@@ -1,0 +1,44 @@
+:root {
+  /* Backgrounds */
+  --bg-base: #0b0b0d;
+  --bg-surface: #101012;
+  --bg-elevated: #141417;
+  --bg-hover: #32323f;
+  --bg-active: #1a1a22;
+
+  /* Borders */
+  --border: #242430;
+  --border-dim: #1a1a24;
+
+  /* Text */
+  --text-primary: #e2e2e6;
+  --text-secondary: #8b8b96;
+  --text-lo: #44444e;
+
+  /* Accent */
+  --accent: #7b68ee;
+  --accent-dim: rgba(123, 104, 238, 0.15);
+
+  /* Status */
+  --status-green: #3ecf8e;
+  --status-amber: #e8a44a;
+  --status-red: #e05c5c;
+  --status-blue: #5ba3f5;
+
+  /* Fonts */
+  --font-ui: 'Figtree', -apple-system, sans-serif;
+  --font-mono: 'JetBrains Mono', monospace;
+
+  /* Layout */
+  --sidebar-width: 240px;
+  --titlebar-height: 40px;
+
+  /* Radii */
+  --radius-sm: 4px;
+  --radius-md: 6px;
+  --radius-lg: 8px;
+
+  /* Transitions */
+  --transition-fast: 120ms ease;
+  --transition-normal: 200ms ease;
+}

@@ -1,0 +1,97 @@
+.section {
+  padding: 4px 0;
+  border-top: 1px solid var(--border);
+}
+
+.sectionLabel {
+  font-family: var(--font-ui);
+  font-size: 10px;
+  font-weight: 600;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--text-lo);
+  padding: 8px 16px 4px;
+}
+
+.item {
+  padding: 6px 16px;
+  cursor: pointer;
+  transition: background var(--transition-fast);
+}
+
+.item:hover {
+  background: var(--bg-hover);
+}
+
+.branchLine {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.branchIcon {
+  flex-shrink: 0;
+  font-size: 12px;
+  color: var(--text-secondary);
+}
+
+.branchName {
+  font-family: var(--font-mono);
+  font-size: 12px;
+  color: var(--text-secondary);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.taskLine {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  margin-top: 2px;
+}
+
+.taskId {
+  font-family: var(--font-mono);
+  font-size: 11px;
+  color: var(--text-lo);
+  flex-shrink: 0;
+}
+
+.separator {
+  font-size: 11px;
+  color: var(--text-lo);
+  flex-shrink: 0;
+}
+
+.taskTitle {
+  font-family: var(--font-ui);
+  font-size: 11px;
+  color: var(--text-lo);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.statusLine {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  margin-top: 2px;
+}
+
+.statusDot {
+  font-size: 8px;
+  color: var(--text-lo);
+}
+
+.statusDotActive {
+  font-size: 8px;
+  color: var(--status-green);
+}
+
+.statusLabel {
+  font-family: var(--font-ui);
+  font-size: 10px;
+  color: var(--text-lo);
+}

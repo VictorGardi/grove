@@ -1,0 +1,46 @@
+.sidebar {
+  width: var(--sidebar-width);
+  background: var(--bg-surface);
+  border-right: 1px solid var(--border);
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+  flex-shrink: 0;
+  overflow: hidden;
+}
+
+.section {
+  padding: 4px 0;
+}
+
+.sectionLabel {
+  font-family: var(--font-ui);
+  font-size: 10px;
+  font-weight: 600;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--text-lo);
+  padding: 8px 16px 4px;
+}
+
+.workspaceListArea {
+  flex: 1;
+  overflow-y: auto;
+  min-height: 0;
+}
+
+.worktreeListArea {
+  flex-shrink: 0;
+  overflow-y: auto;
+  max-height: 40%;
+  min-height: 0;
+}
+
+.spacer {
+  flex: 1;
+}
+
+.bottomSection {
+  border-top: 1px solid var(--border);
+  padding: 4px 0;
+}

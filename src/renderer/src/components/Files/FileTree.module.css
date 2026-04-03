@@ -1,0 +1,123 @@
+.treeContainer {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+
+.treeScroll {
+  flex: 1;
+  overflow-y: auto;
+  overflow-x: hidden;
+  padding: 4px 0;
+}
+
+.treeScroll:focus {
+  outline: none;
+}
+
+.row {
+  display: flex;
+  align-items: center;
+  height: 28px;
+  padding-right: 8px;
+  cursor: pointer;
+  user-select: none;
+  font-family: var(--font-ui);
+  font-size: 13px;
+  color: var(--text-primary);
+  transition: background var(--transition-fast);
+  position: relative;
+}
+
+.row:hover {
+  background: var(--bg-hover);
+}
+
+.rowSelected {
+  background: var(--bg-active);
+  border-left: 2px solid var(--accent);
+}
+
+.rowSelected:hover {
+  background: var(--bg-active);
+}
+
+.rowFocused {
+  outline: 1px solid var(--accent);
+  outline-offset: -1px;
+}
+
+.dirRow {
+  color: var(--text-secondary);
+}
+
+.indent {
+  display: inline-flex;
+  align-items: center;
+  flex-shrink: 0;
+}
+
+.indentGuide {
+  width: 16px;
+  height: 100%;
+  position: relative;
+  flex-shrink: 0;
+}
+
+.indentGuide::after {
+  content: "";
+  position: absolute;
+  left: 10px;
+  top: 0;
+  bottom: 0;
+  width: 1px;
+  background: var(--border-dim);
+}
+
+.chevron {
+  width: 16px;
+  height: 16px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+  color: var(--text-lo);
+  transition: transform var(--transition-fast);
+}
+
+.chevronExpanded {
+  transform: rotate(90deg);
+}
+
+.fileIconBadge {
+  width: 22px;
+  height: 16px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+  font-family: var(--font-mono);
+  font-size: 9px;
+  color: var(--text-lo);
+  letter-spacing: -0.5px;
+  margin-right: 4px;
+}
+
+.fileName {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  flex: 1;
+  min-width: 0;
+}
+
+.emptyState {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  height: 100%;
+  color: var(--text-lo);
+  font-family: var(--font-ui);
+  font-size: 13px;
+}

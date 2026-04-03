@@ -1,0 +1,18 @@
+.titlebar {
+  height: var(--titlebar-height);
+  background: var(--bg-base);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+  -webkit-app-region: drag;
+  user-select: none;
+  border-bottom: 1px solid var(--border-dim);
+}
+
+.workspaceName {
+  font-family: var(--font-ui);
+  font-size: 12px;
+  color: var(--text-secondary);
+  pointer-events: none;
+}
