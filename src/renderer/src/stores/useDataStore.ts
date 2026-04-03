@@ -1,15 +1,12 @@
 import { create } from "zustand";
-import type { TaskInfo, MilestoneInfo } from "@shared/types";
+import type { TaskInfo } from "@shared/types";
 import { useWorkspaceStore } from "./useWorkspaceStore";
 
 interface DataState {
   tasks: TaskInfo[];
-  milestones: MilestoneInfo[];
   loading: boolean;
   fetched: boolean; // true once the first successful fetch for the current workspace completes
   error: string | null;
-  milestoneFilter: string | null;
-  selectedMilestoneId: string | null;
 
   // Phase 4: Task detail state
   selectedTaskId: string | null;
@@ -21,8 +18,6 @@ interface DataState {
   // Immediately patch a single task in the store after a confirmed write,
   // avoiding the chokidar round-trip (~350ms) for user-initiated changes.
   patchTask: (updated: TaskInfo) => void;
-  setMilestoneFilter: (filter: string | null) => void;
-  setSelectedMilestone: (id: string | null) => void;
   setSelectedTask: (id: string | null) => void;
   setTaskDetailDirty: (dirty: boolean) => void;
   clearSelectedTask: () => void;
@@ -33,12 +28,9 @@ let fetchTimer: ReturnType<typeof setTimeout> | null = null;
 
 export const useDataStore = create<DataState>()((set, get) => ({
   tasks: [],
-  milestones: [],
   loading: false,
   fetched: false,
   error: null,
-  milestoneFilter: null,
-  selectedMilestoneId: null,
   selectedTaskId: null,
   selectedTaskBody: null,
   taskDetailLoading: false,
@@ -59,7 +51,6 @@ export const useDataStore = create<DataState>()((set, get) => ({
           const state = get();
           set({
             tasks: result.data.tasks,
-            milestones: result.data.milestones,
             loading: false,
             fetched: true,
             error: null,
@@ -95,9 +86,6 @@ export const useDataStore = create<DataState>()((set, get) => ({
       }
     }, 200);
   },
-
-  setMilestoneFilter: (filter) => set({ milestoneFilter: filter }),
-  setSelectedMilestone: (id) => set({ selectedMilestoneId: id }),
 
   patchTask: (updated) =>
     set((state) => ({
@@ -168,12 +156,9 @@ export const useDataStore = create<DataState>()((set, get) => ({
   clear: () =>
     set({
       tasks: [],
-      milestones: [],
       loading: false,
       fetched: false,
       error: null,
-      milestoneFilter: null,
-      selectedMilestoneId: null,
       selectedTaskId: null,
       selectedTaskBody: null,
       taskDetailLoading: false,

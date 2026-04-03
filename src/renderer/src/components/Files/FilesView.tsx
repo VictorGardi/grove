@@ -4,37 +4,36 @@ import { useWorkspaceStore } from "../../stores/useWorkspaceStore";
 import { FileTree } from "./FileTree";
 import { FileSearch } from "./FileSearch";
 import { FileViewer } from "./FileViewer";
+import { WorktreeSelector } from "./WorktreeSelector";
 
 /**
  * FilesView — container composing file search, tree, and viewer side by side.
  *
  * Layout:
  *   +-------------------------------+
- *   | [Search]   |  FileViewer      |
- *   | ---------- |                  |
- *   | FileTree   |                  |
- *   |            |                  |
+ *   | [Worktree]  |  FileViewer     |
+ *   | [Search]    |                 |
+ *   | ----------  |                 |
+ *   | FileTree    |                 |
+ *   |             |                 |
  *   +-------------------------------+
  */
 export function FilesView(): React.JSX.Element {
   const fetchTree = useFileStore((s) => s.fetchTree);
   const searchActive = useFileStore((s) => s.searchActive);
   const activeWorkspacePath = useWorkspaceStore((s) => s.activeWorkspacePath);
+  const selectedRoot = useFileStore((s) => s.selectedRoot);
 
-  // Fetch tree on mount and whenever the active workspace changes.
-  // fetchTree() is debounced and reads the workspace path internally,
-  // but we need activeWorkspacePath as a dependency so this effect
-  // re-runs if the workspace switches while Files view is open,
-  // or if the workspace loads after this component mounts.
+  // Fetch tree on mount and whenever the active workspace or selected root changes.
   useEffect(() => {
     if (activeWorkspacePath) {
       fetchTree();
     }
-  }, [fetchTree, activeWorkspacePath]);
+  }, [fetchTree, activeWorkspacePath, selectedRoot]);
 
   return (
     <div style={{ display: "flex", flex: 1, overflow: "hidden" }}>
-      {/* Left panel: search + tree */}
+      {/* Left panel: worktree selector + search + tree */}
       <div
         style={{
           display: "flex",
@@ -46,6 +45,7 @@ export function FilesView(): React.JSX.Element {
           borderRight: "1px solid var(--border)",
         }}
       >
+        <WorktreeSelector />
         <FileSearch />
         {!searchActive && <FileTree />}
       </div>

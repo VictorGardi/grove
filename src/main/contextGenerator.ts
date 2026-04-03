@@ -3,7 +3,7 @@ import * as path from "path";
 import matter from "gray-matter";
 import { atomicWrite } from "./fileWriter";
 import { parseTaskBody } from "@shared/taskBodyParser";
-import type { TaskInfo, MilestoneInfo } from "@shared/types";
+import type { TaskInfo } from "@shared/types";
 
 export interface DecisionContent {
   id: string;
@@ -68,12 +68,6 @@ export async function generateContextFile(
     decisions.push(await readDecisionContent(workspacePath, decId));
   }
 
-  // Read linked milestone
-  let milestone: MilestoneInfo | null = null;
-  if (task.milestone) {
-    milestone = await readMilestoneInfo(workspacePath, task.milestone);
-  }
-
   const lines: string[] = [];
 
   // Header
@@ -89,7 +83,6 @@ export async function generateContextFile(
   lines.push("");
   lines.push(`**ID:** ${task.id}`);
   lines.push(`**Branch:** ${task.branch ?? "(not set)"}`);
-  lines.push(`**Priority:** ${task.priority ?? "not set"}`);
   lines.push(`**Agent:** ${task.agent ?? "not set"}`);
   lines.push("");
 
@@ -117,18 +110,6 @@ export async function generateContextFile(
   lines.push(parsed.contextForAgent || "(no context provided)");
   lines.push("");
 
-  // Milestone (optional)
-  if (milestone) {
-    lines.push(`## Milestone: ${milestone.title}`);
-    lines.push("");
-    lines.push(`**ID:** ${milestone.id}`);
-    lines.push("");
-    if (milestone.description) {
-      lines.push(milestone.description);
-      lines.push("");
-    }
-  }
-
   // Linked decisions (optional)
   if (decisions.length > 0) {
     lines.push("## Linked Decisions");
@@ -145,36 +126,4 @@ export async function generateContextFile(
 
   const content = lines.join("\n");
   await atomicWrite(path.join(worktreePath, "CONTEXT.md"), content);
-}
-
-/**
- * Read milestone info for embedding in CONTEXT.md.
- */
-async function readMilestoneInfo(
-  workspacePath: string,
-  milestoneId: string,
-): Promise<MilestoneInfo | null> {
-  const milestoneDir = path.join(workspacePath, ".milestones");
-  try {
-    const entries = await fs.promises.readdir(milestoneDir);
-    const match = entries.find(
-      (e) => e.startsWith(milestoneId) && e.endsWith(".md"),
-    );
-    if (!match) return null;
-    const filePath = path.join(milestoneDir, match);
-    const raw = await fs.promises.readFile(filePath, "utf-8");
-    const { data, content } = matter(raw);
-    return {
-      id: milestoneId,
-      title: typeof data.title === "string" ? data.title : milestoneId,
-      status: data.status === "closed" ? "closed" : "open",
-      created: typeof data.created === "string" ? data.created : null,
-      tags: Array.isArray(data.tags) ? data.tags.map(String) : [],
-      description: content.trim(),
-      filePath,
-      taskCounts: { total: 0, done: 0, doing: 0, review: 0, backlog: 0 },
-    };
-  } catch {
-    return null;
-  }
 }

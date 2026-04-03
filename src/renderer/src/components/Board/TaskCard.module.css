@@ -39,36 +39,6 @@
   line-height: 1.4;
 }
 
-.priority {
-  flex-shrink: 0;
-  padding: 1px 6px;
-  text-transform: uppercase;
-  font-family: var(--font-mono);
-  font-size: 10px;
-  border-radius: var(--radius-sm);
-  white-space: nowrap;
-}
-
-.priorityCritical {
-  background: var(--status-red);
-  color: #fff;
-}
-
-.priorityHigh {
-  background: var(--status-amber);
-  color: #1a1a22;
-}
-
-.priorityMedium {
-  background: var(--status-blue);
-  color: #fff;
-}
-
-.priorityLow {
-  background: rgba(68, 68, 78, 0.2);
-  color: var(--text-lo);
-}
-
 .description {
   margin-top: 6px;
   font-family: var(--font-ui);
@@ -95,26 +65,6 @@
   font-size: 10px;
   border-radius: var(--radius-sm);
   padding: 1px 6px;
-}
-
-.milestone {
-  display: flex;
-  align-items: center;
-  gap: 4px;
-  margin-top: 8px;
-  font-family: var(--font-ui);
-  font-size: 11px;
-  color: var(--text-lo);
-  cursor: pointer;
-}
-
-.milestone:hover {
-  color: var(--text-secondary);
-}
-
-.milestoneDiamond {
-  color: var(--accent);
-  font-size: 10px;
 }
 
 .branchRow {
@@ -155,4 +105,42 @@
   font-size: 11px;
   color: var(--text-lo);
   animation: pulse 1.4s ease-in-out infinite;
+}
+
+/* ── autoRun toggle ──────────────────────────────────────────────── */
+
+.autoRunRow {
+  display: flex;
+  align-items: center;
+  margin-top: 8px;
+}
+
+.autoRunToggle {
+  font-family: var(--font-mono);
+  font-size: 10px;
+  padding: 2px 7px;
+  border-radius: var(--radius-sm);
+  border: 1px solid var(--border-dim);
+  background: transparent;
+  color: var(--text-lo);
+  cursor: pointer;
+  transition:
+    background var(--transition-fast),
+    color var(--transition-fast),
+    border-color var(--transition-fast);
+  white-space: nowrap;
+}
+
+.autoRunToggle:hover {
+  border-color: var(--border);
+  color: var(--text-secondary);
+}
+
+.autoRunToggleActive {
+  border-color: var(--status-green);
+  color: var(--status-green);
+}
+
+.autoRunToggleActive:hover {
+  background: color-mix(in srgb, var(--status-green) 10%, transparent);
 }

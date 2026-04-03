@@ -29,58 +29,33 @@ export interface WindowState {
   isMaximized: boolean;
 }
 
-// ── Phase 2: Tasks & Milestones ──────────────────────────────────
+// ── Phase 2: Tasks ───────────────────────────────────────────────
 
 /** Status columns — maps to directory names in .tasks/ */
 export type TaskStatus = "backlog" | "doing" | "review" | "done";
-
-/** Priority levels for task cards — optional frontmatter field */
-export type TaskPriority = "critical" | "high" | "medium" | "low";
 
 /** Parsed from a .tasks/{status}/T-XXX-slug.md file */
 export interface TaskInfo {
   id: string;
   title: string;
   status: TaskStatus;
-  priority: TaskPriority | null;
   agent: string | null;
   worktree: string | null;
   branch: string | null;
   created: string | null;
   tags: string[];
   decisions: string[];
-  milestone: string | null;
   description: string;
   dodTotal: number;
   dodDone: number;
   filePath: string;
-}
-
-/** Milestone status — binary */
-export type MilestoneStatus = "open" | "closed";
-
-/** Parsed from a .milestones/M-XXX-slug.md file */
-export interface MilestoneInfo {
-  id: string;
-  title: string;
-  status: MilestoneStatus;
-  created: string | null;
-  tags: string[];
-  description: string;
-  filePath: string;
-  taskCounts: {
-    total: number;
-    done: number;
-    doing: number;
-    review: number;
-    backlog: number;
-  };
+  /** Whether agent work should start automatically when task moves to doing. Default true. */
+  autoRun: boolean;
 }
 
 /** Combined workspace data — returned atomically to avoid stale cross-references */
 export interface WorkspaceData {
   tasks: TaskInfo[];
-  milestones: MilestoneInfo[];
 }
 
 // ── Phase 3: File Tree & Viewer ──────────────────────────────────
@@ -106,30 +81,21 @@ export type FileReadResult =
   | { binary: true }
   | { tooLarge: true; size: number };
 
-// ── Phase 4: Task & Milestone CRUD ──────────────────────────────
+// ── Phase 4: Task CRUD ──────────────────────────────────────────
 
 /** Partial frontmatter fields for task updates (read-merge-write pattern) */
 export interface TaskFrontmatter {
   id: string;
   title: string;
   status: TaskStatus;
-  priority: TaskPriority | null;
   agent: string | null;
   worktree: string | null;
   branch: string | null;
   created: string | null;
   tags: string[];
   decisions: string[];
-  milestone: string | null;
-}
-
-/** Partial frontmatter fields for milestone updates */
-export interface MilestoneFrontmatter {
-  id: string;
-  title: string;
-  status: MilestoneStatus;
-  created: string | null;
-  tags: string[];
+  /** Only persisted when false; omitted (default true) otherwise */
+  autoRun?: boolean;
 }
 
 /** A single DoD checklist item parsed from the task body */
@@ -192,4 +158,29 @@ export interface TeardownWorktreeInput {
   workspacePath: string;
   taskFilePath: string; // absolute path (already in .tasks/done/)
   worktreePath: string; // relative or absolute from frontmatter
+}
+
+// ── Branch listing (for Files branch selector) ───────────────────
+
+/** A local git branch with optional worktree path */
+export interface BranchInfo {
+  name: string;
+  isCurrent: boolean;
+  /** Absolute path to the worktree if one exists, null otherwise */
+  worktreePath: string | null;
+}
+
+/** A single changed file in the diff summary */
+export interface ChangedFile {
+  path: string;
+  status: "M" | "A" | "D" | "R";
+  additions: number;
+  deletions: number;
+}
+
+/** Result from git:diff — summary of all changed files */
+export interface DiffSummary {
+  files: ChangedFile[];
+  totalAdditions: number;
+  totalDeletions: number;
 }

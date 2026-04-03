@@ -51,10 +51,8 @@ export function MainArea(): React.JSX.Element {
 
   if (activeView === "board") {
     return (
-      <div className={styles.mainAreaWithPanel}>
-        <div className={styles.mainAreaContent}>
-          <Board />
-        </div>
+      <div className={styles.mainAreaContent}>
+        <Board />
         {selectedTaskId && <TaskDetailPanel />}
       </div>
     );

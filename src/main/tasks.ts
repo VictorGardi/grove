@@ -1,12 +1,7 @@
 import matter from "gray-matter";
 import * as fs from "fs";
 import * as path from "path";
-import type {
-  TaskInfo,
-  TaskStatus,
-  TaskPriority,
-  TaskFrontmatter,
-} from "@shared/types";
+import type { TaskInfo, TaskStatus, TaskFrontmatter } from "@shared/types";
 import { atomicWrite } from "./fileWriter";
 
 const STATUS_DIRS: TaskStatus[] = ["backlog", "doing", "review", "done"];
@@ -15,7 +10,7 @@ const ALL_TASK_DIRS = ["backlog", "doing", "review", "done", "archive"];
 /**
  * Per-file write lock: chains write operations so they execute serially.
  * Prevents concurrent read-modify-write races when rapid IPC calls arrive
- * for the same file (e.g. priority click + description debounce firing together).
+ * for the same file (e.g. status change + description debounce firing together).
  */
 const writeLocks = new Map<string, Promise<void>>();
 function withWriteLock<T>(filePath: string, fn: () => Promise<T>): Promise<T> {
@@ -27,7 +22,6 @@ function withWriteLock<T>(filePath: string, fn: () => Promise<T>): Promise<T> {
   writeLocks.set(filePath, gate);
   return prev.then(fn).finally(resolve) as Promise<T>;
 }
-const VALID_PRIORITIES: TaskPriority[] = ["critical", "high", "medium", "low"];
 
 /** Session-level counter to prevent TOCTOU race on rapid creates */
 let lastGeneratedId = 0;
@@ -51,14 +45,6 @@ export async function parseTaskFile(
       typeof data.title === "string"
         ? data.title
         : filename.replace(/^T-\d+-/, "").replace(/-/g, " ");
-
-    // Priority: validate against known values
-    const rawPriority =
-      typeof data.priority === "string" ? data.priority.toLowerCase() : null;
-    const priority =
-      rawPriority && VALID_PRIORITIES.includes(rawPriority as TaskPriority)
-        ? (rawPriority as TaskPriority)
-        : null;
 
     // DoD checkboxes
     const dodDone = (content.match(/^- \[x\]/gm) || []).length;
@@ -87,7 +73,6 @@ export async function parseTaskFile(
       id,
       title,
       status,
-      priority,
       agent: typeof data.agent === "string" ? data.agent : null,
       worktree: typeof data.worktree === "string" ? data.worktree : null,
       branch: typeof data.branch === "string" ? data.branch : null,
@@ -101,11 +86,12 @@ export async function parseTaskFile(
       decisions: Array.isArray(data.decisions)
         ? data.decisions.map(String)
         : [],
-      milestone: typeof data.milestone === "string" ? data.milestone : null,
       description,
       dodTotal,
       dodDone,
       filePath,
+      // autoRun defaults to true; only false when explicitly set to false
+      autoRun: data.autoRun !== false,
     };
   } catch (err) {
     console.warn(`[Tasks] Failed to parse ${filePath}:`, err);
@@ -195,14 +181,14 @@ function buildFrontmatter(fm: TaskFrontmatter): Record<string, unknown> {
     title: fm.title,
     status: fm.status,
   };
-  if (fm.priority) obj.priority = fm.priority;
   if (fm.agent) obj.agent = fm.agent;
   if (fm.worktree) obj.worktree = fm.worktree;
   if (fm.branch) obj.branch = fm.branch;
   if (fm.created) obj.created = fm.created;
   if (fm.tags.length > 0) obj.tags = fm.tags;
   if (fm.decisions.length > 0) obj.decisions = fm.decisions;
-  if (fm.milestone) obj.milestone = fm.milestone;
+  // Only persist autoRun when explicitly false (default is true)
+  if (fm.autoRun === false) obj.autoRun = false;
   return obj;
 }
 
@@ -223,14 +209,12 @@ export async function createTask(
     id,
     title,
     status: "backlog",
-    priority: null,
     agent: null,
     worktree: null,
     branch: null,
     created,
     tags: [],
     decisions: [],
-    milestone: null,
   };
 
   const body = `\n## Description\n\n\n## Definition of Done\n\n- [ ] Define acceptance criteria\n\n## Context for agent\n\n`;
@@ -250,8 +234,8 @@ export async function createTask(
 /**
  * Read-merge-write update: reads current file, merges only the changed fields, writes back.
  * Prevents overwriting concurrent agent edits with stale renderer state.
- * Uses a per-file write lock to serialise concurrent IPC calls (e.g. priority
- * click + description debounce arriving at the same time).
+ * Uses a per-file write lock to serialise concurrent IPC calls (e.g. status
+ * change + description debounce arriving at the same time).
  */
 export function updateTask(
   workspacePath: string,
@@ -407,4 +391,56 @@ export async function readTaskBody(
     preview: content.slice(0, 100),
   });
   return content;
+}
+
+/**
+ * Read the full raw markdown file (frontmatter + body) for the task editor overlay.
+ * Validates path traversal before reading.
+ */
+export async function readTaskRaw(
+  workspacePath: string,
+  filePath: string,
+): Promise<string> {
+  const resolved = path.resolve(filePath);
+  if (!resolved.startsWith(path.resolve(workspacePath))) {
+    throw new Error("Path traversal detected");
+  }
+
+  return fs.promises.readFile(filePath, "utf-8");
+}
+
+/**
+ * Write the full raw markdown file (frontmatter + body) from the task editor overlay.
+ * Uses the write lock to prevent races. Validates path traversal.
+ */
+export function writeTaskRaw(
+  workspacePath: string,
+  filePath: string,
+  rawContent: string,
+): Promise<TaskInfo> {
+  return withWriteLock(filePath, async () => {
+    const resolved = path.resolve(filePath);
+    if (!resolved.startsWith(path.resolve(workspacePath))) {
+      throw new Error("Path traversal detected");
+    }
+
+    await atomicWrite(filePath, rawContent);
+
+    // Derive status from directory
+    const dirName = path.basename(path.dirname(filePath));
+    const STATUS_DIRS_SET: TaskStatus[] = [
+      "backlog",
+      "doing",
+      "review",
+      "done",
+    ];
+    const status = STATUS_DIRS_SET.includes(dirName as TaskStatus)
+      ? (dirName as TaskStatus)
+      : "backlog";
+
+    const task = await parseTaskFile(filePath, status);
+    if (!task)
+      throw new Error(`Failed to re-parse task after raw write: ${filePath}`);
+    return task;
+  });
 }

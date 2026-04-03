@@ -135,6 +135,41 @@
   opacity: 0.6;
 }
 
+/* Preview / Source toggle */
+.viewToggle {
+  display: flex;
+  align-items: center;
+  background: var(--bg-surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  overflow: hidden;
+  flex-shrink: 0;
+}
+
+.toggleBtn {
+  padding: 2px 8px;
+  font-family: var(--font-mono);
+  font-size: 11px;
+  color: var(--text-lo);
+  background: transparent;
+  border: none;
+  cursor: pointer;
+  transition:
+    color var(--transition-fast),
+    background var(--transition-fast);
+  line-height: 18px;
+}
+
+.toggleBtn:hover {
+  color: var(--text-secondary);
+  background: var(--bg-hover);
+}
+
+.toggleBtnActive {
+  color: var(--text-primary);
+  background: var(--bg-elevated);
+}
+
 /* Plain text fallback */
 .plainText {
   padding: 16px;

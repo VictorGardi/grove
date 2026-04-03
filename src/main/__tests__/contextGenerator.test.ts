@@ -20,18 +20,17 @@ function makeTask(overrides: Partial<TaskInfo> = {}): TaskInfo {
     id: "T-001",
     title: "Test Task",
     status: "doing",
-    priority: "high",
     agent: null,
     worktree: ".worktrees/T-001",
     branch: "feat/t-001-test-task",
     created: "2026-04-03",
     tags: [],
     decisions: [],
-    milestone: null,
     description: "A task description",
     dodTotal: 0,
     dodDone: 0,
     filePath: ".tasks/doing/T-001-test-task.md",
+    autoRun: true,
     ...overrides,
   };
 }
@@ -73,7 +72,6 @@ describe("generateContextFile", () => {
     expect(content).toContain("# Task Context: Test Task");
     expect(content).toContain("**ID:** T-001");
     expect(content).toContain("**Branch:** feat/t-001-test-task");
-    expect(content).toContain("**Priority:** high");
   });
 
   it("includes description section content", async () => {
@@ -119,17 +117,6 @@ describe("generateContextFile", () => {
       string,
     ];
     expect(content).toContain("(no description provided)");
-  });
-
-  it("omits milestone section when task has no milestone", async () => {
-    const task = makeTask({ milestone: null });
-    await generateContextFile(tmpDir, task, BODY_WITH_SECTIONS, tmpDir);
-
-    const [, content] = vi.mocked(atomicWrite).mock.calls[0] as [
-      string,
-      string,
-    ];
-    expect(content).not.toContain("## Milestone:");
   });
 
   it("omits linked decisions section when task has no decisions", async () => {

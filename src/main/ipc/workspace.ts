@@ -5,7 +5,6 @@ import simpleGit from "simple-git";
 import type { ConfigManager } from "../config";
 import type { IpcResult, WorkspaceInfo, WorkspaceEntry } from "@shared/types";
 import { initTaskDirs } from "../tasks";
-import { initMilestoneDirs } from "../milestones";
 import { startWatchers, stopWatchers } from "../watchers";
 
 // Branch watcher state
@@ -139,7 +138,6 @@ export function registerWorkspaceHandlers(
 
         // Initialize directories and start watchers for the new active workspace
         await initTaskDirs(selectedPath);
-        await initMilestoneDirs(selectedPath);
         startWatchers(selectedPath, mainWindow);
         startBranchWatcher(selectedPath, mainWindow);
 
@@ -214,9 +212,8 @@ export function registerWorkspaceHandlers(
           c.lastActiveWorkspace = wPath;
         });
 
-        // Initialize task and milestone directories
+        // Initialize task directories
         await initTaskDirs(wPath);
-        await initMilestoneDirs(wPath);
 
         // Start file watchers for the new active workspace
         startWatchers(wPath, mainWindow);

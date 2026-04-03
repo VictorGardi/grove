@@ -8,12 +8,12 @@ import type {
   TaskInfo,
   TaskStatus,
   TaskFrontmatter,
-  MilestoneInfo,
-  MilestoneFrontmatter,
   WorktreeInfo,
   SetupWorktreeInput,
   SetupWorktreeResult,
   TeardownWorktreeInput,
+  DiffSummary,
+  BranchInfo,
 } from "@shared/types";
 
 export interface ElectronAPI {
@@ -66,22 +66,15 @@ export interface ElectronAPI {
       workspacePath: string,
       filePath: string,
     ) => Promise<IpcResult<string>>;
-  };
-  milestones: {
-    create: (
-      workspacePath: string,
-      title: string,
-    ) => Promise<IpcResult<MilestoneInfo>>;
-    update: (
-      workspacePath: string,
-      filePath: string,
-      changes: Partial<MilestoneFrontmatter>,
-      body?: string,
-    ) => Promise<IpcResult<void>>;
-    readBody: (
+    readRaw: (
       workspacePath: string,
       filePath: string,
     ) => Promise<IpcResult<string>>;
+    writeRaw: (
+      workspacePath: string,
+      filePath: string,
+      rawContent: string,
+    ) => Promise<IpcResult<TaskInfo>>;
   };
   app: {
     getPlatform: () => Promise<NodeJS.Platform>;
@@ -94,6 +87,25 @@ export interface ElectronAPI {
     teardownWorktreeForTask: (
       input: TeardownWorktreeInput,
     ) => Promise<IpcResult<void>>;
+    diff: (
+      worktreePath: string,
+      baseBranch?: string,
+    ) => Promise<IpcResult<DiffSummary>>;
+    fileDiff: (
+      worktreePath: string,
+      filePath: string,
+      baseBranch?: string,
+    ) => Promise<IpcResult<string>>;
+    listBranches: (workspacePath: string) => Promise<IpcResult<BranchInfo[]>>;
+    treeForBranch: (
+      workspacePath: string,
+      branch: string,
+    ) => Promise<IpcResult<FileTreeNode[]>>;
+    readFileAtBranch: (
+      workspacePath: string,
+      branch: string,
+      relativePath: string,
+    ) => Promise<IpcResult<FileReadResult>>;
   };
   pty: {
     create: (id: string, cwd: string) => Promise<IpcResult<void>>;

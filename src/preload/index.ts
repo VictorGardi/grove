@@ -65,25 +65,10 @@ contextBridge.exposeInMainWorld("api", {
       ipcRenderer.invoke("task:archive", workspacePath, filePath),
     readBody: (workspacePath: string, filePath: string) =>
       ipcRenderer.invoke("task:readBody", workspacePath, filePath),
-  },
-  milestones: {
-    create: (workspacePath: string, title: string) =>
-      ipcRenderer.invoke("milestone:create", workspacePath, title),
-    update: (
-      workspacePath: string,
-      filePath: string,
-      changes: Record<string, unknown>,
-      body?: string,
-    ) =>
-      ipcRenderer.invoke(
-        "milestone:update",
-        workspacePath,
-        filePath,
-        changes,
-        body,
-      ),
-    readBody: (workspacePath: string, filePath: string) =>
-      ipcRenderer.invoke("milestone:readBody", workspacePath, filePath),
+    readRaw: (workspacePath: string, filePath: string) =>
+      ipcRenderer.invoke("task:readRaw", workspacePath, filePath),
+    writeRaw: (workspacePath: string, filePath: string, rawContent: string) =>
+      ipcRenderer.invoke("task:writeRaw", workspacePath, filePath, rawContent),
   },
   git: {
     listWorktrees: (repoPath: string) =>
@@ -99,6 +84,25 @@ contextBridge.exposeInMainWorld("api", {
       taskFilePath: string;
       worktreePath: string;
     }) => ipcRenderer.invoke("git:teardownWorktreeForTask", input),
+    diff: (worktreePath: string, baseBranch?: string) =>
+      ipcRenderer.invoke("git:diff", worktreePath, baseBranch),
+    fileDiff: (worktreePath: string, filePath: string, baseBranch?: string) =>
+      ipcRenderer.invoke("git:fileDiff", worktreePath, filePath, baseBranch),
+    listBranches: (workspacePath: string) =>
+      ipcRenderer.invoke("git:listBranches", workspacePath),
+    treeForBranch: (workspacePath: string, branch: string) =>
+      ipcRenderer.invoke("git:treeForBranch", workspacePath, branch),
+    readFileAtBranch: (
+      workspacePath: string,
+      branch: string,
+      relativePath: string,
+    ) =>
+      ipcRenderer.invoke(
+        "git:readFileAtBranch",
+        workspacePath,
+        branch,
+        relativePath,
+      ),
   },
   pty: {
     create: (id: string, cwd: string) =>

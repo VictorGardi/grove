@@ -15,6 +15,14 @@ Add renderer-side keyboard shortcuts so users can manage workspaces without touc
 
 **Note:** Workspace deletion is already implemented — right-click any workspace in the sidebar to get the context menu → "Remove workspace" → `window.confirm()` confirmation. No work needed there.
 
+## Definition of Done
+
+- [x] `Cmd+N` (Mac) / `Ctrl+N` (Win/Linux) opens the native folder-picker dialog
+- [x] `Cmd+1`–`Cmd+9` activates the corresponding workspace by sidebar position
+- [x] Pressing `Cmd+3` with only 2 workspaces is a silent no-op
+- [x] Shortcut does not fire when cursor is inside a text input
+- [x] `npm run typecheck && npm run build` passes
+
 ## Shortcuts to implement
 
 | Shortcut | Action |
@@ -101,10 +109,5 @@ function AppContent(): React.JSX.Element {
 - Input focus guard: prevents `Cmd+N` from firing when typing in a rename input (future) or any other field
 - `Cmd+N` while dialog already open: the store's `addWorkspace` call is safe to call twice — Electron's dialog system handles this
 
-## Definition of Done
+## Context for agent
 
-- [ ] `Cmd+N` (Mac) / `Ctrl+N` (Win/Linux) opens the native folder-picker dialog
-- [ ] `Cmd+1`–`Cmd+9` activates the corresponding workspace by sidebar position
-- [ ] Pressing `Cmd+3` with only 2 workspaces is a silent no-op
-- [ ] Shortcut does not fire when cursor is inside a text input
-- [ ] `npm run typecheck && npm run build` passes

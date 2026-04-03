@@ -1,4 +1,8 @@
-import { createHighlighter, type Highlighter } from "shiki";
+import {
+  createHighlighter,
+  createJavaScriptRegexEngine,
+  type Highlighter,
+} from "shiki";
 import { groveTheme } from "./shikiTheme";
 
 let highlighterPromise: Promise<Highlighter> | null = null;
@@ -10,6 +14,9 @@ let highlighterPromise: Promise<Highlighter> | null = null;
 export function getHighlighter(): Promise<Highlighter> {
   if (!highlighterPromise) {
     highlighterPromise = createHighlighter({
+      // Use the JavaScript regex engine — avoids loading onig.wasm which can
+      // fail silently in Electron's sandboxed renderer process.
+      engine: createJavaScriptRegexEngine(),
       themes: [groveTheme],
       langs: [
         "typescript",

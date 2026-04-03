@@ -2,6 +2,7 @@ import React, { useEffect, useState, useMemo, useRef } from "react";
 import type { ThemedToken, BundledLanguage } from "shiki";
 import { useFileStore } from "../../stores/useFileStore";
 import { getHighlighter, SUPPORTED_LANGS } from "./shikiHighlighter";
+import { MarkdownViewer } from "./MarkdownViewer";
 import styles from "./FileViewer.module.css";
 
 // ── Breadcrumb ─────────────────────────────────────────────────
@@ -45,6 +46,7 @@ export function FileViewer(): React.JSX.Element {
   const [tokenLines, setTokenLines] = useState<ThemedToken[][] | null>(null);
   const [highlighterReady, setHighlighterReady] = useState(false);
   const [flashKey, setFlashKey] = useState(0);
+  const [viewMode, setViewMode] = useState<"rendered" | "source">("rendered");
   const prevContentRef = useRef<string | null>(null);
   const codeAreaRef = useRef<HTMLDivElement>(null);
 
@@ -52,6 +54,11 @@ export function FileViewer(): React.JSX.Element {
   useEffect(() => {
     getHighlighter().then(() => setHighlighterReady(true));
   }, []);
+
+  // Reset to rendered view when opening a new file
+  useEffect(() => {
+    setViewMode("rendered");
+  }, [openFilePath]);
 
   // Tokenize when file content or language changes
   useEffect(() => {
@@ -69,7 +76,6 @@ export function FileViewer(): React.JSX.Element {
       if (cancelled) return;
       try {
         if (lang === "text") {
-          // For plain text, don't tokenize — render as-is
           setTokenLines(null);
           return;
         }
@@ -81,7 +87,6 @@ export function FileViewer(): React.JSX.Element {
           setTokenLines(tokens);
         }
       } catch {
-        // Language not supported — fall back to plain
         if (!cancelled) {
           setTokenLines(null);
         }
@@ -138,6 +143,8 @@ export function FileViewer(): React.JSX.Element {
     ));
   }, [fileContent, tokenLines]);
 
+  const isMarkdown = fileContent?.language === "markdown";
+
   // No file selected
   if (!openFilePath) {
     return (
@@ -190,14 +197,29 @@ export function FileViewer(): React.JSX.Element {
           filePath={openFilePath}
           language={fileContent.language}
           lineCount={fileContent.lineCount}
+          viewMode={isMarkdown ? viewMode : undefined}
+          onSetViewMode={isMarkdown ? setViewMode : undefined}
         />
-        <div
-          ref={codeAreaRef}
-          key={flashKey}
-          className={`${styles.codeArea} ${flashKey > 0 ? styles.flash : ""}`}
-        >
-          <div className={styles.codeTable}>{renderedLines}</div>
-        </div>
+
+        {/* Markdown rendered preview */}
+        {isMarkdown && viewMode === "rendered" ? (
+          <div
+            ref={codeAreaRef}
+            key={`md-${flashKey}`}
+            className={`${styles.codeArea} ${flashKey > 0 ? styles.flash : ""}`}
+          >
+            <MarkdownViewer content={fileContent.content} />
+          </div>
+        ) : (
+          /* Code / source view */
+          <div
+            ref={codeAreaRef}
+            key={`src-${flashKey}`}
+            className={`${styles.codeArea} ${flashKey > 0 ? styles.flash : ""}`}
+          >
+            <div className={styles.codeTable}>{renderedLines}</div>
+          </div>
+        )}
       </div>
     );
   }
@@ -216,15 +238,38 @@ function Header({
   filePath,
   language,
   lineCount,
+  viewMode,
+  onSetViewMode,
 }: {
   filePath: string;
   language: string | null;
   lineCount: number | null;
+  viewMode?: "rendered" | "source";
+  onSetViewMode?: (mode: "rendered" | "source") => void;
 }): React.JSX.Element {
   return (
     <div className={styles.header}>
       <PathBreadcrumb filePath={filePath} />
-      {language && (
+
+      {/* Preview / Source toggle for markdown */}
+      {viewMode !== undefined && onSetViewMode && (
+        <div className={styles.viewToggle}>
+          <button
+            className={`${styles.toggleBtn} ${viewMode === "rendered" ? styles.toggleBtnActive : ""}`}
+            onClick={() => onSetViewMode("rendered")}
+          >
+            Preview
+          </button>
+          <button
+            className={`${styles.toggleBtn} ${viewMode === "source" ? styles.toggleBtnActive : ""}`}
+            onClick={() => onSetViewMode("source")}
+          >
+            Source
+          </button>
+        </div>
+      )}
+
+      {language && language !== "markdown" && (
         <span className={styles.badge}>{language.toUpperCase()}</span>
       )}
       {lineCount !== null && (

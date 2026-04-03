@@ -5,8 +5,6 @@ import type {
   TaskInfo,
   TaskStatus,
   TaskFrontmatter,
-  MilestoneInfo,
-  MilestoneFrontmatter,
 } from "@shared/types";
 import {
   scanTasks,
@@ -15,16 +13,12 @@ import {
   moveTask,
   archiveTask,
   readTaskBody,
+  readTaskRaw,
+  writeTaskRaw,
 } from "../tasks";
-import {
-  scanMilestones,
-  createMilestone,
-  updateMilestone,
-  readMilestoneBody,
-} from "../milestones";
 
 export function registerTaskHandlers(): void {
-  // Atomic data fetch — returns tasks + milestones in one response
+  // Atomic data fetch — returns tasks in one response
   ipcMain.handle(
     "workspace:data",
     async (
@@ -33,8 +27,7 @@ export function registerTaskHandlers(): void {
     ): Promise<IpcResult<WorkspaceData>> => {
       try {
         const tasks = await scanTasks(workspacePath);
-        const milestones = await scanMilestones(workspacePath, tasks);
-        return { ok: true, data: { tasks, milestones } };
+        return { ok: true, data: { tasks } };
       } catch (err) {
         return {
           ok: false,
@@ -153,61 +146,38 @@ export function registerTaskHandlers(): void {
     },
   );
 
-  // ── Milestone CRUD ─────────────────────────────────────────────
+  // ── Raw file read/write (for overlay editor) ──────────────────
 
   ipcMain.handle(
-    "milestone:create",
-    async (
-      _event,
-      workspacePath: string,
-      title: string,
-    ): Promise<IpcResult<MilestoneInfo>> => {
-      try {
-        if (!title || !title.trim()) {
-          return { ok: false, error: "Title is required" };
-        }
-        const milestone = await createMilestone(workspacePath, title.trim());
-        return { ok: true, data: milestone };
-      } catch (err) {
-        return {
-          ok: false,
-          error: err instanceof Error ? err.message : String(err),
-        };
-      }
-    },
-  );
-
-  ipcMain.handle(
-    "milestone:update",
-    async (
-      _event,
-      workspacePath: string,
-      filePath: string,
-      changes: Partial<MilestoneFrontmatter>,
-      body?: string,
-    ): Promise<IpcResult<void>> => {
-      try {
-        await updateMilestone(workspacePath, filePath, changes, body);
-        return { ok: true, data: undefined };
-      } catch (err) {
-        return {
-          ok: false,
-          error: err instanceof Error ? err.message : String(err),
-        };
-      }
-    },
-  );
-
-  ipcMain.handle(
-    "milestone:readBody",
+    "task:readRaw",
     async (
       _event,
       workspacePath: string,
       filePath: string,
     ): Promise<IpcResult<string>> => {
       try {
-        const body = await readMilestoneBody(workspacePath, filePath);
-        return { ok: true, data: body };
+        const raw = await readTaskRaw(workspacePath, filePath);
+        return { ok: true, data: raw };
+      } catch (err) {
+        return {
+          ok: false,
+          error: err instanceof Error ? err.message : String(err),
+        };
+      }
+    },
+  );
+
+  ipcMain.handle(
+    "task:writeRaw",
+    async (
+      _event,
+      workspacePath: string,
+      filePath: string,
+      rawContent: string,
+    ): Promise<IpcResult<TaskInfo>> => {
+      try {
+        const task = await writeTaskRaw(workspacePath, filePath, rawContent);
+        return { ok: true, data: task };
       } catch (err) {
         return {
           ok: false,

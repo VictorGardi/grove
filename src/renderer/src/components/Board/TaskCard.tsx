@@ -2,18 +2,12 @@ import { useDraggable } from "@dnd-kit/core";
 import type { TaskInfo } from "@shared/types";
 import { useDataStore } from "../../stores/useDataStore";
 import { useWorktreeStore } from "../../stores/useWorktreeStore";
+import { updateTask } from "../../actions/taskActions";
 import styles from "./TaskCard.module.css";
 
 interface TaskCardProps {
   task: TaskInfo;
 }
-
-const PRIORITY_CLASSES: Record<string, string> = {
-  critical: styles.priorityCritical,
-  high: styles.priorityHigh,
-  medium: styles.priorityMedium,
-  low: styles.priorityLow,
-};
 
 export function TaskCard({ task }: TaskCardProps): React.JSX.Element {
   const selectedTaskId = useDataStore((s) => s.selectedTaskId);
@@ -36,16 +30,9 @@ export function TaskCard({ task }: TaskCardProps): React.JSX.Element {
       className={`${styles.card} ${isSelected ? styles.cardSelected : ""} ${isDragging ? styles.cardDragging : ""}`}
       onClick={handleClick}
     >
-      {/* Row 1: Title + priority badge */}
+      {/* Row 1: Title */}
       <div className={styles.titleRow}>
         <span className={styles.title}>{task.title}</span>
-        {task.priority && (
-          <span
-            className={`${styles.priority} ${PRIORITY_CLASSES[task.priority] || ""}`}
-          >
-            {task.priority}
-          </span>
-        )}
       </div>
 
       {/* Row 2: Branch badge — shown when worktree is active or being created */}
@@ -74,6 +61,26 @@ export function TaskCard({ task }: TaskCardProps): React.JSX.Element {
               {tag}
             </span>
           ))}
+        </div>
+      )}
+
+      {/* Row 5: autoRun toggle — backlog tasks only */}
+      {task.status === "backlog" && (
+        <div className={styles.autoRunRow} onClick={(e) => e.stopPropagation()}>
+          <button
+            className={`${styles.autoRunToggle} ${task.autoRun ? styles.autoRunToggleActive : ""}`}
+            onClick={(e) => {
+              e.stopPropagation();
+              updateTask(task.filePath, { autoRun: !task.autoRun });
+            }}
+            title={
+              task.autoRun
+                ? "Auto-run on: click to disable"
+                : "Auto-run off: click to enable"
+            }
+          >
+            {task.autoRun ? "auto-run: on" : "auto-run: off"}
+          </button>
         </div>
       )}
     </div>

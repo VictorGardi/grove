@@ -1,7 +1,14 @@
 import * as fs from "fs";
 import * as path from "path";
 import simpleGit from "simple-git";
-import type { WorktreeInfo, WorktreeErrorCode } from "@shared/types";
+import type {
+  WorktreeInfo,
+  WorktreeErrorCode,
+  BranchInfo,
+  FileTreeNode,
+  FileReadResult,
+} from "@shared/types";
+import { ALWAYS_EXCLUDED } from "./filesystem";
 
 // ── Error type ────────────────────────────────────────────────────
 
@@ -354,4 +361,480 @@ export async function ensureWorktreesIgnored(repoPath: string): Promise<void> {
   if (content.includes(".worktrees/")) return;
   const append = content.endsWith("\n") ? ".worktrees/\n" : "\n.worktrees/\n";
   await fs.promises.appendFile(gitignorePath, append, "utf-8");
+}
+
+// ── Phase 7: Diff helpers ────────────────────────────────────────
+
+/**
+ * Workspace-level config stored in <repo>/.grove/config.json
+ */
+interface WorkspaceConfig {
+  baseBranch?: string;
+}
+
+/**
+ * Read workspace-level config from <workspacePath>/.grove/config.json.
+ * Returns empty config on any error (missing file, malformed JSON, etc.)
+ */
+async function readWorkspaceConfig(
+  workspacePath: string,
+): Promise<WorkspaceConfig> {
+  const configPath = path.join(workspacePath, ".grove", "config.json");
+  try {
+    const raw = await fs.promises.readFile(configPath, "utf-8");
+    const parsed = JSON.parse(raw);
+    return typeof parsed === "object" && parsed !== null ? parsed : {};
+  } catch {
+    return {};
+  }
+}
+
+/**
+ * Resolve the main repository root from a worktree path.
+ * Uses `git rev-parse --git-common-dir` to find the shared .git directory,
+ * then derives the repo root from that.
+ */
+async function resolveRepoRoot(worktreePath: string): Promise<string> {
+  const git = simpleGit(worktreePath);
+  try {
+    const raw = await git.raw([
+      "rev-parse",
+      "--path-format=absolute",
+      "--git-common-dir",
+    ]);
+    // git-common-dir returns the .git dir of the main repo (e.g. /repo/.git)
+    const gitDir = raw.trim();
+    return path.dirname(gitDir);
+  } catch {
+    return worktreePath; // fallback: assume we're already at repo root
+  }
+}
+
+/**
+ * Get a summary of changed files in a worktree branch vs the base branch.
+ * Uses `git merge-base` to find the true divergence point — only shows
+ * what this branch added, not unrelated commits on the base.
+ */
+export async function getDiff(
+  worktreePath: string,
+  baseBranch: string,
+): Promise<{
+  files: Array<{
+    path: string;
+    status: string;
+    additions: number;
+    deletions: number;
+  }>;
+  totalAdditions: number;
+  totalDeletions: number;
+}> {
+  const git = simpleGit(worktreePath);
+
+  // Find the merge-base (common ancestor)
+  let mergeBase: string;
+  let headSha: string;
+  try {
+    const raw = await git.raw(["merge-base", "HEAD", baseBranch]);
+    mergeBase = raw.trim();
+  } catch (err) {
+    throw new WorktreeError(
+      "UNKNOWN",
+      `Failed to find merge-base between HEAD and ${baseBranch}: ${String(err)}`,
+      err,
+    );
+  }
+  try {
+    headSha = (await git.raw(["rev-parse", "HEAD"])).trim();
+  } catch {
+    headSha = "";
+  }
+
+  // If merge-base equals HEAD (e.g. on the base branch itself), show working
+  // tree changes against HEAD instead of an empty branch diff.
+  const isOnBaseBranch = mergeBase === headSha;
+  const diffRef = isOnBaseBranch ? "HEAD" : `${mergeBase}...HEAD`;
+
+  // Get name-status for file list
+  let nameStatusRaw: string;
+  try {
+    nameStatusRaw = await git.raw(["diff", "--name-status", diffRef]);
+  } catch (err) {
+    throw new WorktreeError(
+      "UNKNOWN",
+      `Failed to get diff name-status: ${String(err)}`,
+      err,
+    );
+  }
+
+  // Get numstat for additions/deletions per file
+  let numstatRaw: string;
+  try {
+    numstatRaw = await git.raw(["diff", "--numstat", diffRef]);
+  } catch (err) {
+    throw new WorktreeError(
+      "UNKNOWN",
+      `Failed to get diff numstat: ${String(err)}`,
+      err,
+    );
+  }
+
+  // Parse numstat into a map: filePath → { additions, deletions }
+  const numstatMap = new Map<
+    string,
+    { additions: number; deletions: number }
+  >();
+  for (const line of numstatRaw.trim().split("\n")) {
+    if (!line.trim()) continue;
+    const parts = line.split("\t");
+    if (parts.length >= 3) {
+      const additions = parts[0] === "-" ? 0 : parseInt(parts[0], 10) || 0;
+      const deletions = parts[1] === "-" ? 0 : parseInt(parts[1], 10) || 0;
+      const filePath = parts.slice(2).join("\t"); // handle paths with tabs (rare)
+      numstatMap.set(filePath, { additions, deletions });
+    }
+  }
+
+  // Parse name-status and build result
+  const files: Array<{
+    path: string;
+    status: string;
+    additions: number;
+    deletions: number;
+  }> = [];
+  let totalAdditions = 0;
+  let totalDeletions = 0;
+
+  for (const line of nameStatusRaw.trim().split("\n")) {
+    if (!line.trim()) continue;
+    const parts = line.split("\t");
+    if (parts.length < 2) continue;
+
+    const rawStatus = parts[0].trim();
+    // Normalize status: R100 → R, C100 → M, etc.
+    let status: string;
+    if (rawStatus.startsWith("R")) {
+      status = "R";
+    } else if (rawStatus.startsWith("C")) {
+      status = "M";
+    } else {
+      status = rawStatus;
+    }
+
+    // For renames, the path is the destination (second path)
+    const filePath = status === "R" ? parts[2] || parts[1] : parts[1];
+    const stats = numstatMap.get(filePath) || { additions: 0, deletions: 0 };
+
+    files.push({
+      path: filePath,
+      status,
+      additions: stats.additions,
+      deletions: stats.deletions,
+    });
+
+    totalAdditions += stats.additions;
+    totalDeletions += stats.deletions;
+  }
+
+  return { files, totalAdditions, totalDeletions };
+}
+
+/**
+ * Get the raw unified diff for a single file in a worktree branch vs base.
+ */
+export async function getFileDiff(
+  worktreePath: string,
+  baseBranch: string,
+  filePath: string,
+): Promise<string> {
+  const git = simpleGit(worktreePath);
+
+  // Find the merge-base
+  let mergeBase: string;
+  let headSha: string;
+  try {
+    const raw = await git.raw(["merge-base", "HEAD", baseBranch]);
+    mergeBase = raw.trim();
+  } catch (err) {
+    throw new WorktreeError(
+      "UNKNOWN",
+      `Failed to find merge-base: ${String(err)}`,
+      err,
+    );
+  }
+  try {
+    headSha = (await git.raw(["rev-parse", "HEAD"])).trim();
+  } catch {
+    headSha = "";
+  }
+
+  const isOnBaseBranch = mergeBase === headSha;
+  const diffRef = isOnBaseBranch ? "HEAD" : `${mergeBase}...HEAD`;
+
+  // Get unified diff for this file
+  try {
+    const diff = await git.raw(["diff", diffRef, "--", filePath]);
+    return diff;
+  } catch (err) {
+    throw new WorktreeError(
+      "UNKNOWN",
+      `Failed to get file diff: ${String(err)}`,
+      err,
+    );
+  }
+}
+
+/**
+ * Detect the base branch for a worktree.
+ * Priority:
+ *   1. Workspace config (.grove/config.json baseBranch)
+ *   2. Local branch detection (main/master)
+ *   3. Remote branch detection (origin/main, origin/master)
+ *   4. Fallback to "main"
+ */
+export async function detectWorktreeBaseBranch(
+  worktreePath: string,
+): Promise<string> {
+  // 1. Check workspace config for baseBranch override
+  const repoRoot = await resolveRepoRoot(worktreePath);
+  const config = await readWorkspaceConfig(repoRoot);
+  if (config.baseBranch) return config.baseBranch;
+
+  // 2. Try to find main or master branch locally
+  const git = simpleGit(worktreePath);
+  try {
+    const branches = await git.branchLocal();
+    if (branches.all.includes("main")) return "main";
+    if (branches.all.includes("master")) return "master";
+  } catch {
+    // ignore
+  }
+
+  // 3. Try remote
+  try {
+    const remoteBranches = await git.branch(["-r"]);
+    if (remoteBranches.all.some((b) => b.includes("origin/main")))
+      return "origin/main";
+    if (remoteBranches.all.some((b) => b.includes("origin/master")))
+      return "origin/master";
+  } catch {
+    // ignore — no remote is fine
+  }
+
+  // 4. Last resort fallback
+  return "main";
+}
+
+// ── Branch listing (for Files branch selector) ────────────────────
+
+/** Extension → Shiki language identifier (mirrors filesystem.ts) */
+const LANG_MAP_GIT: Record<string, string> = {
+  ".ts": "typescript",
+  ".tsx": "tsx",
+  ".js": "javascript",
+  ".jsx": "jsx",
+  ".mjs": "javascript",
+  ".cjs": "javascript",
+  ".py": "python",
+  ".go": "go",
+  ".rs": "rust",
+  ".sql": "sql",
+  ".yml": "yaml",
+  ".yaml": "yaml",
+  ".json": "json",
+  ".jsonc": "jsonc",
+  ".md": "markdown",
+  ".mdx": "markdown",
+  ".sh": "bash",
+  ".bash": "bash",
+  ".zsh": "bash",
+  ".css": "css",
+  ".scss": "scss",
+  ".less": "less",
+  ".html": "html",
+  ".htm": "html",
+  ".toml": "toml",
+  ".xml": "xml",
+  ".svg": "xml",
+  ".graphql": "graphql",
+  ".gql": "graphql",
+  ".vue": "vue",
+  ".svelte": "svelte",
+  ".rb": "ruby",
+  ".java": "java",
+  ".kt": "kotlin",
+  ".swift": "swift",
+  ".c": "c",
+  ".cpp": "cpp",
+  ".h": "c",
+  ".hpp": "cpp",
+  ".cs": "csharp",
+  ".php": "php",
+  ".lua": "lua",
+  ".r": "r",
+  ".env": "shell",
+};
+
+const FILENAME_MAP_GIT: Record<string, string> = {
+  Makefile: "makefile",
+  Dockerfile: "dockerfile",
+  ".gitignore": "gitignore",
+  ".dockerignore": "gitignore",
+  ".env": "shell",
+  ".env.local": "shell",
+  ".env.development": "shell",
+  ".env.production": "shell",
+  Jenkinsfile: "groovy",
+  ".prettierrc": "json",
+  ".eslintrc": "json",
+  "tsconfig.json": "jsonc",
+  "tsconfig.node.json": "jsonc",
+  "tsconfig.web.json": "jsonc",
+};
+
+function detectLanguageGit(filename: string): string {
+  if (FILENAME_MAP_GIT[filename]) return FILENAME_MAP_GIT[filename];
+  const ext = path.extname(filename).toLowerCase();
+  return LANG_MAP_GIT[ext] || "text";
+}
+
+/**
+ * List all local branches with worktree path if one exists.
+ */
+export async function listBranches(repoPath: string): Promise<BranchInfo[]> {
+  const git = simpleGit(repoPath);
+
+  // Get all local branches
+  const localBranches = await git.branchLocal();
+
+  // Get worktrees to cross-reference
+  let worktrees: WorktreeInfo[] = [];
+  try {
+    worktrees = await listWorktrees(repoPath);
+  } catch {
+    // not critical
+  }
+
+  // Build a map: branchShort → absolute worktree path
+  const worktreeMap = new Map<string, string>();
+  for (const wt of worktrees) {
+    if (wt.branchShort && !wt.isMain) {
+      worktreeMap.set(wt.branchShort, wt.path);
+    }
+  }
+
+  const results: BranchInfo[] = [];
+  for (const name of localBranches.all) {
+    results.push({
+      name,
+      isCurrent: name === localBranches.current,
+      worktreePath: worktreeMap.get(name) ?? null,
+    });
+  }
+
+  return results;
+}
+
+/**
+ * Build a FileTreeNode[] hierarchy from a flat list of git-tracked paths.
+ * Filters top-level names against ALWAYS_EXCLUDED, sorts dirs before files.
+ */
+export function buildFileTreeFromGitPaths(filePaths: string[]): FileTreeNode[] {
+  // Trie: map from name → { children map, isFile }
+  interface TrieNode {
+    children: Map<string, TrieNode>;
+    isFile: boolean;
+  }
+
+  const root: TrieNode = { children: new Map(), isFile: false };
+
+  for (const filePath of filePaths) {
+    const parts = filePath.split("/");
+    let node = root;
+    for (let i = 0; i < parts.length; i++) {
+      const part = parts[i];
+      if (!part) continue;
+      if (!node.children.has(part)) {
+        node.children.set(part, { children: new Map(), isFile: false });
+      }
+      node = node.children.get(part)!;
+      if (i === parts.length - 1) {
+        node.isFile = true;
+      }
+    }
+  }
+
+  const sortFn = (a: FileTreeNode, b: FileTreeNode): number =>
+    a.name.toLowerCase().localeCompare(b.name.toLowerCase());
+
+  function trieToNodes(
+    trieNode: TrieNode,
+    currentPath: string,
+    depth: number,
+  ): FileTreeNode[] {
+    const dirs: FileTreeNode[] = [];
+    const files: FileTreeNode[] = [];
+
+    for (const [name, child] of trieNode.children) {
+      // Filter ALWAYS_EXCLUDED at any depth level that makes sense
+      if (depth === 0 && ALWAYS_EXCLUDED.includes(name)) continue;
+
+      const nodePath = currentPath ? `${currentPath}/${name}` : name;
+
+      if (child.isFile && child.children.size === 0) {
+        files.push({ name, path: nodePath, type: "file" });
+      } else {
+        // Directory (may also have isFile if git has a file and dir with same name — rare)
+        const children = trieToNodes(child, nodePath, depth + 1);
+        dirs.push({ name, path: nodePath, type: "directory", children });
+      }
+    }
+
+    dirs.sort(sortFn);
+    files.sort(sortFn);
+    return [...dirs, ...files];
+  }
+
+  return trieToNodes(root, "", 0);
+}
+
+/**
+ * Read a file from a specific git branch (committed state).
+ * Uses `git show <branch>:<relativePath>`.
+ */
+export async function readFileAtBranch(
+  repoPath: string,
+  branch: string,
+  relativePath: string,
+): Promise<FileReadResult> {
+  const git = simpleGit(repoPath);
+
+  const MAX_FILE_SIZE = 1_048_576; // 1 MB
+
+  let raw: string;
+  try {
+    raw = await git.raw(["show", `${branch}:${relativePath}`]);
+  } catch (err) {
+    throw new WorktreeError(
+      "NOT_FOUND",
+      `Cannot read ${relativePath} from branch ${branch}: ${String(err)}`,
+      err,
+    );
+  }
+
+  // Binary detection: check for null bytes
+  if (raw.includes("\0")) {
+    return { binary: true };
+  }
+
+  // Size check
+  const byteSize = Buffer.byteLength(raw, "utf-8");
+  if (byteSize > MAX_FILE_SIZE) {
+    return { tooLarge: true, size: byteSize };
+  }
+
+  const filename = path.basename(relativePath);
+  const language = detectLanguageGit(filename);
+  const lineCount = raw.split("\n").length;
+
+  return { content: raw, language, lineCount };
 }

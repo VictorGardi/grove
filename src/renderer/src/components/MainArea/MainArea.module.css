@@ -14,12 +14,6 @@
   overflow: hidden;
 }
 
-.mainAreaWithPanel {
-  display: flex;
-  flex: 1;
-  overflow: hidden;
-}
-
 .placeholder {
   display: flex;
   flex-direction: column;

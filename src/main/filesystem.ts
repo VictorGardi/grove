@@ -9,7 +9,6 @@ export const ALWAYS_EXCLUDED = [
   "node_modules",
   ".worktrees",
   ".tasks",
-  ".milestones",
   ".decisions",
   ".grove",
 ];

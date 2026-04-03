@@ -1,14 +1,12 @@
-import { useState, useEffect, useRef, useCallback, useMemo } from "react";
+import { useState, useEffect, useRef, useCallback } from "react";
 import { useDataStore, useSelectedTask } from "../../stores/useDataStore";
+import { useWorkspaceStore } from "../../stores/useWorkspaceStore";
+import { useNavStore } from "../../stores/useNavStore";
+import { useFileStore } from "../../stores/useFileStore";
 import { updateTask, archiveTask } from "../../actions/taskActions";
-import {
-  parseTaskBody,
-  serializeTaskBody,
-  type TaskBody,
-} from "../../utils/taskBodyParser";
 import { InlineEdit } from "../shared/InlineEdit";
 import { TagInput } from "../shared/TagInput";
-import type { TaskPriority, DodItem } from "@shared/types";
+import { ChangesTab } from "./ChangesTab";
 import styles from "./TaskDetailPanel.module.css";
 
 // ── Constants ─────────────────────────────────────────────────────
@@ -20,15 +18,6 @@ const STATUS_COLORS: Record<string, string> = {
   done: "var(--status-green)",
 };
 
-const PRIORITY_LEVELS: TaskPriority[] = ["critical", "high", "medium", "low"];
-
-const PRIORITY_STYLE: Record<TaskPriority, string> = {
-  critical: styles.priorityCritical,
-  high: styles.priorityHigh,
-  medium: styles.priorityMedium,
-  low: styles.priorityLow,
-};
-
 const AGENT_OPTIONS = [
   "",
   "claude-code",
@@ -38,94 +27,164 @@ const AGENT_OPTIONS = [
   "opencode",
 ];
 
-const DEBOUNCE_MS = 300;
+const DEBOUNCE_MS = 500;
+
+type DetailTab = "edit" | "changes";
+
+// ── Simple markdown preview ───────────────────────────────────────
+
+function renderMarkdownPreview(md: string): string {
+  // Minimal markdown-to-HTML for preview. Handles headings, bold,
+  // italic, code blocks, inline code, lists, checkboxes, and paragraphs.
+  let html = md
+    // Fenced code blocks
+    .replace(
+      /```(\w*)\n([\s\S]*?)```/g,
+      (_m, _lang, code) =>
+        `<pre><code>${code.replace(/</g, "&lt;").replace(/>/g, "&gt;")}</code></pre>`,
+    )
+    // Headings
+    .replace(/^#### (.+)$/gm, "<h4>$1</h4>")
+    .replace(/^### (.+)$/gm, "<h3>$1</h3>")
+    .replace(/^## (.+)$/gm, "<h2>$1</h2>")
+    .replace(/^# (.+)$/gm, "<h1>$1</h1>")
+    // Bold + italic
+    .replace(/\*\*\*(.+?)\*\*\*/g, "<strong><em>$1</em></strong>")
+    .replace(/\*\*(.+?)\*\*/g, "<strong>$1</strong>")
+    .replace(/\*(.+?)\*/g, "<em>$1</em>")
+    // Inline code
+    .replace(/`([^`]+)`/g, "<code>$1</code>")
+    // Checkboxes
+    .replace(
+      /^- \[x\] (.+)$/gm,
+      '<div class="checkbox checked"><input type="checkbox" checked disabled /> <s>$1</s></div>',
+    )
+    .replace(
+      /^- \[ \] (.+)$/gm,
+      '<div class="checkbox"><input type="checkbox" disabled /> $1</div>',
+    )
+    // Unordered lists
+    .replace(/^- (.+)$/gm, "<li>$1</li>")
+    // Horizontal rules
+    .replace(/^---$/gm, "<hr />")
+    // Paragraphs (double newlines)
+    .replace(/\n\n/g, "</p><p>")
+    // Single newlines within paragraphs
+    .replace(/\n/g, "<br />");
+
+  return `<p>${html}</p>`;
+}
 
 // ── Component ─────────────────────────────────────────────────────
 
 export function TaskDetailPanel(): React.JSX.Element {
   const task = useSelectedTask();
-  const selectedTaskBody = useDataStore((s) => s.selectedTaskBody);
-  const taskDetailLoading = useDataStore((s) => s.taskDetailLoading);
-  const setTaskDetailDirty = useDataStore((s) => s.setTaskDetailDirty);
   const clearSelectedTask = useDataStore((s) => s.clearSelectedTask);
-  const milestones = useDataStore((s) => s.milestones);
-  const allTasks = useDataStore((s) => s.tasks);
+  const workspacePath = useWorkspaceStore((s) => s.activeWorkspacePath);
 
-  console.log("[TDP] render:", {
-    taskId: task?.id,
-    taskPriority: task?.priority,
-    taskCount: allTasks.length,
-    bodyLen: selectedTaskBody?.length,
-    loading: taskDetailLoading,
-  });
+  // Tab state
+  const [activeTab, setActiveTab] = useState<DetailTab>("edit");
 
-  // Parsed body state — local to panel, synced from store body
-  const [parsed, setParsed] = useState<TaskBody>({
-    description: "",
-    dod: [],
-    contextForAgent: "",
-    otherSections: [],
-  });
+  // Raw markdown content
+  const [rawContent, setRawContent] = useState("");
+  const [savedContent, setSavedContent] = useState("");
+  const [loading, setLoading] = useState(true);
+  const [loadError, setLoadError] = useState<string | null>(null);
 
-  // Debounce timers
-  const descTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
-  const ctxTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  // Debounce timer
+  const saveTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
-  // Dod add-item input
-  const [dodInput, setDodInput] = useState("");
+  // Scroll sync refs
+  const editorRef = useRef<HTMLTextAreaElement>(null);
+  const previewRef = useRef<HTMLDivElement>(null);
+  const isSyncingRef = useRef(false);
 
-  // Open milestones for the picker
-  const openMilestones = useMemo(
-    () => milestones.filter((m) => m.status === "open"),
-    [milestones],
-  );
+  // Track whether we have unsaved changes
+  const isDirty = rawContent !== savedContent;
 
-  // ── Sync parsed body from store ──────────────────────────────
+  // Reset to edit tab when task changes
+  useEffect(() => {
+    setActiveTab("edit");
+  }, [task?.id]);
+
+  // ── Load raw file content ─────────────────────────────────────
 
   useEffect(() => {
-    if (selectedTaskBody !== null) {
-      setParsed(parseTaskBody(selectedTaskBody));
-    } else {
-      setParsed({
-        description: "",
-        dod: [],
-        contextForAgent: "",
-        otherSections: [],
-      });
+    if (!task || !workspacePath) {
+      setRawContent("");
+      setSavedContent("");
+      setLoading(false);
+      return;
     }
-  }, [selectedTaskBody]);
 
-  // ── Cleanup timers ────────────────────────────────────────────
+    setLoading(true);
+    setLoadError(null);
+    console.log("[TaskDetailPanel] calling readRaw:", {
+      workspacePath,
+      filePath: task.filePath,
+    });
+    window.api.tasks
+      .readRaw(workspacePath, task.filePath)
+      .then((result) => {
+        console.log("[TaskDetailPanel] readRaw result:", {
+          ok: result.ok,
+          len: result.ok ? result.data?.length : undefined,
+          error: result.ok ? undefined : result.error,
+        });
+        if (result.ok) {
+          setRawContent(result.data);
+          setSavedContent(result.data);
+        } else {
+          setLoadError(result.error ?? "Failed to read file");
+        }
+        setLoading(false);
+      })
+      .catch((err: unknown) => {
+        const msg = err instanceof Error ? err.message : String(err);
+        console.error("[TaskDetailPanel] readRaw threw:", msg);
+        setLoadError(msg);
+        setLoading(false);
+      });
+  }, [task?.id, task?.filePath, workspacePath]);
+
+  // ── Cleanup timer ─────────────────────────────────────────────
 
   useEffect(() => {
     return () => {
-      if (descTimerRef.current) clearTimeout(descTimerRef.current);
-      if (ctxTimerRef.current) clearTimeout(ctxTimerRef.current);
+      if (saveTimerRef.current) clearTimeout(saveTimerRef.current);
     };
   }, []);
 
-  // ── Body save helper ──────────────────────────────────────────
+  // ── Save raw content ──────────────────────────────────────────
 
-  const saveBody = useCallback(
-    (updatedParsed: TaskBody) => {
-      if (!task) return;
-      const body = serializeTaskBody(updatedParsed);
-      updateTask(task.filePath, {}, body);
-      // Dirty flag cleared when chokidar re-delivers body
+  const saveRaw = useCallback(
+    (content: string) => {
+      if (!task || !workspacePath) return;
+      window.api.tasks
+        .writeRaw(workspacePath, task.filePath, content)
+        .then((result) => {
+          if (result.ok) {
+            setSavedContent(content);
+            useDataStore.getState().patchTask(result.data);
+          }
+        })
+        .catch((err) => {
+          console.error("[TaskDetailPanel] save failed:", err);
+        });
     },
-    [task],
+    [task, workspacePath],
   );
 
-  // ── Loading / empty state ─────────────────────────────────────
+  // ── Handle editor change with debounce ────────────────────────
 
-  if (!task) return <div className={styles.panel} />;
+  function handleEditorChange(e: React.ChangeEvent<HTMLTextAreaElement>): void {
+    const value = e.target.value;
+    setRawContent(value);
 
-  if (taskDetailLoading) {
-    return (
-      <div className={styles.panel}>
-        <div className={styles.loading}>Loading...</div>
-      </div>
-    );
+    if (saveTimerRef.current) clearTimeout(saveTimerRef.current);
+    saveTimerRef.current = setTimeout(() => {
+      saveRaw(value);
+    }, DEBOUNCE_MS);
   }
 
   // ── Frontmatter field handlers ────────────────────────────────
@@ -134,89 +193,47 @@ export function TaskDetailPanel(): React.JSX.Element {
     updateTask(task!.filePath, { title });
   }
 
-  function handlePriorityClick(p: TaskPriority): void {
-    // Toggle off if clicking the active priority
-    const newVal = task!.priority === p ? null : p;
-    updateTask(task!.filePath, { priority: newVal });
-  }
-
   function handleAgentChange(e: React.ChangeEvent<HTMLSelectElement>): void {
     const val = e.target.value || null;
     updateTask(task!.filePath, { agent: val });
-  }
-
-  function handleMilestoneChange(
-    e: React.ChangeEvent<HTMLSelectElement>,
-  ): void {
-    const val = e.target.value || null;
-    updateTask(task!.filePath, { milestone: val });
   }
 
   function handleTagsChange(tags: string[]): void {
     updateTask(task!.filePath, { tags });
   }
 
-  // ── Body section handlers ─────────────────────────────────────
+  // ── Scroll sync ───────────────────────────────────────────────
 
-  function handleDescriptionChange(
-    e: React.ChangeEvent<HTMLTextAreaElement>,
-  ): void {
-    const description = e.target.value;
-    const next = { ...parsed, description };
-    setParsed(next);
-    setTaskDetailDirty(true);
-
-    if (descTimerRef.current) clearTimeout(descTimerRef.current);
-    descTimerRef.current = setTimeout(() => {
-      saveBody(next);
-      setTaskDetailDirty(false);
-    }, DEBOUNCE_MS);
+  function handleEditorScroll(): void {
+    if (isSyncingRef.current) return;
+    const editor = editorRef.current;
+    const preview = previewRef.current;
+    if (!editor || !preview) return;
+    const scrollable = editor.scrollHeight - editor.clientHeight;
+    if (scrollable <= 0) return;
+    isSyncingRef.current = true;
+    preview.scrollTop =
+      (editor.scrollTop / scrollable) *
+      (preview.scrollHeight - preview.clientHeight);
+    requestAnimationFrame(() => {
+      isSyncingRef.current = false;
+    });
   }
 
-  function handleContextChange(
-    e: React.ChangeEvent<HTMLTextAreaElement>,
-  ): void {
-    const contextForAgent = e.target.value;
-    const next = { ...parsed, contextForAgent };
-    setParsed(next);
-    setTaskDetailDirty(true);
-
-    if (ctxTimerRef.current) clearTimeout(ctxTimerRef.current);
-    ctxTimerRef.current = setTimeout(() => {
-      saveBody(next);
-      setTaskDetailDirty(false);
-    }, DEBOUNCE_MS);
-  }
-
-  // ── DoD handlers ──────────────────────────────────────────────
-
-  function handleDodToggle(index: number): void {
-    const dod = parsed.dod.map((item, i) =>
-      i === index ? { ...item, checked: !item.checked } : item,
-    );
-    const next = { ...parsed, dod };
-    setParsed(next);
-    saveBody(next);
-  }
-
-  function handleDodDelete(index: number): void {
-    const dod = parsed.dod.filter((_, i) => i !== index);
-    const next = { ...parsed, dod };
-    setParsed(next);
-    saveBody(next);
-  }
-
-  function handleDodAdd(e: React.KeyboardEvent<HTMLInputElement>): void {
-    if (e.key !== "Enter") return;
-    const text = dodInput.trim();
-    if (!text) return;
-
-    const item: DodItem = { text, checked: false };
-    const dod = [...parsed.dod, item];
-    const next = { ...parsed, dod };
-    setParsed(next);
-    setDodInput("");
-    saveBody(next);
+  function handlePreviewScroll(): void {
+    if (isSyncingRef.current) return;
+    const editor = editorRef.current;
+    const preview = previewRef.current;
+    if (!editor || !preview) return;
+    const scrollable = preview.scrollHeight - preview.clientHeight;
+    if (scrollable <= 0) return;
+    isSyncingRef.current = true;
+    editor.scrollTop =
+      (preview.scrollTop / scrollable) *
+      (editor.scrollHeight - editor.clientHeight);
+    requestAnimationFrame(() => {
+      isSyncingRef.current = false;
+    });
   }
 
   // ── Archive handler ───────────────────────────────────────────
@@ -229,204 +246,236 @@ export function TaskDetailPanel(): React.JSX.Element {
     }
   }
 
-  // ── Computed values ───────────────────────────────────────────
+  // ── View files handler ────────────────────────────────────────
 
-  const dodDone = parsed.dod.filter((d) => d.checked).length;
-  const dodTotal = parsed.dod.length;
-  const dodPct = dodTotal > 0 ? Math.round((dodDone / dodTotal) * 100) : 0;
+  function handleViewFiles(): void {
+    if (!task || !workspacePath) return;
+
+    let root: import("../../stores/useFileStore").FileRoot;
+
+    if (task.worktree) {
+      // Has worktree — resolve absolute path and use filesystem mode
+      const absoluteWorktreePath = task.worktree.startsWith("/")
+        ? task.worktree
+        : `${workspacePath}/${task.worktree}`;
+      root = {
+        label: task.branch ?? task.worktree,
+        path: absoluteWorktreePath,
+      };
+    } else if (task.branch) {
+      // Branch only (no worktree) — use git-based reading
+      root = {
+        label: task.branch,
+        path: workspacePath,
+        gitBranch: task.branch,
+      };
+    } else {
+      // No branch or worktree — navigate to repo root
+      useFileStore.getState().setSelectedRoot(null);
+      useNavStore.getState().setActiveView("files");
+      setTimeout(() => useFileStore.getState().fetchTree(), 0);
+      clearSelectedTask();
+      return;
+    }
+
+    useFileStore.getState().setSelectedRoot(root);
+    useNavStore.getState().setActiveView("files");
+    // Fetch tree after navigation
+    setTimeout(() => useFileStore.getState().fetchTree(), 0);
+    clearSelectedTask();
+  }
+
+  // ── Close on Escape ───────────────────────────────────────────
+
+  useEffect(() => {
+    function handleKeyDown(e: KeyboardEvent): void {
+      if (e.key === "Escape") {
+        clearSelectedTask();
+      }
+    }
+    window.addEventListener("keydown", handleKeyDown);
+    return () => window.removeEventListener("keydown", handleKeyDown);
+  }, [clearSelectedTask]);
+
+  // ── Click-outside to close (backdrop click) ───────────────────
+
+  function handleBackdropClick(e: React.MouseEvent): void {
+    if (e.target === e.currentTarget) {
+      clearSelectedTask();
+    }
+  }
+
+  // ── Loading / empty state ─────────────────────────────────────
+
+  if (!task) return <></>;
+
+  if (loading) {
+    return (
+      <div className={styles.overlay} onClick={handleBackdropClick}>
+        <div className={styles.modal}>
+          <div className={styles.loading}>Loading...</div>
+        </div>
+      </div>
+    );
+  }
+
+  if (loadError) {
+    return (
+      <div className={styles.overlay} onClick={handleBackdropClick}>
+        <div className={styles.modal}>
+          <div
+            className={styles.loading}
+            style={{ color: "var(--status-red)" }}
+          >
+            {loadError}
+          </div>
+        </div>
+      </div>
+    );
+  }
 
   // ── Render ────────────────────────────────────────────────────
 
   return (
-    <div className={styles.panel}>
-      {/* 1. Header */}
-      <div className={styles.header}>
-        <div className={styles.headerTop}>
-          <span className={styles.idBadge}>{task.id}</span>
-          <span className={styles.statusTag}>
-            <span
-              className={styles.statusDot}
-              style={{ background: STATUS_COLORS[task.status] }}
-            />
-            {task.status}
-          </span>
-          <button
-            className={styles.closeBtn}
-            onClick={clearSelectedTask}
-            aria-label="Close detail panel"
-          >
-            &times;
-          </button>
-        </div>
+    <div className={styles.overlay} onClick={handleBackdropClick}>
+      <div className={styles.modal}>
+        {/* Top bar: metadata */}
+        <div className={styles.topBar}>
+          <div className={styles.topBarLeft}>
+            <span className={styles.idBadge}>{task.id}</span>
+            <span className={styles.statusTag}>
+              <span
+                className={styles.statusDot}
+                style={{ background: STATUS_COLORS[task.status] }}
+              />
+              {task.status}
+            </span>
 
-        {/* 2. Title */}
-        <InlineEdit
-          value={task.title}
-          onSave={handleTitleSave}
-          className={styles.titleEdit}
-          tag="h3"
-          placeholder="Task title..."
-        />
-      </div>
+            {/* Agent select */}
+            <select
+              className={styles.fieldSelect}
+              value={task.agent || ""}
+              onChange={handleAgentChange}
+            >
+              <option value="">No agent</option>
+              {AGENT_OPTIONS.filter(Boolean).map((a) => (
+                <option key={a} value={a}>
+                  {a}
+                </option>
+              ))}
+            </select>
 
-      {/* Scrollable body */}
-      <div className={styles.body}>
-        {/* 3. Priority */}
-        <div className={styles.section}>
-          <div className={styles.sectionLabel}>Priority</div>
-          <div className={styles.priorityRow}>
-            {PRIORITY_LEVELS.map((p) => (
+            {/* Tags */}
+            <div className={styles.tagsInline}>
+              <TagInput
+                tags={task.tags || []}
+                onChange={handleTagsChange}
+                placeholder="Add tag..."
+              />
+            </div>
+
+            {/* autoRun toggle — backlog only */}
+            {task.status === "backlog" && (
               <button
-                key={p}
-                className={`${styles.priorityPill} ${
-                  task.priority === p
-                    ? `${styles.priorityPillActive} ${PRIORITY_STYLE[p]}`
-                    : ""
-                }`}
-                onClick={() => handlePriorityClick(p)}
+                className={`${styles.autoRunBtn} ${task.autoRun ? styles.autoRunBtnActive : ""}`}
+                onClick={() =>
+                  updateTask(task.filePath, { autoRun: !task.autoRun })
+                }
+                title={
+                  task.autoRun
+                    ? "Auto-run on: click to disable"
+                    : "Auto-run off: click to enable"
+                }
               >
-                {p}
+                {task.autoRun ? "auto-run: on" : "auto-run: off"}
               </button>
-            ))}
-          </div>
-        </div>
-
-        {/* 4. Agent */}
-        <div className={styles.section}>
-          <div className={styles.sectionLabel}>Agent</div>
-          <select
-            className={styles.fieldSelect}
-            value={task.agent || ""}
-            onChange={handleAgentChange}
-          >
-            <option value="">None</option>
-            {AGENT_OPTIONS.filter(Boolean).map((a) => (
-              <option key={a} value={a}>
-                {a}
-              </option>
-            ))}
-          </select>
-        </div>
-
-        {/* 5. Milestone */}
-        <div className={styles.section}>
-          <div className={styles.sectionLabel}>Milestone</div>
-          <select
-            className={styles.fieldSelect}
-            value={task.milestone || ""}
-            onChange={handleMilestoneChange}
-          >
-            <option value="">None</option>
-            {openMilestones.map((m) => (
-              <option key={m.id} value={m.id}>
-                {m.id} — {m.title}
-              </option>
-            ))}
-          </select>
-        </div>
-
-        {/* 6. Tags */}
-        <div className={styles.section}>
-          <div className={styles.sectionLabel}>Tags</div>
-          <TagInput
-            tags={task.tags || []}
-            onChange={handleTagsChange}
-            placeholder="Add tag..."
-          />
-        </div>
-
-        {/* 7. Description */}
-        <div className={styles.section}>
-          <div className={styles.sectionLabel}>Description</div>
-          <textarea
-            className={styles.textarea}
-            value={parsed.description}
-            onChange={handleDescriptionChange}
-            placeholder="Task description..."
-          />
-        </div>
-
-        {/* 8. Definition of Done */}
-        <div className={styles.section}>
-          <div className={styles.dodHeader}>
-            <span className={styles.sectionLabel}>Definition of Done</span>
-            {dodTotal > 0 && (
-              <span className={styles.dodProgress}>
-                {dodDone}/{dodTotal} complete
-              </span>
             )}
           </div>
-          {dodTotal > 0 && (
-            <div className={styles.dodTrack}>
-              <div className={styles.dodFill} style={{ width: `${dodPct}%` }} />
-            </div>
-          )}
-          {parsed.dod.map((item, i) => (
-            <div key={i} className={styles.dodItem}>
-              <input
-                type="checkbox"
-                className={styles.dodCheckbox}
-                checked={item.checked}
-                onChange={() => handleDodToggle(i)}
-              />
-              <span
-                className={`${styles.dodText} ${
-                  item.checked ? styles.dodTextDone : ""
-                }`}
-              >
-                {item.text}
-              </span>
-              <button
-                className={styles.dodDeleteBtn}
-                onClick={() => handleDodDelete(i)}
-                aria-label={`Remove: ${item.text}`}
-              >
-                &times;
-              </button>
-            </div>
-          ))}
-          <input
-            className={styles.dodAddInput}
-            value={dodInput}
-            onChange={(e) => setDodInput(e.target.value)}
-            onKeyDown={handleDodAdd}
-            placeholder="Add checklist item..."
+
+          <div className={styles.topBarRight}>
+            {isDirty && <span className={styles.dirtyIndicator}>Unsaved</span>}
+            {task.created && (
+              <span className={styles.metaCreated}>{task.created}</span>
+            )}
+            {/* View files button — always shown */}
+            <button className={styles.viewFilesBtn} onClick={handleViewFiles}>
+              View files
+            </button>
+            <button className={styles.archiveBtn} onClick={handleArchive}>
+              Archive
+            </button>
+            <button
+              className={styles.closeBtn}
+              onClick={clearSelectedTask}
+              aria-label="Close"
+            >
+              &times;
+            </button>
+          </div>
+        </div>
+
+        {/* Title */}
+        <div className={styles.titleBar}>
+          <InlineEdit
+            value={task.title}
+            onSave={handleTitleSave}
+            className={styles.titleEdit}
+            tag="h2"
+            placeholder="Task title..."
           />
         </div>
 
-        {/* 9. Linked decisions (read-only) */}
-        {task.decisions && task.decisions.length > 0 && (
-          <div className={styles.section}>
-            <div className={styles.sectionLabel}>Linked Decisions</div>
-            {task.decisions.map((d) => (
-              <span key={d} className={styles.decisionBadge}>
-                {d}
-              </span>
-            ))}
+        {/* Tab bar */}
+        <div className={styles.tabBar}>
+          <button
+            className={`${styles.tab} ${activeTab === "edit" ? styles.tabActive : ""}`}
+            onClick={() => setActiveTab("edit")}
+          >
+            Edit
+          </button>
+          <button
+            className={`${styles.tab} ${activeTab === "changes" ? styles.tabActive : ""}`}
+            onClick={() => setActiveTab("changes")}
+          >
+            Changes
+          </button>
+          <span className={styles.filePathHint}>{task.filePath}</span>
+        </div>
+
+        {/* Content area */}
+        {activeTab === "changes" ? (
+          <div className={styles.changesWrapper}>
+            <ChangesTab task={task} />
+          </div>
+        ) : (
+          <div className={styles.splitView}>
+            {/* Left: raw markdown editor */}
+            <div className={styles.editorPane}>
+              <textarea
+                ref={editorRef}
+                className={styles.editor}
+                value={rawContent}
+                onChange={handleEditorChange}
+                onScroll={handleEditorScroll}
+                spellCheck={false}
+              />
+            </div>
+
+            {/* Right: markdown preview */}
+            <div
+              ref={previewRef}
+              className={styles.previewPane}
+              onScroll={handlePreviewScroll}
+            >
+              <div
+                className={styles.preview}
+                dangerouslySetInnerHTML={{
+                  __html: renderMarkdownPreview(rawContent),
+                }}
+              />
+            </div>
           </div>
         )}
-
-        {/* 10. Context for agent */}
-        <div className={styles.section}>
-          <div className={styles.sectionLabel}>Context for Agent</div>
-          <textarea
-            className={styles.textarea}
-            value={parsed.contextForAgent}
-            onChange={handleContextChange}
-            placeholder="Context and instructions for the AI agent..."
-          />
-        </div>
-
-        {/* 11. Metadata footer */}
-        <div className={styles.footer}>
-          {task.created && (
-            <div className={styles.metaLine}>Created: {task.created}</div>
-          )}
-          <div className={styles.metaPath}>{task.filePath}</div>
-          <button className={styles.archiveBtn} onClick={handleArchive}>
-            Archive task
-          </button>
-        </div>
       </div>
     </div>
   );
