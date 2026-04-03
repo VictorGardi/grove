@@ -1,4 +1,4 @@
-import { useMemo, useState, useCallback } from "react";
+import { useState, useCallback } from "react";
 import {
   DndContext,
   DragOverlay,
@@ -66,8 +66,6 @@ function shouldRollback(error: string): boolean {
 
 export function Board(): React.JSX.Element {
   const tasks = useDataStore((s) => s.tasks);
-  const milestones = useDataStore((s) => s.milestones);
-  const milestoneFilter = useDataStore((s) => s.milestoneFilter);
   const loading = useDataStore((s) => s.loading);
   const [activeTask, setActiveTask] = useState<TaskInfo | null>(null);
 
@@ -76,19 +74,7 @@ export function Board(): React.JSX.Element {
     useSensor(PointerSensor, { activationConstraint: { distance: 5 } }),
   );
 
-  // Filter tasks by milestone
-  const filtered = useMemo(() => {
-    if (milestoneFilter === null) return tasks;
-    if (milestoneFilter === "none") return tasks.filter((t) => !t.milestone);
-    return tasks.filter((t) => t.milestone === milestoneFilter);
-  }, [tasks, milestoneFilter]);
-
-  // Build milestone ID -> title lookup for card rendering
-  const milestoneMap = useMemo(() => {
-    const map = new Map<string, string>();
-    for (const m of milestones) map.set(m.id, m.title);
-    return map;
-  }, [milestones]);
+  const filtered = tasks;
 
   const handleDragStart = useCallback(
     (event: DragStartEvent) => {
@@ -155,7 +141,7 @@ export function Board(): React.JSX.Element {
 
   return (
     <div className={styles.board}>
-      <BoardToolbar milestones={milestones} />
+      <BoardToolbar />
       <DndContext
         sensors={sensors}
         onDragStart={handleDragStart}
@@ -172,7 +158,6 @@ export function Board(): React.JSX.Element {
                 label={col.label}
                 color={col.color}
                 tasks={colTasks}
-                milestoneMap={milestoneMap}
               />
             );
           })}
@@ -180,14 +165,7 @@ export function Board(): React.JSX.Element {
         <DragOverlay dropAnimation={null}>
           {activeTask && (
             <div className={styles.dragOverlay}>
-              <TaskCard
-                task={activeTask}
-                milestoneName={
-                  activeTask.milestone
-                    ? (milestoneMap.get(activeTask.milestone) ?? null)
-                    : null
-                }
-              />
+              <TaskCard task={activeTask} />
             </div>
           )}
         </DragOverlay>
@@ -209,7 +187,11 @@ function agentToCommand(agent: string | null, task: TaskInfo): string | null {
     }
     if (task.description) {
       const escaped = task.description.replace(/"/g, '\\"');
-      parts.push(`"${escaped}"`);
+      const dodHint =
+        task.dodTotal > 0
+          ? `\\n\\nIMPORTANT: This task has a Definition of Done (${task.dodDone}/${task.dodTotal} checkboxes). As you complete each item, update the task file to mark it checked (change "- [ ]" to "- [x]"). When ALL checkboxes are checked, the app will automatically move this task to "review".`
+          : "";
+      parts.push(`"${escaped}${dodHint}"`);
     }
     return parts.join(" ");
   }

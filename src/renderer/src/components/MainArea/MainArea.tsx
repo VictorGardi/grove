@@ -4,15 +4,12 @@ import { useWorkspaceStore } from "../../stores/useWorkspaceStore";
 import { useDataStore } from "../../stores/useDataStore";
 import { Board } from "../Board/Board";
 import { TaskDetailPanel } from "../TaskDetail/TaskDetailPanel";
-import { MilestoneList } from "../Milestones/MilestoneList";
-import { MilestoneDetail } from "../Milestones/MilestoneDetail";
 import { FilesView } from "../Files/FilesView";
 
 export function MainArea(): React.JSX.Element {
   const activeView = useNavStore((s) => s.activeView);
   const activeWorkspacePath = useWorkspaceStore((s) => s.activeWorkspacePath);
   const addWorkspace = useWorkspaceStore((s) => s.addWorkspace);
-  const selectedMilestoneId = useDataStore((s) => s.selectedMilestoneId);
   const selectedTaskId = useDataStore((s) => s.selectedTaskId);
 
   if (!activeWorkspacePath) {
@@ -59,15 +56,6 @@ export function MainArea(): React.JSX.Element {
           <Board />
         </div>
         {selectedTaskId && <TaskDetailPanel />}
-      </div>
-    );
-  }
-
-  if (activeView === "milestones") {
-    return (
-      <div className={styles.mainAreaWithPanel}>
-        <MilestoneList />
-        {selectedMilestoneId && <MilestoneDetail />}
       </div>
     );
   }

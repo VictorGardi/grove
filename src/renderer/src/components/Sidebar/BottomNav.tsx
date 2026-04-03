@@ -58,26 +58,6 @@ const navItems: NavItem[] = [
     ),
   },
   {
-    id: "milestones",
-    label: "Milestones",
-    icon: (
-      <svg
-        width="14"
-        height="14"
-        viewBox="0 0 16 16"
-        fill="none"
-        xmlns="http://www.w3.org/2000/svg"
-      >
-        <path
-          d="M8 1L14.5 8L8 15L1.5 8L8 1Z"
-          stroke="currentColor"
-          strokeWidth="1.3"
-          strokeLinejoin="round"
-        />
-      </svg>
-    ),
-  },
-  {
     id: "files",
     label: "Files",
     icon: (

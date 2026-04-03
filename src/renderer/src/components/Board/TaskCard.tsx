@@ -1,13 +1,11 @@
 import { useDraggable } from "@dnd-kit/core";
 import type { TaskInfo } from "@shared/types";
-import { useNavStore } from "../../stores/useNavStore";
 import { useDataStore } from "../../stores/useDataStore";
 import { useWorktreeStore } from "../../stores/useWorktreeStore";
 import styles from "./TaskCard.module.css";
 
 interface TaskCardProps {
   task: TaskInfo;
-  milestoneName: string | null;
 }
 
 const PRIORITY_CLASSES: Record<string, string> = {
@@ -17,10 +15,7 @@ const PRIORITY_CLASSES: Record<string, string> = {
   low: styles.priorityLow,
 };
 
-export function TaskCard({
-  task,
-  milestoneName,
-}: TaskCardProps): React.JSX.Element {
+export function TaskCard({ task }: TaskCardProps): React.JSX.Element {
   const selectedTaskId = useDataStore((s) => s.selectedTaskId);
   const isSelected = task.id === selectedTaskId;
   const worktreeCreating = useWorktreeStore((s) => s.creatingIds.has(task.id));
@@ -31,14 +26,6 @@ export function TaskCard({
 
   function handleClick(): void {
     useDataStore.getState().setSelectedTask(task.id);
-  }
-
-  function handleMilestoneClick(e: React.MouseEvent): void {
-    e.stopPropagation();
-    if (task.milestone) {
-      useNavStore.getState().setActiveView("milestones");
-      useDataStore.getState().setSelectedMilestone(task.milestone);
-    }
   }
 
   return (
@@ -87,14 +74,6 @@ export function TaskCard({
               {tag}
             </span>
           ))}
-        </div>
-      )}
-
-      {/* Row 5: Milestone label */}
-      {task.milestone && (
-        <div className={styles.milestone} onClick={handleMilestoneClick}>
-          <span className={styles.milestoneDiamond}>&#9670;</span>
-          {milestoneName || task.milestone}
         </div>
       )}
     </div>

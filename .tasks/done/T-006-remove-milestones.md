@@ -6,9 +6,7 @@ created: '2026-04-03'
 tags:
   - refactor
   - cleanup
-status: doing
-worktree: .worktrees/T-006
-branch: feat/t-006-remove-milestone-concept-from
+status: done
 agent: opencode
 ---
 
@@ -24,16 +22,14 @@ so the compiler stays clean throughout. After each numbered step, verify that
 
 ## Definition of Done
 
-- [ ] All files listed under Step 1 are deleted from the repository
-- [ ] The `src/renderer/src/components/Milestones/` directory is removed entirely
-- [ ] No `milestone` references remain in any `.ts` or `.tsx` file
-- [ ] No `.milestones` references remain in watchers or filesystem exclusion lists
-- [ ] `VISION.md` contains no milestone content
-- [ ] `tsc --noEmit` passes cleanly with zero errors
-- [ ] All existing tests pass; the deleted contextGenerator test case is gone
-- [ ] The app builds and runs: board view works, no console errors related to milestones
-
----
+- [x] All files listed under Step 1 are deleted from the repository
+- [x] The `src/renderer/src/components/Milestones/` directory is removed entirely
+- [x] No `milestone` references remain in any `.ts` or `.tsx` file
+- [x] No `.milestones` references remain in watchers or filesystem exclusion lists
+- [x] `VISION.md` contains no milestone content
+- [x] `tsc --noEmit` passes cleanly with zero errors
+- [x] All existing tests pass; the deleted contextGenerator test case is gone
+- [x] The app builds and runs: board view works, no console errors related to milestones
 
 ## Step 1 — Delete entire files and the Milestones component folder
 
@@ -271,3 +267,6 @@ Edit `VISION.md` to remove all milestone references:
   data migration is required.
 - Any task files in external repos that happen to have a `milestone` frontmatter
   field will have that field silently ignored after this change.
+
+## Context for agent
+

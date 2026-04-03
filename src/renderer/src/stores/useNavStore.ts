@@ -1,6 +1,6 @@
 import { create } from "zustand";
 
-export type View = "board" | "milestones" | "decisions" | "files";
+export type View = "board" | "decisions" | "files";
 
 interface NavState {
   activeView: View;

@@ -9,7 +9,6 @@ interface ColumnProps {
   label: string;
   color: string;
   tasks: TaskInfo[];
-  milestoneMap: Map<string, string>;
 }
 
 export function Column({
@@ -17,7 +16,6 @@ export function Column({
   label,
   color,
   tasks,
-  milestoneMap,
 }: ColumnProps): React.JSX.Element {
   const { setNodeRef, isOver } = useDroppable({ id: status });
 
@@ -33,13 +31,7 @@ export function Column({
       </div>
       <div className={styles.cardList}>
         {tasks.map((task) => (
-          <TaskCard
-            key={task.id}
-            task={task}
-            milestoneName={
-              task.milestone ? (milestoneMap.get(task.milestone) ?? null) : null
-            }
-          />
+          <TaskCard key={task.id} task={task} />
         ))}
       </div>
       <div className={styles.footer} onClick={() => createTask("New task")}>
