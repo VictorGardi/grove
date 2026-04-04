@@ -2,20 +2,21 @@ import { spawn, ChildProcess } from "child_process";
 import * as readline from "readline";
 import * as os from "os";
 import * as path from "path";
-import type { PlanAgent, PlanChunk } from "@shared/types";
+import type { PlanAgent, PlanChunk, PlanMode } from "@shared/types";
 
-type ChunkCallback = (taskId: string, chunk: PlanChunk) => void;
+type ChunkCallback = (taskId: string, mode: PlanMode, chunk: PlanChunk) => void;
 
 interface ActiveRun {
   proc: ChildProcess;
   rl: readline.Interface | null;
   taskId: string;
+  mode: PlanMode;
 }
 
 const SIGKILL_TIMEOUT_MS = 5000;
 
 export class PlanManager {
-  private activeRuns = new Map<string, ActiveRun>(); // taskId → run
+  private activeRuns = new Map<string, ActiveRun>(); // `${mode}:${taskId}` → run
   private onChunkCb: ChunkCallback | null = null;
 
   setOnChunk(cb: ChunkCallback): void {
@@ -23,33 +24,43 @@ export class PlanManager {
   }
 
   /**
-   * Start or continue a plan session.
-   * @param taskId         Task ID (e.g. "T-001") — used as the stream routing key
-   * @param agent          "opencode" | "copilot"
-   * @param model          Model string (e.g. "anthropic/claude-opus-4-5"), or null for agent default
-   * @param message        The assembled prompt (first message) or plain user reply
-   * @param sessionId      Existing session ID to continue, or null for new session
-   * @param workspacePath  Absolute path to the workspace root
-   * @param taskFilePath   Absolute path to the task markdown file (for copilot allow-tool)
+   * Start or continue a plan or execution session.
+   * @param taskId       Task ID (e.g. "T-001") — used for stream routing
+   * @param mode         "plan" for planning (restricted), "execute" for execution (unrestricted)
+   * @param agent        "opencode" | "copilot"
+   * @param model        Model string or null for agent default
+   * @param message      The assembled prompt or plain user reply
+   * @param sessionId    Existing session ID to continue, or null for new session
+   * @param cwd          Absolute CWD for the agent process (workspace root for plan, worktree for execute)
+   * @param taskFilePath Absolute path to the task markdown file (used for copilot allow-tool in plan mode)
    */
   run(
     taskId: string,
+    mode: PlanMode,
     agent: PlanAgent,
     model: string | null,
     message: string,
     sessionId: string | null,
-    workspacePath: string,
+    cwd: string,
     taskFilePath: string,
   ): void {
-    // Cancel any in-flight run for this task
-    this.cancel(taskId);
+    const runKey = `${mode}:${taskId}`;
+    // Cancel any in-flight run for this task+mode
+    this.cancel(runKey);
 
     console.log(
-      `[PlanManager][${taskId}] run() called agent=${agent} model=${model ?? "default"} sessionId=${sessionId ?? "null"}`,
+      `[PlanManager][${runKey}] run() called agent=${agent} model=${model ?? "default"} sessionId=${sessionId ?? "null"}`,
     );
-    const args = this.buildArgs(agent, model, message, sessionId, taskFilePath);
+    const args = this.buildArgs(
+      agent,
+      mode,
+      model,
+      message,
+      sessionId,
+      taskFilePath,
+    );
     const proc = spawn(this.agentBinary(agent), args, {
-      cwd: workspacePath,
+      cwd,
       // stdin must be 'ignore' — the default 'pipe' creates a writable stream
       // that CLI tools (opencode, copilot) detect as piped input. If stdin is
       // never written-to or closed the child process hangs waiting for EOF,
@@ -60,7 +71,7 @@ export class PlanManager {
 
     // Guard against null stdout (spawn failure, misconfigured stdio)
     if (!proc.stdout) {
-      this.onChunkCb?.(taskId, {
+      this.onChunkCb?.(taskId, mode, {
         type: "error",
         content: "Failed to capture agent stdout",
       });
@@ -69,21 +80,21 @@ export class PlanManager {
     }
 
     console.log(
-      `[PlanManager][${taskId}] spawned pid=${proc.pid ?? "?"} agent=${agent}`,
+      `[PlanManager][${runKey}] spawned pid=${proc.pid ?? "?"} agent=${agent}`,
     );
 
     const rl = readline.createInterface({ input: proc.stdout });
-    this.activeRuns.set(taskId, { proc, rl, taskId });
+    this.activeRuns.set(runKey, { proc, rl, taskId, mode });
 
     rl.on("line", (line) => {
-      console.log(`[PlanManager][${taskId}] stdout line:`, line.slice(0, 120));
+      console.log(`[PlanManager][${runKey}] stdout line:`, line.slice(0, 120));
       const chunks = this.parseLine(agent, line);
       console.log(
-        `[PlanManager][${taskId}] parsed chunks:`,
+        `[PlanManager][${runKey}] parsed chunks:`,
         chunks.map((c) => c.type),
       );
       for (const chunk of chunks) {
-        this.onChunkCb?.(taskId, chunk);
+        this.onChunkCb?.(taskId, mode, chunk);
       }
     });
 
@@ -92,32 +103,35 @@ export class PlanManager {
     // arriving before the last text chunks.
     rl.on("close", () => {
       console.log(
-        `[PlanManager][${taskId}] readline closed, exitCode=${proc.exitCode}`,
+        `[PlanManager][${runKey}] readline closed, exitCode=${proc.exitCode}`,
       );
-      this.activeRuns.delete(taskId);
-      this.onChunkCb?.(taskId, {
+      this.activeRuns.delete(runKey);
+      this.onChunkCb?.(taskId, mode, {
         type: "done",
         content: String(proc.exitCode ?? 0),
       });
     });
 
     proc.stderr?.on("data", (data: Buffer) => {
-      console.warn(`[PlanManager][${taskId}] stderr:`, data.toString());
+      console.warn(`[PlanManager][${runKey}] stderr:`, data.toString());
     });
 
     proc.on("error", (err) => {
-      console.error(`[PlanManager][${taskId}] proc error:`, err.message);
+      console.error(`[PlanManager][${runKey}] proc error:`, err.message);
       rl.close();
-      this.activeRuns.delete(taskId);
-      this.onChunkCb?.(taskId, {
+      this.activeRuns.delete(runKey);
+      this.onChunkCb?.(taskId, mode, {
         type: "error",
         content: err.message,
       });
     });
   }
 
-  cancel(taskId: string): void {
-    const run = this.activeRuns.get(taskId);
+  /**
+   * Cancel a run by its composite key (`${mode}:${taskId}`).
+   */
+  cancel(runKey: string): void {
+    const run = this.activeRuns.get(runKey);
     if (run) {
       // Close readline to stop line processing
       run.rl?.close();
@@ -130,13 +144,13 @@ export class PlanManager {
           proc.kill("SIGKILL");
         }
       }, SIGKILL_TIMEOUT_MS);
-      this.activeRuns.delete(taskId);
+      this.activeRuns.delete(runKey);
     }
   }
 
   cancelAll(): void {
-    for (const [taskId] of this.activeRuns) {
-      this.cancel(taskId);
+    for (const [runKey] of this.activeRuns) {
+      this.cancel(runKey);
     }
   }
 
@@ -216,6 +230,7 @@ export class PlanManager {
 
   private buildArgs(
     agent: PlanAgent,
+    mode: PlanMode,
     model: string | null,
     message: string,
     sessionId: string | null,
@@ -245,9 +260,13 @@ export class PlanManager {
         "--stream",
         "on",
         "--no-color",
-        "--deny-tool=shell",
-        `--allow-tool=write(${taskFilePath})`,
       ];
+      // Plan mode: restrict tools to the task file only.
+      // Execute mode: no restrictions — agent needs full access to the codebase.
+      if (mode === "plan") {
+        args.push("--deny-tool=shell");
+        args.push(`--allow-tool=write(${taskFilePath})`);
+      }
       if (model) {
         args.push(`--model=${model}`);
       }

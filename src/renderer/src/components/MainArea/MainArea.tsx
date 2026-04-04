@@ -5,6 +5,7 @@ import { useDataStore } from "../../stores/useDataStore";
 import { Board } from "../Board/Board";
 import { TaskDetailPanel } from "../TaskDetail/TaskDetailPanel";
 import { FilesView } from "../Files/FilesView";
+import { Settings } from "../Settings/Settings";
 
 export function MainArea(): React.JSX.Element {
   const activeView = useNavStore((s) => s.activeView);
@@ -62,6 +63,14 @@ export function MainArea(): React.JSX.Element {
     return (
       <div className={styles.mainAreaContent}>
         <FilesView />
+      </div>
+    );
+  }
+
+  if (activeView === "settings") {
+    return (
+      <div className={styles.mainAreaContent}>
+        <Settings />
       </div>
     );
   }

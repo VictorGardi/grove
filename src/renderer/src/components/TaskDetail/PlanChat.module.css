@@ -477,3 +477,37 @@
   padding: 2px 0;
   align-self: flex-start;
 }
+
+/* ── Default prompt preview ─────────────────────────────────── */
+
+.defaultPromptPreview {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 12px;
+  background: var(--bg-elevated);
+  border: 1px solid var(--border-dim);
+  border-radius: var(--radius-md);
+  margin-bottom: 12px;
+}
+
+.defaultPromptLabel {
+  font-family: var(--font-ui);
+  font-size: 11px;
+  color: var(--text-lo);
+}
+
+.defaultPromptContent {
+  font-family: var(--font-mono);
+  font-size: 11px;
+  color: var(--text-secondary);
+  white-space: pre-wrap;
+  word-break: break-word;
+  margin: 0;
+  padding: 8px;
+  background: var(--bg-base);
+  border-radius: var(--radius-sm);
+  border: 1px solid var(--border-dim);
+  max-height: 150px;
+  overflow-y: auto;
+}

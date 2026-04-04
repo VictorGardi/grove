@@ -3,13 +3,15 @@ import {
   createJavaScriptRegexEngine,
   type Highlighter,
 } from "shiki";
-import { groveTheme } from "./shikiTheme";
+import { groveTheme, groveThemeMocha, groveThemeLatte } from "./shikiTheme";
 
 let highlighterPromise: Promise<Highlighter> | null = null;
 
 /**
  * Lazy-loaded, cached Shiki highlighter singleton.
  * Languages are pre-loaded to avoid per-file loading delays.
+ * All three Grove themes are registered so the active theme can be
+ * switched without reinitialising the highlighter.
  */
 export function getHighlighter(): Promise<Highlighter> {
   if (!highlighterPromise) {
@@ -17,7 +19,7 @@ export function getHighlighter(): Promise<Highlighter> {
       // Use the JavaScript regex engine — avoids loading onig.wasm which can
       // fail silently in Electron's sandboxed renderer process.
       engine: createJavaScriptRegexEngine(),
-      themes: [groveTheme],
+      themes: [groveTheme, groveThemeMocha, groveThemeLatte],
       langs: [
         "typescript",
         "tsx",

@@ -4,6 +4,7 @@ interface NavItem {
   id: View | "terminal";
   label: string;
   icon: React.JSX.Element;
+  bottom?: boolean;
 }
 
 const navItems: NavItem[] = [
@@ -134,6 +135,28 @@ const navItems: NavItem[] = [
       </svg>
     ),
   },
+  {
+    id: "settings",
+    label: "Settings",
+    bottom: true,
+    icon: (
+      <svg
+        width="14"
+        height="14"
+        viewBox="0 0 16 16"
+        fill="none"
+        xmlns="http://www.w3.org/2000/svg"
+      >
+        <circle cx="8" cy="8" r="2" stroke="currentColor" strokeWidth="1.3" />
+        <path
+          d="M8 1.5V3M8 13V14.5M14.5 8H13M3 8H1.5M12.7 3.3L11.6 4.4M4.4 11.6L3.3 12.7M12.7 12.7L11.6 11.6M4.4 4.4L3.3 3.3"
+          stroke="currentColor"
+          strokeWidth="1.3"
+          strokeLinecap="round"
+        />
+      </svg>
+    ),
+  },
 ];
 
 export function BottomNav(): React.JSX.Element {
@@ -142,73 +165,84 @@ export function BottomNav(): React.JSX.Element {
   const terminalPanelOpen = useNavStore((s) => s.terminalPanelOpen);
   const toggleTerminalPanel = useNavStore((s) => s.toggleTerminalPanel);
 
-  return (
-    <div>
-      {navItems.map((item) => {
-        const isTerminal = item.id === "terminal";
-        const isActive = isTerminal
-          ? terminalPanelOpen
-          : activeView === item.id;
+  function renderItem(item: NavItem): React.JSX.Element {
+    const isTerminal = item.id === "terminal";
+    const isActive = isTerminal ? terminalPanelOpen : activeView === item.id;
 
-        function handleClick(): void {
-          if (isTerminal) {
-            toggleTerminalPanel();
-          } else {
-            setActiveView(item.id as View);
+    function handleClick(): void {
+      if (isTerminal) {
+        toggleTerminalPanel();
+      } else {
+        setActiveView(item.id as View);
+      }
+    }
+
+    function handleKeyDown(e: React.KeyboardEvent): void {
+      if (e.key === "Enter" || e.key === " ") handleClick();
+    }
+
+    return (
+      <div
+        key={item.id}
+        role="button"
+        tabIndex={0}
+        aria-label={item.label}
+        aria-pressed={isActive}
+        onClick={handleClick}
+        onKeyDown={handleKeyDown}
+        style={{
+          display: "flex",
+          alignItems: "center",
+          gap: "8px",
+          padding: "8px 16px",
+          cursor: "pointer",
+          background: isActive ? "var(--bg-active)" : "transparent",
+          color: isActive ? "var(--text-primary)" : "var(--text-secondary)",
+          fontFamily: "var(--font-ui)",
+          fontSize: "13px",
+          transition:
+            "background var(--transition-fast), color var(--transition-fast)",
+          outline: "none",
+        }}
+        onMouseEnter={(e) => {
+          if (!isActive) {
+            (e.currentTarget as HTMLDivElement).style.background =
+              "var(--bg-hover)";
           }
-        }
+        }}
+        onMouseLeave={(e) => {
+          if (!isActive) {
+            (e.currentTarget as HTMLDivElement).style.background =
+              "transparent";
+          }
+        }}
+      >
+        <span
+          style={{
+            color: isActive ? "var(--text-secondary)" : "var(--text-lo)",
+            display: "flex",
+          }}
+        >
+          {item.icon}
+        </span>
+        {item.label}
+      </div>
+    );
+  }
 
-        function handleKeyDown(e: React.KeyboardEvent): void {
-          if (e.key === "Enter" || e.key === " ") handleClick();
-        }
-        return (
-          <div
-            key={item.id}
-            role="button"
-            tabIndex={0}
-            aria-label={item.label}
-            aria-pressed={isActive}
-            onClick={handleClick}
-            onKeyDown={handleKeyDown}
-            style={{
-              display: "flex",
-              alignItems: "center",
-              gap: "8px",
-              padding: "8px 16px",
-              cursor: "pointer",
-              background: isActive ? "var(--bg-active)" : "transparent",
-              color: isActive ? "var(--text-primary)" : "var(--text-secondary)",
-              fontFamily: "var(--font-ui)",
-              fontSize: "13px",
-              transition:
-                "background var(--transition-fast), color var(--transition-fast)",
-              outline: "none",
-            }}
-            onMouseEnter={(e) => {
-              if (!isActive) {
-                (e.currentTarget as HTMLDivElement).style.background =
-                  "var(--bg-hover)";
-              }
-            }}
-            onMouseLeave={(e) => {
-              if (!isActive) {
-                (e.currentTarget as HTMLDivElement).style.background =
-                  "transparent";
-              }
-            }}
-          >
-            <span
-              style={{
-                color: isActive ? "var(--text-secondary)" : "var(--text-lo)",
-                display: "flex",
-              }}
-            >
-              {item.icon}
-            </span>
-            {item.label}
-          </div>
-        );
-      })}
+  const topItems = navItems.filter((item) => !item.bottom);
+  const bottomItems = navItems.filter((item) => item.bottom);
+
+  return (
+    <div
+      style={{
+        display: "flex",
+        flexDirection: "column",
+        height: "100%",
+      }}
+    >
+      <div>{topItems.map(renderItem)}</div>
+      <div style={{ marginTop: "auto" }}>{bottomItems.map(renderItem)}</div>
     </div>
   );
 }

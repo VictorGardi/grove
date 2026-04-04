@@ -147,22 +147,23 @@ function AppContent(): React.JSX.Element {
 
   // Plan chat: route streamed chunks from the main process to the plan store
   useEffect(() => {
-    const unsub = window.api.plan.onChunk((taskId, chunk) => {
+    const unsub = window.api.plan.onChunk((taskId, mode, chunk) => {
+      const sessionKey = `${mode}:${taskId}`;
       console.log(
         "[Plan] chunk received:",
-        taskId,
+        sessionKey,
         chunk.type,
         chunk.content?.slice(0, 60),
       );
       const store = usePlanStore.getState();
 
       if (chunk.type === "session_id") {
-        store.setSessionId(taskId, chunk.content);
+        store.setSessionId(sessionKey, chunk.content);
         // Persist session ID to task frontmatter
         const task = useDataStore.getState().tasks.find((t) => t.id === taskId);
         const wp = useWorkspaceStore.getState().activeWorkspacePath;
         if (task && wp) {
-          const session = store.sessions[taskId];
+          const session = store.sessions[sessionKey];
           const agent = session?.agent ?? "opencode";
           const model = session?.model ?? null;
           window.api.plan.saveSession({
@@ -171,12 +172,39 @@ function AppContent(): React.JSX.Element {
             sessionId: chunk.content,
             agent,
             model,
+            mode,
           });
         }
         return;
       }
 
-      store.applyChunk(taskId, chunk);
+      if (chunk.type === "done" && mode === "execute") {
+        const exitCode = parseInt(chunk.content, 10);
+        if (exitCode === 0) {
+          // Re-read the task from disk (agent may have checked off DoD items)
+          // and auto-move to review if all DoD items are complete.
+          const task = useDataStore
+            .getState()
+            .tasks.find((t) => t.id === taskId);
+          const wp = useWorkspaceStore.getState().activeWorkspacePath;
+          if (task && wp) {
+            window.api.tasks.readRaw(wp, task.filePath).then((result) => {
+              if (!result.ok) return;
+              const raw = result.data;
+              const checkboxes = raw.match(/- \[[ xX]\]/g) ?? [];
+              const checked = raw.match(/- \[[xX]\]/g) ?? [];
+              if (
+                checkboxes.length > 0 &&
+                checked.length === checkboxes.length
+              ) {
+                void window.api.tasks.move(wp, task.filePath, "review");
+              }
+            });
+          }
+        }
+      }
+
+      store.applyChunk(sessionKey, chunk);
     });
     return unsub;
   }, []);

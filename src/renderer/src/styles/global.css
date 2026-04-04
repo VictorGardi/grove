@@ -1,8 +1,11 @@
-@import './variables.css';
-@import './reset.css';
+@import "./variables.css";
+@import "./reset.css";
+@import "./themes/default.css";
+@import "./themes/catppuccin-mocha.css";
+@import "./themes/catppuccin-latte.css";
 
 /* Google Fonts fallback for development */
-@import url('https://fonts.googleapis.com/css2?family=Figtree:wght@300..900&family=JetBrains+Mono:wght@400;700&display=swap');
+@import url("https://fonts.googleapis.com/css2?family=Figtree:wght@300..900&family=JetBrains+Mono:wght@400;700&display=swap");
 
 html,
 body,
@@ -42,5 +45,5 @@ body {
 }
 
 ::selection {
-  background: rgba(123, 104, 238, 0.3);
+  background: var(--accent-selection);
 }

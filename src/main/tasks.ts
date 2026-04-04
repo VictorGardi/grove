@@ -105,6 +105,14 @@ export async function parseTaskFile(
           ? (data.planSessionAgent as PlanAgent)
           : null,
       planModel: typeof data.planModel === "string" ? data.planModel : null,
+      execSessionId:
+        typeof data.execSessionId === "string" ? data.execSessionId : null,
+      execSessionAgent:
+        data.execSessionAgent === "opencode" ||
+        data.execSessionAgent === "copilot"
+          ? (data.execSessionAgent as PlanAgent)
+          : null,
+      execModel: typeof data.execModel === "string" ? data.execModel : null,
     };
   } catch (err) {
     console.warn(`[Tasks] Failed to parse ${filePath}:`, err);
@@ -205,6 +213,9 @@ function buildFrontmatter(fm: TaskFrontmatter): Record<string, unknown> {
   if (fm.planSessionId != null) obj.planSessionId = fm.planSessionId;
   if (fm.planSessionAgent != null) obj.planSessionAgent = fm.planSessionAgent;
   if (fm.planModel != null) obj.planModel = fm.planModel;
+  if (fm.execSessionId != null) obj.execSessionId = fm.execSessionId;
+  if (fm.execSessionAgent != null) obj.execSessionAgent = fm.execSessionAgent;
+  if (fm.execModel != null) obj.execModel = fm.execModel;
   return obj;
 }
 

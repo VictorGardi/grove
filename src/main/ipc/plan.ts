@@ -2,22 +2,23 @@ import { ipcMain } from "electron";
 import type { BrowserWindow } from "electron";
 import * as path from "path";
 import type { PlanManager } from "../planManager";
-import type { IpcResult, PlanAgent } from "@shared/types";
+import type { IpcResult, PlanAgent, PlanMode } from "@shared/types";
 import { updateTask } from "../tasks";
 
 const VALID_AGENTS: PlanAgent[] = ["opencode", "copilot"];
+const VALID_MODES: PlanMode[] = ["plan", "execute"];
 
 export function registerPlanHandlers(
   planManager: PlanManager,
   mainWindow: BrowserWindow,
 ): void {
-  // Wire chunk forwarding to renderer
-  planManager.setOnChunk((taskId, chunk) => {
+  // Wire chunk forwarding to renderer — now includes mode for routing
+  planManager.setOnChunk((taskId, mode, chunk) => {
     console.log(
-      `[PlanIPC] forwarding chunk type=${chunk.type} taskId=${taskId}`,
+      `[PlanIPC] forwarding chunk type=${chunk.type} taskId=${taskId} mode=${mode}`,
     );
     if (!mainWindow.isDestroyed()) {
-      mainWindow.webContents.send("plan:chunk", taskId, chunk);
+      mainWindow.webContents.send("plan:chunk", taskId, mode, chunk);
     }
   });
 
@@ -28,18 +29,23 @@ export function registerPlanHandlers(
       _event,
       input: {
         taskId: string;
+        mode: PlanMode;
         agent: PlanAgent;
         model: string | null;
         message: string;
         sessionId: string | null;
         workspacePath: string;
         taskFilePath: string;
+        worktreePath?: string; // required when mode === "execute"
       },
     ): Promise<IpcResult<void>> => {
       try {
         // Validate input types
         if (typeof input.taskId !== "string" || !input.taskId) {
           return { ok: false, error: "Invalid taskId" };
+        }
+        if (!VALID_MODES.includes(input.mode)) {
+          return { ok: false, error: `Invalid mode: ${String(input.mode)}` };
         }
         if (!VALID_AGENTS.includes(input.agent)) {
           return { ok: false, error: `Invalid agent: ${String(input.agent)}` };
@@ -57,23 +63,40 @@ export function registerPlanHandlers(
           return { ok: false, error: "Invalid taskFilePath" };
         }
 
-        // Path traversal check: taskFilePath must be inside workspace .tasks/
-        const resolvedTask = path.resolve(input.taskFilePath);
-        const tasksDir = path.resolve(path.join(input.workspacePath, ".tasks"));
-        if (!resolvedTask.startsWith(tasksDir + path.sep)) {
-          return {
-            ok: false,
-            error: "taskFilePath must be inside workspace .tasks/ directory",
-          };
+        let cwd: string;
+
+        if (input.mode === "execute") {
+          // Execute mode: CWD is the worktree path; no .tasks/ restriction
+          if (typeof input.worktreePath !== "string" || !input.worktreePath) {
+            return {
+              ok: false,
+              error: "worktreePath is required for execute mode",
+            };
+          }
+          cwd = input.worktreePath;
+        } else {
+          // Plan mode: CWD is workspace root; taskFilePath must be inside .tasks/
+          const resolvedTask = path.resolve(input.taskFilePath);
+          const tasksDir = path.resolve(
+            path.join(input.workspacePath, ".tasks"),
+          );
+          if (!resolvedTask.startsWith(tasksDir + path.sep)) {
+            return {
+              ok: false,
+              error: "taskFilePath must be inside workspace .tasks/ directory",
+            };
+          }
+          cwd = input.workspacePath;
         }
 
         planManager.run(
           input.taskId,
+          input.mode,
           input.agent,
           input.model ?? null,
           input.message,
           input.sessionId,
-          input.workspacePath,
+          cwd,
           input.taskFilePath,
         );
         return { ok: true, data: undefined };
@@ -83,16 +106,21 @@ export function registerPlanHandlers(
     },
   );
 
-  // plan:cancel — abort the current run for a task
+  // plan:cancel — abort the current run for a task+mode
   ipcMain.handle(
     "plan:cancel",
-    async (_event, taskId: string): Promise<IpcResult<void>> => {
-      planManager.cancel(taskId);
+    async (
+      _event,
+      input: { taskId: string; mode: PlanMode },
+    ): Promise<IpcResult<void>> => {
+      const runKey = `${input.mode}:${input.taskId}`;
+      planManager.cancel(runKey);
       return { ok: true, data: undefined };
     },
   );
 
   // plan:saveSession — called by renderer after receiving session_id chunk
+  // Writes mode-appropriate frontmatter fields.
   ipcMain.handle(
     "plan:saveSession",
     async (
@@ -103,14 +131,23 @@ export function registerPlanHandlers(
         sessionId: string;
         agent: PlanAgent;
         model: string | null;
+        mode: PlanMode;
       },
     ): Promise<IpcResult<void>> => {
       try {
-        await updateTask(input.workspacePath, input.filePath, {
-          planSessionId: input.sessionId,
-          planSessionAgent: input.agent,
-          planModel: input.model ?? null,
-        });
+        const changes =
+          input.mode === "execute"
+            ? {
+                execSessionId: input.sessionId,
+                execSessionAgent: input.agent,
+                execModel: input.model ?? null,
+              }
+            : {
+                planSessionId: input.sessionId,
+                planSessionAgent: input.agent,
+                planModel: input.model ?? null,
+              };
+        await updateTask(input.workspacePath, input.filePath, changes);
         return { ok: true, data: undefined };
       } catch (err) {
         return { ok: false, error: String(err) };

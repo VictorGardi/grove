@@ -136,19 +136,24 @@ contextBridge.exposeInMainWorld("api", {
   },
   app: {
     getPlatform: () => ipcRenderer.invoke("app:getPlatform"),
+    setTitleBarColor: (opts: { color: string; symbolColor: string }) =>
+      ipcRenderer.invoke("app:setTitleBarColor", opts),
   },
   plan: {
     send: (input: {
       taskId: string;
+      mode: string;
       agent: string;
       model: string | null;
       message: string;
       sessionId: string | null;
       workspacePath: string;
       taskFilePath: string;
+      worktreePath?: string;
     }) => ipcRenderer.invoke("plan:send", input),
 
-    cancel: (taskId: string) => ipcRenderer.invoke("plan:cancel", taskId),
+    cancel: (input: { taskId: string; mode: string }) =>
+      ipcRenderer.invoke("plan:cancel", input),
 
     listModels: (input: { agent: string; workspacePath: string }) =>
       ipcRenderer.invoke("plan:listModels", input),
@@ -159,19 +164,22 @@ contextBridge.exposeInMainWorld("api", {
       sessionId: string;
       agent: string;
       model: string | null;
+      mode: string;
     }) => ipcRenderer.invoke("plan:saveSession", input),
 
     onChunk: (
       callback: (
         taskId: string,
+        mode: string,
         chunk: { type: string; content: string },
       ) => void,
     ) => {
       const handler = (
         _event: Electron.IpcRendererEvent,
         taskId: string,
+        mode: string,
         chunk: { type: string; content: string },
-      ) => callback(taskId, chunk);
+      ) => callback(taskId, mode, chunk);
       ipcRenderer.on("plan:chunk", handler);
       return () => ipcRenderer.removeListener("plan:chunk", handler);
     },

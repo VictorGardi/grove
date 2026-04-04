@@ -176,40 +176,6 @@ export function Board(): React.JSX.Element {
 
 // ── Worktree drag handlers (module-level async, not hooks) ────────────────────
 
-/** Shell-escape a string for use inside single-quotes.
- *  Replaces every ' with '\'' (end quote, literal apostrophe, reopen quote). */
-function shellSingleQuote(s: string): string {
-  return `'${s.replace(/'/g, "'\\''")}'`;
-}
-
-/** Resolve agent field + task metadata to CLI command text */
-function agentToCommand(
-  agent: string | null,
-  task: TaskInfo,
-  worktreeTaskFilePath?: string,
-): string | null {
-  if (!agent) return null;
-
-  if (agent === "opencode") {
-    const parts = ["opencode", "run"];
-    if (task.title) {
-      parts.push("--title", shellSingleQuote(task.title));
-    }
-    const taskPath = worktreeTaskFilePath ?? task.filePath;
-    const prompt = `See ${taskPath} for the full task description and Definition of Done. Work through it and mark each checkbox as you complete it.`;
-    parts.push(shellSingleQuote(prompt));
-    return parts.join(" ");
-  }
-
-  const map: Record<string, string> = {
-    "claude-code": "claude",
-    copilot: "gh copilot suggest",
-    codex: "codex",
-    aider: "aider",
-  };
-  return map[agent] ?? null;
-}
-
 async function handleDragToDoing(task: TaskInfo): Promise<void> {
   const wp = useWorkspaceStore.getState().activeWorkspacePath;
   if (!wp) return;
@@ -258,11 +224,8 @@ async function handleDragToDoing(task: TaskInfo): Promise<void> {
     showToast(`Worktree created: ${result.data.branchName}`, "success");
   }
 
-  // Auto-create terminal tab for the worktree
+  // Auto-create terminal tab for the worktree (terminal remains for manual use)
   const worktreeAbsPath = wp + "/" + result.data.worktreePath;
-  const agentCmd = movedTask.autoRun
-    ? agentToCommand(task.agent, movedTask, result.data.taskFilePath)
-    : null;
   const tabId = `wt-${task.id}`;
 
   // Create the PTY BEFORE adding the tab so it exists when TerminalTabView mounts.
@@ -281,11 +244,11 @@ async function handleDragToDoing(task: TaskInfo): Promise<void> {
     taskId: task.id,
   });
 
-  // Schedule agent command outside React — shell needs ~1 s to print its prompt
-  if (ptyResult.ok && agentCmd) {
-    setTimeout(() => {
-      window.api.pty.write(tabId, agentCmd + "\n");
-    }, 1000);
+  // When autoRun is enabled, open the task detail panel with the Agent tab.
+  // Do NOT auto-send — let the user review and press Send. This avoids
+  // accidental expensive agent runs and gives the user a chance to add context.
+  if (movedTask.autoRun) {
+    useDataStore.getState().setSelectedTask(task.id);
   }
 
   // Open the terminal panel if it's collapsed

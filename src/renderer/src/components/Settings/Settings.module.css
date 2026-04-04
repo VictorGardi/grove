@@ -1,0 +1,136 @@
+.container {
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+  overflow: hidden;
+}
+
+.header {
+  display: flex;
+  align-items: center;
+  padding: 0 24px;
+  height: var(--titlebar-height);
+  border-bottom: 1px solid var(--border-dim);
+  flex-shrink: 0;
+}
+
+.title {
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--text-primary);
+  letter-spacing: 0.01em;
+}
+
+.content {
+  flex: 1;
+  overflow-y: auto;
+  padding: 24px;
+}
+
+.section {
+  max-width: 560px;
+}
+
+.sectionTitle {
+  font-size: 11px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  color: var(--text-secondary);
+  margin-bottom: 6px;
+}
+
+.sectionDesc {
+  font-size: 12px;
+  color: var(--text-secondary);
+  margin-bottom: 16px;
+  line-height: 1.6;
+}
+
+/* ── Theme card grid ──────────────────────────────────────────── */
+
+.themeGrid {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 12px;
+}
+
+.themeCard {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  align-items: stretch;
+  gap: 8px;
+  padding: 0;
+  background: var(--bg-elevated);
+  border: 1.5px solid var(--border);
+  border-radius: var(--radius-md);
+  cursor: pointer;
+  transition:
+    border-color var(--transition-fast),
+    box-shadow var(--transition-fast);
+  overflow: hidden;
+  text-align: left;
+}
+
+.themeCard:not(.themeCardActive):hover {
+  border-color: var(--text-lo);
+}
+
+.themeCardActive {
+  border-color: var(--accent);
+  box-shadow: 0 0 0 1px var(--accent);
+}
+
+/* ── Swatch (mini preview) ─────────────────────────────────────── */
+
+.swatch {
+  display: flex;
+  height: 64px;
+  width: 100%;
+  overflow: hidden;
+  border-radius: var(--radius-md) var(--radius-md) 0 0;
+}
+
+.swatchSidebar {
+  width: 28%;
+  flex-shrink: 0;
+}
+
+.swatchContent {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  gap: 5px;
+  padding: 8px 10px;
+}
+
+.swatchLine {
+  height: 4px;
+  border-radius: 2px;
+  opacity: 0.8;
+}
+
+/* ── Label & checkmark ──────────────────────────────────────────── */
+
+.themeLabel {
+  font-size: 11px;
+  font-weight: 500;
+  color: var(--text-primary);
+  padding: 0 10px 10px;
+}
+
+.checkmark {
+  position: absolute;
+  top: 6px;
+  right: 6px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 18px;
+  height: 18px;
+  border-radius: 50%;
+  background: var(--accent);
+  color: var(--bg-base);
+}

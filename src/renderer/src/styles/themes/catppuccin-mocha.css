@@ -1,0 +1,39 @@
+/* ── Catppuccin Mocha (Dark) theme ──────────────────────────────
+   https://github.com/catppuccin/catppuccin
+   Elevation hierarchy: Base → Surface0 (elevated) → Surface1/2 (hover/active)
+   Mantle/Crust are used for elements that recede behind the base (sidebar, insets).
+   ─────────────────────────────────────────────────────────────── */
+:root[data-theme="catppuccin-mocha"] {
+  /* Backgrounds */
+  --bg-base: #1e1e2e; /* Base */
+  --bg-surface: #181825; /* Mantle — sidebar / recessed panels */
+  --bg-elevated: #313244; /* Surface0 — elevated above Base (cards, dialogs) */
+  --bg-hover: #585b70; /* Surface2 — hover state */
+  --bg-active: #45475a; /* Surface1 — active / selected item */
+
+  /* Borders */
+  --border: #45475a; /* Surface1 */
+  --border-dim: #313244; /* Surface0 */
+
+  /* Text */
+  --text-primary: #cdd6f4; /* Text */
+  --text-secondary: #bac2de; /* Subtext1 */
+  --text-lo: #6c7086; /* Overlay0 */
+
+  /* Accent */
+  --accent: #cba6f7; /* Mauve */
+  --accent-dim: rgba(203, 166, 247, 0.15);
+  --accent-selection: rgba(203, 166, 247, 0.3);
+
+  /* Status */
+  --status-green: #a6e3a1; /* Green */
+  --status-amber: #f9e2af; /* Yellow */
+  --status-red: #f38ba8; /* Red */
+  --status-blue: #89b4fa; /* Blue */
+
+  /* Diff colors */
+  --green: #a6e3a1;
+  --green-dim: rgba(166, 227, 161, 0.12);
+  --red: #f38ba8;
+  --red-dim: rgba(243, 139, 168, 0.12);
+}

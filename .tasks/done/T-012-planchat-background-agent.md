@@ -1,12 +1,12 @@
 ---
 id: T-012
 title: Allow PlanChat agent to run in background when UI closed
-status: backlog
+status: done
 created: '2026-04-04'
 autoRun: true
 agent: opencode
-worktree: .worktrees/T-012
-branch: feat/t-012-allow-planchat-agent-to-run-in
+worktree: null
+branch: null
 ---
 
 ## Description

@@ -37,6 +37,9 @@ export type TaskStatus = "backlog" | "doing" | "review" | "done";
 /** Supported agents for in-app planning */
 export type PlanAgent = "opencode" | "copilot";
 
+/** Mode for the plan/execution agent chat */
+export type PlanMode = "plan" | "execute";
+
 /** Parsed from a .tasks/{status}/T-XXX-slug.md file */
 export interface TaskInfo {
   id: string;
@@ -60,6 +63,12 @@ export interface TaskInfo {
   planSessionAgent: PlanAgent | null;
   /** Model used in the current plan session (e.g. "anthropic/claude-opus-4-5") */
   planModel: string | null;
+  /** Session ID for execution agent chat (persisted in frontmatter) */
+  execSessionId: string | null;
+  /** Which agent owns the current execution session */
+  execSessionAgent: PlanAgent | null;
+  /** Model used in the current execution session */
+  execModel: string | null;
 }
 
 /** Combined workspace data — returned atomically to avoid stale cross-references */
@@ -111,6 +120,12 @@ export interface TaskFrontmatter {
   planSessionAgent?: PlanAgent | null;
   /** Model used in the current plan session */
   planModel?: string | null;
+  /** Session ID for execution agent chat */
+  execSessionId?: string | null;
+  /** Which agent owns the current execution session */
+  execSessionAgent?: PlanAgent | null;
+  /** Model used in the current execution session */
+  execModel?: string | null;
 }
 
 /** A single DoD checklist item parsed from the task body */
@@ -125,6 +140,13 @@ export interface DodItem {
 export interface PlanChunk {
   type: "text" | "thinking" | "session_id" | "done" | "error";
   content: string;
+}
+
+/** IPC envelope wrapping a chunk with routing metadata */
+export interface PlanChunkEnvelope {
+  taskId: string;
+  mode: PlanMode;
+  chunk: PlanChunk;
 }
 
 /** Role in a planning conversation */

@@ -1,10 +1,15 @@
 ---
 id: T-014
-title: Unify agent experience — move execution from terminal into structured Agent tab
-status: backlog
-created: "2026-04-04"
+title: >-
+  Unify agent experience — move execution from terminal into structured Agent
+  tab
+status: review
+created: '2026-04-04'
 agent: opencode
-tags: [agent, ux, architecture]
+tags:
+  - agent
+  - ux
+  - architecture
 autoRun: true
 ---
 

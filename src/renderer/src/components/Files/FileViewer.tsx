@@ -1,6 +1,7 @@
 import React, { useEffect, useState, useMemo, useRef } from "react";
 import type { ThemedToken, BundledLanguage } from "shiki";
 import { useFileStore } from "../../stores/useFileStore";
+import { useThemeStore } from "../../stores/useThemeStore";
 import { getHighlighter, SUPPORTED_LANGS } from "./shikiHighlighter";
 import { MarkdownViewer } from "./MarkdownViewer";
 import styles from "./FileViewer.module.css";
@@ -42,6 +43,7 @@ export function FileViewer(): React.JSX.Element {
   const fileTooLarge = useFileStore((s) => s.fileTooLarge);
   const fileTooLargeSize = useFileStore((s) => s.fileTooLargeSize);
   const fileLoading = useFileStore((s) => s.fileLoading);
+  const shikiTheme = useThemeStore((s) => s.colors.shikiTheme);
 
   const [tokenLines, setTokenLines] = useState<ThemedToken[][] | null>(null);
   const [highlighterReady, setHighlighterReady] = useState(false);
@@ -60,7 +62,7 @@ export function FileViewer(): React.JSX.Element {
     setViewMode("rendered");
   }, [openFilePath]);
 
-  // Tokenize when file content or language changes
+  // Tokenize when file content, language, or theme changes
   useEffect(() => {
     if (!fileContent || !highlighterReady) {
       setTokenLines(null);
@@ -72,6 +74,9 @@ export function FileViewer(): React.JSX.Element {
       ? fileContent.language
       : "text";
 
+    // Clear stale tokens immediately so old theme colors don't flash
+    setTokenLines(null);
+
     getHighlighter().then((highlighter) => {
       if (cancelled) return;
       try {
@@ -81,7 +86,7 @@ export function FileViewer(): React.JSX.Element {
         }
         const { tokens } = highlighter.codeToTokens(fileContent.content, {
           lang: lang as BundledLanguage,
-          theme: "grove-dark",
+          theme: shikiTheme,
         });
         if (!cancelled) {
           setTokenLines(tokens);
@@ -96,7 +101,7 @@ export function FileViewer(): React.JSX.Element {
     return () => {
       cancelled = true;
     };
-  }, [fileContent, highlighterReady]);
+  }, [fileContent, highlighterReady, shikiTheme]);
 
   // Flash on reload (content changed while file was open)
   useEffect(() => {

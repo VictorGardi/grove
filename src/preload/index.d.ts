@@ -16,6 +16,7 @@ import type {
   BranchInfo,
   PlanAgent,
   PlanChunk,
+  PlanMode,
 } from "@shared/types";
 
 export interface ElectronAPI {
@@ -80,6 +81,10 @@ export interface ElectronAPI {
   };
   app: {
     getPlatform: () => Promise<NodeJS.Platform>;
+    setTitleBarColor: (opts: {
+      color: string;
+      symbolColor: string;
+    }) => Promise<void>;
   };
   git: {
     listWorktrees: (repoPath: string) => Promise<IpcResult<WorktreeInfo[]>>;
@@ -123,14 +128,19 @@ export interface ElectronAPI {
   plan: {
     send: (input: {
       taskId: string;
+      mode: PlanMode;
       agent: PlanAgent;
       model: string | null;
       message: string;
       sessionId: string | null;
       workspacePath: string;
       taskFilePath: string;
+      worktreePath?: string;
     }) => Promise<IpcResult<void>>;
-    cancel: (taskId: string) => Promise<IpcResult<void>>;
+    cancel: (input: {
+      taskId: string;
+      mode: PlanMode;
+    }) => Promise<IpcResult<void>>;
     listModels: (input: {
       agent: PlanAgent;
       workspacePath: string;
@@ -141,9 +151,10 @@ export interface ElectronAPI {
       sessionId: string;
       agent: PlanAgent;
       model: string | null;
+      mode: PlanMode;
     }) => Promise<IpcResult<void>>;
     onChunk: (
-      callback: (taskId: string, chunk: PlanChunk) => void,
+      callback: (taskId: string, mode: PlanMode, chunk: PlanChunk) => void,
     ) => () => void;
   };
 }

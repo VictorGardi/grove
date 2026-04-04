@@ -24,6 +24,13 @@ export function useKeyboardShortcuts(): void {
         return;
       }
 
+      // Cmd+, : open settings — works even when input is focused
+      if (mod && e.key === ",") {
+        e.preventDefault();
+        useNavStore.getState().setActiveView("settings");
+        return;
+      }
+
       // Cmd+B: toggle sidebar — works even when input is focused
       if (mod && (e.key === "b" || e.key === "B")) {
         e.preventDefault();

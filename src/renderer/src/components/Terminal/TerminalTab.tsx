@@ -8,37 +8,13 @@ import {
   unregisterXterm,
   useTerminalStore,
 } from "../../stores/useTerminalStore";
+import { useThemeStore } from "../../stores/useThemeStore";
 
 interface TerminalTabProps {
   id: string;
   cwd: string;
   visible: boolean;
 }
-
-const XTERM_THEME = {
-  background: "#0b0b0d",
-  foreground: "#e2e2e6",
-  cursor: "#7b68ee",
-  cursorAccent: "#0b0b0d",
-  selectionBackground: "rgba(123, 104, 238, 0.3)",
-  selectionForeground: "#e2e2e6",
-  black: "#0b0b0d",
-  red: "#e05c5c",
-  green: "#3ecf8e",
-  yellow: "#e8a44a",
-  blue: "#5ba3f5",
-  magenta: "#7b68ee",
-  cyan: "#56d4dd",
-  white: "#e2e2e6",
-  brightBlack: "#44444e",
-  brightRed: "#e05c5c",
-  brightGreen: "#3ecf8e",
-  brightYellow: "#e8a44a",
-  brightBlue: "#5ba3f5",
-  brightMagenta: "#7b68ee",
-  brightCyan: "#56d4dd",
-  brightWhite: "#ffffff",
-};
 
 export function TerminalTabView({
   id,
@@ -49,6 +25,8 @@ export function TerminalTabView({
   const terminalRef = useRef<Terminal | null>(null);
   const fitAddonRef = useRef<FitAddon | null>(null);
   const resizeTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  const xtermTheme = useThemeStore((s) => s.colors.xterm);
 
   const doFit = useCallback(() => {
     if (!fitAddonRef.current || !terminalRef.current || !visible) return;
@@ -80,7 +58,7 @@ export function TerminalTabView({
     if (!containerRef.current) return;
 
     const term = new Terminal({
-      theme: XTERM_THEME,
+      theme: useThemeStore.getState().colors.xterm,
       fontFamily: "'JetBrains Mono', monospace",
       fontSize: 13,
       lineHeight: 1.4,
@@ -153,6 +131,13 @@ export function TerminalTabView({
       }, 20);
     }
   }, [visible, doFit]);
+
+  // Update xterm theme when the active Grove theme changes
+  useEffect(() => {
+    if (terminalRef.current) {
+      terminalRef.current.options.theme = xtermTheme;
+    }
+  }, [xtermTheme]);
 
   // ResizeObserver for container size changes
   useEffect(() => {

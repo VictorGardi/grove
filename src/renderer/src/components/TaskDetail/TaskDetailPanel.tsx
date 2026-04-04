@@ -110,9 +110,9 @@ export function TaskDetailPanel(): React.JSX.Element {
     isDirtyRef.current = isDirty;
   }, [isDirty]);
 
-  // Default to plan tab for backlog tasks, edit for all others
+  // Default to plan tab for backlog tasks, "plan" (Agent) tab for doing, edit for all others
   useEffect(() => {
-    if (task?.status === "backlog") {
+    if (task?.status === "backlog" || task?.status === "doing") {
       setActiveTab("plan");
     } else {
       setActiveTab("edit");
@@ -426,17 +426,6 @@ export function TaskDetailPanel(): React.JSX.Element {
                 {task.autoRun ? "auto-run: on" : "auto-run: off"}
               </button>
             )}
-
-            {/* Plan with agent — backlog only */}
-            {task.status === "backlog" && (
-              <button
-                className={styles.planBtn}
-                onClick={() => setActiveTab("plan")}
-                title="Start a planning session with an AI agent"
-              >
-                Plan with agent
-              </button>
-            )}
           </div>
 
           <div className={styles.topBarRight}>
@@ -480,12 +469,12 @@ export function TaskDetailPanel(): React.JSX.Element {
           >
             Edit
           </button>
-          {task.status === "backlog" && (
+          {(task.status === "backlog" || task.status === "doing") && (
             <button
               className={`${styles.tab} ${activeTab === "plan" ? styles.tabActive : ""}`}
               onClick={() => setActiveTab("plan")}
             >
-              Plan
+              {task.status === "doing" ? "Agent" : "Plan"}
             </button>
           )}
           <button
@@ -498,25 +487,39 @@ export function TaskDetailPanel(): React.JSX.Element {
         </div>
 
         {/* Content area */}
-        {/* PlanChat stays mounted for backlog tasks so a running agent isn't
-            cancelled when the user temporarily switches to Edit/Changes tab.
+        {/* PlanChat stays mounted for backlog and doing tasks so a running agent
+            isn't cancelled when the user temporarily switches to Edit/Changes tab.
             The cancel-on-unmount in PlanChat only fires when the panel closes. */}
-        {task.status === "backlog" && (
-          <div
-            style={
-              activeTab === "plan"
-                ? {
-                    display: "flex",
-                    flex: 1,
-                    overflow: "hidden",
-                    flexDirection: "column",
-                  }
-                : { display: "none" }
-            }
-          >
-            <PlanChat task={task} onClose={() => setActiveTab("edit")} />
-          </div>
-        )}
+        {(task.status === "backlog" || task.status === "doing") &&
+          (() => {
+            const planMode = task.status === "doing" ? "execute" : "plan";
+            const worktreeAbsPath = task.worktree
+              ? task.worktree.startsWith("/")
+                ? task.worktree
+                : `${workspacePath}/${task.worktree}`
+              : undefined;
+            return (
+              <div
+                style={
+                  activeTab === "plan"
+                    ? {
+                        display: "flex",
+                        flex: 1,
+                        overflow: "hidden",
+                        flexDirection: "column",
+                      }
+                    : { display: "none" }
+                }
+              >
+                <PlanChat
+                  task={task}
+                  mode={planMode}
+                  worktreePath={worktreeAbsPath}
+                  onClose={() => setActiveTab("edit")}
+                />
+              </div>
+            );
+          })()}
         {activeTab === "changes" && (
           <div className={styles.changesWrapper}>
             <ChangesTab task={task} />

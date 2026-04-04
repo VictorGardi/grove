@@ -31,6 +31,20 @@ export function registerIpcHandlers(
 
   // app:getPlatform
   ipcMain.handle("app:getPlatform", () => process.platform);
+
+  // app:setTitleBarColor — Windows only, no-op on other platforms
+  ipcMain.handle(
+    "app:setTitleBarColor",
+    (_event, opts: { color: string; symbolColor: string }) => {
+      if (process.platform === "win32" && mainWindow) {
+        mainWindow.setTitleBarOverlay({
+          color: opts.color,
+          symbolColor: opts.symbolColor,
+          height: 40,
+        });
+      }
+    },
+  );
 }
 
 /**

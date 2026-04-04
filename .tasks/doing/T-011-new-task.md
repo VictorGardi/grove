@@ -1,13 +1,20 @@
 ---
 id: T-011
 title: allow @ to attach files to agent chat
-status: backlog
+status: doing
 created: '2026-04-03'
 autoRun: true
 agent: opencode
 planSessionId: ses_2a87f05a8ffe8sNM1zMitlSZUU
 planSessionAgent: opencode
 planModel: opencode/big-pickle
+runSessionAgent: opencode
+runModel: opencode/big-pickle
+worktree: .worktrees/T-011
+branch: feat/t-011-allow-to-attach-files-to-agent
+execSessionId: ses_2a7062f19ffebZ4OWlnCO30Sn2
+execSessionAgent: opencode
+execModel: opencode/big-pickle
 ---
 
 ## Description

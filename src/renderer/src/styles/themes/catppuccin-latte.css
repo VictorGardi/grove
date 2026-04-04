@@ -1,0 +1,37 @@
+/* ── Catppuccin Latte (Light) theme ─────────────────────────────
+   https://github.com/catppuccin/catppuccin
+   ─────────────────────────────────────────────────────────────── */
+:root[data-theme="catppuccin-latte"] {
+  /* Backgrounds */
+  --bg-base: #eff1f5; /* Base */
+  --bg-surface: #e6e9ef; /* Mantle */
+  --bg-elevated: #dce0e8; /* Crust */
+  --bg-hover: #ccd0da; /* Surface0 */
+  --bg-active: #bcc0cc; /* Surface1 */
+
+  /* Borders */
+  --border: #acb0be; /* Surface2 */
+  --border-dim: #bcc0cc; /* Surface1 */
+
+  /* Text */
+  --text-primary: #4c4f69; /* Text */
+  --text-secondary: #6c6f85; /* Subtext0 */
+  --text-lo: #9ca0b0; /* Overlay0 */
+
+  /* Accent */
+  --accent: #8839ef; /* Mauve */
+  --accent-dim: rgba(136, 57, 239, 0.15);
+  --accent-selection: rgba(136, 57, 239, 0.2);
+
+  /* Status */
+  --status-green: #40a02b; /* Green */
+  --status-amber: #df8e1d; /* Yellow */
+  --status-red: #d20f39; /* Red */
+  --status-blue: #1e66f5; /* Blue */
+
+  /* Diff colors */
+  --green: #40a02b;
+  --green-dim: rgba(64, 160, 43, 0.12);
+  --red: #d20f39;
+  --red-dim: rgba(210, 15, 57, 0.12);
+}

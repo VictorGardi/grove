@@ -4,12 +4,12 @@ import remarkGfm from "remark-gfm";
 import { usePlanStore } from "../../stores/usePlanStore";
 import { useWorkspaceStore } from "../../stores/useWorkspaceStore";
 import { updateTask } from "../../actions/taskActions";
-import type { TaskInfo, PlanAgent, PlanMessage } from "@shared/types";
+import type { TaskInfo, PlanAgent, PlanMessage, PlanMode } from "@shared/types";
 import styles from "./PlanChat.module.css";
 
-// ── Planning prompt builder ─────────────────────────────────────
+// ── Prompt builders (exported for preview) ────────────────────────────────
 
-function buildFirstMessage(
+export function buildFirstPlanMessage(
   task: TaskInfo,
   userText: string,
   taskRawContent: string,
@@ -46,9 +46,33 @@ Rules:
 ${userText}`;
 }
 
-// ── Model placeholder per agent ─────────────────────────────────
+export function buildFirstExecutionMessage(
+  task: TaskInfo,
+  taskRawContent: string,
+): string {
+  return `You are an execution agent for a software task.
 
-// (model list loaded dynamically via IPC)
+## Task
+
+ID: ${task.id}
+Title: ${task.title}
+File: ${task.filePath}
+
+## Current Task Content
+
+${taskRawContent}
+
+## Your Role
+
+Work through the task's Definition of Done checkboxes systematically:
+
+1. Read the task description carefully and understand the full scope.
+2. Implement the required changes in the codebase.
+3. After completing each DoD item, update the task file at the path above to check it off.
+4. When all items are complete, verify your work against the acceptance criteria.
+
+You have full access to read files, write files, and run shell commands. Work autonomously through the entire Definition of Done without waiting for confirmation unless you encounter a genuine blocker.`;
+}
 
 // ── Thinking block ──────────────────────────────────────────────
 
@@ -116,24 +140,71 @@ function ChatMessage({
 
 interface PlanChatProps {
   task: TaskInfo;
+  mode: PlanMode;
+  /** Absolute path to the worktree — required when mode === "execute" */
+  worktreePath?: string;
   onClose: () => void;
 }
 
-export function PlanChat({ task, onClose }: PlanChatProps): React.JSX.Element {
+export function PlanChat({
+  task,
+  mode,
+  worktreePath,
+  onClose,
+}: PlanChatProps): React.JSX.Element {
   const workspacePath = useWorkspaceStore((s) => s.activeWorkspacePath);
-  const session = usePlanStore((s) => s.sessions[task.id]);
+
+  // Composite session key scopes plan and execute sessions independently
+  const sessionKey = `${mode}:${task.id}`;
+
+  const session = usePlanStore((s) => s.sessions[sessionKey]);
   const initSession = usePlanStore((s) => s.initSession);
   const appendUserMessage = usePlanStore((s) => s.appendUserMessage);
   const startAgentMessage = usePlanStore((s) => s.startAgentMessage);
+  const applyChunk = usePlanStore((s) => s.applyChunk);
   const clearSession = usePlanStore((s) => s.clearSession);
 
+  // Use mode-appropriate persisted session info for initial state
+  const persistedSessionId =
+    mode === "execute" ? task.execSessionId : task.planSessionId;
+  const persistedAgent =
+    mode === "execute"
+      ? (task.execSessionAgent ?? "opencode")
+      : (task.planSessionAgent ?? "opencode");
+  const persistedModel =
+    mode === "execute" ? (task.execModel ?? "") : (task.planModel ?? "");
+
   const [inputText, setInputText] = useState("");
-  const [agent, setAgent] = useState<PlanAgent>(
-    task.planSessionAgent ?? "opencode",
-  );
-  const [model, setModel] = useState<string>(task.planModel ?? "");
+  const [agent, setAgent] = useState<PlanAgent>(persistedAgent);
+  const [model, setModel] = useState<string>(persistedModel);
   const [availableModels, setAvailableModels] = useState<string[]>([]);
   const [modelsLoading, setModelsLoading] = useState(false);
+  const [defaultPromptPreview, setDefaultPromptPreview] = useState<string>("");
+
+  const isRunning = session?.isRunning ?? false;
+  const hasSession = !!session?.sessionId;
+
+  // Compute default prompt preview on mount (for execute mode, show what will be sent)
+  useEffect(() => {
+    if (!workspacePath || hasSession || mode !== "execute") {
+      setDefaultPromptPreview("");
+      return;
+    }
+
+    window.api.tasks
+      .readRaw(workspacePath, task.filePath)
+      .then((result) => {
+        if (result.ok) {
+          const preview = buildFirstExecutionMessage(task, result.data);
+          // Truncate for display
+          setDefaultPromptPreview(
+            preview.length > 300 ? preview.slice(0, 300) + "..." : preview,
+          );
+        }
+      })
+      .catch(() => setDefaultPromptPreview(""));
+  }, [workspacePath, task.filePath, task.id, task.title, mode, hasSession]);
+
   const messageListRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLTextAreaElement>(null);
   const userScrolledRef = useRef(false);
@@ -151,10 +222,10 @@ export function PlanChat({ task, onClose }: PlanChatProps): React.JSX.Element {
       .finally(() => setModelsLoading(false));
   }, [agent, workspacePath]);
 
-  // Initialise session on mount
+  // Initialise session on mount using the composite key
   useEffect(() => {
-    initSession(task.id, agent, model || null, task.planSessionId);
-  }, [task.id, agent, model, task.planSessionId, initSession]);
+    initSession(sessionKey, agent, model || null, persistedSessionId ?? null);
+  }, [sessionKey, agent, model, persistedSessionId, initSession]);
 
   // Auto-scroll to bottom on new messages/chunks, unless user scrolled up
   useEffect(() => {
@@ -172,17 +243,6 @@ export function PlanChat({ task, onClose }: PlanChatProps): React.JSX.Element {
     userScrolledRef.current = !atBottom;
   }, []);
 
-  // Cancel agent on unmount
-  useEffect(() => {
-    return () => {
-      if (usePlanStore.getState().sessions[task.id]?.isRunning) {
-        window.api.plan.cancel(task.id);
-      }
-    };
-  }, [task.id]);
-
-  const isRunning = session?.isRunning ?? false;
-  const hasSession = !!session?.sessionId;
   const messages = session?.messages ?? [];
   const lastExitCode = session?.lastExitCode ?? null;
   const sessionModel = session?.model ?? null;
@@ -191,33 +251,56 @@ export function PlanChat({ task, onClose }: PlanChatProps): React.JSX.Element {
 
   async function handleSend(): Promise<void> {
     const text = inputText.trim();
-    if (!text || !workspacePath || isRunning) return;
+    if (!workspacePath || isRunning) return;
 
-    // Add user message to store
-    appendUserMessage(task.id, text);
+    const sessionId = session?.sessionId ?? null;
+    const isFirstMessage = !sessionId;
+
+    // Plan mode always requires text.
+    // Execute mode allows empty text on the first message — the full execution
+    // prompt is built from the task content, no user text needed to kick it off.
+    if (!text && (mode === "plan" || !isFirstMessage)) return;
+
+    // In execute mode: first send auto-builds the execution prompt; user text
+    // is only included in the initial prompt (the input box just triggers it).
+    // In plan mode: first send assembles planning prompt; follow-ups are plain.
+
+    // Add user message to store — skip if empty (execute first-send with no extra context)
+    if (text) {
+      appendUserMessage(sessionKey, text);
+    }
     setInputText("");
     // Reset textarea height after clearing
     if (inputRef.current) inputRef.current.style.height = "auto";
     userScrolledRef.current = false;
 
     // Prepare the agent message slot
-    startAgentMessage(task.id);
+    startAgentMessage(sessionKey);
 
     // Build the actual prompt
     let message: string;
-    const sessionId = session?.sessionId ?? null;
 
     if (!sessionId) {
-      // First message — assemble full planning prompt
+      // First message — read task content and assemble full prompt
+      let rawContent = "";
       try {
         const rawResult = await window.api.tasks.readRaw(
           workspacePath,
           task.filePath,
         );
-        const rawContent = rawResult.ok ? rawResult.data : "";
-        message = buildFirstMessage(task, text, rawContent);
+        rawContent = rawResult.ok ? rawResult.data : "";
       } catch {
-        message = buildFirstMessage(task, text, "");
+        // continue with empty content
+      }
+
+      if (mode === "execute") {
+        // Execution prompt is fully built — user text is appended as context if provided
+        const base = buildFirstExecutionMessage(task, rawContent);
+        message = text
+          ? `${base}\n\n## Additional Context from User\n\n${text}`
+          : base;
+      } else {
+        message = buildFirstPlanMessage(task, text, rawContent);
       }
     } else {
       // Follow-up — just send plain text
@@ -226,40 +309,53 @@ export function PlanChat({ task, onClose }: PlanChatProps): React.JSX.Element {
 
     const result = await window.api.plan.send({
       taskId: task.id,
+      mode,
       agent,
       model: model || null,
       message,
       sessionId,
       workspacePath,
       taskFilePath: task.filePath,
+      ...(mode === "execute" && worktreePath ? { worktreePath } : {}),
     });
     if (!result.ok) {
       console.error("[PlanChat] plan.send failed:", result.error);
+      // IPC failed — no done chunk will arrive, so manually reset the running
+      // state to prevent Send being permanently replaced by Cancel.
+      applyChunk(sessionKey, { type: "error", content: result.error });
     }
   }
 
   // ── Cancel ──────────────────────────────────────────────────
 
   function handleCancel(): void {
-    window.api.plan.cancel(task.id);
+    window.api.plan.cancel({ taskId: task.id, mode });
   }
 
   // ── New session ─────────────────────────────────────────────
 
   function handleNewSession(): void {
     // Cancel any in-flight run before clearing
-    window.api.plan.cancel(task.id);
-    clearSession(task.id);
-    // Clear from frontmatter
+    window.api.plan.cancel({ taskId: task.id, mode });
+    clearSession(sessionKey);
+    // Clear from frontmatter (mode-appropriate fields)
     if (workspacePath) {
-      updateTask(task.filePath, {
-        planSessionId: null,
-        planSessionAgent: null,
-        planModel: null,
-      });
+      if (mode === "execute") {
+        updateTask(task.filePath, {
+          execSessionId: null,
+          execSessionAgent: null,
+          execModel: null,
+        });
+      } else {
+        updateTask(task.filePath, {
+          planSessionId: null,
+          planSessionAgent: null,
+          planModel: null,
+        });
+      }
     }
     // Re-init fresh session
-    initSession(task.id, agent, model || null, null);
+    initSession(sessionKey, agent, model || null, null);
   }
 
   // ── Agent change (only before session starts) ───────────────
@@ -267,8 +363,8 @@ export function PlanChat({ task, onClose }: PlanChatProps): React.JSX.Element {
   function handleAgentChange(newAgent: PlanAgent): void {
     if (hasSession || isRunning) return;
     setAgent(newAgent);
-    clearSession(task.id);
-    initSession(task.id, newAgent, model || null, null);
+    clearSession(sessionKey);
+    initSession(sessionKey, newAgent, model || null, null);
   }
 
   // ── Model change (only before session starts) ───────────────
@@ -306,12 +402,26 @@ export function PlanChat({ task, onClose }: PlanChatProps): React.JSX.Element {
     ((lastExitCode != null && lastExitCode !== 0) ||
       (lastMsg.text === "" && messages.length > 0));
 
+  const headerTitle =
+    mode === "execute" ? "Execute with agent" : "Plan with agent";
+  const emptyStatePlaceholder =
+    mode === "execute"
+      ? `Send a message to start executing this task with ${agent}...`
+      : `Type a message to start planning this task with ${agent}`;
+  const inputPlaceholder = isRunning
+    ? "Waiting for agent..."
+    : hasSession
+      ? "Continue the conversation..."
+      : mode === "execute"
+        ? "Send a message to start executing (or leave blank for default prompt)..."
+        : "Describe what you want to plan...";
+
   return (
     <div className={styles.container}>
       {/* Header */}
       <div className={styles.header}>
         <div className={styles.headerLeft}>
-          <span className={styles.headerTitle}>Plan with agent</span>
+          <span className={styles.headerTitle}>{headerTitle}</span>
           <select
             className={styles.agentSelect}
             value={agent}
@@ -366,10 +476,21 @@ export function PlanChat({ task, onClose }: PlanChatProps): React.JSX.Element {
         className={styles.messageList}
         onScroll={handleScroll}
       >
+        {/* Default prompt preview for execute mode when no session */}
+        {messages.length === 0 &&
+          mode === "execute" &&
+          defaultPromptPreview && (
+            <div className={styles.defaultPromptPreview}>
+              <div className={styles.defaultPromptLabel}>
+                Default execution prompt (will be sent on Send):
+              </div>
+              <pre className={styles.defaultPromptContent}>
+                {defaultPromptPreview}
+              </pre>
+            </div>
+          )}
         {messages.length === 0 ? (
-          <div className={styles.emptyState}>
-            Type a message to start planning this task with {agent}
-          </div>
+          <div className={styles.emptyState}>{emptyStatePlaceholder}</div>
         ) : (
           messages.map((msg) => (
             <ChatMessage
@@ -407,13 +528,7 @@ export function PlanChat({ task, onClose }: PlanChatProps): React.JSX.Element {
             resizeTextarea();
           }}
           onKeyDown={handleKeyDown}
-          placeholder={
-            isRunning
-              ? "Waiting for agent..."
-              : hasSession
-                ? "Continue the conversation..."
-                : "Describe what you want to plan..."
-          }
+          placeholder={inputPlaceholder}
           disabled={isRunning}
           rows={1}
         />
@@ -425,7 +540,7 @@ export function PlanChat({ task, onClose }: PlanChatProps): React.JSX.Element {
           <button
             className={styles.sendBtn}
             onClick={() => void handleSend()}
-            disabled={!inputText.trim()}
+            disabled={mode === "plan" && !inputText.trim()}
           >
             Send
           </button>

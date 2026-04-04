@@ -5,8 +5,26 @@
     <title>Grove</title>
     <meta
       http-equiv="Content-Security-Policy"
-      content="default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src 'self' https://fonts.gstatic.com; img-src 'self' data:"
+      content="default-src 'self'; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src 'self' https://fonts.gstatic.com; img-src 'self' data:"
     />
+    <!--
+      Flash-prevention: apply the stored theme BEFORE the page renders.
+      This runs synchronously, before any JS modules load, so there's no
+      flash of the default dark theme when a different theme is selected.
+    -->
+    <script>
+      (function () {
+        var t = localStorage.getItem("grove:theme");
+        var valid = ["default", "catppuccin-mocha", "catppuccin-latte"];
+        if (t && valid.indexOf(t) !== -1) {
+          if (t === "default") {
+            document.documentElement.removeAttribute("data-theme");
+          } else {
+            document.documentElement.setAttribute("data-theme", t);
+          }
+        }
+      })();
+    </script>
   </head>
 
   <body>

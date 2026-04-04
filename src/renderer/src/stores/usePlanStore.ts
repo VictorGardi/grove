@@ -2,7 +2,7 @@ import { create } from "zustand";
 import type { PlanMessage, PlanAgent, PlanChunk } from "@shared/types";
 
 interface PlanSession {
-  taskId: string;
+  sessionKey: string; // `${mode}:${taskId}`
   agent: PlanAgent;
   model: string | null;
   sessionId: string | null;
@@ -12,21 +12,21 @@ interface PlanSession {
 }
 
 interface PlanState {
-  sessions: Record<string, PlanSession>; // keyed by taskId
+  sessions: Record<string, PlanSession>; // keyed by `${mode}:${taskId}`
 
-  // Actions
+  // Actions — all take the composite sessionKey
   initSession: (
-    taskId: string,
+    sessionKey: string,
     agent: PlanAgent,
     model: string | null,
     existingSessionId: string | null,
   ) => void;
-  appendUserMessage: (taskId: string, text: string) => void;
-  startAgentMessage: (taskId: string) => void;
-  applyChunk: (taskId: string, chunk: PlanChunk) => void;
-  setSessionId: (taskId: string, sessionId: string) => void;
-  setRunning: (taskId: string, running: boolean) => void;
-  clearSession: (taskId: string) => void;
+  appendUserMessage: (sessionKey: string, text: string) => void;
+  startAgentMessage: (sessionKey: string) => void;
+  applyChunk: (sessionKey: string, chunk: PlanChunk) => void;
+  setSessionId: (sessionKey: string, sessionId: string) => void;
+  setRunning: (sessionKey: string, running: boolean) => void;
+  clearSession: (sessionKey: string) => void;
 }
 
 function nextId(): string {
@@ -36,19 +36,28 @@ function nextId(): string {
 export const usePlanStore = create<PlanState>()((set) => ({
   sessions: {},
 
-  initSession: (taskId, agent, model, existingSessionId) => {
+  initSession: (sessionKey, agent, model, existingSessionId) => {
     set((s) => {
-      // Don't re-initialise if session already exists for this task+agent+model
+      // Don't re-initialise if session already exists for this key+agent+model,
+      // but DO reset isRunning — a stale true (e.g. from a crashed/aborted run)
+      // would permanently hide the Send button after a component remount.
       if (
-        s.sessions[taskId]?.agent === agent &&
-        s.sessions[taskId]?.model === model
-      )
-        return s;
+        s.sessions[sessionKey]?.agent === agent &&
+        s.sessions[sessionKey]?.model === model
+      ) {
+        if (!s.sessions[sessionKey].isRunning) return s;
+        return {
+          sessions: {
+            ...s.sessions,
+            [sessionKey]: { ...s.sessions[sessionKey], isRunning: false },
+          },
+        };
+      }
       return {
         sessions: {
           ...s.sessions,
-          [taskId]: {
-            taskId,
+          [sessionKey]: {
+            sessionKey,
             agent,
             model,
             sessionId: existingSessionId,
@@ -61,9 +70,9 @@ export const usePlanStore = create<PlanState>()((set) => ({
     });
   },
 
-  appendUserMessage: (taskId, text) => {
+  appendUserMessage: (sessionKey, text) => {
     set((s) => {
-      const session = s.sessions[taskId];
+      const session = s.sessions[sessionKey];
       if (!session) return s;
       const msg: PlanMessage = {
         id: nextId(),
@@ -74,15 +83,15 @@ export const usePlanStore = create<PlanState>()((set) => ({
       return {
         sessions: {
           ...s.sessions,
-          [taskId]: { ...session, messages: [...session.messages, msg] },
+          [sessionKey]: { ...session, messages: [...session.messages, msg] },
         },
       };
     });
   },
 
-  startAgentMessage: (taskId) => {
+  startAgentMessage: (sessionKey) => {
     set((s) => {
-      const session = s.sessions[taskId];
+      const session = s.sessions[sessionKey];
       if (!session) return s;
       const msg: PlanMessage = {
         id: nextId(),
@@ -94,7 +103,7 @@ export const usePlanStore = create<PlanState>()((set) => ({
       return {
         sessions: {
           ...s.sessions,
-          [taskId]: {
+          [sessionKey]: {
             ...session,
             isRunning: true,
             messages: [...session.messages, msg],
@@ -104,9 +113,9 @@ export const usePlanStore = create<PlanState>()((set) => ({
     });
   },
 
-  applyChunk: (taskId, chunk) => {
+  applyChunk: (sessionKey, chunk) => {
     set((s) => {
-      const session = s.sessions[taskId];
+      const session = s.sessions[sessionKey];
       if (!session) return s;
       const messages = [...session.messages];
       const last = messages[messages.length - 1];
@@ -129,7 +138,7 @@ export const usePlanStore = create<PlanState>()((set) => ({
         return {
           sessions: {
             ...s.sessions,
-            [taskId]: {
+            [sessionKey]: {
               ...session,
               messages,
               isRunning: false,
@@ -149,7 +158,7 @@ export const usePlanStore = create<PlanState>()((set) => ({
       return {
         sessions: {
           ...s.sessions,
-          [taskId]: {
+          [sessionKey]: {
             ...session,
             messages,
             isRunning: chunk.type !== "error",
@@ -159,36 +168,36 @@ export const usePlanStore = create<PlanState>()((set) => ({
     });
   },
 
-  setSessionId: (taskId, sessionId) => {
+  setSessionId: (sessionKey, sessionId) => {
     set((s) => {
-      const session = s.sessions[taskId];
+      const session = s.sessions[sessionKey];
       if (!session) return s;
       return {
         sessions: {
           ...s.sessions,
-          [taskId]: { ...session, sessionId },
+          [sessionKey]: { ...session, sessionId },
         },
       };
     });
   },
 
-  setRunning: (taskId, running) => {
+  setRunning: (sessionKey, running) => {
     set((s) => {
-      const session = s.sessions[taskId];
+      const session = s.sessions[sessionKey];
       if (!session) return s;
       return {
         sessions: {
           ...s.sessions,
-          [taskId]: { ...session, isRunning: running },
+          [sessionKey]: { ...session, isRunning: running },
         },
       };
     });
   },
 
-  clearSession: (taskId) => {
+  clearSession: (sessionKey) => {
     set((s) => {
       const next = { ...s.sessions };
-      delete next[taskId];
+      delete next[sessionKey];
       return { sessions: next };
     });
   },
