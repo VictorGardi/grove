@@ -176,23 +176,28 @@ export function Board(): React.JSX.Element {
 
 // ── Worktree drag handlers (module-level async, not hooks) ────────────────────
 
+/** Shell-escape a string for use inside single-quotes.
+ *  Replaces every ' with '\'' (end quote, literal apostrophe, reopen quote). */
+function shellSingleQuote(s: string): string {
+  return `'${s.replace(/'/g, "'\\''")}'`;
+}
+
 /** Resolve agent field + task metadata to CLI command text */
-function agentToCommand(agent: string | null, task: TaskInfo): string | null {
+function agentToCommand(
+  agent: string | null,
+  task: TaskInfo,
+  worktreeTaskFilePath?: string,
+): string | null {
   if (!agent) return null;
 
   if (agent === "opencode") {
     const parts = ["opencode", "run"];
     if (task.title) {
-      parts.push("--title", `"${task.title}"`);
+      parts.push("--title", shellSingleQuote(task.title));
     }
-    if (task.description) {
-      const escaped = task.description.replace(/"/g, '\\"');
-      const dodHint =
-        task.dodTotal > 0
-          ? `\\n\\nIMPORTANT: This task has a Definition of Done (${task.dodDone}/${task.dodTotal} checkboxes). As you complete each item, update the task file to mark it checked (change "- [ ]" to "- [x]"). When ALL checkboxes are checked, the app will automatically move this task to "review".`
-          : "";
-      parts.push(`"${escaped}${dodHint}"`);
-    }
+    const taskPath = worktreeTaskFilePath ?? task.filePath;
+    const prompt = `See ${taskPath} for the full task description and Definition of Done. Work through it and mark each checkbox as you complete it.`;
+    parts.push(shellSingleQuote(prompt));
     return parts.join(" ");
   }
 
@@ -255,7 +260,9 @@ async function handleDragToDoing(task: TaskInfo): Promise<void> {
 
   // Auto-create terminal tab for the worktree
   const worktreeAbsPath = wp + "/" + result.data.worktreePath;
-  const agentCmd = agentToCommand(task.agent, task);
+  const agentCmd = movedTask.autoRun
+    ? agentToCommand(task.agent, movedTask, result.data.taskFilePath)
+    : null;
   const tabId = `wt-${task.id}`;
 
   // Create the PTY BEFORE adding the tab so it exists when TerminalTabView mounts.

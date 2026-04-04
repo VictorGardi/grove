@@ -14,6 +14,8 @@ import type {
   TeardownWorktreeInput,
   DiffSummary,
   BranchInfo,
+  PlanAgent,
+  PlanChunk,
 } from "@shared/types";
 
 export interface ElectronAPI {
@@ -116,6 +118,32 @@ export interface ElectronAPI {
     onData: (callback: (id: string, data: string) => void) => () => void;
     onExit: (
       callback: (id: string, exitCode: number, signal?: number) => void,
+    ) => () => void;
+  };
+  plan: {
+    send: (input: {
+      taskId: string;
+      agent: PlanAgent;
+      model: string | null;
+      message: string;
+      sessionId: string | null;
+      workspacePath: string;
+      taskFilePath: string;
+    }) => Promise<IpcResult<void>>;
+    cancel: (taskId: string) => Promise<IpcResult<void>>;
+    listModels: (input: {
+      agent: PlanAgent;
+      workspacePath: string;
+    }) => Promise<IpcResult<string[]>>;
+    saveSession: (input: {
+      workspacePath: string;
+      filePath: string;
+      sessionId: string;
+      agent: PlanAgent;
+      model: string | null;
+    }) => Promise<IpcResult<void>>;
+    onChunk: (
+      callback: (taskId: string, chunk: PlanChunk) => void,
     ) => () => void;
   };
 }

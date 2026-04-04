@@ -393,6 +393,28 @@
   background: color-mix(in srgb, var(--status-green) 10%, transparent);
 }
 
+/* ── Plan with agent button ───────────────────────────────────── */
+
+.planBtn {
+  font-family: var(--font-mono);
+  font-size: 10px;
+  padding: 2px 7px;
+  border-radius: var(--radius-sm);
+  border: 1px solid var(--accent);
+  background: transparent;
+  color: var(--accent);
+  cursor: pointer;
+  transition:
+    background var(--transition-fast),
+    color var(--transition-fast);
+  flex-shrink: 0;
+  white-space: nowrap;
+}
+
+.planBtn:hover {
+  background: color-mix(in srgb, var(--accent) 15%, transparent);
+}
+
 /* ── View files button ────────────────────────────────────────── */
 
 .viewFilesBtn {

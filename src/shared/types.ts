@@ -34,6 +34,9 @@ export interface WindowState {
 /** Status columns — maps to directory names in .tasks/ */
 export type TaskStatus = "backlog" | "doing" | "review" | "done";
 
+/** Supported agents for in-app planning */
+export type PlanAgent = "opencode" | "copilot";
+
 /** Parsed from a .tasks/{status}/T-XXX-slug.md file */
 export interface TaskInfo {
   id: string;
@@ -51,6 +54,12 @@ export interface TaskInfo {
   filePath: string;
   /** Whether agent work should start automatically when task moves to doing. Default true. */
   autoRun: boolean;
+  /** Session ID for in-app planning chat (persisted in frontmatter) */
+  planSessionId: string | null;
+  /** Which agent owns the current plan session */
+  planSessionAgent: PlanAgent | null;
+  /** Model used in the current plan session (e.g. "anthropic/claude-opus-4-5") */
+  planModel: string | null;
 }
 
 /** Combined workspace data — returned atomically to avoid stale cross-references */
@@ -96,12 +105,38 @@ export interface TaskFrontmatter {
   decisions: string[];
   /** Only persisted when false; omitted (default true) otherwise */
   autoRun?: boolean;
+  /** Session ID for in-app planning chat */
+  planSessionId?: string | null;
+  /** Which agent owns the current plan session */
+  planSessionAgent?: PlanAgent | null;
+  /** Model used in the current plan session */
+  planModel?: string | null;
 }
 
 /** A single DoD checklist item parsed from the task body */
 export interface DodItem {
   text: string;
   checked: boolean;
+}
+
+// ── Planning Chat ───────────────────────────────────────────────
+
+/** A chunk of streamed output from the planning agent */
+export interface PlanChunk {
+  type: "text" | "thinking" | "session_id" | "done" | "error";
+  content: string;
+}
+
+/** Role in a planning conversation */
+export type PlanMessageRole = "user" | "agent";
+
+/** A single message in the planning chat */
+export interface PlanMessage {
+  id: string;
+  role: PlanMessageRole;
+  text: string;
+  thinking?: string;
+  isStreaming: boolean;
 }
 
 // ── Phase 5: Git Worktrees ──────────────────────────────────────
@@ -151,6 +186,7 @@ export interface SetupWorktreeResult {
   worktreePath: string; // relative, e.g. ".worktrees/T-004"
   branchName: string;
   alreadyExisted: boolean;
+  taskFilePath: string; // relative path to task in worktree, e.g. ".tasks/doing/T-012.md"
 }
 
 /** Input for git:teardownWorktreeForTask IPC handler */

@@ -1,5 +1,6 @@
 import { ipcMain } from "electron";
 import * as path from "path";
+import * as fs from "fs";
 import simpleGit from "simple-git";
 import type {
   IpcResult,
@@ -128,6 +129,30 @@ export function registerGitHandlers(): void {
         return { ok: false, error: String(err) };
       }
 
+      // Copy task file into worktree so agent can access it (main repo may have uncommitted tasks)
+      const relativeTaskFilePath = path.join(
+        ".tasks",
+        "doing",
+        path.basename(taskFilePath),
+      );
+      const absoluteTaskDestPath = path.join(
+        absoluteWorktreePath,
+        ".tasks",
+        "doing",
+      );
+      try {
+        await fs.promises.mkdir(absoluteTaskDestPath, { recursive: true });
+        await fs.promises.copyFile(
+          taskFilePath,
+          path.join(absoluteTaskDestPath, path.basename(taskFilePath)),
+        );
+      } catch (copyErr) {
+        console.warn(
+          "[git:setupWorktreeForTask] Task file copy failed:",
+          copyErr,
+        );
+      }
+
       // Generate CONTEXT.md — failure is non-blocking (warn, don't fail)
       try {
         const taskBody = await readTaskBody(workspacePath, taskFilePath);
@@ -170,6 +195,7 @@ export function registerGitHandlers(): void {
           worktreePath: relativeWorktreePath,
           branchName,
           alreadyExisted,
+          taskFilePath: relativeTaskFilePath,
         },
       };
     },

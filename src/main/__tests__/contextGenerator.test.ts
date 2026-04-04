@@ -31,6 +31,9 @@ function makeTask(overrides: Partial<TaskInfo> = {}): TaskInfo {
     dodDone: 0,
     filePath: ".tasks/doing/T-001-test-task.md",
     autoRun: true,
+    planSessionId: null,
+    planSessionAgent: null,
+    planModel: null,
     ...overrides,
   };
 }

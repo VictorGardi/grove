@@ -137,4 +137,43 @@ contextBridge.exposeInMainWorld("api", {
   app: {
     getPlatform: () => ipcRenderer.invoke("app:getPlatform"),
   },
+  plan: {
+    send: (input: {
+      taskId: string;
+      agent: string;
+      model: string | null;
+      message: string;
+      sessionId: string | null;
+      workspacePath: string;
+      taskFilePath: string;
+    }) => ipcRenderer.invoke("plan:send", input),
+
+    cancel: (taskId: string) => ipcRenderer.invoke("plan:cancel", taskId),
+
+    listModels: (input: { agent: string; workspacePath: string }) =>
+      ipcRenderer.invoke("plan:listModels", input),
+
+    saveSession: (input: {
+      workspacePath: string;
+      filePath: string;
+      sessionId: string;
+      agent: string;
+      model: string | null;
+    }) => ipcRenderer.invoke("plan:saveSession", input),
+
+    onChunk: (
+      callback: (
+        taskId: string,
+        chunk: { type: string; content: string },
+      ) => void,
+    ) => {
+      const handler = (
+        _event: Electron.IpcRendererEvent,
+        taskId: string,
+        chunk: { type: string; content: string },
+      ) => callback(taskId, chunk);
+      ipcRenderer.on("plan:chunk", handler);
+      return () => ipcRenderer.removeListener("plan:chunk", handler);
+    },
+  },
 });

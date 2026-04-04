@@ -1,7 +1,12 @@
 import matter from "gray-matter";
 import * as fs from "fs";
 import * as path from "path";
-import type { TaskInfo, TaskStatus, TaskFrontmatter } from "@shared/types";
+import type {
+  TaskInfo,
+  TaskStatus,
+  TaskFrontmatter,
+  PlanAgent,
+} from "@shared/types";
 import { atomicWrite } from "./fileWriter";
 
 const STATUS_DIRS: TaskStatus[] = ["backlog", "doing", "review", "done"];
@@ -92,6 +97,14 @@ export async function parseTaskFile(
       filePath,
       // autoRun defaults to true; only false when explicitly set to false
       autoRun: data.autoRun !== false,
+      planSessionId:
+        typeof data.planSessionId === "string" ? data.planSessionId : null,
+      planSessionAgent:
+        data.planSessionAgent === "opencode" ||
+        data.planSessionAgent === "copilot"
+          ? (data.planSessionAgent as PlanAgent)
+          : null,
+      planModel: typeof data.planModel === "string" ? data.planModel : null,
     };
   } catch (err) {
     console.warn(`[Tasks] Failed to parse ${filePath}:`, err);
@@ -189,6 +202,9 @@ function buildFrontmatter(fm: TaskFrontmatter): Record<string, unknown> {
   if (fm.decisions.length > 0) obj.decisions = fm.decisions;
   // Only persist autoRun when explicitly false (default is true)
   if (fm.autoRun === false) obj.autoRun = false;
+  if (fm.planSessionId != null) obj.planSessionId = fm.planSessionId;
+  if (fm.planSessionAgent != null) obj.planSessionAgent = fm.planSessionAgent;
+  if (fm.planModel != null) obj.planModel = fm.planModel;
   return obj;
 }
 

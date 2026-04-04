@@ -7,6 +7,7 @@ import { updateTask, archiveTask } from "../../actions/taskActions";
 import { InlineEdit } from "../shared/InlineEdit";
 import { TagInput } from "../shared/TagInput";
 import { ChangesTab } from "./ChangesTab";
+import { PlanChat } from "./PlanChat";
 import styles from "./TaskDetailPanel.module.css";
 
 // ── Constants ─────────────────────────────────────────────────────
@@ -29,7 +30,7 @@ const AGENT_OPTIONS = [
 
 const DEBOUNCE_MS = 500;
 
-type DetailTab = "edit" | "changes";
+type DetailTab = "edit" | "plan" | "changes";
 
 // ── Simple markdown preview ───────────────────────────────────────
 
@@ -102,9 +103,20 @@ export function TaskDetailPanel(): React.JSX.Element {
   // Track whether we have unsaved changes
   const isDirty = rawContent !== savedContent;
 
-  // Reset to edit tab when task changes
+  // Keep a ref so the external-change listener below can read the latest
+  // isDirty without needing to re-subscribe on every keystroke.
+  const isDirtyRef = useRef(isDirty);
   useEffect(() => {
-    setActiveTab("edit");
+    isDirtyRef.current = isDirty;
+  }, [isDirty]);
+
+  // Default to plan tab for backlog tasks, edit for all others
+  useEffect(() => {
+    if (task?.status === "backlog") {
+      setActiveTab("plan");
+    } else {
+      setActiveTab("edit");
+    }
   }, [task?.id]);
 
   // ── Load raw file content ─────────────────────────────────────
@@ -154,6 +166,30 @@ export function TaskDetailPanel(): React.JSX.Element {
       if (saveTimerRef.current) clearTimeout(saveTimerRef.current);
     };
   }, []);
+
+  // ── Refresh on external file change ───────────────────────────
+  // Re-read the raw file whenever the workspace data changes (e.g. the
+  // planning agent writes to the task markdown). Skip the re-read if the
+  // user has unsaved edits so we never clobber in-progress work.
+
+  useEffect(() => {
+    if (!task || !workspacePath) return;
+    const unsub = window.api.data.onChanged(() => {
+      if (isDirtyRef.current) return;
+      window.api.tasks
+        .readRaw(workspacePath, task.filePath)
+        .then((result) => {
+          if (result.ok) {
+            setRawContent(result.data);
+            setSavedContent(result.data);
+          }
+        })
+        .catch(() => {
+          /* ignore read errors on external changes */
+        });
+    });
+    return unsub;
+  }, [task?.id, task?.filePath, workspacePath]);
 
   // ── Save raw content ──────────────────────────────────────────
 
@@ -390,6 +426,17 @@ export function TaskDetailPanel(): React.JSX.Element {
                 {task.autoRun ? "auto-run: on" : "auto-run: off"}
               </button>
             )}
+
+            {/* Plan with agent — backlog only */}
+            {task.status === "backlog" && (
+              <button
+                className={styles.planBtn}
+                onClick={() => setActiveTab("plan")}
+                title="Start a planning session with an AI agent"
+              >
+                Plan with agent
+              </button>
+            )}
           </div>
 
           <div className={styles.topBarRight}>
@@ -433,6 +480,14 @@ export function TaskDetailPanel(): React.JSX.Element {
           >
             Edit
           </button>
+          {task.status === "backlog" && (
+            <button
+              className={`${styles.tab} ${activeTab === "plan" ? styles.tabActive : ""}`}
+              onClick={() => setActiveTab("plan")}
+            >
+              Plan
+            </button>
+          )}
           <button
             className={`${styles.tab} ${activeTab === "changes" ? styles.tabActive : ""}`}
             onClick={() => setActiveTab("changes")}
@@ -443,11 +498,31 @@ export function TaskDetailPanel(): React.JSX.Element {
         </div>
 
         {/* Content area */}
-        {activeTab === "changes" ? (
+        {/* PlanChat stays mounted for backlog tasks so a running agent isn't
+            cancelled when the user temporarily switches to Edit/Changes tab.
+            The cancel-on-unmount in PlanChat only fires when the panel closes. */}
+        {task.status === "backlog" && (
+          <div
+            style={
+              activeTab === "plan"
+                ? {
+                    display: "flex",
+                    flex: 1,
+                    overflow: "hidden",
+                    flexDirection: "column",
+                  }
+                : { display: "none" }
+            }
+          >
+            <PlanChat task={task} onClose={() => setActiveTab("edit")} />
+          </div>
+        )}
+        {activeTab === "changes" && (
           <div className={styles.changesWrapper}>
             <ChangesTab task={task} />
           </div>
-        ) : (
+        )}
+        {activeTab === "edit" && (
           <div className={styles.splitView}>
             {/* Left: raw markdown editor */}
             <div className={styles.editorPane}>

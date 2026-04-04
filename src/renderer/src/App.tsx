@@ -12,6 +12,7 @@ import { useFileStore } from "./stores/useFileStore";
 import { useNavStore } from "./stores/useNavStore";
 import { useWorktreeStore } from "./stores/useWorktreeStore";
 import { useTerminalStore } from "./stores/useTerminalStore";
+import { usePlanStore } from "./stores/usePlanStore";
 import { useKeyboardShortcuts } from "./hooks/useKeyboardShortcuts";
 
 function AppContent(): React.JSX.Element {
@@ -140,6 +141,42 @@ function AppContent(): React.JSX.Element {
   useEffect(() => {
     const unsub = window.api.fs.onFileChanged(() => {
       useFileStore.getState().reloadOpenFile();
+    });
+    return unsub;
+  }, []);
+
+  // Plan chat: route streamed chunks from the main process to the plan store
+  useEffect(() => {
+    const unsub = window.api.plan.onChunk((taskId, chunk) => {
+      console.log(
+        "[Plan] chunk received:",
+        taskId,
+        chunk.type,
+        chunk.content?.slice(0, 60),
+      );
+      const store = usePlanStore.getState();
+
+      if (chunk.type === "session_id") {
+        store.setSessionId(taskId, chunk.content);
+        // Persist session ID to task frontmatter
+        const task = useDataStore.getState().tasks.find((t) => t.id === taskId);
+        const wp = useWorkspaceStore.getState().activeWorkspacePath;
+        if (task && wp) {
+          const session = store.sessions[taskId];
+          const agent = session?.agent ?? "opencode";
+          const model = session?.model ?? null;
+          window.api.plan.saveSession({
+            workspacePath: wp,
+            filePath: task.filePath,
+            sessionId: chunk.content,
+            agent,
+            model,
+          });
+        }
+        return;
+      }
+
+      store.applyChunk(taskId, chunk);
     });
     return unsub;
   }, []);
