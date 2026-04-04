@@ -1,6 +1,5 @@
 import { create } from "zustand";
 import type { Terminal } from "@xterm/xterm";
-import { useDataStore } from "./useDataStore";
 
 export interface TerminalTab {
   id: string;
@@ -61,23 +60,11 @@ export function initTerminalListeners(): void {
 
   exitCleanup = window.api.pty.onExit(async (id: string, exitCode: number) => {
     const term = xtermRefs.get(id);
-    const taskId = useTerminalStore.getState().getTaskIdForTab(id);
 
     if (term) {
       term.write(
         `\r\n\x1b[90mProcess exited (code ${exitCode}). Press any key to restart.\x1b[0m\r\n`,
       );
-    }
-
-    // If this was a task-driven terminal and exited with code 0, check DoD
-    if (taskId && exitCode === 0) {
-      const task = useDataStore.getState().tasks.find((t) => t.id === taskId);
-      const tab = useTerminalStore.getState().tabs.find((t) => t.id === id);
-      if (task && tab && task.dodTotal > 0 && task.dodDone === task.dodTotal) {
-        console.log("[Terminal] DoD complete, moving to review:", taskId);
-        useDataStore.getState().patchTask({ ...task, status: "review" });
-        await window.api.tasks.move(tab.workspacePath, task.filePath, "review");
-      }
     }
 
     useTerminalStore.getState().markDead(id);

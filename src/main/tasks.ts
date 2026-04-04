@@ -95,8 +95,8 @@ export async function parseTaskFile(
       dodTotal,
       dodDone,
       filePath,
-      // autoRun defaults to true; only false when explicitly set to false
-      autoRun: data.autoRun !== false,
+      // useWorktree defaults to true; only false when explicitly set to false
+      useWorktree: data.useWorktree !== false,
       planSessionId:
         typeof data.planSessionId === "string" ? data.planSessionId : null,
       planSessionAgent:
@@ -208,8 +208,8 @@ function buildFrontmatter(fm: TaskFrontmatter): Record<string, unknown> {
   if (fm.created) obj.created = fm.created;
   if (fm.tags.length > 0) obj.tags = fm.tags;
   if (fm.decisions.length > 0) obj.decisions = fm.decisions;
-  // Only persist autoRun when explicitly false (default is true)
-  if (fm.autoRun === false) obj.autoRun = false;
+  // Only persist useWorktree when explicitly false (default is true)
+  if (fm.useWorktree === false) obj.useWorktree = false;
   if (fm.planSessionId != null) obj.planSessionId = fm.planSessionId;
   if (fm.planSessionAgent != null) obj.planSessionAgent = fm.planSessionAgent;
   if (fm.planModel != null) obj.planModel = fm.planModel;

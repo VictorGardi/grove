@@ -2,6 +2,7 @@ import { useDraggable } from "@dnd-kit/core";
 import type { TaskInfo } from "@shared/types";
 import { useDataStore } from "../../stores/useDataStore";
 import { useWorktreeStore } from "../../stores/useWorktreeStore";
+import { usePlanStore } from "../../stores/usePlanStore";
 import { updateTask } from "../../actions/taskActions";
 import styles from "./TaskCard.module.css";
 
@@ -13,6 +14,9 @@ export function TaskCard({ task }: TaskCardProps): React.JSX.Element {
   const selectedTaskId = useDataStore((s) => s.selectedTaskId);
   const isSelected = task.id === selectedTaskId;
   const worktreeCreating = useWorktreeStore((s) => s.creatingIds.has(task.id));
+  const isAgentRunning = usePlanStore(
+    (s) => s.sessions[`execute:${task.id}`]?.isRunning ?? false,
+  );
 
   const { attributes, listeners, setNodeRef, isDragging } = useDraggable({
     id: task.id,
@@ -48,7 +52,15 @@ export function TaskCard({ task }: TaskCardProps): React.JSX.Element {
         </div>
       )}
 
-      {/* Row 3: Description preview */}
+      {/* Row 3: Agent running indicator — doing tasks only */}
+      {task.status === "doing" && isAgentRunning && (
+        <div className={styles.agentRunningRow}>
+          <span className={styles.agentRunningDot} />
+          <span className={styles.agentRunningLabel}>agent running</span>
+        </div>
+      )}
+
+      {/* Row 4: Description preview */}
       {task.description && (
         <div className={styles.description}>{task.description}</div>
       )}
@@ -64,22 +76,25 @@ export function TaskCard({ task }: TaskCardProps): React.JSX.Element {
         </div>
       )}
 
-      {/* Row 5: autoRun toggle — backlog tasks only */}
-      {task.status === "backlog" && (
-        <div className={styles.autoRunRow} onClick={(e) => e.stopPropagation()}>
+      {/* Row 5: worktree toggle — backlog and doing tasks */}
+      {(task.status === "backlog" || task.status === "doing") && (
+        <div
+          className={styles.worktreeRow}
+          onClick={(e) => e.stopPropagation()}
+        >
           <button
-            className={`${styles.autoRunToggle} ${task.autoRun ? styles.autoRunToggleActive : ""}`}
+            className={`${styles.worktreeToggle} ${task.useWorktree ? styles.worktreeToggleActive : ""}`}
             onClick={(e) => {
               e.stopPropagation();
-              updateTask(task.filePath, { autoRun: !task.autoRun });
+              updateTask(task.filePath, { useWorktree: !task.useWorktree });
             }}
             title={
-              task.autoRun
-                ? "Auto-run on: click to disable"
-                : "Auto-run off: click to enable"
+              task.useWorktree
+                ? "Running in git worktree — click to switch to root repo"
+                : "Running in root repo — click to switch to git worktree"
             }
           >
-            {task.autoRun ? "auto-run: on" : "auto-run: off"}
+            {task.useWorktree ? "worktree" : "root repo"}
           </button>
         </div>
       )}

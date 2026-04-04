@@ -66,14 +66,12 @@ export function registerPlanHandlers(
         let cwd: string;
 
         if (input.mode === "execute") {
-          // Execute mode: CWD is the worktree path; no .tasks/ restriction
-          if (typeof input.worktreePath !== "string" || !input.worktreePath) {
-            return {
-              ok: false,
-              error: "worktreePath is required for execute mode",
-            };
-          }
-          cwd = input.worktreePath;
+          // Execute mode: use worktree path when provided, otherwise fall back
+          // to workspace root (root-repo mode — useWorktree: false on the task).
+          cwd =
+            typeof input.worktreePath === "string" && input.worktreePath
+              ? input.worktreePath
+              : input.workspacePath;
         } else {
           // Plan mode: CWD is workspace root; taskFilePath must be inside .tasks/
           const resolvedTask = path.resolve(input.taskFilePath);

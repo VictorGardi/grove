@@ -38,20 +38,16 @@ export const usePlanStore = create<PlanState>()((set) => ({
 
   initSession: (sessionKey, agent, model, existingSessionId) => {
     set((s) => {
-      // Don't re-initialise if session already exists for this key+agent+model,
-      // but DO reset isRunning — a stale true (e.g. from a crashed/aborted run)
-      // would permanently hide the Send button after a component remount.
+      // Don't re-initialise if session already exists for this key+agent+model.
+      // Never touch isRunning here — a live session whose task file was just
+      // written (triggering a chokidar re-render) must not have its isRunning
+      // flag clobbered. Stale isRunning from a crashed run is reset by the
+      // dedicated on-mount effect in PlanChat instead.
       if (
         s.sessions[sessionKey]?.agent === agent &&
         s.sessions[sessionKey]?.model === model
       ) {
-        if (!s.sessions[sessionKey].isRunning) return s;
-        return {
-          sessions: {
-            ...s.sessions,
-            [sessionKey]: { ...s.sessions[sessionKey], isRunning: false },
-          },
-        };
+        return s;
       }
       return {
         sessions: {

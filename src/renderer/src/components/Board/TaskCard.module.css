@@ -100,6 +100,18 @@
   }
 }
 
+@keyframes dotPulse {
+  0%,
+  100% {
+    opacity: 1;
+    transform: scale(1);
+  }
+  50% {
+    opacity: 0.5;
+    transform: scale(0.75);
+  }
+}
+
 .branchCreating {
   font-family: var(--font-mono);
   font-size: 11px;
@@ -107,15 +119,39 @@
   animation: pulse 1.4s ease-in-out infinite;
 }
 
-/* ── autoRun toggle ──────────────────────────────────────────────── */
+/* ── agent running indicator ─────────────────────────────────────── */
 
-.autoRunRow {
+.agentRunningRow {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  margin-top: 5px;
+}
+
+.agentRunningDot {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: var(--status-green);
+  flex-shrink: 0;
+  animation: dotPulse 1.2s ease-in-out infinite;
+}
+
+.agentRunningLabel {
+  font-family: var(--font-mono);
+  font-size: 10px;
+  color: var(--status-green);
+}
+
+/* ── worktree toggle ──────────────────────────────────────────────── */
+
+.worktreeRow {
   display: flex;
   align-items: center;
   margin-top: 8px;
 }
 
-.autoRunToggle {
+.worktreeToggle {
   font-family: var(--font-mono);
   font-size: 10px;
   padding: 2px 7px;
@@ -131,16 +167,16 @@
   white-space: nowrap;
 }
 
-.autoRunToggle:hover {
+.worktreeToggle:hover {
   border-color: var(--border);
   color: var(--text-secondary);
 }
 
-.autoRunToggleActive {
+.worktreeToggleActive {
   border-color: var(--status-green);
   color: var(--status-green);
 }
 
-.autoRunToggleActive:hover {
+.worktreeToggleActive:hover {
   background: color-mix(in srgb, var(--status-green) 10%, transparent);
 }

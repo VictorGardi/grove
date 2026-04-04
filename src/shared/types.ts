@@ -55,8 +55,9 @@ export interface TaskInfo {
   dodTotal: number;
   dodDone: number;
   filePath: string;
-  /** Whether agent work should start automatically when task moves to doing. Default true. */
-  autoRun: boolean;
+  /** When false the agent runs in the workspace root instead of a dedicated
+   *  git worktree. Default true. */
+  useWorktree: boolean;
   /** Session ID for in-app planning chat (persisted in frontmatter) */
   planSessionId: string | null;
   /** Which agent owns the current plan session */
@@ -113,7 +114,7 @@ export interface TaskFrontmatter {
   tags: string[];
   decisions: string[];
   /** Only persisted when false; omitted (default true) otherwise */
-  autoRun?: boolean;
+  useWorktree?: boolean;
   /** Session ID for in-app planning chat */
   planSessionId?: string | null;
   /** Which agent owns the current plan session */

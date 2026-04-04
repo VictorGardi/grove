@@ -11,8 +11,6 @@ import {
 import { useDataStore } from "../../stores/useDataStore";
 import { useWorkspaceStore } from "../../stores/useWorkspaceStore";
 import { useWorktreeStore } from "../../stores/useWorktreeStore";
-import { useTerminalStore } from "../../stores/useTerminalStore";
-import { useNavStore } from "../../stores/useNavStore";
 import { useDialogStore } from "../../stores/useDialogStore";
 import { showToast } from "../../stores/useToastStore";
 import type { TaskInfo, TaskStatus } from "@shared/types";
@@ -191,85 +189,59 @@ async function handleDragToDoing(task: TaskInfo): Promise<void> {
   const movedTask =
     useDataStore.getState().tasks.find((t) => t.id === task.id) ?? task;
 
-  // Mark as creating — shows pulsing "Creating worktree…" on card
-  useWorktreeStore.getState().markCreating(task.id);
+  if (movedTask.useWorktree !== false) {
+    // ── Worktree mode (default) ──────────────────────────────────
+    // Create an isolated git worktree so the execute agent works on its own branch.
+    useWorktreeStore.getState().markCreating(task.id);
 
-  const result = await window.api.git.setupWorktreeForTask({
-    workspacePath: wp,
-    taskFilePath: movedTask.filePath,
-    taskId: task.id,
-    taskTitle: task.title,
-  });
+    const result = await window.api.git.setupWorktreeForTask({
+      workspacePath: wp,
+      taskFilePath: movedTask.filePath,
+      taskId: task.id,
+      taskTitle: task.title,
+    });
 
-  useWorktreeStore.getState().markCreated(task.id);
+    useWorktreeStore.getState().markCreated(task.id);
 
-  if (!result.ok) {
-    if (shouldRollback(result.error)) {
-      // Roll back: move task back to original status
-      await moveTask(movedTask.filePath, task.status);
+    if (!result.ok) {
+      if (shouldRollback(result.error)) {
+        await moveTask(movedTask.filePath, task.status);
+      }
+      showToast(worktreeErrorMessage(result.error), "error");
+      return;
     }
-    showToast(worktreeErrorMessage(result.error), "error");
-    return;
+
+    useDataStore.getState().patchTask({
+      ...movedTask,
+      status: "doing",
+      worktree: result.data.worktreePath,
+      branch: result.data.branchName,
+    });
+
+    if (!result.data.alreadyExisted) {
+      showToast(`Worktree created: ${result.data.branchName}`, "success");
+    }
   }
 
-  // Patch in-memory state immediately — don't wait for chokidar
-  useDataStore.getState().patchTask({
-    ...movedTask,
-    status: "doing",
-    worktree: result.data.worktreePath,
-    branch: result.data.branchName,
-  });
-
-  if (!result.data.alreadyExisted) {
-    showToast(`Worktree created: ${result.data.branchName}`, "success");
-  }
-
-  // Auto-create terminal tab for the worktree (terminal remains for manual use)
-  const worktreeAbsPath = wp + "/" + result.data.worktreePath;
-  const tabId = `wt-${task.id}`;
-
-  // Create the PTY BEFORE adding the tab so it exists when TerminalTabView mounts.
-  // TerminalTabView no longer calls pty.create — it only manages the xterm UI.
-  const ptyResult = await window.api.pty.create(tabId, worktreeAbsPath);
-  if (!ptyResult.ok) {
-    showToast(`Terminal error: ${ptyResult.error}`, "error");
-    // Still open the tab — user can press a key to restart
-  }
-
-  useTerminalStore.getState().addTab({
-    id: tabId,
-    label: result.data.branchName,
-    workspacePath: wp,
-    worktreePath: worktreeAbsPath,
-    taskId: task.id,
-  });
-
-  // When autoRun is enabled, open the task detail panel with the Agent tab.
-  // Do NOT auto-send — let the user review and press Send. This avoids
-  // accidental expensive agent runs and gives the user a chance to add context.
-  if (movedTask.autoRun) {
-    useDataStore.getState().setSelectedTask(task.id);
-  }
-
-  // Open the terminal panel if it's collapsed
-  if (!useNavStore.getState().terminalPanelOpen) {
-    useNavStore.getState().toggleTerminalPanel();
-  }
+  // Open the task detail panel so the execute agent UI is immediately visible.
+  useDataStore.getState().setSelectedTask(task.id);
 }
 
 async function handleDragToDone(task: TaskInfo): Promise<void> {
   const wp = useWorkspaceStore.getState().activeWorkspacePath;
   if (!wp) return;
 
-  // Show confirmation dialog before doing anything
-  const confirmed = await useDialogStore.getState().show({
-    title: "Remove worktree?",
-    message: `The branch "${task.branch ?? "(unknown)"}" will be kept.\nThe working tree at ${task.worktree} will be deleted.`,
-    confirmLabel: "Remove worktree",
-    cancelLabel: "Keep worktree",
-  });
+  if (task.worktree) {
+    // Show confirmation dialog before tearing down the worktree
+    const confirmed = await useDialogStore.getState().show({
+      title: "Remove worktree?",
+      message: `The branch "${task.branch ?? "(unknown)"}" will be kept.\nThe working tree at ${task.worktree} will be deleted.`,
+      confirmLabel: "Remove worktree",
+      cancelLabel: "Keep worktree",
+    });
 
-  if (!confirmed) return;
+    if (!confirmed) return;
+  }
 
   // Optimistic patch + move
   useDataStore.getState().patchTask({ ...task, status: "done" });
@@ -288,39 +260,34 @@ async function handleDragToDone(task: TaskInfo): Promise<void> {
     status: "done" as TaskStatus,
   };
 
-  const result = await window.api.git.teardownWorktreeForTask({
-    workspacePath: wp,
-    taskFilePath: movedTask.filePath,
-    worktreePath: task.worktree!,
-  });
+  if (task.worktree) {
+    const result = await window.api.git.teardownWorktreeForTask({
+      workspacePath: wp,
+      taskFilePath: movedTask.filePath,
+      worktreePath: task.worktree,
+    });
 
-  if (!result.ok) {
-    if (result.error.includes("DIRTY_WORKING_TREE")) {
-      showToast(
-        "Worktree has uncommitted changes. Commit or stash, then remove manually.",
-        "warning",
-      );
-    } else {
-      showToast(
-        `Task done, but worktree removal failed: ${result.error}`,
-        "warning",
-      );
+    if (!result.ok) {
+      if (result.error.includes("DIRTY_WORKING_TREE")) {
+        showToast(
+          "Worktree has uncommitted changes. Commit or stash, then remove manually.",
+          "warning",
+        );
+      } else {
+        showToast(
+          `Task done, but worktree removal failed: ${result.error}`,
+          "warning",
+        );
+      }
+      return;
     }
-    return;
+
+    useDataStore
+      .getState()
+      .patchTask({ ...movedTask, worktree: null, branch: null });
+
+    showToast("Task done. Worktree removed. Branch kept.", "success");
+  } else {
+    showToast("Task done.", "success");
   }
-
-  useDataStore
-    .getState()
-    .patchTask({ ...movedTask, worktree: null, branch: null });
-
-  // Remove terminal tab for this worktree
-  const termTabId = `wt-${task.id}`;
-  const termTab = useTerminalStore
-    .getState()
-    .tabs.find((t) => t.id === termTabId);
-  if (termTab) {
-    useTerminalStore.getState().removeTab(termTabId);
-  }
-
-  showToast("Task done. Worktree removed. Branch kept.", "success");
 }

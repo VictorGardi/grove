@@ -19,15 +19,6 @@ const STATUS_COLORS: Record<string, string> = {
   done: "var(--status-green)",
 };
 
-const AGENT_OPTIONS = [
-  "",
-  "claude-code",
-  "copilot",
-  "codex",
-  "aider",
-  "opencode",
-];
-
 const DEBOUNCE_MS = 500;
 
 type DetailTab = "edit" | "plan" | "changes";
@@ -229,11 +220,6 @@ export function TaskDetailPanel(): React.JSX.Element {
     updateTask(task!.filePath, { title });
   }
 
-  function handleAgentChange(e: React.ChangeEvent<HTMLSelectElement>): void {
-    const val = e.target.value || null;
-    updateTask(task!.filePath, { agent: val });
-  }
-
   function handleTagsChange(tags: string[]): void {
     updateTask(task!.filePath, { tags });
   }
@@ -387,20 +373,6 @@ export function TaskDetailPanel(): React.JSX.Element {
               {task.status}
             </span>
 
-            {/* Agent select */}
-            <select
-              className={styles.fieldSelect}
-              value={task.agent || ""}
-              onChange={handleAgentChange}
-            >
-              <option value="">No agent</option>
-              {AGENT_OPTIONS.filter(Boolean).map((a) => (
-                <option key={a} value={a}>
-                  {a}
-                </option>
-              ))}
-            </select>
-
             {/* Tags */}
             <div className={styles.tagsInline}>
               <TagInput
@@ -410,20 +382,20 @@ export function TaskDetailPanel(): React.JSX.Element {
               />
             </div>
 
-            {/* autoRun toggle — backlog only */}
-            {task.status === "backlog" && (
+            {/* Worktree toggle — backlog and doing */}
+            {(task.status === "backlog" || task.status === "doing") && (
               <button
-                className={`${styles.autoRunBtn} ${task.autoRun ? styles.autoRunBtnActive : ""}`}
+                className={`${styles.worktreeBtn} ${task.useWorktree ? styles.worktreeBtnActive : ""}`}
                 onClick={() =>
-                  updateTask(task.filePath, { autoRun: !task.autoRun })
+                  updateTask(task.filePath, { useWorktree: !task.useWorktree })
                 }
                 title={
-                  task.autoRun
-                    ? "Auto-run on: click to disable"
-                    : "Auto-run off: click to enable"
+                  task.useWorktree
+                    ? "Running in git worktree — click to switch to root repo"
+                    : "Running in root repo — click to switch to git worktree"
                 }
               >
-                {task.autoRun ? "auto-run: on" : "auto-run: off"}
+                {task.useWorktree ? "worktree" : "root repo"}
               </button>
             )}
           </div>
@@ -493,11 +465,15 @@ export function TaskDetailPanel(): React.JSX.Element {
         {(task.status === "backlog" || task.status === "doing") &&
           (() => {
             const planMode = task.status === "doing" ? "execute" : "plan";
-            const worktreeAbsPath = task.worktree
-              ? task.worktree.startsWith("/")
-                ? task.worktree
-                : `${workspacePath}/${task.worktree}`
-              : undefined;
+            // Only pass a worktree path when useWorktree is enabled AND a
+            // worktree has actually been created. When false the agent runs
+            // in the workspace root.
+            const worktreeAbsPath =
+              task.useWorktree && task.worktree
+                ? task.worktree.startsWith("/")
+                  ? task.worktree
+                  : `${workspacePath}/${task.worktree}`
+                : undefined;
             return (
               <div
                 style={
@@ -512,6 +488,7 @@ export function TaskDetailPanel(): React.JSX.Element {
                 }
               >
                 <PlanChat
+                  key={task.id}
                   task={task}
                   mode={planMode}
                   worktreePath={worktreeAbsPath}

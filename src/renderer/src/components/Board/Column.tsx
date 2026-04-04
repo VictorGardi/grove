@@ -1,6 +1,5 @@
 import { useDroppable } from "@dnd-kit/core";
 import type { TaskInfo, TaskStatus } from "@shared/types";
-import { createTask } from "../../actions/taskActions";
 import { TaskCard } from "./TaskCard";
 import styles from "./Column.module.css";
 
@@ -33,9 +32,6 @@ export function Column({
         {tasks.map((task) => (
           <TaskCard key={task.id} task={task} />
         ))}
-      </div>
-      <div className={styles.footer} onClick={() => createTask("New task")}>
-        + Add ticket
       </div>
     </div>
   );

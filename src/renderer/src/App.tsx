@@ -178,32 +178,6 @@ function AppContent(): React.JSX.Element {
         return;
       }
 
-      if (chunk.type === "done" && mode === "execute") {
-        const exitCode = parseInt(chunk.content, 10);
-        if (exitCode === 0) {
-          // Re-read the task from disk (agent may have checked off DoD items)
-          // and auto-move to review if all DoD items are complete.
-          const task = useDataStore
-            .getState()
-            .tasks.find((t) => t.id === taskId);
-          const wp = useWorkspaceStore.getState().activeWorkspacePath;
-          if (task && wp) {
-            window.api.tasks.readRaw(wp, task.filePath).then((result) => {
-              if (!result.ok) return;
-              const raw = result.data;
-              const checkboxes = raw.match(/- \[[ xX]\]/g) ?? [];
-              const checked = raw.match(/- \[[xX]\]/g) ?? [];
-              if (
-                checkboxes.length > 0 &&
-                checked.length === checkboxes.length
-              ) {
-                void window.api.tasks.move(wp, task.filePath, "review");
-              }
-            });
-          }
-        }
-      }
-
       store.applyChunk(sessionKey, chunk);
     });
     return unsub;

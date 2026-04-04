@@ -1,10 +1,18 @@
-import { useState, useRef, useEffect, useCallback } from "react";
+import { useState, useRef, useEffect, useCallback, useMemo } from "react";
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
+import Fuse from "fuse.js";
 import { usePlanStore } from "../../stores/usePlanStore";
 import { useWorkspaceStore } from "../../stores/useWorkspaceStore";
+import { useFileStore } from "../../stores/useFileStore";
 import { updateTask } from "../../actions/taskActions";
-import type { TaskInfo, PlanAgent, PlanMessage, PlanMode } from "@shared/types";
+import type {
+  TaskInfo,
+  PlanAgent,
+  PlanMessage,
+  PlanMode,
+  FileTreeNode,
+} from "@shared/types";
 import styles from "./PlanChat.module.css";
 
 // ── Prompt builders (exported for preview) ────────────────────────────────
@@ -163,6 +171,7 @@ export function PlanChat({
   const startAgentMessage = usePlanStore((s) => s.startAgentMessage);
   const applyChunk = usePlanStore((s) => s.applyChunk);
   const clearSession = usePlanStore((s) => s.clearSession);
+  const setRunning = usePlanStore((s) => s.setRunning);
 
   // Use mode-appropriate persisted session info for initial state
   const persistedSessionId =
@@ -222,10 +231,35 @@ export function PlanChat({
       .finally(() => setModelsLoading(false));
   }, [agent, workspacePath]);
 
-  // Initialise session on mount using the composite key
+  // Initialise session on mount using the composite key.
+  // NOTE: persistedSessionId is intentionally excluded from the dep array.
+  // When a new session starts, saveSession() writes the session ID to the task
+  // frontmatter, which triggers a chokidar re-fetch that updates persistedSessionId
+  // from null → a real ID. Including it in deps would re-fire this effect mid-stream,
+  // which hits the isRunning guard in initSession and resets isRunning:false on a
+  // live session — making the Send button appear and letting the user accidentally
+  // cancel the running agent. The value IS captured correctly on first mount and
+  // whenever sessionKey / agent / model change.
+  // eslint-disable-next-line react-hooks/exhaustive-deps
   useEffect(() => {
     initSession(sessionKey, agent, model || null, persistedSessionId ?? null);
-  }, [sessionKey, agent, model, persistedSessionId, initSession]);
+  }, [sessionKey, agent, model, initSession]);
+
+  // Reset stale isRunning on component mount only. If the agent process
+  // crashed or was killed outside of Grove, isRunning can remain true
+  // indefinitely. We reset it here — not inside initSession — so that a
+  // chokidar-triggered re-fire of the initSession effect cannot clobber a
+  // live session. key={task.id} on <PlanChat> ensures this runs fresh for
+  // each task; if the task panel closes and reopens for the same task the
+  // component remounts and the reset fires again (acceptable: next chunk
+  // from a still-running agent sets isRunning back to true).
+  useEffect(() => {
+    const session = usePlanStore.getState().sessions[sessionKey];
+    if (session?.isRunning) {
+      setRunning(sessionKey, false);
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []); // intentionally empty — only run on mount
 
   // Auto-scroll to bottom on new messages/chunks, unless user scrolled up
   useEffect(() => {
@@ -383,14 +417,179 @@ export function PlanChat({
     el.style.height = `${Math.min(el.scrollHeight, 120)}px`;
   }, []);
 
-  // ── Key handler ─────────────────────────────────────────────
+  // ── File autocomplete ──────────────────────────────────────────
 
-  function handleKeyDown(e: React.KeyboardEvent<HTMLTextAreaElement>): void {
+  const tree = useFileStore((s) => s.tree);
+  const [showDropdown, setShowDropdown] = useState(false);
+  const [dropdownPosition, setDropdownPosition] = useState({ top: 0, left: 0 });
+  const [selectedIndex, setSelectedIndex] = useState(0);
+  const dropdownRef = useRef<HTMLDivElement>(null);
+
+  interface SearchableFile {
+    name: string;
+    path: string;
+  }
+
+  function flattenFiles(nodes: FileTreeNode[]): SearchableFile[] {
+    const result: SearchableFile[] = [];
+    for (const node of nodes) {
+      if (node.type === "file") {
+        result.push({ name: node.name, path: node.path });
+      }
+      if (node.type === "directory" && node.children) {
+        result.push(...flattenFiles(node.children));
+      }
+    }
+    return result;
+  }
+
+  const flatFiles = useMemo(() => flattenFiles(tree), [tree]);
+
+  const fuse = useMemo(
+    () =>
+      new Fuse(flatFiles, {
+        keys: [
+          { name: "name", weight: 0.7 },
+          { name: "path", weight: 0.3 },
+        ],
+        threshold: 0.3,
+        distance: 100,
+        ignoreLocation: true,
+      }),
+    [flatFiles],
+  );
+
+  function findAtPosition(
+    text: string,
+    cursorPos: number,
+  ): { query: string; start: number } | null {
+    const beforeCursor = text.slice(0, cursorPos);
+    const atMatch = beforeCursor.match(/@([^ ]*)$/);
+    if (!atMatch) return null;
+    return {
+      query: atMatch[1],
+      start: beforeCursor.length - atMatch[0].length,
+    };
+  }
+
+  const atPosition = useMemo(
+    () =>
+      findAtPosition(
+        inputText,
+        inputRef.current?.selectionStart ?? inputText.length,
+      ),
+    [inputText],
+  );
+  const atQuery = atPosition?.query ?? "";
+  const atStart = atPosition?.start ?? 0;
+
+  const fileResults = useMemo(() => {
+    if (!showDropdown) return [];
+    if (!atQuery) {
+      return flatFiles.slice(0, 50).map((f) => ({ item: f }));
+    }
+    return fuse.search(atQuery, { limit: 50 });
+  }, [showDropdown, atQuery, fuse, flatFiles]);
+
+  useEffect(() => {
+    setSelectedIndex(0);
+  }, [fileResults.length]);
+
+  useEffect(() => {
+    if (!showDropdown || !inputRef.current) return;
+    const rect = inputRef.current.getBoundingClientRect();
+    const parentRect = inputRef.current.parentElement?.getBoundingClientRect();
+    if (parentRect) {
+      setDropdownPosition({
+        top: rect.height + 4,
+        left: 0,
+      });
+    }
+  }, [showDropdown, inputText]);
+
+  function insertFilePath(filePath: string): void {
+    const before = inputText.slice(0, atStart);
+    const after = inputText.slice(
+      inputRef.current?.selectionStart ?? inputText.length,
+    );
+    const newText = `${before}@${filePath}${after}`;
+    setInputText(newText);
+    setShowDropdown(false);
+    setTimeout(() => {
+      if (inputRef.current) {
+        const newCursorPos = atStart + filePath.length + 1;
+        inputRef.current.setSelectionRange(newCursorPos, newCursorPos);
+        inputRef.current.focus();
+      }
+    }, 0);
+  }
+
+  function handleDropdownKeyDown(e: React.KeyboardEvent): void {
+    if (e.key === "ArrowDown") {
+      e.preventDefault();
+      setSelectedIndex((prev) => Math.min(prev + 1, fileResults.length - 1));
+    } else if (e.key === "ArrowUp") {
+      e.preventDefault();
+      setSelectedIndex((prev) => Math.max(prev - 1, 0));
+    } else if (e.key === "Enter") {
+      e.preventDefault();
+      if (fileResults[selectedIndex]) {
+        insertFilePath(fileResults[selectedIndex].item.path);
+      }
+    } else if (e.key === "Escape") {
+      e.preventDefault();
+      setShowDropdown(false);
+    }
+  }
+
+  function handleInputChange(e: React.ChangeEvent<HTMLTextAreaElement>): void {
+    const value = e.target.value;
+    setInputText(value);
+    resizeTextarea();
+
+    const cursorPos = e.target.selectionStart ?? value.length;
+    const pos = findAtPosition(value, cursorPos);
+    if (pos) {
+      setShowDropdown(true);
+      setSelectedIndex(0);
+    } else {
+      setShowDropdown(false);
+    }
+  }
+
+  function handleInputKeyDown(
+    e: React.KeyboardEvent<HTMLTextAreaElement>,
+  ): void {
+    if (
+      showDropdown &&
+      (e.key === "ArrowUp" ||
+        e.key === "ArrowDown" ||
+        e.key === "Enter" ||
+        e.key === "Escape")
+    ) {
+      handleDropdownKeyDown(e);
+      return;
+    }
+
     if (e.key === "Enter" && !e.shiftKey) {
       e.preventDefault();
       void handleSend();
     }
   }
+
+  useEffect(() => {
+    function handleClickOutside(e: MouseEvent): void {
+      if (
+        dropdownRef.current &&
+        !dropdownRef.current.contains(e.target as Node) &&
+        !inputRef.current?.contains(e.target as Node)
+      ) {
+        setShowDropdown(false);
+      }
+    }
+    document.addEventListener("mousedown", handleClickOutside);
+    return () => document.removeEventListener("mousedown", handleClickOutside);
+  }, []);
 
   // ── Check for non-zero exit code in done messages ───────────
 
@@ -519,19 +718,49 @@ export function PlanChat({
 
       {/* Input area */}
       <div className={styles.inputArea}>
-        <textarea
-          ref={inputRef}
-          className={styles.inputField}
-          value={inputText}
-          onChange={(e) => {
-            setInputText(e.target.value);
-            resizeTextarea();
-          }}
-          onKeyDown={handleKeyDown}
-          placeholder={inputPlaceholder}
-          disabled={isRunning}
-          rows={1}
-        />
+        <div className={styles.inputWrapper}>
+          <textarea
+            ref={inputRef}
+            className={styles.inputField}
+            value={inputText}
+            onChange={handleInputChange}
+            onKeyDown={handleInputKeyDown}
+            placeholder={inputPlaceholder}
+            disabled={isRunning}
+            rows={1}
+          />
+          {showDropdown && (
+            <div
+              ref={dropdownRef}
+              className={styles.fileDropdown}
+              style={{
+                top: dropdownPosition.top,
+                left: dropdownPosition.left,
+              }}
+            >
+              {fileResults.length === 0 ? (
+                <div className={styles.fileDropdownNoResults}>
+                  {atQuery ? "No matching files" : "No files in workspace"}
+                </div>
+              ) : (
+                fileResults.map((result, index) => (
+                  <div
+                    key={result.item.path}
+                    className={`${styles.fileDropdownItem} ${index === selectedIndex ? styles.fileDropdownItemSelected : ""}`}
+                    onClick={() => insertFilePath(result.item.path)}
+                  >
+                    <span className={styles.fileDropdownItemName}>
+                      {result.item.name}
+                    </span>
+                    <span className={styles.fileDropdownItemPath}>
+                      {result.item.path}
+                    </span>
+                  </div>
+                ))
+              )}
+            </div>
+          )}
+        </div>
         {isRunning ? (
           <button className={styles.cancelBtn} onClick={handleCancel}>
             Cancel

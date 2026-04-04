@@ -360,9 +360,9 @@
   overflow-y: auto;
 }
 
-/* ── autoRun toggle (top bar) ─────────────────────────────────── */
+/* ── worktree toggle (top bar) ─────────────────────────────────── */
 
-.autoRunBtn {
+.worktreeBtn {
   font-family: var(--font-mono);
   font-size: 10px;
   padding: 2px 7px;
@@ -379,17 +379,17 @@
   white-space: nowrap;
 }
 
-.autoRunBtn:hover {
+.worktreeBtn:hover {
   border-color: var(--border);
   color: var(--text-secondary);
 }
 
-.autoRunBtnActive {
+.worktreeBtnActive {
   border-color: var(--status-green);
   color: var(--status-green);
 }
 
-.autoRunBtnActive:hover {
+.worktreeBtnActive:hover {
   background: color-mix(in srgb, var(--status-green) 10%, transparent);
 }
 

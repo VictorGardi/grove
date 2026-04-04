@@ -1,11 +1,14 @@
 ---
 id: T-015
 title: remove new ticket
-status: backlog
+status: done
 created: '2026-04-04'
 planSessionId: ses_2a72c976affeQ6OeKIGGF2EaKY
 planSessionAgent: opencode
 planModel: opencode/big-pickle
+useWorktree: false
+execSessionId: ses_2a6ea0ef1ffeJLr40anIBRit7U
+execSessionAgent: opencode
 ---
 
 ## Description
@@ -14,9 +17,9 @@ Remove the "+ Add ticket" button from the footer of each kanban column in the Bo
 
 ## Definition of Done
 
-- [ ] The footer div containing "+ Add ticket" is removed from Column.tsx (lines 37-39)
-- [ ] The unused `createTask` import is also removed from Column.tsx
-- [ ] The Column component still renders correctly without the footer
+- [x] The footer div containing "+ Add ticket" is removed from Column.tsx (lines 37-39)
+- [x] The unused `createTask` import is also removed from Column.tsx
+- [x] The Column component still renders correctly without the footer
 
 ## Context for agent
 

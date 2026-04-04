@@ -3,7 +3,7 @@ id: T-014
 title: >-
   Unify agent experience — move execution from terminal into structured Agent
   tab
-status: review
+status: done
 created: '2026-04-04'
 agent: opencode
 tags:

@@ -6,6 +6,8 @@ created: '2026-04-04'
 planSessionId: ses_2a7032c3dffeMNRvxxnrxsHExF
 planSessionAgent: opencode
 planModel: opencode/big-pickle
+worktree: .worktrees/T-016
+branch: feat/t-016-bug-in-worktree-where-task-fil
 ---
 
 ## Description
