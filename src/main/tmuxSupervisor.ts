@@ -3,7 +3,12 @@ import * as fs from "fs";
 import * as os from "os";
 import * as path from "path";
 import * as crypto from "crypto";
-import type { PlanAgent, PlanMode, PlanChunk } from "@shared/types";
+import type {
+  PlanAgent,
+  PlanMode,
+  PlanChunk,
+  ToolUseData,
+} from "@shared/types";
 
 /**
  * TmuxSupervisor — manages agent processes inside tmux sessions so they
@@ -150,8 +155,14 @@ export class TmuxSupervisor {
     const msgPath = buildMsgPath(tmuxSession);
     const errPath = buildErrPath(tmuxSession);
 
-    // Clean up previous run files
-    for (const f of [logPath, scriptPath, msgPath, errPath]) {
+    // Clean up previous run files.
+    // The log is only reset for new sessions (agentSessionId === null).
+    // Follow-up sends append to the same log so the full conversation history
+    // survives app restarts.
+    const filesToClean = agentSessionId
+      ? [scriptPath, msgPath, errPath] // keep log for follow-ups
+      : [logPath, scriptPath, msgPath, errPath]; // fresh log for new sessions
+    for (const f of filesToClean) {
       try {
         fs.unlinkSync(f);
       } catch {
@@ -162,15 +173,21 @@ export class TmuxSupervisor {
     // Write message to a separate file (avoids all shell quoting issues)
     fs.writeFileSync(msgPath, message, "utf-8");
 
-    // Create log file with the user's display message as the first line.
-    // This allows the log to be replayed on restart with the user message
-    // visible above the agent's response, even though it is not in the
-    // agent's output stream.
+    // Write (new session) or append (follow-up) the user's display message as
+    // a JSON line at the current end of the log.  The shell script uses
+    // `tee -a` so subsequent agent output is appended after this marker line,
+    // preserving the entire conversation log across multiple turns.
     const userMsgLine = JSON.stringify({
       type: "grove_user_message",
       content: displayMessage,
     });
-    fs.writeFileSync(logPath, userMsgLine + "\n", "utf-8");
+    if (agentSessionId) {
+      // Follow-up: append user message to existing log
+      fs.appendFileSync(logPath, userMsgLine + "\n", "utf-8");
+    } else {
+      // New session: create fresh log with user message as first line
+      fs.writeFileSync(logPath, userMsgLine + "\n", "utf-8");
+    }
 
     // Build the shell script
     const script = this.buildScript(
@@ -192,7 +209,10 @@ export class TmuxSupervisor {
       // doesn't exist, fine
     }
 
-    // Start the tailer BEFORE launching tmux so we don't miss early output
+    // Start the tailer BEFORE launching tmux so we don't miss early output.
+    // Use the current file size as the start offset so we only read content
+    // written by the new agent run — not old turns already in the log.
+    const tailerStartOffset = fs.statSync(logPath).size;
     this.startTailer(
       tmuxSession,
       logPath,
@@ -201,6 +221,7 @@ export class TmuxSupervisor {
       mode,
       onChunk,
       onComplete,
+      tailerStartOffset,
     );
 
     // Launch tmux with the script as its command.
@@ -274,9 +295,12 @@ export class TmuxSupervisor {
 
     // The script:
     // 1. Reads the message from .msg file via $MSG_FILE variable
-    // 2. Pipes agent stdout through `tee` to the log file so the agent sees a
-    //    pipe (same as SpawnPlanRunner) and does not buffer — this gives us
+    // 2. Pipes agent stdout through `tee -a` to the log file so the agent sees
+    //    a pipe (same as SpawnPlanRunner) and does not buffer — this gives us
     //    real-time streaming while still capturing output to the log file.
+    //    Using `-a` (append) is critical: the log already has the
+    //    grove_user_message header line written by Node before the script runs;
+    //    truncating the file would lose that line.
     // 3. Captures the agent exit code via PIPESTATUS[0] (bash-specific).
     // 4. Appends a sentinel JSON line with the exit code.
     return `#!/bin/bash
@@ -285,7 +309,7 @@ MSG_FILE=${this.shellQuote(msgPath)}
 LOG_FILE=${this.shellQuote(logPath)}
 ERR_FILE=${this.shellQuote(errPath)}
 
-${bin} ${argsStr} 2>"$ERR_FILE" | tee "$LOG_FILE"
+${bin} ${argsStr} 2>"$ERR_FILE" | tee -a "$LOG_FILE"
 EXIT_CODE=\${PIPESTATUS[0]}
 
 echo '{"type":"grove_exit","code":'"$EXIT_CODE"'}' >> "$LOG_FILE"
@@ -308,6 +332,7 @@ exit $EXIT_CODE
     mode: PlanMode,
     onChunk: ChunkCallback,
     onComplete?: () => void,
+    startOffset: number = 0,
   ): void {
     // Stop any existing tailer for this session
     this.stopTailer(tmuxSession);
@@ -318,7 +343,7 @@ exit $EXIT_CODE
       watcher: null,
       pollTimer: null,
       fd,
-      offset: 0,
+      offset: startOffset,
       lineBuffer: "",
       stopped: false,
     };
@@ -331,15 +356,37 @@ exit $EXIT_CODE
       for (const result of results) {
         // Detect the internal sentinel written by our script
         if (result.type === "__grove_exit") {
-          console.log(
-            `[TmuxSupervisor] Agent exited in ${tmuxSession} code=${result.code}`,
-          );
-          this.stopTailer(tmuxSession);
-          onChunk(taskId, mode, {
-            type: "done",
-            content: String(result.code),
-          });
-          onComplete?.();
+          // Peek one byte ahead to determine whether this sentinel is the last
+          // one in the file (single-turn or final turn) or an intermediate one
+          // (multi-turn log with more turns after it).
+          const peek = Buffer.alloc(1);
+          const peeked = fs.readSync(tailer.fd, peek, 0, 1, tailer.offset);
+          const isLastSentinel = peeked === 0;
+
+          if (isLastSentinel) {
+            // Final sentinel — stop tailing and signal completion.
+            console.log(
+              `[TmuxSupervisor] Agent exited in ${tmuxSession} code=${result.code}`,
+            );
+            this.stopTailer(tmuxSession);
+            onChunk(taskId, mode, {
+              type: "done",
+              content: String(result.code),
+            });
+            // Signal that log replay / run is fully complete (resets isReplaying in renderer)
+            onChunk(taskId, mode, { type: "replay_done", content: "" });
+            onComplete?.();
+          } else {
+            // Intermediate sentinel (multi-turn log) — close this turn's agent
+            // bubble and continue tailing for the next turn.
+            console.log(
+              `[TmuxSupervisor] Intermediate exit in ${tmuxSession} code=${result.code} — more turns follow`,
+            );
+            onChunk(taskId, mode, {
+              type: "done",
+              content: String(result.code),
+            });
+          }
           return;
         }
         if (result.type === "session_id") {
@@ -662,6 +709,62 @@ exit $EXIT_CODE
       }
       if (part.type === "thinking" && typeof part.thinking === "string") {
         chunks.push({ type: "thinking", content: part.thinking });
+      }
+    }
+
+    if (
+      obj.type === "tool_use" &&
+      obj.part !== null &&
+      typeof obj.part === "object"
+    ) {
+      const part = obj.part as Record<string, unknown>;
+      const tool = typeof part.tool === "string" ? part.tool : "unknown";
+      const state =
+        part.state !== null && typeof part.state === "object"
+          ? (part.state as Record<string, unknown>)
+          : null;
+
+      // Only emit for completed tool invocations
+      if (state && state.status === "completed") {
+        const title = typeof state.title === "string" ? state.title : "";
+        const rawOutput = typeof state.output === "string" ? state.output : "";
+        const MAX_OUTPUT = 5 * 1024;
+        const truncated = rawOutput.length > MAX_OUTPUT;
+        const output = truncated ? rawOutput.slice(0, MAX_OUTPUT) : rawOutput;
+
+        const input =
+          state.input !== null && typeof state.input === "object"
+            ? (state.input as Record<string, unknown>)
+            : {};
+
+        const metadata =
+          state.metadata !== null && typeof state.metadata === "object"
+            ? (state.metadata as Record<string, unknown>)
+            : {};
+        const exitCode =
+          typeof metadata.exit === "number" ? metadata.exit : null;
+
+        const timeRaw =
+          state.time !== null && typeof state.time === "object"
+            ? (state.time as Record<string, unknown>)
+            : null;
+        const time =
+          timeRaw &&
+          typeof timeRaw.start === "number" &&
+          typeof timeRaw.end === "number"
+            ? { start: timeRaw.start, end: timeRaw.end }
+            : null;
+
+        const data: ToolUseData = {
+          tool,
+          input,
+          output,
+          truncated,
+          title,
+          exitCode,
+          time,
+        };
+        chunks.push({ type: "tool_use", content: title, data });
       }
     }
 

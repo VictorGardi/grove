@@ -1,5 +1,10 @@
 import { create } from "zustand";
-import type { PlanMessage, PlanAgent, PlanChunk } from "@shared/types";
+import type {
+  PlanMessage,
+  PlanAgent,
+  PlanChunk,
+  MessageContentBlock,
+} from "@shared/types";
 
 interface PlanSession {
   sessionKey: string; // `${mode}:${taskId}`
@@ -13,6 +18,13 @@ interface PlanSession {
   totalTokens: number;
   /** Session status for tmux persistence */
   sessionStatus: "idle" | "running" | "paused" | "reconnecting";
+  /**
+   * True while replaying a log file from a previous app session.
+   * Used to decide whether grove_user_message chunks should create user
+   * bubbles (replay: yes) or be skipped (fresh send: handleSend already
+   * added the bubble).
+   */
+  isReplaying: boolean;
 }
 
 interface PlanState {
@@ -41,6 +53,7 @@ interface PlanState {
     sessionKey: string,
     status: "idle" | "running" | "paused" | "reconnecting",
   ) => void;
+  setReplaying: (sessionKey: string, isReplaying: boolean) => void;
   clearSession: (sessionKey: string) => void;
   /**
    * Ensure models for `(workspacePath, agent)` are in the cache.
@@ -102,6 +115,7 @@ export const usePlanStore = create<PlanState>()((set, get) => ({
             lastExitCode: null,
             totalTokens: 0,
             sessionStatus: existingSessionId ? "paused" : "idle",
+            isReplaying: false,
           },
         },
       };
@@ -145,6 +159,7 @@ export const usePlanStore = create<PlanState>()((set, get) => ({
         role: "agent",
         text: "",
         thinking: "",
+        content: [],
         isStreaming: true,
         timestamp: Date.now(),
       };
@@ -171,18 +186,79 @@ export const usePlanStore = create<PlanState>()((set, get) => ({
       if (!last || last.role !== "agent") return s;
 
       if (chunk.type === "text") {
+        // Append to last text block in content array, or start a new one
+        const prevContent = last.content ?? [];
+        const lastBlock = prevContent[prevContent.length - 1];
+        let newContent: MessageContentBlock[];
+        if (lastBlock?.kind === "text") {
+          newContent = [...prevContent];
+          newContent[newContent.length - 1] = {
+            ...lastBlock,
+            content: lastBlock.content + chunk.content,
+          };
+        } else {
+          newContent = [
+            ...prevContent,
+            { kind: "text", content: chunk.content },
+          ];
+        }
         messages[messages.length - 1] = {
           ...last,
           text: last.text + chunk.content,
+          content: newContent,
         };
       } else if (chunk.type === "thinking") {
+        // Append to last thinking block in content array, or start a new one
+        const prevContent = last.content ?? [];
+        const lastBlock = prevContent[prevContent.length - 1];
+        let newContent: MessageContentBlock[];
+        if (lastBlock?.kind === "thinking") {
+          newContent = [...prevContent];
+          newContent[newContent.length - 1] = {
+            ...lastBlock,
+            content: lastBlock.content + chunk.content,
+          };
+        } else {
+          newContent = [
+            ...prevContent,
+            { kind: "thinking", content: chunk.content },
+          ];
+        }
         messages[messages.length - 1] = {
           ...last,
           thinking: (last.thinking ?? "") + chunk.content,
+          content: newContent,
+        };
+      } else if (chunk.type === "tool_use") {
+        // Always append a new tool_use block (each is a discrete completed call)
+        const newBlock: MessageContentBlock = {
+          kind: "tool_use",
+          content: chunk.content,
+          data: chunk.data,
+        };
+        messages[messages.length - 1] = {
+          ...last,
+          content: [...(last.content ?? []), newBlock],
         };
       } else if (chunk.type === "done") {
         messages[messages.length - 1] = { ...last, isStreaming: false };
         const exitCode = parseInt(chunk.content, 10);
+
+        // If we replayed a log that predates history tracking, no
+        // grove_user_message lines exist → no user bubbles in messages.
+        // Prepend a placeholder so the user knows context is missing.
+        const noUserMessages = !messages.some((m) => m.role === "user");
+        if (session.isReplaying && noUserMessages) {
+          messages.unshift({
+            id: nextId(),
+            role: "user",
+            text: "Previous conversation not available — log predates history tracking",
+            isStreaming: false,
+            timestamp: messages[0]?.timestamp ?? Date.now(),
+            isPlaceholder: true,
+          });
+        }
+
         return {
           sessions: {
             ...s.sessions,
@@ -202,6 +278,22 @@ export const usePlanStore = create<PlanState>()((set, get) => ({
           text:
             last.text + (last.text ? "\n\n" : "") + `Error: ${chunk.content}`,
           isStreaming: false,
+        };
+        // Explicit return: set isRunning: false AND lastExitCode: 1 so the
+        // board card shows "session failed" rather than "Waiting for input".
+        // Without this explicit return the fall-through at the end of
+        // applyChunk would leave lastExitCode unchanged (null), which causes
+        // isExecuteWaiting / isPlanWaiting to evaluate to true instead.
+        return {
+          sessions: {
+            ...s.sessions,
+            [sessionKey]: {
+              ...session,
+              messages,
+              isRunning: false,
+              lastExitCode: 1,
+            },
+          },
         };
       } else if (chunk.type === "tokens") {
         const tokenData = chunk.data;
@@ -223,7 +315,11 @@ export const usePlanStore = create<PlanState>()((set, get) => ({
           [sessionKey]: {
             ...session,
             messages,
-            isRunning: chunk.type !== "error",
+            // text/thinking/tool_use and any other streaming chunks arrive only
+            // while the agent is actively running — re-assert isRunning: true so
+            // that a stale false value (e.g. from a mount reset racing with an
+            // in-flight chunk) is corrected on the next chunk.
+            isRunning: true,
           },
         },
       };
@@ -274,6 +370,19 @@ export const usePlanStore = create<PlanState>()((set, get) => ({
       const next = { ...s.sessions };
       delete next[sessionKey];
       return { sessions: next };
+    });
+  },
+
+  setReplaying: (sessionKey, isReplaying) => {
+    set((s) => {
+      const session = s.sessions[sessionKey];
+      if (!session) return s;
+      return {
+        sessions: {
+          ...s.sessions,
+          [sessionKey]: { ...session, isReplaying },
+        },
+      };
     });
   },
 

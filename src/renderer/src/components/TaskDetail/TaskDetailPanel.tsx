@@ -107,7 +107,7 @@ export function TaskDetailPanel(): React.JSX.Element {
   useEffect(() => {
     if (!task) return;
     setActiveTab("plan");
-  }, [task?.id, task]);
+  }, [task?.id]);
 
   // ── Load raw file content ─────────────────────────────────────
 

@@ -170,6 +170,33 @@ export interface TokenUsage {
   };
 }
 
+/** Tool invocation data from a tool_use event */
+export interface ToolUseData {
+  /** Tool name: bash | read | write | edit | glob | grep | task | webfetch | websearch */
+  tool: string;
+  /** Input parameters passed to the tool */
+  input: Record<string, unknown>;
+  /** Tool output, capped at 5KB */
+  output: string;
+  /** True when the original output exceeded 5KB and was truncated */
+  truncated: boolean;
+  /** Human-readable title for the tool call */
+  title: string;
+  /** Process exit code (null for non-shell tools) */
+  exitCode: number | null;
+  /** Start/end timestamps in Unix ms */
+  time: { start: number; end: number } | null;
+}
+
+/** A single block in the ordered content array of a PlanMessage */
+export interface MessageContentBlock {
+  kind: "text" | "thinking" | "tool_use";
+  /** Text content (markdown for text, raw for thinking, tool title for tool_use) */
+  content: string;
+  /** Present only when kind === "tool_use" */
+  data?: ToolUseData;
+}
+
 /** A chunk of streamed output from the planning agent */
 export type PlanChunk =
   | {
@@ -179,10 +206,12 @@ export type PlanChunk =
         | "session_id"
         | "done"
         | "error"
-        | "user_message";
+        | "user_message"
+        | "replay_done";
       content: string;
     }
-  | { type: "tokens"; content: string; data: TokenUsage };
+  | { type: "tokens"; content: string; data: TokenUsage }
+  | { type: "tool_use"; content: string; data: ToolUseData };
 
 /** IPC envelope wrapping a chunk with routing metadata */
 export interface PlanChunkEnvelope {
@@ -198,11 +227,24 @@ export type PlanMessageRole = "user" | "agent";
 export interface PlanMessage {
   id: string;
   role: PlanMessageRole;
+  /** Concatenated text content — kept for backward compat with stored messages */
   text: string;
+  /** Concatenated thinking content — kept for backward compat */
   thinking?: string;
+  /**
+   * Ordered content blocks preserving temporal interleaving of text, thinking,
+   * and tool_use events.  Present on new messages; absent on messages loaded
+   * from older stored logs (use `text` / `thinking` fallback in that case).
+   */
+  content?: MessageContentBlock[];
   isStreaming: boolean;
   /** Unix timestamp (ms) when the message was created */
   timestamp?: number;
+  /**
+   * True for synthetic placeholder messages inserted when a replayed log
+   * contains no grove_user_message lines (i.e. it predates history tracking).
+   */
+  isPlaceholder?: boolean;
 }
 
 // ── Phase 5: Git Worktrees ──────────────────────────────────────

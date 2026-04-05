@@ -174,29 +174,38 @@ function AppContent(): React.JSX.Element {
       }
 
       // user_message chunk: emitted during log replay from the first line of the
-      // log file. Only add the bubble if the store has no messages yet — a fresh
-      // run already added the user message via handleSend before this chunk lands.
+      // log file (and before each subsequent turn). Only add the bubble when
+      // replaying — a fresh send already added the user message via handleSend.
       if (chunk.type === "user_message") {
         const session = store.sessions[sessionKey];
-        if ((session?.messages?.length ?? 0) === 0) {
+        if (session?.isReplaying) {
           store.appendUserMessage(sessionKey, chunk.content);
         }
         return;
       }
 
-      // For content chunks (text / thinking / done / error), ensure an agent
-      // bubble exists before applying. During log replay the bubble is NOT
-      // pre-created by the reconnect effect (that call was removed); instead we
-      // lazily create it here the moment the first content chunk arrives.
+      // replay_done: emitted after the final grove_exit sentinel in the log.
+      // Resets isReplaying so subsequent user_message chunks (from live sends)
+      // are not mistakenly treated as replay content.
+      if (chunk.type === "replay_done") {
+        store.setReplaying(sessionKey, false);
+        return;
+      }
+
+      // For content chunks (text / thinking / tool_use / done / error), ensure
+      // an agent bubble exists before applying. During log replay the bubble is
+      // NOT pre-created by the reconnect effect (that call was removed); instead
+      // we lazily create it here the moment the first content chunk arrives.
       if (
         chunk.type === "text" ||
         chunk.type === "thinking" ||
+        chunk.type === "tool_use" ||
         chunk.type === "done" ||
         chunk.type === "error"
       ) {
         const session = store.sessions[sessionKey];
         const lastMsg = session?.messages[session.messages.length - 1];
-        if (!lastMsg || lastMsg.role !== "agent") {
+        if (!lastMsg || lastMsg.role === "user") {
           store.startAgentMessage(sessionKey);
         }
       }

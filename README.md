@@ -25,13 +25,12 @@ A local-first, file-based developer task orchestration tool. Grove acts as an or
 - Drag-and-drop cards between columns
 - Priority badges (Critical, High, Medium, Low)
 - Tag support with filtering
-- Milestone tracking with progress bars
+- Keyboard shortcuts for moving tasks between columns (B/D/R/F)
 
 ### File-Based Storage
 
 - Tasks live in `.tasks/{backlog,doing,review,done}/` as Markdown files with YAML frontmatter
 - Decisions stored in `.decisions/` with structured format
-- Milestones in `.milestones/`
 - Full git integration — version control your tasks alongside your code
 
 ### Git Worktree Automation
@@ -46,8 +45,8 @@ A local-first, file-based developer task orchestration tool. Grove acts as an or
 - Real terminal per worktree using xterm.js + node-pty (same stack as VS Code)
 - One tab per active worktree
 - Run any CLI-based agent (Claude Code, Copilot CLI, Codex, Aider, OpenCode)
-- Agent command pre-filled based on task's agent field
 - Terminal persists across workspace switches
+- Session persistence — PTYs survive app restarts and reconnect automatically
 
 ### Diff View
 
@@ -63,11 +62,20 @@ A local-first, file-based developer task orchestration tool. Grove acts as an or
 - Fuzzy file search with `Cmd+P`
 - Syntax-highlighted read-only viewer powered by Shiki
 
-### Decision Log
+### Task Detail
 
-- Structured decision records linked to tasks
-- Status tracking: active, superseded, deprecated
-- Context available to agents in worktrees
+- Tabbed interface: Edit, Agent, Changes, Debug
+- Raw markdown editor with live preview for task content
+- Inline title editing and tag management
+- Changes tab shows git diff for tasks in Doing status
+- Debug tab exposes session metadata and internal state
+
+### Agent Integration
+
+- Plan and Execute modes for each task
+- In-app AI agent chat with agent selection (opencode, copilot) and model picker
+- Session persistence and reconnection across app restarts
+- File autocomplete in chat via `@` prefix
 
 ## Quick Start
 

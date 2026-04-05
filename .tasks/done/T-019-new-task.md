@@ -1,12 +1,13 @@
 ---
 id: T-019
 title: fix writing to task file while watcher is active
-status: backlog
-created: "2026-04-04"
+status: done
+created: '2026-04-04'
 useWorktree: false
 planSessionId: ses_2a61c35ecffeJ45ECtcnG4CkXV
 planSessionAgent: opencode
 planModel: github-copilot/claude-opus-4.6
+completed: '2026-04-05T18:09:48.205Z'
 ---
 
 ## Description

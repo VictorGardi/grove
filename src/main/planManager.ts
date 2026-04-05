@@ -2,7 +2,12 @@ import { spawn, ChildProcess } from "child_process";
 import * as readline from "readline";
 import * as os from "os";
 import * as path from "path";
-import type { PlanAgent, PlanChunk, PlanMode } from "@shared/types";
+import type {
+  PlanAgent,
+  PlanChunk,
+  PlanMode,
+  ToolUseData,
+} from "@shared/types";
 import { TmuxSupervisor, buildTmuxSessionName } from "./tmuxSupervisor";
 
 type ChunkCallback = (taskId: string, mode: PlanMode, chunk: PlanChunk) => void;
@@ -12,6 +17,13 @@ interface ActiveRun {
   rl: readline.Interface | null;
   taskId: string;
   mode: PlanMode;
+  /** Chunk callback captured at start() time for use in cancel(). */
+  onChunk: ChunkCallback;
+  /**
+   * Set to true by cancel() before rl.close() so the 'close' handler can
+   * skip the duplicate done emission.
+   */
+  cancelled: boolean;
 }
 
 interface RunOpts {
@@ -172,6 +184,61 @@ function parseOpencodeLine(obj: Record<string, unknown>): PlanChunk[] {
     }
   }
 
+  if (
+    obj.type === "tool_use" &&
+    obj.part !== null &&
+    typeof obj.part === "object"
+  ) {
+    const part = obj.part as Record<string, unknown>;
+    const tool = typeof part.tool === "string" ? part.tool : "unknown";
+    const state =
+      part.state !== null && typeof part.state === "object"
+        ? (part.state as Record<string, unknown>)
+        : null;
+
+    // Only emit for completed tool invocations
+    if (state && state.status === "completed") {
+      const title = typeof state.title === "string" ? state.title : "";
+      const rawOutput = typeof state.output === "string" ? state.output : "";
+      const MAX_OUTPUT = 5 * 1024;
+      const truncated = rawOutput.length > MAX_OUTPUT;
+      const output = truncated ? rawOutput.slice(0, MAX_OUTPUT) : rawOutput;
+
+      const input =
+        state.input !== null && typeof state.input === "object"
+          ? (state.input as Record<string, unknown>)
+          : {};
+
+      const metadata =
+        state.metadata !== null && typeof state.metadata === "object"
+          ? (state.metadata as Record<string, unknown>)
+          : {};
+      const exitCode = typeof metadata.exit === "number" ? metadata.exit : null;
+
+      const timeRaw =
+        state.time !== null && typeof state.time === "object"
+          ? (state.time as Record<string, unknown>)
+          : null;
+      const time =
+        timeRaw &&
+        typeof timeRaw.start === "number" &&
+        typeof timeRaw.end === "number"
+          ? { start: timeRaw.start, end: timeRaw.end }
+          : null;
+
+      const data: ToolUseData = {
+        tool,
+        input,
+        output,
+        truncated,
+        title,
+        exitCode,
+        time,
+      };
+      chunks.push({ type: "tool_use", content: title, data });
+    }
+  }
+
   return chunks;
 }
 
@@ -237,12 +304,15 @@ class SpawnPlanRunner implements PlanRunner {
     );
 
     const rl = readline.createInterface({ input: proc.stdout });
-    this.activeRuns.set(runKey, {
+    const run: ActiveRun = {
       proc,
       rl,
       taskId: opts.taskId,
       mode: opts.mode,
-    });
+      onChunk: opts.onChunk,
+      cancelled: false,
+    };
+    this.activeRuns.set(runKey, run);
 
     let sessionIdEmitted = false;
 
@@ -258,6 +328,9 @@ class SpawnPlanRunner implements PlanRunner {
     });
 
     rl.on("close", () => {
+      // If cancel() already emitted a synthetic done chunk, skip to avoid a
+      // duplicate that could flip isRunning back to false a second time.
+      if (run.cancelled) return;
       console.log(
         `[SpawnPlanRunner][${runKey}] readline closed, exitCode=${proc.exitCode}`,
       );
@@ -287,6 +360,12 @@ class SpawnPlanRunner implements PlanRunner {
   cancel(runKey: string): void {
     const run = this.activeRuns.get(runKey);
     if (run) {
+      // Mark as cancelled BEFORE calling rl.close() so the 'close' event
+      // handler (which may fire synchronously) knows to skip its done emission.
+      run.cancelled = true;
+      // Emit a synthetic done with a definitive exit code of 1 so the renderer
+      // immediately transitions isRunning → false and lastExitCode → 1.
+      run.onChunk(run.taskId, run.mode, { type: "done", content: "1" });
       run.rl?.close();
       run.proc.kill("SIGTERM");
       const proc = run.proc;
@@ -316,6 +395,14 @@ class SpawnPlanRunner implements PlanRunner {
 class TmuxPlanRunner implements PlanRunner {
   private tmux: TmuxSupervisor;
   private activeKeys = new Set<string>();
+  /**
+   * Callbacks captured per run so cancel() can emit a synthetic done chunk
+   * without needing to route through PlanManager.onChunkCb.
+   */
+  private runCallbacks = new Map<
+    string,
+    { taskId: string; mode: PlanMode; onChunk: ChunkCallback }
+  >();
 
   constructor(tmux: TmuxSupervisor) {
     this.tmux = tmux;
@@ -354,11 +441,26 @@ class TmuxPlanRunner implements PlanRunner {
       return;
     }
 
+    this.runCallbacks.set(runKey, {
+      taskId: opts.taskId,
+      mode: opts.mode,
+      onChunk: opts.onChunk,
+    });
     this.activeKeys.add(runKey);
   }
 
   cancel(runKey: string, workspacePath?: string): void {
     if (!this.activeKeys.has(runKey)) return;
+
+    // Emit a synthetic done chunk with exit code 1 immediately so the renderer
+    // transitions isRunning → false in the same render cycle as the cancel.
+    // This must happen BEFORE kill() stops the tailer, since the tailer's
+    // grove_exit sentinel will never be read after stopTailer() closes the fd.
+    const cb = this.runCallbacks.get(runKey);
+    if (cb) {
+      cb.onChunk(cb.taskId, cb.mode, { type: "done", content: "1" });
+      this.runCallbacks.delete(runKey);
+    }
 
     const [mode, taskId] = runKey.split(":");
     const tmuxSession = buildTmuxSessionName(
@@ -373,6 +475,7 @@ class TmuxPlanRunner implements PlanRunner {
   detach(): void {
     this.tmux.detachAll();
     this.activeKeys.clear();
+    this.runCallbacks.clear();
   }
 }
 

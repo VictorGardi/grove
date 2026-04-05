@@ -10,6 +10,7 @@ import {
   buildFirstPlanMessage,
   buildFirstExecutionMessage,
 } from "../../utils/planPrompts";
+import { ToolUseBlock } from "./ToolUseBlock";
 import type {
   TaskInfo,
   PlanAgent,
@@ -55,6 +56,15 @@ function ChatMessage({
 }): React.JSX.Element {
   const isAgent = msg.role === "agent";
 
+  // Placeholder messages get a distinct muted treatment
+  if (msg.isPlaceholder) {
+    return (
+      <div className={styles.messagePlaceholder}>
+        <span className={styles.messagePlaceholderText}>{msg.text}</span>
+      </div>
+    );
+  }
+
   const timeStr = msg.timestamp
     ? new Date(msg.timestamp).toLocaleTimeString([], {
         hour: "2-digit",
@@ -63,26 +73,66 @@ function ChatMessage({
       })
     : null;
 
+  // Count tool_use blocks for the badge in the message header
+  const toolCallCount =
+    isAgent && msg.content
+      ? msg.content.filter((b) => b.kind === "tool_use").length
+      : 0;
+
+  // Determine whether to use new ordered content rendering or legacy fallback
+  const hasContent = isAgent && msg.content && msg.content.length > 0;
+
   return (
     <div
       className={`${styles.message} ${isAgent ? styles.messageAgent : styles.messageUser}`}
+      role="article"
+      aria-label={`${isAgent ? "Agent" : "You"}${isAgent && model ? ` (${model})` : ""}${timeStr ? ` — ${timeStr}` : ""}`}
     >
       <span className={styles.messageRole}>
         {isAgent ? "Agent" : "You"}
         {isAgent && model ? (
           <span className={styles.messageModel}>{model}</span>
         ) : null}
+        {toolCallCount > 0 && (
+          <span className={styles.toolCallBadge}>
+            {toolCallCount} {toolCallCount === 1 ? "tool call" : "tool calls"}
+          </span>
+        )}
         {timeStr && <span className={styles.messageTime}>{timeStr}</span>}
       </span>
-      {isAgent && msg.thinking && <ThinkingBlock content={msg.thinking} />}
+      {/* Legacy rendering path: no content array (old messages / backward compat) */}
+      {isAgent && !hasContent && msg.thinking && (
+        <ThinkingBlock content={msg.thinking} />
+      )}
       <div
         className={`${styles.messageBubble} ${isAgent ? styles.bubbleAgent : styles.bubbleUser}`}
       >
         {isAgent ? (
           <div className={styles.agentMarkdown}>
-            <ReactMarkdown remarkPlugins={[remarkGfm]}>
-              {msg.text || " "}
-            </ReactMarkdown>
+            {hasContent ? (
+              // New ordered content array rendering
+              <>
+                {msg.content!.map((block, i) => {
+                  if (block.kind === "thinking") {
+                    return <ThinkingBlock key={i} content={block.content} />;
+                  }
+                  if (block.kind === "tool_use") {
+                    return <ToolUseBlock key={i} block={block} />;
+                  }
+                  // kind === "text"
+                  return (
+                    <ReactMarkdown key={i} remarkPlugins={[remarkGfm]}>
+                      {block.content || " "}
+                    </ReactMarkdown>
+                  );
+                })}
+              </>
+            ) : (
+              // Legacy: render flat text field
+              <ReactMarkdown remarkPlugins={[remarkGfm]}>
+                {msg.text || " "}
+              </ReactMarkdown>
+            )}
             {msg.isStreaming && <span className={styles.streamingCursor} />}
           </div>
         ) : (
@@ -122,6 +172,7 @@ export function PlanChat({
   const clearSession = usePlanStore((s) => s.clearSession);
   const setRunning = usePlanStore((s) => s.setRunning);
   const setSessionStatus = usePlanStore((s) => s.setSessionStatus);
+  const setReplaying = usePlanStore((s) => s.setReplaying);
 
   // Use mode-appropriate persisted session info for initial state
   const persistedSessionId =
@@ -257,19 +308,27 @@ export function PlanChat({
     initSession(sessionKey, agent, model || null, persistedSessionId ?? null);
   }, [sessionKey, agent, model, initSession]);
 
-  // Reset stale isRunning on component mount only. If the agent process
-  // crashed or was killed outside of Grove, isRunning can remain true
-  // indefinitely. We reset it here — not inside initSession — so that a
-  // chokidar-triggered re-fire of the initSession effect cannot clobber a
-  // live session. key={task.id} on <PlanChat> ensures this runs fresh for
-  // each task; if the task panel closes and reopens for the same task the
-  // component remounts and the reset fires again (acceptable: next chunk
-  // from a still-running agent sets isRunning back to true).
+  // Reset stale isRunning on component mount only — but ONLY when there is no
+  // stored tmux session that a live agent could be attached to.
+  //
+  // If storedSession is non-null the reconnect effect below is responsible for
+  // determining the correct isRunning value:
+  //   • reconnected === true  → setRunning(true) so the board card shows
+  //     "agent running" throughout replay without a flicker window
+  //   • reconnected === false → setRunning(false) to clear any stale flag
+  //
+  // If storedSession is null there is definitively no live agent; reset any
+  // stale flag left behind by a crash or external kill.
+  //
+  // key={task.id} on <PlanChat> ensures this runs fresh for each task.
   useEffect(() => {
-    const session = usePlanStore.getState().sessions[sessionKey];
-    if (session?.isRunning) {
-      setRunning(sessionKey, false);
+    const storedSession =
+      mode === "execute" ? task.execTmuxSession : task.planTmuxSession;
+    if (!storedSession) {
+      const s = usePlanStore.getState().sessions[sessionKey];
+      if (s?.isRunning) setRunning(sessionKey, false);
     }
+    // If storedSession exists: the reconnect effect below handles isRunning.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []); // intentionally empty — only run on mount
 
@@ -340,13 +399,19 @@ export function PlanChat({
           // Log file found, tailer is running. The agent bubble will be
           // created lazily in App.tsx when the first content chunk arrives,
           // so we don't call startAgentMessage here.
-          // The tailer is now running (or has already finished replaying a
-          // completed session).  The "done" chunk from the sentinel will
-          // set isRunning: false when it arrives.
+          // Mark isRunning: true immediately so the board card shows
+          // "agent running" throughout the entire replay window — before
+          // the first content chunk arrives.  The "done" chunk from the
+          // log sentinel will reset isRunning: false when replay finishes.
+          setRunning(sessionKey, true);
+          // Mark as replaying so user_message chunks create user bubbles.
+          setReplaying(sessionKey, true);
           setSessionStatus(sessionKey, "running");
         } else {
-          // No log file found — nothing to replay.  Leave planTmuxSession in
-          // frontmatter; the "paused" status lets the user resume with Send.
+          // No log file found — nothing to replay.  Clear any stale
+          // isRunning flag left by a previous crashed run, then let the
+          // user resume with Send.
+          setRunning(sessionKey, false);
           setSessionStatus(sessionKey, "paused");
         }
       } catch {
@@ -407,6 +472,9 @@ export function PlanChat({
     // In execute mode: first send auto-builds the execution prompt; user text
     // is only included in the initial prompt (the input box just triggers it).
     // In plan mode: first send assembles planning prompt; follow-ups are plain.
+
+    // Stop replaying — fresh send shouldn't process log user_message chunks as bubbles
+    setReplaying(sessionKey, false);
 
     // Add user message to store — skip if empty (execute first-send with no extra context)
     if (text) {
