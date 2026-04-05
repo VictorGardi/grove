@@ -8,6 +8,8 @@ interface ColumnProps {
   label: string;
   color: string;
   tasks: TaskInfo[];
+  /** Set of matched task IDs from search; null when search is inactive */
+  matchedIds?: string[] | null;
 }
 
 export function Column({
@@ -15,6 +17,7 @@ export function Column({
   label,
   color,
   tasks,
+  matchedIds,
 }: ColumnProps): React.JSX.Element {
   const { setNodeRef, isOver } = useDroppable({ id: status });
 
@@ -30,7 +33,13 @@ export function Column({
       </div>
       <div className={styles.cardList}>
         {tasks.map((task) => (
-          <TaskCard key={task.id} task={task} />
+          <TaskCard
+            key={task.id}
+            task={task}
+            isSearchMatch={
+              matchedIds != null ? matchedIds.includes(task.id) : undefined
+            }
+          />
         ))}
       </div>
     </div>

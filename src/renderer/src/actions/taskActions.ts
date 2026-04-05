@@ -14,7 +14,8 @@ export async function createTask(title: string): Promise<string | null> {
     console.error("[taskActions] Failed to create task:", result.error);
     return null;
   }
-  // Auto-select the new task after chokidar refreshes
+  // Patch the store immediately with confirmed disk state — no chokidar wait
+  useDataStore.getState().patchTask(result.data);
   useDataStore.getState().setSelectedTask(result.data.id);
   return result.data.id;
 }

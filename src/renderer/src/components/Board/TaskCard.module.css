@@ -226,3 +226,22 @@
 .worktreeToggleActive:hover {
   background: color-mix(in srgb, var(--status-green) 10%, transparent);
 }
+
+/* ── search match highlight ────────────────────────────────────────── */
+
+.cardSearchMatch {
+  border-color: var(--status-amber, #d97706);
+  background: color-mix(
+    in srgb,
+    var(--status-amber, #d97706) 12%,
+    var(--bg-surface)
+  );
+}
+
+.cardSearchMatch:hover {
+  background: color-mix(
+    in srgb,
+    var(--status-amber, #d97706) 18%,
+    var(--bg-surface)
+  );
+}

@@ -1,4 +1,5 @@
-import { useState, useCallback } from "react";
+import { useState, useCallback, useEffect, useMemo } from "react";
+import Fuse from "fuse.js";
 import {
   DndContext,
   DragOverlay,
@@ -12,6 +13,7 @@ import { useDataStore } from "../../stores/useDataStore";
 import { useWorkspaceStore } from "../../stores/useWorkspaceStore";
 import { useWorktreeStore } from "../../stores/useWorktreeStore";
 import { useDialogStore } from "../../stores/useDialogStore";
+import { useBoardStore } from "../../stores/useBoardStore";
 import { showToast } from "../../stores/useToastStore";
 import type { TaskInfo, TaskStatus } from "@shared/types";
 import { moveTask } from "../../actions/taskActions";
@@ -67,12 +69,65 @@ export function Board(): React.JSX.Element {
   const loading = useDataStore((s) => s.loading);
   const [activeTask, setActiveTask] = useState<TaskInfo | null>(null);
 
+  const searchQuery = useBoardStore((s) => s.searchQuery);
+
+  // Clear search when leaving board view (handled via useEffect in parent,
+  // but we also handle it here when component unmounts)
+  useEffect(() => {
+    return () => {
+      useBoardStore.getState().clearSearch();
+    };
+  }, []);
+
+  // Fuse.js instance, rebuilt when tasks change
+  const fuse = useMemo(
+    () =>
+      new Fuse(tasks, {
+        keys: ["title", "description", "tags", "id"],
+        threshold: 0.35,
+        includeScore: true,
+      }),
+    [tasks],
+  );
+
+  // Compute search results
+  const searchResults = useMemo(() => {
+    if (!searchQuery.trim()) return null;
+    return fuse.search(searchQuery);
+  }, [fuse, searchQuery]);
+
+  // Set of matched task IDs (in ranked order)
+  const matchedIds: string[] | null = useMemo(() => {
+    if (!searchResults) return null;
+    return searchResults.map((r) => r.item.id);
+  }, [searchResults]);
+
+  const matchCount = matchedIds?.length ?? 0;
+
+  // Handle Enter from board search: open top-ranked match
+  useEffect(() => {
+    function handleBoardSearchEnter(): void {
+      if (!matchedIds || matchedIds.length === 0) return;
+      const topId = matchedIds[0];
+      useDataStore.getState().setSelectedTask(topId);
+      useBoardStore.getState().clearSearch();
+    }
+
+    document.addEventListener("board-search-enter", handleBoardSearchEnter);
+    return () =>
+      document.removeEventListener(
+        "board-search-enter",
+        handleBoardSearchEnter,
+      );
+  }, [matchedIds]);
+
   // Pointer sensor with activation distance to avoid accidental drags on click
   const sensors = useSensors(
     useSensor(PointerSensor, { activationConstraint: { distance: 5 } }),
   );
 
-  const filtered = tasks;
+  // When search is active, filter displayed tasks; otherwise show all
+  const filtered = searchResults ? searchResults.map((r) => r.item) : tasks;
 
   const handleDragStart = useCallback(
     (event: DragStartEvent) => {
@@ -139,7 +194,7 @@ export function Board(): React.JSX.Element {
 
   return (
     <div className={styles.board}>
-      <BoardToolbar />
+      <BoardToolbar matchCount={searchQuery.trim() ? matchCount : undefined} />
       <DndContext
         sensors={sensors}
         onDragStart={handleDragStart}
@@ -156,6 +211,7 @@ export function Board(): React.JSX.Element {
                 label={col.label}
                 color={col.color}
                 tasks={colTasks}
+                matchedIds={matchedIds}
               />
             );
           })}

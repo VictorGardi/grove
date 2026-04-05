@@ -8,9 +8,14 @@ import styles from "./TaskCard.module.css";
 
 interface TaskCardProps {
   task: TaskInfo;
+  /** When search is active: true = matched, false = not matched, undefined = no search */
+  isSearchMatch?: boolean;
 }
 
-export function TaskCard({ task }: TaskCardProps): React.JSX.Element {
+export function TaskCard({
+  task,
+  isSearchMatch,
+}: TaskCardProps): React.JSX.Element {
   const selectedTaskId = useDataStore((s) => s.selectedTaskId);
   const isSelected = task.id === selectedTaskId;
   const worktreeCreating = useWorktreeStore((s) => s.creatingIds.has(task.id));
@@ -60,7 +65,7 @@ export function TaskCard({ task }: TaskCardProps): React.JSX.Element {
       ref={setNodeRef}
       {...listeners}
       {...attributes}
-      className={`${styles.card} ${isSelected ? styles.cardSelected : ""} ${isDragging ? styles.cardDragging : ""}`}
+      className={`${styles.card} ${isSelected ? styles.cardSelected : ""} ${isDragging ? styles.cardDragging : ""} ${isSearchMatch === true ? styles.cardSearchMatch : ""}`}
       onClick={handleClick}
     >
       {/* Row 1: Title */}

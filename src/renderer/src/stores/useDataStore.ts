@@ -88,9 +88,15 @@ export const useDataStore = create<DataState>()((set, get) => ({
   },
 
   patchTask: (updated) =>
-    set((state) => ({
-      tasks: state.tasks.map((t) => (t.id === updated.id ? updated : t)),
-    })),
+    set((state) => {
+      const exists = state.tasks.some((t) => t.id === updated.id);
+      if (exists) {
+        return {
+          tasks: state.tasks.map((t) => (t.id === updated.id ? updated : t)),
+        };
+      }
+      return { tasks: [updated, ...state.tasks] };
+    }),
 
   setSelectedTask: (id) => {
     if (id === null) {
