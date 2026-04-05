@@ -6,6 +6,7 @@ import { MainArea } from "./components/MainArea/MainArea";
 import { TerminalPanel } from "./components/Terminal/TerminalPanel";
 import { Toast } from "./components/shared/Toast";
 import { ConfirmDialog } from "./components/shared/ConfirmDialog";
+import { LaunchModal } from "./components/shared/LaunchModal";
 import { useWorkspaceStore } from "./stores/useWorkspaceStore";
 import { useDataStore } from "./stores/useDataStore";
 import { useFileStore } from "./stores/useFileStore";
@@ -228,6 +229,7 @@ function AppContent(): React.JSX.Element {
       <TerminalPanel visible={terminalPanelOpen} />
       <Toast />
       <ConfirmDialog />
+      <LaunchModal />
     </div>
   );
 }

@@ -15,6 +15,10 @@ import { useWorktreeStore } from "../../stores/useWorktreeStore";
 import { useDialogStore } from "../../stores/useDialogStore";
 import { useBoardStore } from "../../stores/useBoardStore";
 import { usePlanStore } from "../../stores/usePlanStore";
+import {
+  useLaunchModalStore,
+  type LaunchConfig,
+} from "../../stores/useLaunchModalStore";
 import { showToast } from "../../stores/useToastStore";
 import type { TaskInfo, TaskStatus } from "@shared/types";
 import { moveTask, updateTask } from "../../actions/taskActions";
@@ -152,9 +156,40 @@ export function Board(): React.JSX.Element {
       if (!VALID_STATUSES.has(toStatus)) return;
       if (task.status === toStatus) return;
 
-      // Async path for Doing and Done (with worktree)
+      // Async path for Doing: check isRunning guard, then show modal
       if (toStatus === "doing") {
-        void handleDragToDoing(task);
+        const execSessionKey = `execute:${task.id}`;
+        const isRunning =
+          usePlanStore.getState().sessions[execSessionKey]?.isRunning ?? false;
+        if (isRunning) return; // no-op: task already running
+
+        // Fetch workspace defaults before opening the modal so the agent/model
+        // pre-fill values reflect the workspace config.
+        const wp = useWorkspaceStore.getState().activeWorkspacePath;
+        if (wp) {
+          void useWorkspaceStore
+            .getState()
+            .fetchDefaults(wp)
+            .then(() => {
+              // Show modal; on Execute call handleDragToDoing with confirmed config
+              void useLaunchModalStore
+                .getState()
+                .show(task)
+                .then((config) => {
+                  if (config === null) return; // user cancelled — no side effects
+                  void handleDragToDoing(task, config);
+                });
+            });
+        } else {
+          // No workspace path — open modal without defaults (edge case)
+          void useLaunchModalStore
+            .getState()
+            .show(task)
+            .then((config) => {
+              if (config === null) return;
+              void handleDragToDoing(task, config);
+            });
+        }
         return;
       }
 
@@ -239,12 +274,28 @@ export function Board(): React.JSX.Element {
 
 // ── Worktree drag handlers (module-level async, not hooks) ────────────────────
 
-async function handleDragToDoing(task: TaskInfo): Promise<void> {
+async function handleDragToDoing(
+  task: TaskInfo,
+  config: LaunchConfig,
+): Promise<void> {
   const wp = useWorkspaceStore.getState().activeWorkspacePath;
   if (!wp) return;
 
+  // Persist confirmed agent, model, and useWorktree to frontmatter before any
+  // side effects so they survive a refresh.  useWorktree=false must be written
+  // explicitly (not by omission) — the parser round-trips it correctly.
+  await updateTask(task.filePath, {
+    execSessionAgent: config.agent,
+    execModel: config.model,
+    useWorktree: config.useWorktree,
+  });
+
+  // Re-read task to pick up the updated filePath / metadata
+  const currentTask =
+    useDataStore.getState().tasks.find((t) => t.id === task.id) ?? task;
+
   // Move to Doing first
-  const moveOk = await moveTask(task.filePath, "doing");
+  const moveOk = await moveTask(currentTask.filePath, "doing");
   if (!moveOk) {
     showToast(`Failed to move task: ${task.title}`, "error");
     return;
@@ -252,7 +303,7 @@ async function handleDragToDoing(task: TaskInfo): Promise<void> {
 
   // Get updated task (filePath may have changed after move)
   let movedTask =
-    useDataStore.getState().tasks.find((t) => t.id === task.id) ?? task;
+    useDataStore.getState().tasks.find((t) => t.id === task.id) ?? currentTask;
 
   // Clear stale exec session fields so a fresh session is started
   // (not a resume attempt) — especially important when re-dragging
@@ -281,7 +332,7 @@ async function handleDragToDoing(task: TaskInfo): Promise<void> {
   // Resolve worktree path (absolute) for plan.send
   let worktreeAbsPath: string | undefined;
 
-  if (movedTask.useWorktree !== false) {
+  if (config.useWorktree !== false) {
     // ── Worktree mode (default) ──────────────────────────────────
     // Create an isolated git worktree so the execute agent works on its own branch.
     useWorktreeStore.getState().markCreating(task.id);
@@ -333,22 +384,11 @@ async function handleDragToDoing(task: TaskInfo): Promise<void> {
   const latestTask =
     useDataStore.getState().tasks.find((t) => t.id === task.id) ?? movedTask;
 
-  // Resolve the agent via 3-level fallback:
-  //   1. execSessionAgent from task frontmatter
-  //   2. defaultExecutionAgent from workspace config
-  //   3. "opencode"
-  await useWorkspaceStore.getState().fetchDefaults(wp);
-  const defaults = useWorkspaceStore.getState().workspaceDefaults[wp];
-  const agent =
-    latestTask.execSessionAgent ??
-    defaults?.defaultExecutionAgent ??
-    "opencode";
-
-  const model = latestTask.execModel ?? defaults?.defaultExecutionModel ?? null;
+  // Use confirmed agent/model from config
+  const agent = config.agent;
+  const model = config.model;
 
   // Validate model against cached list — stale selections fall back to null.
-  // Read from the shared models cache (keyed by workspacePath:agent) so we
-  // don't fire a redundant IPC call here (TaskCards already populated it).
   const cacheKey = `${wp}:${agent}`;
   const cachedModels = usePlanStore.getState().modelsCache[cacheKey];
   const resolvedModel =

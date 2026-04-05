@@ -166,6 +166,12 @@
   color: var(--status-yellow, #f0c060);
 }
 
+.reviewPendingLabel {
+  font-family: var(--font-mono);
+  font-size: 10px;
+  color: var(--status-amber, #d97706);
+}
+
 /* ── ship it indicator ─────────────────────────────────────────────── */
 
 .shipItRow {

@@ -1,7 +1,7 @@
 ---
 id: T-050
 title: first message from user in execution chat
-status: review
+status: done
 created: '2026-04-05T13:45:17.988Z'
 planTmuxSession: grove-plan-c0e897-T-050
 planSessionId: ses_2a21a9da0ffefPfnsIz2OBRYLH
@@ -11,6 +11,7 @@ execSessionAgent: opencode
 execModel: opencode/big-pickle
 execTmuxSession: grove-exec-c0e897-T-050
 execSessionId: ses_2a20b0a79ffeihqcHUoYD9lBNR
+completed: '2026-04-05T14:22:41.670Z'
 ---
 
 ## Description

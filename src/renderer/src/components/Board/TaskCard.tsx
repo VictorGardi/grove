@@ -5,7 +5,6 @@ import { useDataStore } from "../../stores/useDataStore";
 import { useWorktreeStore } from "../../stores/useWorktreeStore";
 import { usePlanStore } from "../../stores/usePlanStore";
 import { useWorkspaceStore } from "../../stores/useWorkspaceStore";
-import { updateTask } from "../../actions/taskActions";
 import styles from "./TaskCard.module.css";
 
 interface TaskCardProps {
@@ -21,9 +20,15 @@ export function TaskCard({
   const selectedTaskId = useDataStore((s) => s.selectedTaskId);
   const isSelected = task.id === selectedTaskId;
   const worktreeCreating = useWorktreeStore((s) => s.creatingIds.has(task.id));
-  const isAgentRunning = usePlanStore(
-    (s) => s.sessions[`execute:${task.id}`]?.isRunning ?? false,
-  );
+  const isAgentRunning = usePlanStore((s) => {
+    // Consider the execute session as running, or a dedicated reviewer session.
+    const execRunning = s.sessions[`execute:${task.id}`]?.isRunning ?? false;
+    const reviewerRunning =
+      s.sessions[`execute-review:${task.id}`]?.isRunning ??
+      s.sessions[`execute:review:${task.id}`]?.isRunning ??
+      false;
+    return execRunning || reviewerRunning;
+  });
   const isPlanningRunning = usePlanStore(
     (s) => s.sessions[`plan:${task.id}`]?.isRunning ?? false,
   );
@@ -33,6 +38,17 @@ export function TaskCard({
     if (!session || session.messages.length === 0 || session.isRunning)
       return false;
     return session.lastExitCode === null || session.lastExitCode === 0;
+  });
+  const isReviewerRunning = usePlanStore((s) =>
+    Boolean(
+      s.sessions[`execute-review:${task.id}`]?.isRunning ||
+      s.sessions[`execute:review:${task.id}`]?.isRunning,
+    ),
+  );
+  const reviewerLastExitCode = usePlanStore((s) => {
+    const r1 = s.sessions[`execute-review:${task.id}`];
+    const r2 = s.sessions[`execute:review:${task.id}`];
+    return r1?.lastExitCode ?? r2?.lastExitCode ?? null;
   });
   const isPlanWaiting = usePlanStore((s) => {
     const session = s.sessions[`plan:${task.id}`];
@@ -59,17 +75,9 @@ export function TaskCard({
   // Resolve which agent is displayed on this card
   const cardAgent = task.execSessionAgent ?? "opencode";
 
-  // Read workspace path and defaults for model fallback label
+  // Read workspace path — needed for ensureModels pre-fetching
   const workspacePath = useWorkspaceStore((s) => s.activeWorkspacePath);
-  const defaultExecutionModel = useWorkspaceStore(
-    (s) =>
-      s.workspaceDefaults[s.activeWorkspacePath ?? ""]?.defaultExecutionModel,
-  );
 
-  // Read models from the shared cache — null means loading, undefined means not fetched yet
-  const modelsCacheEntry = usePlanStore(
-    (s) => s.modelsCache[`${workspacePath ?? ""}:${cardAgent}`],
-  );
   const ensureModels = usePlanStore((s) => s.ensureModels);
 
   // Fire one IPC call per (workspacePath, agent) pair the first time a card
@@ -83,12 +91,6 @@ export function TaskCard({
     }
   }, [workspacePath, cardAgent, task.status, ensureModels]);
 
-  // Derive available models from cache: null/undefined → loading, [] → show "default" only
-  const modelsLoading = modelsCacheEntry === null;
-  const availableModels: string[] = Array.isArray(modelsCacheEntry)
-    ? modelsCacheEntry
-    : [];
-
   const { attributes, listeners, setNodeRef, isDragging } = useDraggable({
     id: task.id,
   });
@@ -96,8 +98,6 @@ export function TaskCard({
   function handleClick(): void {
     useDataStore.getState().setSelectedTask(task.id);
   }
-
-  const showControls = task.status === "backlog" || task.status === "doing";
 
   return (
     <div
@@ -139,19 +139,25 @@ export function TaskCard({
         </div>
       )}
 
-      {/* Row 3b: Waiting for input indicator */}
-      {task.status === "doing" && isExecuteWaiting && isDodComplete && (
-        <div className={styles.shipItRow}>
-          <span className={styles.shipItDot} />
-          <span className={styles.shipItLabel}>ship it 🚢</span>
-        </div>
-      )}
-      {task.status === "doing" && isExecuteWaiting && !isDodComplete && (
+      {/* Row 3b: Review / ship-it indicator
+          - Do not show "waiting for you" for doing tasks anymore.
+          - While a reviewer subagent is running show an optional "review pending" badge.
+          - After reviewer ends, show ship it if DoD complete, or session failed if reviewer signalled failure. */}
+      {task.status === "doing" && isReviewerRunning && (
         <div className={styles.waitingRow}>
-          <span className={styles.waitingDot} />
-          <span className={styles.waitingLabel}>waiting for you</span>
+          <span className={styles.reviewPendingLabel}>review pending</span>
         </div>
       )}
+      {task.status === "doing" &&
+        !isReviewerRunning &&
+        isDodComplete &&
+        (reviewerLastExitCode === 0 ||
+          (isExecuteWaiting && reviewerLastExitCode === null)) && (
+          <div className={styles.shipItRow}>
+            <span className={styles.shipItDot} />
+            <span className={styles.shipItLabel}>ship it 🚢</span>
+          </div>
+        )}
       {task.status === "backlog" && isPlanWaiting && (
         <div className={styles.waitingRow}>
           <span className={styles.waitingDot} />
@@ -186,60 +192,6 @@ export function TaskCard({
               {tag}
             </span>
           ))}
-        </div>
-      )}
-
-      {/* Row 5: worktree toggle + model select — backlog and doing tasks */}
-      {showControls && (
-        <div
-          className={styles.worktreeRow}
-          onClick={(e) => e.stopPropagation()}
-        >
-          <button
-            className={`${styles.worktreeToggle} ${task.useWorktree ? styles.worktreeToggleActive : ""}`}
-            onClick={(e) => {
-              e.stopPropagation();
-              updateTask(task.filePath, { useWorktree: !task.useWorktree });
-            }}
-            title={
-              task.useWorktree
-                ? "Running in git worktree — click to switch to root repo"
-                : "Running in root repo — click to switch to git worktree"
-            }
-          >
-            {task.useWorktree ? "worktree" : "root repo"}
-          </button>
-
-          {/* Model dropdown — backlog and doing tasks */}
-          <select
-            className={`${styles.modelSelect} ${isAgentRunning || worktreeCreating ? styles.modelSelectDisabled : ""}`}
-            value={task.execModel ?? ""}
-            disabled={isAgentRunning || worktreeCreating}
-            onClick={(e) => e.stopPropagation()}
-            onChange={(e) => {
-              e.stopPropagation();
-              const val = e.target.value;
-              updateTask(task.filePath, {
-                execModel: val === "" ? null : val,
-              });
-            }}
-            title="Execution model for this task"
-          >
-            {modelsLoading ? (
-              <option value="" disabled>
-                loading…
-              </option>
-            ) : (
-              <>
-                <option value="">{defaultExecutionModel ?? "default"}</option>
-                {availableModels.map((m) => (
-                  <option key={m} value={m}>
-                    {m}
-                  </option>
-                ))}
-              </>
-            )}
-          </select>
         </div>
       )}
     </div>
