@@ -3,7 +3,7 @@ import { join } from "path";
 import { is } from "@electron-toolkit/utils";
 import { ConfigManager } from "./config";
 import { createWindowStateKeeper } from "./window-state";
-import { registerIpcHandlers, killAllPtys, cancelAllPlans } from "./ipc/index";
+import { registerIpcHandlers, killAllPtys, detachAllPlans } from "./ipc/index";
 import { stopBranchWatcher } from "./ipc/workspace";
 import { stopWatchers } from "./watchers";
 import { closeAllWorktreeTaskWatchers } from "./ipc/git";
@@ -101,7 +101,7 @@ if (!gotTheLock) {
     stopWatchers();
     closeAllWorktreeTaskWatchers();
     killAllPtys();
-    cancelAllPlans();
+    detachAllPlans();
     if (configManager) {
       configManager.flushSync();
     }

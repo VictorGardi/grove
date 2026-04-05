@@ -2,7 +2,7 @@
 id: T-023
 title: show opencode/copilot context usage and total usage
 status: done
-created: '2026-04-04'
+created: "2026-04-04"
 planSessionId: ses_2a61124bcffeyQZO4A3l9snALB
 planSessionAgent: opencode
 planModel: opencode/big-pickle

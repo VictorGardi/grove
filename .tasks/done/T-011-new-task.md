@@ -2,7 +2,7 @@
 id: T-011
 title: allow @ to attach files to agent chat
 status: done
-created: '2026-04-03'
+created: "2026-04-03"
 autoRun: true
 agent: opencode
 planSessionId: ses_2a87f05a8ffe8sNM1zMitlSZUU

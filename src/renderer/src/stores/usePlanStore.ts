@@ -11,10 +11,19 @@ interface PlanSession {
   lastExitCode: number | null;
   /** Accumulated token total across all steps in this session */
   totalTokens: number;
+  /** Session status for tmux persistence */
+  sessionStatus: "idle" | "running" | "paused" | "reconnecting";
 }
 
 interface PlanState {
-  sessions: Record<string, PlanSession>; // keyed by `${mode}:${taskId}`
+  sessions: Record<string, PlanSession>;
+
+  /**
+   * Shared model list cache keyed by `"${workspacePath}:${agent}"`.
+   * Cards read from this synchronously; the first card for a given pair fires
+   * the IPC fetch. `null` means a fetch is in flight; `string[]` is the result.
+   */
+  modelsCache: Record<string, string[] | null>;
 
   // Actions — all take the composite sessionKey
   initSession: (
@@ -28,15 +37,27 @@ interface PlanState {
   applyChunk: (sessionKey: string, chunk: PlanChunk) => void;
   setSessionId: (sessionKey: string, sessionId: string) => void;
   setRunning: (sessionKey: string, running: boolean) => void;
+  setSessionStatus: (
+    sessionKey: string,
+    status: "idle" | "running" | "paused" | "reconnecting",
+  ) => void;
   clearSession: (sessionKey: string) => void;
+  /**
+   * Ensure models for `(workspacePath, agent)` are in the cache.
+   * - If a result is already cached, resolves immediately (no-op).
+   * - If a fetch is in-flight (`null`), resolves immediately (caller reads null as "loading").
+   * - Otherwise fires one IPC call and stores the result.
+   */
+  ensureModels: (workspacePath: string, agent: PlanAgent) => Promise<void>;
 }
 
 function nextId(): string {
   return Date.now().toString(36) + Math.random().toString(36).slice(2, 8);
 }
 
-export const usePlanStore = create<PlanState>()((set) => ({
+export const usePlanStore = create<PlanState>()((set, get) => ({
   sessions: {},
+  modelsCache: {},
 
   initSession: (sessionKey, agent, model, existingSessionId) => {
     set((s) => {
@@ -80,6 +101,7 @@ export const usePlanStore = create<PlanState>()((set) => ({
             isRunning: false,
             lastExitCode: null,
             totalTokens: 0,
+            sessionStatus: existingSessionId ? "paused" : "idle",
           },
         },
       };
@@ -110,6 +132,14 @@ export const usePlanStore = create<PlanState>()((set) => ({
     set((s) => {
       const session = s.sessions[sessionKey];
       if (!session) return s;
+
+      // Don't add a duplicate agent bubble if the last message is already an
+      // agent message (streaming OR completed).  Between agent turns there is
+      // always a user message as the last message, so this guard only fires in
+      // the double-bubble scenario (reconnect racing with an existing session).
+      const lastMsg = session.messages[session.messages.length - 1];
+      if (lastMsg?.role === "agent") return s;
+
       const msg: PlanMessage = {
         id: nextId(),
         role: "agent",
@@ -161,6 +191,8 @@ export const usePlanStore = create<PlanState>()((set) => ({
               messages,
               isRunning: false,
               lastExitCode: isNaN(exitCode) ? null : exitCode,
+              // Clear the "Agent running — reconnected" banner now that replay is done
+              sessionStatus: "idle",
             },
           },
         };
@@ -224,11 +256,48 @@ export const usePlanStore = create<PlanState>()((set) => ({
     });
   },
 
+  setSessionStatus: (sessionKey, status) => {
+    set((s) => {
+      const session = s.sessions[sessionKey];
+      if (!session) return s;
+      return {
+        sessions: {
+          ...s.sessions,
+          [sessionKey]: { ...session, sessionStatus: status },
+        },
+      };
+    });
+  },
+
   clearSession: (sessionKey) => {
     set((s) => {
       const next = { ...s.sessions };
       delete next[sessionKey];
       return { sessions: next };
     });
+  },
+
+  ensureModels: async (workspacePath, agent) => {
+    const cacheKey = `${workspacePath}:${agent}`;
+    const existing = get().modelsCache[cacheKey];
+    // Already cached (string[] result) or in-flight (null) — nothing to do
+    if (existing !== undefined) return;
+
+    // Mark as in-flight so concurrent calls don't fire duplicate IPC requests
+    set((s) => ({
+      modelsCache: { ...s.modelsCache, [cacheKey]: null },
+    }));
+
+    try {
+      const result = await window.api.plan.listModels({ agent, workspacePath });
+      const models = result.ok ? result.data : [];
+      set((s) => ({
+        modelsCache: { ...s.modelsCache, [cacheKey]: models },
+      }));
+    } catch {
+      set((s) => ({
+        modelsCache: { ...s.modelsCache, [cacheKey]: [] },
+      }));
+    }
   },
 }));

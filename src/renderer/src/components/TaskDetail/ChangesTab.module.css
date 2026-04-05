@@ -45,7 +45,9 @@
   padding: 3px 10px;
   border-radius: var(--radius-sm);
   cursor: pointer;
-  transition: background var(--transition-fast), color var(--transition-fast);
+  transition:
+    background var(--transition-fast),
+    color var(--transition-fast);
 }
 
 .refreshBtn:hover {
@@ -75,6 +77,11 @@
   flex: 1;
   overflow-y: auto;
   overflow-x: hidden;
+  scrollbar-width: none;
+}
+
+.fileList::-webkit-scrollbar {
+  display: none;
 }
 
 /* ── File row ─────────────────────────────────────────────────── */
@@ -167,7 +174,9 @@
   padding: 2px 4px;
   flex-shrink: 0;
   opacity: 0;
-  transition: opacity var(--transition-fast), color var(--transition-fast);
+  transition:
+    opacity var(--transition-fast),
+    color var(--transition-fast);
 }
 
 .fileRow:hover .viewFileBtn {

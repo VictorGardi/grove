@@ -2,7 +2,7 @@
 id: T-026
 title: keyboard bindings
 status: done
-created: '2026-04-05'
+created: "2026-04-05"
 useWorktree: false
 planSessionId: ses_2a3ecf8e8ffez5SlSciCM0pbxX
 planSessionAgent: opencode

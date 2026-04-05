@@ -2,7 +2,7 @@
 id: T-012
 title: Allow PlanChat agent to run in background when UI closed
 status: done
-created: '2026-04-04'
+created: "2026-04-04"
 autoRun: true
 agent: opencode
 worktree: null

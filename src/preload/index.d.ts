@@ -28,6 +28,23 @@ export interface ElectronAPI {
     setActive: (path: string) => Promise<IpcResult<void>>;
     getActive: () => Promise<IpcResult<string | null>>;
     getBranch: (path: string) => Promise<IpcResult<string>>;
+    getDefaults: (path: string) => Promise<
+      IpcResult<{
+        defaultPlanningAgent?: PlanAgent;
+        defaultPlanningModel?: string;
+        defaultExecutionAgent?: PlanAgent;
+        defaultExecutionModel?: string;
+      }>
+    >;
+    setDefaults: (
+      path: string,
+      defaults: {
+        defaultPlanningAgent?: PlanAgent;
+        defaultPlanningModel?: string;
+        defaultExecutionAgent?: PlanAgent;
+        defaultExecutionModel?: string;
+      },
+    ) => Promise<IpcResult<void>>;
     onBranchChanged: (
       callback: (data: { path: string; branch: string }) => void,
     ) => () => void;
@@ -81,6 +98,8 @@ export interface ElectronAPI {
   };
   app: {
     getPlatform: () => Promise<NodeJS.Platform>;
+    getTheme: () => Promise<IpcResult<string>>;
+    setTheme: (theme: string) => Promise<IpcResult<string>>;
     setTitleBarColor: (opts: {
       color: string;
       symbolColor: string;
@@ -132,6 +151,8 @@ export interface ElectronAPI {
       agent: PlanAgent;
       model: string | null;
       message: string;
+      /** Short user-facing text for chat history (not the full prompt) */
+      displayMessage: string;
       sessionId: string | null;
       workspacePath: string;
       taskFilePath: string;
@@ -140,6 +161,8 @@ export interface ElectronAPI {
     cancel: (input: {
       taskId: string;
       mode: PlanMode;
+      workspacePath: string;
+      taskFilePath: string;
     }) => Promise<IpcResult<void>>;
     listModels: (input: {
       agent: PlanAgent;
@@ -153,6 +176,19 @@ export interface ElectronAPI {
       model: string | null;
       mode: PlanMode;
     }) => Promise<IpcResult<void>>;
+    isTmuxAvailable: () => Promise<IpcResult<boolean>>;
+    tmuxCheck: (input: {
+      workspacePath: string;
+      taskId: string;
+      mode: PlanMode;
+    }) => Promise<IpcResult<{ alive: boolean }>>;
+    reconnect: (input: {
+      taskId: string;
+      mode: PlanMode;
+      agent: PlanAgent;
+      workspacePath: string;
+      taskFilePath: string;
+    }) => Promise<IpcResult<{ reconnected: boolean }>>;
     onChunk: (
       callback: (taskId: string, mode: PlanMode, chunk: PlanChunk) => void,
     ) => () => void;

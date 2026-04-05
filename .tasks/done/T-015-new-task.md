@@ -2,7 +2,7 @@
 id: T-015
 title: remove new ticket
 status: done
-created: '2026-04-04'
+created: "2026-04-04"
 planSessionId: ses_2a72c976affeQ6OeKIGGF2EaKY
 planSessionAgent: opencode
 planModel: opencode/big-pickle

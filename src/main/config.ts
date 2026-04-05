@@ -6,7 +6,16 @@ import type { AppConfig } from "@shared/types";
 const DEFAULT_CONFIG: AppConfig = {
   workspaces: [],
   lastActiveWorkspace: null,
+  theme: "catppuccin-mocha",
 };
+
+const VALID_THEMES = ["catppuccin-mocha", "catppuccin-latte"] as const;
+
+export type ValidTheme = (typeof VALID_THEMES)[number];
+
+export function isValidTheme(theme: string): theme is ValidTheme {
+  return (VALID_THEMES as readonly string[]).includes(theme);
+}
 
 export class ConfigManager {
   private config: AppConfig;
@@ -49,6 +58,10 @@ export class ConfigManager {
       }
       const raw = fs.readFileSync(this.configPath, "utf-8");
       const parsed = JSON.parse(raw) as Partial<AppConfig>;
+      const theme =
+        typeof parsed.theme === "string" && isValidTheme(parsed.theme)
+          ? parsed.theme
+          : "catppuccin-mocha";
       return {
         workspaces: Array.isArray(parsed.workspaces) ? parsed.workspaces : [],
         lastActiveWorkspace:
@@ -56,13 +69,14 @@ export class ConfigManager {
           parsed.lastActiveWorkspace === null
             ? (parsed.lastActiveWorkspace ?? null)
             : null,
+        theme,
       };
     } catch (err) {
       console.warn(
         "[ConfigManager] Failed to load config, using defaults:",
         err,
       );
-      return { ...DEFAULT_CONFIG, workspaces: [] };
+      return { ...DEFAULT_CONFIG, workspaces: [], theme: "catppuccin-mocha" };
     }
   }
 

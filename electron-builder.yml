@@ -1,7 +1,7 @@
-appId: com.electron.app
-productName: grove-scaffold
+appId: com.grove.app
+productName: Grove
 directories:
-  buildResources: build
+  buildResources: resources
 files:
   - "!**/.vscode/*"
   - "!src/*"
@@ -13,7 +13,7 @@ asarUnpack:
   - resources/**
   - node_modules/node-pty/**
 win:
-  executableName: grove-scaffold
+  executableName: Grove
 nsis:
   artifactName: ${name}-${version}-setup.${ext}
   shortcutName: ${productName}

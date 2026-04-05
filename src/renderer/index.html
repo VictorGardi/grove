@@ -15,13 +15,9 @@
     <script>
       (function () {
         var t = localStorage.getItem("grove:theme");
-        var valid = ["default", "catppuccin-mocha", "catppuccin-latte"];
+        var valid = ["catppuccin-mocha", "catppuccin-latte"];
         if (t && valid.indexOf(t) !== -1) {
-          if (t === "default") {
-            document.documentElement.removeAttribute("data-theme");
-          } else {
-            document.documentElement.setAttribute("data-theme", t);
-          }
+          document.documentElement.setAttribute("data-theme", t);
         }
       })();
     </script>

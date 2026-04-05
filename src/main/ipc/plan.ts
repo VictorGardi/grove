@@ -4,6 +4,7 @@ import * as path from "path";
 import type { PlanManager } from "../planManager";
 import type { IpcResult, PlanAgent, PlanMode } from "@shared/types";
 import { updateTask } from "../tasks";
+import { buildTmuxSessionName } from "../tmuxSupervisor";
 
 const VALID_AGENTS: PlanAgent[] = ["opencode", "copilot"];
 const VALID_MODES: PlanMode[] = ["plan", "execute"];
@@ -12,13 +13,40 @@ export function registerPlanHandlers(
   planManager: PlanManager,
   mainWindow: BrowserWindow,
 ): void {
-  // Wire chunk forwarding to renderer — now includes mode for routing
+  // Wire chunk forwarding to renderer — now includes mode for routing.
+  //
+  // Chunks are micro-batched: we collect all chunks emitted within a single
+  // event-loop turn and flush them as one IPC message ("plan:chunks", plural).
+  // This prevents a synchronous burst of N individual send() calls during log
+  // replay (which could be hundreds of lines) from overwhelming the IPC queue.
+  // Live streaming is unaffected — a single chunk still appears within the same
+  // event-loop tick.
+  interface BatchEntry {
+    taskId: string;
+    mode: string;
+    chunk: import("@shared/types").PlanChunk;
+  }
+  const pendingChunks: BatchEntry[] = [];
+  let flushScheduled = false;
+
+  const flushChunks = (): void => {
+    flushScheduled = false;
+    if (pendingChunks.length === 0 || mainWindow.isDestroyed()) {
+      pendingChunks.length = 0;
+      return;
+    }
+    const batch = pendingChunks.splice(0);
+    mainWindow.webContents.send("plan:chunks", batch);
+  };
+
   planManager.setOnChunk((taskId, mode, chunk) => {
     console.log(
-      `[PlanIPC] forwarding chunk type=${chunk.type} taskId=${taskId} mode=${mode}`,
+      `[PlanIPC] queuing chunk type=${chunk.type} taskId=${taskId} mode=${mode}`,
     );
-    if (!mainWindow.isDestroyed()) {
-      mainWindow.webContents.send("plan:chunk", taskId, mode, chunk);
+    pendingChunks.push({ taskId, mode, chunk });
+    if (!flushScheduled) {
+      flushScheduled = true;
+      setImmediate(flushChunks);
     }
   });
 
@@ -33,6 +61,8 @@ export function registerPlanHandlers(
         agent: PlanAgent;
         model: string | null;
         message: string;
+        /** Short user-facing text for chat history (not the full prompt) */
+        displayMessage: string;
         sessionId: string | null;
         workspacePath: string;
         taskFilePath: string;
@@ -93,10 +123,27 @@ export function registerPlanHandlers(
           input.agent,
           input.model ?? null,
           input.message,
+          input.displayMessage ?? "",
           input.sessionId,
           cwd,
           input.taskFilePath,
+          input.workspacePath,
+          // onComplete: intentionally no-op — the session name must remain in
+          // frontmatter so the log can be replayed on every future app restart.
+          async () => {},
         );
+
+        const tmuxSession = buildTmuxSessionName(
+          input.workspacePath,
+          input.taskId,
+          input.mode,
+        );
+        const tmuxChanges =
+          input.mode === "execute"
+            ? { execTmuxSession: tmuxSession }
+            : { planTmuxSession: tmuxSession };
+        await updateTask(input.workspacePath, input.taskFilePath, tmuxChanges);
+
         return { ok: true, data: undefined };
       } catch (err) {
         return { ok: false, error: String(err) };
@@ -109,11 +156,34 @@ export function registerPlanHandlers(
     "plan:cancel",
     async (
       _event,
-      input: { taskId: string; mode: PlanMode },
+      input: {
+        taskId: string;
+        mode: PlanMode;
+        workspacePath: string;
+        taskFilePath: string;
+      },
     ): Promise<IpcResult<void>> => {
-      const runKey = `${input.mode}:${input.taskId}`;
-      planManager.cancel(runKey);
-      return { ok: true, data: undefined };
+      try {
+        const runKey = `${input.mode}:${input.taskId}`;
+        planManager.cancel(runKey, input.workspacePath);
+
+        // Only clear the tmux session from frontmatter if we have a valid path
+        if (input.taskFilePath) {
+          const tmuxChanges =
+            input.mode === "execute"
+              ? { execTmuxSession: null }
+              : { planTmuxSession: null };
+          await updateTask(
+            input.workspacePath,
+            input.taskFilePath,
+            tmuxChanges,
+          );
+        }
+
+        return { ok: true, data: undefined };
+      } catch (err) {
+        return { ok: false, error: String(err) };
+      }
     },
   );
 
@@ -180,6 +250,79 @@ export function registerPlanHandlers(
         }
         const models = await planManager.listModels(input.workspacePath);
         return { ok: true, data: models };
+      } catch (err) {
+        return { ok: false, error: String(err) };
+      }
+    },
+  );
+
+  ipcMain.handle(
+    "plan:is-tmux-available",
+    async (): Promise<IpcResult<boolean>> => {
+      try {
+        const available = await planManager.isTmuxAvailable();
+        return { ok: true, data: available };
+      } catch (err) {
+        return { ok: false, error: String(err) };
+      }
+    },
+  );
+
+  ipcMain.handle(
+    "plan:tmux-check",
+    async (
+      _event,
+      input: { workspacePath: string; taskId: string; mode: PlanMode },
+    ): Promise<IpcResult<{ alive: boolean }>> => {
+      try {
+        const tmuxSession = buildTmuxSessionName(
+          input.workspacePath,
+          input.taskId,
+          input.mode,
+        );
+        const available = await planManager.isTmuxAvailable();
+        if (!available) {
+          return { ok: true, data: { alive: false } };
+        }
+        const alive = await planManager.checkTmuxSession(tmuxSession);
+        return { ok: true, data: { alive } };
+      } catch (err) {
+        return { ok: false, error: String(err) };
+      }
+    },
+  );
+
+  ipcMain.handle(
+    "plan:reconnect",
+    async (
+      _event,
+      input: {
+        taskId: string;
+        mode: PlanMode;
+        agent: PlanAgent;
+        workspacePath: string;
+        taskFilePath: string;
+      },
+    ): Promise<IpcResult<{ reconnected: boolean }>> => {
+      try {
+        const tmuxSession = buildTmuxSessionName(
+          input.workspacePath,
+          input.taskId,
+          input.mode,
+        );
+
+        // onComplete: intentionally no-op — the session name must remain in
+        // frontmatter so the log can be replayed on every future app restart.
+        const onComplete = async () => {};
+
+        const reconnected = await planManager.reconnectTmuxSession(
+          tmuxSession,
+          input.taskId,
+          input.mode,
+          input.agent,
+          onComplete,
+        );
+        return { ok: true, data: { reconnected } };
       } catch (err) {
         return { ok: false, error: String(err) };
       }

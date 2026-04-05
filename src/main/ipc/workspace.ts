@@ -3,7 +3,12 @@ import * as fs from "fs";
 import * as path from "path";
 import simpleGit from "simple-git";
 import type { ConfigManager } from "../config";
-import type { IpcResult, WorkspaceInfo, WorkspaceEntry } from "@shared/types";
+import type {
+  IpcResult,
+  WorkspaceInfo,
+  WorkspaceEntry,
+  PlanAgent,
+} from "@shared/types";
 import { initTaskDirs, parseTaskFile } from "../tasks";
 import { startWatchers, stopWatchers } from "../watchers";
 import { startWorktreeTaskWatcher } from "./git";
@@ -317,6 +322,82 @@ export function registerWorkspaceHandlers(
         const raw = await git.revparse(["--abbrev-ref", "HEAD"]);
         const branch = raw.trim() === "HEAD" ? "(detached)" : raw.trim();
         return { ok: true, data: branch };
+      } catch (err) {
+        const msg = err instanceof Error ? err.message : String(err);
+        return { ok: false, error: msg };
+      }
+    },
+  );
+
+  // workspace:getDefaults
+  ipcMain.handle(
+    "workspace:getDefaults",
+    async (
+      _event,
+      wPath: string,
+    ): Promise<
+      IpcResult<{
+        defaultPlanningAgent?: PlanAgent;
+        defaultPlanningModel?: string;
+        defaultExecutionAgent?: PlanAgent;
+        defaultExecutionModel?: string;
+      }>
+    > => {
+      try {
+        const config = configManager.get();
+        const workspace = config.workspaces.find((w) => w.path === wPath);
+        if (!workspace) {
+          return { ok: false, error: "Workspace not found" };
+        }
+        return {
+          ok: true,
+          data: {
+            defaultPlanningAgent: workspace.defaultPlanningAgent,
+            defaultPlanningModel: workspace.defaultPlanningModel,
+            defaultExecutionAgent: workspace.defaultExecutionAgent,
+            defaultExecutionModel: workspace.defaultExecutionModel,
+          },
+        };
+      } catch (err) {
+        const msg = err instanceof Error ? err.message : String(err);
+        return { ok: false, error: msg };
+      }
+    },
+  );
+
+  // workspace:setDefaults
+  ipcMain.handle(
+    "workspace:setDefaults",
+    async (
+      _event,
+      wPath: string,
+      defaults: {
+        defaultPlanningAgent?: PlanAgent;
+        defaultPlanningModel?: string;
+        defaultExecutionAgent?: PlanAgent;
+        defaultExecutionModel?: string;
+      },
+    ): Promise<IpcResult<void>> => {
+      try {
+        configManager.update((c) => {
+          const workspace = c.workspaces.find((w) => w.path === wPath);
+          if (workspace) {
+            if (defaults.defaultPlanningAgent !== undefined) {
+              workspace.defaultPlanningAgent = defaults.defaultPlanningAgent;
+            }
+            if (defaults.defaultPlanningModel !== undefined) {
+              workspace.defaultPlanningModel = defaults.defaultPlanningModel;
+            }
+            if (defaults.defaultExecutionAgent !== undefined) {
+              workspace.defaultExecutionAgent = defaults.defaultExecutionAgent;
+            }
+            if (defaults.defaultExecutionModel !== undefined) {
+              workspace.defaultExecutionModel = defaults.defaultExecutionModel;
+            }
+          }
+        });
+        configManager.flushSync();
+        return { ok: true, data: undefined };
       } catch (err) {
         const msg = err instanceof Error ? err.message : String(err);
         return { ok: false, error: msg };

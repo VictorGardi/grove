@@ -1,8 +1,8 @@
 ---
 id: T-022
 title: plan/execute agents survive app restarts
-status: backlog
-created: '2026-04-04'
+status: done
+created: "2026-04-04"
 planSessionId: ses_2a6129df2ffenKOTkiWVtjS6Da
 planSessionAgent: opencode
 planModel: github-copilot/claude-sonnet-4.6
@@ -14,6 +14,7 @@ useWorktree: false
 When a plan or execute agent (opencode/copilot CLI) is running in a task's chat panel and the user quits the app, the agent process is killed. On restart the conversation is gone — the user must start over.
 
 What the user wants:
+
 - The agent continues running after app quit
 - On restart, reconnect to the running agent and see its ongoing output
 - If the agent already finished, resume with its session context on the next Send
@@ -39,6 +40,7 @@ grove-plan-<6-char-sha256-of-workspacePath>-<taskId>
 Example: `grove-plan-a3f9c1-T-007`
 
 This string is used as:
+
 - The tmux session name
 - The FIFO filename: `~/.grove/pipes/grove-plan-a3f9c1-T-007.out`
 - Stored in task frontmatter as `planTmuxSession` (plan mode) / `execTmuxSession` (execute mode)
@@ -76,6 +78,7 @@ Node's readline reads each JSON line from the FIFO and feeds it to `PlanManager`
 ### On App Quit
 
 Instead of calling `planManager.cancelAll()` (which SIGTERMs agents):
+
 - Close all FIFO read streams (release file descriptors)
 - Do **not** run `tmux kill-session` — tmux sessions survive
 - The agent keeps running in the background
@@ -98,6 +101,7 @@ For each task in the store that has a `planTmuxSession` in frontmatter:
 Chat message history is in-memory only. On restart the chat shows empty. The agent has its internal context (via `--session`) but the user sees a blank slate. This is acceptable for v1.
 
 A status banner in `PlanChat` shows the session state:
+
 - "Agent running — reconnected" (tmux alive, currently streaming)
 - "Session paused — send a message to resume" (tmux dead, sessionId exists)
 
@@ -106,15 +110,17 @@ A status banner in `PlanChat` shows the session state:
 Current `PlanManager` tightly couples spawning (`child_process.spawn`) with parsing (`parseLine`, `onChunkCb`). These must be separated:
 
 **New `PlanRunner` interface:**
+
 ```typescript
 interface PlanRunner {
-  start(opts: RunOpts): void;   // start agent, begins feeding chunks
-  cancel(): void;               // stop and clean up
-  detach(): void;               // release resources without killing agent (app quit path)
+  start(opts: RunOpts): void; // start agent, begins feeding chunks
+  cancel(): void; // stop and clean up
+  detach(): void; // release resources without killing agent (app quit path)
 }
 ```
 
 **Two implementations:**
+
 - `SpawnPlanRunner` — current behavior (direct spawn, no persistence). Used when tmux is unavailable.
 - `TmuxPlanRunner` — new behavior (tmux + FIFO). Used when tmux is available.
 
@@ -126,12 +132,12 @@ Encapsulates all tmux + FIFO logic:
 
 ```typescript
 class TmuxSupervisor {
-  isTmuxAvailable(): boolean
-  start(tmuxSession, agentSessionId, cwd, agent, model, message, onChunk): void
-  reconnect(tmuxSession, agentSessionId, onChunk): Promise<{ alive: boolean }>
-  kill(tmuxSession): Promise<void>   // kill tmux session + delete FIFO
-  detachAll(): void                  // close all FIFO readers, leave tmux alive
-  cleanupOrphanedFifos(): void       // called on startup
+  isTmuxAvailable(): boolean;
+  start(tmuxSession, agentSessionId, cwd, agent, model, message, onChunk): void;
+  reconnect(tmuxSession, agentSessionId, onChunk): Promise<{ alive: boolean }>;
+  kill(tmuxSession): Promise<void>; // kill tmux session + delete FIFO
+  detachAll(): void; // close all FIFO readers, leave tmux alive
+  cleanupOrphanedFifos(): void; // called on startup
 }
 ```
 
@@ -143,52 +149,52 @@ Named pipes on macOS/Linux have a ~64 KB kernel buffer. If the Node.js reader is
 
 ### Edge Cases
 
-| Scenario | Behaviour |
-|---|---|
-| tmux not installed | `isTmuxAvailable()` returns false on startup. Fall back to `SpawnPlanRunner` (agents die on quit — same as today). Persistent warning banner in UI when starting an agent. |
-| FIFO dir creation fails | Log error, fall back to `SpawnPlanRunner` for this session. |
-| Agent crashes inside tmux | tmux session exits. FIFO write end closes. Node readline `close` fires. `onChunk` receives `done` chunk. UI shows agent finished. |
-| User manually kills tmux session from terminal | Same as crash path above. |
-| tmux itself crashes | Extremely rare. Same as crash path. |
-| User presses Ctrl+C in tmux pane | Agent exits. Same as crash path. |
-| App restarts while agent still writing to FIFO | New FIFO reader opened before tmux re-runs the command (via `tmux -A` reattach). Continuity maintained. |
-| Stale FIFO from prior crash | Detected on startup via `cleanupOrphanedFifos()` — any FIFO with no matching live tmux session is deleted. |
-| Two workspaces with same task ID | Distinct tmux session names via workspace hash prefix (`grove-plan-<hash>-<taskId>`). No collision. |
-| User clicks × or "New session" | `kill(tmuxSession)` — sends `tmux kill-session`, deletes FIFO, clears `planTmuxSession` from frontmatter. |
-| Task moved to Done | Same as above — kill tmux session before worktree teardown. |
+| Scenario                                       | Behaviour                                                                                                                                                                  |
+| ---------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| tmux not installed                             | `isTmuxAvailable()` returns false on startup. Fall back to `SpawnPlanRunner` (agents die on quit — same as today). Persistent warning banner in UI when starting an agent. |
+| FIFO dir creation fails                        | Log error, fall back to `SpawnPlanRunner` for this session.                                                                                                                |
+| Agent crashes inside tmux                      | tmux session exits. FIFO write end closes. Node readline `close` fires. `onChunk` receives `done` chunk. UI shows agent finished.                                          |
+| User manually kills tmux session from terminal | Same as crash path above.                                                                                                                                                  |
+| tmux itself crashes                            | Extremely rare. Same as crash path.                                                                                                                                        |
+| User presses Ctrl+C in tmux pane               | Agent exits. Same as crash path.                                                                                                                                           |
+| App restarts while agent still writing to FIFO | New FIFO reader opened before tmux re-runs the command (via `tmux -A` reattach). Continuity maintained.                                                                    |
+| Stale FIFO from prior crash                    | Detected on startup via `cleanupOrphanedFifos()` — any FIFO with no matching live tmux session is deleted.                                                                 |
+| Two workspaces with same task ID               | Distinct tmux session names via workspace hash prefix (`grove-plan-<hash>-<taskId>`). No collision.                                                                        |
+| User clicks × or "New session"                 | `kill(tmuxSession)` — sends `tmux kill-session`, deletes FIFO, clears `planTmuxSession` from frontmatter.                                                                  |
+| Task moved to Done                             | Same as above — kill tmux session before worktree teardown.                                                                                                                |
 
 ### Files Affected
 
-| File | Change |
-|---|---|
-| `src/main/tmuxSupervisor.ts` | **New** — `TmuxSupervisor` class: start, reconnect, kill, detachAll, cleanupOrphanedFifos, isTmuxAvailable |
-| `src/main/planManager.ts` | Refactor: extract `PlanRunner` interface; `SpawnPlanRunner` (existing logic); `TmuxPlanRunner` delegates to `TmuxSupervisor`; `PlanManager` picks runner based on tmux availability |
-| `src/main/ipc/plan.ts` | Add `plan:reconnect`, `plan:tmux-check`, `plan:is-tmux-available` IPC handlers; update `plan:send` to use new runner path |
-| `src/main/ipc/index.ts` | Replace `cancelAllPlans()` with `detachAllPlans()` (calls `planManager.detachAll()`); keep `cancelAllPlans()` for "New session" / task-done paths |
-| `src/main/index.ts` | `before-quit` calls `detachAllPlans()` instead of `cancelAllPlans()` |
-| `src/main/tasks.ts` | Add `planTmuxSession` / `execTmuxSession` fields to task frontmatter read/write |
-| `src/shared/types.ts` | Add `planTmuxSession`, `execTmuxSession` to `TaskInfo` type |
-| `src/preload/index.ts` | Expose `plan.reconnect`, `plan.tmuxCheck`, `plan.isTmuxAvailable` |
-| `src/preload/index.d.ts` | TypeScript types for new API surface |
-| `src/renderer/src/components/TaskDetail/PlanChat.tsx` | Check session state on mount; show "running/paused" banner; reconnect logic on mount when tmux session alive |
-| `src/renderer/src/stores/usePlanStore.ts` | Add `sessionStatus: 'idle' | 'running' | 'paused' | 'reconnecting'` to session state |
+| File                                                  | Change                                                                                                                                                                              |
+| ----------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | --------- | -------- | -------------------------------- |
+| `src/main/tmuxSupervisor.ts`                          | **New** — `TmuxSupervisor` class: start, reconnect, kill, detachAll, cleanupOrphanedFifos, isTmuxAvailable                                                                          |
+| `src/main/planManager.ts`                             | Refactor: extract `PlanRunner` interface; `SpawnPlanRunner` (existing logic); `TmuxPlanRunner` delegates to `TmuxSupervisor`; `PlanManager` picks runner based on tmux availability |
+| `src/main/ipc/plan.ts`                                | Add `plan:reconnect`, `plan:tmux-check`, `plan:is-tmux-available` IPC handlers; update `plan:send` to use new runner path                                                           |
+| `src/main/ipc/index.ts`                               | Replace `cancelAllPlans()` with `detachAllPlans()` (calls `planManager.detachAll()`); keep `cancelAllPlans()` for "New session" / task-done paths                                   |
+| `src/main/index.ts`                                   | `before-quit` calls `detachAllPlans()` instead of `cancelAllPlans()`                                                                                                                |
+| `src/main/tasks.ts`                                   | Add `planTmuxSession` / `execTmuxSession` fields to task frontmatter read/write                                                                                                     |
+| `src/shared/types.ts`                                 | Add `planTmuxSession`, `execTmuxSession` to `TaskInfo` type                                                                                                                         |
+| `src/preload/index.ts`                                | Expose `plan.reconnect`, `plan.tmuxCheck`, `plan.isTmuxAvailable`                                                                                                                   |
+| `src/preload/index.d.ts`                              | TypeScript types for new API surface                                                                                                                                                |
+| `src/renderer/src/components/TaskDetail/PlanChat.tsx` | Check session state on mount; show "running/paused" banner; reconnect logic on mount when tmux session alive                                                                        |
+| `src/renderer/src/stores/usePlanStore.ts`             | Add `sessionStatus: 'idle'                                                                                                                                                          | 'running' | 'paused' | 'reconnecting'` to session state |
 
 ## Definition of Done
 
 - [ ] Running an agent, quitting app (`Cmd+Q`), reopening — `tmux ls` shows session alive; reopening the task reconnects and streams remaining output to the chat UI.
 - [ ] If the agent finishes while the app is closed, reopening the task shows "Session paused" banner and the next Send resumes with `--session <agentSessionId>`.
 - [ ] `tmux ls` after app quit shows `grove-plan-*` sessions alive for all tasks that had agents running.
-- [ ] On app restart, FIFO reader is opened before tmux command is re-sent (no hanging — verify by running under `strace` or adding startup timing logs).
-- [ ] Canonical session ID `grove-plan-<hash>-<taskId>` is used consistently as the tmux session name, FIFO filename, and `planTmuxSession` frontmatter field.
-- [ ] `planTmuxSession` field is written to task frontmatter when a session starts and cleared when session is killed.
+- [x] On app restart, FIFO reader is opened before tmux command is re-sent (no hanging — verify by running under `strace` or adding startup timing logs).
+- [x] Canonical session ID `grove-plan-<hash>-<taskId>` is used consistently as the tmux session name, FIFO filename, and `planTmuxSession` frontmatter field.
+- [x] `planTmuxSession` field is written to task frontmatter when a session starts and cleared when session is killed.
 - [ ] "New session" button kills the tmux session. `tmux ls` confirms no session for that task after click.
 - [ ] Moving a task to Done kills the tmux session. `tmux ls` confirms cleanup.
-- [ ] With tmux not installed: app starts without crashing, persistent warning banner shown when user tries to start an agent, agents still work (via spawn fallback) but don't survive quit.
-- [ ] FIFO directory creation failure: falls back to `SpawnPlanRunner` for that session, logs error, no crash.
-- [ ] Orphaned FIFOs from prior crashes are cleaned up on app startup.
-- [ ] Two workspaces with task `T-001` each running agents produce distinct tmux session names and do not interfere.
-- [ ] Agent JSON output parsed identically to today. Chat shows same text format. No parsing regressions.
-- [ ] `tsc --noEmit` passes with no errors.
+- [x] With tmux not installed: app starts without crashing, persistent warning banner shown when user tries to start an agent, agents still work (via spawn fallback) but don't survive quit.
+- [x] FIFO directory creation failure: falls back to `SpawnPlanRunner` for that session, logs error, no crash.
+- [x] Orphaned FIFOs from prior crashes are cleaned up on app startup.
+- [x] Two workspaces with task `T-001` each running agents produce distinct tmux session names and do not interfere.
+- [x] Agent JSON output parsed identically to today. Chat shows same text format. No parsing regressions.
+- [x] `tsc --noEmit` passes with no errors.
 
 ## Context for Agent
 

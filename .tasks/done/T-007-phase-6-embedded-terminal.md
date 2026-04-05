@@ -1,10 +1,10 @@
 ---
 id: T-007
-title: 'Phase 6: Embedded terminal with node-pty and xterm.js'
+title: "Phase 6: Embedded terminal with node-pty and xterm.js"
 status: done
 priority: critical
 agent: opencode
-created: '2026-04-03'
+created: "2026-04-03"
 tags:
   - terminal
   - phase-6

@@ -3,6 +3,7 @@ import { useDataStore, useSelectedTask } from "../../stores/useDataStore";
 import { useWorkspaceStore } from "../../stores/useWorkspaceStore";
 import { useNavStore } from "../../stores/useNavStore";
 import { useFileStore } from "../../stores/useFileStore";
+import { usePlanStore } from "../../stores/usePlanStore";
 import { updateTask, archiveTask } from "../../actions/taskActions";
 import { InlineEdit } from "../shared/InlineEdit";
 import { TagInput } from "../shared/TagInput";
@@ -21,7 +22,7 @@ const STATUS_COLORS: Record<string, string> = {
 
 const DEBOUNCE_MS = 500;
 
-type DetailTab = "edit" | "plan" | "changes";
+type DetailTab = "edit" | "plan" | "changes" | "debug";
 
 // ── Simple markdown preview ───────────────────────────────────────
 
@@ -101,13 +102,9 @@ export function TaskDetailPanel(): React.JSX.Element {
     isDirtyRef.current = isDirty;
   }, [isDirty]);
 
-  // Default to plan tab for backlog tasks, "plan" (Agent) tab for doing, edit for all others
+  // Default to plan (Agent) tab for all tasks
   useEffect(() => {
-    if (task?.status === "backlog" || task?.status === "doing") {
-      setActiveTab("plan");
-    } else {
-      setActiveTab("edit");
-    }
+    setActiveTab("plan");
   }, [task?.id]);
 
   // ── Load raw file content ─────────────────────────────────────
@@ -430,6 +427,7 @@ export function TaskDetailPanel(): React.JSX.Element {
             className={styles.titleEdit}
             tag="h2"
             placeholder="Task title..."
+            startEditing={task.title === "New task"}
           />
         </div>
 
@@ -441,67 +439,151 @@ export function TaskDetailPanel(): React.JSX.Element {
           >
             Edit
           </button>
-          {(task.status === "backlog" || task.status === "doing") && (
-            <button
-              className={`${styles.tab} ${activeTab === "plan" ? styles.tabActive : ""}`}
-              onClick={() => setActiveTab("plan")}
-            >
-              {task.status === "doing" ? "Agent" : "Plan"}
-            </button>
-          )}
+          <button
+            className={`${styles.tab} ${activeTab === "plan" ? styles.tabActive : ""}`}
+            onClick={() => setActiveTab("plan")}
+          >
+            Agent
+          </button>
           <button
             className={`${styles.tab} ${activeTab === "changes" ? styles.tabActive : ""}`}
             onClick={() => setActiveTab("changes")}
           >
             Changes
           </button>
+          <button
+            className={`${styles.tab} ${activeTab === "debug" ? styles.tabActive : ""}`}
+            onClick={() => setActiveTab("debug")}
+          >
+            Debug
+          </button>
           <span className={styles.filePathHint}>{task.filePath}</span>
         </div>
 
         {/* Content area */}
-        {/* PlanChat stays mounted for backlog and doing tasks so a running agent
+        {/* PlanChat stays mounted for all tasks so a running agent
             isn't cancelled when the user temporarily switches to Edit/Changes tab.
             The cancel-on-unmount in PlanChat only fires when the panel closes. */}
-        {(task.status === "backlog" || task.status === "doing") &&
-          (() => {
-            const planMode = task.status === "doing" ? "execute" : "plan";
-            // Only pass a worktree path when useWorktree is enabled AND a
-            // worktree has actually been created. When false the agent runs
-            // in the workspace root.
-            const worktreeAbsPath =
-              task.useWorktree && task.worktree
-                ? task.worktree.startsWith("/")
-                  ? task.worktree
-                  : `${workspacePath}/${task.worktree}`
-                : undefined;
-            return (
-              <div
-                style={
-                  activeTab === "plan"
-                    ? {
-                        display: "flex",
-                        flex: 1,
-                        overflow: "hidden",
-                        flexDirection: "column",
-                      }
-                    : { display: "none" }
-                }
-              >
-                <PlanChat
-                  key={task.id}
-                  task={task}
-                  mode={planMode}
-                  worktreePath={worktreeAbsPath}
-                  onClose={() => setActiveTab("edit")}
-                />
-              </div>
-            );
-          })()}
+        {(() => {
+          const planMode = task.status === "doing" ? "execute" : "plan";
+          // Only pass a worktree path when useWorktree is enabled AND a
+          // worktree has actually been created. When false the agent runs
+          // in the workspace root.
+          const worktreeAbsPath =
+            task.useWorktree && task.worktree
+              ? task.worktree.startsWith("/")
+                ? task.worktree
+                : `${workspacePath}/${task.worktree}`
+              : undefined;
+          return (
+            <div
+              style={
+                activeTab === "plan"
+                  ? {
+                      display: "flex",
+                      flex: 1,
+                      overflow: "hidden",
+                      flexDirection: "column",
+                    }
+                  : { display: "none" }
+              }
+            >
+              <PlanChat
+                key={task.id}
+                task={task}
+                mode={planMode}
+                worktreePath={worktreeAbsPath}
+                onClose={() => setActiveTab("edit")}
+              />
+            </div>
+          );
+        })()}
         {activeTab === "changes" && (
           <div className={styles.changesWrapper}>
             <ChangesTab task={task} />
           </div>
         )}
+        {activeTab === "debug" &&
+          (() => {
+            const planSessionKey = `plan:${task.id}`;
+            const execSessionKey = `execute:${task.id}`;
+            const planStoreSession =
+              usePlanStore.getState().sessions[planSessionKey];
+            const execStoreSession =
+              usePlanStore.getState().sessions[execSessionKey];
+            const groveDir = `${(window as { process?: { env?: { HOME?: string } } }).process?.env?.HOME ?? "~"}/.grove/runs`;
+            const planLogPath = task.planTmuxSession
+              ? `${groveDir}/${task.planTmuxSession}.log`
+              : null;
+            const execLogPath = task.execTmuxSession
+              ? `${groveDir}/${task.execTmuxSession}.log`
+              : null;
+
+            type DebugRow = { label: string; value: string | null | undefined };
+            const rows: DebugRow[] = [
+              { label: "planTmuxSession", value: task.planTmuxSession },
+              { label: "planLogPath", value: planLogPath },
+              { label: "execTmuxSession", value: task.execTmuxSession },
+              { label: "execLogPath", value: execLogPath },
+              { label: "planSessionId", value: task.planSessionId },
+              { label: "planSessionAgent", value: task.planSessionAgent },
+              { label: "planModel", value: task.planModel },
+              { label: "execSessionId", value: task.execSessionId },
+              { label: "execSessionAgent", value: task.execSessionAgent },
+              { label: "execModel", value: task.execModel },
+              {
+                label: "store:plan status",
+                value: planStoreSession?.sessionStatus ?? null,
+              },
+              {
+                label: "store:plan msgs",
+                value: planStoreSession
+                  ? String(planStoreSession.messages.length)
+                  : null,
+              },
+              {
+                label: "store:plan isRunning",
+                value: planStoreSession
+                  ? String(planStoreSession.isRunning)
+                  : null,
+              },
+              {
+                label: "store:exec status",
+                value: execStoreSession?.sessionStatus ?? null,
+              },
+              {
+                label: "store:exec msgs",
+                value: execStoreSession
+                  ? String(execStoreSession.messages.length)
+                  : null,
+              },
+              {
+                label: "store:exec isRunning",
+                value: execStoreSession
+                  ? String(execStoreSession.isRunning)
+                  : null,
+              },
+            ];
+
+            return (
+              <div className={styles.debugPanel}>
+                <table className={styles.debugTable}>
+                  <tbody>
+                    {rows.map((row) => (
+                      <tr key={row.label}>
+                        <td className={styles.debugLabel}>{row.label}</td>
+                        <td className={styles.debugValue}>
+                          {row.value ?? (
+                            <span className={styles.debugNull}>null</span>
+                          )}
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            );
+          })()}
         {activeTab === "edit" && (
           <div className={styles.splitView}>
             {/* Left: raw markdown editor */}

@@ -37,6 +37,9 @@ function makeTask(overrides: Partial<TaskInfo> = {}): TaskInfo {
     execSessionId: null,
     execSessionAgent: null,
     execModel: null,
+    planTmuxSession: null,
+    execTmuxSession: null,
+    completed: null,
     ...overrides,
   };
 }

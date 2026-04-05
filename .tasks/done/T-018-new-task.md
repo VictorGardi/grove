@@ -2,7 +2,7 @@
 id: T-018
 title: show agent running with indicator when planning session is ongoing
 status: done
-created: '2026-04-04'
+created: "2026-04-04"
 useWorktree: false
 planSessionId: ses_2a6847c3effeRav4Ier5RuM6u5
 planSessionAgent: opencode

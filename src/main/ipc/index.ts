@@ -1,5 +1,6 @@
 import { ipcMain, BrowserWindow } from "electron";
 import type { ConfigManager } from "../config";
+import { isValidTheme } from "../config";
 import { PtyManager } from "../pty";
 import { PlanManager } from "../planManager";
 import { registerWorkspaceHandlers } from "./workspace";
@@ -27,10 +28,31 @@ export function registerIpcHandlers(
 
   // Plan manager — lifecycle managed here
   planManager = new PlanManager();
+  planManager.init(); // Clean up orphaned FIFOs on startup
   registerPlanHandlers(planManager, mainWindow);
 
   // app:getPlatform
   ipcMain.handle("app:getPlatform", () => process.platform);
+
+  // app:getTheme
+  ipcMain.handle("app:getTheme", () => {
+    const theme = configManager.get().theme;
+    return { ok: true, data: theme };
+  });
+
+  // app:setTheme
+  ipcMain.handle("app:setTheme", (_event, theme: string) => {
+    if (!isValidTheme(theme)) {
+      return {
+        ok: false,
+        error: `Invalid theme: ${theme}. Valid themes are: catppuccin-mocha, catppuccin-latte`,
+      };
+    }
+    configManager.update((cfg) => {
+      cfg.theme = theme;
+    });
+    return { ok: true, data: theme };
+  });
 
   // app:setTitleBarColor — Windows only, no-op on other platforms
   ipcMain.handle(
@@ -55,8 +77,16 @@ export function killAllPtys(): void {
 }
 
 /**
- * Cancel all plan agent runs. Called on app quit.
+ * Cancel all plan agent runs. Called when explicitly cancelling (e.g., "New session").
  */
 export function cancelAllPlans(): void {
   planManager?.cancelAll();
+}
+
+/**
+ * Detach all plan agent runs. Called on app quit — releases resources
+ * without killing the underlying tmux sessions.
+ */
+export function detachAllPlans(): void {
+  planManager?.detachAll();
 }

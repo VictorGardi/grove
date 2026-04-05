@@ -2,7 +2,7 @@
 id: T-027
 title: takes too long to open new task?
 status: done
-created: '2026-04-05'
+created: "2026-04-05"
 planSessionId: ses_2a3e46e56ffeo5QmNjXWFxGNHK
 planSessionAgent: opencode
 planModel: opencode/big-pickle

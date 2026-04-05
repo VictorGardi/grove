@@ -1,38 +1,37 @@
-/* ── Default (Dark) theme ───────────────────────────────────────
-   Extracted from the original variables.css.
+/* ── Fallback theme (Catppuccin Mocha) ───────────────────────────
    Applied when no data-theme attribute is set.
    ─────────────────────────────────────────────────────────────── */
 :root {
   /* Backgrounds */
-  --bg-base: #0b0b0d;
-  --bg-surface: #101012;
-  --bg-elevated: #141417;
-  --bg-hover: #32323f;
-  --bg-active: #1a1a22;
+  --bg-base: #1e1e2e;
+  --bg-surface: #181825;
+  --bg-elevated: #313244;
+  --bg-hover: #585b70;
+  --bg-active: #45475a;
 
   /* Borders */
-  --border: #242430;
-  --border-dim: #1a1a24;
+  --border: #45475a;
+  --border-dim: #313244;
 
   /* Text */
-  --text-primary: #e2e2e6;
-  --text-secondary: #8b8b96;
-  --text-lo: #44444e;
+  --text-primary: #cdd6f4;
+  --text-secondary: #bac2de;
+  --text-lo: #6c7086;
 
   /* Accent */
-  --accent: #7b68ee;
-  --accent-dim: rgba(123, 104, 238, 0.15);
-  --accent-selection: rgba(123, 104, 238, 0.3);
+  --accent: #cba6f7;
+  --accent-dim: rgba(203, 166, 247, 0.15);
+  --accent-selection: rgba(203, 166, 247, 0.3);
 
   /* Status */
-  --status-green: #3ecf8e;
-  --status-amber: #e8a44a;
-  --status-red: #e05c5c;
-  --status-blue: #5ba3f5;
+  --status-green: #a6e3a1;
+  --status-amber: #f9e2af;
+  --status-red: #f38ba8;
+  --status-blue: #89b4fa;
 
   /* Diff colors */
-  --green: #3ecf8e;
-  --green-dim: rgba(62, 207, 142, 0.12);
-  --red: #e05c5c;
-  --red-dim: rgba(224, 92, 92, 0.12);
+  --green: #a6e3a1;
+  --green-dim: rgba(166, 227, 161, 0.12);
+  --red: #f38ba8;
+  --red-dim: rgba(243, 139, 168, 0.12);
 }

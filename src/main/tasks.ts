@@ -85,7 +85,7 @@ export async function parseTaskFile(
         typeof data.created === "string"
           ? data.created
           : data.created instanceof Date
-            ? data.created.toISOString().split("T")[0]
+            ? data.created.toISOString()
             : null,
       tags: Array.isArray(data.tags) ? data.tags.map(String) : [],
       decisions: Array.isArray(data.decisions)
@@ -95,8 +95,8 @@ export async function parseTaskFile(
       dodTotal,
       dodDone,
       filePath,
-      // useWorktree defaults to true; only false when explicitly set to false
-      useWorktree: data.useWorktree !== false,
+      // useWorktree defaults to false; only true when explicitly set to true
+      useWorktree: data.useWorktree === true,
       planSessionId:
         typeof data.planSessionId === "string" ? data.planSessionId : null,
       planSessionAgent:
@@ -113,6 +113,11 @@ export async function parseTaskFile(
           ? (data.execSessionAgent as PlanAgent)
           : null,
       execModel: typeof data.execModel === "string" ? data.execModel : null,
+      planTmuxSession:
+        typeof data.planTmuxSession === "string" ? data.planTmuxSession : null,
+      execTmuxSession:
+        typeof data.execTmuxSession === "string" ? data.execTmuxSession : null,
+      completed: typeof data.completed === "string" ? data.completed : null,
     };
   } catch (err) {
     console.warn(`[Tasks] Failed to parse ${filePath}:`, err);
@@ -182,18 +187,6 @@ export async function nextTaskId(workspacePath: string): Promise<string> {
 }
 
 /**
- * Generate a URL-safe slug from a title.
- * Lowercase, hyphens, max 50 chars, no leading/trailing hyphens.
- */
-function slugify(title: string): string {
-  return title
-    .toLowerCase()
-    .replace(/[^a-z0-9]+/g, "-")
-    .replace(/^-|-$/g, "")
-    .slice(0, 50);
-}
-
-/**
  * Build frontmatter object from TaskFrontmatter, omitting null/empty fields.
  */
 function buildFrontmatter(fm: TaskFrontmatter): Record<string, unknown> {
@@ -208,14 +201,17 @@ function buildFrontmatter(fm: TaskFrontmatter): Record<string, unknown> {
   if (fm.created) obj.created = fm.created;
   if (fm.tags.length > 0) obj.tags = fm.tags;
   if (fm.decisions.length > 0) obj.decisions = fm.decisions;
-  // Only persist useWorktree when explicitly false (default is true)
-  if (fm.useWorktree === false) obj.useWorktree = false;
+  // Only persist useWorktree when explicitly true (default is false)
+  if (fm.useWorktree === true) obj.useWorktree = true;
   if (fm.planSessionId != null) obj.planSessionId = fm.planSessionId;
   if (fm.planSessionAgent != null) obj.planSessionAgent = fm.planSessionAgent;
   if (fm.planModel != null) obj.planModel = fm.planModel;
   if (fm.execSessionId != null) obj.execSessionId = fm.execSessionId;
   if (fm.execSessionAgent != null) obj.execSessionAgent = fm.execSessionAgent;
   if (fm.execModel != null) obj.execModel = fm.execModel;
+  if (fm.planTmuxSession != null) obj.planTmuxSession = fm.planTmuxSession;
+  if (fm.execTmuxSession != null) obj.execTmuxSession = fm.execTmuxSession;
+  if (fm.completed != null) obj.completed = fm.completed;
   return obj;
 }
 
@@ -228,9 +224,8 @@ export async function createTask(
   title: string,
 ): Promise<TaskInfo> {
   const id = await nextTaskId(workspacePath);
-  const slug = slugify(title);
-  const filename = `${id}-${slug || "untitled"}.md`;
-  const created = new Date().toISOString().split("T")[0];
+  const filename = `${id}.md`;
+  const created = new Date().toISOString();
 
   const frontmatter: TaskFrontmatter = {
     id,
@@ -242,6 +237,7 @@ export async function createTask(
     created,
     tags: [],
     decisions: [],
+    useWorktree: false,
   };
 
   const body = `\n## Description\n\n\n## Definition of Done\n\n- [ ] Define acceptance criteria\n\n## Context for agent\n\n`;
@@ -334,6 +330,11 @@ export function moveTask(
 
     // Update status in frontmatter
     parsed.data.status = toStatus;
+
+    // Set completed date when moving to done
+    if (toStatus === "done") {
+      parsed.data.completed = new Date().toISOString();
+    }
 
     const content = matter.stringify(parsed.content, parsed.data);
     const filename = path.basename(filePath);

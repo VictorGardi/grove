@@ -18,8 +18,19 @@ export const useThemeStore = create<ThemeState>()((set) => {
   return {
     theme: initial,
     colors: THEME_COLORS[initial],
-    setTheme: (theme: ThemeName) => {
+    setTheme: async (theme: ThemeName) => {
       applyTheme(theme);
+      try {
+        const result = await window.api.app.setTheme(theme);
+        if (!result.ok) {
+          console.warn(
+            "[useThemeStore] Failed to persist theme to config:",
+            result.error,
+          );
+        }
+      } catch (err) {
+        console.warn("[useThemeStore] Failed to persist theme to config:", err);
+      }
       set({ theme, colors: THEME_COLORS[theme] });
     },
   };

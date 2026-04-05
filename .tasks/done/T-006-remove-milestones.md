@@ -2,7 +2,7 @@
 id: T-006
 title: Remove milestone concept from Grove
 priority: high
-created: '2026-04-03'
+created: "2026-04-03"
 tags:
   - refactor
   - cleanup
@@ -269,4 +269,3 @@ Edit `VISION.md` to remove all milestone references:
   field will have that field silently ignored after this change.
 
 ## Context for agent
-

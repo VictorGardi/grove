@@ -3,15 +3,10 @@
  * CSS variables are applied by toggling `data-theme` on <html>.
  */
 
-export const THEMES = [
-  "default",
-  "catppuccin-mocha",
-  "catppuccin-latte",
-] as const;
+export const THEMES = ["catppuccin-mocha", "catppuccin-latte"] as const;
 export type ThemeName = (typeof THEMES)[number];
 
 export const THEME_LABELS: Record<ThemeName, string> = {
-  default: "Default (Dark)",
   "catppuccin-mocha": "Catppuccin Mocha",
   "catppuccin-latte": "Catppuccin Latte",
 };
@@ -59,43 +54,6 @@ export interface ThemeColors {
 }
 
 export const THEME_COLORS: Record<ThemeName, ThemeColors> = {
-  default: {
-    bgBase: "#0b0b0d",
-    bgSurface: "#101012",
-    accent: "#7b68ee",
-    textPrimary: "#e2e2e6",
-    textSecondary: "#8b8b96",
-    textLo: "#44444e",
-    border: "#242430",
-    xterm: {
-      background: "#0b0b0d",
-      foreground: "#e2e2e6",
-      cursor: "#7b68ee",
-      cursorAccent: "#0b0b0d",
-      selectionBackground: "rgba(123, 104, 238, 0.3)",
-      selectionForeground: "#e2e2e6",
-      black: "#0b0b0d",
-      red: "#e05c5c",
-      green: "#3ecf8e",
-      yellow: "#e8a44a",
-      blue: "#5ba3f5",
-      magenta: "#7b68ee",
-      cyan: "#56d4dd",
-      white: "#e2e2e6",
-      brightBlack: "#44444e",
-      brightRed: "#e05c5c",
-      brightGreen: "#3ecf8e",
-      brightYellow: "#e8a44a",
-      brightBlue: "#5ba3f5",
-      brightMagenta: "#7b68ee",
-      brightCyan: "#56d4dd",
-      brightWhite: "#ffffff",
-    },
-    shikiTheme: "grove-dark",
-    titleBarColor: "#0b0b0d",
-    titleBarSymbolColor: "#8b8b96",
-  },
-
   "catppuccin-mocha": {
     bgBase: "#1e1e2e",
     bgSurface: "#181825",
@@ -179,7 +137,22 @@ export function isValidTheme(value: string | null): value is ThemeName {
 
 export function getStoredTheme(): ThemeName {
   const saved = localStorage.getItem(STORAGE_KEY);
-  return isValidTheme(saved) ? saved : "default";
+  return isValidTheme(saved) ? saved : "catppuccin-mocha";
+}
+
+/**
+ * Load theme from config.json via IPC. Returns the theme or falls back to localStorage.
+ */
+export async function loadThemeFromConfig(): Promise<ThemeName> {
+  try {
+    const result = await window.api.app.getTheme();
+    if (result.ok && isValidTheme(result.data)) {
+      return result.data;
+    }
+  } catch (err) {
+    console.warn("[loadTheme] Failed to load theme from config:", err);
+  }
+  return getStoredTheme();
 }
 
 /**
@@ -188,11 +161,7 @@ export function getStoredTheme(): ThemeName {
  * when changing themes from React components.
  */
 export function applyTheme(theme: ThemeName): void {
-  if (theme === "default") {
-    document.documentElement.removeAttribute("data-theme");
-  } else {
-    document.documentElement.setAttribute("data-theme", theme);
-  }
+  document.documentElement.setAttribute("data-theme", theme);
   localStorage.setItem(STORAGE_KEY, theme);
 }
 

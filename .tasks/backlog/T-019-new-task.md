@@ -2,7 +2,7 @@
 id: T-019
 title: fix writing to task file while watcher is active
 status: backlog
-created: '2026-04-04'
+created: "2026-04-04"
 useWorktree: false
 planSessionId: ses_2a61c35ecffeJ45ECtcnG4CkXV
 planSessionAgent: opencode
@@ -26,6 +26,7 @@ The watcher uses `chokidar.watch(worktreeTaskFilePath)` — watching a single fi
 The `awaitWriteFinish` configuration (`stabilityThreshold: 150ms`, `pollInterval: 50ms`) monitors file stat (size + mtime) stability. For agents that write via truncate-then-write (the default `fs.writeFile` with `w` flag), the watcher may fire during the truncated state if the timing is unlucky. The 300ms debounce (line 111) helps but does not fully protect against this since it reads at a fixed delay after the last event rather than verifying content integrity.
 
 **Issue flow (current):**
+
 1. Agent writes worktree task file (via temp+rename or truncate+write)
 2. Watcher either (a) misses the event entirely (rename case) or (b) fires on partial/stale state
 3. If the event fires, the watcher reads the file — may get truncated or pre-write content
@@ -57,6 +58,7 @@ watcher.on("all", (event, changedPath) => {
 **Change 2: Add content validation before writing to root** (defense-in-depth)
 
 Before calling `atomicWrite(rootPath, content)`, validate the content read from the worktree:
+
 - Non-empty (skip if empty or whitespace-only)
 - Contains YAML frontmatter markers (starts with `---`)
 

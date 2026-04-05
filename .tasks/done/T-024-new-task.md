@@ -2,7 +2,7 @@
 id: T-024
 title: Show "waiting for you" indicator on task cards when agent session is complete
 status: done
-created: '2026-04-04'
+created: "2026-04-04"
 useWorktree: false
 planSessionId: ses_2a60fa4c2ffekeoNhWvVbWRnHU
 planSessionAgent: opencode

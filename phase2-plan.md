@@ -28,60 +28,61 @@ Add the following types alongside existing `WorkspaceEntry`, `WorkspaceInfo`, et
 
 ```ts
 /** Status columns — maps to directory names in .tasks/ */
-export type TaskStatus = 'backlog' | 'doing' | 'review' | 'done'
+export type TaskStatus = "backlog" | "doing" | "review" | "done";
 
 /** Priority levels for task cards — optional frontmatter field */
-export type TaskPriority = 'critical' | 'high' | 'medium' | 'low'
+export type TaskPriority = "critical" | "high" | "medium" | "low";
 
 /** Parsed from a .tasks/{status}/T-XXX-slug.md file */
 export interface TaskInfo {
-  id: string                    // e.g. "T-004" — from frontmatter `id`, or derived from filename
-  title: string                 // from frontmatter `title`, or derived from filename
-  status: TaskStatus
-  priority: TaskPriority | null // null = no badge rendered
-  agent: string | null          // e.g. "claude-code"
-  worktree: string | null
-  branch: string | null
-  created: string | null        // ISO date string
-  tags: string[]
-  decisions: string[]           // e.g. ["D-002"]
-  milestone: string | null      // e.g. "M-001"
-  description: string           // first ~200 chars of body (for card preview)
-  dodTotal: number              // total DoD checklist items
-  dodDone: number               // checked items
-  filePath: string              // absolute path to the .md file
+  id: string; // e.g. "T-004" — from frontmatter `id`, or derived from filename
+  title: string; // from frontmatter `title`, or derived from filename
+  status: TaskStatus;
+  priority: TaskPriority | null; // null = no badge rendered
+  agent: string | null; // e.g. "claude-code"
+  worktree: string | null;
+  branch: string | null;
+  created: string | null; // ISO date string
+  tags: string[];
+  decisions: string[]; // e.g. ["D-002"]
+  milestone: string | null; // e.g. "M-001"
+  description: string; // first ~200 chars of body (for card preview)
+  dodTotal: number; // total DoD checklist items
+  dodDone: number; // checked items
+  filePath: string; // absolute path to the .md file
 }
 
 /** Milestone status — binary */
-export type MilestoneStatus = 'open' | 'closed'
+export type MilestoneStatus = "open" | "closed";
 
 /** Parsed from a .milestones/M-XXX-slug.md file */
 export interface MilestoneInfo {
-  id: string                    // e.g. "M-001"
-  title: string
-  status: MilestoneStatus
-  created: string | null        // ISO date string
-  tags: string[]
-  description: string           // full body content
-  filePath: string              // absolute path to the .md file
+  id: string; // e.g. "M-001"
+  title: string;
+  status: MilestoneStatus;
+  created: string | null; // ISO date string
+  tags: string[];
+  description: string; // full body content
+  filePath: string; // absolute path to the .md file
   // Computed at query time, not stored in file:
   taskCounts: {
-    total: number
-    done: number
-    doing: number
-    review: number
-    backlog: number
-  }
+    total: number;
+    done: number;
+    doing: number;
+    review: number;
+    backlog: number;
+  };
 }
 
 /** Combined workspace data — returned atomically to avoid stale cross-references */
 export interface WorkspaceData {
-  tasks: TaskInfo[]
-  milestones: MilestoneInfo[]
+  tasks: TaskInfo[];
+  milestones: MilestoneInfo[];
 }
 ```
 
 **Key design decisions:**
+
 - `taskCounts` on `MilestoneInfo`: Progress is computed by cross-referencing tasks. The main process resolves this so the renderer never has to cross-reference stores.
 - `WorkspaceData`: A single atomic response containing both tasks and milestones, ensuring milestone `taskCounts` are always consistent with the task list the board displays.
 - `priority` is nullable: When `null`, the priority badge is simply not rendered on the card. This is the common case for existing `.tasks/` files that don't have a `priority` frontmatter field.
@@ -94,6 +95,7 @@ export interface WorkspaceData {
 **File:** `src/main/tasks.ts`
 
 Create a module responsible for:
+
 1. Scanning `.tasks/{backlog,doing,review,done}/*.md`
 2. Parsing each file with `gray-matter`
 3. Extracting DoD progress from the Markdown body
@@ -101,102 +103,120 @@ Create a module responsible for:
 5. Returning `TaskInfo[]`
 
 ```ts
-import matter from 'gray-matter'
-import * as fs from 'fs'
-import * as path from 'path'
-import type { TaskInfo, TaskStatus, TaskPriority } from '@shared/types'
+import matter from "gray-matter";
+import * as fs from "fs";
+import * as path from "path";
+import type { TaskInfo, TaskStatus, TaskPriority } from "@shared/types";
 
-const STATUS_DIRS: TaskStatus[] = ['backlog', 'doing', 'review', 'done']
-const VALID_PRIORITIES: TaskPriority[] = ['critical', 'high', 'medium', 'low']
+const STATUS_DIRS: TaskStatus[] = ["backlog", "doing", "review", "done"];
+const VALID_PRIORITIES: TaskPriority[] = ["critical", "high", "medium", "low"];
 
-export async function parseTaskFile(filePath: string, status: TaskStatus): Promise<TaskInfo | null> {
+export async function parseTaskFile(
+  filePath: string,
+  status: TaskStatus,
+): Promise<TaskInfo | null> {
   try {
-    const raw = await fs.promises.readFile(filePath, 'utf-8')
-    const { data, content } = matter(raw)
+    const raw = await fs.promises.readFile(filePath, "utf-8");
+    const { data, content } = matter(raw);
 
     // ID: frontmatter > filename-derived
-    const filename = path.basename(filePath, '.md')
-    const idMatch = filename.match(/^(T-\d+)/)
-    const id = typeof data.id === 'string' ? data.id : (idMatch ? idMatch[1] : filename)
+    const filename = path.basename(filePath, ".md");
+    const idMatch = filename.match(/^(T-\d+)/);
+    const id =
+      typeof data.id === "string" ? data.id : idMatch ? idMatch[1] : filename;
 
     // Title: frontmatter > filename slug
-    const title = typeof data.title === 'string' ? data.title : filename.replace(/^T-\d+-/, '').replace(/-/g, ' ')
+    const title =
+      typeof data.title === "string"
+        ? data.title
+        : filename.replace(/^T-\d+-/, "").replace(/-/g, " ");
 
     // Priority: validate against known values
-    const rawPriority = typeof data.priority === 'string' ? data.priority.toLowerCase() : null
-    const priority = rawPriority && VALID_PRIORITIES.includes(rawPriority as TaskPriority)
-      ? (rawPriority as TaskPriority)
-      : null
+    const rawPriority =
+      typeof data.priority === "string" ? data.priority.toLowerCase() : null;
+    const priority =
+      rawPriority && VALID_PRIORITIES.includes(rawPriority as TaskPriority)
+        ? (rawPriority as TaskPriority)
+        : null;
 
     // DoD checkboxes
-    const dodDone = (content.match(/^- \[x\]/gm) || []).length
-    const dodTotal = dodDone + (content.match(/^- \[ \]/gm) || []).length
+    const dodDone = (content.match(/^- \[x\]/gm) || []).length;
+    const dodTotal = dodDone + (content.match(/^- \[ \]/gm) || []).length;
 
     // Description: scan lines, skip headings and blank lines, take first
     // contiguous block of content lines, join and truncate to 200 chars
-    const lines = content.split('\n')
-    const descLines: string[] = []
-    let foundContent = false
+    const lines = content.split("\n");
+    const descLines: string[] = [];
+    let foundContent = false;
     for (const line of lines) {
-      const trimmed = line.trim()
-      if (trimmed.startsWith('#') || trimmed === '') {
-        if (foundContent) break // end of first paragraph
-        continue
+      const trimmed = line.trim();
+      if (trimmed.startsWith("#") || trimmed === "") {
+        if (foundContent) break; // end of first paragraph
+        continue;
       }
-      if (trimmed.startsWith('- [')) continue // skip DoD lines
-      foundContent = true
-      descLines.push(trimmed)
+      if (trimmed.startsWith("- [")) continue; // skip DoD lines
+      foundContent = true;
+      descLines.push(trimmed);
     }
-    let description = descLines.join(' ').trim()
-    if (description.length > 200) description = description.slice(0, 197) + '...'
+    let description = descLines.join(" ").trim();
+    if (description.length > 200)
+      description = description.slice(0, 197) + "...";
 
     return {
       id,
       title,
       status,
       priority,
-      agent: typeof data.agent === 'string' ? data.agent : null,
-      worktree: typeof data.worktree === 'string' ? data.worktree : null,
-      branch: typeof data.branch === 'string' ? data.branch : null,
-      created: typeof data.created === 'string' ? data.created : data.created instanceof Date ? data.created.toISOString().split('T')[0] : null,
+      agent: typeof data.agent === "string" ? data.agent : null,
+      worktree: typeof data.worktree === "string" ? data.worktree : null,
+      branch: typeof data.branch === "string" ? data.branch : null,
+      created:
+        typeof data.created === "string"
+          ? data.created
+          : data.created instanceof Date
+            ? data.created.toISOString().split("T")[0]
+            : null,
       tags: Array.isArray(data.tags) ? data.tags.map(String) : [],
-      decisions: Array.isArray(data.decisions) ? data.decisions.map(String) : [],
-      milestone: typeof data.milestone === 'string' ? data.milestone : null,
+      decisions: Array.isArray(data.decisions)
+        ? data.decisions.map(String)
+        : [],
+      milestone: typeof data.milestone === "string" ? data.milestone : null,
       description,
       dodTotal,
       dodDone,
-      filePath
-    }
+      filePath,
+    };
   } catch (err) {
-    console.warn(`[Tasks] Failed to parse ${filePath}:`, err)
-    return null
+    console.warn(`[Tasks] Failed to parse ${filePath}:`, err);
+    return null;
   }
 }
 
 export async function scanTasks(workspacePath: string): Promise<TaskInfo[]> {
-  const tasks: TaskInfo[] = []
-  const taskBase = path.join(workspacePath, '.tasks')
+  const tasks: TaskInfo[] = [];
+  const taskBase = path.join(workspacePath, ".tasks");
 
   for (const status of STATUS_DIRS) {
-    const dirPath = path.join(taskBase, status)
+    const dirPath = path.join(taskBase, status);
     try {
-      const entries = await fs.promises.readdir(dirPath)
+      const entries = await fs.promises.readdir(dirPath);
       for (const entry of entries) {
-        if (!entry.endsWith('.md')) continue
-        const filePath = path.join(dirPath, entry)
-        const task = await parseTaskFile(filePath, status)
-        if (task) tasks.push(task)
+        if (!entry.endsWith(".md")) continue;
+        const filePath = path.join(dirPath, entry);
+        const task = await parseTaskFile(filePath, status);
+        if (task) tasks.push(task);
       }
     } catch {
       // Directory may not exist yet — that's fine
     }
   }
 
-  return tasks
+  return tasks;
 }
 ```
 
 **Important details:**
+
 - All file I/O uses `fs.promises` (async) to avoid blocking the main process event loop during scans of large task directories.
 - `gray-matter` parses YAML dates as `Date` objects — the `created` field handler accounts for this.
 - Description extraction: scans body lines, skips headings (`#`), blank lines, and DoD checklist items (`- [`). Takes the first contiguous block of content, joins with spaces, truncates to 200 chars.
@@ -209,72 +229,84 @@ export async function scanTasks(workspacePath: string): Promise<TaskInfo[]> {
 **File:** `src/main/milestones.ts`
 
 ```ts
-import matter from 'gray-matter'
-import * as fs from 'fs'
-import * as path from 'path'
-import type { MilestoneInfo, MilestoneStatus, TaskInfo } from '@shared/types'
+import matter from "gray-matter";
+import * as fs from "fs";
+import * as path from "path";
+import type { MilestoneInfo, MilestoneStatus, TaskInfo } from "@shared/types";
 
-export async function parseMilestoneFile(filePath: string): Promise<Omit<MilestoneInfo, 'taskCounts'> | null> {
+export async function parseMilestoneFile(
+  filePath: string,
+): Promise<Omit<MilestoneInfo, "taskCounts"> | null> {
   try {
-    const raw = await fs.promises.readFile(filePath, 'utf-8')
-    const { data, content } = matter(raw)
+    const raw = await fs.promises.readFile(filePath, "utf-8");
+    const { data, content } = matter(raw);
 
-    const filename = path.basename(filePath, '.md')
-    const idMatch = filename.match(/^(M-\d+)/)
-    const id = typeof data.id === 'string' ? data.id : (idMatch ? idMatch[1] : filename)
-    const title = typeof data.title === 'string' ? data.title : filename.replace(/^M-\d+-/, '').replace(/-/g, ' ')
+    const filename = path.basename(filePath, ".md");
+    const idMatch = filename.match(/^(M-\d+)/);
+    const id =
+      typeof data.id === "string" ? data.id : idMatch ? idMatch[1] : filename;
+    const title =
+      typeof data.title === "string"
+        ? data.title
+        : filename.replace(/^M-\d+-/, "").replace(/-/g, " ");
 
-    const rawStatus = typeof data.status === 'string' ? data.status.toLowerCase() : 'open'
-    const status: MilestoneStatus = rawStatus === 'closed' ? 'closed' : 'open'
+    const rawStatus =
+      typeof data.status === "string" ? data.status.toLowerCase() : "open";
+    const status: MilestoneStatus = rawStatus === "closed" ? "closed" : "open";
 
     return {
       id,
       title,
       status,
-      created: typeof data.created === 'string' ? data.created : data.created instanceof Date ? data.created.toISOString().split('T')[0] : null,
+      created:
+        typeof data.created === "string"
+          ? data.created
+          : data.created instanceof Date
+            ? data.created.toISOString().split("T")[0]
+            : null,
       tags: Array.isArray(data.tags) ? data.tags.map(String) : [],
       description: content.trim(),
-      filePath
-    }
+      filePath,
+    };
   } catch (err) {
-    console.warn(`[Milestones] Failed to parse ${filePath}:`, err)
-    return null
+    console.warn(`[Milestones] Failed to parse ${filePath}:`, err);
+    return null;
   }
 }
 
 export async function scanMilestones(
   workspacePath: string,
-  tasks: TaskInfo[]
+  tasks: TaskInfo[],
 ): Promise<MilestoneInfo[]> {
-  const milestoneDir = path.join(workspacePath, '.milestones')
-  const milestones: MilestoneInfo[] = []
+  const milestoneDir = path.join(workspacePath, ".milestones");
+  const milestones: MilestoneInfo[] = [];
 
   try {
-    const entries = await fs.promises.readdir(milestoneDir)
+    const entries = await fs.promises.readdir(milestoneDir);
     for (const entry of entries) {
-      if (!entry.endsWith('.md')) continue
-      const filePath = path.join(milestoneDir, entry)
-      const parsed = await parseMilestoneFile(filePath)
-      if (!parsed) continue
+      if (!entry.endsWith(".md")) continue;
+      const filePath = path.join(milestoneDir, entry);
+      const parsed = await parseMilestoneFile(filePath);
+      if (!parsed) continue;
 
       // Compute taskCounts by cross-referencing the task list
-      const linked = tasks.filter(t => t.milestone === parsed.id)
+      const linked = tasks.filter((t) => t.milestone === parsed.id);
       milestones.push({
         ...parsed,
         taskCounts: {
           total: linked.length,
-          done: linked.filter(t => t.status === 'done').length,
-          doing: linked.filter(t => t.status === 'doing').length,
-          review: linked.filter(t => t.status === 'review').length,
-          backlog: linked.filter(t => t.status === 'backlog').length
-        }
-      })
+          done: linked.filter((t) => t.status === "done").length,
+          doing: linked.filter((t) => t.status === "doing").length,
+          review: linked.filter((t) => t.status === "review").length,
+          backlog: linked.filter((t) => t.status === "backlog").length,
+        },
+      });
     }
   } catch {
     // Directory may not exist yet
   }
 
-  return milestones
+  return milestones;
 }
 ```
 
@@ -288,9 +320,9 @@ export async function scanMilestones(
 
 ```ts
 export async function initTaskDirs(workspacePath: string): Promise<void> {
-  const taskBase = path.join(workspacePath, '.tasks')
+  const taskBase = path.join(workspacePath, ".tasks");
   for (const dir of STATUS_DIRS) {
-    await fs.promises.mkdir(path.join(taskBase, dir), { recursive: true })
+    await fs.promises.mkdir(path.join(taskBase, dir), { recursive: true });
   }
 }
 ```
@@ -299,7 +331,9 @@ export async function initTaskDirs(workspacePath: string): Promise<void> {
 
 ```ts
 export async function initMilestoneDirs(workspacePath: string): Promise<void> {
-  await fs.promises.mkdir(path.join(workspacePath, '.milestones'), { recursive: true })
+  await fs.promises.mkdir(path.join(workspacePath, ".milestones"), {
+    recursive: true,
+  });
 }
 ```
 
@@ -312,57 +346,58 @@ Directory initialization is split by module (tasks.ts creates `.tasks/` dirs, mi
 **File:** `src/main/watchers.ts`
 
 ```ts
-import chokidar from 'chokidar'
-import * as path from 'path'
-import type { BrowserWindow } from 'electron'
+import chokidar from "chokidar";
+import * as path from "path";
+import type { BrowserWindow } from "electron";
 
-let taskWatcher: chokidar.FSWatcher | null = null
-let milestoneWatcher: chokidar.FSWatcher | null = null
+let taskWatcher: chokidar.FSWatcher | null = null;
+let milestoneWatcher: chokidar.FSWatcher | null = null;
 
 export function startWatchers(
   workspacePath: string,
-  mainWindow: BrowserWindow
+  mainWindow: BrowserWindow,
 ): void {
-  stopWatchers()
+  stopWatchers();
 
   taskWatcher = chokidar.watch(
-    path.join(workspacePath, '.tasks', '**', '*.md'),
+    path.join(workspacePath, ".tasks", "**", "*.md"),
     {
       ignoreInitial: true,
-      awaitWriteFinish: { stabilityThreshold: 150, pollInterval: 50 }
-    }
-  )
+      awaitWriteFinish: { stabilityThreshold: 150, pollInterval: 50 },
+    },
+  );
 
-  taskWatcher.on('all', () => {
+  taskWatcher.on("all", () => {
     if (!mainWindow.isDestroyed()) {
-      mainWindow.webContents.send('workspace:dataChanged')
+      mainWindow.webContents.send("workspace:dataChanged");
     }
-  })
+  });
 
   milestoneWatcher = chokidar.watch(
-    path.join(workspacePath, '.milestones', '*.md'),
+    path.join(workspacePath, ".milestones", "*.md"),
     {
       ignoreInitial: true,
-      awaitWriteFinish: { stabilityThreshold: 150, pollInterval: 50 }
-    }
-  )
+      awaitWriteFinish: { stabilityThreshold: 150, pollInterval: 50 },
+    },
+  );
 
-  milestoneWatcher.on('all', () => {
+  milestoneWatcher.on("all", () => {
     if (!mainWindow.isDestroyed()) {
-      mainWindow.webContents.send('workspace:dataChanged')
+      mainWindow.webContents.send("workspace:dataChanged");
     }
-  })
+  });
 }
 
 export function stopWatchers(): void {
-  taskWatcher?.close()
-  milestoneWatcher?.close()
-  taskWatcher = null
-  milestoneWatcher = null
+  taskWatcher?.close();
+  milestoneWatcher?.close();
+  taskWatcher = null;
+  milestoneWatcher = null;
 }
 ```
 
 **Design notes:**
+
 - Both task and milestone file changes send the same `workspace:dataChanged` event. Since we use a single atomic `workspace:data` IPC handler (Step 6), the renderer always re-fetches both together. This eliminates stale cross-references.
 - Module-level mutable state for watchers matches the existing pattern in `workspace.ts:9` (`headWatcher`). This works because there's only ever one active workspace. If multi-window support is added later, this should be refactored to a class or Map keyed by workspace path.
 - `stopWatchers()` is called first inside `startWatchers()` to clean up before switching workspaces.
@@ -374,34 +409,41 @@ export function stopWatchers(): void {
 **File:** `src/main/ipc/tasks.ts`
 
 Instead of separate `tasks:list` and `milestones:list` handlers, use a single atomic handler that returns both in one call. This solves:
+
 1. **Consistency**: milestone `taskCounts` are always computed from the exact same task list the board displays.
 2. **Performance**: one task scan serves both tasks and milestones, avoiding a redundant O(N) rescan.
 
 ```ts
-import { ipcMain } from 'electron'
-import type { BrowserWindow } from 'electron'
-import type { IpcResult, WorkspaceData } from '@shared/types'
-import { scanTasks, initTaskDirs } from '../tasks'
-import { scanMilestones, initMilestoneDirs } from '../milestones'
-import { startWatchers, stopWatchers } from '../watchers'
+import { ipcMain } from "electron";
+import type { BrowserWindow } from "electron";
+import type { IpcResult, WorkspaceData } from "@shared/types";
+import { scanTasks, initTaskDirs } from "../tasks";
+import { scanMilestones, initMilestoneDirs } from "../milestones";
+import { startWatchers, stopWatchers } from "../watchers";
 
 export function registerTaskHandlers(
   configManager: ConfigManager,
-  mainWindow: BrowserWindow
+  mainWindow: BrowserWindow,
 ): void {
   // Atomic data fetch — returns tasks + milestones in one response
   ipcMain.handle(
-    'workspace:data',
-    async (_event, workspacePath: string): Promise<IpcResult<WorkspaceData>> => {
+    "workspace:data",
+    async (
+      _event,
+      workspacePath: string,
+    ): Promise<IpcResult<WorkspaceData>> => {
       try {
-        const tasks = await scanTasks(workspacePath)
-        const milestones = await scanMilestones(workspacePath, tasks)
-        return { ok: true, data: { tasks, milestones } }
+        const tasks = await scanTasks(workspacePath);
+        const milestones = await scanMilestones(workspacePath, tasks);
+        return { ok: true, data: { tasks, milestones } };
       } catch (err) {
-        return { ok: false, error: err instanceof Error ? err.message : String(err) }
+        return {
+          ok: false,
+          error: err instanceof Error ? err.message : String(err),
+        };
       }
-    }
-  )
+    },
+  );
 }
 ```
 
@@ -411,15 +453,15 @@ Update `src/main/ipc/workspace.ts` to integrate watchers into the workspace acti
 
 ```ts
 // In workspace:setActive handler, after updating config:
-import { startWatchers } from '../watchers'
-import { initTaskDirs } from '../tasks'
-import { initMilestoneDirs } from '../milestones'
+import { startWatchers } from "../watchers";
+import { initTaskDirs } from "../tasks";
+import { initMilestoneDirs } from "../milestones";
 
 // Inside the handler:
-await initTaskDirs(wPath)
-await initMilestoneDirs(wPath)
-startWatchers(wPath, mainWindow)
-startBranchWatcher(wPath, mainWindow)
+await initTaskDirs(wPath);
+await initMilestoneDirs(wPath);
+startWatchers(wPath, mainWindow);
+startBranchWatcher(wPath, mainWindow);
 ```
 
 **On app launch:** The workspace restored from `lastActiveWorkspace` also needs watchers started. Add initialization in `registerWorkspaceHandlers` (or a new `workspace:init` IPC call from the renderer). The safest approach: when `fetchWorkspaces` runs on mount, the renderer calls `workspace:setActive` for the last active workspace, which triggers watcher setup.
@@ -427,25 +469,25 @@ startBranchWatcher(wPath, mainWindow)
 **Register in `src/main/ipc/index.ts`:**
 
 ```ts
-import { registerTaskHandlers } from './tasks'
+import { registerTaskHandlers } from "./tasks";
 
 export function registerIpcHandlers(configManager, mainWindow) {
-  registerWorkspaceHandlers(configManager, mainWindow)
-  registerTaskHandlers(configManager, mainWindow)
-  ipcMain.handle('app:getPlatform', () => process.platform)
+  registerWorkspaceHandlers(configManager, mainWindow);
+  registerTaskHandlers(configManager, mainWindow);
+  ipcMain.handle("app:getPlatform", () => process.platform);
 }
 ```
 
 **Watcher cleanup in `src/main/index.ts`:**
 
 ```ts
-import { stopWatchers } from './watchers'
+import { stopWatchers } from "./watchers";
 
-app.on('before-quit', () => {
-  stopBranchWatcher()
-  stopWatchers()
-  if (configManager) configManager.flushSync()
-})
+app.on("before-quit", () => {
+  stopBranchWatcher();
+  stopWatchers();
+  if (configManager) configManager.flushSync();
+});
 ```
 
 Also export `stopWatchers` from `watchers.ts` and call it from `workspace:remove` if the removed workspace was the active one.
@@ -459,18 +501,23 @@ Also export `stopWatchers` from `watchers.ts` and call it from `workspace:remove
 Add the workspace data IPC binding:
 
 ```ts
-contextBridge.exposeInMainWorld('api', {
-  workspaces: { /* existing */ },
-  data: {
-    fetch: (workspacePath: string) => ipcRenderer.invoke('workspace:data', workspacePath),
-    onChanged: (callback: () => void) => {
-      const handler = () => callback()
-      ipcRenderer.on('workspace:dataChanged', handler)
-      return () => ipcRenderer.removeListener('workspace:dataChanged', handler)
-    }
+contextBridge.exposeInMainWorld("api", {
+  workspaces: {
+    /* existing */
   },
-  app: { /* existing */ }
-})
+  data: {
+    fetch: (workspacePath: string) =>
+      ipcRenderer.invoke("workspace:data", workspacePath),
+    onChanged: (callback: () => void) => {
+      const handler = () => callback();
+      ipcRenderer.on("workspace:dataChanged", handler);
+      return () => ipcRenderer.removeListener("workspace:dataChanged", handler);
+    },
+  },
+  app: {
+    /* existing */
+  },
+});
 ```
 
 **File:** `src/preload/index.d.ts`
@@ -478,15 +525,24 @@ contextBridge.exposeInMainWorld('api', {
 Extend `ElectronAPI`:
 
 ```ts
-import type { WorkspaceInfo, WorkspaceEntry, WorkspaceData, IpcResult } from '@shared/types'
+import type {
+  WorkspaceInfo,
+  WorkspaceEntry,
+  WorkspaceData,
+  IpcResult,
+} from "@shared/types";
 
 export interface ElectronAPI {
-  workspaces: { /* existing */ }
+  workspaces: {
+    /* existing */
+  };
   data: {
-    fetch: (workspacePath: string) => Promise<IpcResult<WorkspaceData>>
-    onChanged: (callback: () => void) => () => void
-  }
-  app: { /* existing */ }
+    fetch: (workspacePath: string) => Promise<IpcResult<WorkspaceData>>;
+    onChanged: (callback: () => void) => () => void;
+  };
+  app: {
+    /* existing */
+  };
 }
 ```
 
@@ -503,25 +559,25 @@ export interface ElectronAPI {
 A single store for workspace-scoped data (tasks + milestones). This replaces the originally planned separate `useTaskStore` and `useMilestoneStore` to match the atomic IPC model.
 
 ```ts
-import { create } from 'zustand'
-import type { TaskInfo, MilestoneInfo } from '@shared/types'
-import { useWorkspaceStore } from './useWorkspaceStore'
+import { create } from "zustand";
+import type { TaskInfo, MilestoneInfo } from "@shared/types";
+import { useWorkspaceStore } from "./useWorkspaceStore";
 
 interface DataState {
-  tasks: TaskInfo[]
-  milestones: MilestoneInfo[]
-  loading: boolean
-  error: string | null
-  milestoneFilter: string | null      // milestone ID, 'none', or null (= all)
-  selectedMilestoneId: string | null  // for detail panel
+  tasks: TaskInfo[];
+  milestones: MilestoneInfo[];
+  loading: boolean;
+  error: string | null;
+  milestoneFilter: string | null; // milestone ID, 'none', or null (= all)
+  selectedMilestoneId: string | null; // for detail panel
 
-  fetchData: () => void               // debounced
-  setMilestoneFilter: (filter: string | null) => void
-  setSelectedMilestone: (id: string | null) => void
-  clear: () => void                   // reset on workspace switch
+  fetchData: () => void; // debounced
+  setMilestoneFilter: (filter: string | null) => void;
+  setSelectedMilestone: (id: string | null) => void;
+  clear: () => void; // reset on workspace switch
 }
 
-let fetchTimer: ReturnType<typeof setTimeout> | null = null
+let fetchTimer: ReturnType<typeof setTimeout> | null = null;
 
 export const useDataStore = create<DataState>()((set) => ({
   tasks: [],
@@ -535,39 +591,49 @@ export const useDataStore = create<DataState>()((set) => ({
     // Debounce: wait 200ms before executing. If called again within that
     // window, restart the timer. This coalesces rapid chokidar events.
     // Do NOT set loading=true until the debounce fires — prevents UI flicker.
-    if (fetchTimer) clearTimeout(fetchTimer)
+    if (fetchTimer) clearTimeout(fetchTimer);
     fetchTimer = setTimeout(async () => {
-      const workspacePath = useWorkspaceStore.getState().activeWorkspacePath
-      if (!workspacePath) return
-      set({ loading: true })
+      const workspacePath = useWorkspaceStore.getState().activeWorkspacePath;
+      if (!workspacePath) return;
+      set({ loading: true });
       try {
-        const result = await window.api.data.fetch(workspacePath)
+        const result = await window.api.data.fetch(workspacePath);
         if (result.ok) {
-          set({ tasks: result.data.tasks, milestones: result.data.milestones, loading: false, error: null })
+          set({
+            tasks: result.data.tasks,
+            milestones: result.data.milestones,
+            loading: false,
+            error: null,
+          });
         } else {
-          set({ loading: false, error: result.error })
+          set({ loading: false, error: result.error });
         }
       } catch (err) {
-        set({ loading: false, error: err instanceof Error ? err.message : String(err) })
+        set({
+          loading: false,
+          error: err instanceof Error ? err.message : String(err),
+        });
       }
-    }, 200)
+    }, 200);
   },
 
   setMilestoneFilter: (filter) => set({ milestoneFilter: filter }),
   setSelectedMilestone: (id) => set({ selectedMilestoneId: id }),
 
-  clear: () => set({
-    tasks: [],
-    milestones: [],
-    loading: false,
-    error: null,
-    milestoneFilter: null,
-    selectedMilestoneId: null
-  })
-}))
+  clear: () =>
+    set({
+      tasks: [],
+      milestones: [],
+      loading: false,
+      error: null,
+      milestoneFilter: null,
+      selectedMilestoneId: null,
+    }),
+}));
 ```
 
 **Debounce details:**
+
 - `loading` is only set to `true` when the debounce fires, not immediately on call. This prevents the UI flickering to a loading skeleton on every rapid chokidar event.
 - The timer is module-scoped, not instance-scoped, which is fine because Zustand stores are singletons.
 
@@ -580,7 +646,7 @@ export const useDataStore = create<DataState>()((set) => ({
 Add `'milestones'` to the `View` union type:
 
 ```ts
-export type View = 'board' | 'milestones' | 'decisions' | 'terminal'
+export type View = "board" | "milestones" | "decisions" | "terminal";
 ```
 
 ---
@@ -592,24 +658,24 @@ export type View = 'board' | 'milestones' | 'decisions' | 'terminal'
 Add effects to the `AppContent` component:
 
 ```tsx
-const fetchData = useDataStore((s) => s.fetchData)
-const clearData = useDataStore((s) => s.clear)
+const fetchData = useDataStore((s) => s.fetchData);
+const clearData = useDataStore((s) => s.clear);
 
 // Clear stale data immediately on workspace switch, then fetch fresh
 useEffect(() => {
-  clearData()
+  clearData();
   if (activeWorkspacePath) {
-    fetchData()
+    fetchData();
   }
-}, [activeWorkspacePath, clearData, fetchData])
+}, [activeWorkspacePath, clearData, fetchData]);
 
 // Live update listener — re-fetch when files change on disk
 useEffect(() => {
   const unsub = window.api.data.onChanged(() => {
-    fetchData()  // debounced in store — safe to call rapidly
-  })
-  return unsub
-}, [fetchData])
+    fetchData(); // debounced in store — safe to call rapidly
+  });
+  return unsub;
+}, [fetchData]);
 ```
 
 **Stale data prevention:** `clearData()` is called immediately on workspace switch, before the async fetch. This ensures the user never sees the old workspace's tasks under the new workspace's name.
@@ -624,46 +690,46 @@ useEffect(() => {
 Layout: horizontal flex container with four columns. Each column scrolls independently.
 
 ```tsx
-import { useMemo } from 'react'
-import { useDataStore } from '../../stores/useDataStore'
-import type { TaskStatus } from '@shared/types'
-import { Column } from './Column'
-import { BoardToolbar } from './BoardToolbar'
-import styles from './Board.module.css'
+import { useMemo } from "react";
+import { useDataStore } from "../../stores/useDataStore";
+import type { TaskStatus } from "@shared/types";
+import { Column } from "./Column";
+import { BoardToolbar } from "./BoardToolbar";
+import styles from "./Board.module.css";
 
 const COLUMNS: { status: TaskStatus; label: string; color: string }[] = [
-  { status: 'backlog', label: 'BACKLOG', color: 'var(--text-lo)' },
-  { status: 'doing',   label: 'DOING',   color: 'var(--status-green)' },
-  { status: 'review',  label: 'REVIEW',  color: 'var(--status-amber)' },
-  { status: 'done',    label: 'DONE',    color: 'var(--status-green)' },
-]
+  { status: "backlog", label: "BACKLOG", color: "var(--text-lo)" },
+  { status: "doing", label: "DOING", color: "var(--status-green)" },
+  { status: "review", label: "REVIEW", color: "var(--status-amber)" },
+  { status: "done", label: "DONE", color: "var(--status-green)" },
+];
 
 export function Board(): React.JSX.Element {
-  const tasks = useDataStore((s) => s.tasks)
-  const milestones = useDataStore((s) => s.milestones)
-  const milestoneFilter = useDataStore((s) => s.milestoneFilter)
-  const loading = useDataStore((s) => s.loading)
+  const tasks = useDataStore((s) => s.tasks);
+  const milestones = useDataStore((s) => s.milestones);
+  const milestoneFilter = useDataStore((s) => s.milestoneFilter);
+  const loading = useDataStore((s) => s.loading);
 
   // Filter tasks by milestone
   const filtered = useMemo(() => {
-    if (milestoneFilter === null) return tasks
-    if (milestoneFilter === 'none') return tasks.filter(t => !t.milestone)
-    return tasks.filter(t => t.milestone === milestoneFilter)
-  }, [tasks, milestoneFilter])
+    if (milestoneFilter === null) return tasks;
+    if (milestoneFilter === "none") return tasks.filter((t) => !t.milestone);
+    return tasks.filter((t) => t.milestone === milestoneFilter);
+  }, [tasks, milestoneFilter]);
 
   // Build milestone ID → title lookup for card rendering
   const milestoneMap = useMemo(() => {
-    const map = new Map<string, string>()
-    for (const m of milestones) map.set(m.id, m.title)
-    return map
-  }, [milestones])
+    const map = new Map<string, string>();
+    for (const m of milestones) map.set(m.id, m.title);
+    return map;
+  }, [milestones]);
 
   if (loading && tasks.length === 0) {
     return (
       <div className={styles.board}>
         <div className={styles.loading}>Loading tasks...</div>
       </div>
-    )
+    );
   }
 
   if (!loading && tasks.length === 0) {
@@ -676,15 +742,15 @@ export function Board(): React.JSX.Element {
           </div>
         </div>
       </div>
-    )
+    );
   }
 
   return (
     <div className={styles.board}>
       <BoardToolbar milestones={milestones} />
       <div className={styles.columns}>
-        {COLUMNS.map(col => {
-          const colTasks = filtered.filter(t => t.status === col.status)
+        {COLUMNS.map((col) => {
+          const colTasks = filtered.filter((t) => t.status === col.status);
           return (
             <Column
               key={col.status}
@@ -692,11 +758,11 @@ export function Board(): React.JSX.Element {
               tasks={colTasks}
               milestoneMap={milestoneMap}
             />
-          )
+          );
         })}
       </div>
     </div>
-  )
+  );
 }
 ```
 
@@ -705,6 +771,7 @@ export function Board(): React.JSX.Element {
 **File:** `src/renderer/src/components/Board/BoardToolbar.tsx`
 
 Milestone filter dropdown:
+
 - Default label: "All tasks"
 - Options: "All tasks", "No milestone", then each open milestone by title
 - Selecting calls `setMilestoneFilter` on the data store
@@ -720,15 +787,16 @@ Style: toolbar at top of board area, `height: 40px`, `padding: 0 16px`, flex row
 
 ```tsx
 interface ColumnProps {
-  status: TaskStatus
-  label: string
-  color: string
-  tasks: TaskInfo[]
-  milestoneMap: Map<string, string>
+  status: TaskStatus;
+  label: string;
+  color: string;
+  tasks: TaskInfo[];
+  milestoneMap: Map<string, string>;
 }
 ```
 
 Structure:
+
 - **Header**: colored dot (8px circle, `background: color`) + uppercase label (`--font-ui`, 11px, letter-spacing 0.5px) + count badge (muted)
 - **Card list**: vertical stack of `TaskCard` components, scrollable via `overflow-y: auto`
 - **Footer**: "Add ticket" placeholder — `+ Add ticket` text in `--text-lo`, cursor default (not functional in Phase 2)
@@ -744,18 +812,20 @@ CSS: columns fill available space equally via `flex: 1`, `min-width: 220px`, gap
 
 ```tsx
 interface TaskCardProps {
-  task: TaskInfo
-  milestoneName: string | null  // resolved by parent from milestoneMap
+  task: TaskInfo;
+  milestoneName: string | null; // resolved by parent from milestoneMap
 }
 ```
 
 **Layout (top to bottom):**
+
 1. **Row 1**: Title (left, `--text-primary`, normal weight, `--font-ui` 13px) + Priority badge (right, only rendered when `task.priority !== null`)
 2. **Row 2**: Description preview (1-2 lines, `--text-secondary`, 12px, truncated with CSS `-webkit-line-clamp: 2`)
 3. **Row 3**: Tag pills (flex-wrap, gap `4px`)
 4. **Row 4** (conditional): Milestone label — only when `task.milestone` is set
 
 **Priority badge styling:**
+
 - Small pill: `padding: 1px 6px`, uppercase text, `--font-mono` 10px, `border-radius: var(--radius-sm)`
 - Colors:
   - `critical`: `--status-red` bg, white text
@@ -771,6 +841,7 @@ interface TaskCardProps {
 If the milestone ID doesn't resolve to a name (orphaned reference), show the raw ID instead (e.g. `◆ M-999`).
 
 **Card container:**
+
 - `background: var(--bg-surface)`
 - `border: 1px solid var(--border-dim)`
 - `border-radius: var(--radius-md)`
@@ -791,17 +862,17 @@ Renders when `activeView === 'milestones'`.
 
 ```tsx
 export function MilestoneList(): React.JSX.Element {
-  const milestones = useDataStore((s) => s.milestones)
-  const selectedId = useDataStore((s) => s.selectedMilestoneId)
-  const setSelected = useDataStore((s) => s.setSelectedMilestone)
+  const milestones = useDataStore((s) => s.milestones);
+  const selectedId = useDataStore((s) => s.selectedMilestoneId);
+  const setSelected = useDataStore((s) => s.setSelectedMilestone);
 
   // Sort: open first, then closed. Within group, newest first.
   const sorted = useMemo(() => {
     return [...milestones].sort((a, b) => {
-      if (a.status !== b.status) return a.status === 'open' ? -1 : 1
-      return (b.created || '').localeCompare(a.created || '')
-    })
-  }, [milestones])
+      if (a.status !== b.status) return a.status === "open" ? -1 : 1;
+      return (b.created || "").localeCompare(a.created || "");
+    });
+  }, [milestones]);
 
   return (
     <div className={styles.container}>
@@ -810,7 +881,7 @@ export function MilestoneList(): React.JSX.Element {
         {/* "New milestone" button — placeholder for Phase 4 */}
       </div>
       <div className={styles.list}>
-        {sorted.map(m => (
+        {sorted.map((m) => (
           <MilestoneRow
             key={m.id}
             milestone={m}
@@ -828,7 +899,7 @@ export function MilestoneList(): React.JSX.Element {
         )}
       </div>
     </div>
-  )
+  );
 }
 ```
 
@@ -838,6 +909,7 @@ export function MilestoneList(): React.JSX.Element {
 **File:** `src/renderer/src/components/Milestones/MilestoneRow.module.css`
 
 Each row shows:
+
 - Diamond icon (`◆`) in `--accent`
 - Title in `--text-primary`, `--font-ui` 14px
 - Status badge: `OPEN` (green bg, `--status-green`) or `CLOSED` (`--text-lo` bg) — small pill, `--font-mono` 10px
@@ -874,29 +946,29 @@ When `selectedMilestoneId` is set, render a detail panel on the right side:
 Replace the placeholder board view with the real `Board` component. Add the milestones view:
 
 ```tsx
-import { Board } from '../Board/Board'
-import { MilestoneList } from '../Milestones/MilestoneList'
-import { MilestoneDetail } from '../Milestones/MilestoneDetail'
-import { useDataStore } from '../../stores/useDataStore'
+import { Board } from "../Board/Board";
+import { MilestoneList } from "../Milestones/MilestoneList";
+import { MilestoneDetail } from "../Milestones/MilestoneDetail";
+import { useDataStore } from "../../stores/useDataStore";
 
 // In the component:
-const selectedMilestoneId = useDataStore((s) => s.selectedMilestoneId)
+const selectedMilestoneId = useDataStore((s) => s.selectedMilestoneId);
 
-if (activeView === 'board') {
+if (activeView === "board") {
   return (
     <div className={styles.mainArea}>
       <Board />
     </div>
-  )
+  );
 }
 
-if (activeView === 'milestones') {
+if (activeView === "milestones") {
   return (
     <div className={styles.mainAreaWithPanel}>
       <MilestoneList />
       {selectedMilestoneId && <MilestoneDetail />}
     </div>
-  )
+  );
 }
 ```
 
@@ -943,12 +1015,14 @@ The diamond SVG matches the `◆` glyph used in task cards.
 Hide the badge for non-active workspaces entirely (displaying `[0]` for inactive workspaces is misleading since we don't scan their tasks). For the active workspace, show the real count:
 
 ```tsx
-const tasks = useDataStore((s) => s.tasks)
-const isActive = workspace.path === activeWorkspacePath
+const tasks = useDataStore((s) => s.tasks);
+const isActive = workspace.path === activeWorkspacePath;
 
 // Only show badge for active workspace with doing tasks
-const doingCount = isActive ? tasks.filter(t => t.status === 'doing').length : 0
-const showBadge = isActive && doingCount > 0
+const doingCount = isActive
+  ? tasks.filter((t) => t.status === "doing").length
+  : 0;
+const showBadge = isActive && doingCount > 0;
 ```
 
 Display the badge only when `showBadge` is true. This replaces the placeholder `[0]`.
@@ -957,38 +1031,38 @@ Display the badge only when `showBadge` is true. This replaces the placeholder `
 
 ## File creation summary
 
-| File | Type | Description |
-|------|------|-------------|
-| `src/shared/types.ts` | **Edit** | Add `TaskInfo`, `MilestoneInfo`, `WorkspaceData`, status/priority types |
-| `src/main/tasks.ts` | **New** | Task file parser + scanner + directory initializer |
-| `src/main/milestones.ts` | **New** | Milestone file parser + scanner + directory initializer |
-| `src/main/watchers.ts` | **New** | Chokidar watcher manager |
-| `src/main/ipc/tasks.ts` | **New** | IPC handler: `workspace:data` (atomic tasks + milestones) |
-| `src/main/ipc/index.ts` | **Edit** | Register task handlers |
-| `src/main/ipc/workspace.ts` | **Edit** | Wire up `initTaskDirs`, `initMilestoneDirs`, `startWatchers` into `workspace:setActive` |
-| `src/main/index.ts` | **Edit** | Stop watchers on quit |
-| `src/preload/index.ts` | **Edit** | Add `data` API bridge |
-| `src/preload/index.d.ts` | **Edit** | Add type declarations for `data` API |
-| `src/renderer/src/stores/useDataStore.ts` | **New** | Combined task + milestone state with debounced fetch |
-| `src/renderer/src/stores/useNavStore.ts` | **Edit** | Add `'milestones'` to `View` type |
-| `src/renderer/src/App.tsx` | **Edit** | Wire up data fetch + change listener + workspace switch cleanup |
-| `src/renderer/src/components/Board/Board.tsx` | **New** | Kanban board with columns + empty/loading states |
-| `src/renderer/src/components/Board/Board.module.css` | **New** | Board layout styles |
-| `src/renderer/src/components/Board/BoardToolbar.tsx` | **New** | Milestone filter dropdown |
-| `src/renderer/src/components/Board/Column.tsx` | **New** | Single kanban column |
-| `src/renderer/src/components/Board/Column.module.css` | **New** | Column styles |
-| `src/renderer/src/components/Board/TaskCard.tsx` | **New** | Task card with milestone label |
-| `src/renderer/src/components/Board/TaskCard.module.css` | **New** | Card styles |
-| `src/renderer/src/components/Milestones/MilestoneList.tsx` | **New** | Milestone list view |
-| `src/renderer/src/components/Milestones/MilestoneList.module.css` | **New** | List styles |
-| `src/renderer/src/components/Milestones/MilestoneRow.tsx` | **New** | Single milestone row |
-| `src/renderer/src/components/Milestones/MilestoneRow.module.css` | **New** | Row styles |
-| `src/renderer/src/components/Milestones/MilestoneDetail.tsx` | **New** | Milestone detail panel (read-only) |
-| `src/renderer/src/components/Milestones/MilestoneDetail.module.css` | **New** | Detail panel styles |
-| `src/renderer/src/components/MainArea/MainArea.tsx` | **Edit** | Route board + milestones views |
-| `src/renderer/src/components/MainArea/MainArea.module.css` | **Edit** | Add `mainAreaWithPanel` class |
-| `src/renderer/src/components/Sidebar/BottomNav.tsx` | **Edit** | Add Milestones nav item |
-| `src/renderer/src/components/Sidebar/WorkspaceItem.tsx` | **Edit** | Wire up doing-count badge |
+| File                                                                | Type     | Description                                                                             |
+| ------------------------------------------------------------------- | -------- | --------------------------------------------------------------------------------------- |
+| `src/shared/types.ts`                                               | **Edit** | Add `TaskInfo`, `MilestoneInfo`, `WorkspaceData`, status/priority types                 |
+| `src/main/tasks.ts`                                                 | **New**  | Task file parser + scanner + directory initializer                                      |
+| `src/main/milestones.ts`                                            | **New**  | Milestone file parser + scanner + directory initializer                                 |
+| `src/main/watchers.ts`                                              | **New**  | Chokidar watcher manager                                                                |
+| `src/main/ipc/tasks.ts`                                             | **New**  | IPC handler: `workspace:data` (atomic tasks + milestones)                               |
+| `src/main/ipc/index.ts`                                             | **Edit** | Register task handlers                                                                  |
+| `src/main/ipc/workspace.ts`                                         | **Edit** | Wire up `initTaskDirs`, `initMilestoneDirs`, `startWatchers` into `workspace:setActive` |
+| `src/main/index.ts`                                                 | **Edit** | Stop watchers on quit                                                                   |
+| `src/preload/index.ts`                                              | **Edit** | Add `data` API bridge                                                                   |
+| `src/preload/index.d.ts`                                            | **Edit** | Add type declarations for `data` API                                                    |
+| `src/renderer/src/stores/useDataStore.ts`                           | **New**  | Combined task + milestone state with debounced fetch                                    |
+| `src/renderer/src/stores/useNavStore.ts`                            | **Edit** | Add `'milestones'` to `View` type                                                       |
+| `src/renderer/src/App.tsx`                                          | **Edit** | Wire up data fetch + change listener + workspace switch cleanup                         |
+| `src/renderer/src/components/Board/Board.tsx`                       | **New**  | Kanban board with columns + empty/loading states                                        |
+| `src/renderer/src/components/Board/Board.module.css`                | **New**  | Board layout styles                                                                     |
+| `src/renderer/src/components/Board/BoardToolbar.tsx`                | **New**  | Milestone filter dropdown                                                               |
+| `src/renderer/src/components/Board/Column.tsx`                      | **New**  | Single kanban column                                                                    |
+| `src/renderer/src/components/Board/Column.module.css`               | **New**  | Column styles                                                                           |
+| `src/renderer/src/components/Board/TaskCard.tsx`                    | **New**  | Task card with milestone label                                                          |
+| `src/renderer/src/components/Board/TaskCard.module.css`             | **New**  | Card styles                                                                             |
+| `src/renderer/src/components/Milestones/MilestoneList.tsx`          | **New**  | Milestone list view                                                                     |
+| `src/renderer/src/components/Milestones/MilestoneList.module.css`   | **New**  | List styles                                                                             |
+| `src/renderer/src/components/Milestones/MilestoneRow.tsx`           | **New**  | Single milestone row                                                                    |
+| `src/renderer/src/components/Milestones/MilestoneRow.module.css`    | **New**  | Row styles                                                                              |
+| `src/renderer/src/components/Milestones/MilestoneDetail.tsx`        | **New**  | Milestone detail panel (read-only)                                                      |
+| `src/renderer/src/components/Milestones/MilestoneDetail.module.css` | **New**  | Detail panel styles                                                                     |
+| `src/renderer/src/components/MainArea/MainArea.tsx`                 | **Edit** | Route board + milestones views                                                          |
+| `src/renderer/src/components/MainArea/MainArea.module.css`          | **Edit** | Add `mainAreaWithPanel` class                                                           |
+| `src/renderer/src/components/Sidebar/BottomNav.tsx`                 | **Edit** | Add Milestones nav item                                                                 |
+| `src/renderer/src/components/Sidebar/WorkspaceItem.tsx`             | **Edit** | Wire up doing-count badge                                                               |
 
 **Styling note:** New Board and Milestone components use CSS modules (`.module.css`). Existing sidebar components use inline styles (matching Phase 1 patterns). Refactoring sidebar to CSS modules is out of scope for Phase 2.
 

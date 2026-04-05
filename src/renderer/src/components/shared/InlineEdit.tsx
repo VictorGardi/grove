@@ -7,6 +7,7 @@ interface InlineEditProps {
   className?: string;
   placeholder?: string;
   tag?: "h2" | "h3" | "span";
+  startEditing?: boolean;
 }
 
 export function InlineEdit({
@@ -15,8 +16,9 @@ export function InlineEdit({
   className,
   placeholder = "Click to edit...",
   tag: Tag = "span",
+  startEditing = false,
 }: InlineEditProps): React.JSX.Element {
-  const [editing, setEditing] = useState(false);
+  const [editing, setEditing] = useState(startEditing);
   const [draft, setDraft] = useState(value);
   const inputRef = useRef<HTMLInputElement>(null);
 

@@ -6,6 +6,7 @@ import {
   type ThemeName,
 } from "../../styles/loadTheme";
 import styles from "./Settings.module.css";
+import { WorkspaceDefaultsForm } from "./WorkspaceDefaultsForm";
 
 export function Settings(): React.JSX.Element {
   const theme = useThemeStore((s) => s.theme);
@@ -110,6 +111,8 @@ export function Settings(): React.JSX.Element {
             })}
           </div>
         </section>
+
+        <WorkspaceDefaultsForm />
       </div>
     </div>
   );

@@ -2,6 +2,14 @@
 export interface WorkspaceEntry {
   name: string; // Display label (directory basename)
   path: string; // Absolute path — unique identifier
+  /** Default agent for planning sessions */
+  defaultPlanningAgent?: PlanAgent;
+  /** Default model for planning sessions */
+  defaultPlanningModel?: string;
+  /** Default agent for execution sessions */
+  defaultExecutionAgent?: PlanAgent;
+  /** Default model for execution sessions */
+  defaultExecutionModel?: string;
 }
 
 /** Returned from workspace:list with runtime info */
@@ -15,6 +23,7 @@ export interface WorkspaceInfo extends WorkspaceEntry {
 export interface AppConfig {
   workspaces: WorkspaceEntry[];
   lastActiveWorkspace: string | null; // workspace path
+  theme: string;
 }
 
 /** Standard IPC result wrapper */
@@ -70,6 +79,12 @@ export interface TaskInfo {
   execSessionAgent: PlanAgent | null;
   /** Model used in the current execution session */
   execModel: string | null;
+  /** Tmux session name for plan mode (persisted in frontmatter) */
+  planTmuxSession: string | null;
+  /** Tmux session name for execute mode (persisted in frontmatter) */
+  execTmuxSession: string | null;
+  /** Date when task was moved to done status (YYYY-MM-DD) */
+  completed: string | null;
 }
 
 /** Combined workspace data — returned atomically to avoid stale cross-references */
@@ -113,7 +128,7 @@ export interface TaskFrontmatter {
   created: string | null;
   tags: string[];
   decisions: string[];
-  /** Only persisted when false; omitted (default true) otherwise */
+  /** Only persisted when true; omitted (default false) otherwise */
   useWorktree?: boolean;
   /** Session ID for in-app planning chat */
   planSessionId?: string | null;
@@ -127,6 +142,12 @@ export interface TaskFrontmatter {
   execSessionAgent?: PlanAgent | null;
   /** Model used in the current execution session */
   execModel?: string | null;
+  /** Tmux session name for plan mode */
+  planTmuxSession?: string | null;
+  /** Tmux session name for execute mode */
+  execTmuxSession?: string | null;
+  /** Date when task was moved to done status (YYYY-MM-DD) */
+  completed?: string | null;
 }
 
 /** A single DoD checklist item parsed from the task body */
@@ -152,7 +173,13 @@ export interface TokenUsage {
 /** A chunk of streamed output from the planning agent */
 export type PlanChunk =
   | {
-      type: "text" | "thinking" | "session_id" | "done" | "error";
+      type:
+        | "text"
+        | "thinking"
+        | "session_id"
+        | "done"
+        | "error"
+        | "user_message";
       content: string;
     }
   | { type: "tokens"; content: string; data: TokenUsage };

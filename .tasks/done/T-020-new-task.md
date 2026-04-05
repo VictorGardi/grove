@@ -2,7 +2,7 @@
 id: T-020
 title: fix alignment send button
 status: done
-created: '2026-04-04'
+created: "2026-04-04"
 planSessionId: ses_2a61a6e82ffelBUK0fxJZjuDSM
 planSessionAgent: opencode
 planModel: opencode/big-pickle
@@ -24,4 +24,3 @@ Fix vertical alignment of the Send button in the PlanChat input area so it is ce
 - [ ] Change `.inputArea` CSS from `align-items: flex-end` to `align-items: center`
 
 ## Context for agent
-

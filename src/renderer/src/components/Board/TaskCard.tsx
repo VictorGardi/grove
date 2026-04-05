@@ -1,8 +1,10 @@
+import { useEffect } from "react";
 import { useDraggable } from "@dnd-kit/core";
 import type { TaskInfo } from "@shared/types";
 import { useDataStore } from "../../stores/useDataStore";
 import { useWorktreeStore } from "../../stores/useWorktreeStore";
 import { usePlanStore } from "../../stores/usePlanStore";
+import { useWorkspaceStore } from "../../stores/useWorkspaceStore";
 import { updateTask } from "../../actions/taskActions";
 import styles from "./TaskCard.module.css";
 
@@ -39,6 +41,8 @@ export function TaskCard({
     return session.lastExitCode === null || session.lastExitCode === 0;
   });
 
+  const isDodComplete = task.dodTotal > 0 && task.dodDone >= task.dodTotal;
+
   const isExecuteErrored = usePlanStore((s) => {
     const session = s.sessions[`execute:${task.id}`];
     if (!session || session.messages.length === 0 || session.isRunning)
@@ -52,6 +56,39 @@ export function TaskCard({
     return session.lastExitCode !== null && session.lastExitCode !== 0;
   });
 
+  // Resolve which agent is displayed on this card
+  const cardAgent = task.execSessionAgent ?? "opencode";
+
+  // Read workspace path and defaults for model fallback label
+  const workspacePath = useWorkspaceStore((s) => s.activeWorkspacePath);
+  const defaultExecutionModel = useWorkspaceStore(
+    (s) =>
+      s.workspaceDefaults[s.activeWorkspacePath ?? ""]?.defaultExecutionModel,
+  );
+
+  // Read models from the shared cache — null means loading, undefined means not fetched yet
+  const modelsCacheEntry = usePlanStore(
+    (s) => s.modelsCache[`${workspacePath ?? ""}:${cardAgent}`],
+  );
+  const ensureModels = usePlanStore((s) => s.ensureModels);
+
+  // Fire one IPC call per (workspacePath, agent) pair the first time a card
+  // for that combination renders. Subsequent cards read synchronously.
+  useEffect(() => {
+    if (
+      workspacePath &&
+      (task.status === "backlog" || task.status === "doing")
+    ) {
+      void ensureModels(workspacePath, cardAgent);
+    }
+  }, [workspacePath, cardAgent, task.status, ensureModels]);
+
+  // Derive available models from cache: null/undefined → loading, [] → show "default" only
+  const modelsLoading = modelsCacheEntry === null;
+  const availableModels: string[] = Array.isArray(modelsCacheEntry)
+    ? modelsCacheEntry
+    : [];
+
   const { attributes, listeners, setNodeRef, isDragging } = useDraggable({
     id: task.id,
   });
@@ -59,6 +96,8 @@ export function TaskCard({
   function handleClick(): void {
     useDataStore.getState().setSelectedTask(task.id);
   }
+
+  const showControls = task.status === "backlog" || task.status === "doing";
 
   return (
     <div
@@ -101,7 +140,13 @@ export function TaskCard({
       )}
 
       {/* Row 3b: Waiting for input indicator */}
-      {task.status === "doing" && isExecuteWaiting && (
+      {task.status === "doing" && isExecuteWaiting && isDodComplete && (
+        <div className={styles.shipItRow}>
+          <span className={styles.shipItDot} />
+          <span className={styles.shipItLabel}>ship it 🚢</span>
+        </div>
+      )}
+      {task.status === "doing" && isExecuteWaiting && !isDodComplete && (
         <div className={styles.waitingRow}>
           <span className={styles.waitingDot} />
           <span className={styles.waitingLabel}>waiting for you</span>
@@ -144,8 +189,8 @@ export function TaskCard({
         </div>
       )}
 
-      {/* Row 5: worktree toggle — backlog and doing tasks */}
-      {(task.status === "backlog" || task.status === "doing") && (
+      {/* Row 5: worktree toggle + model select — backlog and doing tasks */}
+      {showControls && (
         <div
           className={styles.worktreeRow}
           onClick={(e) => e.stopPropagation()}
@@ -164,6 +209,37 @@ export function TaskCard({
           >
             {task.useWorktree ? "worktree" : "root repo"}
           </button>
+
+          {/* Model dropdown — backlog and doing tasks */}
+          <select
+            className={`${styles.modelSelect} ${isAgentRunning || worktreeCreating ? styles.modelSelectDisabled : ""}`}
+            value={task.execModel ?? ""}
+            disabled={isAgentRunning || worktreeCreating}
+            onClick={(e) => e.stopPropagation()}
+            onChange={(e) => {
+              e.stopPropagation();
+              const val = e.target.value;
+              updateTask(task.filePath, {
+                execModel: val === "" ? null : val,
+              });
+            }}
+            title="Execution model for this task"
+          >
+            {modelsLoading ? (
+              <option value="" disabled>
+                loading…
+              </option>
+            ) : (
+              <>
+                <option value="">{defaultExecutionModel ?? "default"}</option>
+                {availableModels.map((m) => (
+                  <option key={m} value={m}>
+                    {m}
+                  </option>
+                ))}
+              </>
+            )}
+          </select>
         </div>
       )}
     </div>

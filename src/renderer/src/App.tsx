@@ -172,6 +172,34 @@ function AppContent(): React.JSX.Element {
         return;
       }
 
+      // user_message chunk: emitted during log replay from the first line of the
+      // log file. Only add the bubble if the store has no messages yet — a fresh
+      // run already added the user message via handleSend before this chunk lands.
+      if (chunk.type === "user_message") {
+        const session = store.sessions[sessionKey];
+        if ((session?.messages?.length ?? 0) === 0) {
+          store.appendUserMessage(sessionKey, chunk.content);
+        }
+        return;
+      }
+
+      // For content chunks (text / thinking / done / error), ensure an agent
+      // bubble exists before applying. During log replay the bubble is NOT
+      // pre-created by the reconnect effect (that call was removed); instead we
+      // lazily create it here the moment the first content chunk arrives.
+      if (
+        chunk.type === "text" ||
+        chunk.type === "thinking" ||
+        chunk.type === "done" ||
+        chunk.type === "error"
+      ) {
+        const session = store.sessions[sessionKey];
+        const lastMsg = session?.messages[session.messages.length - 1];
+        if (!lastMsg || lastMsg.role !== "agent") {
+          store.startAgentMessage(sessionKey);
+        }
+      }
+
       store.applyChunk(sessionKey, chunk);
     });
     return unsub;

@@ -4,7 +4,7 @@ title: >-
   Unify agent experience — move execution from terminal into structured Agent
   tab
 status: done
-created: '2026-04-04'
+created: "2026-04-04"
 agent: opencode
 tags:
   - agent

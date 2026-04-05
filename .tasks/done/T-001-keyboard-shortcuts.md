@@ -25,10 +25,10 @@ Add renderer-side keyboard shortcuts so users can manage workspaces without touc
 
 ## Shortcuts to implement
 
-| Shortcut | Action |
-|---|---|
+| Shortcut                             | Action                                                                               |
+| ------------------------------------ | ------------------------------------------------------------------------------------ |
 | `Cmd+N` (Mac) / `Ctrl+N` (Win/Linux) | Opens native folder picker to add a new workspace (same as clicking "Add workspace") |
-| `Cmd+1`–`Cmd+9` / `Ctrl+1`–`Ctrl+9` | Activates the Nth workspace by its position in the sidebar |
+| `Cmd+1`–`Cmd+9` / `Ctrl+1`–`Ctrl+9`  | Activates the Nth workspace by its position in the sidebar                           |
 
 ## Implementation
 
@@ -37,52 +37,52 @@ Add renderer-side keyboard shortcuts so users can manage workspaces without touc
 A custom React hook that registers a `document` `keydown` listener via `useEffect`.
 
 ```ts
-import { useEffect } from 'react'
-import { useWorkspaceStore } from '../stores/useWorkspaceStore'
+import { useEffect } from "react";
+import { useWorkspaceStore } from "../stores/useWorkspaceStore";
 
 export function useKeyboardShortcuts(): void {
-  const addWorkspace = useWorkspaceStore((s) => s.addWorkspace)
-  const setActiveWorkspace = useWorkspaceStore((s) => s.setActiveWorkspace)
+  const addWorkspace = useWorkspaceStore((s) => s.addWorkspace);
+  const setActiveWorkspace = useWorkspaceStore((s) => s.setActiveWorkspace);
 
   useEffect(() => {
     function handleKeyDown(e: KeyboardEvent): void {
-      const mod = e.metaKey || e.ctrlKey
+      const mod = e.metaKey || e.ctrlKey;
 
       // Skip when focus is inside an input, textarea, select, or contenteditable
-      const target = e.target as HTMLElement
+      const target = e.target as HTMLElement;
       if (
-        target.tagName === 'INPUT' ||
-        target.tagName === 'TEXTAREA' ||
-        target.tagName === 'SELECT' ||
+        target.tagName === "INPUT" ||
+        target.tagName === "TEXTAREA" ||
+        target.tagName === "SELECT" ||
         target.isContentEditable
       ) {
-        return
+        return;
       }
 
-      if (!mod) return
+      if (!mod) return;
 
       // Cmd+N — add workspace
-      if (e.key === 'n' || e.key === 'N') {
-        e.preventDefault()
-        addWorkspace()
-        return
+      if (e.key === "n" || e.key === "N") {
+        e.preventDefault();
+        addWorkspace();
+        return;
       }
 
       // Cmd+1–9 — switch to Nth workspace
-      const digit = parseInt(e.key, 10)
+      const digit = parseInt(e.key, 10);
       if (digit >= 1 && digit <= 9) {
-        e.preventDefault()
-        const workspaces = useWorkspaceStore.getState().workspaces
-        const ws = workspaces[digit - 1]
+        e.preventDefault();
+        const workspaces = useWorkspaceStore.getState().workspaces;
+        const ws = workspaces[digit - 1];
         if (ws) {
-          setActiveWorkspace(ws.path)
+          setActiveWorkspace(ws.path);
         }
       }
     }
 
-    document.addEventListener('keydown', handleKeyDown)
-    return () => document.removeEventListener('keydown', handleKeyDown)
-  }, [addWorkspace, setActiveWorkspace])
+    document.addEventListener("keydown", handleKeyDown);
+    return () => document.removeEventListener("keydown", handleKeyDown);
+  }, [addWorkspace, setActiveWorkspace]);
 }
 ```
 
@@ -94,10 +94,10 @@ Using `useWorkspaceStore.getState()` in the keydown callback always gets the cur
 Call the hook inside `AppContent`:
 
 ```tsx
-import { useKeyboardShortcuts } from './hooks/useKeyboardShortcuts'
+import { useKeyboardShortcuts } from "./hooks/useKeyboardShortcuts";
 
 function AppContent(): React.JSX.Element {
-  useKeyboardShortcuts()
+  useKeyboardShortcuts();
   // ... rest unchanged
 }
 ```
@@ -110,4 +110,3 @@ function AppContent(): React.JSX.Element {
 - `Cmd+N` while dialog already open: the store's `addWorkspace` call is safe to call twice — Electron's dialog system handles this
 
 ## Context for agent
-

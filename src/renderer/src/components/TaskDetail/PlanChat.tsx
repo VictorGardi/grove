@@ -6,6 +6,10 @@ import { usePlanStore } from "../../stores/usePlanStore";
 import { useWorkspaceStore } from "../../stores/useWorkspaceStore";
 import { useFileStore } from "../../stores/useFileStore";
 import { updateTask } from "../../actions/taskActions";
+import {
+  buildFirstPlanMessage,
+  buildFirstExecutionMessage,
+} from "../../utils/planPrompts";
 import type {
   TaskInfo,
   PlanAgent,
@@ -15,72 +19,8 @@ import type {
 } from "@shared/types";
 import styles from "./PlanChat.module.css";
 
-// ── Prompt builders (exported for preview) ────────────────────────────────
-
-export function buildFirstPlanMessage(
-  task: TaskInfo,
-  userText: string,
-  taskRawContent: string,
-): string {
-  const absolutePath = task.filePath;
-
-  return `You are a planning assistant for a software task.
-
-## Task
-
-ID: ${task.id}
-Title: ${task.title}
-File: ${absolutePath}
-
-## Current Task Content
-
-${taskRawContent}
-
-## Your Role
-
-You are helping a developer plan and define this task — NOT implement it.
-
-Rules:
-- Do NOT write any code.
-- Do NOT create, delete, or modify any file except the task markdown at the path above.
-- Do NOT run shell commands that read or modify the codebase.
-- You may use read-only tools (read file, search) to understand the codebase if needed.
-- Only update the "## Description" and "## Definition of Done" sections of the task file when the plan is agreed upon.
-- Ask clarifying questions freely. The user will respond in this same session.
-- Before writing to the task file, spawn a senior software engineer subagent to critically review the proposed plan. The subagent should verify: Are the DoD items testable and specific? Are there missing edge cases? Is the scope appropriate? Only write to the file if the review passes or the raised issues are addressed.
-
-## User's Request
-
-${userText}`;
-}
-
-export function buildFirstExecutionMessage(
-  task: TaskInfo,
-  taskRawContent: string,
-): string {
-  return `You are an execution agent for a software task.
-
-## Task
-
-ID: ${task.id}
-Title: ${task.title}
-File: ${task.filePath}
-
-## Current Task Content
-
-${taskRawContent}
-
-## Your Role
-
-Work through the task's Definition of Done checkboxes systematically:
-
-1. Read the task description carefully and understand the full scope.
-2. Implement the required changes in the codebase.
-3. After completing each DoD item, update the task file at the path above to check it off.
-4. When all items are complete, verify your work against the acceptance criteria.
-
-You have full access to read files, write files, and run shell commands. Work autonomously through the entire Definition of Done without waiting for confirmation unless you encounter a genuine blocker.`;
-}
+// Re-export for consumers that imported these from PlanChat before the refactor
+export { buildFirstPlanMessage, buildFirstExecutionMessage };
 
 // ── Thinking block ──────────────────────────────────────────────
 
@@ -119,6 +59,7 @@ function ChatMessage({
     ? new Date(msg.timestamp).toLocaleTimeString([], {
         hour: "2-digit",
         minute: "2-digit",
+        hour12: false,
       })
     : null;
 
@@ -180,6 +121,7 @@ export function PlanChat({
   const applyChunk = usePlanStore((s) => s.applyChunk);
   const clearSession = usePlanStore((s) => s.clearSession);
   const setRunning = usePlanStore((s) => s.setRunning);
+  const setSessionStatus = usePlanStore((s) => s.setSessionStatus);
 
   // Use mode-appropriate persisted session info for initial state
   const persistedSessionId =
@@ -191,12 +133,44 @@ export function PlanChat({
   const persistedModel =
     mode === "execute" ? (task.execModel ?? "") : (task.planModel ?? "");
 
+  const workspaceDefaults = useWorkspaceStore((s) => s.workspaceDefaults);
+  const fetchDefaults = useWorkspaceStore((s) => s.fetchDefaults);
+
+  const isExecute = mode === "execute";
+
+  const defaultAgent = isExecute
+    ? (workspaceDefaults[workspacePath ?? ""]?.defaultExecutionAgent ??
+      "opencode")
+    : (workspaceDefaults[workspacePath ?? ""]?.defaultPlanningAgent ??
+      "opencode");
+  const defaultModel = isExecute
+    ? (workspaceDefaults[workspacePath ?? ""]?.defaultExecutionModel ?? "")
+    : (workspaceDefaults[workspacePath ?? ""]?.defaultPlanningModel ?? "");
+
+  const initialAgent =
+    persistedAgent !== "opencode" || persistedModel !== ""
+      ? persistedAgent
+      : defaultAgent;
+  const initialModel = persistedModel !== "" ? persistedModel : defaultModel;
+
   const [inputText, setInputText] = useState("");
-  const [agent, setAgent] = useState<PlanAgent>(persistedAgent);
-  const [model, setModel] = useState<string>(persistedModel);
-  const [availableModels, setAvailableModels] = useState<string[]>([]);
-  const [modelsLoading, setModelsLoading] = useState(false);
+  const [agent, setAgent] = useState<PlanAgent>(initialAgent);
+  const [model, setModel] = useState<string>(initialModel);
+  // Use cached models from usePlanStore
+  const ensureModels = usePlanStore((s) => s.ensureModels);
+  const modelsCacheEntry = usePlanStore(
+    (s) => s.modelsCache[`${workspacePath ?? ""}:${agent}`],
+  );
+
+  const [availableModels, setAvailableModels] = useState<string[]>(() =>
+    Array.isArray(modelsCacheEntry) ? modelsCacheEntry : [],
+  );
+  const [modelsLoading, setModelsLoading] = useState<boolean>(
+    () => modelsCacheEntry === null,
+  );
   const [defaultPromptPreview, setDefaultPromptPreview] = useState<string>("");
+  const [tmuxAvailable, setTmuxAvailable] = useState<boolean | null>(null);
+  const [defaultsLoaded, setDefaultsLoaded] = useState(false);
 
   const isRunning = session?.isRunning ?? false;
   const hasSession = !!session?.sessionId;
@@ -226,18 +200,48 @@ export function PlanChat({
   const inputRef = useRef<HTMLTextAreaElement>(null);
   const userScrolledRef = useRef(false);
 
-  // Load model list whenever agent changes (or on mount)
+  // Ensure models are cached for this (workspacePath, agent) combination
   useEffect(() => {
-    if (!workspacePath) return;
-    setModelsLoading(true);
+    if (workspacePath) {
+      void ensureModels(workspacePath, agent);
+    }
+  }, [workspacePath, agent, ensureModels]);
+
+  // Sync from cache to local state, preserving model validation logic
+  useEffect(() => {
+    const cached = modelsCacheEntry;
+    if (Array.isArray(cached)) {
+      setAvailableModels(cached);
+      setModelsLoading(false);
+      if (model && cached.length > 0 && !cached.includes(model)) {
+        console.warn(
+          `[PlanChat] Invalid model "${model}" for agent "${agent}". Clearing.`,
+        );
+        setModel("");
+      }
+    } else if (cached === null) {
+      setModelsLoading(true);
+    }
+  }, [modelsCacheEntry, model, agent]);
+
+  // Fetch workspace defaults on mount
+  useEffect(() => {
+    if (workspacePath && !defaultsLoaded) {
+      fetchDefaults(workspacePath).then(() => setDefaultsLoaded(true));
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [workspacePath]);
+
+  // One-time check on mount: is tmux available at all?
+  // This drives the "tmux unavailable" warning in the header independently of
+  // whether there is an active session to reconnect to.
+  useEffect(() => {
     window.api.plan
-      .listModels({ agent, workspacePath })
-      .then((result) => {
-        setAvailableModels(result.ok ? result.data : []);
-      })
-      .catch(() => setAvailableModels([]))
-      .finally(() => setModelsLoading(false));
-  }, [agent, workspacePath]);
+      .isTmuxAvailable()
+      .then((result) => setTmuxAvailable(result.ok && result.data))
+      .catch(() => setTmuxAvailable(false));
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []); // only on mount
 
   // Initialise session on mount using the composite key.
   // NOTE: persistedSessionId is intentionally excluded from the dep array.
@@ -268,6 +272,94 @@ export function PlanChat({
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []); // intentionally empty — only run on mount
+
+  // Reconnect to an existing tmux session on mount only.
+  // Reads the stored session name from frontmatter at mount time:
+  //   - non-null → a prior run exists, replay its log (live or finished)
+  //   - null     → nothing to reconnect, skip
+  //
+  // IMPORTANT: this must use an empty dep array (mount-only) so it does NOT
+  // re-fire when task.planTmuxSession changes.  plan:send writes planTmuxSession
+  // to frontmatter after the tmux session starts; chokidar picks that up and
+  // updates task.planTmuxSession from null → a value.  If this effect ran
+  // reactively on that change it would call startAgentMessage() again, creating
+  // a duplicate agent bubble alongside the one handleSend() already created.
+  //
+  // Duplicate-bubble prevention:
+  //   1. startAgentMessage is called AFTER plan:reconnect confirms the log file
+  //      exists, not before.  This avoids adding an empty bubble when the log is
+  //      missing (e.g. deleted), which would otherwise persist on every open.
+  //   2. A `cancelled` flag is returned as the cleanup function so that React
+  //      StrictMode's double-invocation of effects does not fire two concurrent
+  //      reconnect attempts — the first invocation is cancelled before its async
+  //      code runs past the guard, and only the second proceeds.
+  useEffect(() => {
+    if (!workspacePath) return;
+
+    // Capture storedSession at mount time — don't react to later changes
+    const storedSession =
+      mode === "execute" ? task.execTmuxSession : task.planTmuxSession;
+    if (!storedSession) return;
+
+    // If the store already has messages for this session the tailer is either
+    // already running (plan:send path) or the session was fully replayed in an
+    // earlier mount.  Either way another reconnect would duplicate every bubble.
+    const existingSession = usePlanStore.getState().sessions[sessionKey];
+    if ((existingSession?.messages?.length ?? 0) > 0) return;
+
+    let cancelled = false;
+
+    const checkTmux = async () => {
+      try {
+        const availableResult = await window.api.plan.isTmuxAvailable();
+        if (cancelled) return;
+        setTmuxAvailable(availableResult.ok && availableResult.data);
+
+        if (!availableResult.ok || !availableResult.data) {
+          return;
+        }
+
+        setSessionStatus(sessionKey, "reconnecting");
+
+        // Call plan:reconnect BEFORE creating the agent bubble.
+        // The main process starts the log tailer synchronously inside the IPC
+        // handler, then returns.  Chunks are flushed via setImmediate — which
+        // fires after the handler returns — so the IPC response always arrives
+        // in the renderer before the first plan:chunks message.  This means the
+        // bubble created below is guaranteed to exist before any chunks land.
+        const reconnectResult = await window.api.plan.reconnect({
+          taskId: task.id,
+          mode,
+          agent,
+          workspacePath,
+          taskFilePath: task.filePath,
+        });
+        if (cancelled) return;
+
+        if (reconnectResult.ok && reconnectResult.data.reconnected) {
+          // Log file found, tailer is running. The agent bubble will be
+          // created lazily in App.tsx when the first content chunk arrives,
+          // so we don't call startAgentMessage here.
+          // The tailer is now running (or has already finished replaying a
+          // completed session).  The "done" chunk from the sentinel will
+          // set isRunning: false when it arrives.
+          setSessionStatus(sessionKey, "running");
+        } else {
+          // No log file found — nothing to replay.  Leave planTmuxSession in
+          // frontmatter; the "paused" status lets the user resume with Send.
+          setSessionStatus(sessionKey, "paused");
+        }
+      } catch {
+        // Ignore errors - tmux may not be available
+      }
+    };
+
+    checkTmux();
+    return () => {
+      cancelled = true;
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []); // intentionally mount-only — must not re-fire when planTmuxSession changes
 
   // Auto-scroll to bottom on new messages/chunks, unless user scrolled up
   useEffect(() => {
@@ -364,6 +456,7 @@ export function PlanChat({
       agent,
       model: model || null,
       message,
+      displayMessage: text,
       sessionId,
       workspacePath,
       taskFilePath: task.filePath,
@@ -380,14 +473,27 @@ export function PlanChat({
   // ── Cancel ──────────────────────────────────────────────────
 
   function handleCancel(): void {
-    window.api.plan.cancel({ taskId: task.id, mode });
+    if (!workspacePath) return;
+    window.api.plan.cancel({
+      taskId: task.id,
+      mode,
+      workspacePath,
+      taskFilePath: task.filePath,
+    });
   }
 
   // ── New session ─────────────────────────────────────────────
 
   function handleNewSession(): void {
     // Cancel any in-flight run before clearing
-    window.api.plan.cancel({ taskId: task.id, mode });
+    if (workspacePath) {
+      window.api.plan.cancel({
+        taskId: task.id,
+        mode,
+        workspacePath,
+        taskFilePath: task.filePath,
+      });
+    }
     clearSession(sessionKey);
     // Clear from frontmatter (mode-appropriate fields)
     if (workspacePath) {
@@ -810,6 +916,11 @@ export function PlanChat({
               🪙 {tokenDisplay}
             </span>
           )}
+          {tmuxAvailable === false && (
+            <span className={styles.exitWarning} style={{ fontSize: "12px" }}>
+              tmux unavailable — agents will not survive app restart
+            </span>
+          )}
         </div>
         <div className={styles.headerRight}>
           {hasSession && (
@@ -837,6 +948,23 @@ export function PlanChat({
         className={styles.messageList}
         onScroll={handleScroll}
       >
+        {/* Session status banner */}
+        {session?.sessionStatus === "reconnecting" && (
+          <div className={styles.runningIndicator}>
+            Reconnecting to running agent...
+          </div>
+        )}
+        {session?.sessionStatus === "running" && (
+          <div className={styles.runningIndicator}>
+            <span className={styles.runningDot} />
+            Agent running — reconnected
+          </div>
+        )}
+        {session?.sessionStatus === "paused" && (
+          <div className={styles.exitWarning}>
+            Session paused — send a message to resume
+          </div>
+        )}
         {/* Default prompt preview for execute mode when no session */}
         {messages.length === 0 &&
           mode === "execute" &&

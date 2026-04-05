@@ -14,9 +14,11 @@ import { useWorkspaceStore } from "../../stores/useWorkspaceStore";
 import { useWorktreeStore } from "../../stores/useWorktreeStore";
 import { useDialogStore } from "../../stores/useDialogStore";
 import { useBoardStore } from "../../stores/useBoardStore";
+import { usePlanStore } from "../../stores/usePlanStore";
 import { showToast } from "../../stores/useToastStore";
 import type { TaskInfo, TaskStatus } from "@shared/types";
-import { moveTask } from "../../actions/taskActions";
+import { moveTask, updateTask } from "../../actions/taskActions";
+import { buildFirstExecutionMessage } from "../../utils/planPrompts";
 import { Column } from "./Column";
 import { BoardToolbar } from "./BoardToolbar";
 import { TaskCard } from "./TaskCard";
@@ -203,7 +205,14 @@ export function Board(): React.JSX.Element {
       >
         <div className={styles.columns}>
           {COLUMNS.map((col) => {
-            const colTasks = filtered.filter((t) => t.status === col.status);
+            let colTasks = filtered.filter((t) => t.status === col.status);
+            if (col.status === "done") {
+              colTasks = [...colTasks].sort((a, b) => {
+                const dateA = a.completed ?? a.created ?? "";
+                const dateB = b.completed ?? b.created ?? "";
+                return dateB.localeCompare(dateA);
+              });
+            }
             return (
               <Column
                 key={col.status}
@@ -242,8 +251,35 @@ async function handleDragToDoing(task: TaskInfo): Promise<void> {
   }
 
   // Get updated task (filePath may have changed after move)
-  const movedTask =
+  let movedTask =
     useDataStore.getState().tasks.find((t) => t.id === task.id) ?? task;
+
+  // Clear stale exec session fields so a fresh session is started
+  // (not a resume attempt) — especially important when re-dragging
+  // from backlog back to doing.
+  if (movedTask.execSessionId || movedTask.execTmuxSession) {
+    // Cancel any orphaned background process before clearing the session
+    if (movedTask.execTmuxSession) {
+      await window.api.plan.cancel({
+        taskId: task.id,
+        mode: "execute",
+        workspacePath: wp,
+        taskFilePath: movedTask.filePath,
+      });
+    }
+    // Clear in-memory plan store session so a fresh slot is created
+    usePlanStore.getState().clearSession(`execute:${task.id}`);
+    await updateTask(movedTask.filePath, {
+      execSessionId: null,
+      execTmuxSession: null,
+    });
+    // Re-read task after update to get fresh filePath / metadata
+    movedTask =
+      useDataStore.getState().tasks.find((t) => t.id === task.id) ?? movedTask;
+  }
+
+  // Resolve worktree path (absolute) for plan.send
+  let worktreeAbsPath: string | undefined;
 
   if (movedTask.useWorktree !== false) {
     // ── Worktree mode (default) ──────────────────────────────────
@@ -277,10 +313,93 @@ async function handleDragToDoing(task: TaskInfo): Promise<void> {
     if (!result.data.alreadyExisted) {
       showToast(`Worktree created: ${result.data.branchName}`, "success");
     }
+
+    // Resolve worktree path to absolute for plan.send
+    const wtp = result.data.worktreePath;
+    worktreeAbsPath = wtp.startsWith("/") ? wtp : `${wp}/${wtp}`;
   }
 
   // Open the task detail panel so the execute agent UI is immediately visible.
-  useDataStore.getState().setSelectedTask(task.id);
+  // NOTE: The panel does NOT auto-open on drag. setSelectedTask is intentionally removed.
+
+  // ── Auto-execution ─────────────────────────────────────────────
+  // Skip if the execute session is already running (guard against double-fire)
+  const execSessionKey = `execute:${task.id}`;
+  const isRunning =
+    usePlanStore.getState().sessions[execSessionKey]?.isRunning ?? false;
+  if (isRunning) return;
+
+  // Re-read the latest task state (path and frontmatter may have changed)
+  const latestTask =
+    useDataStore.getState().tasks.find((t) => t.id === task.id) ?? movedTask;
+
+  // Resolve the agent via 3-level fallback:
+  //   1. execSessionAgent from task frontmatter
+  //   2. defaultExecutionAgent from workspace config
+  //   3. "opencode"
+  await useWorkspaceStore.getState().fetchDefaults(wp);
+  const defaults = useWorkspaceStore.getState().workspaceDefaults[wp];
+  const agent =
+    latestTask.execSessionAgent ??
+    defaults?.defaultExecutionAgent ??
+    "opencode";
+
+  const model = latestTask.execModel ?? defaults?.defaultExecutionModel ?? null;
+
+  // Validate model against cached list — stale selections fall back to null.
+  // Read from the shared models cache (keyed by workspacePath:agent) so we
+  // don't fire a redundant IPC call here (TaskCards already populated it).
+  const cacheKey = `${wp}:${agent}`;
+  const cachedModels = usePlanStore.getState().modelsCache[cacheKey];
+  const resolvedModel =
+    model !== null && Array.isArray(cachedModels) && cachedModels.length > 0
+      ? cachedModels.includes(model)
+        ? model
+        : null
+      : model;
+
+  // Read full task content to build the execution prompt
+  const rawResult = await window.api.tasks.readRaw(wp, latestTask.filePath);
+  if (!rawResult.ok) {
+    showToast("Could not read task file — execution not started", "error");
+    return;
+  }
+
+  const message = buildFirstExecutionMessage(latestTask, rawResult.data);
+
+  // Initialise the in-memory plan session so startAgentMessage has a slot to write to
+  usePlanStore
+    .getState()
+    .initSession(execSessionKey, agent, resolvedModel, null);
+
+  const sendResult = await window.api.plan.send({
+    taskId: task.id,
+    mode: "execute",
+    agent,
+    model: resolvedModel,
+    message,
+    displayMessage: "",
+    sessionId: null,
+    workspacePath: wp,
+    taskFilePath: latestTask.filePath,
+    ...(worktreeAbsPath ? { worktreePath: worktreeAbsPath } : {}),
+  });
+
+  if (!sendResult.ok) {
+    showToast(`Execution failed to start: ${sendResult.error}`, "error");
+  } else {
+    // Append user message BEFORE starting agent message so it appears on top
+    // (user message is last in the array, agent bubble comes after)
+    usePlanStore
+      .getState()
+      .appendUserMessage(
+        execSessionKey,
+        `Sent plan for ticket '${task.title}' to Agent`,
+      );
+    // Create the agent message slot and set isRunning: true so the running
+    // indicator on the card is visible without the user opening the panel.
+    usePlanStore.getState().startAgentMessage(execSessionKey);
+  }
 }
 
 async function handleDragToDone(task: TaskInfo): Promise<void> {

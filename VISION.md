@@ -5,6 +5,7 @@
 A local-first, file-based developer task orchestration tool. Grove is an Electron desktop app that acts as an orchestration layer over a developer's repositories — reading and writing Markdown files, managing git worktrees, and embedding a terminal so AI coding agents can be run without requiring API keys.
 
 **Core principles:**
+
 - No auth, no login, no server, no cloud
 - The repo is the source of truth — all tasks and decisions are stored as Markdown files inside the repo being worked on
 - The app is a UI layer on top of the filesystem and git
@@ -15,20 +16,20 @@ A local-first, file-based developer task orchestration tool. Grove is an Electro
 
 ## Tech stack
 
-| Layer | Choice | Reason |
-|---|---|---|
-| Shell | Electron | node-pty (terminal emulation) requires native Node bindings; Electron handles this cleanly |
-| UI | React + Vite (via `electron-vite`) | Fast iteration, standard ecosystem |
-| Styling | CSS variables + scoped CSS modules | No runtime CSS-in-JS, clean theming |
-| Terminal | xterm.js + node-pty | Same stack as VS Code terminal |
-| Filesystem watch | chokidar | Reliable cross-platform fs watcher |
-| Markdown parsing | gray-matter + remark | Frontmatter + body parsing |
-| Syntax highlighting | Shiki | Fast, accurate, theme-aware — used for file viewer |
-| Diff rendering | Custom React component | Parses unified diff format, renders with full control over colors and layout. ~150 lines. More flexible than diff2html CSS overrides. |
-| Fuzzy search | fuse.js | Client-side fuzzy search for file tree and command palette |
-| Git ops | simple-git | Thin wrapper over git CLI |
-| State | Zustand | Lightweight, no boilerplate |
-| IPC | Electron contextBridge | Renderer ↔ main communication |
+| Layer               | Choice                             | Reason                                                                                                                                |
+| ------------------- | ---------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------- |
+| Shell               | Electron                           | node-pty (terminal emulation) requires native Node bindings; Electron handles this cleanly                                            |
+| UI                  | React + Vite (via `electron-vite`) | Fast iteration, standard ecosystem                                                                                                    |
+| Styling             | CSS variables + scoped CSS modules | No runtime CSS-in-JS, clean theming                                                                                                   |
+| Terminal            | xterm.js + node-pty                | Same stack as VS Code terminal                                                                                                        |
+| Filesystem watch    | chokidar                           | Reliable cross-platform fs watcher                                                                                                    |
+| Markdown parsing    | gray-matter + remark               | Frontmatter + body parsing                                                                                                            |
+| Syntax highlighting | Shiki                              | Fast, accurate, theme-aware — used for file viewer                                                                                    |
+| Diff rendering      | Custom React component             | Parses unified diff format, renders with full control over colors and layout. ~150 lines. More flexible than diff2html CSS overrides. |
+| Fuzzy search        | fuse.js                            | Client-side fuzzy search for file tree and command palette                                                                            |
+| Git ops             | simple-git                         | Thin wrapper over git CLI                                                                                                             |
+| State               | Zustand                            | Lightweight, no boilerplate                                                                                                           |
+| IPC                 | Electron contextBridge             | Renderer ↔ main communication                                                                                                         |
 
 **Note on file editing:** The file viewer is intentionally read-only in v1. Agents running in the embedded terminal are actively modifying files — adding an in-app editor creates conflict risk (concurrent writes, stale content, "file changed on disk" flows). Read-only with syntax highlighting gives full visibility without that complexity. Promote to editable in a future version once the terminal/agent workflow is stable.
 
@@ -73,15 +74,18 @@ milestone: M-001
 ---
 
 ## Description
+
 Implement secure refresh token rotation...
 
 ## Definition of Done
+
 - [x] Refresh endpoint issues new token pair
 - [x] Old token added to Redis revocation set
 - [ ] TTL cleanup job for expired entries
 - [ ] Integration tests covering rotation flow
 
 ## Context for agent
+
 See D-002. Use existing Redis client from src/lib/redis.ts.
 Follow error handling patterns in src/middleware/errors.ts.
 Tests in Vitest.
@@ -99,12 +103,15 @@ tags: [infra, auth]
 ---
 
 ## Context
+
 Needed fast revocation lookups without DB round-trips.
 
 ## Decision
+
 Use Redis with TTL-based expiry for token revocation lists and session state.
 
 ## Consequences
+
 - Adds Redis as a dependency
 - Cleanup is automatic via TTL
 - +~2ms latency on token validation (acceptable)
@@ -122,15 +129,18 @@ tags: [release]
 ---
 
 ## Description
+
 First public release. Core auth, API endpoints, and admin dashboard.
 
 ## Key deliverables
+
 - JWT auth with refresh rotation
 - CRUD endpoints for all resources
 - Admin dashboard with usage metrics
 ```
 
 Milestone frontmatter fields:
+
 - `id` (required) — auto-generated `M-XXX` format, monotonically incrementing (same pattern as task IDs)
 - `title` (required) — human-readable name
 - `status` — `open` or `closed` (default: `open`)
@@ -150,7 +160,10 @@ A task references its milestone via an optional `milestone` field in frontmatter
 {
   "workspaces": [
     { "name": "assaria-backend", "path": "/Users/victor/code/assaria/backend" },
-    { "name": "centiro-pipeline", "path": "/Users/victor/code/centiro/pipeline" }
+    {
+      "name": "centiro-pipeline",
+      "path": "/Users/victor/code/centiro/pipeline"
+    }
   ],
   "lastActiveWorkspace": "assaria-backend"
 }
@@ -166,11 +179,13 @@ A task references its milestone via an optional `milestone` field in frontmatter
 ```
 
 The **main area** is a view switcher — the sidebar nav determines what's shown:
+
 - **Task Board** — kanban columns (default)
 - **Milestones** — milestone list with progress indicators
 - **Files** — file tree + file viewer
 
 The **detail panel** is context-sensitive:
+
 - When a kanban card is selected: task detail with DoD, chat, metadata
 - When a milestone is selected: milestone detail with linked tasks and progress
 - When a "doing" task is selected: detail panel gains a **Changes** tab showing git diff
@@ -214,6 +229,7 @@ The **detail panel** is context-sensitive:
 Four columns, left to right: **BACKLOG**, **DOING**, **REVIEW**, **DONE**
 
 Column header format: `● STATUS  N` — colored dot, uppercase status label, count. Dot colors:
+
 - BACKLOG: gray (`--text-lo`)
 - DOING: green (`--status-green`)
 - REVIEW: amber (`--status-amber`)
@@ -245,6 +261,7 @@ Column header format: `● STATUS  N` — colored dot, uppercase status label, c
 - Card background: `--bg-surface`. Hover: `--bg-hover`. Selected: subtle accent border.
 
 ### Other panels
+
 - **File Tree** — collapsible directory tree of repo, fuzzy search, click to open file in viewer pane
 - **File Viewer** — read-only, syntax-highlighted, Shiki-powered
 - **Detail Panel** — task details, DoD, agent picker, decisions, chat. For "doing" tasks: adds Changes tab with diff view. For milestones: linked tasks grouped by status with progress bar
@@ -268,6 +285,7 @@ Accessible via the "Milestones" nav item in the sidebar. Renders in the main are
 ### Milestone detail panel
 
 Replaces the task detail panel when a milestone is selected:
+
 - **Header**: ID badge (`M-001` in mono), title (inline-editable), status toggle button (open/closed)
 - **Tags**: editable tag pills, same input pattern as tasks
 - **Description**: rendered Markdown body, editable (same debounce + atomic write pattern as tasks)
@@ -276,6 +294,7 @@ Replaces the task detail panel when a milestone is selected:
 - **"Create task in milestone"** button — creates a new task with the `milestone` field pre-filled
 
 ### Design spec
+
 - Dark theme, Zed/Obsidian aesthetic
 - Background `#0b0b0d`, surfaces `#101012` / `#141417`
 - Border `#242430`, hover `#32323f`
@@ -297,6 +316,7 @@ Replaces the task detail panel when a milestone is selected:
 **Goal:** A working Electron app with workspace switching. No tasks yet. Just the skeleton.
 
 **Tasks:**
+
 1. Scaffold with `electron-vite` + React + TypeScript
 2. Implement `config.json` read/write in main process via IPC:
    - `workspace:list` → returns array of workspaces
@@ -325,6 +345,7 @@ Replaces the task detail panel when a milestone is selected:
 **Tasks:**
 
 ### Task scanning and board
+
 1. Main process: scan `.tasks/{backlog,doing,review,done}/*.md` on workspace switch
    - Parse frontmatter with `gray-matter`
    - Parse DoD checkbox progress from body (`- [x]` vs `- [ ]`)
@@ -344,18 +365,21 @@ Replaces the task detail panel when a milestone is selected:
 8. Smooth card hover states, column scroll
 
 ### Milestone scanning and list view
+
 9. Main process: scan `.milestones/*.md` on workspace switch
    - Parse frontmatter with `gray-matter`: `id`, `title`, `status` (open/closed), `created`, `tags`
    - Return structured milestone array via IPC: `milestones:list(workspacePath)`
 10. Initialize `.milestones/` directory alongside `.tasks/` if it doesn't exist
 11. Watch `.milestones/` with `chokidar` — push `milestones:changed` IPC event on file change
 12. Milestone list view component — accessible via "Milestones" nav item in sidebar
-   - Vertical list: diamond icon, title, status badge (OPEN green / CLOSED muted), tag pills, progress bar, task count
-   - Progress bar computed from linked tasks: `done_count / total_linked_tasks`
-   - Open milestones sorted first, then closed; within each group sorted by creation date descending
-   - Click a milestone row to open the milestone detail panel on the right
+
+- Vertical list: diamond icon, title, status badge (OPEN green / CLOSED muted), tag pills, progress bar, task count
+- Progress bar computed from linked tasks: `done_count / total_linked_tasks`
+- Open milestones sorted first, then closed; within each group sorted by creation date descending
+- Click a milestone row to open the milestone detail panel on the right
 
 ### Milestone-board integration
+
 13. Kanban board: filter dropdown in board toolbar — filter by milestone (dropdown of all open milestones + "No milestone" + "All"). Defaults to "All".
 14. When a milestone filter is active, only cards with that milestone (or no milestone, if "No milestone" selected) are shown. Column counts update accordingly.
 
@@ -370,6 +394,7 @@ Replaces the task detail panel when a milestone is selected:
 **Tasks:**
 
 ### File tree
+
 1. IPC handler `fs:tree(workspacePath)` — returns a recursive directory tree, respecting `.gitignore` (use the `ignore` npm package to parse and apply gitignore rules). Always exclude: `.git/`, `node_modules/`, `.worktrees/`
 2. Sidebar nav item "Files" switches the main area to file tree view
 3. File tree component:
@@ -381,12 +406,14 @@ Replaces the task detail panel when a milestone is selected:
 4. chokidar watches workspace root (excluding `.git`, `node_modules`, `.worktrees`) — refresh tree on file add/remove/rename
 
 ### Fuzzy file search
+
 5. Search input at top of file tree — `⌘P` / `Ctrl+P` focuses it from anywhere in the app
 6. Uses `fuse.js` over the flat list of all file paths — shows filtered flat results while query is active, returns to tree view when cleared
 7. Results show: filename bold, directory path dimmed, matching characters highlighted with accent color
 8. Keyboard: arrows navigate results, enter opens, escape clears
 
 ### File viewer
+
 9. IPC handler `fs:readFile(filePath)` → returns file content as string + detected language (from extension)
 10. File viewer pane renders to the right of the file tree, occupying the same layout slot as the kanban board when in Files view
 11. Syntax highlighting via **Shiki** — use a custom theme object built from the app's CSS variable palette (do not use a bundled Shiki theme directly — derive colors so syntax integrates naturally). Support at minimum: TypeScript, JavaScript, TSX, JSX, Python, Go, Rust, SQL, YAML, JSON, Markdown, Bash, Dockerfile
@@ -407,6 +434,7 @@ Replaces the task detail panel when a milestone is selected:
 **Tasks:**
 
 ### Task CRUD
+
 1. Detail panel slides in from right on card click (not a modal — panel stays, board narrows slightly)
 2. Panel shows: ID, title, status tag, description, DoD checklist (interactive — clicking a checkbox updates the `.md` file), agent badge, metadata grid, context-for-agent field (editable textarea), linked decisions, milestone picker
 3. Inline title editing (click to edit, blur/enter to save)
@@ -419,6 +447,7 @@ Replaces the task detail panel when a milestone is selected:
 10. Milestone picker — searchable dropdown of all open milestones, saves `milestone: M-XXX` to task frontmatter. Shows current milestone with "×" to remove. Choosing "None" clears the field.
 
 ### Milestone CRUD
+
 11. Milestone detail panel — opens when a milestone is clicked in the milestone list view:
     - ID badge, title (inline-editable), status toggle (open ↔ closed)
     - Tags (editable), description (rendered Markdown, editable)
@@ -438,6 +467,7 @@ Replaces the task detail panel when a milestone is selected:
 **Goal:** Dragging a card to Doing creates a git worktree and updates the task.
 
 **Tasks:**
+
 1. Main process git helpers via `simple-git`:
    - `git:isRepo(path)` → validates workspace is a git repo
    - `git:worktrees(path)` → list existing worktrees
@@ -464,6 +494,7 @@ Replaces the task detail panel when a milestone is selected:
 **Goal:** A real terminal per worktree, tabbed, persistent across workspace switches.
 
 **Tasks:**
+
 1. Install `node-pty` and `xterm.js` (+ `xterm-addon-fit`, `xterm-addon-web-links`)
 2. Main process: PTY manager
    - `pty:create(id, cwd)` → spawns a PTY in the given directory (default shell from `$SHELL`), returns `id`
@@ -494,6 +525,7 @@ Replaces the task detail panel when a milestone is selected:
 **Tasks:**
 
 ### Changed files list
+
 1. IPC handler `git:diff(worktreePath, baseBranch)`:
    - Runs `git diff $(git merge-base HEAD <baseBranch>)...HEAD --name-status` in the worktree
    - Returns array of `{ path, status: 'M' | 'A' | 'D' | 'R', additions: number, deletions: number }`
@@ -508,6 +540,7 @@ Replaces the task detail panel when a milestone is selected:
    - Keyboard: arrow keys navigate rows, enter expands/collapses
 
 ### Inline diff renderer
+
 5. IPC handler `git:fileDiff(worktreePath, baseBranch, filePath)`:
    - Runs `git diff $(git merge-base HEAD <baseBranch>)...HEAD -- <filePath>` → returns raw unified diff string
 6. Render inline below the file row using a custom React diff parser and renderer:
@@ -523,6 +556,7 @@ Replaces the task detail panel when a milestone is selected:
 9. Deleted files (status `D`): show full file content as a pure removal diff (all lines red)
 
 ### Refresh + cross-linking
+
 10. "Refresh" button in the Changes tab header — re-fetches diff on demand
 11. Auto-refresh when the terminal for this worktree has been idle for 3 seconds (use the idle signal from Phase 6)
 12. Each file row has a small "→ View file" icon button — clicking it switches to Files view and opens that file in the Shiki viewer, so you can see the full file with proper syntax highlighting alongside the diff context
@@ -537,6 +571,7 @@ Replaces the task detail panel when a milestone is selected:
 **Goal:** A structured decision log, linked to tasks, readable by agents.
 
 **Tasks:**
+
 1. Main process: scan `.decisions/*.md` with same `chokidar` watcher pattern as tasks
 2. Parse frontmatter: `id`, `title`, `status` (active / superseded / deprecated), `created`, `tags`
 3. Decision log view — "Decisions" sidebar nav item
@@ -558,6 +593,7 @@ Replaces the task detail panel when a milestone is selected:
 **Goal:** An AI chat panel inside the task detail for refining ticket content — not tied to any provider, not required to use the app.
 
 **Tasks:**
+
 1. Chat panel embedded at the bottom of the detail panel (below DoD, above metadata)
 2. Settings: OpenAI-compatible base URL + optional API key
 3. Context payload on send:
@@ -580,6 +616,7 @@ Replaces the task detail panel when a milestone is selected:
 **Goal:** App is stable, distributable, and pleasant to use.
 
 **Tasks:**
+
 1. Keyboard shortcuts:
    - `N` — new ticket (board focused)
    - `⌘P` / `Ctrl+P` — fuzzy file search (global)
@@ -603,6 +640,7 @@ Replaces the task detail panel when a milestone is selected:
 ## Important implementation notes
 
 ### IPC pattern
+
 All filesystem, git, and PTY operations happen in the **main process**. The renderer never touches the filesystem directly. Use `contextBridge` to expose a typed API:
 
 ```ts
@@ -628,24 +666,29 @@ Scan all files in `.tasks/{backlog,doing,review,done,archive}/*` to find the hig
 Same pattern as tasks: scan all files in `.milestones/*` to find the highest integer ID suffix (e.g., `M-003` → `3`). Increment by 1 for the next milestone. Never reuse IDs.
 
 ### File write strategy
+
 - Debounce all writes by 300ms to avoid hammering the filesystem on fast typing
 - Write atomically: write to `<file>.tmp` then rename — prevents partial reads by chokidar
 - Never re-parse a file immediately after writing it — use in-memory state as truth, let chokidar confirm
 
 ### File viewer and agent edits
+
 The viewer is read-only so there is no conflict to resolve when an agent modifies an open file. Re-fetch and re-highlight on the chokidar event. Flash changed lines for 200ms (`--accent-dim` background pulse) to signal the reload.
 
 ### Diff base branch detection
+
 ```ts
 // In main process
-const base = await git.raw(['merge-base', 'HEAD', baseBranch])
-const diff = await git.raw(['diff', `${base.trim()}...HEAD`, '--name-status'])
+const base = await git.raw(["merge-base", "HEAD", baseBranch]);
+const diff = await git.raw(["diff", `${base.trim()}...HEAD`, "--name-status"]);
 ```
+
 Default `baseBranch`: check if `main` exists, else `master`, else prompt the user once and save to workspace config.
 
 ### Settings data model
 
 **App-level config** (`~/.config/grove/config.json`):
+
 - Workspaces list
 - Last active workspace
 - OpenAI-compatible endpoint URL + API key
@@ -653,6 +696,7 @@ Default `baseBranch`: check if `main` exists, else `master`, else prompt the use
 - Shiki theme choice
 
 **Workspace-level config** (`<repo>/.grove/config.json`):
+
 - Base branch override (default: detect from origin, fallback to `main`/`master`)
 
 This split keeps per-repo settings in the repo and app-wide settings in the user's config directory.
@@ -660,6 +704,7 @@ This split keeps per-repo settings in the repo and app-wide settings in the user
 ### Worktree context injection
 
 When creating a worktree, generate into the worktree root:
+
 - `CONTEXT.md` — generated summary of the specific task: title, full DoD with checked state, linked decision content, context-for-agent field, and parent milestone title/description if the task belongs to a milestone. This is what the agent needs to start work.
 
 Agents can navigate to the repo root to access the full `.tasks/` and `.decisions/` directories if needed, but the primary interface is `CONTEXT.md`.
@@ -667,21 +712,25 @@ Agents can navigate to the repo root to access the full `.tasks/` and `.decision
 **Known limitation:** The `worktree` field in the task frontmatter stores an absolute or relative path. If the repo is moved, these paths break and worktrees must be recreated. Document this in onboarding/help text.
 
 ### Multi-workspace terminal isolation
+
 Each workspace has its own PTY pool. Switching workspaces does not kill running terminals — they stay alive in the background. Switching back resumes them exactly where they left off.
 
 ### Chokidar setup
+
 ```ts
 chokidar.watch(`${workspacePath}/.tasks/**/*.md`, {
   ignoreInitial: false,
-  awaitWriteFinish: { stabilityThreshold: 150, pollInterval: 50 }
-})
+  awaitWriteFinish: { stabilityThreshold: 150, pollInterval: 50 },
+});
 
 chokidar.watch(`${workspacePath}/.milestones/*.md`, {
   ignoreInitial: false,
-  awaitWriteFinish: { stabilityThreshold: 150, pollInterval: 50 }
-})
+  awaitWriteFinish: { stabilityThreshold: 150, pollInterval: 50 },
+});
 ```
+
 `awaitWriteFinish` prevents double-reads during atomic writes.
 
 ### Shiki setup
+
 Load Shiki lazily on first file open — it's large. Cache the highlighter instance per session. Build a custom theme object from CSS variables rather than using a bundled theme, so syntax colors integrate naturally with the app palette.

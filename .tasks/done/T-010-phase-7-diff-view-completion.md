@@ -1,10 +1,10 @@
 ---
 id: T-010
-title: 'Phase 7: Diff View Completion + Worktree/Branch Selector in Files View'
+title: "Phase 7: Diff View Completion + Worktree/Branch Selector in Files View"
 status: done
 priority: high
 agent: opencode
-created: '2026-04-03'
+created: "2026-04-03"
 tags:
   - phase-7
   - diff

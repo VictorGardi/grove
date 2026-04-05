@@ -166,7 +166,30 @@
   color: var(--status-yellow, #f0c060);
 }
 
-/* ── session failed indicator ────────────────────────────────────── */
+/* ── ship it indicator ─────────────────────────────────────────────── */
+
+.shipItRow {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  margin-top: 5px;
+}
+
+.shipItDot {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: var(--status-green);
+  flex-shrink: 0;
+}
+
+.shipItLabel {
+  font-family: var(--font-mono);
+  font-size: 10px;
+  color: var(--status-green);
+}
+
+/* ── session failed indicator ──────────────────────────────────────── */
 
 .errorRow {
   display: flex;
@@ -194,7 +217,8 @@
 .worktreeRow {
   display: flex;
   align-items: center;
-  margin-top: 8px;
+  gap: 5px;
+  margin-top: 6px;
 }
 
 .worktreeToggle {
@@ -225,6 +249,38 @@
 
 .worktreeToggleActive:hover {
   background: color-mix(in srgb, var(--status-green) 10%, transparent);
+}
+
+/* ── model select dropdown (backlog and doing tasks) ─────────────────── */
+
+.modelSelect {
+  font-family: var(--font-mono);
+  font-size: 10px;
+  padding: 2px 4px;
+  border-radius: var(--radius-sm);
+  border: 1px solid var(--border-dim);
+  background: var(--bg-surface);
+  color: var(--text-secondary);
+  cursor: pointer;
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  transition:
+    background var(--transition-fast),
+    color var(--transition-fast),
+    border-color var(--transition-fast);
+}
+
+.modelSelect:hover:not(:disabled) {
+  border-color: var(--border);
+  color: var(--text-primary);
+}
+
+.modelSelectDisabled,
+.modelSelect:disabled {
+  opacity: 0.4;
+  cursor: not-allowed;
 }
 
 /* ── search match highlight ────────────────────────────────────────── */

@@ -11,6 +11,17 @@ contextBridge.exposeInMainWorld("api", {
     getActive: () => ipcRenderer.invoke("workspace:getActive"),
     getBranch: (path: string) =>
       ipcRenderer.invoke("workspace:getBranch", path),
+    getDefaults: (path: string) =>
+      ipcRenderer.invoke("workspace:getDefaults", path),
+    setDefaults: (
+      path: string,
+      defaults: {
+        defaultPlanningAgent?: string;
+        defaultPlanningModel?: string;
+        defaultExecutionAgent?: string;
+        defaultExecutionModel?: string;
+      },
+    ) => ipcRenderer.invoke("workspace:setDefaults", path, defaults),
     onBranchChanged: (
       callback: (data: { path: string; branch: string }) => void,
     ) => {
@@ -136,6 +147,8 @@ contextBridge.exposeInMainWorld("api", {
   },
   app: {
     getPlatform: () => ipcRenderer.invoke("app:getPlatform"),
+    getTheme: () => ipcRenderer.invoke("app:getTheme"),
+    setTheme: (theme: string) => ipcRenderer.invoke("app:setTheme", theme),
     setTitleBarColor: (opts: { color: string; symbolColor: string }) =>
       ipcRenderer.invoke("app:setTitleBarColor", opts),
   },
@@ -152,8 +165,12 @@ contextBridge.exposeInMainWorld("api", {
       worktreePath?: string;
     }) => ipcRenderer.invoke("plan:send", input),
 
-    cancel: (input: { taskId: string; mode: string }) =>
-      ipcRenderer.invoke("plan:cancel", input),
+    cancel: (input: {
+      taskId: string;
+      mode: string;
+      workspacePath: string;
+      taskFilePath: string;
+    }) => ipcRenderer.invoke("plan:cancel", input),
 
     listModels: (input: { agent: string; workspacePath: string }) =>
       ipcRenderer.invoke("plan:listModels", input),
@@ -167,6 +184,22 @@ contextBridge.exposeInMainWorld("api", {
       mode: string;
     }) => ipcRenderer.invoke("plan:saveSession", input),
 
+    isTmuxAvailable: () => ipcRenderer.invoke("plan:is-tmux-available"),
+
+    tmuxCheck: (input: {
+      workspacePath: string;
+      taskId: string;
+      mode: string;
+    }) => ipcRenderer.invoke("plan:tmux-check", input),
+
+    reconnect: (input: {
+      taskId: string;
+      mode: string;
+      agent: string;
+      workspacePath: string;
+      taskFilePath: string;
+    }) => ipcRenderer.invoke("plan:reconnect", input),
+
     onChunk: (
       callback: (
         taskId: string,
@@ -176,12 +209,18 @@ contextBridge.exposeInMainWorld("api", {
     ) => {
       const handler = (
         _event: Electron.IpcRendererEvent,
-        taskId: string,
-        mode: string,
-        chunk: { type: string; content: string },
-      ) => callback(taskId, mode, chunk);
-      ipcRenderer.on("plan:chunk", handler);
-      return () => ipcRenderer.removeListener("plan:chunk", handler);
+        batch: Array<{
+          taskId: string;
+          mode: string;
+          chunk: { type: string; content: string };
+        }>,
+      ) => {
+        for (const entry of batch) {
+          callback(entry.taskId, entry.mode, entry.chunk);
+        }
+      };
+      ipcRenderer.on("plan:chunks", handler);
+      return () => ipcRenderer.removeListener("plan:chunks", handler);
     },
   },
 });

@@ -22,6 +22,7 @@
   border-radius: var(--radius-md);
   display: flex;
   flex-direction: column;
+  min-height: 0;
   overflow: hidden;
   box-shadow: 0 24px 64px rgba(0, 0, 0, 0.5);
 }
@@ -226,11 +227,13 @@
 .splitView {
   display: flex;
   flex: 1;
+  min-height: 0;
   overflow: hidden;
 }
 
 .editorPane {
   flex: 1;
+  min-height: 0;
   display: flex;
   flex-direction: column;
   border-right: 1px solid var(--border-dim);
@@ -239,6 +242,7 @@
 
 .editor {
   flex: 1;
+  min-height: 0;
   width: 100%;
   resize: none;
   font-family: var(--font-mono);
@@ -252,12 +256,23 @@
   overflow-y: auto;
   tab-size: 2;
   box-sizing: border-box;
+  scrollbar-width: none;
+}
+
+.editor::-webkit-scrollbar {
+  display: none;
 }
 
 .previewPane {
   flex: 1;
+  min-height: 0;
   overflow-y: auto;
   background: var(--bg-surface);
+  scrollbar-width: none;
+}
+
+.previewPane::-webkit-scrollbar {
+  display: none;
 }
 
 .preview {
@@ -357,6 +372,7 @@
 
 .changesWrapper {
   flex: 1;
+  min-height: 0;
   overflow-y: auto;
 }
 
@@ -436,4 +452,43 @@
   background: var(--bg-hover);
   border-color: var(--accent);
   color: var(--text-primary);
+}
+
+/* ── Debug tab panel ──────────────────────────────────────────── */
+
+.debugPanel {
+  flex: 1;
+  overflow-y: auto;
+  padding: 20px 24px;
+  background: var(--bg-base);
+}
+
+.debugTable {
+  border-collapse: collapse;
+  width: 100%;
+  font-family: var(--font-mono);
+  font-size: 12px;
+}
+
+.debugTable tr + tr {
+  border-top: 1px solid var(--border-dim);
+}
+
+.debugLabel {
+  color: var(--text-lo);
+  padding: 6px 16px 6px 0;
+  white-space: nowrap;
+  vertical-align: top;
+  width: 200px;
+}
+
+.debugValue {
+  color: var(--text-primary);
+  padding: 6px 0;
+  word-break: break-all;
+}
+
+.debugNull {
+  color: var(--text-lo);
+  font-style: italic;
 }
