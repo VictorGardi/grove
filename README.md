@@ -17,6 +17,19 @@ A local-first, file-based developer task orchestration tool. Grove acts as an or
 - **The app is a UI layer** on top of the filesystem and git
 - **Multiple workspaces** — manage several repos in parallel, each with their own tasks and terminals
 
+## How It Works
+
+1. Define a task in the kanban board - it will be saved in .tasks in the chosen workspace. Plan the task details with an agent inside the task definition. Automatically get a review of the plan from another agent to make sure it's trustworthy.
+2. Drag a planned task to **Doing** (or press `D`) → Grove automatically creates a git worktree, isolated branch and your chosen execution agent implements the plan and reviews implementation.
+3. Review what the agent changed via the built-in diff view
+4. Move to **Done** → Grove prompts to clean up the worktree
+
+## Why Grove
+
+- **No context switching** — task board, terminal, file browser, and diff review in one window
+- **Isolated work** — one worktree per task means clean parallel development without manual branch switching
+- **No lock-in** — everything is Markdown files in your repo; delete the app, your tasks remain
+
 ## Features
 
 ### Task Board
