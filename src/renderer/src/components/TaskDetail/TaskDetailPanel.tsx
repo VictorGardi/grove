@@ -103,9 +103,11 @@ export function TaskDetailPanel(): React.JSX.Element {
   }, [isDirty]);
 
   // Default to plan (Agent) tab for all tasks
+  // Only set when a task is present to avoid updating state when no task is selected
   useEffect(() => {
+    if (!task) return;
     setActiveTab("plan");
-  }, [task?.id]);
+  }, [task?.id, task]);
 
   // ── Load raw file content ─────────────────────────────────────
 
