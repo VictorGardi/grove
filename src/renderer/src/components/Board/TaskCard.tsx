@@ -17,6 +17,35 @@ export function TaskCard({ task }: TaskCardProps): React.JSX.Element {
   const isAgentRunning = usePlanStore(
     (s) => s.sessions[`execute:${task.id}`]?.isRunning ?? false,
   );
+  const isPlanningRunning = usePlanStore(
+    (s) => s.sessions[`plan:${task.id}`]?.isRunning ?? false,
+  );
+
+  const isExecuteWaiting = usePlanStore((s) => {
+    const session = s.sessions[`execute:${task.id}`];
+    if (!session || session.messages.length === 0 || session.isRunning)
+      return false;
+    return session.lastExitCode === null || session.lastExitCode === 0;
+  });
+  const isPlanWaiting = usePlanStore((s) => {
+    const session = s.sessions[`plan:${task.id}`];
+    if (!session || session.messages.length === 0 || session.isRunning)
+      return false;
+    return session.lastExitCode === null || session.lastExitCode === 0;
+  });
+
+  const isExecuteErrored = usePlanStore((s) => {
+    const session = s.sessions[`execute:${task.id}`];
+    if (!session || session.messages.length === 0 || session.isRunning)
+      return false;
+    return session.lastExitCode !== null && session.lastExitCode !== 0;
+  });
+  const isPlanErrored = usePlanStore((s) => {
+    const session = s.sessions[`plan:${task.id}`];
+    if (!session || session.messages.length === 0 || session.isRunning)
+      return false;
+    return session.lastExitCode !== null && session.lastExitCode !== 0;
+  });
 
   const { attributes, listeners, setNodeRef, isDragging } = useDraggable({
     id: task.id,
@@ -52,11 +81,45 @@ export function TaskCard({ task }: TaskCardProps): React.JSX.Element {
         </div>
       )}
 
-      {/* Row 3: Agent running indicator — doing tasks only */}
+      {/* Row 3: Agent running indicator — doing tasks (execution) or backlog tasks (planning) */}
       {task.status === "doing" && isAgentRunning && (
         <div className={styles.agentRunningRow}>
           <span className={styles.agentRunningDot} />
           <span className={styles.agentRunningLabel}>agent running</span>
+        </div>
+      )}
+      {task.status === "backlog" && isPlanningRunning && (
+        <div className={styles.agentRunningRow}>
+          <span className={styles.agentRunningDot} />
+          <span className={styles.agentRunningLabel}>agent running</span>
+        </div>
+      )}
+
+      {/* Row 3b: Waiting for input indicator */}
+      {task.status === "doing" && isExecuteWaiting && (
+        <div className={styles.waitingRow}>
+          <span className={styles.waitingDot} />
+          <span className={styles.waitingLabel}>waiting for you</span>
+        </div>
+      )}
+      {task.status === "backlog" && isPlanWaiting && (
+        <div className={styles.waitingRow}>
+          <span className={styles.waitingDot} />
+          <span className={styles.waitingLabel}>waiting for you</span>
+        </div>
+      )}
+
+      {/* Row 3c: Error indicator */}
+      {task.status === "doing" && isExecuteErrored && (
+        <div className={styles.errorRow}>
+          <span className={styles.errorDot} />
+          <span className={styles.errorLabel}>session failed</span>
+        </div>
+      )}
+      {task.status === "backlog" && isPlanErrored && (
+        <div className={styles.errorRow}>
+          <span className={styles.errorDot} />
+          <span className={styles.errorLabel}>session failed</span>
         </div>
       )}
 

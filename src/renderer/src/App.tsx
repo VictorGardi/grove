@@ -149,12 +149,6 @@ function AppContent(): React.JSX.Element {
   useEffect(() => {
     const unsub = window.api.plan.onChunk((taskId, mode, chunk) => {
       const sessionKey = `${mode}:${taskId}`;
-      console.log(
-        "[Plan] chunk received:",
-        sessionKey,
-        chunk.type,
-        chunk.content?.slice(0, 60),
-      );
       const store = usePlanStore.getState();
 
       if (chunk.type === "session_id") {

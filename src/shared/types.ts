@@ -137,11 +137,25 @@ export interface DodItem {
 
 // ── Planning Chat ───────────────────────────────────────────────
 
-/** A chunk of streamed output from the planning agent */
-export interface PlanChunk {
-  type: "text" | "thinking" | "session_id" | "done" | "error";
-  content: string;
+/** Token usage data from a step_finish event */
+export interface TokenUsage {
+  total: number;
+  input: number;
+  output: number;
+  reasoning: number;
+  cache: {
+    write: number;
+    read: number;
+  };
 }
+
+/** A chunk of streamed output from the planning agent */
+export type PlanChunk =
+  | {
+      type: "text" | "thinking" | "session_id" | "done" | "error";
+      content: string;
+    }
+  | { type: "tokens"; content: string; data: TokenUsage };
 
 /** IPC envelope wrapping a chunk with routing metadata */
 export interface PlanChunkEnvelope {
@@ -160,6 +174,8 @@ export interface PlanMessage {
   text: string;
   thinking?: string;
   isStreaming: boolean;
+  /** Unix timestamp (ms) when the message was created */
+  timestamp?: number;
 }
 
 // ── Phase 5: Git Worktrees ──────────────────────────────────────

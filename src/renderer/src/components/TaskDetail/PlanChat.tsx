@@ -115,6 +115,13 @@ function ChatMessage({
 }): React.JSX.Element {
   const isAgent = msg.role === "agent";
 
+  const timeStr = msg.timestamp
+    ? new Date(msg.timestamp).toLocaleTimeString([], {
+        hour: "2-digit",
+        minute: "2-digit",
+      })
+    : null;
+
   return (
     <div
       className={`${styles.message} ${isAgent ? styles.messageAgent : styles.messageUser}`}
@@ -124,6 +131,7 @@ function ChatMessage({
         {isAgent && model ? (
           <span className={styles.messageModel}>{model}</span>
         ) : null}
+        {timeStr && <span className={styles.messageTime}>{timeStr}</span>}
       </span>
       {isAgent && msg.thinking && <ThinkingBlock content={msg.thinking} />}
       <div
@@ -240,7 +248,7 @@ export function PlanChat({
   // live session — making the Send button appear and letting the user accidentally
   // cancel the running agent. The value IS captured correctly on first mount and
   // whenever sessionKey / agent / model change.
-  // eslint-disable-next-line react-hooks/exhaustive-deps
+
   useEffect(() => {
     initSession(sessionKey, agent, model || null, persistedSessionId ?? null);
   }, [sessionKey, agent, model, initSession]);
@@ -280,6 +288,15 @@ export function PlanChat({
   const messages = session?.messages ?? [];
   const lastExitCode = session?.lastExitCode ?? null;
   const sessionModel = session?.model ?? null;
+  const totalTokens = session?.totalTokens ?? 0;
+
+  // Format token count for display (e.g., 1234 -> "1.2k")
+  const tokenDisplay =
+    totalTokens > 0
+      ? totalTokens >= 1000
+        ? `${(totalTokens / 1000).toFixed(1)}k`
+        : totalTokens.toString()
+      : null;
 
   // ── Send message ────────────────────────────────────────────
 
@@ -401,10 +418,11 @@ export function PlanChat({
     initSession(sessionKey, newAgent, model || null, null);
   }
 
-  // ── Model change (only before session starts) ───────────────
+  // ── Model change — allowed mid-session via /model command ──────────────────
+  // Only blocked while the agent is actively streaming.
 
   function handleModelChange(newModel: string): void {
-    if (hasSession || isRunning) return;
+    if (isRunning) return;
     setModel(newModel);
   }
 
@@ -414,16 +432,23 @@ export function PlanChat({
     const el = inputRef.current;
     if (!el) return;
     el.style.height = "auto";
-    el.style.height = `${Math.min(el.scrollHeight, 120)}px`;
+    el.style.height = `${Math.min(el.scrollHeight, 200)}px`;
   }, []);
 
   // ── File autocomplete ──────────────────────────────────────────
 
   const tree = useFileStore((s) => s.tree);
+  const treeLoading = useFileStore((s) => s.treeLoading);
+  const fetchTree = useFileStore((s) => s.fetchTree);
   const [showDropdown, setShowDropdown] = useState(false);
   const [dropdownPosition, setDropdownPosition] = useState({ top: 0, left: 0 });
   const [selectedIndex, setSelectedIndex] = useState(0);
   const dropdownRef = useRef<HTMLDivElement>(null);
+
+  // ── Model slash-command dropdown ────────────────────────────────────────────
+  const [showModelDropdown, setShowModelDropdown] = useState(false);
+  const [selectedModelIndex, setSelectedModelIndex] = useState(0);
+  const modelDropdownRef = useRef<HTMLDivElement>(null);
 
   interface SearchableFile {
     name: string;
@@ -500,10 +525,20 @@ export function PlanChat({
     const rect = inputRef.current.getBoundingClientRect();
     const parentRect = inputRef.current.parentElement?.getBoundingClientRect();
     if (parentRect) {
-      setDropdownPosition({
-        top: rect.height + 4,
-        left: 0,
-      });
+      const spaceBelow = window.innerHeight - rect.bottom - 10;
+      const spaceAbove = rect.top - 10;
+      const dropdownHeight = 250; // max-height from CSS
+      if (spaceBelow >= dropdownHeight || spaceBelow >= spaceAbove) {
+        setDropdownPosition({
+          top: rect.height + 4,
+          left: 0,
+        });
+      } else {
+        setDropdownPosition({
+          top: -dropdownHeight - 4,
+          left: 0,
+        });
+      }
     }
   }, [showDropdown, inputText]);
 
@@ -542,6 +577,103 @@ export function PlanChat({
     }
   }
 
+  // ── /model slash-command helpers ────────────────────────────────────────────
+
+  /** Returns the query string and start offset when cursor is inside `/model …` */
+  function findSlashModelPosition(
+    text: string,
+    cursorPos: number,
+  ): { query: string; start: number } | null {
+    const beforeCursor = text.slice(0, cursorPos);
+    // Require /model to be at start-of-input or preceded by whitespace so that
+    // file paths like "src/models/user.ts" don't false-positive trigger.
+    const match = beforeCursor.match(/(^|\s)(\/model\s*(\S*))$/);
+    if (!match) return null;
+    // match[2] = the "/model …" fragment; match[3] = the query word after /model
+    return {
+      query: match[3],
+      start: beforeCursor.length - match[2].length,
+    };
+  }
+
+  const slashModelPosition = useMemo(
+    () =>
+      findSlashModelPosition(
+        inputText,
+        inputRef.current?.selectionStart ?? inputText.length,
+      ),
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [inputText],
+  );
+  const slashModelQuery = slashModelPosition?.query ?? "";
+  const slashModelStart = slashModelPosition?.start ?? 0;
+
+  /**
+   * All available models filtered by the query typed after `/model`.
+   * An empty string entry represents "default model" (let the agent decide).
+   */
+  const modelResults = useMemo(() => {
+    if (!showModelDropdown) return [];
+    const all: string[] = ["", ...availableModels];
+    const query = slashModelQuery.toLowerCase();
+    if (!query) return all;
+    return all.filter((m) =>
+      m === ""
+        ? "default model".includes(query)
+        : m.toLowerCase().includes(query),
+    );
+  }, [showModelDropdown, slashModelQuery, availableModels]);
+
+  useEffect(() => {
+    setSelectedModelIndex(0);
+  }, [modelResults.length]);
+
+  /** Commit a model selection: clear the `/model …` token and update state. */
+  function insertModelSelection(modelName: string): void {
+    const cursorPos = inputRef.current?.selectionStart ?? inputText.length;
+    const before = inputText.slice(0, slashModelStart);
+    const after = inputText.slice(cursorPos);
+    // When the command sits at the very start, the remaining `after` text may
+    // have a leading space (e.g. "/model gpt rest" → after=" rest"). trimStart
+    // removes that orphaned space.  When `before` is non-empty (command is
+    // mid-input) there is never leading whitespace so trimStart is a no-op.
+    const newText = (before + after).trimStart();
+    // Cursor lands right where the command started. Because trimStart can only
+    // shrink the string from the front (when before=""), the offset into the
+    // trimmed result is simply `before.length` – the leading characters of
+    // `before` are never trimmed.
+    const newCursorPos = before.length;
+    setInputText(newText);
+    setShowModelDropdown(false);
+    handleModelChange(modelName);
+    setTimeout(() => {
+      if (inputRef.current) {
+        inputRef.current.focus();
+        inputRef.current.setSelectionRange(newCursorPos, newCursorPos);
+      }
+    }, 0);
+  }
+
+  function handleModelDropdownKeyDown(e: React.KeyboardEvent): void {
+    if (e.key === "ArrowDown") {
+      e.preventDefault();
+      setSelectedModelIndex((prev) =>
+        Math.min(prev + 1, modelResults.length - 1),
+      );
+    } else if (e.key === "ArrowUp") {
+      e.preventDefault();
+      setSelectedModelIndex((prev) => Math.max(prev - 1, 0));
+    } else if (e.key === "Enter") {
+      e.preventDefault();
+      if (modelResults[selectedModelIndex] !== undefined) {
+        insertModelSelection(modelResults[selectedModelIndex]);
+      }
+    } else if (e.key === "Escape") {
+      e.preventDefault();
+      setShowModelDropdown(false);
+    }
+  }
+
   function handleInputChange(e: React.ChangeEvent<HTMLTextAreaElement>): void {
     const value = e.target.value;
     setInputText(value);
@@ -550,10 +682,24 @@ export function PlanChat({
     const cursorPos = e.target.selectionStart ?? value.length;
     const pos = findAtPosition(value, cursorPos);
     if (pos) {
+      // Ensure tree is loaded — fetch if empty and not loading
+      if (tree.length === 0 && !treeLoading) {
+        fetchTree();
+      }
       setShowDropdown(true);
       setSelectedIndex(0);
+      setShowModelDropdown(false);
     } else {
       setShowDropdown(false);
+
+      // Check for /model slash command
+      const modelPos = findSlashModelPosition(value, cursorPos);
+      if (modelPos !== null) {
+        setShowModelDropdown(true);
+        setSelectedModelIndex(0);
+      } else {
+        setShowModelDropdown(false);
+      }
     }
   }
 
@@ -571,6 +717,17 @@ export function PlanChat({
       return;
     }
 
+    if (
+      showModelDropdown &&
+      (e.key === "ArrowUp" ||
+        e.key === "ArrowDown" ||
+        e.key === "Enter" ||
+        e.key === "Escape")
+    ) {
+      handleModelDropdownKeyDown(e);
+      return;
+    }
+
     if (e.key === "Enter" && !e.shiftKey) {
       e.preventDefault();
       void handleSend();
@@ -579,12 +736,18 @@ export function PlanChat({
 
   useEffect(() => {
     function handleClickOutside(e: MouseEvent): void {
+      const target = e.target as Node;
       if (
-        dropdownRef.current &&
-        !dropdownRef.current.contains(e.target as Node) &&
-        !inputRef.current?.contains(e.target as Node)
+        !inputRef.current?.contains(target) &&
+        !dropdownRef.current?.contains(target)
       ) {
         setShowDropdown(false);
+      }
+      if (
+        !inputRef.current?.contains(target) &&
+        !modelDropdownRef.current?.contains(target)
+      ) {
+        setShowModelDropdown(false);
       }
     }
     document.addEventListener("mousedown", handleClickOutside);
@@ -630,23 +793,22 @@ export function PlanChat({
             <option value="opencode">opencode</option>
             <option value="copilot">copilot</option>
           </select>
-          <select
-            className={styles.modelSelect}
-            value={model}
-            onChange={(e) => handleModelChange(e.target.value)}
-            disabled={hasSession || isRunning || modelsLoading}
+          <span
+            className={styles.modelIndicator}
+            title="Type /model in the chat input to change"
           >
-            <option value="">
-              {modelsLoading ? "loading…" : "default model"}
-            </option>
-            {availableModels.map((m) => (
-              <option key={m} value={m}>
-                {m}
-              </option>
-            ))}
-          </select>
+            {modelsLoading ? "…" : model || "default"}
+          </span>
           {hasSession && (
             <span className={styles.resumeIndicator}>Session active</span>
+          )}
+          {tokenDisplay && (
+            <span
+              className={styles.tokenIndicator}
+              title={`${totalTokens.toLocaleString()} total tokens`}
+            >
+              🪙 {tokenDisplay}
+            </span>
           )}
         </div>
         <div className={styles.headerRight}>
@@ -727,7 +889,7 @@ export function PlanChat({
             onKeyDown={handleInputKeyDown}
             placeholder={inputPlaceholder}
             disabled={isRunning}
-            rows={1}
+            rows={2}
           />
           {showDropdown && (
             <div
@@ -755,6 +917,42 @@ export function PlanChat({
                     <span className={styles.fileDropdownItemPath}>
                       {result.item.path}
                     </span>
+                  </div>
+                ))
+              )}
+            </div>
+          )}
+          {showModelDropdown && (
+            <div ref={modelDropdownRef} className={styles.modelDropdown}>
+              {modelsLoading ? (
+                <div className={styles.modelDropdownNoResults}>
+                  Loading models…
+                </div>
+              ) : modelResults.length === 0 ? (
+                <div className={styles.modelDropdownNoResults}>
+                  No matching models
+                </div>
+              ) : (
+                modelResults.map((m, index) => (
+                  <div
+                    key={m || "__default__"}
+                    className={`${styles.modelDropdownItem} ${
+                      index === selectedModelIndex
+                        ? styles.modelDropdownItemSelected
+                        : ""
+                    }`}
+                    // Use onMouseDown + preventDefault so the textarea keeps focus
+                    onMouseDown={(e) => {
+                      e.preventDefault();
+                      insertModelSelection(m);
+                    }}
+                  >
+                    <span className={styles.modelDropdownItemName}>
+                      {m || "default model"}
+                    </span>
+                    {m === model && (
+                      <span className={styles.modelDropdownCurrentMark}>✓</span>
+                    )}
                   </div>
                 ))
               )}

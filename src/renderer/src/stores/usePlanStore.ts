@@ -9,6 +9,8 @@ interface PlanSession {
   messages: PlanMessage[];
   isRunning: boolean;
   lastExitCode: number | null;
+  /** Accumulated token total across all steps in this session */
+  totalTokens: number;
 }
 
 interface PlanState {
@@ -38,17 +40,34 @@ export const usePlanStore = create<PlanState>()((set) => ({
 
   initSession: (sessionKey, agent, model, existingSessionId) => {
     set((s) => {
+      const existing = s.sessions[sessionKey];
+
       // Don't re-initialise if session already exists for this key+agent+model.
       // Never touch isRunning here — a live session whose task file was just
       // written (triggering a chokidar re-render) must not have its isRunning
       // flag clobbered. Stale isRunning from a crashed run is reset by the
       // dedicated on-mount effect in PlanChat instead.
-      if (
-        s.sessions[sessionKey]?.agent === agent &&
-        s.sessions[sessionKey]?.model === model
-      ) {
+      if (existing?.agent === agent && existing?.model === model) {
         return s;
       }
+
+      // If the conversation is already in progress (has messages) and only the
+      // model changed (agent is the same), patch the model field in-place so
+      // the /model slash command works mid-conversation without wiping history.
+      if (
+        existing &&
+        existing.messages.length > 0 &&
+        existing.agent === agent
+      ) {
+        return {
+          sessions: {
+            ...s.sessions,
+            [sessionKey]: { ...existing, model },
+          },
+        };
+      }
+
+      // Full initialisation — new session, agent switched, or no prior session.
       return {
         sessions: {
           ...s.sessions,
@@ -60,6 +79,7 @@ export const usePlanStore = create<PlanState>()((set) => ({
             messages: [],
             isRunning: false,
             lastExitCode: null,
+            totalTokens: 0,
           },
         },
       };
@@ -75,6 +95,7 @@ export const usePlanStore = create<PlanState>()((set) => ({
         role: "user",
         text,
         isStreaming: false,
+        timestamp: Date.now(),
       };
       return {
         sessions: {
@@ -95,6 +116,7 @@ export const usePlanStore = create<PlanState>()((set) => ({
         text: "",
         thinking: "",
         isStreaming: true,
+        timestamp: Date.now(),
       };
       return {
         sessions: {
@@ -148,6 +170,18 @@ export const usePlanStore = create<PlanState>()((set) => ({
           text:
             last.text + (last.text ? "\n\n" : "") + `Error: ${chunk.content}`,
           isStreaming: false,
+        };
+      } else if (chunk.type === "tokens") {
+        const tokenData = chunk.data;
+        return {
+          sessions: {
+            ...s.sessions,
+            [sessionKey]: {
+              ...session,
+              messages,
+              totalTokens: session.totalTokens + tokenData.total,
+            },
+          },
         };
       }
 

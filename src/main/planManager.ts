@@ -86,14 +86,17 @@ export class PlanManager {
     const rl = readline.createInterface({ input: proc.stdout });
     this.activeRuns.set(runKey, { proc, rl, taskId, mode });
 
+    // Track whether session_id has been emitted for this run so we only
+    // emit it once (opencode sends sessionID on every step_start event).
+    let sessionIdEmitted = false;
+
     rl.on("line", (line) => {
-      console.log(`[PlanManager][${runKey}] stdout line:`, line.slice(0, 120));
       const chunks = this.parseLine(agent, line);
-      console.log(
-        `[PlanManager][${runKey}] parsed chunks:`,
-        chunks.map((c) => c.type),
-      );
       for (const chunk of chunks) {
+        if (chunk.type === "session_id") {
+          if (sessionIdEmitted) continue;
+          sessionIdEmitted = true;
+        }
         this.onChunkCb?.(taskId, mode, chunk);
       }
     });
@@ -305,6 +308,36 @@ export class PlanManager {
       chunks.push({ type: "session_id", content: obj.sessionID });
     }
 
+    // Token usage — emitted in step_finish events under obj.part.tokens
+    if (
+      obj.type === "step_finish" &&
+      obj.part !== null &&
+      typeof obj.part === "object"
+    ) {
+      const part = obj.part as Record<string, unknown>;
+      if (part.tokens !== null && typeof part.tokens === "object") {
+        const t = part.tokens as Record<string, unknown>;
+        const cache =
+          t.cache !== null && typeof t.cache === "object"
+            ? (t.cache as Record<string, unknown>)
+            : {};
+        chunks.push({
+          type: "tokens",
+          content: "",
+          data: {
+            total: typeof t.total === "number" ? t.total : 0,
+            input: typeof t.input === "number" ? t.input : 0,
+            output: typeof t.output === "number" ? t.output : 0,
+            reasoning: typeof t.reasoning === "number" ? t.reasoning : 0,
+            cache: {
+              write: typeof cache.write === "number" ? cache.write : 0,
+              read: typeof cache.read === "number" ? cache.read : 0,
+            },
+          },
+        });
+      }
+    }
+
     // Text / thinking content — emitted as individual streaming events
     // { type: "text", part: { type: "text", text: "..." } }
     // { type: "text", part: { type: "thinking", thinking: "..." } }  (with --thinking flag)
@@ -322,6 +355,10 @@ export class PlanManager {
       }
     }
 
+    console.log(
+      "[PlanManager] parseOpencodeLine result:",
+      chunks.map((c) => c.type),
+    );
     return chunks;
   }
 

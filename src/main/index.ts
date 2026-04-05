@@ -6,6 +6,7 @@ import { createWindowStateKeeper } from "./window-state";
 import { registerIpcHandlers, killAllPtys, cancelAllPlans } from "./ipc/index";
 import { stopBranchWatcher } from "./ipc/workspace";
 import { stopWatchers } from "./watchers";
+import { closeAllWorktreeTaskWatchers } from "./ipc/git";
 
 let mainWindow: BrowserWindow | null = null;
 let configManager: ConfigManager | null = null;
@@ -98,6 +99,7 @@ if (!gotTheLock) {
   app.on("before-quit", () => {
     stopBranchWatcher();
     stopWatchers();
+    closeAllWorktreeTaskWatchers();
     killAllPtys();
     cancelAllPlans();
     if (configManager) {

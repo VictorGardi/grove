@@ -28,7 +28,7 @@ type DetailTab = "edit" | "plan" | "changes";
 function renderMarkdownPreview(md: string): string {
   // Minimal markdown-to-HTML for preview. Handles headings, bold,
   // italic, code blocks, inline code, lists, checkboxes, and paragraphs.
-  let html = md
+  const html = md
     // Fenced code blocks
     .replace(
       /```(\w*)\n([\s\S]*?)```/g,

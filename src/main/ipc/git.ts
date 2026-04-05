@@ -1,6 +1,7 @@
 import { ipcMain } from "electron";
 import * as path from "path";
 import * as fs from "fs";
+import chokidar from "chokidar";
 import simpleGit from "simple-git";
 import type {
   IpcResult,
@@ -28,6 +29,118 @@ import {
 } from "../git";
 import { updateTask, readTaskBody, parseTaskFile } from "../tasks";
 import { generateContextFile } from "../contextGenerator";
+import { atomicWrite } from "../fileWriter";
+
+// ── Worktree task file watchers ───────────────────────────────────────────────
+// Key: `${workspacePath}:${taskId}`
+const worktreeTaskWatchers = new Map<string, chokidar.FSWatcher>();
+
+const ALL_TASK_STATUS_DIRS = ["doing", "review", "done", "backlog", "archive"];
+
+/**
+ * Scan all 5 task status directories to find the current root path for a
+ * given task filename.  Returns `null` if not found (deleted / archived
+ * outside our knowledge).
+ */
+async function resolveRootTaskPath(
+  workspacePath: string,
+  filename: string,
+): Promise<string | null> {
+  for (const dir of ALL_TASK_STATUS_DIRS) {
+    const candidate = path.join(workspacePath, ".tasks", dir, filename);
+    try {
+      await fs.promises.access(candidate);
+      return candidate;
+    } catch {
+      // not here — try next dir
+    }
+  }
+  return null;
+}
+
+/**
+ * Start a chokidar watcher on the worktree copy of a task file.
+ * On `change` events the file is synced back to the root repo via atomicWrite.
+ * The watcher is stored in `worktreeTaskWatchers` keyed by
+ * `${workspacePath}:${taskId}` so it can be retrieved and closed later.
+ *
+ * This function is idempotent: if a watcher for the key already exists it
+ * returns without creating a second one.
+ */
+export function startWorktreeTaskWatcher(
+  workspacePath: string,
+  taskId: string,
+  worktreeTaskFilePath: string,
+  taskFilename: string,
+): void {
+  const key = `${workspacePath}:${taskId}`;
+
+  // Idempotent — don't double-watch
+  if (worktreeTaskWatchers.has(key)) return;
+
+  const watcher = chokidar.watch(worktreeTaskFilePath, {
+    ignoreInitial: true,
+    ignored: /\.tmp$/,
+    awaitWriteFinish: { stabilityThreshold: 150, pollInterval: 50 },
+  });
+
+  let debounceTimer: NodeJS.Timeout | null = null;
+
+  watcher.on("change", () => {
+    if (debounceTimer) clearTimeout(debounceTimer);
+    debounceTimer = setTimeout(async () => {
+      try {
+        const content = await fs.promises.readFile(
+          worktreeTaskFilePath,
+          "utf-8",
+        );
+        const rootPath = await resolveRootTaskPath(workspacePath, taskFilename);
+        if (rootPath) {
+          await atomicWrite(rootPath, content);
+        } else {
+          console.warn(
+            `[WorktreeTaskWatcher] Root task file not found for "${taskFilename}" — task may have been deleted or archived externally`,
+          );
+        }
+      } catch (err) {
+        console.error(
+          `[WorktreeTaskWatcher] Sync error for task ${taskId}:`,
+          err,
+        );
+      }
+    }, 300);
+  });
+
+  watcher.on("unlink", () => {
+    console.warn(
+      `[WorktreeTaskWatcher] Worktree task file deleted: ${worktreeTaskFilePath}`,
+    );
+  });
+
+  watcher.on("error", (err) => {
+    console.error(
+      `[WorktreeTaskWatcher] Watcher error for task ${taskId}:`,
+      err,
+    );
+  });
+
+  worktreeTaskWatchers.set(key, watcher);
+}
+
+/**
+ * Close all worktree task watchers.  Called on `before-quit` to ensure clean
+ * shutdown.
+ */
+export function closeAllWorktreeTaskWatchers(): void {
+  for (const [key, watcher] of worktreeTaskWatchers) {
+    try {
+      watcher.close();
+    } catch (err) {
+      console.warn(`[WorktreeTaskWatcher] Error closing watcher ${key}:`, err);
+    }
+  }
+  worktreeTaskWatchers.clear();
+}
 
 export function registerGitHandlers(): void {
   // ── git:listWorktrees ─────────────────────────────────────────
@@ -140,18 +253,28 @@ export function registerGitHandlers(): void {
         ".tasks",
         "doing",
       );
+      const taskBasename = path.basename(taskFilePath);
+      const worktreeTaskCopyPath = path.join(
+        absoluteTaskDestPath,
+        taskBasename,
+      );
       try {
         await fs.promises.mkdir(absoluteTaskDestPath, { recursive: true });
-        await fs.promises.copyFile(
-          taskFilePath,
-          path.join(absoluteTaskDestPath, path.basename(taskFilePath)),
-        );
+        await fs.promises.copyFile(taskFilePath, worktreeTaskCopyPath);
       } catch (copyErr) {
         console.warn(
           "[git:setupWorktreeForTask] Task file copy failed:",
           copyErr,
         );
       }
+
+      // Start watcher to sync worktree task file changes back to root repo
+      startWorktreeTaskWatcher(
+        workspacePath,
+        taskId,
+        worktreeTaskCopyPath,
+        taskBasename,
+      );
 
       // Generate CONTEXT.md — failure is non-blocking (warn, don't fail)
       try {
@@ -208,6 +331,24 @@ export function registerGitHandlers(): void {
     "git:teardownWorktreeForTask",
     async (_event, input: TeardownWorktreeInput): Promise<IpcResult<void>> => {
       const { workspacePath, taskFilePath, worktreePath } = input;
+
+      // Derive taskId from worktree path convention: .worktrees/<taskId>
+      const taskId = path.basename(worktreePath);
+
+      // Close and remove the worktree task file watcher before removing the worktree
+      const watcherKey = `${workspacePath}:${taskId}`;
+      const existingWatcher = worktreeTaskWatchers.get(watcherKey);
+      if (existingWatcher) {
+        try {
+          existingWatcher.close();
+        } catch (err) {
+          console.warn(
+            `[git:teardownWorktreeForTask] Error closing watcher for ${taskId}:`,
+            err,
+          );
+        }
+        worktreeTaskWatchers.delete(watcherKey);
+      }
 
       // Resolve absolute path
       const absolutePath = path.isAbsolute(worktreePath)

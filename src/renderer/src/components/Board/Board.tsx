@@ -109,7 +109,7 @@ export function Board(): React.JSX.Element {
       // Default: plain move (backlog, review, or done without worktree)
       moveTask(task.filePath, toStatus as TaskStatus);
     },
-    [tasks], // eslint-disable-line react-hooks/exhaustive-deps
+    [tasks],
   );
 
   const handleDragCancel = useCallback(() => {

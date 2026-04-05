@@ -1,12 +1,15 @@
-import styles from './TitleBar.module.css'
+import styles from "./TitleBar.module.css";
 
 interface TitleBarProps {
-  platform: NodeJS.Platform | null
-  workspaceName?: string | null
+  platform: NodeJS.Platform | null;
+  workspaceName?: string | null;
 }
 
-export function TitleBar({ platform, workspaceName }: TitleBarProps): React.JSX.Element {
-  const isMac = platform === 'darwin'
+export function TitleBar({
+  platform,
+  workspaceName,
+}: TitleBarProps): React.JSX.Element {
+  const isMac = platform === "darwin";
 
   return (
     <div className={styles.titlebar} style={{ paddingLeft: isMac ? 80 : 16 }}>
@@ -14,5 +17,5 @@ export function TitleBar({ platform, workspaceName }: TitleBarProps): React.JSX.
         <span className={styles.workspaceName}>{workspaceName}</span>
       )}
     </div>
-  )
+  );
 }

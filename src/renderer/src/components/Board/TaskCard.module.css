@@ -143,6 +143,52 @@
   color: var(--status-green);
 }
 
+/* ── waiting for input indicator ─────────────────────────────────── */
+
+.waitingRow {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  margin-top: 5px;
+}
+
+.waitingDot {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: var(--status-yellow, #f0c060);
+  flex-shrink: 0;
+}
+
+.waitingLabel {
+  font-family: var(--font-mono);
+  font-size: 10px;
+  color: var(--status-yellow, #f0c060);
+}
+
+/* ── session failed indicator ────────────────────────────────────── */
+
+.errorRow {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  margin-top: 5px;
+}
+
+.errorDot {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: var(--status-red, #e05555);
+  flex-shrink: 0;
+}
+
+.errorLabel {
+  font-family: var(--font-mono);
+  font-size: 10px;
+  color: var(--status-red, #e05555);
+}
+
 /* ── worktree toggle ──────────────────────────────────────────────── */
 
 .worktreeRow {

@@ -4,12 +4,66 @@ import * as path from "path";
 import simpleGit from "simple-git";
 import type { ConfigManager } from "../config";
 import type { IpcResult, WorkspaceInfo, WorkspaceEntry } from "@shared/types";
-import { initTaskDirs } from "../tasks";
+import { initTaskDirs, parseTaskFile } from "../tasks";
 import { startWatchers, stopWatchers } from "../watchers";
+import { startWorktreeTaskWatcher } from "./git";
 
 // Branch watcher state
 let headWatcher: fs.FSWatcher | null = null;
 let watchedWorkspacePath: string | null = null;
+
+const ALL_TASK_STATUS_DIRS = ["doing", "review", "done", "backlog", "archive"];
+
+/**
+ * After workspace activation, scan all task files for tasks that have an
+ * active worktree and re-establish the worktree→root sync watcher for each.
+ * This handles the case where the app was restarted while tasks were in-flight.
+ */
+async function reestablishWorktreeTaskWatchers(
+  workspacePath: string,
+): Promise<void> {
+  for (const dir of ALL_TASK_STATUS_DIRS) {
+    const dirPath = path.join(workspacePath, ".tasks", dir);
+    let entries: string[];
+    try {
+      entries = await fs.promises.readdir(dirPath);
+    } catch {
+      continue;
+    }
+
+    for (const entry of entries) {
+      if (!entry.endsWith(".md")) continue;
+      const filePath = path.join(dirPath, entry);
+      // Use "doing" as a placeholder status — only the worktree field matters here
+      const task = await parseTaskFile(filePath, "doing").catch(() => null);
+      if (!task || !task.worktree || !task.id) continue;
+
+      // The worktree copy always lives at .tasks/doing/<filename> inside the worktree
+      const worktreeTaskFilePath = path.join(
+        workspacePath,
+        task.worktree,
+        ".tasks",
+        "doing",
+        entry,
+      );
+
+      // Only watch if the worktree directory and the task file copy both exist
+      const worktreeDirPath = path.join(workspacePath, task.worktree);
+      try {
+        await fs.promises.access(worktreeDirPath);
+        // startWorktreeTaskWatcher is idempotent — safe to call even if already watching
+        startWorktreeTaskWatcher(
+          workspacePath,
+          task.id,
+          worktreeTaskFilePath,
+          entry,
+        );
+      } catch {
+        // Worktree directory doesn't exist — skip
+      }
+    }
+  }
+}
 
 function stopBranchWatcher(): void {
   if (headWatcher) {
@@ -219,6 +273,9 @@ export function registerWorkspaceHandlers(
         startWatchers(wPath, mainWindow);
         startBranchWatcher(wPath, mainWindow);
 
+        // Re-establish worktree task file sync watchers for any in-flight tasks
+        await reestablishWorktreeTaskWatchers(wPath);
+
         return { ok: true, data: undefined };
       } catch (err) {
         const msg = err instanceof Error ? err.message : String(err);
@@ -239,6 +296,8 @@ export function registerWorkspaceHandlers(
         if (activePath && fs.existsSync(activePath)) {
           startWatchers(activePath, mainWindow);
           startBranchWatcher(activePath, mainWindow);
+          // Re-establish worktree task file sync watchers for any in-flight tasks
+          await reestablishWorktreeTaskWatchers(activePath);
         }
 
         return { ok: true, data: activePath };
