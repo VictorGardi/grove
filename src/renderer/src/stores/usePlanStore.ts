@@ -259,6 +259,29 @@ export const usePlanStore = create<PlanState>()((set, get) => ({
           });
         }
 
+        // During log replay an intermediate `done` chunk closes one turn's
+        // bubble but the session is still running (more turns follow in the
+        // log, or the agent is live and waiting for the next user message).
+        // Only the final `done` — which arrives outside of replay, or is
+        // immediately followed by `replay_done` — should mark the session idle.
+        // We conservatively treat ANY `done` during replay as intermediate;
+        // `replay_done` will fire right after the true final sentinel and
+        // `setReplaying(false)` is called there. isRunning is managed
+        // separately by the reconnect effect and `setRunning`.
+        if (session.isReplaying) {
+          return {
+            sessions: {
+              ...s.sessions,
+              [sessionKey]: {
+                ...session,
+                messages,
+                // Keep isRunning: true — the session continues
+                lastExitCode: isNaN(exitCode) ? null : exitCode,
+              },
+            },
+          };
+        }
+
         return {
           sessions: {
             ...s.sessions,

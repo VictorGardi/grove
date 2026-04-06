@@ -34,6 +34,8 @@ interface LogTailer {
   fd: number;
   offset: number;
   lineBuffer: string;
+  /** File offset of the first byte in lineBuffer (used for per-line offset tracking). */
+  lineBufferOffset: number;
   stopped: boolean;
 }
 
@@ -345,22 +347,30 @@ exit $EXIT_CODE
       fd,
       offset: startOffset,
       lineBuffer: "",
+      lineBufferOffset: startOffset,
       stopped: false,
     };
     this.tailers.set(tmuxSession, tailer);
 
     let sessionIdEmitted = false;
 
-    const processLine = (line: string): void => {
+    const processLine = (line: string, afterLineOffset: number): void => {
       const results = this.parseLine(agent, line);
       for (const result of results) {
         // Detect the internal sentinel written by our script
         if (result.type === "__grove_exit") {
-          // Peek one byte ahead to determine whether this sentinel is the last
-          // one in the file (single-turn or final turn) or an intermediate one
-          // (multi-turn log with more turns after it).
+          // Peek one byte immediately after this sentinel line to determine
+          // whether more content has been written to the log (intermediate
+          // sentinel in a multi-turn session) or we are truly at EOF (final).
+          //
+          // IMPORTANT: use `afterLineOffset` — the file position of the byte
+          // just after this line's newline — NOT tailer.offset, which has
+          // already been advanced to the end of the current read buffer.
+          // If the sentinel and the next turn's data were in the same buffer,
+          // tailer.offset would overshoot past the next turn's content, causing
+          // an incorrect EOF result and a false-positive "last sentinel" read.
           const peek = Buffer.alloc(1);
-          const peeked = fs.readSync(tailer.fd, peek, 0, 1, tailer.offset);
+          const peeked = fs.readSync(tailer.fd, peek, 0, 1, afterLineOffset);
           const isLastSentinel = peeked === 0;
 
           if (isLastSentinel) {
@@ -410,13 +420,24 @@ exit $EXIT_CODE
           tailer.offset += bytesRead;
           tailer.lineBuffer += buf.toString("utf8", 0, bytesRead);
 
-          // Process complete lines
+          // Process complete lines.  Track the file offset of the start of
+          // each line so that processLine can peek at the correct position
+          // (the byte immediately after the line's trailing newline), rather
+          // than at tailer.offset which has been advanced to the end of the
+          // entire read buffer.
           const lines = tailer.lineBuffer.split("\n");
           tailer.lineBuffer = lines.pop()!; // keep incomplete last fragment
+          let lineStart = tailer.lineBufferOffset;
           for (const line of lines) {
             if (tailer.stopped) return;
-            processLine(line);
+            // afterLineOffset = position of byte after this line's '\n'
+            const afterLineOffset =
+              lineStart + Buffer.byteLength(line, "utf8") + 1;
+            processLine(line, afterLineOffset);
+            lineStart = afterLineOffset;
           }
+          // lineBufferOffset now points to the start of the incomplete fragment
+          tailer.lineBufferOffset = lineStart;
         }
       } catch (err) {
         if (!tailer.stopped) {

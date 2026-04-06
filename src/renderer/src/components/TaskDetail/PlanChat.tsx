@@ -11,6 +11,7 @@ import {
   buildFirstExecutionMessage,
 } from "../../utils/planPrompts";
 import { ToolUseBlock } from "./ToolUseBlock";
+import { TodoListFromMarkdown } from "./TodoListBlock";
 import type {
   TaskInfo,
   PlanAgent,
@@ -118,6 +119,11 @@ function ChatMessage({
                   }
                   if (block.kind === "tool_use") {
                     return <ToolUseBlock key={i} block={block} />;
+                  }
+                  if (block.kind === "todo_list") {
+                    return (
+                      <TodoListFromMarkdown key={i} content={block.content} />
+                    );
                   }
                   // kind === "text"
                   return (
@@ -401,8 +407,11 @@ export function PlanChat({
           // so we don't call startAgentMessage here.
           // Mark isRunning: true immediately so the board card shows
           // "agent running" throughout the entire replay window — before
-          // the first content chunk arrives.  The "done" chunk from the
-          // log sentinel will reset isRunning: false when replay finishes.
+          // the first content chunk arrives.  The `replay_done` chunk emitted
+          // after the final sentinel will reset isRunning: false when replay
+          // finishes.  Intermediate `done` chunks (multi-turn boundaries)
+          // intentionally do NOT reset isRunning to avoid false-positive
+          // "agent exited without output" warnings.
           setRunning(sessionKey, true);
           // Mark as replaying so user_message chunks create user bubbles.
           setReplaying(sessionKey, true);
@@ -931,12 +940,18 @@ export function PlanChat({
   // ── Check for non-zero exit code in done messages ───────────
 
   const lastMsg = messages[messages.length - 1];
+  // "No output" means the agent produced neither text nor any content blocks
+  // (tool_use blocks count as real output — don't warn in that case).
+  const lastMsgHasNoOutput =
+    lastMsg?.role === "agent" &&
+    lastMsg.text === "" &&
+    (!lastMsg.content || lastMsg.content.length === 0);
   const showExitWarning =
     lastMsg?.role === "agent" &&
     !lastMsg.isStreaming &&
     !isRunning &&
     ((lastExitCode != null && lastExitCode !== 0) ||
-      (lastMsg.text === "" && messages.length > 0));
+      (lastMsgHasNoOutput && messages.length > 0));
 
   const headerTitle =
     mode === "execute" ? "Execute with agent" : "Plan with agent";
@@ -1069,7 +1084,17 @@ export function PlanChat({
             {lastExitCode != null && lastExitCode !== 0
               ? ` with code ${lastExitCode}`
               : " without output"}
-            . Is {agent} installed and on PATH?
+            .{" "}
+            {lastExitCode === 0 || lastExitCode == null
+              ? "The session may have expired — try "
+              : `Is ${agent} installed and on PATH? If so, try `}
+            <button
+              className={styles.exitWarningNewSession}
+              onClick={handleNewSession}
+            >
+              New session
+            </button>
+            .
           </div>
         )}
       </div>

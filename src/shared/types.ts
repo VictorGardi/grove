@@ -190,11 +190,25 @@ export interface ToolUseData {
 
 /** A single block in the ordered content array of a PlanMessage */
 export interface MessageContentBlock {
-  kind: "text" | "thinking" | "tool_use";
-  /** Text content (markdown for text, raw for thinking, tool title for tool_use) */
+  kind: "text" | "thinking" | "tool_use" | "todo_list";
+  /** Text content (markdown for text, raw for thinking, tool title for tool_use, todo title for todo_list) */
   content: string;
   /** Present only when kind === "tool_use" */
   data?: ToolUseData;
+  /** Present only when kind === "todo_list" */
+  todoData?: TodoListData;
+}
+
+/** Todo list data from structured output */
+export interface TodoListData {
+  items: TodoItem[];
+}
+
+/** A single todo item */
+export interface TodoItem {
+  id: string;
+  text: string;
+  completed: boolean;
 }
 
 /** A chunk of streamed output from the planning agent */
@@ -211,7 +225,8 @@ export type PlanChunk =
       content: string;
     }
   | { type: "tokens"; content: string; data: TokenUsage }
-  | { type: "tool_use"; content: string; data: ToolUseData };
+  | { type: "tool_use"; content: string; data: ToolUseData }
+  | { type: "todo_list"; content: string; data: TodoListData };
 
 /** IPC envelope wrapping a chunk with routing metadata */
 export interface PlanChunkEnvelope {

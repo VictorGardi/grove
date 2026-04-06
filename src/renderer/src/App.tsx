@@ -186,21 +186,29 @@ function AppContent(): React.JSX.Element {
 
       // replay_done: emitted after the final grove_exit sentinel in the log.
       // Resets isReplaying so subsequent user_message chunks (from live sends)
-      // are not mistakenly treated as replay content.
+      // are not mistakenly treated as replay content. Also marks the session
+      // as no longer running — the final `done` chunk during replay intentionally
+      // does NOT set isRunning:false (to avoid false-positive exit warnings for
+      // intermediate turns), so replay_done is responsible for the final reset.
       if (chunk.type === "replay_done") {
         store.setReplaying(sessionKey, false);
+        store.setRunning(sessionKey, false);
         return;
       }
 
-      // For content chunks (text / thinking / tool_use / done / error), ensure
-      // an agent bubble exists before applying. During log replay the bubble is
+      // For content chunks (text / thinking / tool_use / error), ensure an
+      // agent bubble exists before applying. During log replay the bubble is
       // NOT pre-created by the reconnect effect (that call was removed); instead
       // we lazily create it here the moment the first content chunk arrives.
+      //
+      // NOTE: "done" is intentionally excluded — a done chunk closes the
+      // current bubble; it should never create a new empty one. If a done
+      // chunk arrives when the last message is a user bubble it means the
+      // agent turn produced no output, which is handled by applyChunk itself.
       if (
         chunk.type === "text" ||
         chunk.type === "thinking" ||
         chunk.type === "tool_use" ||
-        chunk.type === "done" ||
         chunk.type === "error"
       ) {
         const session = store.sessions[sessionKey];

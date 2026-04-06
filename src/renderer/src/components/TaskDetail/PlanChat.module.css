@@ -532,6 +532,22 @@
   align-self: flex-start;
 }
 
+.exitWarningNewSession {
+  background: none;
+  border: none;
+  padding: 0;
+  font-family: var(--font-mono);
+  font-size: 10px;
+  color: var(--accent);
+  cursor: pointer;
+  text-decoration: underline;
+  text-underline-offset: 2px;
+}
+
+.exitWarningNewSession:hover {
+  opacity: 0.8;
+}
+
 /* ── Default prompt preview ─────────────────────────────────── */
 
 .defaultPromptPreview {
@@ -763,6 +779,116 @@
   font-size: 11px;
 }
 
+.toolUseDir {
+  font-family: var(--font-mono);
+  font-size: 10px;
+  color: var(--text-lo);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  max-width: 200px;
+}
+
+.subagentPill {
+  font-family: var(--font-mono);
+  font-size: 9px;
+  color: var(--accent);
+  background: color-mix(in srgb, var(--accent) 15%, transparent);
+  padding: 1px 5px;
+  border-radius: 3px;
+  flex-shrink: 0;
+}
+
+.lineCountBadgeAdded {
+  font-family: var(--font-mono);
+  font-size: 10px;
+  color: #22c55e;
+  background: color-mix(in srgb, #22c55e 15%, transparent);
+  padding: 1px 4px;
+  border-radius: 3px;
+}
+
+.lineCountBadgeRemoved {
+  font-family: var(--font-mono);
+  font-size: 10px;
+  color: #ef4444;
+  background: color-mix(in srgb, #ef4444 15%, transparent);
+  padding: 1px 4px;
+  border-radius: 3px;
+}
+
+.diffContainer {
+  background: var(--bg-elevated);
+  border: 1px solid var(--border-dim);
+  border-radius: var(--radius-sm);
+  overflow: hidden;
+}
+
+.diffShowMore {
+  display: block;
+  width: 100%;
+  padding: 6px;
+  background: var(--bg-base);
+  border: none;
+  border-bottom: 1px solid var(--border-dim);
+  font-family: var(--font-mono);
+  font-size: 11px;
+  color: var(--accent);
+  cursor: pointer;
+  text-align: center;
+}
+
+.diffShowMore:hover {
+  background: var(--bg-hover);
+}
+
+.diffLines {
+  padding: 4px 0;
+  max-height: 400px;
+  overflow-y: auto;
+  scrollbar-width: none;
+}
+
+.diffLines::-webkit-scrollbar {
+  display: none;
+}
+
+.diffLine {
+  display: flex;
+  font-family: var(--font-mono);
+  font-size: 11px;
+  line-height: 1.5;
+}
+
+.diffLinePrefix {
+  width: 16px;
+  flex-shrink: 0;
+  text-align: center;
+  user-select: none;
+}
+
+.diffLineContent {
+  flex: 1;
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+
+.diffRemoved {
+  background: color-mix(in srgb, #ef4444 15%, transparent);
+}
+
+.diffRemoved .diffLinePrefix {
+  color: #ef4444;
+}
+
+.diffAdded {
+  background: color-mix(in srgb, #22c55e 15%, transparent);
+}
+
+.diffAdded .diffLinePrefix {
+  color: #22c55e;
+}
+
 .toolUseMeta {
   display: flex;
   align-items: center;
@@ -849,4 +975,233 @@
   color: var(--text-lo);
   padding: 6px 0;
   font-style: italic;
+}
+
+/* ── Code block with syntax highlighting ─────────────────────────── */
+
+.codeBlockContainer {
+  position: relative;
+  background: var(--bg-elevated);
+  border: 1px solid var(--border-dim);
+  border-radius: var(--radius-sm);
+  overflow: hidden;
+}
+
+.copyButton {
+  position: absolute;
+  top: 6px;
+  right: 6px;
+  z-index: 10;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 26px;
+  height: 26px;
+  padding: 0;
+  background: var(--bg-surface);
+  border: 1px solid var(--border-dim);
+  border-radius: var(--radius-sm);
+  color: var(--text-lo);
+  cursor: pointer;
+  opacity: 0.7;
+  transition:
+    opacity var(--transition-fast),
+    background var(--transition-fast);
+}
+
+.copyButton:hover {
+  opacity: 1;
+  background: var(--bg-hover);
+  color: var(--text-primary);
+}
+
+.copyButton:focus {
+  outline: 2px solid var(--accent);
+  outline-offset: 1px;
+}
+
+.codeBlockWrapper {
+  display: flex;
+  max-height: 300px;
+  overflow-y: auto;
+  scrollbar-width: none;
+}
+
+.codeBlockWrapper::-webkit-scrollbar {
+  display: none;
+}
+
+.codeLineNumbers {
+  display: flex;
+  flex-direction: column;
+  padding: 6px 0;
+  background: var(--bg-base);
+  border-right: 1px solid var(--border-dim);
+  user-select: none;
+  flex-shrink: 0;
+}
+
+.codeLineNumber {
+  display: block;
+  padding: 0 8px;
+  font-family: var(--font-mono);
+  font-size: 11px;
+  line-height: 1.5;
+  color: var(--text-lo);
+  text-align: right;
+  min-width: 32px;
+}
+
+.codeHighlighted {
+  flex: 1;
+  padding: 6px 10px;
+  overflow-x: auto;
+  overflow-y: visible;
+}
+
+.codeHighlighted pre {
+  margin: 0;
+  padding: 0;
+  background: transparent;
+  font-family: var(--font-mono);
+  font-size: 11px;
+  line-height: 1.5;
+}
+
+.codeHighlighted code {
+  background: transparent;
+  padding: 0;
+}
+
+.codeBlockPre {
+  flex: 1;
+  padding: 6px 10px;
+  margin: 0;
+  font-family: var(--font-mono);
+  font-size: 11px;
+  line-height: 1.5;
+  color: var(--text-primary);
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+
+/* ── ANSI output ─────────────────────────────────────────────────── */
+
+.ansiOutput {
+  flex: 1;
+  padding: 6px 10px;
+  font-family: var(--font-mono);
+  font-size: 11px;
+  line-height: 1.5;
+  color: var(--text-primary);
+  overflow-x: auto;
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+
+.ansiLine {
+  min-height: 1.5em;
+}
+
+/* ── Todo list ─────────────────────────────────────────────────── */
+
+.todoListBlock {
+  margin: 8px 0;
+  padding: 10px 12px;
+  background: var(--bg-elevated);
+  border: 1px solid var(--border-dim);
+  border-radius: var(--radius-md);
+}
+
+.todoListTitle {
+  font-family: var(--font-ui);
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--text-primary);
+  margin-bottom: 8px;
+}
+
+.todoListItems {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.todoItem {
+  display: flex;
+  align-items: flex-start;
+}
+
+.todoLabel {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+  cursor: default;
+  width: 100%;
+}
+
+.todoCheckboxCustom {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 16px;
+  height: 16px;
+  min-width: 16px;
+  margin: 0;
+  position: relative;
+  top: 2px;
+}
+
+.todoCheckboxIconChecked {
+  color: var(--accent);
+}
+
+.todoCheckboxIconUnchecked {
+  color: var(--border);
+}
+
+.todoText {
+  font-family: var(--font-ui);
+  font-size: 13px;
+  line-height: 1.5;
+  color: var(--text-primary);
+}
+
+.todoTextCompleted {
+  text-decoration: line-through;
+  color: var(--text-lo);
+}
+
+.todoListFooter {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-top: 8px;
+  padding-top: 8px;
+  border-top: 1px solid var(--border-dim);
+}
+
+.todoProgress {
+  font-family: var(--font-mono);
+  font-size: 11px;
+  color: var(--text-lo);
+}
+
+.todoToggle {
+  font-family: var(--font-ui);
+  font-size: 12px;
+  color: var(--accent);
+  background: none;
+  border: none;
+  cursor: pointer;
+  padding: 2px 4px;
+}
+
+.todoToggle:hover {
+  text-decoration: underline;
+}
+
+.todoToggle:focus {
+  outline: 2px solid var(--accent);
+  outline-offset: 1px;
 }

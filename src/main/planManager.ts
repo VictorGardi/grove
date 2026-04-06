@@ -418,6 +418,18 @@ class TmuxPlanRunner implements PlanRunner {
       opts.mode,
     );
 
+    // Wrap onComplete so that when a run finishes normally (via the grove_exit
+    // sentinel in the log), we clean up activeKeys and runCallbacks immediately.
+    // Without this, the next call to start() for the same task would find the
+    // stale runKey in activeKeys and call cancel(), which emits a synthetic
+    // `done` chunk with exit code 1 — causing a false-positive "Is ${agent}
+    // installed and on PATH?" warning in the renderer for every follow-up send.
+    const wrappedOnComplete = async (): Promise<void> => {
+      this.activeKeys.delete(runKey);
+      this.runCallbacks.delete(runKey);
+      await opts.onComplete?.();
+    };
+
     const success = await this.tmux.start(
       tmuxSession,
       opts.sessionId,
@@ -430,7 +442,7 @@ class TmuxPlanRunner implements PlanRunner {
       opts.mode,
       opts.taskFilePath,
       opts.onChunk,
-      opts.onComplete,
+      wrappedOnComplete,
     );
 
     if (!success) {
