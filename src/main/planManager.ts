@@ -1,5 +1,6 @@
 import { spawn, ChildProcess } from "child_process";
 import * as readline from "readline";
+import * as fs from "fs";
 import * as os from "os";
 import * as path from "path";
 import type {
@@ -83,7 +84,7 @@ function buildArgs(
   taskFilePath: string,
 ): string[] {
   if (agent === "opencode") {
-    const args = ["run", "--format", "json"];
+    const args = ["run", "--format", "json", "--agent", "build"];
     if (model) {
       args.push("--model", model);
     }
@@ -105,6 +106,10 @@ function buildArgs(
     if (mode === "plan") {
       args.push("--deny-tool=shell");
       args.push(`--allow-tool=write(${taskFilePath})`);
+    } else {
+      // Execute mode: allow all tools for unattended headless runs.
+      // Copilot defaults to asking for approval; --allow-all-tools suppresses prompts.
+      args.push("--allow-all-tools");
     }
     if (model) {
       args.push(`--model=${model}`);
@@ -245,20 +250,33 @@ function parseOpencodeLine(obj: Record<string, unknown>): PlanChunk[] {
 function parseCopilotLine(obj: Record<string, unknown>): PlanChunk[] {
   const chunks: PlanChunk[] = [];
 
+  // Legacy format (kept for backward compatibility)
   if (obj.type === "session_id" && typeof obj.id === "string") {
     chunks.push({ type: "session_id", content: obj.id });
   }
-
   if (
     obj.type === "message" &&
     obj.role === "assistant" &&
-    typeof obj.content === "string"
+    typeof obj.content === "string" &&
+    obj.content
   ) {
     chunks.push({ type: "text", content: obj.content });
   }
-
-  if (obj.type === "delta" && typeof obj.content === "string") {
+  if (obj.type === "delta" && typeof obj.content === "string" && obj.content) {
     chunks.push({ type: "text", content: obj.content });
+  }
+
+  // New copilot CLI format (2025+)
+  // Streaming text delta: { type: "assistant.message_delta", data: { deltaContent: "..." } }
+  if (
+    obj.type === "assistant.message_delta" &&
+    obj.data !== null &&
+    typeof obj.data === "object"
+  ) {
+    const data = obj.data as Record<string, unknown>;
+    if (typeof data.deltaContent === "string" && data.deltaContent) {
+      chunks.push({ type: "text", content: data.deltaContent });
+    }
   }
 
   return chunks;
@@ -266,6 +284,56 @@ function parseCopilotLine(obj: Record<string, unknown>): PlanChunk[] {
 
 class SpawnPlanRunner implements PlanRunner {
   private activeRuns = new Map<string, ActiveRun>();
+  /** Tracks opencode.json files written by Grove so we can clean them up. */
+  private wroteConfigFiles = new Map<string, string>(); // runKey -> filePath
+
+  /** Overrides problematic 'ask' permissions in the build agent so headless runs never block. */
+  private writeOpencodeConfig(runKey: string, cwd: string): void {
+    const configPath = path.join(cwd, "opencode.json");
+    if (fs.existsSync(configPath)) return; // respect existing project config
+    try {
+      fs.writeFileSync(
+        configPath,
+        JSON.stringify(
+          {
+            $schema: "https://opencode.ai/config.json",
+            permission: {
+              // doom_loop only accepts a plain string action (not a pattern object)
+              doom_loop: "allow",
+              // external_directory accepts either a string or { pattern: action }
+              external_directory: "allow",
+            },
+          },
+          null,
+          2,
+        ),
+        "utf-8",
+      );
+      this.wroteConfigFiles.set(runKey, configPath);
+      console.log(
+        `[SpawnPlanRunner][${runKey}] Wrote opencode.json to ${configPath}`,
+      );
+    } catch (e) {
+      console.warn(
+        `[SpawnPlanRunner][${runKey}] Could not write opencode.json:`,
+        e,
+      );
+    }
+  }
+
+  private cleanupGroveConfig(runKey: string): void {
+    const configPath = this.wroteConfigFiles.get(runKey);
+    if (!configPath) return;
+    try {
+      fs.unlinkSync(configPath);
+      console.log(
+        `[SpawnPlanRunner][${runKey}] Cleaned up opencode.json: ${configPath}`,
+      );
+    } catch {
+      // ignore — file may have been deleted already
+    }
+    this.wroteConfigFiles.delete(runKey);
+  }
 
   start(opts: RunOpts): void {
     const runKey = `${opts.mode}:${opts.taskId}`;
@@ -274,6 +342,12 @@ class SpawnPlanRunner implements PlanRunner {
     console.log(
       `[SpawnPlanRunner][${runKey}] start() agent=${opts.agent} model=${opts.model ?? "default"} sessionId=${opts.sessionId ?? "null"}`,
     );
+
+    // Write a project opencode.json to suppress ask-permission prompts that
+    // would block headless runs. Skipped if the project already has one.
+    if (opts.agent === "opencode") {
+      this.writeOpencodeConfig(runKey, opts.cwd);
+    }
 
     const args = buildArgs(
       opts.agent,
@@ -315,8 +389,39 @@ class SpawnPlanRunner implements PlanRunner {
     this.activeRuns.set(runKey, run);
 
     let sessionIdEmitted = false;
+    let stderrBuffer = "";
+    let turnHadError = false;
 
     rl.on("line", (line) => {
+      // Intercept opencode error events before normal parsing so we can emit
+      // them as visible error chunks and track them for exit code correction.
+      if (opts.agent === "opencode") {
+        try {
+          const obj = JSON.parse(line.trim()) as Record<string, unknown>;
+          if (
+            obj.type === "error" &&
+            obj.error !== null &&
+            typeof obj.error === "object"
+          ) {
+            const err = obj.error as Record<string, unknown>;
+            let msg = typeof err.name === "string" ? err.name : "Error";
+            if (err.data !== null && typeof err.data === "object") {
+              const d = err.data as Record<string, unknown>;
+              if (typeof d.message === "string") {
+                msg = d.message.replace(/^"|"$/g, "").trim();
+              }
+            }
+            turnHadError = true;
+            opts.onChunk(opts.taskId, opts.mode, {
+              type: "error",
+              content: msg,
+            });
+            return;
+          }
+        } catch {
+          /* not JSON or no error field — fall through */
+        }
+      }
       const chunks = parseLine(opts.agent, line);
       for (const chunk of chunks) {
         if (chunk.type === "session_id") {
@@ -331,19 +436,36 @@ class SpawnPlanRunner implements PlanRunner {
       // If cancel() already emitted a synthetic done chunk, skip to avoid a
       // duplicate that could flip isRunning back to false a second time.
       if (run.cancelled) return;
+      const rawExitCode = proc.exitCode ?? 0;
+      // When opencode emits an error event then exits cleanly (code 0), treat
+      // the effective exit code as 1 so the UI shows it as a failure.
+      const exitCode = turnHadError && rawExitCode === 0 ? 1 : rawExitCode;
       console.log(
-        `[SpawnPlanRunner][${runKey}] readline closed, exitCode=${proc.exitCode}`,
+        `[SpawnPlanRunner][${runKey}] readline closed, exitCode=${exitCode} (raw=${rawExitCode})`,
       );
       this.activeRuns.delete(runKey);
+      this.cleanupGroveConfig(runKey);
+
+      // Surface stderr so the user sees the actual error in the exit warning
+      // section rather than the generic "exited without output" message.
+      if (exitCode !== 0 && stderrBuffer.trim()) {
+        opts.onChunk(opts.taskId, opts.mode, {
+          type: "stderr",
+          content: stderrBuffer.trim(),
+        });
+      }
+
       opts.onChunk(opts.taskId, opts.mode, {
         type: "done",
-        content: String(proc.exitCode ?? 0),
+        content: String(exitCode),
       });
       opts.onComplete?.();
     });
 
     proc.stderr?.on("data", (data: Buffer) => {
-      console.warn(`[SpawnPlanRunner][${runKey}] stderr:`, data.toString());
+      const text = data.toString();
+      stderrBuffer += text;
+      console.warn(`[SpawnPlanRunner][${runKey}] stderr:`, text);
     });
 
     proc.on("error", (err) => {
@@ -375,6 +497,7 @@ class SpawnPlanRunner implements PlanRunner {
         }
       }, SIGKILL_TIMEOUT_MS);
       this.activeRuns.delete(runKey);
+      this.cleanupGroveConfig(runKey);
     }
   }
 
@@ -385,8 +508,9 @@ class SpawnPlanRunner implements PlanRunner {
   }
 
   detach(): void {
-    for (const [, run] of this.activeRuns) {
+    for (const [runKey, run] of this.activeRuns) {
       run.rl?.close();
+      this.cleanupGroveConfig(runKey);
     }
     this.activeRuns.clear();
   }
@@ -616,13 +740,17 @@ export class PlanManager {
     return this.tmuxSupervisor.checkSession(tmuxSession);
   }
 
+  async captureTmuxPane(session: string): Promise<string> {
+    return this.tmuxSupervisor.capturePan(session);
+  }
+
   async reconnectTmuxSession(
     tmuxSession: string,
     taskId: string,
     mode: PlanMode,
     agent: PlanAgent,
     onComplete?: () => void,
-  ): Promise<boolean> {
+  ): Promise<{ reconnected: boolean; sessionAlive: boolean }> {
     const onChunk: ChunkCallback = (tid, m, chunk) => {
       this.onChunkCb?.(tid, m, chunk);
     };
@@ -634,7 +762,7 @@ export class PlanManager {
       onChunk,
       onComplete,
     );
-    return result.alive;
+    return { reconnected: result.alive, sessionAlive: result.sessionAlive };
   }
 
   listModels(workspacePath: string): Promise<string[]> {

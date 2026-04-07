@@ -280,7 +280,11 @@ export function registerGitHandlers(): void {
       try {
         const taskBody = await readTaskBody(workspacePath, taskFilePath);
         // Re-parse to get fresh TaskInfo (status is now "doing")
-        const taskInfo = await parseTaskFile(taskFilePath, "doing");
+        const taskInfo = await parseTaskFile(
+          taskFilePath,
+          "doing",
+          workspacePath,
+        );
         if (taskInfo) {
           // Attach the branch name we just derived (frontmatter not updated yet)
           await generateContextFile(

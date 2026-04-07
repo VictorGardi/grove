@@ -14,6 +14,8 @@ interface PlanSession {
   messages: PlanMessage[];
   isRunning: boolean;
   lastExitCode: number | null;
+  /** Stderr output from the last agent run, shown in the exit warning area. */
+  lastStderr: string | null;
   /** Accumulated token total across all steps in this session */
   totalTokens: number;
   /** Session status for tmux persistence */
@@ -43,6 +45,7 @@ interface PlanState {
     agent: PlanAgent,
     model: string | null,
     existingSessionId: string | null,
+    lastExitCode?: number | null,
   ) => void;
   appendUserMessage: (sessionKey: string, text: string) => void;
   startAgentMessage: (sessionKey: string) => void;
@@ -72,7 +75,7 @@ export const usePlanStore = create<PlanState>()((set, get) => ({
   sessions: {},
   modelsCache: {},
 
-  initSession: (sessionKey, agent, model, existingSessionId) => {
+  initSession: (sessionKey, agent, model, existingSessionId, lastExitCode) => {
     set((s) => {
       const existing = s.sessions[sessionKey];
 
@@ -112,7 +115,8 @@ export const usePlanStore = create<PlanState>()((set, get) => ({
             sessionId: existingSessionId,
             messages: [],
             isRunning: false,
-            lastExitCode: null,
+            lastExitCode: lastExitCode ?? null,
+            lastStderr: null,
             totalTokens: 0,
             sessionStatus: existingSessionId ? "paused" : "idle",
             isReplaying: false,
@@ -162,6 +166,7 @@ export const usePlanStore = create<PlanState>()((set, get) => ({
         content: [],
         isStreaming: true,
         timestamp: Date.now(),
+        model: session.model ?? undefined,
       };
       return {
         sessions: {
@@ -169,6 +174,8 @@ export const usePlanStore = create<PlanState>()((set, get) => ({
           [sessionKey]: {
             ...session,
             isRunning: true,
+            lastStderr: null,
+            lastExitCode: null,
             messages: [...session.messages, msg],
           },
         },
@@ -295,18 +302,54 @@ export const usePlanStore = create<PlanState>()((set, get) => ({
             },
           },
         };
+      } else if (chunk.type === "stderr") {
+        // Store stderr for display in the exit warning area (not in the bubble).
+        return {
+          sessions: {
+            ...s.sessions,
+            [sessionKey]: {
+              ...session,
+              messages,
+              lastStderr: chunk.content,
+            },
+          },
+        };
       } else if (chunk.type === "error") {
+        const errorText = `Error: ${chunk.content}`;
+        const prevContent = last.content ?? [];
         messages[messages.length - 1] = {
           ...last,
-          text:
-            last.text + (last.text ? "\n\n" : "") + `Error: ${chunk.content}`,
+          text: last.text + (last.text ? "\n\n" : "") + errorText,
+          // Also push to content so it is visible when the agent message already
+          // has content blocks (text/thinking/tool_use). Previously only msg.text
+          // was updated, which is invisible when msg.content is non-empty.
+          content: [
+            ...prevContent,
+            { kind: "text" as const, content: errorText },
+          ],
           isStreaming: false,
         };
-        // Explicit return: set isRunning: false AND lastExitCode: 1 so the
+        // When replaying a historical log, an error chunk from a previous turn
+        // must not force isRunning: false — the live agent may still be running.
+        // Mirror the guard used in the "done" handler.
+        if (session.isReplaying) {
+          return {
+            sessions: {
+              ...s.sessions,
+              [sessionKey]: {
+                ...session,
+                messages,
+                lastExitCode: 1,
+                // Do not set lastStderr during replay so the exit warning is
+                // not shown for errors that belong to a past turn.
+              },
+            },
+          };
+        }
+        // Live session: set isRunning: false AND lastExitCode: 1 so the
         // board card shows "session failed" rather than "Waiting for input".
-        // Without this explicit return the fall-through at the end of
-        // applyChunk would leave lastExitCode unchanged (null), which causes
-        // isExecuteWaiting / isPlanWaiting to evaluate to true instead.
+        // Also store the error in lastStderr so it appears in the exit warning
+        // area, giving the user the actual failure reason.
         return {
           sessions: {
             ...s.sessions,
@@ -315,6 +358,7 @@ export const usePlanStore = create<PlanState>()((set, get) => ({
               messages,
               isRunning: false,
               lastExitCode: 1,
+              lastStderr: chunk.content,
             },
           },
         };
@@ -338,11 +382,12 @@ export const usePlanStore = create<PlanState>()((set, get) => ({
           [sessionKey]: {
             ...session,
             messages,
-            // text/thinking/tool_use and any other streaming chunks arrive only
-            // while the agent is actively running — re-assert isRunning: true so
-            // that a stale false value (e.g. from a mount reset racing with an
-            // in-flight chunk) is corrected on the next chunk.
-            isRunning: true,
+            // text/thinking/tool_use and any other streaming chunks arrive both
+            // during live runs and during log replay of finished sessions. Only
+            // re-assert isRunning: true for live chunks; during replay the agent
+            // is already gone and setting isRunning would make a completed
+            // session appear to still be running after the app reloads.
+            ...(!session.isReplaying ? { isRunning: true } : {}),
           },
         },
       };

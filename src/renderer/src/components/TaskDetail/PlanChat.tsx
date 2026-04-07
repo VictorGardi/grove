@@ -9,6 +9,7 @@ import { updateTask } from "../../actions/taskActions";
 import {
   buildFirstPlanMessage,
   buildFirstExecutionMessage,
+  type PromptConfig,
 } from "../../utils/planPrompts";
 import { ToolUseBlock } from "./ToolUseBlock";
 import { TodoListFromMarkdown } from "./TodoListBlock";
@@ -104,6 +105,12 @@ function ChatMessage({
       {/* Legacy rendering path: no content array (old messages / backward compat) */}
       {isAgent && !hasContent && msg.thinking && (
         <ThinkingBlock content={msg.thinking} />
+      )}
+      {/* "Thinking..." indicator while waiting for first response */}
+      {isAgent && msg.isStreaming && !hasContent && !msg.thinking && (
+        <div className={styles.thinkingBlock}>
+          <span className={styles.thinkingToggle}>Thinking...</span>
+        </div>
       )}
       <div
         className={`${styles.messageBubble} ${isAgent ? styles.bubbleAgent : styles.bubbleUser}`}
@@ -204,6 +211,17 @@ export function PlanChat({
     ? (workspaceDefaults[workspacePath ?? ""]?.defaultExecutionModel ?? "")
     : (workspaceDefaults[workspacePath ?? ""]?.defaultPlanningModel ?? "");
 
+  const promptConfig: PromptConfig = {
+    planPersona: workspaceDefaults[workspacePath ?? ""]?.planPersona,
+    planReviewPersona:
+      workspaceDefaults[workspacePath ?? ""]?.planReviewPersona,
+    executePersona: workspaceDefaults[workspacePath ?? ""]?.executePersona,
+    executeReviewPersona:
+      workspaceDefaults[workspacePath ?? ""]?.executeReviewPersona,
+    executeReviewInstructions:
+      workspaceDefaults[workspacePath ?? ""]?.executeReviewInstructions,
+  };
+
   const initialAgent =
     persistedAgent !== "opencode" || persistedModel !== ""
       ? persistedAgent
@@ -213,6 +231,9 @@ export function PlanChat({
   const [inputText, setInputText] = useState("");
   const [agent, setAgent] = useState<PlanAgent>(initialAgent);
   const [model, setModel] = useState<string>(initialModel);
+
+  // Chat history navigation state
+  const [historyIndex, setHistoryIndex] = useState<number | null>(null);
   // Use cached models from usePlanStore
   const ensureModels = usePlanStore((s) => s.ensureModels);
   const modelsCacheEntry = usePlanStore(
@@ -243,7 +264,11 @@ export function PlanChat({
       .readRaw(workspacePath, task.filePath)
       .then((result) => {
         if (result.ok) {
-          const preview = buildFirstExecutionMessage(task, result.data);
+          const preview = buildFirstExecutionMessage(
+            task,
+            result.data,
+            promptConfig,
+          );
           // Truncate for display
           setDefaultPromptPreview(
             preview.length > 300 ? preview.slice(0, 300) + "..." : preview,
@@ -403,19 +428,21 @@ export function PlanChat({
 
         if (reconnectResult.ok && reconnectResult.data.reconnected) {
           // Log file found, tailer is running. The agent bubble will be
-          // created lazily in App.tsx when the first content chunk arrives,
-          // so we don't call startAgentMessage here.
-          // Mark isRunning: true immediately so the board card shows
-          // "agent running" throughout the entire replay window — before
-          // the first content chunk arrives.  The `replay_done` chunk emitted
-          // after the final sentinel will reset isRunning: false when replay
-          // finishes.  Intermediate `done` chunks (multi-turn boundaries)
-          // intentionally do NOT reset isRunning to avoid false-positive
-          // "agent exited without output" warnings.
-          setRunning(sessionKey, true);
+          // created lazily in App.tsx when the first content chunk arrives.
+          //
+          // Only set isRunning: true and show the "reconnected" banner when
+          // the tmux session itself is still alive — i.e. the agent is still
+          // running. For dead sessions (agent finished while the app was
+          // closed) we just replay the log for history display without
+          // blocking the input.
+          if (reconnectResult.data.sessionAlive) {
+            setRunning(sessionKey, true);
+            setSessionStatus(sessionKey, "running");
+          } else {
+            setSessionStatus(sessionKey, "idle");
+          }
           // Mark as replaying so user_message chunks create user bubbles.
           setReplaying(sessionKey, true);
-          setSessionStatus(sessionKey, "running");
         } else {
           // No log file found — nothing to replay.  Clear any stale
           // isRunning flag left by a previous crashed run, then let the
@@ -452,8 +479,14 @@ export function PlanChat({
   }, []);
 
   const messages = session?.messages ?? [];
+
+  // Extract user messages for history navigation (only user messages, newest first)
+  const userMessages = useMemo(
+    () => messages.filter((m) => m.role === "user").map((m) => m.text),
+    [messages],
+  );
   const lastExitCode = session?.lastExitCode ?? null;
-  const sessionModel = session?.model ?? null;
+  const lastStderr = session?.lastStderr ?? null;
   const totalTokens = session?.totalTokens ?? 0;
 
   // Format token count for display (e.g., 1234 -> "1.2k")
@@ -485,14 +518,22 @@ export function PlanChat({
     // Stop replaying — fresh send shouldn't process log user_message chunks as bubbles
     setReplaying(sessionKey, false);
 
-    // Add user message to store — skip if empty (execute first-send with no extra context)
+    // Add user message to store.
+    // For execute mode first-send with no user text, show a minimal "Executing..."
+    // placeholder so the user always sees their send was received, rather than
+    // just the agent bubble appearing out of nowhere.
     if (text) {
       appendUserMessage(sessionKey, text);
+    } else if (mode === "execute" && isFirstMessage) {
+      appendUserMessage(sessionKey, `Execute: ${task.title}`);
     }
     setInputText("");
     // Reset textarea height after clearing
     if (inputRef.current) inputRef.current.style.height = "auto";
     userScrolledRef.current = false;
+
+    // Reset history navigation state after sending
+    setHistoryIndex(null);
 
     // Prepare the agent message slot
     startAgentMessage(sessionKey);
@@ -515,12 +556,12 @@ export function PlanChat({
 
       if (mode === "execute") {
         // Execution prompt is fully built — user text is appended as context if provided
-        const base = buildFirstExecutionMessage(task, rawContent);
+        const base = buildFirstExecutionMessage(task, rawContent, promptConfig);
         message = text
           ? `${base}\n\n## Additional Context from User\n\n${text}`
           : base;
       } else {
-        message = buildFirstPlanMessage(task, text, rawContent);
+        message = buildFirstPlanMessage(task, text, rawContent, promptConfig);
       }
     } else {
       // Follow-up — just send plain text
@@ -551,6 +592,13 @@ export function PlanChat({
 
   function handleCancel(): void {
     if (!workspacePath) return;
+    // Optimistically unblock the UI immediately — don't wait for the IPC
+    // round-trip or for a synthetic done chunk from the backend.  This is
+    // especially important for reconnected-but-dead sessions where
+    // TmuxPlanRunner.cancel() returns early (no activeKey) and never emits
+    // a synthetic done chunk.
+    setRunning(sessionKey, false);
+    setReplaying(sessionKey, false);
     window.api.plan.cancel({
       taskId: task.id,
       mode,
@@ -572,19 +620,24 @@ export function PlanChat({
       });
     }
     clearSession(sessionKey);
-    // Clear from frontmatter (mode-appropriate fields)
+    // Clear from frontmatter (mode-appropriate fields).
+    // Also clear the tmux session name so the old log is not replayed the
+    // next time this task is opened — plan:cancel no longer clears it (to
+    // preserve history for cancel + reload), so New Session must do it.
     if (workspacePath) {
       if (mode === "execute") {
         updateTask(task.filePath, {
           execSessionId: null,
           execSessionAgent: null,
           execModel: null,
+          execTmuxSession: null,
         });
       } else {
         updateTask(task.filePath, {
           planSessionId: null,
           planSessionAgent: null,
           planModel: null,
+          planTmuxSession: null,
         });
       }
     }
@@ -889,6 +942,48 @@ export function PlanChat({
   function handleInputKeyDown(
     e: React.KeyboardEvent<HTMLTextAreaElement>,
   ): void {
+    // Only handle history navigation when no dropdown is open
+    const noDropdownOpen = !showDropdown && !showModelDropdown;
+
+    if (noDropdownOpen && e.key === "ArrowUp") {
+      e.preventDefault();
+      // If no history yet, or already at the oldest, do nothing
+      if (userMessages.length === 0) return;
+
+      // If not currently browsing history, start at newest message
+      if (historyIndex === null) {
+        setHistoryIndex(userMessages.length - 1);
+        setInputText(userMessages[userMessages.length - 1] || "");
+      } else if (historyIndex > 0) {
+        // Move to older message
+        const newIndex = historyIndex - 1;
+        setHistoryIndex(newIndex);
+        setInputText(userMessages[newIndex] || "");
+      }
+      // At index 0, do nothing (already at oldest)
+      resizeTextarea();
+      return;
+    }
+
+    if (noDropdownOpen && e.key === "ArrowDown") {
+      e.preventDefault();
+      // If not browsing history, do nothing
+      if (historyIndex === null) return;
+
+      if (historyIndex < userMessages.length - 1) {
+        // Move to newer message
+        const newIndex = historyIndex + 1;
+        setHistoryIndex(newIndex);
+        setInputText(userMessages[newIndex] || "");
+      } else {
+        // At newest, clear to return to fresh input
+        setHistoryIndex(null);
+        setInputText("");
+      }
+      resizeTextarea();
+      return;
+    }
+
     if (
       showDropdown &&
       (e.key === "ArrowUp" ||
@@ -957,15 +1052,15 @@ export function PlanChat({
     mode === "execute" ? "Execute with agent" : "Plan with agent";
   const emptyStatePlaceholder =
     mode === "execute"
-      ? `Send a message to start executing this task with ${agent}...`
-      : `Type a message to start planning this task with ${agent}`;
+      ? `Send a message to start executing. Type @ to mention files, /model to choose model...`
+      : `Describe what you want. Type @ to mention files, /model to choose model...`;
   const inputPlaceholder = isRunning
     ? "Waiting for agent..."
     : hasSession
       ? "Continue the conversation..."
       : mode === "execute"
-        ? "Send a message to start executing (or leave blank for default prompt)..."
-        : "Describe what you want to plan...";
+        ? "Send a message to start executing (or leave blank for default prompt). Type @ to mention files, /model to choose model"
+        : "Describe what you want. Type @ to mention files, /model to choose model";
 
   return (
     <div className={styles.container}>
@@ -1007,11 +1102,7 @@ export function PlanChat({
         </div>
         <div className={styles.headerRight}>
           {hasSession && (
-            <button
-              className={styles.newSessionBtn}
-              onClick={handleNewSession}
-              disabled={isRunning}
-            >
+            <button className={styles.newSessionBtn} onClick={handleNewSession}>
               New session
             </button>
           )}
@@ -1068,7 +1159,7 @@ export function PlanChat({
             <ChatMessage
               key={msg.id}
               msg={msg}
-              model={msg.role === "agent" ? sessionModel : null}
+              model={msg.role === "agent" ? msg.model : null}
             />
           ))
         )}
@@ -1087,7 +1178,9 @@ export function PlanChat({
             .{" "}
             {lastExitCode === 0 || lastExitCode == null
               ? "The session may have expired — try "
-              : `Is ${agent} installed and on PATH? If so, try `}
+              : lastStderr
+                ? "Try "
+                : `Is ${agent} installed and on PATH? If so, try `}
             <button
               className={styles.exitWarningNewSession}
               onClick={handleNewSession}
@@ -1095,6 +1188,9 @@ export function PlanChat({
               New session
             </button>
             .
+            {lastStderr && (
+              <pre className={styles.exitWarningStderr}>{lastStderr}</pre>
+            )}
           </div>
         )}
       </div>
@@ -1109,7 +1205,6 @@ export function PlanChat({
             onChange={handleInputChange}
             onKeyDown={handleInputKeyDown}
             placeholder={inputPlaceholder}
-            disabled={isRunning}
             rows={2}
           />
           {showDropdown && (

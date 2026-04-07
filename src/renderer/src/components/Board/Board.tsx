@@ -21,8 +21,11 @@ import {
 } from "../../stores/useLaunchModalStore";
 import { showToast } from "../../stores/useToastStore";
 import type { TaskInfo, TaskStatus } from "@shared/types";
-import { moveTask, updateTask } from "../../actions/taskActions";
-import { buildFirstExecutionMessage } from "../../utils/planPrompts";
+import { createTask, moveTask, updateTask } from "../../actions/taskActions";
+import {
+  buildFirstExecutionMessage,
+  type PromptConfig,
+} from "../../utils/planPrompts";
 import { Column } from "./Column";
 import { BoardToolbar } from "./BoardToolbar";
 import { TaskCard } from "./TaskCard";
@@ -224,6 +227,12 @@ export function Board(): React.JSX.Element {
           <div className={styles.emptyHint}>
             Create a Markdown file in .tasks/backlog/ to get started
           </div>
+          <button
+            className={styles.createFirstTaskBtn}
+            onClick={() => createTask("New task")}
+          >
+            + Create first task
+          </button>
         </div>
       </div>
     );
@@ -398,6 +407,16 @@ async function handleDragToDoing(
         : null
       : model;
 
+  // Get prompt config from workspace defaults
+  const workspaceDefaults = useWorkspaceStore.getState().workspaceDefaults;
+  const promptConfig = {
+    planPersona: workspaceDefaults[wp]?.planPersona,
+    planReviewPersona: workspaceDefaults[wp]?.planReviewPersona,
+    executePersona: workspaceDefaults[wp]?.executePersona,
+    executeReviewPersona: workspaceDefaults[wp]?.executeReviewPersona,
+    executeReviewInstructions: workspaceDefaults[wp]?.executeReviewInstructions,
+  } as PromptConfig;
+
   // Read full task content to build the execution prompt
   const rawResult = await window.api.tasks.readRaw(wp, latestTask.filePath);
   if (!rawResult.ok) {
@@ -405,7 +424,11 @@ async function handleDragToDoing(
     return;
   }
 
-  const message = buildFirstExecutionMessage(latestTask, rawResult.data);
+  const message = buildFirstExecutionMessage(
+    latestTask,
+    rawResult.data,
+    promptConfig,
+  );
 
   // Initialise the in-memory plan session so startAgentMessage has a slot to write to
   usePlanStore

@@ -10,6 +10,16 @@ export interface WorkspaceEntry {
   defaultExecutionAgent?: PlanAgent;
   /** Default model for execution sessions */
   defaultExecutionModel?: string;
+  /** Custom persona for planning agent */
+  planPersona?: string;
+  /** Custom persona for plan reviewer */
+  planReviewPersona?: string;
+  /** Custom persona for execution agent */
+  executePersona?: string;
+  /** Custom persona for execution reviewer */
+  executeReviewPersona?: string;
+  /** Custom instructions for execution review phase */
+  executeReviewInstructions?: string;
 }
 
 /** Returned from workspace:list with runtime info */
@@ -64,6 +74,8 @@ export interface TaskInfo {
   dodTotal: number;
   dodDone: number;
   filePath: string;
+  /** Absolute path of the workspace this task belongs to */
+  workspacePath: string;
   /** When false the agent runs in the workspace root instead of a dedicated
    *  git worktree. Default true. */
   useWorktree: boolean;
@@ -83,6 +95,10 @@ export interface TaskInfo {
   planTmuxSession: string | null;
   /** Tmux session name for execute mode (persisted in frontmatter) */
   execTmuxSession: string | null;
+  /** Last exit code for plan mode (persisted in frontmatter) */
+  planLastExitCode: number | null;
+  /** Last exit code for execute mode (persisted in frontmatter) */
+  execLastExitCode: number | null;
   /** Date when task was moved to done status (YYYY-MM-DD) */
   completed: string | null;
 }
@@ -146,6 +162,10 @@ export interface TaskFrontmatter {
   planTmuxSession?: string | null;
   /** Tmux session name for execute mode */
   execTmuxSession?: string | null;
+  /** Last exit code for plan mode */
+  planLastExitCode?: number | null;
+  /** Last exit code for execute mode */
+  execLastExitCode?: number | null;
   /** Date when task was moved to done status (YYYY-MM-DD) */
   completed?: string | null;
 }
@@ -220,6 +240,7 @@ export type PlanChunk =
         | "session_id"
         | "done"
         | "error"
+        | "stderr"
         | "user_message"
         | "replay_done";
       content: string;
@@ -260,6 +281,8 @@ export interface PlanMessage {
    * contains no grove_user_message lines (i.e. it predates history tracking).
    */
   isPlaceholder?: boolean;
+  /** Model active when this message was created */
+  model?: string;
 }
 
 // ── Phase 5: Git Worktrees ──────────────────────────────────────

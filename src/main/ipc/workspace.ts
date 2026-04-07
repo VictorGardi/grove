@@ -40,7 +40,9 @@ async function reestablishWorktreeTaskWatchers(
       if (!entry.endsWith(".md")) continue;
       const filePath = path.join(dirPath, entry);
       // Use "doing" as a placeholder status — only the worktree field matters here
-      const task = await parseTaskFile(filePath, "doing").catch(() => null);
+      const task = await parseTaskFile(filePath, "doing", workspacePath).catch(
+        () => null,
+      );
       if (!task || !task.worktree || !task.id) continue;
 
       // The worktree copy always lives at .tasks/doing/<filename> inside the worktree
@@ -341,6 +343,11 @@ export function registerWorkspaceHandlers(
         defaultPlanningModel?: string;
         defaultExecutionAgent?: PlanAgent;
         defaultExecutionModel?: string;
+        planPersona?: string;
+        planReviewPersona?: string;
+        executePersona?: string;
+        executeReviewPersona?: string;
+        executeReviewInstructions?: string;
       }>
     > => {
       try {
@@ -356,6 +363,11 @@ export function registerWorkspaceHandlers(
             defaultPlanningModel: workspace.defaultPlanningModel,
             defaultExecutionAgent: workspace.defaultExecutionAgent,
             defaultExecutionModel: workspace.defaultExecutionModel,
+            planPersona: workspace.planPersona,
+            planReviewPersona: workspace.planReviewPersona,
+            executePersona: workspace.executePersona,
+            executeReviewPersona: workspace.executeReviewPersona,
+            executeReviewInstructions: workspace.executeReviewInstructions,
           },
         };
       } catch (err) {
@@ -376,6 +388,11 @@ export function registerWorkspaceHandlers(
         defaultPlanningModel?: string;
         defaultExecutionAgent?: PlanAgent;
         defaultExecutionModel?: string;
+        planPersona?: string;
+        planReviewPersona?: string;
+        executePersona?: string;
+        executeReviewPersona?: string;
+        executeReviewInstructions?: string;
       },
     ): Promise<IpcResult<void>> => {
       try {
@@ -393,6 +410,24 @@ export function registerWorkspaceHandlers(
             }
             if (defaults.defaultExecutionModel !== undefined) {
               workspace.defaultExecutionModel = defaults.defaultExecutionModel;
+            }
+            if (defaults.planPersona !== undefined) {
+              workspace.planPersona = defaults.planPersona || undefined;
+            }
+            if (defaults.planReviewPersona !== undefined) {
+              workspace.planReviewPersona =
+                defaults.planReviewPersona || undefined;
+            }
+            if (defaults.executePersona !== undefined) {
+              workspace.executePersona = defaults.executePersona || undefined;
+            }
+            if (defaults.executeReviewPersona !== undefined) {
+              workspace.executeReviewPersona =
+                defaults.executeReviewPersona || undefined;
+            }
+            if (defaults.executeReviewInstructions !== undefined) {
+              workspace.executeReviewInstructions =
+                defaults.executeReviewInstructions || undefined;
             }
           }
         });

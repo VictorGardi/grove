@@ -33,6 +33,8 @@ contextBridge.exposeInMainWorld("api", {
       return () =>
         ipcRenderer.removeListener("workspace:branchChanged", handler);
     },
+    fetchTasks: (workspacePath: string) =>
+      ipcRenderer.invoke("workspace:tasks", workspacePath),
   },
   data: {
     fetch: (workspacePath: string) =>
@@ -191,6 +193,9 @@ contextBridge.exposeInMainWorld("api", {
       taskId: string;
       mode: string;
     }) => ipcRenderer.invoke("plan:tmux-check", input),
+
+    captureTmuxPane: (input: { session: string }) =>
+      ipcRenderer.invoke("plan:tmux-capture-pane", input),
 
     reconnect: (input: {
       taskId: string;

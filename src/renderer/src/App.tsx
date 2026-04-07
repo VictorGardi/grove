@@ -15,6 +15,8 @@ import { useWorktreeStore } from "./stores/useWorktreeStore";
 import { useTerminalStore } from "./stores/useTerminalStore";
 import { usePlanStore } from "./stores/usePlanStore";
 import { useKeyboardShortcuts } from "./hooks/useKeyboardShortcuts";
+import { ShortcutsModal } from "./components/shared/ShortcutsModal";
+import { HelpButton } from "./components/shared/HelpButton";
 
 function AppContent(): React.JSX.Element {
   useKeyboardShortcuts();
@@ -27,9 +29,11 @@ function AppContent(): React.JSX.Element {
   const workspaces = useWorkspaceStore((s) => s.workspaces);
   const fetchData = useDataStore((s) => s.fetchData);
   const clearData = useDataStore((s) => s.clear);
+  const tasks = useDataStore((s) => s.tasks);
   const fetched = useDataStore((s) => s.fetched);
   const sidebarVisible = useNavStore((s) => s.sidebarVisible);
   const terminalPanelOpen = useNavStore((s) => s.terminalPanelOpen);
+  const previousWorkspacePath = useRef<string | null>(null);
 
   useEffect(() => {
     // Get platform for titlebar padding
@@ -41,6 +45,7 @@ function AppContent(): React.JSX.Element {
 
   // Set up branch change listener
   useEffect(() => {
+    if (!window.api.workspaces) return;
     const unsubscribe = window.api.workspaces.onBranchChanged((data) => {
       updateBranch(data.path, data.branch);
     });
@@ -57,11 +62,101 @@ function AppContent(): React.JSX.Element {
     }
   }, [activeWorkspacePath, clearData, fetchData]);
 
+  // Restore board state after tasks load for the new workspace
+  // MUST run AFTER clear/fetch so tasks are populated with the new workspace's data
+  useEffect(() => {
+    const previousPath = previousWorkspacePath.current;
+    const currentPath = activeWorkspacePath;
+
+    // First load - just record the current path
+    if (!previousPath) {
+      previousWorkspacePath.current = currentPath;
+      return;
+    }
+
+    // Same workspace - no need to restore
+    if (previousPath === currentPath) {
+      return;
+    }
+
+    // Different workspace - restore state
+    if (!currentPath) {
+      return;
+    }
+
+    // CRITICAL: We must wait until the tasks match the expected workspace
+    // The data store is shared across workspaces, so we need to verify that:
+    // 1. We have fetched data for the current workspace
+    // 2. The loaded tasks belong to the current workspace (not stale from previous)
+    //
+    // If fetched is false, data is still loading - don't attempt restore
+    if (!fetched) {
+      return;
+    }
+
+    // Once fetched, verify the tasks belong to the current workspace
+    // We check by looking at the first task's filePath - if it starts with
+    // currentPath, then the tasks are for the current workspace
+    const hasTasksForCurrentWorkspace =
+      tasks.length > 0 && tasks[0].filePath.startsWith(currentPath);
+    if (!hasTasksForCurrentWorkspace) {
+      return;
+    }
+
+    useWorkspaceStore.getState().restoreBoardState(currentPath, tasks);
+    useWorkspaceStore.getState().restoreTerminalState(currentPath);
+
+    // Update tracking AFTER restore attempt
+    previousWorkspacePath.current = currentPath;
+  }, [activeWorkspacePath, fetched, tasks]);
+
+  // Clear stale data immediately on workspace switch, then fetch fresh
+  useEffect(() => {
+    clearData();
+    useFileStore.getState().clear();
+    useWorktreeStore.getState().clear();
+    if (activeWorkspacePath) {
+      fetchData();
+    }
+  }, [activeWorkspacePath, clearData, fetchData]);
+
   // Session restoration: when tasks load for a workspace, auto-create terminal tabs
   // for any doing tasks with worktrees that don't already have terminal tabs
-  const tasks = useDataStore((s) => s.tasks);
   useEffect(() => {
     if (!activeWorkspacePath || tasks.length === 0) return;
+
+    // Board state restoration (including indicators via initSession)
+    // CRITICAL: Only process "doing" and "backlog" tasks for indicator performance
+    const dashboardTasks = tasks.filter(
+      (t) => t.status === "doing" || t.status === "backlog",
+    );
+    for (const task of dashboardTasks) {
+      // Initialize plan session if it has a tmux session or session ID
+      if (task.planTmuxSession || task.planSessionId) {
+        usePlanStore
+          .getState()
+          .initSession(
+            `plan:${task.id}`,
+            task.planSessionAgent ?? "opencode",
+            task.planModel,
+            task.planSessionId,
+            task.planLastExitCode,
+          );
+      }
+      // Initialize exec session if it has a tmux session or session ID
+      if (task.execTmuxSession || task.execSessionId) {
+        usePlanStore
+          .getState()
+          .initSession(
+            `execute:${task.id}`,
+            task.execSessionAgent ?? "opencode",
+            task.execModel,
+            task.execSessionId,
+            task.execLastExitCode,
+          );
+      }
+    }
+
     if (restoredWorkspaces.current.has(activeWorkspacePath)) return;
     restoredWorkspaces.current.add(activeWorkspacePath);
 
@@ -124,6 +219,7 @@ function AppContent(): React.JSX.Element {
 
   // Live update listener — re-fetch when files change on disk
   useEffect(() => {
+    if (!window.api.data) return;
     const unsub = window.api.data.onChanged(() => {
       fetchData(); // debounced in store — safe to call rapidly
     });
@@ -132,6 +228,7 @@ function AppContent(): React.JSX.Element {
 
   // File tree structural changes (files added/removed on disk)
   useEffect(() => {
+    if (!window.api.fs) return;
     const unsub = window.api.fs.onTreeChanged(() => {
       useFileStore.getState().fetchTree();
     });
@@ -140,6 +237,7 @@ function AppContent(): React.JSX.Element {
 
   // Open file content changes (agent modified a file)
   useEffect(() => {
+    if (!window.api.fs) return;
     const unsub = window.api.fs.onFileChanged(() => {
       useFileStore.getState().reloadOpenFile();
     });
@@ -148,6 +246,7 @@ function AppContent(): React.JSX.Element {
 
   // Plan chat: route streamed chunks from the main process to the plan store
   useEffect(() => {
+    if (!window.api.plan) return;
     const unsub = window.api.plan.onChunk((taskId, mode, chunk) => {
       const sessionKey = `${mode}:${taskId}`;
       const store = usePlanStore.getState();
@@ -186,13 +285,19 @@ function AppContent(): React.JSX.Element {
 
       // replay_done: emitted after the final grove_exit sentinel in the log.
       // Resets isReplaying so subsequent user_message chunks (from live sends)
-      // are not mistakenly treated as replay content. Also marks the session
-      // as no longer running — the final `done` chunk during replay intentionally
-      // does NOT set isRunning:false (to avoid false-positive exit warnings for
-      // intermediate turns), so replay_done is responsible for the final reset.
+      // are not mistakenly treated as replay content.
+      //
+      // Always clear isRunning here. replay_done is only emitted once the
+      // grove_exit sentinel has been found AND there is no more data in the
+      // log after it — meaning the agent has definitively finished. For live
+      // sessions replay_done is not emitted until the agent actually writes its
+      // sentinel, so there is no risk of prematurely clearing a running session.
+      // Also clear sessionStatus so the "Agent running — reconnected" banner
+      // is dismissed for dead sessions that were replayed.
       if (chunk.type === "replay_done") {
         store.setReplaying(sessionKey, false);
         store.setRunning(sessionKey, false);
+        store.setSessionStatus(sessionKey, "idle");
         return;
       }
 
@@ -247,6 +352,8 @@ function AppContent(): React.JSX.Element {
       <Toast />
       <ConfirmDialog />
       <LaunchModal />
+      <ShortcutsModal />
+      <HelpButton />
     </div>
   );
 }

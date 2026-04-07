@@ -1,11 +1,34 @@
 import { create } from "zustand";
 import type { WorkspaceInfo, PlanAgent } from "../../../shared/types";
+import { useDataStore } from "./useDataStore";
+import { useNavStore } from "./useNavStore";
+import { useBoardStore } from "./useBoardStore";
+
+export type DetailTab = "edit" | "plan" | "changes" | "debug";
+
+interface BoardState {
+  selectedTaskId: string | null;
+  selectedTaskBody: string | null;
+  taskDetailTab: DetailTab;
+  /** Scroll position for editor/preview sync. Best effort - may not sync
+   * perfectly with editor/preview sync logic. */
+  scrollPosition: number;
+}
+
+interface TerminalState {
+  terminalPanelOpen: boolean;
+}
 
 interface WorkspaceDefaults {
   defaultPlanningAgent?: PlanAgent;
   defaultPlanningModel?: string;
   defaultExecutionAgent?: PlanAgent;
   defaultExecutionModel?: string;
+  planPersona?: string;
+  planReviewPersona?: string;
+  executePersona?: string;
+  executeReviewPersona?: string;
+  executeReviewInstructions?: string;
 }
 
 interface WorkspaceState {
@@ -14,12 +37,20 @@ interface WorkspaceState {
   loading: boolean;
   error: string | null;
   workspaceDefaults: Record<string, WorkspaceDefaults>;
+  workspaceBoardStates: Record<string, BoardState>;
+  workspaceTerminalStates: Record<string, TerminalState>;
 
   // Actions
   fetchWorkspaces: () => Promise<void>;
   addWorkspace: () => Promise<void>;
   removeWorkspace: (path: string) => Promise<void>;
   setActiveWorkspace: (path: string) => Promise<void>;
+  saveCurrentBoardState: () => void;
+  restoreBoardState: (workspacePath: string, tasks: { id: string }[]) => void;
+  saveCurrentTerminalState: () => void;
+  restoreTerminalState: (workspacePath: string) => void;
+  updateBoardTab: (tab: DetailTab) => void;
+  updateScrollPosition: (position: number) => void;
   updateBranch: (path: string, branch: string) => void;
   fetchDefaults: (path: string) => Promise<void>;
   updateDefaults: (path: string, defaults: WorkspaceDefaults) => Promise<void>;
@@ -31,6 +62,8 @@ export const useWorkspaceStore = create<WorkspaceState>()((set, get) => ({
   loading: false,
   error: null,
   workspaceDefaults: {},
+  workspaceBoardStates: {},
+  workspaceTerminalStates: {},
 
   fetchWorkspaces: async () => {
     set({ loading: true, error: null });
@@ -79,12 +112,147 @@ export const useWorkspaceStore = create<WorkspaceState>()((set, get) => ({
   },
 
   setActiveWorkspace: async (path: string) => {
+    const state = get();
+    const currentPath = state.activeWorkspacePath;
+
+    if (currentPath && currentPath !== path) {
+      const dataState = useDataStore.getState();
+      const navState = useNavStore.getState();
+
+      set({
+        workspaceBoardStates: {
+          ...state.workspaceBoardStates,
+          [currentPath]: {
+            selectedTaskId: dataState.selectedTaskId,
+            selectedTaskBody: dataState.selectedTaskBody,
+            taskDetailTab: (state.workspaceBoardStates[currentPath]
+              ?.taskDetailTab ?? "edit") as DetailTab,
+            scrollPosition:
+              state.workspaceBoardStates[currentPath]?.scrollPosition ?? 0,
+          },
+        },
+        workspaceTerminalStates: {
+          ...state.workspaceTerminalStates,
+          [currentPath]: {
+            terminalPanelOpen: navState.terminalPanelOpen,
+          },
+        },
+      });
+      useBoardStore.getState().clearFocusedTask();
+    }
+
     const result = await window.api.workspaces.setActive(path);
     if (!result.ok) {
       set({ error: result.error });
       return;
     }
+
     set({ activeWorkspacePath: path });
+  },
+
+  saveCurrentBoardState: () => {
+    const state = get();
+    const currentPath = state.activeWorkspacePath;
+    if (!currentPath) return;
+
+    const dataState = useDataStore.getState();
+    set({
+      workspaceBoardStates: {
+        ...state.workspaceBoardStates,
+        [currentPath]: {
+          selectedTaskId: dataState.selectedTaskId,
+          selectedTaskBody: dataState.selectedTaskBody,
+          taskDetailTab:
+            state.workspaceBoardStates[currentPath]?.taskDetailTab ?? "edit",
+          scrollPosition:
+            state.workspaceBoardStates[currentPath]?.scrollPosition ?? 0,
+        },
+      },
+    });
+  },
+
+  restoreBoardState: (workspacePath: string, tasks: { id: string }[]) => {
+    const state = get();
+    const saved = state.workspaceBoardStates[workspacePath];
+    if (!saved) return;
+
+    if (
+      saved.selectedTaskId &&
+      tasks.some((t) => t.id === saved.selectedTaskId)
+    ) {
+      useDataStore.getState().setSelectedTask(saved.selectedTaskId);
+    } else {
+      useDataStore.getState().clearSelectedTask();
+    }
+  },
+
+  saveCurrentTerminalState: () => {
+    const state = get();
+    const currentPath = state.activeWorkspacePath;
+    if (!currentPath) return;
+
+    const navState = useNavStore.getState();
+    set({
+      workspaceTerminalStates: {
+        ...state.workspaceTerminalStates,
+        [currentPath]: {
+          terminalPanelOpen: navState.terminalPanelOpen,
+        },
+      },
+    });
+  },
+
+  restoreTerminalState: (workspacePath: string) => {
+    const state = get();
+    const saved = state.workspaceTerminalStates[workspacePath];
+    if (!saved) return;
+
+    const navState = useNavStore.getState();
+    if (saved.terminalPanelOpen && !navState.terminalPanelOpen) {
+      navState.toggleTerminalPanel();
+    } else if (!saved.terminalPanelOpen && navState.terminalPanelOpen) {
+      navState.toggleTerminalPanel();
+    }
+  },
+
+  updateBoardTab: (tab: DetailTab) => {
+    const state = get();
+    const currentPath = state.activeWorkspacePath;
+    if (!currentPath) return;
+
+    set({
+      workspaceBoardStates: {
+        ...state.workspaceBoardStates,
+        [currentPath]: {
+          ...(state.workspaceBoardStates[currentPath] ?? {
+            selectedTaskId: null,
+            selectedTaskBody: null,
+            scrollPosition: 0,
+          }),
+          taskDetailTab: tab,
+        },
+      },
+    });
+  },
+
+  updateScrollPosition: (position: number) => {
+    const state = get();
+    const currentPath = state.activeWorkspacePath;
+    if (!currentPath) return;
+
+    set({
+      workspaceBoardStates: {
+        ...state.workspaceBoardStates,
+        [currentPath]: {
+          ...(state.workspaceBoardStates[currentPath] ?? {
+            selectedTaskId: null,
+            selectedTaskBody: null,
+            taskDetailTab: "edit" as DetailTab,
+          }),
+          scrollPosition: position,
+        },
+      },
+    });
   },
 
   updateBranch: (path: string, branch: string) => {

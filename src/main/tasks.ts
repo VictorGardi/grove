@@ -28,12 +28,13 @@ function withWriteLock<T>(filePath: string, fn: () => Promise<T>): Promise<T> {
   return prev.then(fn).finally(resolve) as Promise<T>;
 }
 
-/** Session-level counter to prevent TOCTOU race on rapid creates */
-let lastGeneratedId = 0;
+/** Per-workspace session-level counters to prevent TOCTOU race on rapid creates */
+const lastGeneratedIds = new Map<string, number>();
 
 export async function parseTaskFile(
   filePath: string,
   status: TaskStatus,
+  workspacePath: string,
 ): Promise<TaskInfo | null> {
   try {
     const raw = await fs.promises.readFile(filePath, "utf-8");
@@ -95,6 +96,7 @@ export async function parseTaskFile(
       dodTotal,
       dodDone,
       filePath,
+      workspacePath,
       // useWorktree defaults to false; only true when explicitly set to true
       useWorktree: data.useWorktree === true,
       planSessionId:
@@ -117,6 +119,14 @@ export async function parseTaskFile(
         typeof data.planTmuxSession === "string" ? data.planTmuxSession : null,
       execTmuxSession:
         typeof data.execTmuxSession === "string" ? data.execTmuxSession : null,
+      planLastExitCode:
+        typeof data.planLastExitCode === "number"
+          ? data.planLastExitCode
+          : null,
+      execLastExitCode:
+        typeof data.execLastExitCode === "number"
+          ? data.execLastExitCode
+          : null,
       completed: typeof data.completed === "string" ? data.completed : null,
     };
   } catch (err) {
@@ -136,7 +146,7 @@ export async function scanTasks(workspacePath: string): Promise<TaskInfo[]> {
       for (const entry of entries) {
         if (!entry.endsWith(".md")) continue;
         const fp = path.join(dirPath, entry);
-        const task = await parseTaskFile(fp, status);
+        const task = await parseTaskFile(fp, status, workspacePath);
         if (task) tasks.push(task);
       }
     } catch {
@@ -180,8 +190,10 @@ export async function nextTaskId(workspacePath: string): Promise<string> {
     }
   }
 
-  const nextNum = Math.max(maxId, lastGeneratedId) + 1;
-  lastGeneratedId = nextNum;
+  const wsKey = path.resolve(workspacePath);
+  const sessionMax = lastGeneratedIds.get(wsKey) ?? 0;
+  const nextNum = Math.max(maxId, sessionMax) + 1;
+  lastGeneratedIds.set(wsKey, nextNum);
   const padded = String(nextNum).padStart(3, "0");
   return `T-${padded}`;
 }
@@ -211,6 +223,8 @@ function buildFrontmatter(fm: TaskFrontmatter): Record<string, unknown> {
   if (fm.execModel != null) obj.execModel = fm.execModel;
   if (fm.planTmuxSession != null) obj.planTmuxSession = fm.planTmuxSession;
   if (fm.execTmuxSession != null) obj.execTmuxSession = fm.execTmuxSession;
+  if (fm.planLastExitCode != null) obj.planLastExitCode = fm.planLastExitCode;
+  if (fm.execLastExitCode != null) obj.execLastExitCode = fm.execLastExitCode;
   if (fm.completed != null) obj.completed = fm.completed;
   return obj;
 }
@@ -248,7 +262,7 @@ export async function createTask(
   await atomicWrite(filePath, content);
 
   // Parse the file we just wrote to get a proper TaskInfo
-  const task = await parseTaskFile(filePath, "backlog");
+  const task = await parseTaskFile(filePath, "backlog", workspacePath);
   if (!task)
     throw new Error(`Failed to parse newly created task at ${filePath}`);
   return task;
@@ -302,7 +316,7 @@ export function updateTask(
     const status = STATUS_DIRS.includes(dirName as TaskStatus)
       ? (dirName as TaskStatus)
       : "backlog";
-    const task = await parseTaskFile(filePath, status);
+    const task = await parseTaskFile(filePath, status, workspacePath);
     if (!task)
       throw new Error(`Failed to re-parse task after update: ${filePath}`);
     return task;
@@ -357,7 +371,7 @@ export function moveTask(
     }
 
     // Return confirmed post-move state
-    const task = await parseTaskFile(newPath, toStatus);
+    const task = await parseTaskFile(newPath, toStatus, workspacePath);
     if (!task)
       throw new Error(`Failed to re-parse task after move: ${newPath}`);
     return task;
@@ -466,7 +480,7 @@ export function writeTaskRaw(
       ? (dirName as TaskStatus)
       : "backlog";
 
-    const task = await parseTaskFile(filePath, status);
+    const task = await parseTaskFile(filePath, status, workspacePath);
     if (!task)
       throw new Error(`Failed to re-parse task after raw write: ${filePath}`);
     return task;

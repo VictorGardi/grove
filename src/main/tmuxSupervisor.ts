@@ -37,6 +37,8 @@ interface LogTailer {
   /** File offset of the first byte in lineBuffer (used for per-line offset tracking). */
   lineBufferOffset: number;
   stopped: boolean;
+  /** Captured task file path for persisting exit code */
+  taskFilePath?: string;
 }
 
 // ── Public helpers ──────────────────────────────────────────────
@@ -98,6 +100,8 @@ function buildEnvPath(): string {
 export class TmuxSupervisor {
   private tailers = new Map<string, LogTailer>();
   private tmuxAvailable: boolean | null = null;
+  /** Tracks opencode.json files written by Grove so we can clean them up. */
+  private wroteConfigFiles = new Map<string, string>(); // tmuxSession -> filePath
 
   // ── tmux availability ──────────────────────────────────────
 
@@ -211,6 +215,12 @@ export class TmuxSupervisor {
       // doesn't exist, fine
     }
 
+    // Write a project opencode.json to suppress ask-permission prompts that
+    // would block headless runs. Skipped if the project already has one.
+    if (agent === "opencode") {
+      this.writeOpencodeConfig(tmuxSession, cwd);
+    }
+
     // Start the tailer BEFORE launching tmux so we don't miss early output.
     // Use the current file size as the start offset so we only read content
     // written by the new agent run — not old turns already in the log.
@@ -224,6 +234,7 @@ export class TmuxSupervisor {
       onChunk,
       onComplete,
       tailerStartOffset,
+      taskFilePath,
     );
 
     // Launch tmux with the script as its command.
@@ -243,6 +254,7 @@ export class TmuxSupervisor {
     } catch (err) {
       console.error("[TmuxSupervisor] Failed to create tmux session:", err);
       this.stopTailer(tmuxSession);
+      this.cleanupGroveConfig(tmuxSession);
       return false;
     }
 
@@ -271,7 +283,7 @@ export class TmuxSupervisor {
     let argsStr: string;
 
     if (agent === "opencode") {
-      const parts = ["run", "--format", "json"];
+      const parts = ["run", "--format", "json", "--agent", "build"];
       if (model) parts.push("--model", this.shellQuote(model));
       if (sessionId) parts.push("--session", this.shellQuote(sessionId));
       parts.push("--", '"$(cat "$MSG_FILE")"');
@@ -289,6 +301,9 @@ export class TmuxSupervisor {
       if (mode === "plan") {
         parts.push("--deny-tool=shell");
         parts.push(`--allow-tool='write(${taskFilePath})'`);
+      } else {
+        // Execute mode: allow all tools for unattended headless runs.
+        parts.push("--allow-all-tools");
       }
       if (model) parts.push(`--model=${this.shellQuote(model)}`);
       if (sessionId) parts.push(`--resume=${this.shellQuote(sessionId)}`);
@@ -335,6 +350,7 @@ exit $EXIT_CODE
     onChunk: ChunkCallback,
     onComplete?: () => void,
     startOffset: number = 0,
+    taskFilePath?: string,
   ): void {
     // Stop any existing tailer for this session
     this.stopTailer(tmuxSession);
@@ -349,10 +365,14 @@ exit $EXIT_CODE
       lineBuffer: "",
       lineBufferOffset: startOffset,
       stopped: false,
+      taskFilePath,
     };
     this.tailers.set(tmuxSession, tailer);
 
     let sessionIdEmitted = false;
+    // Track opencode errors within a turn so we can surface them and correct
+    // the exit code when opencode exits cleanly (code 0) after an error.
+    let turnHadError = false;
 
     const processLine = (line: string, afterLineOffset: number): void => {
       const results = this.parseLine(agent, line);
@@ -373,16 +393,64 @@ exit $EXIT_CODE
           const peeked = fs.readSync(tailer.fd, peek, 0, 1, afterLineOffset);
           const isLastSentinel = peeked === 0;
 
+          // When opencode emits an error event then exits with code 0, treat
+          // the effective exit code as 1 so the UI shows it as a failure.
+          const effectiveCode =
+            turnHadError && result.code === 0 ? 1 : result.code;
+
           if (isLastSentinel) {
             // Final sentinel — stop tailing and signal completion.
             console.log(
-              `[TmuxSupervisor] Agent exited in ${tmuxSession} code=${result.code}`,
+              `[TmuxSupervisor] Agent exited in ${tmuxSession} code=${result.code} effective=${effectiveCode}`,
             );
             this.stopTailer(tmuxSession);
+            this.cleanupGroveConfig(tmuxSession);
+
+            // Surface stderr so the user sees the actual error in the exit
+            // warning section rather than the generic "exited without output".
+            if (effectiveCode !== 0) {
+              try {
+                const errPath = buildErrPath(tmuxSession);
+                const stderr = fs.existsSync(errPath)
+                  ? fs.readFileSync(errPath, "utf-8").trim()
+                  : "";
+                if (stderr) {
+                  onChunk(taskId, mode, { type: "stderr", content: stderr });
+                }
+              } catch {
+                // best-effort — ignore read errors
+              }
+            }
+
             onChunk(taskId, mode, {
               type: "done",
-              content: String(result.code),
+              content: String(effectiveCode),
             });
+
+            // Persist the exit code to task frontmatter so indicators survive app restart
+            // The taskFilePath is captured in the tailer.
+            if (tailer.taskFilePath) {
+              const taskManager = require("./tasks");
+              // derive workspace root from taskFilePath (.tasks/status/T-XXX.md)
+              const wsRoot = path.dirname(
+                path.dirname(path.dirname(tailer.taskFilePath)),
+              );
+              taskManager
+                .updateTask(
+                  wsRoot,
+                  tailer.taskFilePath,
+                  mode === "execute"
+                    ? { execLastExitCode: effectiveCode }
+                    : { planLastExitCode: effectiveCode },
+                )
+                .catch((err: unknown) => {
+                  console.warn(
+                    `[TmuxSupervisor] Failed to persist exit code for ${taskId}:`,
+                    err,
+                  );
+                });
+            }
+
             // Signal that log replay / run is fully complete (resets isReplaying in renderer)
             onChunk(taskId, mode, { type: "replay_done", content: "" });
             onComplete?.();
@@ -394,10 +462,19 @@ exit $EXIT_CODE
             );
             onChunk(taskId, mode, {
               type: "done",
-              content: String(result.code),
+              content: String(effectiveCode),
             });
+            // Reset error tracking for the next turn
+            turnHadError = false;
           }
           return;
+        }
+        // Intercept __grove_error: emit the error message to the user and flag
+        // this turn as failed so the exit code is corrected above.
+        if (result.type === "__grove_error") {
+          turnHadError = true;
+          onChunk(taskId, mode, { type: "error", content: result.message });
+          continue;
         }
         if (result.type === "session_id") {
           if (sessionIdEmitted) continue;
@@ -472,21 +549,21 @@ exit $EXIT_CODE
     agent: PlanAgent,
     onChunk: ChunkCallback,
     onComplete?: () => void,
-  ): Promise<{ alive: boolean }> {
+  ): Promise<{ alive: boolean; sessionAlive: boolean }> {
     const logPath = buildLogPath(tmuxSession);
     if (!fs.existsSync(logPath)) {
       console.warn(
         `[TmuxSupervisor] Log file not found for reconnect: ${logPath}`,
       );
-      return { alive: false };
+      return { alive: false, sessionAlive: false };
     }
 
     const sessionAlive = await this.tmuxSessionExists(tmuxSession);
 
     if (!sessionAlive) {
       // Agent finished while the app was closed. Replay the entire log
-      // synchronously so the renderer gets all output including the
-      // grove_exit sentinel (which fires a "done" chunk).
+      // so the renderer gets all output including the grove_exit sentinel
+      // (which fires a "done" chunk and resets isRunning).
       console.log(
         `[TmuxSupervisor] Session ${tmuxSession} is gone — replaying log file for history`,
       );
@@ -504,9 +581,11 @@ exit $EXIT_CODE
       mode,
       onChunk,
       onComplete,
+      0, // Start from beginning for reconnect replay
+      undefined, // taskFilePath unknown on reconnect (not persisted in tmux)
     );
 
-    return { alive: true };
+    return { alive: true, sessionAlive };
   }
 
   // ── Stop a log tailer ──────────────────────────────────────
@@ -537,12 +616,15 @@ exit $EXIT_CODE
 
   async kill(tmuxSession: string): Promise<void> {
     this.stopTailer(tmuxSession);
+    this.cleanupGroveConfig(tmuxSession);
     try {
       await this.exec(["kill-session", "-t", tmuxSession]);
     } catch {
       // Session may already be dead
     }
-    this.cleanupRunFiles(tmuxSession);
+    // Preserve the .log file so history can be replayed after cancel + reload.
+    // Only clean up the ephemeral run files (script, message, stderr).
+    this.cleanupRunFiles(tmuxSession, { preserveLog: true });
   }
 
   // ── Detach all tailers (on app quit, keep tmux alive) ──────
@@ -551,6 +633,19 @@ exit $EXIT_CODE
     for (const [session] of this.tailers) {
       console.log(`[TmuxSupervisor] Detaching tailer for ${session}`);
       this.stopTailer(session);
+    }
+    // Clean up any Grove-written opencode.json files — the agent already
+    // started and read the config, so it no longer needs the file.
+    for (const [session, configPath] of this.wroteConfigFiles) {
+      try {
+        fs.unlinkSync(configPath);
+        console.log(
+          `[TmuxSupervisor] Cleaned up opencode.json on detach: ${configPath}`,
+        );
+      } catch {
+        // ignore
+      }
+      this.wroteConfigFiles.delete(session);
     }
   }
 
@@ -591,7 +686,67 @@ exit $EXIT_CODE
     return this.tmuxSessionExists(tmuxSession);
   }
 
+  /** Capture the visible contents of a tmux pane, joining wrapped lines. */
+  async capturePan(session: string): Promise<string> {
+    return new Promise((resolve) => {
+      const proc = spawn("tmux", ["capture-pane", "-pt", session, "-J"], {
+        stdio: ["ignore", "pipe", "pipe"],
+      });
+      let stdout = "";
+      proc.stdout?.on("data", (data: Buffer) => {
+        stdout += data.toString();
+      });
+      proc.on("close", () => {
+        resolve(stdout);
+      });
+      proc.on("error", () => {
+        resolve("");
+      });
+    });
+  }
+
   // ── Private helpers ────────────────────────────────────────
+
+  /** Writes a minimal opencode.json to suppress ask-permission prompts. */
+  private writeOpencodeConfig(tmuxSession: string, cwd: string): void {
+    const configPath = path.join(cwd, "opencode.json");
+    if (fs.existsSync(configPath)) return; // respect existing project config
+    try {
+      fs.writeFileSync(
+        configPath,
+        JSON.stringify(
+          {
+            $schema: "https://opencode.ai/config.json",
+            permission: {
+              // doom_loop only accepts a plain string action (not a pattern object)
+              doom_loop: "allow",
+              // external_directory accepts either a string or { pattern: action }
+              external_directory: "allow",
+            },
+          },
+          null,
+          2,
+        ),
+        "utf-8",
+      );
+      this.wroteConfigFiles.set(tmuxSession, configPath);
+      console.log(`[TmuxSupervisor] Wrote opencode.json to ${configPath}`);
+    } catch (e) {
+      console.warn(`[TmuxSupervisor] Could not write opencode.json:`, e);
+    }
+  }
+
+  private cleanupGroveConfig(tmuxSession: string): void {
+    const configPath = this.wroteConfigFiles.get(tmuxSession);
+    if (!configPath) return;
+    try {
+      fs.unlinkSync(configPath);
+      console.log(`[TmuxSupervisor] Cleaned up opencode.json: ${configPath}`);
+    } catch {
+      // ignore — file may have been deleted already
+    }
+    this.wroteConfigFiles.delete(tmuxSession);
+  }
 
   private async tmuxSessionExists(tmuxSession: string): Promise<boolean> {
     return new Promise((resolve) => {
@@ -631,8 +786,14 @@ exit $EXIT_CODE
     });
   }
 
-  private cleanupRunFiles(tmuxSession: string): void {
-    for (const ext of ["log", "sh", "msg", "err"]) {
+  private cleanupRunFiles(
+    tmuxSession: string,
+    opts: { preserveLog?: boolean } = {},
+  ): void {
+    const extensions = opts.preserveLog
+      ? ["sh", "msg", "err"]
+      : ["log", "sh", "msg", "err"];
+    for (const ext of extensions) {
       const p = path.join(RUNS_DIR, `${tmuxSession}.${ext}`);
       try {
         fs.unlinkSync(p);
@@ -651,7 +812,11 @@ exit $EXIT_CODE
   private parseLine(
     agent: PlanAgent,
     line: string,
-  ): Array<PlanChunk | { type: "__grove_exit"; code: number }> {
+  ): Array<
+    | PlanChunk
+    | { type: "__grove_exit"; code: number }
+    | { type: "__grove_error"; message: string }
+  > {
     const trimmed = line.trim();
     if (!trimmed) return [];
 
@@ -683,8 +848,12 @@ exit $EXIT_CODE
     }
   }
 
-  private parseOpencodeLine(obj: Record<string, unknown>): PlanChunk[] {
-    const chunks: PlanChunk[] = [];
+  private parseOpencodeLine(
+    obj: Record<string, unknown>,
+  ): Array<PlanChunk | { type: "__grove_error"; message: string }> {
+    const chunks: Array<
+      PlanChunk | { type: "__grove_error"; message: string }
+    > = [];
 
     if (obj.type === "step_start" && typeof obj.sessionID === "string") {
       chunks.push({ type: "session_id", content: obj.sessionID });
@@ -789,26 +958,63 @@ exit $EXIT_CODE
       }
     }
 
+    // Surface opencode error events (rate limits, permission failures, etc.)
+    // as a __grove_error marker so processLine can emit it as an error chunk
+    // and override the exit code if opencode exits cleanly after an error.
+    if (
+      obj.type === "error" &&
+      obj.error !== null &&
+      typeof obj.error === "object"
+    ) {
+      const err = obj.error as Record<string, unknown>;
+      let msg = typeof err.name === "string" ? err.name : "Error";
+      if (err.data !== null && typeof err.data === "object") {
+        const data = err.data as Record<string, unknown>;
+        if (typeof data.message === "string") {
+          // Strip surrounding quotes that opencode sometimes wraps the message in
+          msg = data.message.replace(/^"|"$/g, "").trim();
+        }
+      }
+      chunks.push({ type: "__grove_error", message: msg });
+    }
+
     return chunks;
   }
 
   private parseCopilotLine(obj: Record<string, unknown>): PlanChunk[] {
     const chunks: PlanChunk[] = [];
 
+    // Legacy format (kept for backward compatibility)
     if (obj.type === "session_id" && typeof obj.id === "string") {
       chunks.push({ type: "session_id", content: obj.id });
     }
-
     if (
       obj.type === "message" &&
       obj.role === "assistant" &&
-      typeof obj.content === "string"
+      typeof obj.content === "string" &&
+      obj.content
+    ) {
+      chunks.push({ type: "text", content: obj.content });
+    }
+    if (
+      obj.type === "delta" &&
+      typeof obj.content === "string" &&
+      obj.content
     ) {
       chunks.push({ type: "text", content: obj.content });
     }
 
-    if (obj.type === "delta" && typeof obj.content === "string") {
-      chunks.push({ type: "text", content: obj.content });
+    // New copilot CLI format (2025+)
+    // Streaming text delta: { type: "assistant.message_delta", data: { deltaContent: "..." } }
+    if (
+      obj.type === "assistant.message_delta" &&
+      obj.data !== null &&
+      typeof obj.data === "object"
+    ) {
+      const data = obj.data as Record<string, unknown>;
+      if (typeof data.deltaContent === "string" && data.deltaContent) {
+        chunks.push({ type: "text", content: data.deltaContent });
+      }
     }
 
     return chunks;

@@ -1,0 +1,29 @@
+.statusIndicator {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  flex-shrink: 0;
+}
+
+.statusIndicator.failed {
+  background: var(--status-red);
+}
+
+.statusIndicator.waiting {
+  background: var(--status-amber);
+}
+
+.statusIndicator.running {
+  background: var(--status-green);
+  animation: indicatorPulse 2s ease-in-out infinite;
+}
+
+@keyframes indicatorPulse {
+  0%,
+  100% {
+    opacity: 1;
+  }
+  50% {
+    opacity: 0.5;
+  }
+}

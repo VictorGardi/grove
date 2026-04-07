@@ -52,6 +52,30 @@ export function registerPlanHandlers(
 
   // plan:send — first message (sessionId is null) or follow-up (sessionId set)
   ipcMain.handle(
+    "plan:updateExitCode",
+    async (
+      _event,
+      input: {
+        workspacePath: string;
+        taskFilePath: string;
+        mode: PlanMode;
+        exitCode: number | null;
+      },
+    ): Promise<IpcResult<void>> => {
+      try {
+        const changes =
+          input.mode === "execute"
+            ? { execLastExitCode: input.exitCode }
+            : { planLastExitCode: input.exitCode };
+        await updateTask(input.workspacePath, input.taskFilePath, changes);
+        return { ok: true, data: undefined };
+      } catch (err) {
+        return { ok: false, error: String(err) };
+      }
+    },
+  );
+
+  ipcMain.handle(
     "plan:send",
     async (
       _event,
@@ -167,18 +191,11 @@ export function registerPlanHandlers(
         const runKey = `${input.mode}:${input.taskId}`;
         planManager.cancel(runKey, input.workspacePath);
 
-        // Only clear the tmux session from frontmatter if we have a valid path
-        if (input.taskFilePath) {
-          const tmuxChanges =
-            input.mode === "execute"
-              ? { execTmuxSession: null }
-              : { planTmuxSession: null };
-          await updateTask(
-            input.workspacePath,
-            input.taskFilePath,
-            tmuxChanges,
-          );
-        }
+        // Intentionally do NOT clear planTmuxSession / execTmuxSession from
+        // frontmatter here.  The log file is preserved by kill() so it can be
+        // replayed on the next app open for history.  Clearing the session name
+        // would prevent that replay.  handleNewSession() in the renderer is
+        // responsible for clearing it when the user explicitly starts fresh.
 
         return { ok: true, data: undefined };
       } catch (err) {
@@ -227,15 +244,17 @@ export function registerPlanHandlers(
   // For opencode: runs `opencode models` and parses the output.
   // For copilot: returns a curated static list (no CLI enumeration available).
   const COPILOT_MODELS = [
+    "claude-sonnet-4.6",
+    "claude-sonnet-4.5",
+    "claude-opus-4.6",
+    "claude-opus-4.6-fast",
+    "claude-haiku-4.5",
     "gpt-4o",
     "gpt-4o-mini",
     "o1",
     "o1-mini",
     "o3-mini",
-    "claude-3.5-sonnet",
-    "claude-3.7-sonnet",
     "gemini-2.0-flash",
-    "gemini-1.5-pro",
   ];
 
   ipcMain.handle(
@@ -293,6 +312,24 @@ export function registerPlanHandlers(
   );
 
   ipcMain.handle(
+    "plan:tmux-capture-pane",
+    async (
+      _event,
+      input: { session: string },
+    ): Promise<IpcResult<{ content: string }>> => {
+      try {
+        if (!input.session) {
+          return { ok: false, error: "No session name provided" };
+        }
+        const content = await planManager.captureTmuxPane(input.session);
+        return { ok: true, data: { content } };
+      } catch (err) {
+        return { ok: false, error: String(err) };
+      }
+    },
+  );
+
+  ipcMain.handle(
     "plan:reconnect",
     async (
       _event,
@@ -303,7 +340,7 @@ export function registerPlanHandlers(
         workspacePath: string;
         taskFilePath: string;
       },
-    ): Promise<IpcResult<{ reconnected: boolean }>> => {
+    ): Promise<IpcResult<{ reconnected: boolean; sessionAlive: boolean }>> => {
       try {
         const tmuxSession = buildTmuxSessionName(
           input.workspacePath,
@@ -315,14 +352,20 @@ export function registerPlanHandlers(
         // frontmatter so the log can be replayed on every future app restart.
         const onComplete = async () => {};
 
-        const reconnected = await planManager.reconnectTmuxSession(
+        const result = await planManager.reconnectTmuxSession(
           tmuxSession,
           input.taskId,
           input.mode,
           input.agent,
           onComplete,
         );
-        return { ok: true, data: { reconnected } };
+        return {
+          ok: true,
+          data: {
+            reconnected: result.reconnected,
+            sessionAlive: result.sessionAlive,
+          },
+        };
       } catch (err) {
         return { ok: false, error: String(err) };
       }

@@ -7,17 +7,22 @@ interface BoardState {
   searchActive: boolean;
   /** Counter incremented to request search input focus */
   searchFocusCounter: number;
+  /** Focused task ID for keyboard navigation (separate from selectedTaskId) */
+  focusedTaskId: string | null;
 
   setSearchQuery: (query: string) => void;
   setSearchActive: (active: boolean) => void;
   requestSearchFocus: () => void;
   clearSearch: () => void;
+  setFocusedTask: (id: string | null) => void;
+  clearFocusedTask: () => void;
 }
 
 export const useBoardStore = create<BoardState>()((set) => ({
   searchQuery: "",
   searchActive: false,
   searchFocusCounter: 0,
+  focusedTaskId: null,
 
   setSearchQuery: (query: string) => set({ searchQuery: query }),
   setSearchActive: (active: boolean) => set({ searchActive: active }),
@@ -26,5 +31,8 @@ export const useBoardStore = create<BoardState>()((set) => ({
       searchFocusCounter: s.searchFocusCounter + 1,
       searchActive: true,
     })),
-  clearSearch: () => set({ searchQuery: "", searchActive: false }),
+  clearSearch: () =>
+    set({ searchQuery: "", searchActive: false, focusedTaskId: null }),
+  setFocusedTask: (id: string | null) => set({ focusedTaskId: id }),
+  clearFocusedTask: () => set({ focusedTaskId: null }),
 }));

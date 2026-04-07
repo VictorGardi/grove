@@ -1,8 +1,10 @@
 import { useState } from "react";
 import type { WorkspaceInfo } from "@shared/types";
 import { ContextMenu } from "./ContextMenu";
+import type { ContextMenuItem } from "./ContextMenu";
 import { useWorkspaceStore } from "../../stores/useWorkspaceStore";
-import { useDataStore } from "../../stores/useDataStore";
+import { useWorkspaceStatus } from "../../hooks/useWorkspaceStatus";
+import styles from "./WorkspaceItem.module.css";
 
 interface WorkspaceItemProps {
   workspace: WorkspaceInfo;
@@ -21,15 +23,18 @@ export function WorkspaceItem({
     y: number;
   } | null>(null);
   const removeWorkspace = useWorkspaceStore((s) => s.removeWorkspace);
-  const activeWorkspacePath = useWorkspaceStore((s) => s.activeWorkspacePath);
-  const tasks = useDataStore((s) => s.tasks);
+  const { status: wsStatus, count: wsCount } = useWorkspaceStatus(
+    workspace.path,
+  );
 
-  // Only show badge for active workspace with doing tasks
-  const isActiveWorkspace = workspace.path === activeWorkspacePath;
-  const doingCount = isActiveWorkspace
-    ? tasks.filter((t) => t.status === "doing").length
-    : 0;
-  const showBadge = isActiveWorkspace && doingCount > 0;
+  const statusTooltip =
+    wsStatus === "failed"
+      ? `${wsCount} task(s) failed`
+      : wsStatus === "waiting"
+        ? `${wsCount} task(s) waiting for input`
+        : wsStatus === "running"
+          ? `${wsCount} agent(s) running`
+          : undefined;
 
   function handleContextMenu(e: React.MouseEvent): void {
     e.preventDefault();
@@ -42,6 +47,14 @@ export function WorkspaceItem({
     }
     setContextMenu(null);
   }
+
+  const menuItems: ContextMenuItem[] = [
+    {
+      label: "Remove workspace",
+      onClick: handleRemove,
+      destructive: true,
+    },
+  ];
 
   return (
     <>
@@ -117,17 +130,12 @@ export function WorkspaceItem({
             {workspace.name}
           </span>
 
-          {/* Task count badge — only active workspace with doing tasks */}
-          {showBadge && (
-            <span
-              style={{
-                fontFamily: "var(--font-mono)",
-                fontSize: "11px",
-                color: "var(--text-lo)",
-              }}
-            >
-              [{doingCount}]
-            </span>
+          {/* Status indicator dot */}
+          {wsStatus !== "idle" && (
+            <div
+              className={`${styles.statusIndicator} ${styles[wsStatus]}`}
+              title={statusTooltip}
+            />
           )}
         </div>
 
@@ -205,8 +213,8 @@ export function WorkspaceItem({
         <ContextMenu
           x={contextMenu.x}
           y={contextMenu.y}
-          workspaceName={workspace.name}
-          onRemove={handleRemove}
+          title={workspace.name}
+          items={menuItems}
           onClose={() => setContextMenu(null)}
         />
       )}

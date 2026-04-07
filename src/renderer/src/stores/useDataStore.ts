@@ -1,6 +1,7 @@
 import { create } from "zustand";
 import type { TaskInfo } from "@shared/types";
 import { useWorkspaceStore } from "./useWorkspaceStore";
+import { useBoardStore } from "./useBoardStore";
 
 interface DataState {
   tasks: TaskInfo[];
@@ -151,15 +152,18 @@ export const useDataStore = create<DataState>()((set, get) => ({
 
   setTaskDetailDirty: (dirty) => set({ taskDetailDirty: dirty }),
 
-  clearSelectedTask: () =>
+  clearSelectedTask: () => {
+    useBoardStore.getState().clearFocusedTask();
     set({
       selectedTaskId: null,
       selectedTaskBody: null,
       taskDetailLoading: false,
       taskDetailDirty: false,
-    }),
+    });
+  },
 
-  clear: () =>
+  clear: () => {
+    useBoardStore.getState().clearFocusedTask();
     set({
       tasks: [],
       loading: false,
@@ -169,7 +173,8 @@ export const useDataStore = create<DataState>()((set, get) => ({
       selectedTaskBody: null,
       taskDetailLoading: false,
       taskDetailDirty: false,
-    }),
+    });
+  },
 }));
 
 /** Derived selector: get the currently selected task object */

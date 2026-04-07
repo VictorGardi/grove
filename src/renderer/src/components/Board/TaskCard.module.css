@@ -20,6 +20,15 @@
   background: var(--accent-dim);
 }
 
+.cardFocused {
+  border-color: var(--accent);
+  background: var(--accent-dim);
+}
+
+.cardFocused:hover {
+  background: var(--accent-dim);
+}
+
 .cardDragging {
   opacity: 0.4;
   border-style: dashed;

@@ -30,6 +30,7 @@ function makeTask(overrides: Partial<TaskInfo> = {}): TaskInfo {
     dodTotal: 0,
     dodDone: 0,
     filePath: ".tasks/doing/T-001-test-task.md",
+    workspacePath: "/test/workspace",
     useWorktree: true,
     planSessionId: null,
     planSessionAgent: null,
@@ -39,6 +40,8 @@ function makeTask(overrides: Partial<TaskInfo> = {}): TaskInfo {
     execModel: null,
     planTmuxSession: null,
     execTmuxSession: null,
+    planLastExitCode: null,
+    execLastExitCode: null,
     completed: null,
     ...overrides,
   };

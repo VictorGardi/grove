@@ -1,14 +1,16 @@
 import { useState, useEffect, useRef, useCallback } from "react";
 import { useDataStore, useSelectedTask } from "../../stores/useDataStore";
-import { useWorkspaceStore } from "../../stores/useWorkspaceStore";
+import { useWorkspaceStore, DetailTab } from "../../stores/useWorkspaceStore";
 import { useNavStore } from "../../stores/useNavStore";
 import { useFileStore } from "../../stores/useFileStore";
 import { usePlanStore } from "../../stores/usePlanStore";
 import { updateTask, archiveTask } from "../../actions/taskActions";
 import { InlineEdit } from "../shared/InlineEdit";
+import { formatTimestamp } from "../../utils/date";
 import { TagInput } from "../shared/TagInput";
 import { ChangesTab } from "./ChangesTab";
 import { PlanChat } from "./PlanChat";
+import type { TaskInfo } from "@shared/types";
 import styles from "./TaskDetailPanel.module.css";
 
 // ── Constants ─────────────────────────────────────────────────────
@@ -22,7 +24,148 @@ const STATUS_COLORS: Record<string, string> = {
 
 const DEBOUNCE_MS = 500;
 
-type DetailTab = "edit" | "plan" | "changes" | "debug";
+// ── Debug panel ───────────────────────────────────────────────────
+
+function DebugPanel({ task }: { task: TaskInfo }): React.JSX.Element {
+  const planSessionKey = `plan:${task.id}`;
+  const execSessionKey = `execute:${task.id}`;
+  const planStoreSession = usePlanStore((s) => s.sessions[planSessionKey]);
+  const execStoreSession = usePlanStore((s) => s.sessions[execSessionKey]);
+  const groveDir = `${(window as { process?: { env?: { HOME?: string } } }).process?.env?.HOME ?? "~"}/.grove/runs`;
+  const planLogPath = task.planTmuxSession
+    ? `${groveDir}/${task.planTmuxSession}.log`
+    : null;
+  const execLogPath = task.execTmuxSession
+    ? `${groveDir}/${task.execTmuxSession}.log`
+    : null;
+
+  const [paneCaptures, setPaneCaptures] = useState<Record<string, string>>({});
+  const [capturing, setCapturing] = useState<Record<string, boolean>>({});
+
+  async function handleCapture(session: string): Promise<void> {
+    setCapturing((c) => ({ ...c, [session]: true }));
+    try {
+      const result = await window.api.plan.captureTmuxPane({ session });
+      if (result.ok && result.data) {
+        setPaneCaptures((p) => ({
+          ...p,
+          [session]: result.data.content || "(empty pane)",
+        }));
+      } else {
+        setPaneCaptures((p) => ({
+          ...p,
+          [session]: `Error: ${(result as { ok: false; error: string }).error}`,
+        }));
+      }
+    } finally {
+      setCapturing((c) => ({ ...c, [session]: false }));
+    }
+  }
+
+  type DebugRow = {
+    label: string;
+    value: string | null | undefined;
+    session?: string;
+  };
+  const rows: DebugRow[] = [
+    {
+      label: "planTmuxSession",
+      value: task.planTmuxSession,
+      session: task.planTmuxSession ?? undefined,
+    },
+    { label: "planLogPath", value: planLogPath },
+    {
+      label: "execTmuxSession",
+      value: task.execTmuxSession,
+      session: task.execTmuxSession ?? undefined,
+    },
+    { label: "execLogPath", value: execLogPath },
+    { label: "planSessionId", value: task.planSessionId },
+    { label: "planSessionAgent", value: task.planSessionAgent },
+    { label: "planModel", value: task.planModel },
+    { label: "execSessionId", value: task.execSessionId },
+    { label: "execSessionAgent", value: task.execSessionAgent },
+    { label: "execModel", value: task.execModel },
+    {
+      label: "store:plan status",
+      value: planStoreSession?.sessionStatus ?? null,
+    },
+    {
+      label: "store:plan msgs",
+      value: planStoreSession ? String(planStoreSession.messages.length) : null,
+    },
+    {
+      label: "store:plan isRunning",
+      value: planStoreSession ? String(planStoreSession.isRunning) : null,
+    },
+    {
+      label: "store:exec status",
+      value: execStoreSession?.sessionStatus ?? null,
+    },
+    {
+      label: "store:exec msgs",
+      value: execStoreSession ? String(execStoreSession.messages.length) : null,
+    },
+    {
+      label: "store:exec isRunning",
+      value: execStoreSession ? String(execStoreSession.isRunning) : null,
+    },
+  ];
+
+  const capturedSessions = Object.keys(paneCaptures);
+
+  return (
+    <div className={styles.debugPanel}>
+      <table className={styles.debugTable}>
+        <tbody>
+          {rows.map((row) => (
+            <tr key={row.label}>
+              <td className={styles.debugLabel}>{row.label}</td>
+              <td className={styles.debugValue}>
+                {row.value != null ? (
+                  <span className={styles.debugValueWithAction}>
+                    {row.value}
+                    {row.session && (
+                      <button
+                        className={styles.debugCaptureBtn}
+                        onClick={() => void handleCapture(row.session!)}
+                        disabled={capturing[row.session] ?? false}
+                        title="Capture current tmux pane contents"
+                      >
+                        {capturing[row.session] ? "…" : "capture pane"}
+                      </button>
+                    )}
+                  </span>
+                ) : (
+                  <span className={styles.debugNull}>null</span>
+                )}
+              </td>
+            </tr>
+          ))}
+        </tbody>
+      </table>
+
+      {capturedSessions.map((session) => (
+        <div key={session} className={styles.debugCaptureBlock}>
+          <div className={styles.debugCaptureHeader}>
+            <span className={styles.debugCaptureTitle}>{session}</span>
+            <button
+              className={styles.debugCaptureRefreshBtn}
+              onClick={() => void handleCapture(session)}
+              disabled={capturing[session] ?? false}
+              title="Refresh capture"
+            >
+              {capturing[session] ? "…" : "↻ refresh"}
+            </button>
+          </div>
+          <pre className={styles.debugCaptureOutput}>
+            {paneCaptures[session]}
+          </pre>
+        </div>
+      ))}
+    </div>
+  );
+}
 
 // ── Simple markdown preview ───────────────────────────────────────
 
@@ -74,9 +217,17 @@ export function TaskDetailPanel(): React.JSX.Element {
   const task = useSelectedTask();
   const clearSelectedTask = useDataStore((s) => s.clearSelectedTask);
   const workspacePath = useWorkspaceStore((s) => s.activeWorkspacePath);
+  const workspaceBoardStates = useWorkspaceStore((s) => s.workspaceBoardStates);
+  const updateBoardTab = useWorkspaceStore((s) => s.updateBoardTab);
 
-  // Tab state
-  const [activeTab, setActiveTab] = useState<DetailTab>("edit");
+  const activeTab: DetailTab =
+    workspacePath && workspaceBoardStates[workspacePath]?.taskDetailTab
+      ? workspaceBoardStates[workspacePath].taskDetailTab
+      : "edit";
+
+  function setActiveTab(tab: DetailTab): void {
+    updateBoardTab(tab);
+  }
 
   // Raw markdown content
   const [rawContent, setRawContent] = useState("");
@@ -402,7 +553,9 @@ export function TaskDetailPanel(): React.JSX.Element {
           <div className={styles.topBarRight}>
             {isDirty && <span className={styles.dirtyIndicator}>Unsaved</span>}
             {task.created && (
-              <span className={styles.metaCreated}>{task.created}</span>
+              <span className={styles.metaCreated}>
+                {formatTimestamp(task.created)}
+              </span>
             )}
             {/* View files button — always shown */}
             <button className={styles.viewFilesBtn} onClick={handleViewFiles}>
@@ -505,87 +658,7 @@ export function TaskDetailPanel(): React.JSX.Element {
             <ChangesTab task={task} />
           </div>
         )}
-        {activeTab === "debug" &&
-          (() => {
-            const planSessionKey = `plan:${task.id}`;
-            const execSessionKey = `execute:${task.id}`;
-            const planStoreSession =
-              usePlanStore.getState().sessions[planSessionKey];
-            const execStoreSession =
-              usePlanStore.getState().sessions[execSessionKey];
-            const groveDir = `${(window as { process?: { env?: { HOME?: string } } }).process?.env?.HOME ?? "~"}/.grove/runs`;
-            const planLogPath = task.planTmuxSession
-              ? `${groveDir}/${task.planTmuxSession}.log`
-              : null;
-            const execLogPath = task.execTmuxSession
-              ? `${groveDir}/${task.execTmuxSession}.log`
-              : null;
-
-            type DebugRow = { label: string; value: string | null | undefined };
-            const rows: DebugRow[] = [
-              { label: "planTmuxSession", value: task.planTmuxSession },
-              { label: "planLogPath", value: planLogPath },
-              { label: "execTmuxSession", value: task.execTmuxSession },
-              { label: "execLogPath", value: execLogPath },
-              { label: "planSessionId", value: task.planSessionId },
-              { label: "planSessionAgent", value: task.planSessionAgent },
-              { label: "planModel", value: task.planModel },
-              { label: "execSessionId", value: task.execSessionId },
-              { label: "execSessionAgent", value: task.execSessionAgent },
-              { label: "execModel", value: task.execModel },
-              {
-                label: "store:plan status",
-                value: planStoreSession?.sessionStatus ?? null,
-              },
-              {
-                label: "store:plan msgs",
-                value: planStoreSession
-                  ? String(planStoreSession.messages.length)
-                  : null,
-              },
-              {
-                label: "store:plan isRunning",
-                value: planStoreSession
-                  ? String(planStoreSession.isRunning)
-                  : null,
-              },
-              {
-                label: "store:exec status",
-                value: execStoreSession?.sessionStatus ?? null,
-              },
-              {
-                label: "store:exec msgs",
-                value: execStoreSession
-                  ? String(execStoreSession.messages.length)
-                  : null,
-              },
-              {
-                label: "store:exec isRunning",
-                value: execStoreSession
-                  ? String(execStoreSession.isRunning)
-                  : null,
-              },
-            ];
-
-            return (
-              <div className={styles.debugPanel}>
-                <table className={styles.debugTable}>
-                  <tbody>
-                    {rows.map((row) => (
-                      <tr key={row.label}>
-                        <td className={styles.debugLabel}>{row.label}</td>
-                        <td className={styles.debugValue}>
-                          {row.value ?? (
-                            <span className={styles.debugNull}>null</span>
-                          )}
-                        </td>
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
-              </div>
-            );
-          })()}
+        {activeTab === "debug" && <DebugPanel task={task} />}
         {activeTab === "edit" && (
           <div className={styles.splitView}>
             {/* Left: raw markdown editor */}

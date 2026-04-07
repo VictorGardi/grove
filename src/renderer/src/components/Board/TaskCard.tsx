@@ -5,6 +5,10 @@ import { useDataStore } from "../../stores/useDataStore";
 import { useWorktreeStore } from "../../stores/useWorktreeStore";
 import { usePlanStore } from "../../stores/usePlanStore";
 import { useWorkspaceStore } from "../../stores/useWorkspaceStore";
+import { useBoardStore } from "../../stores/useBoardStore";
+import { ContextMenu } from "../Sidebar/ContextMenu";
+import type { ContextMenuItem } from "../Sidebar/ContextMenu";
+import { archiveTask } from "../../actions/taskActions";
 import styles from "./TaskCard.module.css";
 
 interface TaskCardProps {
@@ -20,6 +24,9 @@ export function TaskCard({
   const selectedTaskId = useDataStore((s) => s.selectedTaskId);
   const isSelected = task.id === selectedTaskId;
   const worktreeCreating = useWorktreeStore((s) => s.creatingIds.has(task.id));
+
+  const focusedTaskId = useBoardStore((s) => s.focusedTaskId);
+  const isFocused = task.id === focusedTaskId;
 
   // workspacePath is needed for tmuxCheck calls
   const workspacePath = useWorkspaceStore((s) => s.activeWorkspacePath);
@@ -125,37 +132,58 @@ export function TaskCard({
 
   // "Waiting for input" — agent exited cleanly (or never set exit code) but
   // is not currently running (store flag + tmux check both say idle).
+  // For restored sessions: if tmuxSession exists but no messages, assume "waiting"
+  // (the session was active, we just lost the state). The actual exit code determines
+  // whether to show "waiting" vs "session failed" - if null, default to "waiting".
   const isExecuteWaiting =
     !!execSession &&
-    execSession.messages.length > 0 &&
+    (execSession.messages.length > 0 ||
+      (execSession.messages.length === 0 && task.execTmuxSession != null)) &&
     !execSession.isRunning &&
     !execTmuxAlive &&
-    (execSession.lastExitCode === null || execSession.lastExitCode === 0);
+    (execSession.lastExitCode === 0 ||
+      execSession.lastExitCode === null ||
+      task.execLastExitCode === 0 ||
+      (execSession.lastExitCode === null && task.execLastExitCode === null));
 
   const isPlanWaiting =
     !!planSession &&
-    planSession.messages.length > 0 &&
+    (planSession.messages.length > 0 ||
+      (planSession.messages.length === 0 && task.planTmuxSession != null)) &&
     !planSession.isRunning &&
     !planTmuxAlive &&
-    (planSession.lastExitCode === null || planSession.lastExitCode === 0);
+    (planSession.lastExitCode === 0 ||
+      planSession.lastExitCode === null ||
+      task.planLastExitCode === 0 ||
+      (planSession.lastExitCode === null && task.planLastExitCode === null));
 
   // "Session failed" — agent exited with non-zero code AND is not currently
   // running (tmux alive takes precedence — a new run supersedes old exit code).
+  // For restored sessions: only show "session failed" if we have explicit non-zero
+  // exit code (either from store or task frontmatter).
   const isExecuteErrored =
     !!execSession &&
-    execSession.messages.length > 0 &&
+    (execSession.messages.length > 0 ||
+      (execSession.messages.length === 0 &&
+        task.execTmuxSession != null &&
+        (execSession.lastExitCode !== null ||
+          task.execLastExitCode !== null))) &&
     !execSession.isRunning &&
     !execTmuxAlive &&
-    execSession.lastExitCode !== null &&
-    execSession.lastExitCode !== 0;
+    ((execSession.lastExitCode !== null && execSession.lastExitCode !== 0) ||
+      (task.execLastExitCode !== null && task.execLastExitCode !== 0));
 
   const isPlanErrored =
     !!planSession &&
-    planSession.messages.length > 0 &&
+    (planSession.messages.length > 0 ||
+      (planSession.messages.length === 0 &&
+        task.planTmuxSession != null &&
+        (planSession.lastExitCode !== null ||
+          task.planLastExitCode !== null))) &&
     !planSession.isRunning &&
     !planTmuxAlive &&
-    planSession.lastExitCode !== null &&
-    planSession.lastExitCode !== 0;
+    ((planSession.lastExitCode !== null && planSession.lastExitCode !== 0) ||
+      (task.planLastExitCode !== null && task.planLastExitCode !== 0));
 
   const isDodComplete = task.dodTotal > 0 && task.dodDone >= task.dodTotal;
 
@@ -185,17 +213,47 @@ export function TaskCard({
     id: task.id,
   });
 
+  const [contextMenu, setContextMenu] = useState<{
+    x: number;
+    y: number;
+  } | null>(null);
+
   function handleClick(): void {
+    useBoardStore.getState().clearFocusedTask();
     useDataStore.getState().setSelectedTask(task.id);
   }
+
+  function handleContextMenu(e: React.MouseEvent): void {
+    e.preventDefault();
+    setContextMenu({ x: e.clientX, y: e.clientY });
+  }
+
+  function handleArchive(): void {
+    if (
+      window.confirm("Archive this task? It will be moved to .tasks/archive/")
+    ) {
+      archiveTask(task.filePath);
+    }
+    setContextMenu(null);
+  }
+
+  const contextMenuItems: ContextMenuItem[] = [
+    {
+      label: "Archive task",
+      onClick: handleArchive,
+      disabled: isAgentRunning || isPlanningRunning,
+      destructive: true,
+    },
+  ];
 
   return (
     <div
       ref={setNodeRef}
       {...listeners}
       {...attributes}
-      className={`${styles.card} ${isSelected ? styles.cardSelected : ""} ${isDragging ? styles.cardDragging : ""} ${isSearchMatch === true ? styles.cardSearchMatch : ""}`}
+      className={`${styles.card} ${isSelected ? styles.cardSelected : ""} ${isFocused ? styles.cardFocused : ""} ${isDragging ? styles.cardDragging : ""} ${isSearchMatch === true ? styles.cardSearchMatch : ""}`}
       onClick={handleClick}
+      onContextMenu={handleContextMenu}
     >
       {/* Row 1: Title */}
       <div className={styles.titleRow}>
@@ -293,6 +351,14 @@ export function TaskCard({
             </span>
           ))}
         </div>
+      )}
+      {contextMenu && (
+        <ContextMenu
+          x={contextMenu.x}
+          y={contextMenu.y}
+          items={contextMenuItems}
+          onClose={() => setContextMenu(null)}
+        />
       )}
     </div>
   );

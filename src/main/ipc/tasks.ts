@@ -37,6 +37,22 @@ export function registerTaskHandlers(): void {
     },
   );
 
+  // Fetch tasks for a specific workspace (used by workspace status indicator)
+  ipcMain.handle(
+    "workspace:tasks",
+    async (_event, workspacePath: string): Promise<IpcResult<TaskInfo[]>> => {
+      try {
+        const tasks = await scanTasks(workspacePath);
+        return { ok: true, data: tasks };
+      } catch (err) {
+        return {
+          ok: false,
+          error: err instanceof Error ? err.message : String(err),
+        };
+      }
+    },
+  );
+
   // ── Task CRUD ──────────────────────────────────────────────────
 
   ipcMain.handle(

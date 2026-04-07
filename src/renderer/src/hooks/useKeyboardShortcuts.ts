@@ -5,6 +5,9 @@ import { useDataStore } from "../stores/useDataStore";
 import { useFileStore } from "../stores/useFileStore";
 import { useBoardStore } from "../stores/useBoardStore";
 import { createTask, moveTask } from "../actions/taskActions";
+import type { TaskStatus } from "@shared/types";
+
+const COLUMNS: TaskStatus[] = ["backlog", "doing", "review", "done"];
 
 export function useKeyboardShortcuts(): void {
   const addWorkspace = useWorkspaceStore((s) => s.addWorkspace);
@@ -107,6 +110,8 @@ export function useKeyboardShortcuts(): void {
           e.preventDefault();
           ds.clearSelectedTask();
         }
+        // Also clear focus when pressing Escape (even if no task is selected)
+        useBoardStore.getState().clearFocusedTask();
         return;
       }
 
@@ -178,6 +183,178 @@ export function useKeyboardShortcuts(): void {
         e.preventDefault();
         createTask("New task");
         return;
+      }
+
+      // Arrow key navigation: only when detail panel is closed and not in board search
+      const bs = useBoardStore.getState();
+      const dataStore = useDataStore.getState();
+      if (!dataStore.selectedTaskId && !inBoardSearch) {
+        const currentFocusId = bs.focusedTaskId;
+        const tasks = dataStore.tasks;
+        const searchQuery = bs.searchQuery;
+        const visibleTasks = searchQuery
+          ? tasks.filter((t) =>
+              t.title.toLowerCase().includes(searchQuery.toLowerCase()),
+            )
+          : tasks;
+
+        if (
+          e.key === "ArrowDown" ||
+          e.key === "ArrowUp" ||
+          e.key === "ArrowLeft" ||
+          e.key === "ArrowRight" ||
+          e.key === "Home" ||
+          e.key === "End" ||
+          e.key === "Enter"
+        ) {
+          let newFocusId: string | null = currentFocusId;
+          const tasksByStatus: Record<TaskStatus, string[]> = {
+            backlog: [],
+            doing: [],
+            review: [],
+            done: [],
+          };
+          for (const t of visibleTasks) {
+            tasksByStatus[t.status].push(t.id);
+          }
+
+          const getColumnIndex = (taskId: string | null): number => {
+            if (!taskId) return -1;
+            for (let col = 0; col < COLUMNS.length; col++) {
+              const idx = tasksByStatus[COLUMNS[col]].indexOf(taskId);
+              if (idx !== -1) return col;
+            }
+            return -1;
+          };
+
+          const getIndexInColumn = (taskId: string | null): number => {
+            if (!taskId) return -1;
+            for (const col of COLUMNS) {
+              const idx = tasksByStatus[col].indexOf(taskId);
+              if (idx !== -1) return idx;
+            }
+            return -1;
+          };
+
+          const getNonEmptyColumns = (): TaskStatus[] => {
+            return COLUMNS.filter((col) => tasksByStatus[col].length > 0);
+          };
+
+          const getNonEmptyColIndex = (taskId: string | null): number => {
+            if (!taskId) return -1;
+            const colIdx = getColumnIndex(taskId);
+            if (colIdx === -1) return -1;
+            const taskStatus = COLUMNS[colIdx];
+            return nonEmptyCols.indexOf(taskStatus);
+          };
+
+          const nonEmptyCols = getNonEmptyColumns();
+
+          if (e.key === "Enter" && currentFocusId) {
+            e.preventDefault();
+            dataStore.setSelectedTask(currentFocusId);
+            return;
+          }
+
+          if (e.key === "Home" || e.key === "End") {
+            e.preventDefault();
+            const currentColIdx = currentFocusId
+              ? getColumnIndex(currentFocusId)
+              : 0;
+            const targetCol = nonEmptyCols[currentColIdx] || "backlog";
+            const targetTasks = tasksByStatus[targetCol];
+            if (targetTasks.length > 0) {
+              newFocusId =
+                e.key === "Home"
+                  ? targetTasks[0]
+                  : targetTasks[targetTasks.length - 1];
+            }
+          } else if (e.key === "ArrowDown" || e.key === "ArrowUp") {
+            e.preventDefault();
+            const currentNonEmptyIdx = currentFocusId
+              ? getNonEmptyColIndex(currentFocusId)
+              : 0;
+            const targetCol = nonEmptyCols[currentNonEmptyIdx] || "backlog";
+            const targetTasks = tasksByStatus[targetCol];
+            let currentIdx = currentFocusId
+              ? getIndexInColumn(currentFocusId)
+              : -1; // Both start at -1 so ArrowDown goes to 0 and ArrowUp wraps
+
+            let nextIdx: number;
+            if (e.key === "ArrowDown") {
+              nextIdx = currentIdx + 1;
+              if (nextIdx >= targetTasks.length) {
+                const nextNonEmptyIdx =
+                  (currentNonEmptyIdx + 1) % nonEmptyCols.length;
+                const nextCol = nonEmptyCols[nextNonEmptyIdx];
+                newFocusId = tasksByStatus[nextCol][0];
+              } else {
+                newFocusId = targetTasks[nextIdx];
+              }
+            } else {
+              nextIdx = currentIdx - 1;
+              if (nextIdx < 0) {
+                const prevNonEmptyIdx =
+                  (currentNonEmptyIdx - 1 + nonEmptyCols.length) %
+                  nonEmptyCols.length;
+                const prevCol = nonEmptyCols[prevNonEmptyIdx];
+                newFocusId =
+                  tasksByStatus[prevCol][tasksByStatus[prevCol].length - 1];
+              } else {
+                newFocusId = targetTasks[nextIdx];
+              }
+            }
+          } else if (e.key === "ArrowLeft" || e.key === "ArrowRight") {
+            e.preventDefault();
+            let currentColIdx = currentFocusId
+              ? getColumnIndex(currentFocusId)
+              : 0;
+            if (currentColIdx === -1) currentColIdx = 0;
+            const currentIdx = currentFocusId
+              ? getIndexInColumn(currentFocusId)
+              : 0;
+
+            const moveDir = e.key === "ArrowRight" ? 1 : -1;
+            let newColIdx = currentColIdx + moveDir;
+
+            while (newColIdx >= 0 && newColIdx < nonEmptyCols.length) {
+              const newCol = nonEmptyCols[newColIdx];
+              const newColTasks = tasksByStatus[newCol];
+              if (newColTasks.length > 0) {
+                const clampedIdx = Math.min(currentIdx, newColTasks.length - 1);
+                newFocusId = newColTasks[clampedIdx];
+                break;
+              }
+              newColIdx += moveDir;
+            }
+          }
+
+          // Default to first task in backlog if no focus set
+          if (!newFocusId && visibleTasks.length > 0) {
+            newFocusId =
+              visibleTasks.find((t) => t.status === "backlog")?.id ||
+              visibleTasks[0].id;
+          }
+
+          // Check if the focused task is still visible (not filtered out)
+          if (searchQuery && newFocusId) {
+            const focusedTask = tasks.find((t) => t.id === newFocusId);
+            if (
+              !focusedTask ||
+              !focusedTask.title
+                .toLowerCase()
+                .includes(searchQuery.toLowerCase())
+            ) {
+              bs.clearFocusedTask();
+              return;
+            }
+          }
+
+          if (newFocusId) {
+            bs.setFocusedTask(newFocusId);
+          }
+          return;
+        }
       }
 
       // B/D/R/F: move selected task to column — do NOT fire when search input is focused

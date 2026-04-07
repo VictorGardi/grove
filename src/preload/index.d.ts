@@ -48,6 +48,7 @@ export interface ElectronAPI {
     onBranchChanged: (
       callback: (data: { path: string; branch: string }) => void,
     ) => () => void;
+    fetchTasks: (workspacePath: string) => Promise<IpcResult<TaskInfo[]>>;
   };
   data: {
     fetch: (workspacePath: string) => Promise<IpcResult<WorkspaceData>>;
@@ -182,13 +183,16 @@ export interface ElectronAPI {
       taskId: string;
       mode: PlanMode;
     }) => Promise<IpcResult<{ alive: boolean }>>;
+    captureTmuxPane: (input: {
+      session: string;
+    }) => Promise<IpcResult<{ content: string }>>;
     reconnect: (input: {
       taskId: string;
       mode: PlanMode;
       agent: PlanAgent;
       workspacePath: string;
       taskFilePath: string;
-    }) => Promise<IpcResult<{ reconnected: boolean }>>;
+    }) => Promise<IpcResult<{ reconnected: boolean; sessionAlive: boolean }>>;
     onChunk: (
       callback: (taskId: string, mode: PlanMode, chunk: PlanChunk) => void,
     ) => () => void;
