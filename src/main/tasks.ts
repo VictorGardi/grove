@@ -427,11 +427,6 @@ export async function readTaskBody(
 
   const raw = await fs.promises.readFile(filePath, "utf-8");
   const { content } = matter(raw);
-  console.log("[main readTaskBody]", {
-    filePath,
-    contentLen: content.length,
-    preview: content.slice(0, 100),
-  });
   return content;
 }
 
@@ -470,13 +465,7 @@ export function writeTaskRaw(
 
     // Derive status from directory
     const dirName = path.basename(path.dirname(filePath));
-    const STATUS_DIRS_SET: TaskStatus[] = [
-      "backlog",
-      "doing",
-      "review",
-      "done",
-    ];
-    const status = STATUS_DIRS_SET.includes(dirName as TaskStatus)
+    const status = STATUS_DIRS.includes(dirName as TaskStatus)
       ? (dirName as TaskStatus)
       : "backlog";
 

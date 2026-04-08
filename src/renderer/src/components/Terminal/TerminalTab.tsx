@@ -5,7 +5,7 @@ import { WebLinksAddon } from "@xterm/addon-web-links";
 import "@xterm/xterm/css/xterm.css";
 import {
   registerXterm,
-  unregisterXterm,
+  getXterm,
   useTerminalStore,
 } from "../../stores/useTerminalStore";
 import { useThemeStore } from "../../stores/useThemeStore";
@@ -46,45 +46,62 @@ export function TerminalTabView({
     resizeTimeoutRef.current = setTimeout(doFit, 100);
   }, [doFit]);
 
-  // Initialize xterm UI only.
+  // Initialize xterm UI, reusing existing instance if one exists.
   //
   // PTY lifecycle is managed externally (Board.tsx for task tabs,
-  // TerminalPanel.tsx for free tabs). This component only creates/destroys
-  // the xterm.js Terminal UI object. React StrictMode double-invocation is
-  // harmless here: cleanup disposes the first xterm instance, the second
-  // mount creates a fresh one and registers it — the PTY keeps running
-  // throughout because we never kill it here.
+  // TerminalPanel.tsx for free tabs). This component only manages the
+  // xterm.js Terminal UI object. When switching workspaces, the component
+  // unmounts but we keep the xterm alive in xtermRefs so output accumulated
+  // while unmounted is preserved and displayed on remount.
   useEffect(() => {
     if (!containerRef.current) return;
 
-    const term = new Terminal({
-      theme: useThemeStore.getState().colors.xterm,
-      fontFamily: "'JetBrains Mono', monospace",
-      fontSize: 13,
-      lineHeight: 1.4,
-      scrollback: 5000,
-      cursorBlink: true,
-      cursorStyle: "bar",
-      allowProposedApi: true,
-    });
+    const existingTerm = getXterm(id);
 
-    const fitAddon = new FitAddon();
-    const webLinksAddon = new WebLinksAddon();
+    if (existingTerm) {
+      terminalRef.current = existingTerm;
+      fitAddonRef.current = null;
+      registerXterm(id, existingTerm);
 
-    term.loadAddon(fitAddon);
-    term.loadAddon(webLinksAddon);
-    term.open(containerRef.current);
+      const termElement = (
+        existingTerm as unknown as { _core: { _terminalEl: HTMLElement } }
+      )._core._terminalEl;
+      if (termElement.parentElement !== containerRef.current) {
+        if (termElement.parentElement) {
+          termElement.parentElement.removeChild(termElement);
+        }
+        containerRef.current.appendChild(termElement);
+      }
+      existingTerm.focus();
+    } else {
+      const term = new Terminal({
+        theme: useThemeStore.getState().colors.xterm,
+        fontFamily: "'JetBrains Mono', monospace",
+        fontSize: 13,
+        lineHeight: 1.4,
+        scrollback: 5000,
+        cursorBlink: true,
+        cursorStyle: "bar",
+        allowProposedApi: true,
+      });
 
-    terminalRef.current = term;
-    fitAddonRef.current = fitAddon;
+      const fitAddon = new FitAddon();
+      const webLinksAddon = new WebLinksAddon();
 
-    // Register so the centralized data listener can route PTY output here
-    registerXterm(id, term);
+      term.loadAddon(fitAddon);
+      term.loadAddon(webLinksAddon);
+      term.open(containerRef.current);
 
-    // Forward user keystrokes to PTY
-    term.onData((data: string) => {
+      terminalRef.current = term;
+      fitAddonRef.current = fitAddon;
+
+      registerXterm(id, term);
+    }
+
+    const term = terminalRef.current!;
+
+    const dataDisposable = term.onData((data: string) => {
       if (useTerminalStore.getState().deadSet[id] === true) {
-        // PTY exited — restart on any keypress
         useTerminalStore.getState().unmarkDead(id);
         term.clear();
         window.api.pty.create(id, cwd).then((result) => {
@@ -101,26 +118,23 @@ export function TerminalTabView({
       window.api.pty.write(id, data);
     });
 
-    // Initial fit + focus (small delay so the DOM is fully laid out)
     const fitTimer = setTimeout(() => {
-      fitAddon.fit();
-      const { cols, rows } = term;
-      window.api.pty.resize(id, cols, rows);
+      if (fitAddonRef.current) {
+        fitAddonRef.current.fit();
+        const { cols, rows } = term;
+        window.api.pty.resize(id, cols, rows);
+      }
       term.focus();
     }, 50);
 
     return () => {
       clearTimeout(fitTimer);
-      // Only clean up the xterm UI — do NOT kill the PTY here.
-      // PTY is killed by removeTab() in useTerminalStore when the tab is
-      // explicitly closed, or by the Board when the worktree is torn down.
-      unregisterXterm(id);
-      term.dispose();
+      dataDisposable.dispose();
       terminalRef.current = null;
       fitAddonRef.current = null;
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []); // Empty deps: re-running on prop changes would re-open xterm unnecessarily
+  }, []);
 
   // Fit when visibility changes
   useEffect(() => {

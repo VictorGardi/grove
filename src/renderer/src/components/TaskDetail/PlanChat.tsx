@@ -1,8 +1,9 @@
-import { useState, useRef, useEffect, useCallback, useMemo } from "react";
+import { useState, useRef, useEffect, useCallback, useMemo, memo } from "react";
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
 import Fuse from "fuse.js";
 import { usePlanStore } from "../../stores/usePlanStore";
+import { useShallow } from "zustand/shallow";
 import { useWorkspaceStore } from "../../stores/useWorkspaceStore";
 import { useFileStore } from "../../stores/useFileStore";
 import { updateTask } from "../../actions/taskActions";
@@ -49,7 +50,7 @@ function ThinkingBlock({ content }: { content: string }): React.JSX.Element {
 
 // ── Single message ──────────────────────────────────────────────
 
-function ChatMessage({
+const ChatMessage = memo(function ChatMessage({
   msg,
   model,
 }: {
@@ -154,7 +155,7 @@ function ChatMessage({
       </div>
     </div>
   );
-}
+});
 
 // ── Main component ──────────────────────────────────────────────
 
@@ -174,10 +175,54 @@ export function PlanChat({
 }: PlanChatProps): React.JSX.Element {
   const workspacePath = useWorkspaceStore((s) => s.activeWorkspacePath);
 
-  // Composite session key scopes plan and execute sessions independently
-  const sessionKey = `${mode}:${task.id}`;
+  // Determine default tab based on whether execution session exists
+  // Use the incoming 'mode' prop as initial context to check for execution session
+  const hasExecSessionFromProps =
+    mode === "execute"
+      ? true
+      : usePlanStore.getState().sessions[`execute:${task.id}`]?.messages
+          ?.length > 0;
+  const [activeTab, setActiveTab] = useState<"plan" | "execute">(() =>
+    hasExecSessionFromProps || !!task.execSessionId ? "execute" : "plan",
+  );
 
+  // Composite session key scopes plan and execute sessions independently
+  // Use activeTab (UI toggle) to determine which session to display
+  const sessionKey = `${activeTab}:${task.id}`;
+
+  // Fine-grained selectors — each selector only triggers a re-render when
+  // its specific slice changes. This prevents streaming chunks (which update
+  // messages) from re-rendering the entire component on every token.
+  const sessionId = usePlanStore(
+    (s) => s.sessions[sessionKey]?.sessionId ?? null,
+  );
+  const isRunning = usePlanStore(
+    (s) => s.sessions[sessionKey]?.isRunning ?? false,
+  );
+  const sessionStatus = usePlanStore(
+    (s) => s.sessions[sessionKey]?.sessionStatus ?? "idle",
+  );
+  const lastExitCode = usePlanStore(
+    (s) => s.sessions[sessionKey]?.lastExitCode ?? null,
+  );
+  const lastStderr = usePlanStore(
+    (s) => s.sessions[sessionKey]?.lastStderr ?? null,
+  );
+  const totalTokens = usePlanStore(
+    (s) => s.sessions[sessionKey]?.totalTokens ?? 0,
+  );
+  // useShallow ensures re-render only when the messages array reference changes
+  const messages = usePlanStore(
+    useShallow((s) => s.sessions[sessionKey]?.messages ?? []),
+  );
+
+  // Still expose a thin session reference for guards that need to read
+  // the full object imperatively (effects that capture it at mount time).
+  // IMPORTANT: do NOT destructure this into hot-path render variables —
+  // that would re-introduce the coarse selector problem. Use the narrow
+  // selectors above for all render-time reads.
   const session = usePlanStore((s) => s.sessions[sessionKey]);
+
   const initSession = usePlanStore((s) => s.initSession);
   const appendUserMessage = usePlanStore((s) => s.appendUserMessage);
   const startAgentMessage = usePlanStore((s) => s.startAgentMessage);
@@ -188,19 +233,22 @@ export function PlanChat({
   const setReplaying = usePlanStore((s) => s.setReplaying);
 
   // Use mode-appropriate persisted session info for initial state
+  const isExecute = activeTab === "execute";
   const persistedSessionId =
-    mode === "execute" ? task.execSessionId : task.planSessionId;
+    activeTab === "execute" ? task.execSessionId : task.planSessionId;
+  // Whether the task has an explicitly saved agent (vs. null = never run / pre-fix)
+  const hasPersistentAgent = isExecute
+    ? task.execSessionAgent != null
+    : task.planSessionAgent != null;
   const persistedAgent =
-    mode === "execute"
+    activeTab === "execute"
       ? (task.execSessionAgent ?? "opencode")
       : (task.planSessionAgent ?? "opencode");
   const persistedModel =
-    mode === "execute" ? (task.execModel ?? "") : (task.planModel ?? "");
+    activeTab === "execute" ? (task.execModel ?? "") : (task.planModel ?? "");
 
   const workspaceDefaults = useWorkspaceStore((s) => s.workspaceDefaults);
   const fetchDefaults = useWorkspaceStore((s) => s.fetchDefaults);
-
-  const isExecute = mode === "execute";
 
   const defaultAgent = isExecute
     ? (workspaceDefaults[workspacePath ?? ""]?.defaultExecutionAgent ??
@@ -223,14 +271,41 @@ export function PlanChat({
   };
 
   const initialAgent =
-    persistedAgent !== "opencode" || persistedModel !== ""
+    hasPersistentAgent || persistedModel !== ""
       ? persistedAgent
       : defaultAgent;
   const initialModel = persistedModel !== "" ? persistedModel : defaultModel;
 
   const [inputText, setInputText] = useState("");
-  const [agent, setAgent] = useState<PlanAgent>(initialAgent);
-  const [model, setModel] = useState<string>(initialModel);
+  // Use a lazy initializer so the agent/model are read from the Zustand store
+  // synchronously at mount time. This ensures any defaults already cached in the
+  // store (e.g. from a prior workspace visit or the App.tsx pre-fetch) are used
+  // immediately, without waiting for the async fetchDefaults to complete.
+  const [agent, setAgent] = useState<PlanAgent>(() => {
+    if (hasPersistentAgent || persistedModel !== "") return persistedAgent;
+    // Eagerly read defaults from store (sync) — may already be populated
+    const ws = useWorkspaceStore.getState();
+    const wp = ws.activeWorkspacePath ?? "";
+    const cached = ws.workspaceDefaults[wp];
+    if (cached) {
+      return isExecute
+        ? (cached.defaultExecutionAgent ?? "opencode")
+        : (cached.defaultPlanningAgent ?? "opencode");
+    }
+    return initialAgent; // fallback: will be corrected once fetchDefaults resolves
+  });
+  const [model, setModel] = useState<string>(() => {
+    if (persistedModel !== "") return persistedModel;
+    const ws = useWorkspaceStore.getState();
+    const wp = ws.activeWorkspacePath ?? "";
+    const cached = ws.workspaceDefaults[wp];
+    if (cached) {
+      return isExecute
+        ? (cached.defaultExecutionModel ?? "")
+        : (cached.defaultPlanningModel ?? "");
+    }
+    return initialModel;
+  });
 
   // Chat history navigation state
   const [historyIndex, setHistoryIndex] = useState<number | null>(null);
@@ -248,14 +323,18 @@ export function PlanChat({
   );
   const [defaultPromptPreview, setDefaultPromptPreview] = useState<string>("");
   const [tmuxAvailable, setTmuxAvailable] = useState<boolean | null>(null);
-  const [defaultsLoaded, setDefaultsLoaded] = useState(false);
+  const [defaultsLoaded, setDefaultsLoaded] = useState<boolean>(() => {
+    // Start as loaded if defaults for this workspace are already in the store
+    // (e.g. pre-fetched by App.tsx on workspace switch, or from a prior open).
+    const wp = useWorkspaceStore.getState().activeWorkspacePath ?? "";
+    return wp !== "" && useWorkspaceStore.getState().workspaceDefaults[wp] != null;
+  });
 
-  const isRunning = session?.isRunning ?? false;
-  const hasSession = !!session?.sessionId;
+  const hasSession = !!sessionId;
 
   // Compute default prompt preview on mount (for execute mode, show what will be sent)
   useEffect(() => {
-    if (!workspacePath || hasSession || mode !== "execute") {
+    if (!workspacePath || hasSession || activeTab !== "execute") {
       setDefaultPromptPreview("");
       return;
     }
@@ -276,7 +355,14 @@ export function PlanChat({
         }
       })
       .catch(() => setDefaultPromptPreview(""));
-  }, [workspacePath, task.filePath, task.id, task.title, mode, hasSession]);
+  }, [
+    workspacePath,
+    task.filePath,
+    task.id,
+    task.title,
+    activeTab,
+    hasSession,
+  ]);
 
   const messageListRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLTextAreaElement>(null);
@@ -354,7 +440,7 @@ export function PlanChat({
   // key={task.id} on <PlanChat> ensures this runs fresh for each task.
   useEffect(() => {
     const storedSession =
-      mode === "execute" ? task.execTmuxSession : task.planTmuxSession;
+      activeTab === "execute" ? task.execTmuxSession : task.planTmuxSession;
     if (!storedSession) {
       const s = usePlanStore.getState().sessions[sessionKey];
       if (s?.isRunning) setRunning(sessionKey, false);
@@ -388,7 +474,7 @@ export function PlanChat({
 
     // Capture storedSession at mount time — don't react to later changes
     const storedSession =
-      mode === "execute" ? task.execTmuxSession : task.planTmuxSession;
+      activeTab === "execute" ? task.execTmuxSession : task.planTmuxSession;
     if (!storedSession) return;
 
     // If the store already has messages for this session the tailer is either
@@ -419,7 +505,7 @@ export function PlanChat({
         // bubble created below is guaranteed to exist before any chunks land.
         const reconnectResult = await window.api.plan.reconnect({
           taskId: task.id,
-          mode,
+          mode: activeTab,
           agent,
           workspacePath,
           taskFilePath: task.filePath,
@@ -478,16 +564,11 @@ export function PlanChat({
     userScrolledRef.current = !atBottom;
   }, []);
 
-  const messages = session?.messages ?? [];
-
   // Extract user messages for history navigation (only user messages, newest first)
   const userMessages = useMemo(
     () => messages.filter((m) => m.role === "user").map((m) => m.text),
     [messages],
   );
-  const lastExitCode = session?.lastExitCode ?? null;
-  const lastStderr = session?.lastStderr ?? null;
-  const totalTokens = session?.totalTokens ?? 0;
 
   // Format token count for display (e.g., 1234 -> "1.2k")
   const tokenDisplay =
@@ -509,7 +590,7 @@ export function PlanChat({
     // Plan mode always requires text.
     // Execute mode allows empty text on the first message — the full execution
     // prompt is built from the task content, no user text needed to kick it off.
-    if (!text && (mode === "plan" || !isFirstMessage)) return;
+    if (!text && (activeTab === "plan" || !isFirstMessage)) return;
 
     // In execute mode: first send auto-builds the execution prompt; user text
     // is only included in the initial prompt (the input box just triggers it).
@@ -524,7 +605,7 @@ export function PlanChat({
     // just the agent bubble appearing out of nowhere.
     if (text) {
       appendUserMessage(sessionKey, text);
-    } else if (mode === "execute" && isFirstMessage) {
+    } else if (activeTab === "execute" && isFirstMessage) {
       appendUserMessage(sessionKey, `Execute: ${task.title}`);
     }
     setInputText("");
@@ -554,7 +635,7 @@ export function PlanChat({
         // continue with empty content
       }
 
-      if (mode === "execute") {
+      if (activeTab === "execute") {
         // Execution prompt is fully built — user text is appended as context if provided
         const base = buildFirstExecutionMessage(task, rawContent, promptConfig);
         message = text
@@ -570,7 +651,7 @@ export function PlanChat({
 
     const result = await window.api.plan.send({
       taskId: task.id,
-      mode,
+      mode: activeTab,
       agent,
       model: model || null,
       message,
@@ -578,7 +659,7 @@ export function PlanChat({
       sessionId,
       workspacePath,
       taskFilePath: task.filePath,
-      ...(mode === "execute" && worktreePath ? { worktreePath } : {}),
+      ...(activeTab === "execute" && worktreePath ? { worktreePath } : {}),
     });
     if (!result.ok) {
       console.error("[PlanChat] plan.send failed:", result.error);
@@ -601,7 +682,7 @@ export function PlanChat({
     setReplaying(sessionKey, false);
     window.api.plan.cancel({
       taskId: task.id,
-      mode,
+      mode: activeTab,
       workspacePath,
       taskFilePath: task.filePath,
     });
@@ -614,7 +695,7 @@ export function PlanChat({
     if (workspacePath) {
       window.api.plan.cancel({
         taskId: task.id,
-        mode,
+        mode: activeTab,
         workspacePath,
         taskFilePath: task.filePath,
       });
@@ -625,7 +706,7 @@ export function PlanChat({
     // next time this task is opened — plan:cancel no longer clears it (to
     // preserve history for cancel + reload), so New Session must do it.
     if (workspacePath) {
-      if (mode === "execute") {
+      if (activeTab === "execute") {
         updateTask(task.filePath, {
           execSessionId: null,
           execSessionAgent: null,
@@ -646,12 +727,15 @@ export function PlanChat({
   }
 
   // ── Agent change (only before session starts) ───────────────
+  // Once a conversation has messages, the agent is locked to ensure the log
+  // file stays parseable with a single parser. Use /new or the "New session"
+  // button to start fresh with a different agent.
+
+  const sessionHasStarted = messages.length > 0;
 
   function handleAgentChange(newAgent: PlanAgent): void {
-    if (hasSession || isRunning) return;
+    if (isRunning || sessionHasStarted) return;
     setAgent(newAgent);
-    clearSession(sessionKey);
-    initSession(sessionKey, newAgent, model || null, null);
   }
 
   // ── Model change — allowed mid-session via /model command ──────────────────
@@ -663,12 +747,17 @@ export function PlanChat({
   }
 
   // ── Auto-resize textarea ─────────────────────────────────────
+  // Wrapping in requestAnimationFrame defers the scrollHeight read until after
+  // the browser has painted, eliminating the synchronous layout reflow on every
+  // keystroke.
 
   const resizeTextarea = useCallback(() => {
-    const el = inputRef.current;
-    if (!el) return;
-    el.style.height = "auto";
-    el.style.height = `${Math.min(el.scrollHeight, 200)}px`;
+    requestAnimationFrame(() => {
+      const el = inputRef.current;
+      if (!el) return;
+      el.style.height = "auto";
+      el.style.height = `${Math.min(el.scrollHeight, 200)}px`;
+    });
   }, []);
 
   // ── File autocomplete ──────────────────────────────────────────
@@ -685,6 +774,11 @@ export function PlanChat({
   const [showModelDropdown, setShowModelDropdown] = useState(false);
   const [selectedModelIndex, setSelectedModelIndex] = useState(0);
   const modelDropdownRef = useRef<HTMLDivElement>(null);
+
+  // ── Agent slash-command dropdown ────────────────────────────────────────────
+  const [showAgentDropdown, setShowAgentDropdown] = useState(false);
+  const [selectedAgentIndex, setSelectedAgentIndex] = useState(0);
+  const agentDropdownRef = useRef<HTMLDivElement>(null);
 
   interface SearchableFile {
     name: string;
@@ -758,24 +852,32 @@ export function PlanChat({
 
   useEffect(() => {
     if (!showDropdown || !inputRef.current) return;
-    const rect = inputRef.current.getBoundingClientRect();
-    const parentRect = inputRef.current.parentElement?.getBoundingClientRect();
-    if (parentRect) {
-      const spaceBelow = window.innerHeight - rect.bottom - 10;
-      const spaceAbove = rect.top - 10;
-      const dropdownHeight = 250; // max-height from CSS
-      if (spaceBelow >= dropdownHeight || spaceBelow >= spaceAbove) {
-        setDropdownPosition({
-          top: rect.height + 4,
-          left: 0,
-        });
-      } else {
-        setDropdownPosition({
-          top: -dropdownHeight - 4,
-          left: 0,
-        });
+    // Wrapping in requestAnimationFrame ensures the getBoundingClientRect read
+    // happens after the browser has painted, avoiding forced layout reflow.
+    // This introduces a one-frame lag on first appearance, which is imperceptible.
+    const rafId = requestAnimationFrame(() => {
+      if (!inputRef.current) return;
+      const rect = inputRef.current.getBoundingClientRect();
+      const parentRect =
+        inputRef.current.parentElement?.getBoundingClientRect();
+      if (parentRect) {
+        const spaceBelow = window.innerHeight - rect.bottom - 10;
+        const spaceAbove = rect.top - 10;
+        const dropdownHeight = 250; // max-height from CSS
+        if (spaceBelow >= dropdownHeight || spaceBelow >= spaceAbove) {
+          setDropdownPosition({
+            top: rect.height + 4,
+            left: 0,
+          });
+        } else {
+          setDropdownPosition({
+            top: -dropdownHeight - 4,
+            left: 0,
+          });
+        }
       }
-    }
+    });
+    return () => cancelAnimationFrame(rafId);
   }, [showDropdown, inputText]);
 
   function insertFilePath(filePath: string): void {
@@ -910,40 +1012,154 @@ export function PlanChat({
     }
   }
 
+  // ── /agent slash-command helpers ────────────────────────────────────────────
+
+  const AVAILABLE_AGENTS: PlanAgent[] = ["opencode", "copilot"];
+
+  function findSlashAgentPosition(
+    text: string,
+    cursorPos: number,
+  ): { query: string; start: number } | null {
+    const beforeCursor = text.slice(0, cursorPos);
+    const match = beforeCursor.match(/(^|\s)(\/agent\s*(\S*))$/);
+    if (!match) return null;
+    return {
+      query: match[3],
+      start: beforeCursor.length - match[2].length,
+    };
+  }
+
+  const slashAgentPosition = useMemo(
+    () =>
+      findSlashAgentPosition(
+        inputText,
+        inputRef.current?.selectionStart ?? inputText.length,
+      ),
+    [inputText],
+  );
+  const slashAgentQuery = slashAgentPosition?.query ?? "";
+  const slashAgentStart = slashAgentPosition?.start ?? 0;
+
+  const agentResults = useMemo(() => {
+    if (!showAgentDropdown) return [];
+    const query = slashAgentQuery.toLowerCase();
+    if (!query) return AVAILABLE_AGENTS;
+    return AVAILABLE_AGENTS.filter((a) => a.toLowerCase().includes(query));
+  }, [showAgentDropdown, slashAgentQuery]);
+
+  useEffect(() => {
+    setSelectedAgentIndex(0);
+  }, [agentResults.length]);
+
+  function insertAgentSelection(agentName: PlanAgent): void {
+    const cursorPos = inputRef.current?.selectionStart ?? inputText.length;
+    const before = inputText.slice(0, slashAgentStart);
+    const after = inputText.slice(cursorPos);
+    const newText = (before + after).trimStart();
+    const newCursorPos = before.length;
+    setInputText(newText);
+    setShowAgentDropdown(false);
+    handleAgentChange(agentName);
+    setTimeout(() => {
+      if (inputRef.current) {
+        inputRef.current.focus();
+        inputRef.current.setSelectionRange(newCursorPos, newCursorPos);
+      }
+    }, 0);
+  }
+
+  function handleAgentDropdownKeyDown(e: React.KeyboardEvent): void {
+    if (e.key === "ArrowDown") {
+      e.preventDefault();
+      setSelectedAgentIndex((prev) =>
+        Math.min(prev + 1, agentResults.length - 1),
+      );
+    } else if (e.key === "ArrowUp") {
+      e.preventDefault();
+      setSelectedAgentIndex((prev) => Math.max(prev - 1, 0));
+    } else if (e.key === "Enter") {
+      e.preventDefault();
+      if (agentResults[selectedAgentIndex] !== undefined) {
+        insertAgentSelection(agentResults[selectedAgentIndex]);
+      }
+    } else if (e.key === "Escape") {
+      e.preventDefault();
+      setShowAgentDropdown(false);
+    }
+  }
+
+  // Debounce timer for the dropdown-open side-effects.
+  const inputSideEffectTimerRef = useRef<ReturnType<typeof setTimeout> | null>(
+    null,
+  );
+
   function handleInputChange(e: React.ChangeEvent<HTMLTextAreaElement>): void {
     const value = e.target.value;
+    // setInputText is always immediate — the controlled input must reflect the
+    // typed character right away so the cursor position stays correct.
     setInputText(value);
+    // resizeTextarea is rAF-deferred (see definition above) so no layout thrash.
     resizeTextarea();
 
     const cursorPos = e.target.selectionStart ?? value.length;
-    const pos = findAtPosition(value, cursorPos);
-    if (pos) {
-      // Ensure tree is loaded — fetch if empty and not loading
-      if (tree.length === 0 && !treeLoading) {
-        fetchTree();
-      }
-      setShowDropdown(true);
-      setSelectedIndex(0);
-      setShowModelDropdown(false);
-    } else {
-      setShowDropdown(false);
 
-      // Check for /model slash command
-      const modelPos = findSlashModelPosition(value, cursorPos);
-      if (modelPos !== null) {
-        setShowModelDropdown(true);
-        setSelectedModelIndex(0);
-      } else {
-        setShowModelDropdown(false);
-      }
+    // ── Immediate close path ──────────────────────────────────────────────────
+    // When the user clears a trigger character (e.g. backspaces past @, /model,
+    // /agent), close the relevant dropdown immediately so Enter never fires
+    // while a stale dropdown is still visible.
+    const pos = findAtPosition(value, cursorPos);
+    if (!pos) {
+      setShowDropdown(false);
     }
+    const modelPos = findSlashModelPosition(value, cursorPos);
+    if (modelPos === null) {
+      setShowModelDropdown(false);
+    }
+    const agentPos = findSlashAgentPosition(value, cursorPos);
+    if (agentPos === null) {
+      setShowAgentDropdown(false);
+    }
+
+    // ── Debounced open path (~100ms) ──────────────────────────────────────────
+    // Regex evaluation, fetchTree, and dropdown-open state updates are deferred
+    // so they don't compete with the JS thread on every keystroke.
+    if (inputSideEffectTimerRef.current !== null) {
+      clearTimeout(inputSideEffectTimerRef.current);
+    }
+    inputSideEffectTimerRef.current = setTimeout(() => {
+      inputSideEffectTimerRef.current = null;
+      const cursorPosDelayed = inputRef.current?.selectionStart ?? value.length;
+      const posDelayed = findAtPosition(value, cursorPosDelayed);
+      if (posDelayed) {
+        if (tree.length === 0 && !treeLoading) {
+          fetchTree();
+        }
+        setShowDropdown(true);
+        setSelectedIndex(0);
+        setShowModelDropdown(false);
+        setShowAgentDropdown(false);
+      } else {
+        const modelPosDelayed = findSlashModelPosition(value, cursorPosDelayed);
+        if (modelPosDelayed !== null) {
+          setShowModelDropdown(true);
+          setSelectedModelIndex(0);
+          setShowAgentDropdown(false);
+        }
+        const agentPosDelayed = findSlashAgentPosition(value, cursorPosDelayed);
+        if (agentPosDelayed !== null && !sessionHasStarted) {
+          setShowAgentDropdown(true);
+          setSelectedAgentIndex(0);
+        }
+      }
+    }, 100);
   }
 
   function handleInputKeyDown(
     e: React.KeyboardEvent<HTMLTextAreaElement>,
   ): void {
     // Only handle history navigation when no dropdown is open
-    const noDropdownOpen = !showDropdown && !showModelDropdown;
+    const noDropdownOpen =
+      !showDropdown && !showModelDropdown && !showAgentDropdown;
 
     if (noDropdownOpen && e.key === "ArrowUp") {
       e.preventDefault();
@@ -1006,6 +1222,17 @@ export function PlanChat({
       return;
     }
 
+    if (
+      showAgentDropdown &&
+      (e.key === "ArrowUp" ||
+        e.key === "ArrowDown" ||
+        e.key === "Enter" ||
+        e.key === "Escape")
+    ) {
+      handleAgentDropdownKeyDown(e);
+      return;
+    }
+
     if (e.key === "Enter" && !e.shiftKey) {
       e.preventDefault();
       void handleSend();
@@ -1026,6 +1253,12 @@ export function PlanChat({
         !modelDropdownRef.current?.contains(target)
       ) {
         setShowModelDropdown(false);
+      }
+      if (
+        !inputRef.current?.contains(target) &&
+        !agentDropdownRef.current?.contains(target)
+      ) {
+        setShowAgentDropdown(false);
       }
     }
     document.addEventListener("mousedown", handleClickOutside);
@@ -1049,18 +1282,18 @@ export function PlanChat({
       (lastMsgHasNoOutput && messages.length > 0));
 
   const headerTitle =
-    mode === "execute" ? "Execute with agent" : "Plan with agent";
+    activeTab === "execute" ? "Execute with agent" : "Plan with agent";
   const emptyStatePlaceholder =
-    mode === "execute"
-      ? `Send a message to start executing. Type @ to mention files, /model to choose model...`
-      : `Describe what you want. Type @ to mention files, /model to choose model...`;
+    activeTab === "execute"
+      ? `Send a message to start executing. Type @ to mention files, /agent or /model to choose...`
+      : `Describe what you want. Type @ to mention files, /agent or /model to choose...`;
   const inputPlaceholder = isRunning
     ? "Waiting for agent..."
     : hasSession
       ? "Continue the conversation..."
-      : mode === "execute"
-        ? "Send a message to start executing (or leave blank for default prompt). Type @ to mention files, /model to choose model"
-        : "Describe what you want. Type @ to mention files, /model to choose model";
+      : activeTab === "execute"
+        ? "Send a message to start executing (or leave blank for default prompt). Type @ to mention files, /agent or /model"
+        : "Describe what you want. Type @ to mention files, /agent or /model";
 
   return (
     <div className={styles.container}>
@@ -1068,21 +1301,24 @@ export function PlanChat({
       <div className={styles.header}>
         <div className={styles.headerLeft}>
           <span className={styles.headerTitle}>{headerTitle}</span>
-          <select
-            className={styles.agentSelect}
-            value={agent}
-            onChange={(e) => handleAgentChange(e.target.value as PlanAgent)}
-            disabled={hasSession || isRunning}
-          >
-            <option value="opencode">opencode</option>
-            <option value="copilot">copilot</option>
-          </select>
-          <span
-            className={styles.modelIndicator}
-            title="Type /model in the chat input to change"
-          >
-            {modelsLoading ? "…" : model || "default"}
-          </span>
+          <div className={styles.modeToggle}>
+            <button
+              className={`${styles.modeToggleBtn} ${
+                activeTab === "plan" ? styles.modeToggleBtnActive : ""
+              }`}
+              onClick={() => setActiveTab("plan")}
+            >
+              Plan
+            </button>
+            <button
+              className={`${styles.modeToggleBtn} ${
+                activeTab === "execute" ? styles.modeToggleBtnActive : ""
+              }`}
+              onClick={() => setActiveTab("execute")}
+            >
+              Execute
+            </button>
+          </div>
           {hasSession && (
             <span className={styles.resumeIndicator}>Session active</span>
           )}
@@ -1123,25 +1359,25 @@ export function PlanChat({
         onScroll={handleScroll}
       >
         {/* Session status banner */}
-        {session?.sessionStatus === "reconnecting" && (
+        {sessionStatus === "reconnecting" && (
           <div className={styles.runningIndicator}>
             Reconnecting to running agent...
           </div>
         )}
-        {session?.sessionStatus === "running" && (
+        {sessionStatus === "running" && (
           <div className={styles.runningIndicator}>
             <span className={styles.runningDot} />
             Agent running — reconnected
           </div>
         )}
-        {session?.sessionStatus === "paused" && (
+        {sessionStatus === "paused" && (
           <div className={styles.exitWarning}>
             Session paused — send a message to resume
           </div>
         )}
         {/* Default prompt preview for execute mode when no session */}
         {messages.length === 0 &&
-          mode === "execute" &&
+          activeTab === "execute" &&
           defaultPromptPreview && (
             <div className={styles.defaultPromptPreview}>
               <div className={styles.defaultPromptLabel}>
@@ -1274,6 +1510,45 @@ export function PlanChat({
               )}
             </div>
           )}
+          {showAgentDropdown && (
+            <div ref={agentDropdownRef} className={styles.modelDropdown}>
+              {agentResults.length === 0 ? (
+                <div className={styles.modelDropdownNoResults}>
+                  No matching agents
+                </div>
+              ) : (
+                agentResults.map((a, index) => (
+                  <div
+                    key={a}
+                    className={`${styles.modelDropdownItem} ${
+                      index === selectedAgentIndex
+                        ? styles.modelDropdownItemSelected
+                        : ""
+                    }`}
+                    onMouseDown={(e) => {
+                      e.preventDefault();
+                      insertAgentSelection(a);
+                    }}
+                  >
+                    <span className={styles.modelDropdownItemName}>{a}</span>
+                    {a === agent && (
+                      <span className={styles.modelDropdownCurrentMark}>✓</span>
+                    )}
+                  </div>
+                ))
+              )}
+            </div>
+          )}
+          <div className={styles.inputBadge}>
+            <span
+              className={styles.inputBadgeAgent}
+              title={sessionHasStarted ? "Agent locked for this session — start a new session to switch" : undefined}
+            >
+              {agent}
+            </span>
+            <span className={styles.inputBadgeDivider}>|</span>
+            <span className={styles.inputBadgeModel}>{model || "default"}</span>
+          </div>
         </div>
         {isRunning ? (
           <button className={styles.cancelBtn} onClick={handleCancel}>
@@ -1283,7 +1558,7 @@ export function PlanChat({
           <button
             className={styles.sendBtn}
             onClick={() => void handleSend()}
-            disabled={mode === "plan" && !inputText.trim()}
+            disabled={activeTab === "plan" && !inputText.trim()}
           >
             Send
           </button>

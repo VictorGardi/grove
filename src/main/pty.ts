@@ -118,7 +118,9 @@ export class PtyManager {
   write(id: string, data: string): void {
     const entry = this.ptys.get(id);
     if (entry) {
-      console.log("[PtyManager.write] Writing to PTY:", JSON.stringify(data));
+      if (process.env.DEBUG_PTY) {
+        console.log("[PtyManager.write] Writing to PTY:", JSON.stringify(data));
+      }
       entry.process.write(data);
     } else {
       console.warn("[PtyManager.write] No PTY found for id:", id);

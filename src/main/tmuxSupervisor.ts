@@ -3,12 +3,10 @@ import * as fs from "fs";
 import * as os from "os";
 import * as path from "path";
 import * as crypto from "crypto";
-import type {
-  PlanAgent,
-  PlanMode,
-  PlanChunk,
-  ToolUseData,
-} from "@shared/types";
+import type { PlanAgent, PlanMode, PlanChunk } from "@shared/types";
+import { buildEnvPath } from "./env";
+import { parseOpencodeLine, CopilotLineParser } from "./agentOutputParser";
+import { writeOpencodeConfig, cleanupGroveConfig } from "./opencodeConfig";
 
 /**
  * TmuxSupervisor — manages agent processes inside tmux sessions so they
@@ -39,6 +37,8 @@ interface LogTailer {
   stopped: boolean;
   /** Captured task file path for persisting exit code */
   taskFilePath?: string;
+  /** Stateful Copilot stream parser (undefined for opencode runs) */
+  copilotParser?: CopilotLineParser;
 }
 
 // ── Public helpers ──────────────────────────────────────────────
@@ -73,28 +73,6 @@ function buildErrPath(tmuxSession: string): string {
   return path.join(RUNS_DIR, `${tmuxSession}.err`);
 }
 
-// ── PATH builder (same as planManager) ──────────────────────────
-
-function buildEnvPath(): string {
-  const home = os.homedir();
-  const extras = [
-    path.join(home, ".opencode", "bin"),
-    path.join(home, ".local", "bin"),
-    path.join(home, ".npm-global", "bin"),
-    path.join(home, "go", "bin"),
-    "/opt/homebrew/bin",
-    "/opt/homebrew/sbin",
-    "/usr/local/bin",
-    "/usr/local/sbin",
-  ];
-  const current = process.env.PATH ?? "";
-  const parts = current.split(path.delimiter).filter(Boolean);
-  for (const extra of extras.reverse()) {
-    if (!parts.includes(extra)) parts.unshift(extra);
-  }
-  return parts.join(path.delimiter);
-}
-
 // ── TmuxSupervisor ──────────────────────────────────────────────
 
 export class TmuxSupervisor {
@@ -102,6 +80,21 @@ export class TmuxSupervisor {
   private tmuxAvailable: boolean | null = null;
   /** Tracks opencode.json files written by Grove so we can clean them up. */
   private wroteConfigFiles = new Map<string, string>(); // tmuxSession -> filePath
+  private updateTask?: (
+    workspacePath: string,
+    taskFilePath: string,
+    updates: Record<string, unknown>,
+  ) => Promise<unknown>;
+
+  constructor(options?: {
+    updateTask?: (
+      workspacePath: string,
+      taskFilePath: string,
+      updates: Record<string, unknown>,
+    ) => Promise<unknown>;
+  }) {
+    this.updateTask = options?.updateTask;
+  }
 
   // ── tmux availability ──────────────────────────────────────
 
@@ -283,7 +276,7 @@ export class TmuxSupervisor {
     let argsStr: string;
 
     if (agent === "opencode") {
-      const parts = ["run", "--format", "json", "--agent", "build"];
+      const parts = ["run", "--format", "json", "--agent", "build", "--thinking"];
       if (model) parts.push("--model", this.shellQuote(model));
       if (sessionId) parts.push("--session", this.shellQuote(sessionId));
       parts.push("--", '"$(cat "$MSG_FILE")"');
@@ -366,6 +359,7 @@ exit $EXIT_CODE
       lineBufferOffset: startOffset,
       stopped: false,
       taskFilePath,
+      copilotParser: agent !== "opencode" ? new CopilotLineParser() : undefined,
     };
     this.tailers.set(tmuxSession, tailer);
 
@@ -375,7 +369,7 @@ exit $EXIT_CODE
     let turnHadError = false;
 
     const processLine = (line: string, afterLineOffset: number): void => {
-      const results = this.parseLine(agent, line);
+      const results = this.parseLine(agent, line, tailer.copilotParser);
       for (const result of results) {
         // Detect the internal sentinel written by our script
         if (result.type === "__grove_exit") {
@@ -429,26 +423,23 @@ exit $EXIT_CODE
 
             // Persist the exit code to task frontmatter so indicators survive app restart
             // The taskFilePath is captured in the tailer.
-            if (tailer.taskFilePath) {
-              const taskManager = require("./tasks");
+            if (tailer.taskFilePath && this.updateTask) {
               // derive workspace root from taskFilePath (.tasks/status/T-XXX.md)
               const wsRoot = path.dirname(
                 path.dirname(path.dirname(tailer.taskFilePath)),
               );
-              taskManager
-                .updateTask(
-                  wsRoot,
-                  tailer.taskFilePath,
-                  mode === "execute"
-                    ? { execLastExitCode: effectiveCode }
-                    : { planLastExitCode: effectiveCode },
-                )
-                .catch((err: unknown) => {
-                  console.warn(
-                    `[TmuxSupervisor] Failed to persist exit code for ${taskId}:`,
-                    err,
-                  );
-                });
+              this.updateTask(
+                wsRoot,
+                tailer.taskFilePath,
+                mode === "execute"
+                  ? { execLastExitCode: effectiveCode }
+                  : { planLastExitCode: effectiveCode },
+              ).catch((err: unknown) => {
+                console.warn(
+                  `[TmuxSupervisor] Failed to persist exit code for ${taskId}:`,
+                  err,
+                );
+              });
             }
 
             // Signal that log replay / run is fully complete (resets isReplaying in renderer)
@@ -687,7 +678,7 @@ exit $EXIT_CODE
   }
 
   /** Capture the visible contents of a tmux pane, joining wrapped lines. */
-  async capturePan(session: string): Promise<string> {
+  async capturePane(session: string): Promise<string> {
     return new Promise((resolve) => {
       const proc = spawn("tmux", ["capture-pane", "-pt", session, "-J"], {
         stdio: ["ignore", "pipe", "pipe"],
@@ -709,43 +700,11 @@ exit $EXIT_CODE
 
   /** Writes a minimal opencode.json to suppress ask-permission prompts. */
   private writeOpencodeConfig(tmuxSession: string, cwd: string): void {
-    const configPath = path.join(cwd, "opencode.json");
-    if (fs.existsSync(configPath)) return; // respect existing project config
-    try {
-      fs.writeFileSync(
-        configPath,
-        JSON.stringify(
-          {
-            $schema: "https://opencode.ai/config.json",
-            permission: {
-              // doom_loop only accepts a plain string action (not a pattern object)
-              doom_loop: "allow",
-              // external_directory accepts either a string or { pattern: action }
-              external_directory: "allow",
-            },
-          },
-          null,
-          2,
-        ),
-        "utf-8",
-      );
-      this.wroteConfigFiles.set(tmuxSession, configPath);
-      console.log(`[TmuxSupervisor] Wrote opencode.json to ${configPath}`);
-    } catch (e) {
-      console.warn(`[TmuxSupervisor] Could not write opencode.json:`, e);
-    }
+    writeOpencodeConfig(cwd, this.wroteConfigFiles, tmuxSession);
   }
 
   private cleanupGroveConfig(tmuxSession: string): void {
-    const configPath = this.wroteConfigFiles.get(tmuxSession);
-    if (!configPath) return;
-    try {
-      fs.unlinkSync(configPath);
-      console.log(`[TmuxSupervisor] Cleaned up opencode.json: ${configPath}`);
-    } catch {
-      // ignore — file may have been deleted already
-    }
-    this.wroteConfigFiles.delete(tmuxSession);
+    cleanupGroveConfig(this.wroteConfigFiles, tmuxSession);
   }
 
   private async tmuxSessionExists(tmuxSession: string): Promise<boolean> {
@@ -804,14 +763,13 @@ exit $EXIT_CODE
     }
   }
 
-  // ── Sentinel type (internal only, not a PlanChunk) ──────────
-
   // ── Line parsing (shared between start and reconnect) ──────
 
   /** Parse result can be a regular PlanChunk or an internal sentinel. */
   private parseLine(
     agent: PlanAgent,
     line: string,
+    copilotParser?: CopilotLineParser,
   ): Array<
     | PlanChunk
     | { type: "__grove_exit"; code: number }
@@ -837,186 +795,14 @@ exit $EXIT_CODE
       }
 
       if (agent === "opencode") {
-        return this.parseOpencodeLine(obj);
+        return parseOpencodeLine(obj);
       } else {
-        return this.parseCopilotLine(obj);
+        return (copilotParser ?? new CopilotLineParser()).parse(obj);
       }
     } catch {
       const stripped = trimmed.replace(/\x1b\[[0-9;]*[mGKHF]/g, "");
       if (!stripped) return [];
       return [{ type: "text", content: stripped }];
     }
-  }
-
-  private parseOpencodeLine(
-    obj: Record<string, unknown>,
-  ): Array<PlanChunk | { type: "__grove_error"; message: string }> {
-    const chunks: Array<
-      PlanChunk | { type: "__grove_error"; message: string }
-    > = [];
-
-    if (obj.type === "step_start" && typeof obj.sessionID === "string") {
-      chunks.push({ type: "session_id", content: obj.sessionID });
-    }
-
-    if (
-      obj.type === "step_finish" &&
-      obj.part !== null &&
-      typeof obj.part === "object"
-    ) {
-      const part = obj.part as Record<string, unknown>;
-      if (part.tokens !== null && typeof part.tokens === "object") {
-        const t = part.tokens as Record<string, unknown>;
-        const cache =
-          t.cache !== null && typeof t.cache === "object"
-            ? (t.cache as Record<string, unknown>)
-            : {};
-        chunks.push({
-          type: "tokens",
-          content: "",
-          data: {
-            total: typeof t.total === "number" ? t.total : 0,
-            input: typeof t.input === "number" ? t.input : 0,
-            output: typeof t.output === "number" ? t.output : 0,
-            reasoning: typeof t.reasoning === "number" ? t.reasoning : 0,
-            cache: {
-              write: typeof cache.write === "number" ? cache.write : 0,
-              read: typeof cache.read === "number" ? cache.read : 0,
-            },
-          },
-        });
-      }
-    }
-
-    if (
-      obj.type === "text" &&
-      obj.part !== null &&
-      typeof obj.part === "object"
-    ) {
-      const part = obj.part as Record<string, unknown>;
-      if (part.type === "text" && typeof part.text === "string") {
-        chunks.push({ type: "text", content: part.text });
-      }
-      if (part.type === "thinking" && typeof part.thinking === "string") {
-        chunks.push({ type: "thinking", content: part.thinking });
-      }
-    }
-
-    if (
-      obj.type === "tool_use" &&
-      obj.part !== null &&
-      typeof obj.part === "object"
-    ) {
-      const part = obj.part as Record<string, unknown>;
-      const tool = typeof part.tool === "string" ? part.tool : "unknown";
-      const state =
-        part.state !== null && typeof part.state === "object"
-          ? (part.state as Record<string, unknown>)
-          : null;
-
-      // Only emit for completed tool invocations
-      if (state && state.status === "completed") {
-        const title = typeof state.title === "string" ? state.title : "";
-        const rawOutput = typeof state.output === "string" ? state.output : "";
-        const MAX_OUTPUT = 5 * 1024;
-        const truncated = rawOutput.length > MAX_OUTPUT;
-        const output = truncated ? rawOutput.slice(0, MAX_OUTPUT) : rawOutput;
-
-        const input =
-          state.input !== null && typeof state.input === "object"
-            ? (state.input as Record<string, unknown>)
-            : {};
-
-        const metadata =
-          state.metadata !== null && typeof state.metadata === "object"
-            ? (state.metadata as Record<string, unknown>)
-            : {};
-        const exitCode =
-          typeof metadata.exit === "number" ? metadata.exit : null;
-
-        const timeRaw =
-          state.time !== null && typeof state.time === "object"
-            ? (state.time as Record<string, unknown>)
-            : null;
-        const time =
-          timeRaw &&
-          typeof timeRaw.start === "number" &&
-          typeof timeRaw.end === "number"
-            ? { start: timeRaw.start, end: timeRaw.end }
-            : null;
-
-        const data: ToolUseData = {
-          tool,
-          input,
-          output,
-          truncated,
-          title,
-          exitCode,
-          time,
-        };
-        chunks.push({ type: "tool_use", content: title, data });
-      }
-    }
-
-    // Surface opencode error events (rate limits, permission failures, etc.)
-    // as a __grove_error marker so processLine can emit it as an error chunk
-    // and override the exit code if opencode exits cleanly after an error.
-    if (
-      obj.type === "error" &&
-      obj.error !== null &&
-      typeof obj.error === "object"
-    ) {
-      const err = obj.error as Record<string, unknown>;
-      let msg = typeof err.name === "string" ? err.name : "Error";
-      if (err.data !== null && typeof err.data === "object") {
-        const data = err.data as Record<string, unknown>;
-        if (typeof data.message === "string") {
-          // Strip surrounding quotes that opencode sometimes wraps the message in
-          msg = data.message.replace(/^"|"$/g, "").trim();
-        }
-      }
-      chunks.push({ type: "__grove_error", message: msg });
-    }
-
-    return chunks;
-  }
-
-  private parseCopilotLine(obj: Record<string, unknown>): PlanChunk[] {
-    const chunks: PlanChunk[] = [];
-
-    // Legacy format (kept for backward compatibility)
-    if (obj.type === "session_id" && typeof obj.id === "string") {
-      chunks.push({ type: "session_id", content: obj.id });
-    }
-    if (
-      obj.type === "message" &&
-      obj.role === "assistant" &&
-      typeof obj.content === "string" &&
-      obj.content
-    ) {
-      chunks.push({ type: "text", content: obj.content });
-    }
-    if (
-      obj.type === "delta" &&
-      typeof obj.content === "string" &&
-      obj.content
-    ) {
-      chunks.push({ type: "text", content: obj.content });
-    }
-
-    // New copilot CLI format (2025+)
-    // Streaming text delta: { type: "assistant.message_delta", data: { deltaContent: "..." } }
-    if (
-      obj.type === "assistant.message_delta" &&
-      obj.data !== null &&
-      typeof obj.data === "object"
-    ) {
-      const data = obj.data as Record<string, unknown>;
-      if (typeof data.deltaContent === "string" && data.deltaContent) {
-        chunks.push({ type: "text", content: data.deltaContent });
-      }
-    }
-
-    return chunks;
   }
 }

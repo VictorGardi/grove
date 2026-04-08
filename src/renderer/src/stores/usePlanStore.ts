@@ -6,6 +6,51 @@ import type {
   MessageContentBlock,
 } from "@shared/types";
 
+// ── RAF-based streaming throttle ──────────────────────────────────────────────
+// Content chunks (text, thinking, tool_use) are buffered here and flushed to
+// Zustand state in a single set() call per animation frame (~60 fps). Control-
+// flow chunks (done, session_id, replay_done, user_message, stderr, error,
+// tokens) are NOT buffered — they are applied synchronously via applyChunk.
+
+interface BufferedChunk {
+  sessionKey: string;
+  chunk: PlanChunk;
+}
+
+const CONTENT_CHUNK_TYPES = new Set(["text", "thinking", "tool_use"]);
+
+let rafPending = false;
+const chunkQueue: BufferedChunk[] = [];
+
+function scheduleFlush(): void {
+  if (rafPending) return;
+  rafPending = true;
+  requestAnimationFrame(() => {
+    rafPending = false;
+    const toFlush = chunkQueue.splice(0); // drain atomically
+    if (toFlush.length === 0) return;
+    // Apply all buffered chunks in arrival order via a single store update loop.
+    // Each chunk is still applied through applyChunk so all existing logic is
+    // preserved — we just batch multiple Zustand set() calls into one rAF.
+    for (const { sessionKey, chunk } of toFlush) {
+      usePlanStore.getState().applyChunk(sessionKey, chunk);
+    }
+  });
+}
+
+/**
+ * Queue a content chunk for batched delivery at ~60 fps.
+ * Control-flow chunks are not buffered and are applied synchronously.
+ */
+export function queueChunk(sessionKey: string, chunk: PlanChunk): void {
+  if (CONTENT_CHUNK_TYPES.has(chunk.type)) {
+    chunkQueue.push({ sessionKey, chunk });
+    scheduleFlush();
+  } else {
+    usePlanStore.getState().applyChunk(sessionKey, chunk);
+  }
+}
+
 interface PlanSession {
   sessionKey: string; // `${mode}:${taskId}`
   agent: PlanAgent;
@@ -104,6 +149,22 @@ export const usePlanStore = create<PlanState>()((set, get) => ({
         };
       }
 
+      // If the conversation is already in progress (has messages) and only the
+      // agent changed (model is the same), patch the agent field in-place so
+      // the /agent slash command works mid-conversation without wiping history.
+      if (
+        existing &&
+        existing.messages.length > 0 &&
+        existing.model === model
+      ) {
+        return {
+          sessions: {
+            ...s.sessions,
+            [sessionKey]: { ...existing, agent },
+          },
+        };
+      }
+
       // Full initialisation — new session, agent switched, or no prior session.
       return {
         sessions: {
@@ -187,7 +248,10 @@ export const usePlanStore = create<PlanState>()((set, get) => ({
     set((s) => {
       const session = s.sessions[sessionKey];
       if (!session) return s;
-      const messages = [...session.messages];
+      // Reuse the same array reference if messages haven't changed yet.
+      // We build a new array only for control-flow chunks that need to add/prepend
+      // messages. For content chunks, we only replace the last element in-place.
+      const messages = session.messages;
       const last = messages[messages.length - 1];
 
       if (!last || last.role !== "agent") return s;
@@ -209,10 +273,23 @@ export const usePlanStore = create<PlanState>()((set, get) => ({
             { kind: "text", content: chunk.content },
           ];
         }
-        messages[messages.length - 1] = {
+        // Only rebuild the last message; all previous messages keep their
+        // existing object references so React.memo on ChatMessage works correctly.
+        const updatedLast = {
           ...last,
           text: last.text + chunk.content,
           content: newContent,
+        };
+        const newMessages = [...messages.slice(0, -1), updatedLast];
+        return {
+          sessions: {
+            ...s.sessions,
+            [sessionKey]: {
+              ...session,
+              messages: newMessages,
+              ...(!session.isReplaying ? { isRunning: true } : {}),
+            },
+          },
         };
       } else if (chunk.type === "thinking") {
         // Append to last thinking block in content array, or start a new one
@@ -231,10 +308,21 @@ export const usePlanStore = create<PlanState>()((set, get) => ({
             { kind: "thinking", content: chunk.content },
           ];
         }
-        messages[messages.length - 1] = {
+        const updatedLast = {
           ...last,
           thinking: (last.thinking ?? "") + chunk.content,
           content: newContent,
+        };
+        const newMessages = [...messages.slice(0, -1), updatedLast];
+        return {
+          sessions: {
+            ...s.sessions,
+            [sessionKey]: {
+              ...session,
+              messages: newMessages,
+              ...(!session.isReplaying ? { isRunning: true } : {}),
+            },
+          },
         };
       } else if (chunk.type === "tool_use") {
         // Always append a new tool_use block (each is a discrete completed call)
@@ -243,27 +331,46 @@ export const usePlanStore = create<PlanState>()((set, get) => ({
           content: chunk.content,
           data: chunk.data,
         };
-        messages[messages.length - 1] = {
+        const updatedLast = {
           ...last,
           content: [...(last.content ?? []), newBlock],
         };
+        const newMessages = [...messages.slice(0, -1), updatedLast];
+        return {
+          sessions: {
+            ...s.sessions,
+            [sessionKey]: {
+              ...session,
+              messages: newMessages,
+              ...(!session.isReplaying ? { isRunning: true } : {}),
+            },
+          },
+        };
       } else if (chunk.type === "done") {
-        messages[messages.length - 1] = { ...last, isStreaming: false };
+        const updatedLast = { ...last, isStreaming: false };
         const exitCode = parseInt(chunk.content, 10);
+
+        let newMessages: PlanMessage[] = [
+          ...messages.slice(0, -1),
+          updatedLast,
+        ];
 
         // If we replayed a log that predates history tracking, no
         // grove_user_message lines exist → no user bubbles in messages.
         // Prepend a placeholder so the user knows context is missing.
-        const noUserMessages = !messages.some((m) => m.role === "user");
+        const noUserMessages = !newMessages.some((m) => m.role === "user");
         if (session.isReplaying && noUserMessages) {
-          messages.unshift({
-            id: nextId(),
-            role: "user",
-            text: "Previous conversation not available — log predates history tracking",
-            isStreaming: false,
-            timestamp: messages[0]?.timestamp ?? Date.now(),
-            isPlaceholder: true,
-          });
+          newMessages = [
+            {
+              id: nextId(),
+              role: "user",
+              text: "Previous conversation not available — log predates history tracking",
+              isStreaming: false,
+              timestamp: newMessages[0]?.timestamp ?? Date.now(),
+              isPlaceholder: true,
+            },
+            ...newMessages,
+          ];
         }
 
         // During log replay an intermediate `done` chunk closes one turn's
@@ -281,7 +388,7 @@ export const usePlanStore = create<PlanState>()((set, get) => ({
               ...s.sessions,
               [sessionKey]: {
                 ...session,
-                messages,
+                messages: newMessages,
                 // Keep isRunning: true — the session continues
                 lastExitCode: isNaN(exitCode) ? null : exitCode,
               },
@@ -294,7 +401,7 @@ export const usePlanStore = create<PlanState>()((set, get) => ({
             ...s.sessions,
             [sessionKey]: {
               ...session,
-              messages,
+              messages: newMessages,
               isRunning: false,
               lastExitCode: isNaN(exitCode) ? null : exitCode,
               // Clear the "Agent running — reconnected" banner now that replay is done
@@ -317,7 +424,7 @@ export const usePlanStore = create<PlanState>()((set, get) => ({
       } else if (chunk.type === "error") {
         const errorText = `Error: ${chunk.content}`;
         const prevContent = last.content ?? [];
-        messages[messages.length - 1] = {
+        const updatedLast = {
           ...last,
           text: last.text + (last.text ? "\n\n" : "") + errorText,
           // Also push to content so it is visible when the agent message already
@@ -329,6 +436,7 @@ export const usePlanStore = create<PlanState>()((set, get) => ({
           ],
           isStreaming: false,
         };
+        const newMessages = [...messages.slice(0, -1), updatedLast];
         // When replaying a historical log, an error chunk from a previous turn
         // must not force isRunning: false — the live agent may still be running.
         // Mirror the guard used in the "done" handler.
@@ -338,7 +446,7 @@ export const usePlanStore = create<PlanState>()((set, get) => ({
               ...s.sessions,
               [sessionKey]: {
                 ...session,
-                messages,
+                messages: newMessages,
                 lastExitCode: 1,
                 // Do not set lastStderr during replay so the exit warning is
                 // not shown for errors that belong to a past turn.
@@ -355,7 +463,7 @@ export const usePlanStore = create<PlanState>()((set, get) => ({
             ...s.sessions,
             [sessionKey]: {
               ...session,
-              messages,
+              messages: newMessages,
               isRunning: false,
               lastExitCode: 1,
               lastStderr: chunk.content,
@@ -376,17 +484,13 @@ export const usePlanStore = create<PlanState>()((set, get) => ({
         };
       }
 
+      // Fallback for any unhandled chunk types — keep messages stable
       return {
         sessions: {
           ...s.sessions,
           [sessionKey]: {
             ...session,
             messages,
-            // text/thinking/tool_use and any other streaming chunks arrive both
-            // during live runs and during log replay of finished sessions. Only
-            // re-assert isRunning: true for live chunks; during replay the agent
-            // is already gone and setting isRunning would make a completed
-            // session appear to still be running after the app reloads.
             ...(!session.isReplaying ? { isRunning: true } : {}),
           },
         },

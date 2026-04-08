@@ -2,6 +2,8 @@ import * as fs from "fs";
 import * as path from "path";
 import ignore, { type Ignore } from "ignore";
 import type { FileTreeNode, FileReadResult } from "@shared/types";
+import { detectLanguage } from "@shared/language";
+import { MAX_FILE_SIZE, isBinary } from "@shared/fileUtils";
 
 /** Directories that are always excluded from the file tree */
 export const ALWAYS_EXCLUDED = [
@@ -12,98 +14,6 @@ export const ALWAYS_EXCLUDED = [
   ".decisions",
   ".grove",
 ];
-
-/** Max file size for reading content (1 MB) */
-const MAX_FILE_SIZE = 1_048_576;
-
-/** Extension → Shiki language identifier */
-const LANG_MAP: Record<string, string> = {
-  ".ts": "typescript",
-  ".tsx": "tsx",
-  ".js": "javascript",
-  ".jsx": "jsx",
-  ".mjs": "javascript",
-  ".cjs": "javascript",
-  ".py": "python",
-  ".go": "go",
-  ".rs": "rust",
-  ".sql": "sql",
-  ".yml": "yaml",
-  ".yaml": "yaml",
-  ".json": "json",
-  ".jsonc": "jsonc",
-  ".md": "markdown",
-  ".mdx": "markdown",
-  ".sh": "bash",
-  ".bash": "bash",
-  ".zsh": "bash",
-  ".css": "css",
-  ".scss": "scss",
-  ".less": "less",
-  ".html": "html",
-  ".htm": "html",
-  ".toml": "toml",
-  ".xml": "xml",
-  ".svg": "xml",
-  ".graphql": "graphql",
-  ".gql": "graphql",
-  ".vue": "vue",
-  ".svelte": "svelte",
-  ".rb": "ruby",
-  ".java": "java",
-  ".kt": "kotlin",
-  ".swift": "swift",
-  ".c": "c",
-  ".cpp": "cpp",
-  ".h": "c",
-  ".hpp": "cpp",
-  ".cs": "csharp",
-  ".php": "php",
-  ".lua": "lua",
-  ".r": "r",
-  ".env": "shell",
-};
-
-/** Well-known filenames → language */
-const FILENAME_MAP: Record<string, string> = {
-  Makefile: "makefile",
-  Dockerfile: "dockerfile",
-  ".gitignore": "gitignore",
-  ".dockerignore": "gitignore",
-  ".env": "shell",
-  ".env.local": "shell",
-  ".env.development": "shell",
-  ".env.production": "shell",
-  Jenkinsfile: "groovy",
-  ".prettierrc": "json",
-  ".eslintrc": "json",
-  "tsconfig.json": "jsonc",
-  "tsconfig.node.json": "jsonc",
-  "tsconfig.web.json": "jsonc",
-};
-
-/**
- * Detect language from filename/extension for Shiki highlighting
- */
-function detectLanguage(filename: string): string {
-  // Check filename first (more specific)
-  if (FILENAME_MAP[filename]) return FILENAME_MAP[filename];
-
-  const ext = path.extname(filename).toLowerCase();
-  return LANG_MAP[ext] || "text";
-}
-
-/**
- * Check if a buffer likely contains binary content
- * by looking for null bytes in the first 8KB
- */
-function isBinary(buffer: Buffer): boolean {
-  const length = Math.min(buffer.length, 8192);
-  for (let i = 0; i < length; i++) {
-    if (buffer[i] === 0) return true;
-  }
-  return false;
-}
 
 /**
  * Build a recursive file tree for the workspace, respecting .gitignore

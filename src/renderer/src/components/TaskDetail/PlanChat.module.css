@@ -8,6 +8,48 @@
   min-width: 0;
 }
 
+/* ── Plan/Execute toggle ───────────────────────────────────────── */
+
+.modeToggle {
+  display: flex;
+  align-items: center;
+  gap: 2px;
+  background: var(--bg-base);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  padding: 2px;
+}
+
+.modeToggleBtn {
+  font-family: var(--font-mono);
+  font-size: 10px;
+  padding: 3px 8px;
+  border: none;
+  border-radius: var(--radius-sm);
+  background: transparent;
+  color: var(--text-lo);
+  cursor: pointer;
+  transition:
+    background var(--transition-fast),
+    color var(--transition-fast);
+}
+
+.modeToggleBtn:hover {
+  background: var(--bg-hover);
+  color: var(--text-secondary);
+}
+
+.modeToggleBtnActive {
+  background: var(--accent);
+  color: #fff;
+}
+
+.modeToggleBtnActive:hover {
+  background: var(--accent);
+  color: #fff;
+  opacity: 0.9;
+}
+
 /* ── Header ──────────────────────────────────────────────────── */
 
 .header {
@@ -457,6 +499,7 @@
   border: 1px solid var(--border);
   border-radius: var(--radius-md);
   padding: 8px 12px;
+  padding-bottom: 24px;
   outline: none;
   min-height: 40px;
   max-height: 200px;
@@ -661,6 +704,34 @@
   width: 100%;
   min-width: 0;
   flex-shrink: 0;
+}
+
+/* ── Input status badge (agent + model) ─────────────────────────── */
+
+.inputBadge {
+  position: absolute;
+  bottom: 8px;
+  left: 12px;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 11px;
+  color: var(--text-lo);
+  pointer-events: none;
+  background: transparent;
+}
+
+.inputBadgeAgent {
+  color: var(--text-secondary);
+  font-weight: 500;
+}
+
+.inputBadgeModel {
+  color: var(--text-lo);
+}
+
+.inputBadgeDivider {
+  color: var(--border);
 }
 
 /* ── /model command dropdown ────────────────────────────────────── */

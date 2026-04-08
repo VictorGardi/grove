@@ -13,7 +13,7 @@ import { useFileStore } from "./stores/useFileStore";
 import { useNavStore } from "./stores/useNavStore";
 import { useWorktreeStore } from "./stores/useWorktreeStore";
 import { useTerminalStore } from "./stores/useTerminalStore";
-import { usePlanStore } from "./stores/usePlanStore";
+import { usePlanStore, queueChunk } from "./stores/usePlanStore";
 import { useKeyboardShortcuts } from "./hooks/useKeyboardShortcuts";
 import { ShortcutsModal } from "./components/shared/ShortcutsModal";
 import { HelpButton } from "./components/shared/HelpButton";
@@ -59,6 +59,11 @@ function AppContent(): React.JSX.Element {
     useWorktreeStore.getState().clear();
     if (activeWorkspacePath) {
       fetchData();
+      // Pre-fetch workspace defaults so they're available before any task detail
+      // panel opens. Without this, the first open of a task sees an empty
+      // workspaceDefaults map, causing PlanChat to fall back to "opencode" as the
+      // default agent even when the workspace default is "copilot".
+      void useWorkspaceStore.getState().fetchDefaults(activeWorkspacePath);
     }
   }, [activeWorkspacePath, clearData, fetchData]);
 
@@ -109,16 +114,6 @@ function AppContent(): React.JSX.Element {
     // Update tracking AFTER restore attempt
     previousWorkspacePath.current = currentPath;
   }, [activeWorkspacePath, fetched, tasks]);
-
-  // Clear stale data immediately on workspace switch, then fetch fresh
-  useEffect(() => {
-    clearData();
-    useFileStore.getState().clear();
-    useWorktreeStore.getState().clear();
-    if (activeWorkspacePath) {
-      fetchData();
-    }
-  }, [activeWorkspacePath, clearData, fetchData]);
 
   // Session restoration: when tasks load for a workspace, auto-create terminal tabs
   // for any doing tasks with worktrees that don't already have terminal tabs
@@ -323,7 +318,11 @@ function AppContent(): React.JSX.Element {
         }
       }
 
-      store.applyChunk(sessionKey, chunk);
+      // Route content chunks (text/thinking/tool_use) through the RAF-based
+      // queue so Zustand set() fires at most once per animation frame (~60 fps).
+      // Control-flow chunks (done, error, tokens, stderr) are applied
+      // synchronously via applyChunk inside queueChunk's fallback path.
+      queueChunk(sessionKey, chunk);
     });
     return unsub;
   }, []);

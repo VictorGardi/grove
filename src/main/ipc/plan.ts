@@ -162,10 +162,23 @@ export function registerPlanHandlers(
           input.taskId,
           input.mode,
         );
+        // Always persist the agent and model alongside the tmux session name.
+        // This ensures initSession (triggered by the file-change watcher) always
+        // receives the correct agent, preventing a mismatch that would wipe
+        // in-memory chat history. Copilot never emits a session_id event, so
+        // plan:saveSession never fires for it — this is the only write path.
         const tmuxChanges =
           input.mode === "execute"
-            ? { execTmuxSession: tmuxSession }
-            : { planTmuxSession: tmuxSession };
+            ? {
+                execTmuxSession: tmuxSession,
+                execSessionAgent: input.agent,
+                execModel: input.model ?? null,
+              }
+            : {
+                planTmuxSession: tmuxSession,
+                planSessionAgent: input.agent,
+                planModel: input.model ?? null,
+              };
         await updateTask(input.workspacePath, input.taskFilePath, tmuxChanges);
 
         return { ok: true, data: undefined };

@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef, useCallback } from "react";
+import { useState, useEffect, useRef, useCallback, useMemo } from "react";
 import { useDataStore, useSelectedTask } from "../../stores/useDataStore";
 import { useWorkspaceStore, DetailTab } from "../../stores/useWorkspaceStore";
 import { useNavStore } from "../../stores/useNavStore";
@@ -252,6 +252,13 @@ export function TaskDetailPanel(): React.JSX.Element {
   useEffect(() => {
     isDirtyRef.current = isDirty;
   }, [isDirty]);
+
+  // Memoize the expensive 15-regex markdown preview so it only re-runs when
+  // rawContent actually changes, not on every re-render.
+  const renderedMarkdownPreview = useMemo(
+    () => renderMarkdownPreview(rawContent),
+    [rawContent],
+  );
 
   // Default to plan (Agent) tab for all tasks
   // Only set when a task is present to avoid updating state when no task is selected
@@ -682,7 +689,7 @@ export function TaskDetailPanel(): React.JSX.Element {
               <div
                 className={styles.preview}
                 dangerouslySetInnerHTML={{
-                  __html: renderMarkdownPreview(rawContent),
+                  __html: renderedMarkdownPreview,
                 }}
               />
             </div>

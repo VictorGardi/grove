@@ -1,0 +1,71 @@
+import * as path from "path";
+
+export const LANG_MAP: Record<string, string> = {
+  ".ts": "typescript",
+  ".tsx": "tsx",
+  ".js": "javascript",
+  ".jsx": "jsx",
+  ".mjs": "javascript",
+  ".cjs": "javascript",
+  ".py": "python",
+  ".go": "go",
+  ".rs": "rust",
+  ".sql": "sql",
+  ".yml": "yaml",
+  ".yaml": "yaml",
+  ".json": "json",
+  ".jsonc": "jsonc",
+  ".md": "markdown",
+  ".mdx": "markdown",
+  ".sh": "bash",
+  ".bash": "bash",
+  ".zsh": "bash",
+  ".css": "css",
+  ".scss": "scss",
+  ".less": "less",
+  ".html": "html",
+  ".htm": "html",
+  ".toml": "toml",
+  ".xml": "xml",
+  ".svg": "xml",
+  ".graphql": "graphql",
+  ".gql": "graphql",
+  ".vue": "vue",
+  ".svelte": "svelte",
+  ".rb": "ruby",
+  ".java": "java",
+  ".kt": "kotlin",
+  ".swift": "swift",
+  ".c": "c",
+  ".cpp": "cpp",
+  ".h": "c",
+  ".hpp": "cpp",
+  ".cs": "csharp",
+  ".php": "php",
+  ".lua": "lua",
+  ".r": "r",
+  ".env": "shell",
+};
+
+export const FILENAME_MAP: Record<string, string> = {
+  Makefile: "makefile",
+  Dockerfile: "dockerfile",
+  ".gitignore": "gitignore",
+  ".dockerignore": "gitignore",
+  ".env": "shell",
+  ".env.local": "shell",
+  ".env.development": "shell",
+  ".env.production": "shell",
+  Jenkinsfile: "groovy",
+  ".prettierrc": "json",
+  ".eslintrc": "json",
+  "tsconfig.json": "jsonc",
+  "tsconfig.node.json": "jsonc",
+  "tsconfig.web.json": "jsonc",
+};
+
+export function detectLanguage(filename: string): string {
+  if (FILENAME_MAP[filename]) return FILENAME_MAP[filename];
+  const ext = path.extname(filename).toLowerCase();
+  return LANG_MAP[ext] || "text";
+}

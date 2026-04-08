@@ -9,6 +9,8 @@ import type {
   FileReadResult,
 } from "@shared/types";
 import { ALWAYS_EXCLUDED } from "./filesystem";
+import { detectLanguage } from "@shared/language";
+import { MAX_FILE_SIZE } from "@shared/fileUtils";
 
 // ── Error type ────────────────────────────────────────────────────
 
@@ -626,77 +628,6 @@ export async function detectWorktreeBaseBranch(
 
 // ── Branch listing (for Files branch selector) ────────────────────
 
-/** Extension → Shiki language identifier (mirrors filesystem.ts) */
-const LANG_MAP_GIT: Record<string, string> = {
-  ".ts": "typescript",
-  ".tsx": "tsx",
-  ".js": "javascript",
-  ".jsx": "jsx",
-  ".mjs": "javascript",
-  ".cjs": "javascript",
-  ".py": "python",
-  ".go": "go",
-  ".rs": "rust",
-  ".sql": "sql",
-  ".yml": "yaml",
-  ".yaml": "yaml",
-  ".json": "json",
-  ".jsonc": "jsonc",
-  ".md": "markdown",
-  ".mdx": "markdown",
-  ".sh": "bash",
-  ".bash": "bash",
-  ".zsh": "bash",
-  ".css": "css",
-  ".scss": "scss",
-  ".less": "less",
-  ".html": "html",
-  ".htm": "html",
-  ".toml": "toml",
-  ".xml": "xml",
-  ".svg": "xml",
-  ".graphql": "graphql",
-  ".gql": "graphql",
-  ".vue": "vue",
-  ".svelte": "svelte",
-  ".rb": "ruby",
-  ".java": "java",
-  ".kt": "kotlin",
-  ".swift": "swift",
-  ".c": "c",
-  ".cpp": "cpp",
-  ".h": "c",
-  ".hpp": "cpp",
-  ".cs": "csharp",
-  ".php": "php",
-  ".lua": "lua",
-  ".r": "r",
-  ".env": "shell",
-};
-
-const FILENAME_MAP_GIT: Record<string, string> = {
-  Makefile: "makefile",
-  Dockerfile: "dockerfile",
-  ".gitignore": "gitignore",
-  ".dockerignore": "gitignore",
-  ".env": "shell",
-  ".env.local": "shell",
-  ".env.development": "shell",
-  ".env.production": "shell",
-  Jenkinsfile: "groovy",
-  ".prettierrc": "json",
-  ".eslintrc": "json",
-  "tsconfig.json": "jsonc",
-  "tsconfig.node.json": "jsonc",
-  "tsconfig.web.json": "jsonc",
-};
-
-function detectLanguageGit(filename: string): string {
-  if (FILENAME_MAP_GIT[filename]) return FILENAME_MAP_GIT[filename];
-  const ext = path.extname(filename).toLowerCase();
-  return LANG_MAP_GIT[ext] || "text";
-}
-
 /**
  * List all local branches with worktree path if one exists.
  */
@@ -808,8 +739,6 @@ export async function readFileAtBranch(
 ): Promise<FileReadResult> {
   const git = simpleGit(repoPath);
 
-  const MAX_FILE_SIZE = 1_048_576; // 1 MB
-
   let raw: string;
   try {
     raw = await git.raw(["show", `${branch}:${relativePath}`]);
@@ -833,7 +762,7 @@ export async function readFileAtBranch(
   }
 
   const filename = path.basename(relativePath);
-  const language = detectLanguageGit(filename);
+  const language = detectLanguage(filename);
   const lineCount = raw.split("\n").length;
 
   return { content: raw, language, lineCount };

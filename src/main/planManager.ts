@@ -1,15 +1,15 @@
 import { spawn, ChildProcess } from "child_process";
 import * as readline from "readline";
-import * as fs from "fs";
-import * as os from "os";
-import * as path from "path";
-import type {
-  PlanAgent,
-  PlanChunk,
-  PlanMode,
-  ToolUseData,
-} from "@shared/types";
+import type { PlanAgent, PlanChunk, PlanMode } from "@shared/types";
+import * as tasks from "./tasks";
 import { TmuxSupervisor, buildTmuxSessionName } from "./tmuxSupervisor";
+import { buildEnvPath } from "./env";
+import {
+  parseOpencodeLine,
+  CopilotLineParser,
+} from "./agentOutputParser";
+import type { GroveErrorChunk } from "./agentOutputParser";
+import { writeOpencodeConfig, cleanupGroveConfig } from "./opencodeConfig";
 
 type ChunkCallback = (taskId: string, mode: PlanMode, chunk: PlanChunk) => void;
 
@@ -44,32 +44,12 @@ interface RunOpts {
 }
 
 interface PlanRunner {
-  start(opts: RunOpts): void;
+  start(opts: RunOpts): Promise<void>;
   cancel(runKey: string): void;
   detach(): void;
 }
 
 const SIGKILL_TIMEOUT_MS = 5000;
-
-function buildEnvPath(): string {
-  const home = os.homedir();
-  const extras = [
-    path.join(home, ".opencode", "bin"),
-    path.join(home, ".local", "bin"),
-    path.join(home, ".npm-global", "bin"),
-    path.join(home, "go", "bin"),
-    "/opt/homebrew/bin",
-    "/opt/homebrew/sbin",
-    "/usr/local/bin",
-    "/usr/local/sbin",
-  ];
-  const current = process.env.PATH ?? "";
-  const parts = current.split(path.delimiter).filter(Boolean);
-  for (const extra of extras.reverse()) {
-    if (!parts.includes(extra)) parts.unshift(extra);
-  }
-  return parts.join(path.delimiter);
-}
 
 function agentBinary(agent: PlanAgent): string {
   return agent === "opencode" ? "opencode" : "copilot";
@@ -84,7 +64,7 @@ function buildArgs(
   taskFilePath: string,
 ): string[] {
   if (agent === "opencode") {
-    const args = ["run", "--format", "json", "--agent", "build"];
+    const args = ["run", "--format", "json", "--agent", "build", "--thinking"];
     if (model) {
       args.push("--model", model);
     }
@@ -121,165 +101,36 @@ function buildArgs(
   }
 }
 
-function parseLine(agent: PlanAgent, line: string): PlanChunk[] {
+function parseLine(
+  agent: PlanAgent,
+  line: string,
+  copilotParser?: CopilotLineParser,
+): { chunks: PlanChunk[]; error?: GroveErrorChunk } {
   const trimmed = line.trim();
-  if (!trimmed) return [];
+  if (!trimmed) return { chunks: [] };
 
   try {
     const obj = JSON.parse(trimmed);
     if (agent === "opencode") {
-      return parseOpencodeLine(obj);
+      const result = parseOpencodeLine(obj);
+      let error: GroveErrorChunk | undefined;
+      const filtered: PlanChunk[] = [];
+      for (const c of result) {
+        if ("message" in c) {
+          error = c;
+        } else {
+          filtered.push(c);
+        }
+      }
+      return { chunks: filtered, error };
     } else {
-      return parseCopilotLine(obj);
+      return { chunks: (copilotParser ?? new CopilotLineParser()).parse(obj) };
     }
   } catch {
     const stripped = trimmed.replace(/\x1b\[[0-9;]*[mGKHF]/g, "");
-    if (!stripped) return [];
-    return [{ type: "text", content: stripped }];
+    if (!stripped) return { chunks: [] };
+    return { chunks: [{ type: "text", content: stripped }] };
   }
-}
-
-function parseOpencodeLine(obj: Record<string, unknown>): PlanChunk[] {
-  const chunks: PlanChunk[] = [];
-
-  if (obj.type === "step_start" && typeof obj.sessionID === "string") {
-    chunks.push({ type: "session_id", content: obj.sessionID });
-  }
-
-  if (
-    obj.type === "step_finish" &&
-    obj.part !== null &&
-    typeof obj.part === "object"
-  ) {
-    const part = obj.part as Record<string, unknown>;
-    if (part.tokens !== null && typeof part.tokens === "object") {
-      const t = part.tokens as Record<string, unknown>;
-      const cache =
-        t.cache !== null && typeof t.cache === "object"
-          ? (t.cache as Record<string, unknown>)
-          : {};
-      chunks.push({
-        type: "tokens",
-        content: "",
-        data: {
-          total: typeof t.total === "number" ? t.total : 0,
-          input: typeof t.input === "number" ? t.input : 0,
-          output: typeof t.output === "number" ? t.output : 0,
-          reasoning: typeof t.reasoning === "number" ? t.reasoning : 0,
-          cache: {
-            write: typeof cache.write === "number" ? cache.write : 0,
-            read: typeof cache.read === "number" ? cache.read : 0,
-          },
-        },
-      });
-    }
-  }
-
-  if (
-    obj.type === "text" &&
-    obj.part !== null &&
-    typeof obj.part === "object"
-  ) {
-    const part = obj.part as Record<string, unknown>;
-    if (part.type === "text" && typeof part.text === "string") {
-      chunks.push({ type: "text", content: part.text });
-    }
-    if (part.type === "thinking" && typeof part.thinking === "string") {
-      chunks.push({ type: "thinking", content: part.thinking });
-    }
-  }
-
-  if (
-    obj.type === "tool_use" &&
-    obj.part !== null &&
-    typeof obj.part === "object"
-  ) {
-    const part = obj.part as Record<string, unknown>;
-    const tool = typeof part.tool === "string" ? part.tool : "unknown";
-    const state =
-      part.state !== null && typeof part.state === "object"
-        ? (part.state as Record<string, unknown>)
-        : null;
-
-    // Only emit for completed tool invocations
-    if (state && state.status === "completed") {
-      const title = typeof state.title === "string" ? state.title : "";
-      const rawOutput = typeof state.output === "string" ? state.output : "";
-      const MAX_OUTPUT = 5 * 1024;
-      const truncated = rawOutput.length > MAX_OUTPUT;
-      const output = truncated ? rawOutput.slice(0, MAX_OUTPUT) : rawOutput;
-
-      const input =
-        state.input !== null && typeof state.input === "object"
-          ? (state.input as Record<string, unknown>)
-          : {};
-
-      const metadata =
-        state.metadata !== null && typeof state.metadata === "object"
-          ? (state.metadata as Record<string, unknown>)
-          : {};
-      const exitCode = typeof metadata.exit === "number" ? metadata.exit : null;
-
-      const timeRaw =
-        state.time !== null && typeof state.time === "object"
-          ? (state.time as Record<string, unknown>)
-          : null;
-      const time =
-        timeRaw &&
-        typeof timeRaw.start === "number" &&
-        typeof timeRaw.end === "number"
-          ? { start: timeRaw.start, end: timeRaw.end }
-          : null;
-
-      const data: ToolUseData = {
-        tool,
-        input,
-        output,
-        truncated,
-        title,
-        exitCode,
-        time,
-      };
-      chunks.push({ type: "tool_use", content: title, data });
-    }
-  }
-
-  return chunks;
-}
-
-function parseCopilotLine(obj: Record<string, unknown>): PlanChunk[] {
-  const chunks: PlanChunk[] = [];
-
-  // Legacy format (kept for backward compatibility)
-  if (obj.type === "session_id" && typeof obj.id === "string") {
-    chunks.push({ type: "session_id", content: obj.id });
-  }
-  if (
-    obj.type === "message" &&
-    obj.role === "assistant" &&
-    typeof obj.content === "string" &&
-    obj.content
-  ) {
-    chunks.push({ type: "text", content: obj.content });
-  }
-  if (obj.type === "delta" && typeof obj.content === "string" && obj.content) {
-    chunks.push({ type: "text", content: obj.content });
-  }
-
-  // New copilot CLI format (2025+)
-  // Streaming text delta: { type: "assistant.message_delta", data: { deltaContent: "..." } }
-  if (
-    obj.type === "assistant.message_delta" &&
-    obj.data !== null &&
-    typeof obj.data === "object"
-  ) {
-    const data = obj.data as Record<string, unknown>;
-    if (typeof data.deltaContent === "string" && data.deltaContent) {
-      chunks.push({ type: "text", content: data.deltaContent });
-    }
-  }
-
-  return chunks;
 }
 
 class SpawnPlanRunner implements PlanRunner {
@@ -289,53 +140,14 @@ class SpawnPlanRunner implements PlanRunner {
 
   /** Overrides problematic 'ask' permissions in the build agent so headless runs never block. */
   private writeOpencodeConfig(runKey: string, cwd: string): void {
-    const configPath = path.join(cwd, "opencode.json");
-    if (fs.existsSync(configPath)) return; // respect existing project config
-    try {
-      fs.writeFileSync(
-        configPath,
-        JSON.stringify(
-          {
-            $schema: "https://opencode.ai/config.json",
-            permission: {
-              // doom_loop only accepts a plain string action (not a pattern object)
-              doom_loop: "allow",
-              // external_directory accepts either a string or { pattern: action }
-              external_directory: "allow",
-            },
-          },
-          null,
-          2,
-        ),
-        "utf-8",
-      );
-      this.wroteConfigFiles.set(runKey, configPath);
-      console.log(
-        `[SpawnPlanRunner][${runKey}] Wrote opencode.json to ${configPath}`,
-      );
-    } catch (e) {
-      console.warn(
-        `[SpawnPlanRunner][${runKey}] Could not write opencode.json:`,
-        e,
-      );
-    }
+    writeOpencodeConfig(cwd, this.wroteConfigFiles, runKey);
   }
 
   private cleanupGroveConfig(runKey: string): void {
-    const configPath = this.wroteConfigFiles.get(runKey);
-    if (!configPath) return;
-    try {
-      fs.unlinkSync(configPath);
-      console.log(
-        `[SpawnPlanRunner][${runKey}] Cleaned up opencode.json: ${configPath}`,
-      );
-    } catch {
-      // ignore — file may have been deleted already
-    }
-    this.wroteConfigFiles.delete(runKey);
+    cleanupGroveConfig(this.wroteConfigFiles, runKey);
   }
 
-  start(opts: RunOpts): void {
+  start(opts: RunOpts): Promise<void> {
     const runKey = `${opts.mode}:${opts.taskId}`;
     this.cancel(runKey);
 
@@ -370,7 +182,7 @@ class SpawnPlanRunner implements PlanRunner {
         content: "Failed to capture agent stdout",
       });
       proc.kill();
-      return;
+      return Promise.resolve();
     }
 
     console.log(
@@ -391,38 +203,19 @@ class SpawnPlanRunner implements PlanRunner {
     let sessionIdEmitted = false;
     let stderrBuffer = "";
     let turnHadError = false;
+    const copilotParser =
+      opts.agent !== "opencode" ? new CopilotLineParser() : undefined;
 
     rl.on("line", (line) => {
-      // Intercept opencode error events before normal parsing so we can emit
-      // them as visible error chunks and track them for exit code correction.
-      if (opts.agent === "opencode") {
-        try {
-          const obj = JSON.parse(line.trim()) as Record<string, unknown>;
-          if (
-            obj.type === "error" &&
-            obj.error !== null &&
-            typeof obj.error === "object"
-          ) {
-            const err = obj.error as Record<string, unknown>;
-            let msg = typeof err.name === "string" ? err.name : "Error";
-            if (err.data !== null && typeof err.data === "object") {
-              const d = err.data as Record<string, unknown>;
-              if (typeof d.message === "string") {
-                msg = d.message.replace(/^"|"$/g, "").trim();
-              }
-            }
-            turnHadError = true;
-            opts.onChunk(opts.taskId, opts.mode, {
-              type: "error",
-              content: msg,
-            });
-            return;
-          }
-        } catch {
-          /* not JSON or no error field — fall through */
-        }
+      const { chunks, error } = parseLine(opts.agent, line, copilotParser);
+      if (error) {
+        turnHadError = true;
+        opts.onChunk(opts.taskId, opts.mode, {
+          type: "error",
+          content: error.message,
+        });
+        return;
       }
-      const chunks = parseLine(opts.agent, line);
       for (const chunk of chunks) {
         if (chunk.type === "session_id") {
           if (sessionIdEmitted) continue;
@@ -477,6 +270,8 @@ class SpawnPlanRunner implements PlanRunner {
         content: err.message,
       });
     });
+
+    return Promise.resolve();
   }
 
   cancel(runKey: string): void {
@@ -525,7 +320,12 @@ class TmuxPlanRunner implements PlanRunner {
    */
   private runCallbacks = new Map<
     string,
-    { taskId: string; mode: PlanMode; onChunk: ChunkCallback }
+    {
+      taskId: string;
+      mode: PlanMode;
+      onChunk: ChunkCallback;
+      workspacePath: string;
+    }
   >();
 
   constructor(tmux: TmuxSupervisor) {
@@ -581,6 +381,7 @@ class TmuxPlanRunner implements PlanRunner {
       taskId: opts.taskId,
       mode: opts.mode,
       onChunk: opts.onChunk,
+      workspacePath: opts.workspacePath,
     });
     this.activeKeys.add(runKey);
   }
@@ -608,6 +409,21 @@ class TmuxPlanRunner implements PlanRunner {
     this.activeKeys.delete(runKey);
   }
 
+  cancelAll(): void {
+    for (const [runKey, cb] of this.runCallbacks) {
+      cb.onChunk(cb.taskId, cb.mode, { type: "done", content: "1" });
+      const [mode, taskId] = runKey.split(":");
+      const tmuxSession = buildTmuxSessionName(
+        cb.workspacePath,
+        taskId,
+        mode as PlanMode,
+      );
+      this.tmux.kill(tmuxSession);
+    }
+    this.activeKeys.clear();
+    this.runCallbacks.clear();
+  }
+
   detach(): void {
     this.tmux.detachAll();
     this.activeKeys.clear();
@@ -624,7 +440,9 @@ export class PlanManager {
 
   constructor() {
     this.spawnRunner = new SpawnPlanRunner();
-    this.tmuxSupervisor = new TmuxSupervisor();
+    this.tmuxSupervisor = new TmuxSupervisor({
+      updateTask: tasks.updateTask,
+    });
   }
 
   async init(): Promise<void> {
@@ -678,7 +496,7 @@ export class PlanManager {
         await this.ensureTmuxRunner();
         const tmuxRunner = this.tmuxRunner!;
 
-        tmuxRunner.start({
+        await tmuxRunner.start({
           taskId,
           mode,
           agent,
@@ -691,9 +509,9 @@ export class PlanManager {
           workspacePath,
           onChunk,
           onComplete,
-        } as RunOpts);
+        });
       } else {
-        this.spawnRunner.start({
+        await this.spawnRunner.start({
           taskId,
           mode,
           agent,
@@ -706,7 +524,7 @@ export class PlanManager {
           workspacePath,
           onChunk,
           onComplete,
-        } as RunOpts);
+        });
       }
     };
 
@@ -722,11 +540,7 @@ export class PlanManager {
 
   cancelAll(): void {
     this.spawnRunner.cancelAll();
-    if (this.tmuxRunner) {
-      for (const key of this.tmuxRunner["activeKeys"]) {
-        this.tmuxRunner.cancel(key);
-      }
-    }
+    this.tmuxRunner?.cancelAll();
   }
 
   detachAll(): void {
@@ -741,7 +555,7 @@ export class PlanManager {
   }
 
   async captureTmuxPane(session: string): Promise<string> {
-    return this.tmuxSupervisor.capturePan(session);
+    return this.tmuxSupervisor.capturePane(session);
   }
 
   async reconnectTmuxSession(

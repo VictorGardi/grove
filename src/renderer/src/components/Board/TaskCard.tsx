@@ -1,4 +1,4 @@
-import { useEffect, useState, useCallback } from "react";
+import { useEffect, useState } from "react";
 import { useDraggable } from "@dnd-kit/core";
 import type { TaskInfo } from "@shared/types";
 import { useDataStore } from "../../stores/useDataStore";
@@ -6,6 +6,7 @@ import { useWorktreeStore } from "../../stores/useWorktreeStore";
 import { usePlanStore } from "../../stores/usePlanStore";
 import { useWorkspaceStore } from "../../stores/useWorkspaceStore";
 import { useBoardStore } from "../../stores/useBoardStore";
+import { useTmuxLivenessStore } from "../../stores/useTmuxLivenessStore";
 import { ContextMenu } from "../Sidebar/ContextMenu";
 import type { ContextMenuItem } from "../Sidebar/ContextMenu";
 import { archiveTask } from "../../actions/taskActions";
@@ -28,15 +29,6 @@ export function TaskCard({
   const focusedTaskId = useBoardStore((s) => s.focusedTaskId);
   const isFocused = task.id === focusedTaskId;
 
-  // workspacePath is needed for tmuxCheck calls
-  const workspacePath = useWorkspaceStore((s) => s.activeWorkspacePath);
-
-  // Track actual tmux session liveness for execute and plan modes independently.
-  // This is a fallback for when the in-memory isRunning flag is stale (e.g. after
-  // component remount, app restart, or a reconnect race condition).
-  const [execTmuxAlive, setExecTmuxAlive] = useState(false);
-  const [planTmuxAlive, setPlanTmuxAlive] = useState(false);
-
   // Read isRunning from the store for both modes
   const execIsRunning = usePlanStore(
     (s) => s.sessions[`execute:${task.id}`]?.isRunning ?? false,
@@ -45,70 +37,18 @@ export function TaskCard({
     (s) => s.sessions[`plan:${task.id}`]?.isRunning ?? false,
   );
 
-  // Check the actual tmux session liveness when isRunning is false.
-  // The IPC handler derives the session name independently via buildTmuxSessionName,
-  // so we don't strictly require task.execTmuxSession to be set — but we use it as
-  // a hint: if no session name was ever persisted, skip the check to avoid IPC noise
-  // for tasks that never had an agent run. Tasks that crashed mid-frontmatter-write
-  // (execTmuxSession not saved) may miss the alive detection — an acceptable edge case.
-  const checkExecTmux = useCallback(async () => {
-    if (!workspacePath || !task.execTmuxSession) {
-      setExecTmuxAlive(false);
-      return;
-    }
-    try {
-      const result = await window.api.plan.tmuxCheck({
-        workspacePath,
-        taskId: task.id,
-        mode: "execute",
-      });
-      setExecTmuxAlive(result.ok && result.data.alive);
-    } catch {
-      setExecTmuxAlive(false);
-    }
-  }, [workspacePath, task.id, task.execTmuxSession]);
+  // workspacePath is needed for the ensureModels effect below
+  const workspacePath = useWorkspaceStore((s) => s.activeWorkspacePath);
 
-  const checkPlanTmux = useCallback(async () => {
-    if (!workspacePath || !task.planTmuxSession) {
-      setPlanTmuxAlive(false);
-      return;
-    }
-    try {
-      const result = await window.api.plan.tmuxCheck({
-        workspacePath,
-        taskId: task.id,
-        mode: "plan",
-      });
-      setPlanTmuxAlive(result.ok && result.data.alive);
-    } catch {
-      setPlanTmuxAlive(false);
-    }
-  }, [workspacePath, task.id, task.planTmuxSession]);
-
-  // Check tmux liveness on mount and whenever the relevant session name changes.
-  // Only poll when isRunning is false — if isRunning is true, the store already
-  // knows the agent is running, so no IPC needed.
-  useEffect(() => {
-    if (execIsRunning) {
-      // Store says running — trust it; no tmux poll needed
-      setExecTmuxAlive(false);
-      return;
-    }
-    void checkExecTmux();
-    // Poll every 5 seconds while the card is visible and isRunning is false
-    const interval = setInterval(() => void checkExecTmux(), 5000);
-    return () => clearInterval(interval);
-  }, [execIsRunning, checkExecTmux]);
-
-  useEffect(() => {
-    if (planIsRunning) {
-      setPlanTmuxAlive(false);
-      return;
-    }
-    void checkPlanTmux();
-    const interval = setInterval(() => void checkPlanTmux(), 5000);
-    return () => clearInterval(interval);
-  }, [planIsRunning, checkPlanTmux]);
+  // Read tmux liveness from the shared store (populated by useWorkspaceStatus poller).
+  // Per-card setInterval timers have been removed — a single workspace-level poll loop
+  // writes into useTmuxLivenessStore and TaskCard reads from it reactively.
+  const execTmuxAlive = useTmuxLivenessStore(
+    (s) => s.liveness[`execute:${task.id}`]?.alive ?? false,
+  );
+  const planTmuxAlive = useTmuxLivenessStore(
+    (s) => s.liveness[`plan:${task.id}`]?.alive ?? false,
+  );
 
   // Reviewer sessions (used for the isAgentRunning fallback)
   const reviewerIsRunning = usePlanStore(
@@ -266,7 +206,7 @@ export function TaskCard({
           <span className={styles.branchCreating}>Creating worktree…</span>
         </div>
       )}
-      {!worktreeCreating && task.branch && (
+      {!worktreeCreating && task.branch && task.status !== "backlog" && (
         <div className={styles.branchRow}>
           <span className={styles.branchIcon}>&#x2387;</span>
           <span className={styles.branchName}>{task.branch}</span>
@@ -281,6 +221,12 @@ export function TaskCard({
         </div>
       )}
       {task.status === "backlog" && isPlanningRunning && (
+        <div className={styles.agentRunningRow}>
+          <span className={styles.agentRunningDot} />
+          <span className={styles.agentRunningLabel}>agent running</span>
+        </div>
+      )}
+      {task.status === "review" && isAgentRunning && (
         <div className={styles.agentRunningRow}>
           <span className={styles.agentRunningDot} />
           <span className={styles.agentRunningLabel}>agent running</span>
@@ -322,6 +268,12 @@ export function TaskCard({
           <span className={styles.waitingLabel}>Waiting for input</span>
         </div>
       )}
+      {task.status === "review" && (isExecuteWaiting || isPlanWaiting) && (
+        <div className={styles.waitingRow}>
+          <span className={styles.waitingDot} />
+          <span className={styles.waitingLabel}>Waiting for input</span>
+        </div>
+      )}
 
       {/* Row 3c: Error indicator */}
       {task.status === "doing" && isExecuteErrored && (
@@ -331,6 +283,12 @@ export function TaskCard({
         </div>
       )}
       {task.status === "backlog" && isPlanErrored && (
+        <div className={styles.errorRow}>
+          <span className={styles.errorDot} />
+          <span className={styles.errorLabel}>session failed</span>
+        </div>
+      )}
+      {task.status === "review" && (isExecuteErrored || isPlanErrored) && (
         <div className={styles.errorRow}>
           <span className={styles.errorDot} />
           <span className={styles.errorLabel}>session failed</span>

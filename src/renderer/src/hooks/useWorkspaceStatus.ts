@@ -1,6 +1,10 @@
 import { useState, useEffect, useRef, useCallback } from "react";
 import type { PlanMode, TaskInfo } from "@shared/types";
 import { usePlanStore } from "../stores/usePlanStore";
+import {
+  useTmuxLivenessStore,
+  LIVENESS_TTL_MS,
+} from "../stores/useTmuxLivenessStore";
 
 export type WorkspaceStatus = "failed" | "waiting" | "running" | "idle";
 
@@ -26,8 +30,7 @@ function higherPriority(
 function deriveSessionStatus(
   sessionKey: string,
   tmuxSessionName: string | null,
-  _workspacePath: string,
-  tmuxAliveCache: Map<string, boolean>,
+  livenessKey: string,
 ): WorkspaceStatus {
   const planState = usePlanStore.getState();
   const session = planState.sessions[sessionKey];
@@ -51,8 +54,8 @@ function deriveSessionStatus(
       session.sessionStatus !== "reconnecting";
 
     if (hasPreviouslyRun) {
-      const alive = tmuxAliveCache.get(tmuxSessionName);
-      if (alive === true) {
+      const entry = useTmuxLivenessStore.getState().liveness[livenessKey];
+      if (entry?.alive === true) {
         return "waiting";
       }
     }
@@ -65,11 +68,27 @@ export function useWorkspaceStatus(
   workspacePath: string,
 ): WorkspaceStatusResult {
   const sessions = usePlanStore((s) => s.sessions);
+
+  // Read liveness from the shared store reactively so derived status updates
+  // when the poller writes new values.
+  const liveness = useTmuxLivenessStore((s) => s.liveness);
+
   const [tasks, setTasks] = useState<TaskInfo[]>([]);
-  const [tmuxAliveCache, setTmuxAliveCache] = useState<Map<string, boolean>>(
-    new Map(),
-  );
-  const pollTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  // Render-trigger: increment to force a re-render after cache writes without
+  // storing the cache itself in state (avoids the self-reinforcing loop).
+  const [, setRenderTick] = useState(0);
+
+  // Cache lives in a ref — no state update on write, no callback churn.
+  // Shape: tmuxSessionName → { alive, checkedAt }
+  const tmuxAliveCacheRef = useRef<
+    Map<string, { alive: boolean; checkedAt: number }>
+  >(new Map());
+
+  // Track ongoing checks to avoid concurrent duplicate IPC calls for the same session.
+  const inFlightRef = useRef<Set<string>>(new Set());
+
+  const pollTimerRef = useRef<ReturnType<typeof setInterval> | null>(null);
 
   // Fetch tasks for this workspace
   useEffect(() => {
@@ -93,14 +112,18 @@ export function useWorkspaceStatus(
     };
   }, [workspacePath]);
 
-  // Reset cache when workspace changes to avoid stale entries
+  // Reset cache and shared liveness store when workspace changes
   useEffect(() => {
-    setTmuxAliveCache(new Map());
+    tmuxAliveCacheRef.current = new Map();
+    inFlightRef.current = new Set();
+    useTmuxLivenessStore.getState().clearAll();
   }, [workspacePath]);
 
   const checkTmuxSessions = useCallback(async () => {
     const doingTasks = tasks.filter((t) => t.status === "doing");
-    const newCache = new Map<string, boolean>(tmuxAliveCache);
+    const cache = tmuxAliveCacheRef.current;
+    const inFlight = inFlightRef.current;
+    const now = Date.now();
     let changed = false;
 
     const checks: Promise<void>[] = [];
@@ -111,9 +134,9 @@ export function useWorkspaceStatus(
         ["execute" as PlanMode, task.execTmuxSession],
       ] as [PlanMode, string | null][]) {
         if (!tmuxSession) continue;
-        if (newCache.has(tmuxSession)) continue;
 
-        const sessionKey = `${mode}:${task.id}`;
+        const livenessKey = `${mode}:${task.id}`;
+        const sessionKey = livenessKey;
         const session = sessions[sessionKey];
         if (!session || session.isRunning) continue;
         if (
@@ -122,26 +145,39 @@ export function useWorkspaceStatus(
         )
           continue;
 
+        // Skip if entry is fresh (within TTL) and not in-flight
+        const cached = cache.get(tmuxSession);
+        if (cached && now - cached.checkedAt < LIVENESS_TTL_MS) continue;
+
+        // Skip if a check is already in-flight for this session
+        if (inFlight.has(tmuxSession)) continue;
+
+        inFlight.add(tmuxSession);
+
         checks.push(
           window.api.plan
             .tmuxCheck({ workspacePath, taskId: task.id, mode })
             .then((result) => {
-              if (result.ok) {
-                newCache.set(tmuxSession, result.data.alive);
-                changed = true;
-              } else {
+              const alive = result.ok ? result.data.alive : false;
+              if (!result.ok) {
                 console.warn(
                   "[useWorkspaceStatus] tmuxCheck failed:",
                   result.error,
                 );
-                newCache.set(tmuxSession, false);
-                changed = true;
               }
+              cache.set(tmuxSession, { alive, checkedAt: Date.now() });
+              // Write into the shared liveness store so TaskCard reads it reactively
+              useTmuxLivenessStore.getState().setLiveness(livenessKey, alive);
+              changed = true;
             })
             .catch((err) => {
               console.warn("[useWorkspaceStatus] tmuxCheck error:", err);
-              newCache.set(tmuxSession, false);
+              cache.set(tmuxSession, { alive: false, checkedAt: Date.now() });
+              useTmuxLivenessStore.getState().setLiveness(livenessKey, false);
               changed = true;
+            })
+            .finally(() => {
+              inFlight.delete(tmuxSession);
             }),
         );
       }
@@ -150,14 +186,17 @@ export function useWorkspaceStatus(
     if (checks.length > 0) {
       await Promise.all(checks);
       if (changed) {
-        setTmuxAliveCache(new Map(newCache));
+        // Bump the render-trigger so derived status re-evaluates
+        setRenderTick((t) => t + 1);
       }
     }
-  }, [tasks, sessions, workspacePath, tmuxAliveCache]);
+  }, [tasks, sessions, workspacePath]);
+  // NOTE: tmuxAliveCacheRef and inFlightRef are refs — intentionally omitted
+  // from deps to avoid recreating this callback on every cache write.
 
-  // Poll tmux sessions when needed
+  // Poll tmux sessions when needed; restart interval only when tasks/sessions change.
   useEffect(() => {
-    checkTmuxSessions();
+    void checkTmuxSessions();
 
     const needsPolling = tasks.some((t) => {
       if (t.status !== "doing") return false;
@@ -177,7 +216,7 @@ export function useWorkspaceStatus(
     });
 
     if (needsPolling) {
-      pollTimerRef.current = setInterval(checkTmuxSessions, 2000);
+      pollTimerRef.current = setInterval(() => void checkTmuxSessions(), 5_000);
     }
 
     return () => {
@@ -186,9 +225,9 @@ export function useWorkspaceStatus(
         pollTimerRef.current = null;
       }
     };
-  }, [tasks, sessions, workspacePath, checkTmuxSessions]);
+  }, [tasks, sessions, checkTmuxSessions]);
 
-  // Derive aggregate status
+  // Derive aggregate status using the shared liveness store (reactive via `liveness` dep)
   let aggregateStatus: WorkspaceStatus = "idle";
   let aggregateCount = 0;
 
@@ -202,12 +241,8 @@ export function useWorkspaceStatus(
       ["execute" as PlanMode, task.execTmuxSession],
     ] as [PlanMode, string | null][]) {
       const sessionKey = `${mode}:${task.id}`;
-      const status = deriveSessionStatus(
-        sessionKey,
-        tmuxSession,
-        workspacePath,
-        tmuxAliveCache,
-      );
+      const livenessKey = sessionKey;
+      const status = deriveSessionStatus(sessionKey, tmuxSession, livenessKey);
       taskStatus = higherPriority(taskStatus, status);
     }
 
@@ -224,18 +259,18 @@ export function useWorkspaceStatus(
       ["execute" as PlanMode, task.execTmuxSession],
     ] as [PlanMode, string | null][]) {
       const sessionKey = `${mode}:${task.id}`;
-      const status = deriveSessionStatus(
-        sessionKey,
-        tmuxSession,
-        workspacePath,
-        tmuxAliveCache,
-      );
+      const livenessKey = sessionKey;
+      const status = deriveSessionStatus(sessionKey, tmuxSession, livenessKey);
       taskStatus = higherPriority(taskStatus, status);
     }
     if (taskStatus === aggregateStatus) {
       aggregateCount++;
     }
   }
+
+  // Suppress unused-variable warning — liveness is read to keep this component
+  // subscribed so it re-renders when the shared store updates.
+  void liveness;
 
   return { status: aggregateStatus, count: aggregateCount };
 }

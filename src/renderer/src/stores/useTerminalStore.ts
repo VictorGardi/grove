@@ -46,6 +46,23 @@ export function getXterm(id: string): Terminal | undefined {
 let dataCleanup: (() => void) | null = null;
 let exitCleanup: (() => void) | null = null;
 
+// Trailing-edge debounce for setIdle(id, false) — called on every output byte.
+// Without debouncing, Zustand set() fires on every character, causing high-frequency
+// renders. A ~100ms trailing debounce is acceptable: commands completing in <100ms
+// may not show the "running" indicator, which is an accepted trade-off per the DoD.
+const idleDebounceTimers = new Map<string, ReturnType<typeof setTimeout>>();
+const IDLE_DEBOUNCE_MS = 100;
+
+function debouncedSetNotIdle(id: string): void {
+  const existing = idleDebounceTimers.get(id);
+  if (existing) clearTimeout(existing);
+  const timer = setTimeout(() => {
+    idleDebounceTimers.delete(id);
+    useTerminalStore.getState().setIdle(id, false);
+  }, IDLE_DEBOUNCE_MS);
+  idleDebounceTimers.set(id, timer);
+}
+
 export function initTerminalListeners(): void {
   if (dataCleanup) return; // Already initialized
 
@@ -54,8 +71,9 @@ export function initTerminalListeners(): void {
     if (term) {
       term.write(data);
     }
-    // Update idle state
-    useTerminalStore.getState().setIdle(id, false);
+    // Update idle state with trailing-edge debounce to avoid Zustand set() on
+    // every output byte — see debouncedSetNotIdle above.
+    debouncedSetNotIdle(id);
   });
 
   exitCleanup = window.api.pty.onExit(async (id: string, exitCode: number) => {
@@ -99,7 +117,8 @@ export const useTerminalStore = create<TerminalState>()((set, get) => ({
   removeTab: (id: string) => {
     // Kill the PTY
     window.api.pty.kill(id);
-    // Unregister xterm
+    // Dispose and unregister xterm
+    xtermRefs.get(id)?.dispose();
     unregisterXterm(id);
 
     set((s) => {
