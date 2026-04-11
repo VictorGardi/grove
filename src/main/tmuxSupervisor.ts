@@ -276,7 +276,14 @@ export class TmuxSupervisor {
     let argsStr: string;
 
     if (agent === "opencode") {
-      const parts = ["run", "--format", "json", "--agent", "build", "--thinking"];
+      const parts = [
+        "run",
+        "--format",
+        "json",
+        "--agent",
+        "build",
+        "--thinking",
+      ];
       if (model) parts.push("--model", this.shellQuote(model));
       if (sessionId) parts.push("--session", this.shellQuote(sessionId));
       parts.push("--", '"$(cat "$MSG_FILE")"');
@@ -290,6 +297,7 @@ export class TmuxSupervisor {
         "--stream",
         "on",
         "--no-color",
+        "--add-dir=$HOME/.grove",
       ];
       if (mode === "plan") {
         parts.push("--deny-tool=shell");
@@ -481,7 +489,6 @@ exit $EXIT_CODE
       const buf = Buffer.alloc(65536);
       let bytesRead: number;
       try {
-        // eslint-disable-next-line no-constant-condition
         while (true) {
           bytesRead = fs.readSync(tailer.fd, buf, 0, buf.length, tailer.offset);
           if (bytesRead === 0) break;

@@ -298,3 +298,199 @@ export const groveThemeLatte: ThemeRegistration = {
     }, // Peach
   ],
 };
+
+// ── Tokyo Night (dark) ───────────────────────────────────────────
+
+export const groveThemeTokyoNight: ThemeRegistration = {
+  name: "grove-tokyo-night",
+  type: "dark",
+  colors: {
+    "editor.background": "#1a1b26",
+    "editor.foreground": "#c0caf5",
+    "editorLineNumber.foreground": "#565f89",
+  },
+  tokenColors: [
+    {
+      scope: [
+        "keyword",
+        "storage",
+        "storage.type",
+        "keyword.control",
+        "keyword.operator.new",
+      ],
+      settings: { foreground: "#bb9af7" },
+    }, // Purple
+    {
+      scope: ["string", "string.quoted", "string.template"],
+      settings: { foreground: "#9ece6a" },
+    }, // Green
+    {
+      scope: ["comment", "comment.line", "comment.block"],
+      settings: { foreground: "#565f89", fontStyle: "italic" },
+    }, // Comment
+    {
+      scope: [
+        "constant",
+        "constant.numeric",
+        "constant.language",
+        "constant.character",
+      ],
+      settings: { foreground: "#ff9e64" },
+    }, // Orange
+    {
+      scope: ["entity.name.function", "support.function", "meta.function-call"],
+      settings: { foreground: "#7aa2f7" },
+    }, // Blue
+    {
+      scope: [
+        "entity.name.type",
+        "entity.name.class",
+        "support.type",
+        "support.class",
+      ],
+      settings: { foreground: "#e0af68" },
+    }, // Yellow
+    {
+      scope: ["variable", "variable.other"],
+      settings: { foreground: "#c0caf5" },
+    }, // Text
+    {
+      scope: ["variable.other.property", "support.variable.property"],
+      settings: { foreground: "#a9b1d6" },
+    }, // Subtext
+    {
+      scope: ["keyword.operator", "punctuation"],
+      settings: { foreground: "#9aa5ce" },
+    }, // Foreground
+    {
+      scope: ["entity.name.tag", "support.class.component"],
+      settings: { foreground: "#f7768e" },
+    }, // Red
+    {
+      scope: ["entity.other.attribute-name"],
+      settings: { foreground: "#ff9e64" },
+    }, // Orange
+    {
+      scope: ["punctuation.definition.template-expression"],
+      settings: { foreground: "#bb9af7" },
+    }, // Purple
+    { scope: ["string.regexp"], settings: { foreground: "#f7768e" } }, // Red
+    {
+      scope: ["markup.heading", "entity.name.section"],
+      settings: { foreground: "#bb9af7", fontStyle: "bold" },
+    },
+    { scope: ["markup.bold"], settings: { fontStyle: "bold" } },
+    { scope: ["markup.italic"], settings: { fontStyle: "italic" } },
+    { scope: ["markup.underline.link"], settings: { foreground: "#7aa2f7" } }, // Blue
+    {
+      scope: ["support.type.property-name.json"],
+      settings: { foreground: "#7dcfff" },
+    }, // Cyan
+    {
+      scope: ["support.type.property-name.css"],
+      settings: { foreground: "#7dcfff" },
+    },
+    {
+      scope: ["support.constant.property-value.css"],
+      settings: { foreground: "#ff9e64" },
+    }, // Orange
+  ],
+};
+
+// ── Evergreen (Everforest dark) ───────────────────────────────────
+
+export const groveThemeEvergreen: ThemeRegistration = {
+  name: "grove-evergreen",
+  type: "dark",
+  colors: {
+    "editor.background": "#2d353b",
+    "editor.foreground": "#d3c6aa",
+    "editorLineNumber.foreground": "#7a8478",
+  },
+  tokenColors: [
+    {
+      scope: [
+        "keyword",
+        "storage",
+        "storage.type",
+        "keyword.control",
+        "keyword.operator.new",
+      ],
+      settings: { foreground: "#d699b6" },
+    }, // Purple
+    {
+      scope: ["string", "string.quoted", "string.template"],
+      settings: { foreground: "#a7c080" },
+    }, // Green
+    {
+      scope: ["comment", "comment.line", "comment.block"],
+      settings: { foreground: "#7a8478", fontStyle: "italic" },
+    }, // Comment
+    {
+      scope: [
+        "constant",
+        "constant.numeric",
+        "constant.language",
+        "constant.character",
+      ],
+      settings: { foreground: "#e69875" },
+    }, // Orange
+    {
+      scope: ["entity.name.function", "support.function", "meta.function-call"],
+      settings: { foreground: "#7fbbb3" },
+    }, // Blue
+    {
+      scope: [
+        "entity.name.type",
+        "entity.name.class",
+        "support.type",
+        "support.class",
+      ],
+      settings: { foreground: "#dbbc7f" },
+    }, // Yellow
+    {
+      scope: ["variable", "variable.other"],
+      settings: { foreground: "#d3c6aa" },
+    }, // Text
+    {
+      scope: ["variable.other.property", "support.variable.property"],
+      settings: { foreground: "#9da9a0" },
+    }, // Subtext
+    {
+      scope: ["keyword.operator", "punctuation"],
+      settings: { foreground: "#859289" },
+    }, // Grey1
+    {
+      scope: ["entity.name.tag", "support.class.component"],
+      settings: { foreground: "#e67e80" },
+    }, // Red
+    {
+      scope: ["entity.other.attribute-name"],
+      settings: { foreground: "#e69875" },
+    }, // Orange
+    {
+      scope: ["punctuation.definition.template-expression"],
+      settings: { foreground: "#d699b6" },
+    }, // Purple
+    { scope: ["string.regexp"], settings: { foreground: "#e67e80" } }, // Red
+    {
+      scope: ["markup.heading", "entity.name.section"],
+      settings: { foreground: "#d699b6", fontStyle: "bold" },
+    },
+    { scope: ["markup.bold"], settings: { fontStyle: "bold" } },
+    { scope: ["markup.italic"], settings: { fontStyle: "italic" } },
+    { scope: ["markup.underline.link"], settings: { foreground: "#7fbbb3" } }, // Blue
+    {
+      scope: ["support.type.property-name.json"],
+      settings: { foreground: "#83c092" },
+    }, // Aqua
+    {
+      scope: ["support.type.property-name.css"],
+      settings: { foreground: "#83c092" },
+    },
+    {
+      scope: ["support.constant.property-value.css"],
+      settings: { foreground: "#e69875" },
+    }, // Orange
+  ],
+};

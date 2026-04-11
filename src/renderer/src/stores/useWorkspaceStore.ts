@@ -3,6 +3,7 @@ import type { WorkspaceInfo, PlanAgent } from "../../../shared/types";
 import { useDataStore } from "./useDataStore";
 import { useNavStore } from "./useNavStore";
 import { useBoardStore } from "./useBoardStore";
+import { useTerminalStore } from "./useTerminalStore";
 
 export type DetailTab = "edit" | "plan" | "changes" | "debug";
 
@@ -17,6 +18,7 @@ interface BoardState {
 
 interface TerminalState {
   terminalPanelOpen: boolean;
+  activeTabId: string | null;
 }
 
 interface WorkspaceDefaults {
@@ -118,6 +120,7 @@ export const useWorkspaceStore = create<WorkspaceState>()((set, get) => ({
     if (currentPath && currentPath !== path) {
       const dataState = useDataStore.getState();
       const navState = useNavStore.getState();
+      const terminalState = useTerminalStore.getState();
 
       set({
         workspaceBoardStates: {
@@ -135,6 +138,7 @@ export const useWorkspaceStore = create<WorkspaceState>()((set, get) => ({
           ...state.workspaceTerminalStates,
           [currentPath]: {
             terminalPanelOpen: navState.terminalPanelOpen,
+            activeTabId: terminalState.activeTabId,
           },
         },
       });
@@ -181,9 +185,9 @@ export const useWorkspaceStore = create<WorkspaceState>()((set, get) => ({
       tasks.some((t) => t.id === saved.selectedTaskId)
     ) {
       useDataStore.getState().setSelectedTask(saved.selectedTaskId);
-    } else {
-      useDataStore.getState().clearSelectedTask();
     }
+    // Don't clear selectedTask if there's no saved state - that means the user
+    // just selected a task (e.g., via task switcher) and we shouldn't clobber it
   },
 
   saveCurrentTerminalState: () => {
@@ -192,11 +196,13 @@ export const useWorkspaceStore = create<WorkspaceState>()((set, get) => ({
     if (!currentPath) return;
 
     const navState = useNavStore.getState();
+    const terminalState = useTerminalStore.getState();
     set({
       workspaceTerminalStates: {
         ...state.workspaceTerminalStates,
         [currentPath]: {
           terminalPanelOpen: navState.terminalPanelOpen,
+          activeTabId: terminalState.activeTabId,
         },
       },
     });
@@ -212,6 +218,14 @@ export const useWorkspaceStore = create<WorkspaceState>()((set, get) => ({
       navState.toggleTerminalPanel();
     } else if (!saved.terminalPanelOpen && navState.terminalPanelOpen) {
       navState.toggleTerminalPanel();
+    }
+
+    const terminalStore = useTerminalStore.getState();
+    if (
+      saved.activeTabId &&
+      terminalStore.tabs.some((t) => t.id === saved.activeTabId)
+    ) {
+      terminalStore.setActiveTab(saved.activeTabId);
     }
   },
 

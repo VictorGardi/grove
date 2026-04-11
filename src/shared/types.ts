@@ -34,6 +34,7 @@ export interface AppConfig {
   workspaces: WorkspaceEntry[];
   lastActiveWorkspace: string | null; // workspace path
   theme: string;
+  windowOpacity: number;
 }
 
 /** Standard IPC result wrapper */
@@ -91,10 +92,12 @@ export interface TaskInfo {
   execSessionAgent: PlanAgent | null;
   /** Model used in the current execution session */
   execModel: string | null;
-  /** Tmux session name for plan mode (persisted in frontmatter) */
-  planTmuxSession: string | null;
-  /** Tmux session name for execute mode (persisted in frontmatter) */
-  execTmuxSession: string | null;
+  /** Tmux session name for planning terminal session (persisted in frontmatter) */
+  terminalPlanSession: string | null;
+  /** Tmux session name for execution terminal session (persisted in frontmatter) */
+  terminalExecSession: string | null;
+  /** Whether initial context has been sent to the exec session */
+  terminalExecContextSent: boolean;
   /** Last exit code for plan mode (persisted in frontmatter) */
   planLastExitCode: number | null;
   /** Last exit code for execute mode (persisted in frontmatter) */
@@ -158,10 +161,12 @@ export interface TaskFrontmatter {
   execSessionAgent?: PlanAgent | null;
   /** Model used in the current execution session */
   execModel?: string | null;
-  /** Tmux session name for plan mode */
-  planTmuxSession?: string | null;
-  /** Tmux session name for execute mode */
-  execTmuxSession?: string | null;
+  /** Tmux session name for planning terminal mode */
+  terminalPlanSession?: string | null;
+  /** Tmux session name for execution terminal mode */
+  terminalExecSession?: string | null;
+  /** Whether initial context has been sent to the exec session */
+  terminalExecContextSent?: boolean;
   /** Last exit code for plan mode */
   planLastExitCode?: number | null;
   /** Last exit code for execute mode */
@@ -365,4 +370,29 @@ export interface DiffSummary {
   files: ChangedFile[];
   totalAdditions: number;
   totalDeletions: number;
+}
+
+// ── Tmux Session Monitoring ──────────────────────────────────────
+
+/** Session type for a Grove tmux session */
+export type TmuxSessionType = "plan" | "exec" | "term-plan" | "term-exec";
+
+/** Information about an active Grove tmux session */
+export interface TmuxSessionInfo {
+  sessionName: string;
+  sessionType: TmuxSessionType;
+  workspaceHash: string;
+  workspacePath: string | null;
+  workspaceName: string | null;
+  taskId: string;
+  taskStatus: TaskStatus | null;
+  agent: string | null;
+  model: string | null;
+  paneCommand: string;
+  panePid: number;
+  paneDead: boolean;
+  sessionCreatedTs: number; // Unix seconds
+  paneActivityTs: number; // Unix seconds
+  idleSeconds: number; // computed
+  durationSeconds: number; // computed
 }

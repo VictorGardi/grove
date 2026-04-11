@@ -7,9 +7,15 @@ const DEFAULT_CONFIG: AppConfig = {
   workspaces: [],
   lastActiveWorkspace: null,
   theme: "catppuccin-mocha",
+  windowOpacity: 1.0,
 };
 
-const VALID_THEMES = ["catppuccin-mocha", "catppuccin-latte"] as const;
+const VALID_THEMES = [
+  "catppuccin-mocha",
+  "catppuccin-latte",
+  "tokyo-night",
+  "evergreen",
+] as const;
 
 export type ValidTheme = (typeof VALID_THEMES)[number];
 
@@ -62,6 +68,12 @@ export class ConfigManager {
         typeof parsed.theme === "string" && isValidTheme(parsed.theme)
           ? parsed.theme
           : "catppuccin-mocha";
+      const windowOpacity =
+        typeof parsed.windowOpacity === "number" &&
+        parsed.windowOpacity >= 0.1 &&
+        parsed.windowOpacity <= 1.0
+          ? parsed.windowOpacity
+          : 1.0;
       return {
         workspaces: Array.isArray(parsed.workspaces) ? parsed.workspaces : [],
         lastActiveWorkspace:
@@ -70,6 +82,7 @@ export class ConfigManager {
             ? (parsed.lastActiveWorkspace ?? null)
             : null,
         theme,
+        windowOpacity,
       };
     } catch (err) {
       console.warn(

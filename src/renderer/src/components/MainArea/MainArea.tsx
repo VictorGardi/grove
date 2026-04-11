@@ -6,6 +6,8 @@ import { Board } from "../Board/Board";
 import { TaskDetailPanel } from "../TaskDetail/TaskDetailPanel";
 import { FilesView } from "../Files/FilesView";
 import { Settings } from "../Settings/Settings";
+import { AgentMonitor } from "../AgentMonitor/AgentMonitor";
+import { HomePage } from "../Home/HomePage";
 
 export function MainArea(): React.JSX.Element {
   const activeView = useNavStore((s) => s.activeView);
@@ -50,11 +52,32 @@ export function MainArea(): React.JSX.Element {
     );
   }
 
+  if (activeView === "home") {
+    return (
+      <div className={styles.mainAreaContent}>
+        <HomePage />
+      </div>
+    );
+  }
+
   if (activeView === "board") {
     return (
       <div className={styles.mainAreaContent}>
         <Board />
-        {selectedTaskId && <TaskDetailPanel />}
+      </div>
+    );
+  }
+
+  if (activeView === "task") {
+    return (
+      <div className={styles.mainAreaContent}>
+        {selectedTaskId ? (
+          <TaskDetailPanel />
+        ) : (
+          <div className={styles.placeholder}>
+            <div className={styles.placeholderText}>No task selected</div>
+          </div>
+        )}
       </div>
     );
   }
@@ -71,6 +94,14 @@ export function MainArea(): React.JSX.Element {
     return (
       <div className={styles.mainAreaContent}>
         <Settings />
+      </div>
+    );
+  }
+
+  if (activeView === "agents") {
+    return (
+      <div className={styles.mainAreaContent}>
+        <AgentMonitor />
       </div>
     );
   }

@@ -1,5 +1,6 @@
 import { create } from "zustand";
 import type { Terminal } from "@xterm/xterm";
+import { FitAddon } from "@xterm/addon-fit";
 
 export interface TerminalTab {
   id: string;
@@ -29,6 +30,7 @@ interface TerminalState {
 
 // Centralized xterm instance registry — outside Zustand to avoid serialization issues
 const xtermRefs = new Map<string, Terminal>();
+const fitAddonRefs = new Map<string, FitAddon>();
 
 export function registerXterm(id: string, terminal: Terminal): void {
   xtermRefs.set(id, terminal);
@@ -40,6 +42,18 @@ export function unregisterXterm(id: string): void {
 
 export function getXterm(id: string): Terminal | undefined {
   return xtermRefs.get(id);
+}
+
+export function registerFitAddon(id: string, fitAddon: FitAddon): void {
+  fitAddonRefs.set(id, fitAddon);
+}
+
+export function getFitAddon(id: string): FitAddon | undefined {
+  return fitAddonRefs.get(id);
+}
+
+export function unregisterFitAddon(id: string): void {
+  fitAddonRefs.delete(id);
 }
 
 // Global data listener — registered once
@@ -120,6 +134,9 @@ export const useTerminalStore = create<TerminalState>()((set, get) => ({
     // Dispose and unregister xterm
     xtermRefs.get(id)?.dispose();
     unregisterXterm(id);
+    // Dispose and unregister FitAddon
+    fitAddonRefs.get(id)?.dispose();
+    unregisterFitAddon(id);
 
     set((s) => {
       const newTabs = s.tabs.filter((t) => t.id !== id);

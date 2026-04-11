@@ -15,7 +15,12 @@
     <script>
       (function () {
         var t = localStorage.getItem("grove:theme");
-        var valid = ["catppuccin-mocha", "catppuccin-latte"];
+        var valid = [
+          "catppuccin-mocha",
+          "catppuccin-latte",
+          "tokyo-night",
+          "evergreen",
+        ];
         if (t && valid.indexOf(t) !== -1) {
           document.documentElement.setAttribute("data-theme", t);
         }

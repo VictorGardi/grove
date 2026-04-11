@@ -1,0 +1,39 @@
+/* ── Evergreen (Everforest Dark Medium) theme ───────────────────────
+   https://github.com/sainnhe/everforest
+   ───────────────────────────────────────────────────────────────── */
+:root[data-theme="evergreen"] {
+  /* Backgrounds */
+  --bg-base: #2d353b;
+  --bg-surface: #232a2e;
+  --bg-elevated: #3d484d;
+  --bg-hover: #475258;
+  --bg-active: #343f44;
+
+  /* Borders */
+  --border: #343f44;
+  --border-dim: #3d484d;
+
+  /* Text */
+  --text-primary: #d3c6aa;
+  --text-secondary: #9da9a0;
+  --text-lo: #7a8478;
+
+  /* Accent */
+  --accent: #a7c080;
+  --accent-dim: rgba(167, 192, 128, 0.15);
+  --accent-selection: rgba(167, 192, 128, 0.3);
+
+  /* Status */
+  --status-green: #a7c080;
+  --status-amber: #dbbc7f;
+  --status-red: #e67e80;
+  --status-blue: #7fbbb3;
+  --status-backlog: #9db5b2;
+  --status-done: #d4b8a0;
+
+  /* Diff colors */
+  --green: #a7c080;
+  --green-dim: rgba(167, 192, 128, 0.12);
+  --red: #e67e80;
+  --red-dim: rgba(230, 126, 128, 0.12);
+}

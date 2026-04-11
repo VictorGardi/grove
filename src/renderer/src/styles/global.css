@@ -3,6 +3,8 @@
 @import "./themes/default.css";
 @import "./themes/catppuccin-mocha.css";
 @import "./themes/catppuccin-latte.css";
+@import "./themes/tokyo-night.css";
+@import "./themes/evergreen.css";
 
 /* Google Fonts fallback for development */
 @import url("https://fonts.googleapis.com/css2?family=Figtree:wght@300..900&family=JetBrains+Mono:wght@400;700&display=swap");

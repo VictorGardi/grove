@@ -147,12 +147,56 @@ contextBridge.exposeInMainWorld("api", {
       return () => ipcRenderer.removeListener("pty:exit", handler);
     },
   },
+  taskterm: {
+    create: (params: {
+      ptyId: string;
+      taskId: string;
+      taskFilePath: string;
+      workspacePath: string;
+      agent: string;
+      model: string | null;
+      cwd: string;
+      cols?: number;
+      rows?: number;
+    }) => ipcRenderer.invoke("taskterm:create", params),
+    reconnect: (params: {
+      ptyId: string;
+      sessionName: string;
+      cwd: string;
+      cols?: number;
+      rows?: number;
+    }) => ipcRenderer.invoke("taskterm:reconnect", params),
+    capture: (sessionName: string) =>
+      ipcRenderer.invoke("taskterm:capture", sessionName),
+    isAlive: (sessionName: string) =>
+      ipcRenderer.invoke("taskterm:isalive", sessionName),
+    kill: (params: { ptyId: string; sessionName: string }) =>
+      ipcRenderer.invoke("taskterm:kill", params),
+    paneCommand: (sessionName: string) =>
+      ipcRenderer.invoke("taskterm:panecommand", sessionName),
+    state: (sessionName: string, agent: string) =>
+      ipcRenderer.invoke("taskterm:state", sessionName, agent),
+    refresh: (sessionName: string) =>
+      ipcRenderer.invoke("taskterm:refresh", sessionName),
+    writeContext: (params: { sessionName: string; content: string }) =>
+      ipcRenderer.invoke("taskterm:writecontext", params),
+    cleanContext: (sessionName: string) =>
+      ipcRenderer.invoke("taskterm:cleancontext", sessionName),
+  },
   app: {
     getPlatform: () => ipcRenderer.invoke("app:getPlatform"),
     getTheme: () => ipcRenderer.invoke("app:getTheme"),
     setTheme: (theme: string) => ipcRenderer.invoke("app:setTheme", theme),
     setTitleBarColor: (opts: { color: string; symbolColor: string }) =>
       ipcRenderer.invoke("app:setTitleBarColor", opts),
+    getWindowOpacity: () => ipcRenderer.invoke("app:getWindowOpacity"),
+    setWindowOpacity: (opacity: number) =>
+      ipcRenderer.invoke("app:setWindowOpacity", opacity),
+  },
+  tmux: {
+    listGroveSessions: () => ipcRenderer.invoke("tmux:listGroveSessions"),
+    killSession: (params: { sessionName: string }) =>
+      ipcRenderer.invoke("tmux:killSession", params),
   },
   plan: {
     send: (input: {

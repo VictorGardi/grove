@@ -1,7 +1,7 @@
 import { ipcMain } from "electron";
 import type { BrowserWindow } from "electron";
 import * as path from "path";
-import type { PlanManager } from "../planManager";
+import type { AgentRunner } from "../agentRunner";
 import type { IpcResult, PlanAgent, PlanMode } from "@shared/types";
 import { updateTask } from "../tasks";
 import { buildTmuxSessionName } from "../tmuxSupervisor";
@@ -10,7 +10,7 @@ const VALID_AGENTS: PlanAgent[] = ["opencode", "copilot"];
 const VALID_MODES: PlanMode[] = ["plan", "execute"];
 
 export function registerPlanHandlers(
-  planManager: PlanManager,
+  planManager: AgentRunner,
   mainWindow: BrowserWindow,
 ): void {
   // Wire chunk forwarding to renderer — now includes mode for routing.

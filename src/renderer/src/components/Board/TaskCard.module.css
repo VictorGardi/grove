@@ -175,6 +175,40 @@
   color: var(--status-yellow, #f0c060);
 }
 
+/* ── starting agent session indicator ─────────────────────────────── */
+
+@keyframes spin {
+  0% {
+    transform: rotate(0deg);
+  }
+  100% {
+    transform: rotate(360deg);
+  }
+}
+
+.startingRow {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  margin-top: 5px;
+}
+
+.startingDot {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  border: 1.5px solid var(--status-orange, #f97316);
+  border-top-color: transparent;
+  flex-shrink: 0;
+  animation: spin 0.8s linear infinite;
+}
+
+.startingLabel {
+  font-family: var(--font-mono);
+  font-size: 10px;
+  color: var(--status-orange, #f97316);
+}
+
 .reviewPendingLabel {
   font-family: var(--font-mono);
   font-size: 10px;

@@ -1,10 +1,12 @@
 import { useNavStore, type View } from "../../stores/useNavStore";
+import { useAgentsStore } from "../../stores/useAgentsStore";
 
 interface NavItem {
   id: View | "terminal";
   label: string;
   icon: React.JSX.Element;
   bottom?: boolean;
+  badge?: number;
 }
 
 const navItems: NavItem[] = [
@@ -136,6 +138,27 @@ const navItems: NavItem[] = [
     ),
   },
   {
+    id: "agents",
+    label: "Agents",
+    icon: (
+      <svg
+        width="14"
+        height="14"
+        viewBox="0 0 16 16"
+        fill="none"
+        xmlns="http://www.w3.org/2000/svg"
+      >
+        <circle cx="8" cy="4" r="2" stroke="currentColor" strokeWidth="1.3" />
+        <path
+          d="M2 13C2 11 4.5 10 8 10C11.5 10 14 11 14 13"
+          stroke="currentColor"
+          strokeWidth="1.3"
+          strokeLinecap="round"
+        />
+      </svg>
+    ),
+  },
+  {
     id: "settings",
     label: "Settings",
     bottom: true,
@@ -164,10 +187,12 @@ export function BottomNav(): React.JSX.Element {
   const setActiveView = useNavStore((s) => s.setActiveView);
   const terminalPanelOpen = useNavStore((s) => s.terminalPanelOpen);
   const toggleTerminalPanel = useNavStore((s) => s.toggleTerminalPanel);
+  const runningSessionCount = useAgentsStore((s) => s.runningCount);
 
   function renderItem(item: NavItem): React.JSX.Element {
     const isTerminal = item.id === "terminal";
     const isActive = isTerminal ? terminalPanelOpen : activeView === item.id;
+    const showBadge = item.id === "agents" && runningSessionCount > 0;
 
     function handleClick(): void {
       if (isTerminal) {
@@ -203,6 +228,7 @@ export function BottomNav(): React.JSX.Element {
           transition:
             "background var(--transition-fast), color var(--transition-fast)",
           outline: "none",
+          position: "relative",
         }}
         onMouseEnter={(e) => {
           if (!isActive) {
@@ -226,6 +252,25 @@ export function BottomNav(): React.JSX.Element {
           {item.icon}
         </span>
         {item.label}
+        {showBadge && (
+          <div
+            style={{
+              marginLeft: "auto",
+              background: "var(--color-red)",
+              color: "white",
+              borderRadius: "50%",
+              width: "20px",
+              height: "20px",
+              display: "flex",
+              alignItems: "center",
+              justifyContent: "center",
+              fontSize: "11px",
+              fontWeight: "600",
+            }}
+          >
+            {runningSessionCount > 9 ? "9+" : runningSessionCount}
+          </div>
+        )}
       </div>
     );
   }

@@ -2,16 +2,18 @@ import { ipcMain, BrowserWindow } from "electron";
 import type { ConfigManager } from "../config";
 import { isValidTheme } from "../config";
 import { PtyManager } from "../pty";
-import { PlanManager } from "../planManager";
+import { AgentRunner } from "../agentRunner";
 import { registerWorkspaceHandlers } from "./workspace";
 import { registerTaskHandlers } from "./tasks";
 import { registerFilesystemHandlers } from "./filesystem";
 import { registerGitHandlers } from "./git";
 import { registerPtyHandlers } from "./pty";
 import { registerPlanHandlers } from "./plan";
+import { registerTaskTerminalHandlers } from "./taskTerminal";
+import { registerTmuxMonitorHandlers } from "./tmuxMonitor";
 
 let ptyManager: PtyManager | null = null;
-let planManager: PlanManager | null = null;
+let planManager: AgentRunner | null = null;
 
 export function registerIpcHandlers(
   configManager: ConfigManager,
@@ -27,9 +29,15 @@ export function registerIpcHandlers(
   registerPtyHandlers(ptyManager, mainWindow);
 
   // Plan manager — lifecycle managed here
-  planManager = new PlanManager();
+  planManager = new AgentRunner();
   planManager.init(); // Clean up orphaned FIFOs on startup
   registerPlanHandlers(planManager, mainWindow);
+
+  // Task terminal manager — interactive agent TUI sessions bound to tasks
+  registerTaskTerminalHandlers(ptyManager, mainWindow);
+
+  // tmux monitor — lists all Grove tmux sessions across workspaces
+  registerTmuxMonitorHandlers(configManager);
 
   // app:getPlatform
   ipcMain.handle("app:getPlatform", () => process.platform);
@@ -45,7 +53,7 @@ export function registerIpcHandlers(
     if (!isValidTheme(theme)) {
       return {
         ok: false,
-        error: `Invalid theme: ${theme}. Valid themes are: catppuccin-mocha, catppuccin-latte`,
+        error: `Invalid theme: ${theme}. Valid themes are: catppuccin-mocha, catppuccin-latte, tokyo-night, evergreen`,
       };
     }
     configManager.update((cfg) => {
@@ -67,6 +75,24 @@ export function registerIpcHandlers(
       }
     },
   );
+
+  // app:getWindowOpacity
+  ipcMain.handle("app:getWindowOpacity", () => {
+    const opacity = configManager.get().windowOpacity;
+    return { ok: true, data: opacity };
+  });
+
+  // app:setWindowOpacity
+  ipcMain.handle("app:setWindowOpacity", (_event, opacity: number) => {
+    const clampedOpacity = Math.max(0.1, Math.min(1.0, opacity));
+    configManager.update((cfg) => {
+      cfg.windowOpacity = clampedOpacity;
+    });
+    if (mainWindow) {
+      mainWindow.setOpacity(clampedOpacity);
+    }
+    return { ok: true, data: clampedOpacity };
+  });
 }
 
 /**

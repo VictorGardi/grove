@@ -241,3 +241,147 @@
   display: block;
   white-space: pre;
 }
+
+/* ── Mermaid diagrams ─────────────────────────────────────────────── */
+
+.mermaidContainer {
+  margin: 1em 0;
+  border-radius: var(--radius-md);
+  border: 1px solid var(--border);
+  background: var(--bg-surface);
+  max-width: 100%;
+}
+
+.mermaidDiagram {
+  padding: 16px;
+  display: flex;
+  justify-content: center;
+  align-items: flex-start;
+  min-height: 100px;
+  overflow: auto;
+}
+
+.mermaidDiagram.fullscreen {
+  position: fixed;
+  top: 0;
+  left: 0;
+  width: 100vw;
+  height: 100vh;
+  overflow: hidden;
+  background: var(--bg-surface);
+  z-index: 9999;
+  padding: 40px;
+  box-sizing: border-box;
+}
+
+.mermaidDiagram :global(svg) {
+  max-width: 100%;
+  height: auto;
+}
+
+.mermaidLoading {
+  padding: 16px;
+  text-align: center;
+  color: var(--text-lo);
+  font-family: var(--font-ui);
+  font-size: 13px;
+}
+
+.mermaidError {
+  padding: 16px;
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+  color: var(--status-red);
+  font-family: var(--font-ui);
+  font-size: 13px;
+}
+
+.mermaidErrorIcon {
+  flex-shrink: 0;
+  font-size: 14px;
+}
+
+.mermaidErrorText {
+  word-break: break-word;
+}
+
+/* ── Mermaid fullscreen overlay ────────────────────────────────────── */
+
+.mermaidFullscreenOverlay {
+  position: fixed;
+  top: 0;
+  left: 0;
+  width: 100vw;
+  height: 100vh;
+  background: var(--bg-surface);
+  z-index: 9999;
+  display: flex;
+  flex-direction: column;
+}
+
+.mermaidFullscreenHeader {
+  display: flex;
+  justify-content: center;
+  padding: 12px;
+  background: var(--bg-elevated);
+  border-bottom: 1px solid var(--border);
+}
+
+.mermaidFullscreenHeader .mermaidControls {
+  border-bottom: none;
+  background: transparent;
+  padding: 0;
+}
+
+.mermaidFullscreenOverlay .mermaidDiagram {
+  flex: 1;
+  overflow: auto;
+  cursor: grab;
+  padding: 40px;
+  display: flex;
+  justify-content: center;
+  align-items: flex-start;
+}
+
+.mermaidFullscreenOverlay .mermaidDiagram:active {
+  cursor: grabbing;
+}
+
+/* ── Mermaid controls ─────────────────────────────────────────────── */
+
+.mermaidControls {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  padding: 6px 12px;
+  border-bottom: 1px solid var(--border);
+  background: var(--bg-elevated);
+}
+
+.mermaidControlBtn {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 24px;
+  height: 24px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  background: var(--bg-surface);
+  color: var(--text-primary);
+  font-size: 14px;
+  cursor: pointer;
+  transition: background 0.15s ease;
+}
+
+.mermaidControlBtn:hover {
+  background: var(--bg-elevated);
+}
+
+.mermaidScale {
+  min-width: 48px;
+  text-align: center;
+  font-family: var(--font-mono);
+  font-size: 12px;
+  color: var(--text-secondary);
+}

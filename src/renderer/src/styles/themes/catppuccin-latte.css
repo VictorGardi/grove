@@ -28,6 +28,8 @@
   --status-amber: #df8e1d; /* Yellow */
   --status-red: #d20f39; /* Red */
   --status-blue: #1e66f5; /* Blue */
+  --status-backlog: #7287fd; /* Indigo */
+  --status-done: #ea76c4; /* Pink */
 
   /* Diff colors */
   --green: #40a02b;

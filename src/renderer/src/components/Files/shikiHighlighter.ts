@@ -3,7 +3,13 @@ import {
   createJavaScriptRegexEngine,
   type Highlighter,
 } from "shiki";
-import { groveTheme, groveThemeMocha, groveThemeLatte } from "./shikiTheme";
+import {
+  groveTheme,
+  groveThemeMocha,
+  groveThemeLatte,
+  groveThemeTokyoNight,
+  groveThemeEvergreen,
+} from "./shikiTheme";
 
 let highlighterPromise: Promise<Highlighter> | null = null;
 
@@ -19,7 +25,13 @@ export function getHighlighter(): Promise<Highlighter> {
       // Use the JavaScript regex engine — avoids loading onig.wasm which can
       // fail silently in Electron's sandboxed renderer process.
       engine: createJavaScriptRegexEngine(),
-      themes: [groveTheme, groveThemeMocha, groveThemeLatte],
+      themes: [
+        groveTheme,
+        groveThemeMocha,
+        groveThemeLatte,
+        groveThemeTokyoNight,
+        groveThemeEvergreen,
+      ],
       langs: [
         "typescript",
         "tsx",

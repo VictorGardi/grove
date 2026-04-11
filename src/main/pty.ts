@@ -12,8 +12,9 @@ export class PtyManager {
   private ptys = new Map<string, PtyEntry>();
   private onDataCallback: DataCallback | null = null;
   private onExitCallback: ExitCallback | null = null;
-  // Track IDs killed intentionally so their exit events don't trigger markDead
-  private killedIds = new Set<string>();
+  // Track entries killed intentionally (per-instance, not per-ID) so exit
+  // events for old instances don't fire after the ID has been reused.
+  private killedEntries = new WeakSet<PtyEntry>();
 
   /**
    * Register the callback that receives PTY output data.
@@ -95,7 +96,8 @@ export class PtyManager {
       this.onDataCallback?.(id, data);
     });
 
-    // Forward exit — but only if the PTY exited naturally, not via explicit kill()
+    // Forward exit — but only if the PTY exited naturally, not via explicit kill().
+    // Use entry-scoped comparison to avoid stomping on a newer PTY with the same ID.
     ptyProcess.onExit(({ exitCode, signal }) => {
       console.log(
         "[PtyManager] PTY exited, id:",
@@ -105,9 +107,58 @@ export class PtyManager {
         "signal:",
         signal,
       );
-      this.ptys.delete(id);
-      if (!this.killedIds.delete(id)) {
-        this.onExitCallback?.(id, exitCode, signal);
+      const isCurrent = this.ptys.get(id) === entry;
+      if (isCurrent) this.ptys.delete(id);
+      if (!this.killedEntries.has(entry)) {
+        if (isCurrent) this.onExitCallback?.(id, exitCode, signal);
+      }
+    });
+  }
+
+  /**
+   * Spawn an arbitrary command in a PTY (used for task terminals that run
+   * `tmux attach-session` rather than a login shell).
+   */
+  createWithCommand(
+    id: string,
+    command: string,
+    args: string[],
+    cwd: string,
+    opts?: { cols?: number; rows?: number; env?: NodeJS.ProcessEnv },
+  ): void {
+    if (this.ptys.has(id)) {
+      this.kill(id);
+    }
+
+    const ptyProcess = pty.spawn(command, args, {
+      name: "xterm-256color",
+      cols: opts?.cols ?? 200,
+      rows: opts?.rows ?? 50,
+      cwd,
+      env: {
+        ...process.env,
+        TERM: "xterm-256color",
+        ...(opts?.env ?? {}),
+      },
+    });
+
+    const entry: PtyEntry = {
+      process: ptyProcess,
+      lastOutputTime: Date.now(),
+    };
+
+    this.ptys.set(id, entry);
+
+    ptyProcess.onData((data: string) => {
+      entry.lastOutputTime = Date.now();
+      this.onDataCallback?.(id, data);
+    });
+
+    ptyProcess.onExit(({ exitCode, signal }) => {
+      const isCurrent = this.ptys.get(id) === entry;
+      if (isCurrent) this.ptys.delete(id);
+      if (!this.killedEntries.has(entry)) {
+        if (isCurrent) this.onExitCallback?.(id, exitCode, signal);
       }
     });
   }
@@ -147,7 +198,7 @@ export class PtyManager {
   kill(id: string): void {
     const entry = this.ptys.get(id);
     if (entry) {
-      this.killedIds.add(id); // suppress the resulting exit event
+      this.killedEntries.add(entry); // suppress the resulting exit event for this specific instance
       try {
         entry.process.kill();
       } catch {

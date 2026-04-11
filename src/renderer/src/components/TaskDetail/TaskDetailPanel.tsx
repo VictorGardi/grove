@@ -4,23 +4,20 @@ import { useWorkspaceStore, DetailTab } from "../../stores/useWorkspaceStore";
 import { useNavStore } from "../../stores/useNavStore";
 import { useFileStore } from "../../stores/useFileStore";
 import { usePlanStore } from "../../stores/usePlanStore";
-import { updateTask, archiveTask } from "../../actions/taskActions";
+import { updateTask, archiveTask, moveTask } from "../../actions/taskActions";
+import {
+  showLaunchModalAndExecute,
+  completeTask,
+} from "../../actions/executionActions";
 import { InlineEdit } from "../shared/InlineEdit";
 import { formatTimestamp } from "../../utils/date";
 import { TagInput } from "../shared/TagInput";
 import { ChangesTab } from "./ChangesTab";
-import { PlanChat } from "./PlanChat";
-import type { TaskInfo } from "@shared/types";
+import { TaskTerminal } from "./TaskTerminal";
+import type { TaskInfo, TaskStatus } from "@shared/types";
 import styles from "./TaskDetailPanel.module.css";
 
 // ── Constants ─────────────────────────────────────────────────────
-
-const STATUS_COLORS: Record<string, string> = {
-  backlog: "var(--text-lo)",
-  doing: "var(--status-green)",
-  review: "var(--status-amber)",
-  done: "var(--status-green)",
-};
 
 const DEBOUNCE_MS = 500;
 
@@ -31,13 +28,6 @@ function DebugPanel({ task }: { task: TaskInfo }): React.JSX.Element {
   const execSessionKey = `execute:${task.id}`;
   const planStoreSession = usePlanStore((s) => s.sessions[planSessionKey]);
   const execStoreSession = usePlanStore((s) => s.sessions[execSessionKey]);
-  const groveDir = `${(window as { process?: { env?: { HOME?: string } } }).process?.env?.HOME ?? "~"}/.grove/runs`;
-  const planLogPath = task.planTmuxSession
-    ? `${groveDir}/${task.planTmuxSession}.log`
-    : null;
-  const execLogPath = task.execTmuxSession
-    ? `${groveDir}/${task.execTmuxSession}.log`
-    : null;
 
   const [paneCaptures, setPaneCaptures] = useState<Record<string, string>>({});
   const [capturing, setCapturing] = useState<Record<string, boolean>>({});
@@ -69,23 +59,19 @@ function DebugPanel({ task }: { task: TaskInfo }): React.JSX.Element {
   };
   const rows: DebugRow[] = [
     {
-      label: "planTmuxSession",
-      value: task.planTmuxSession,
-      session: task.planTmuxSession ?? undefined,
+      label: "terminalPlanSession",
+      value: task.terminalPlanSession,
+      session: task.terminalPlanSession ?? undefined,
     },
-    { label: "planLogPath", value: planLogPath },
     {
-      label: "execTmuxSession",
-      value: task.execTmuxSession,
-      session: task.execTmuxSession ?? undefined,
+      label: "terminalExecSession",
+      value: task.terminalExecSession,
+      session: task.terminalExecSession ?? undefined,
     },
-    { label: "execLogPath", value: execLogPath },
-    { label: "planSessionId", value: task.planSessionId },
-    { label: "planSessionAgent", value: task.planSessionAgent },
-    { label: "planModel", value: task.planModel },
-    { label: "execSessionId", value: task.execSessionId },
     { label: "execSessionAgent", value: task.execSessionAgent },
     { label: "execModel", value: task.execModel },
+    { label: "planSessionAgent", value: task.planSessionAgent },
+    { label: "planModel", value: task.planModel },
     {
       label: "store:plan status",
       value: planStoreSession?.sessionStatus ?? null,
@@ -216,9 +202,22 @@ function renderMarkdownPreview(md: string): string {
 export function TaskDetailPanel(): React.JSX.Element {
   const task = useSelectedTask();
   const clearSelectedTask = useDataStore((s) => s.clearSelectedTask);
+  const setActiveView = useNavStore((s) => s.setActiveView);
+  const workspaces = useWorkspaceStore((s) => s.workspaces);
   const workspacePath = useWorkspaceStore((s) => s.activeWorkspacePath);
   const workspaceBoardStates = useWorkspaceStore((s) => s.workspaceBoardStates);
   const updateBoardTab = useWorkspaceStore((s) => s.updateBoardTab);
+  const workspaceDefaults =
+    useWorkspaceStore((s) =>
+      workspacePath ? (s.workspaceDefaults[workspacePath] ?? null) : null,
+    ) ?? {};
+  const [loading, setLoading] = useState(true);
+  console.log("[TaskDetailPanel] render, task:", task?.id, "loading:", loading);
+  const activeWorkspaceName = useMemo(() => {
+    if (!workspacePath || workspaces.length === 0) return null;
+    const active = workspaces.find((w) => w.path === workspacePath);
+    return active?.name ?? null;
+  }, [workspacePath, workspaces]);
 
   const activeTab: DetailTab =
     workspacePath && workspaceBoardStates[workspacePath]?.taskDetailTab
@@ -232,7 +231,6 @@ export function TaskDetailPanel(): React.JSX.Element {
   // Raw markdown content
   const [rawContent, setRawContent] = useState("");
   const [savedContent, setSavedContent] = useState("");
-  const [loading, setLoading] = useState(true);
   const [loadError, setLoadError] = useState<string | null>(null);
 
   // Debounce timer
@@ -415,6 +413,24 @@ export function TaskDetailPanel(): React.JSX.Element {
     });
   }
 
+  // ── Status change handler ───────────────────────────────────────
+
+  const handleStatusChange = useCallback(
+    async (newStatus: TaskStatus) => {
+      if (!task || !workspacePath) return;
+
+      if (newStatus === "doing" && task.status !== "doing") {
+        if (task.terminalExecSession) return;
+        void showLaunchModalAndExecute(task);
+      } else if (newStatus === "done") {
+        void completeTask(task);
+      } else if (newStatus !== task.status) {
+        await moveTask(task.filePath, newStatus);
+      }
+    },
+    [task, workspacePath],
+  );
+
   // ── Archive handler ───────────────────────────────────────────
 
   function handleArchive(): void {
@@ -464,24 +480,10 @@ export function TaskDetailPanel(): React.JSX.Element {
     clearSelectedTask();
   }
 
-  // ── Close on Escape ───────────────────────────────────────────
-
-  useEffect(() => {
-    function handleKeyDown(e: KeyboardEvent): void {
-      if (e.key === "Escape") {
-        clearSelectedTask();
-      }
-    }
-    window.addEventListener("keydown", handleKeyDown);
-    return () => window.removeEventListener("keydown", handleKeyDown);
-  }, [clearSelectedTask]);
-
-  // ── Click-outside to close (backdrop click) ───────────────────
-
-  function handleBackdropClick(e: React.MouseEvent): void {
-    if (e.target === e.currentTarget) {
-      clearSelectedTask();
-    }
+  // Close and navigate to home view
+  function handleClose(): void {
+    clearSelectedTask();
+    setActiveView("home");
   }
 
   // ── Loading / empty state ─────────────────────────────────────
@@ -490,25 +492,19 @@ export function TaskDetailPanel(): React.JSX.Element {
 
   if (loading) {
     return (
-      <div className={styles.overlay} onClick={handleBackdropClick}>
-        <div className={styles.modal}>
-          <div className={styles.loading}>Loading...</div>
-        </div>
+      <div className={styles.loading} style={{ flex: 1 }}>
+        Loading...
       </div>
     );
   }
 
   if (loadError) {
     return (
-      <div className={styles.overlay} onClick={handleBackdropClick}>
-        <div className={styles.modal}>
-          <div
-            className={styles.loading}
-            style={{ color: "var(--status-red)" }}
-          >
-            {loadError}
-          </div>
-        </div>
+      <div
+        className={styles.loading}
+        style={{ flex: 1, color: "var(--status-red)" }}
+      >
+        {loadError}
       </div>
     );
   }
@@ -516,186 +512,214 @@ export function TaskDetailPanel(): React.JSX.Element {
   // ── Render ────────────────────────────────────────────────────
 
   return (
-    <div className={styles.overlay} onClick={handleBackdropClick}>
-      <div className={styles.modal}>
-        {/* Top bar: metadata */}
-        <div className={styles.topBar}>
-          <div className={styles.topBarLeft}>
-            <span className={styles.idBadge}>{task.id}</span>
-            <span className={styles.statusTag}>
-              <span
-                className={styles.statusDot}
-                style={{ background: STATUS_COLORS[task.status] }}
-              />
-              {task.status}
-            </span>
+    <div className={styles.page}>
+      {/* Top bar: metadata */}
+      <div className={styles.topBar}>
+        {activeWorkspaceName && (
+          <span className={styles.workspaceName}>{activeWorkspaceName}</span>
+        )}
+        <div className={styles.topBarLeft}>
+          <span className={styles.idBadge}>{task.id}</span>
+          <select
+            className={styles.statusSelect}
+            value={task.status}
+            onChange={(e) => handleStatusChange(e.target.value as TaskStatus)}
+          >
+            <option value="backlog">Backlog</option>
+            <option value="doing">Doing</option>
+            <option value="review">Review</option>
+            <option value="done">Done</option>
+          </select>
 
-            {/* Tags */}
-            <div className={styles.tagsInline}>
-              <TagInput
-                tags={task.tags || []}
-                onChange={handleTagsChange}
-                placeholder="Add tag..."
-              />
-            </div>
-
-            {/* Worktree toggle — backlog and doing */}
-            {(task.status === "backlog" || task.status === "doing") && (
-              <button
-                className={`${styles.worktreeBtn} ${task.useWorktree ? styles.worktreeBtnActive : ""}`}
-                onClick={() =>
-                  updateTask(task.filePath, { useWorktree: !task.useWorktree })
-                }
-                title={
-                  task.useWorktree
-                    ? "Running in git worktree — click to switch to root repo"
-                    : "Running in root repo — click to switch to git worktree"
-                }
-              >
-                {task.useWorktree ? "worktree" : "root repo"}
-              </button>
-            )}
+          {/* Tags */}
+          <div className={styles.tagsInline}>
+            <TagInput
+              tags={task.tags || []}
+              onChange={handleTagsChange}
+              placeholder="Add tag..."
+            />
           </div>
 
-          <div className={styles.topBarRight}>
-            {isDirty && <span className={styles.dirtyIndicator}>Unsaved</span>}
-            {task.created && (
-              <span className={styles.metaCreated}>
-                {formatTimestamp(task.created)}
-              </span>
-            )}
-            {/* View files button — always shown */}
-            <button className={styles.viewFilesBtn} onClick={handleViewFiles}>
-              View files
-            </button>
-            <button className={styles.archiveBtn} onClick={handleArchive}>
-              Archive
-            </button>
+          {/* Worktree toggle — backlog and doing */}
+          {(task.status === "backlog" || task.status === "doing") && (
             <button
-              className={styles.closeBtn}
-              onClick={clearSelectedTask}
-              aria-label="Close"
-            >
-              &times;
-            </button>
-          </div>
-        </div>
-
-        {/* Title */}
-        <div className={styles.titleBar}>
-          <InlineEdit
-            value={task.title}
-            onSave={handleTitleSave}
-            className={styles.titleEdit}
-            tag="h2"
-            placeholder="Task title..."
-            startEditing={task.title === "New task"}
-          />
-        </div>
-
-        {/* Tab bar */}
-        <div className={styles.tabBar}>
-          <button
-            className={`${styles.tab} ${activeTab === "edit" ? styles.tabActive : ""}`}
-            onClick={() => setActiveTab("edit")}
-          >
-            Edit
-          </button>
-          <button
-            className={`${styles.tab} ${activeTab === "plan" ? styles.tabActive : ""}`}
-            onClick={() => setActiveTab("plan")}
-          >
-            Agent
-          </button>
-          <button
-            className={`${styles.tab} ${activeTab === "changes" ? styles.tabActive : ""}`}
-            onClick={() => setActiveTab("changes")}
-          >
-            Changes
-          </button>
-          <button
-            className={`${styles.tab} ${activeTab === "debug" ? styles.tabActive : ""}`}
-            onClick={() => setActiveTab("debug")}
-          >
-            Debug
-          </button>
-          <span className={styles.filePathHint}>{task.filePath}</span>
-        </div>
-
-        {/* Content area */}
-        {/* PlanChat stays mounted for all tasks so a running agent
-            isn't cancelled when the user temporarily switches to Edit/Changes tab.
-            The cancel-on-unmount in PlanChat only fires when the panel closes. */}
-        {(() => {
-          const planMode = task.status === "doing" ? "execute" : "plan";
-          // Only pass a worktree path when useWorktree is enabled AND a
-          // worktree has actually been created. When false the agent runs
-          // in the workspace root.
-          const worktreeAbsPath =
-            task.useWorktree && task.worktree
-              ? task.worktree.startsWith("/")
-                ? task.worktree
-                : `${workspacePath}/${task.worktree}`
-              : undefined;
-          return (
-            <div
-              style={
-                activeTab === "plan"
-                  ? {
-                      display: "flex",
-                      flex: 1,
-                      overflow: "hidden",
-                      flexDirection: "column",
-                    }
-                  : { display: "none" }
+              className={`${styles.worktreeBtn} ${task.useWorktree ? styles.worktreeBtnActive : ""}`}
+              onClick={() =>
+                updateTask(task.filePath, { useWorktree: !task.useWorktree })
+              }
+              title={
+                task.useWorktree
+                  ? "Running in git worktree — click to switch to root repo"
+                  : "Running in root repo — click to switch to git worktree"
               }
             >
-              <PlanChat
-                key={task.id}
-                task={task}
-                mode={planMode}
-                worktreePath={worktreeAbsPath}
-                onClose={() => setActiveTab("edit")}
-              />
-            </div>
-          );
-        })()}
-        {activeTab === "changes" && (
-          <div className={styles.changesWrapper}>
-            <ChangesTab task={task} />
-          </div>
-        )}
-        {activeTab === "debug" && <DebugPanel task={task} />}
-        {activeTab === "edit" && (
-          <div className={styles.splitView}>
-            {/* Left: raw markdown editor */}
-            <div className={styles.editorPane}>
-              <textarea
-                ref={editorRef}
-                className={styles.editor}
-                value={rawContent}
-                onChange={handleEditorChange}
-                onScroll={handleEditorScroll}
-                spellCheck={false}
-              />
-            </div>
+              {task.useWorktree ? "worktree" : "root repo"}
+            </button>
+          )}
+        </div>
 
-            {/* Right: markdown preview */}
-            <div
-              ref={previewRef}
-              className={styles.previewPane}
-              onScroll={handlePreviewScroll}
-            >
-              <div
-                className={styles.preview}
-                dangerouslySetInnerHTML={{
-                  __html: renderedMarkdownPreview,
-                }}
-              />
-            </div>
-          </div>
-        )}
+        <div className={styles.topBarRight}>
+          {isDirty && <span className={styles.dirtyIndicator}>Unsaved</span>}
+          {task.created && (
+            <span className={styles.metaCreated}>
+              {formatTimestamp(task.created)}
+            </span>
+          )}
+          {/* View files button — always shown */}
+          <button className={styles.viewFilesBtn} onClick={handleViewFiles}>
+            View files
+          </button>
+          <button className={styles.archiveBtn} onClick={handleArchive}>
+            Archive
+          </button>
+          <button
+            className={styles.closeBtn}
+            onClick={handleClose}
+            aria-label="Close"
+          >
+            &times;
+          </button>
+        </div>
       </div>
+
+      {/* Title */}
+      <div className={styles.titleBar}>
+        <InlineEdit
+          value={task.title}
+          onSave={handleTitleSave}
+          className={styles.titleEdit}
+          tag="h2"
+          placeholder="Task title..."
+          startEditing={task.title === "New task"}
+        />
+      </div>
+
+      {/* Tab bar */}
+      <div className={styles.tabBar}>
+        <button
+          className={`${styles.tab} ${activeTab === "edit" ? styles.tabActive : ""}`}
+          onClick={() => setActiveTab("edit")}
+        >
+          Edit
+        </button>
+        <button
+          className={`${styles.tab} ${activeTab === "plan" ? styles.tabActive : ""}`}
+          onClick={() => setActiveTab("plan")}
+        >
+          Agent
+        </button>
+        <button
+          className={`${styles.tab} ${activeTab === "changes" ? styles.tabActive : ""}`}
+          onClick={() => setActiveTab("changes")}
+        >
+          Changes
+        </button>
+        <button
+          className={`${styles.tab} ${activeTab === "debug" ? styles.tabActive : ""}`}
+          onClick={() => setActiveTab("debug")}
+        >
+          Debug
+        </button>
+        <span className={styles.filePathHint}>{task.filePath}</span>
+      </div>
+
+      {/* Content area */}
+      {/* TaskTerminal stays mounted so the running agent isn't killed
+            when the user temporarily switches to Edit/Changes tab. */}
+      {(() => {
+        const effectiveCwd =
+          task.useWorktree && task.worktree
+            ? task.worktree.startsWith("/")
+              ? task.worktree
+              : `${workspacePath}/${task.worktree}`
+            : (workspacePath ?? "");
+        const effectiveAgent =
+          task.agent ??
+          (task.status === "doing"
+            ? workspaceDefaults.defaultExecutionAgent
+            : workspaceDefaults.defaultPlanningAgent) ??
+          "opencode";
+        const effectiveModel =
+          task.status === "doing"
+            ? (workspaceDefaults.defaultExecutionModel ?? null)
+            : (workspaceDefaults.defaultPlanningModel ?? null);
+        // Plan session for backlog; exec session for doing/review
+        const sessionMode: "plan" | "exec" =
+          task.status === "doing" || task.status === "review" ? "exec" : "plan";
+        const initialSessionName =
+          sessionMode === "plan"
+            ? (task.terminalPlanSession ?? null)
+            : (task.terminalExecSession ?? null);
+        return (
+          <div
+            style={
+              activeTab === "plan"
+                ? {
+                    display: "flex",
+                    flex: 1,
+                    overflow: "hidden",
+                    flexDirection: "column",
+                  }
+                : { display: "none" }
+            }
+          >
+            <TaskTerminal
+              key={task.id}
+              task={task}
+              visible={activeTab === "plan"}
+              workspacePath={workspacePath ?? ""}
+              cwd={effectiveCwd}
+              agent={effectiveAgent}
+              model={effectiveModel}
+              sessionMode={sessionMode}
+              initialSessionName={initialSessionName}
+              promptConfig={{
+                planPersona: workspaceDefaults.planPersona,
+                planReviewPersona: workspaceDefaults.planReviewPersona,
+                executePersona: workspaceDefaults.executePersona,
+                executeReviewPersona: workspaceDefaults.executeReviewPersona,
+                executeReviewInstructions:
+                  workspaceDefaults.executeReviewInstructions,
+              }}
+            />
+          </div>
+        );
+      })()}
+      {activeTab === "changes" && (
+        <div className={styles.changesWrapper}>
+          <ChangesTab task={task} />
+        </div>
+      )}
+      {activeTab === "debug" && <DebugPanel task={task} />}
+      {activeTab === "edit" && (
+        <div className={styles.splitView}>
+          {/* Left: raw markdown editor */}
+          <div className={styles.editorPane}>
+            <textarea
+              ref={editorRef}
+              className={styles.editor}
+              value={rawContent}
+              onChange={handleEditorChange}
+              onScroll={handleEditorScroll}
+              spellCheck={false}
+            />
+          </div>
+
+          {/* Right: markdown preview */}
+          <div
+            ref={previewRef}
+            className={styles.previewPane}
+            onScroll={handlePreviewScroll}
+          >
+            <div
+              className={styles.preview}
+              dangerouslySetInnerHTML={{
+                __html: renderedMarkdownPreview,
+              }}
+            />
+          </div>
+        </div>
+      )}
     </div>
   );
 }

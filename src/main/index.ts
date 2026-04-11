@@ -73,6 +73,10 @@ if (!gotTheLock) {
     // Register IPC handlers
     registerIpcHandlers(configManager!, mainWindow);
 
+    // Apply saved window opacity
+    const savedOpacity = configManager!.get().windowOpacity;
+    mainWindow.setOpacity(savedOpacity);
+
     // Load the app
     if (is.dev && process.env["ELECTRON_RENDERER_URL"]) {
       mainWindow.loadURL(process.env["ELECTRON_RENDERER_URL"]);

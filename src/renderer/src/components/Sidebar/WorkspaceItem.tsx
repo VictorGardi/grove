@@ -3,18 +3,18 @@ import type { WorkspaceInfo } from "@shared/types";
 import { ContextMenu } from "./ContextMenu";
 import type { ContextMenuItem } from "./ContextMenu";
 import { useWorkspaceStore } from "../../stores/useWorkspaceStore";
-import { useWorkspaceStatus } from "../../hooks/useWorkspaceStatus";
-import styles from "./WorkspaceItem.module.css";
 
 interface WorkspaceItemProps {
   workspace: WorkspaceInfo;
   isActive: boolean;
+  isExpanded: boolean;
   onClick: () => void;
 }
 
 export function WorkspaceItem({
   workspace,
   isActive,
+  isExpanded,
   onClick,
 }: WorkspaceItemProps): React.JSX.Element {
   const [hovered, setHovered] = useState(false);
@@ -23,18 +23,6 @@ export function WorkspaceItem({
     y: number;
   } | null>(null);
   const removeWorkspace = useWorkspaceStore((s) => s.removeWorkspace);
-  const { status: wsStatus, count: wsCount } = useWorkspaceStatus(
-    workspace.path,
-  );
-
-  const statusTooltip =
-    wsStatus === "failed"
-      ? `${wsCount} task(s) failed`
-      : wsStatus === "waiting"
-        ? `${wsCount} task(s) waiting for input`
-        : wsStatus === "running"
-          ? `${wsCount} agent(s) running`
-          : undefined;
 
   function handleContextMenu(e: React.MouseEvent): void {
     e.preventDefault();
@@ -116,6 +104,29 @@ export function WorkspaceItem({
             />
           </svg>
 
+          {/* Chevron */}
+          <svg
+            width="10"
+            height="10"
+            viewBox="0 0 16 16"
+            fill="none"
+            xmlns="http://www.w3.org/2000/svg"
+            style={{
+              color: "var(--text-lo)",
+              flexShrink: 0,
+              transform: isExpanded ? "rotate(90deg)" : "rotate(0deg)",
+              transition: "transform var(--transition-fast)",
+            }}
+          >
+            <path
+              d="M6 4L10 8L6 12"
+              stroke="currentColor"
+              strokeWidth="1.5"
+              strokeLinecap="round"
+              strokeLinejoin="round"
+            />
+          </svg>
+
           <span
             style={{
               fontFamily: "var(--font-ui)",
@@ -129,14 +140,6 @@ export function WorkspaceItem({
           >
             {workspace.name}
           </span>
-
-          {/* Status indicator dot */}
-          {wsStatus !== "idle" && (
-            <div
-              className={`${styles.statusIndicator} ${styles[wsStatus]}`}
-              title={statusTooltip}
-            />
-          )}
         </div>
 
         {/* Branch row */}

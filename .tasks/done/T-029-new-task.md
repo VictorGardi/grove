@@ -1,12 +1,13 @@
 ---
 id: T-029
 title: include thinking in chat
-status: backlog
-created: "2026-04-05"
+status: done
+created: '2026-04-05'
 useWorktree: false
 planSessionId: ses_2a2a07c2effeKruj7QDuuv5aAu
 planSessionAgent: opencode
 planModel: opencode/big-pickle
+completed: '2026-04-09T08:48:08.274Z'
 ---
 
 ## Description

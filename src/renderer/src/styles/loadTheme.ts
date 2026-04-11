@@ -3,12 +3,19 @@
  * CSS variables are applied by toggling `data-theme` on <html>.
  */
 
-export const THEMES = ["catppuccin-mocha", "catppuccin-latte"] as const;
+export const THEMES = [
+  "catppuccin-mocha",
+  "catppuccin-latte",
+  "tokyo-night",
+  "evergreen",
+] as const;
 export type ThemeName = (typeof THEMES)[number];
 
 export const THEME_LABELS: Record<ThemeName, string> = {
   "catppuccin-mocha": "Catppuccin Mocha",
   "catppuccin-latte": "Catppuccin Latte",
+  "tokyo-night": "Tokyo Night",
+  evergreen: "Evergreen",
 };
 
 /** Colors exposed to JS consumers (terminal, IPC, etc.) */
@@ -126,6 +133,80 @@ export const THEME_COLORS: Record<ThemeName, ThemeColors> = {
     shikiTheme: "grove-catppuccin-latte",
     titleBarColor: "#eff1f5",
     titleBarSymbolColor: "#6c6f85",
+  },
+
+  "tokyo-night": {
+    bgBase: "#1a1b26",
+    bgSurface: "#16161e",
+    accent: "#7aa2f7",
+    textPrimary: "#c0caf5",
+    textSecondary: "#a9b1d6",
+    textLo: "#565f89",
+    border: "#292e42",
+    xterm: {
+      background: "#1a1b26",
+      foreground: "#c0caf5",
+      cursor: "#7aa2f7",
+      cursorAccent: "#1a1b26",
+      selectionBackground: "rgba(122, 162, 247, 0.3)",
+      selectionForeground: "#c0caf5",
+      black: "#292e42",
+      red: "#f7768e",
+      green: "#9ece6a",
+      yellow: "#e0af68",
+      blue: "#7aa2f7",
+      magenta: "#bb9af7",
+      cyan: "#7dcfff",
+      white: "#a9b1d6",
+      brightBlack: "#414868",
+      brightRed: "#f7768e",
+      brightGreen: "#9ece6a",
+      brightYellow: "#e0af68",
+      brightBlue: "#7aa2f7",
+      brightMagenta: "#bb9af7",
+      brightCyan: "#7dcfff",
+      brightWhite: "#c0caf5",
+    },
+    shikiTheme: "grove-tokyo-night",
+    titleBarColor: "#1a1b26",
+    titleBarSymbolColor: "#a9b1d6",
+  },
+
+  evergreen: {
+    bgBase: "#2d353b",
+    bgSurface: "#232a2e",
+    accent: "#a7c080",
+    textPrimary: "#d3c6aa",
+    textSecondary: "#9da9a0",
+    textLo: "#7a8478",
+    border: "#343f44",
+    xterm: {
+      background: "#2d353b",
+      foreground: "#d3c6aa",
+      cursor: "#a7c080",
+      cursorAccent: "#2d353b",
+      selectionBackground: "rgba(167, 192, 128, 0.3)",
+      selectionForeground: "#d3c6aa",
+      black: "#343f44",
+      red: "#e67e80",
+      green: "#a7c080",
+      yellow: "#dbbc7f",
+      blue: "#7fbbb3",
+      magenta: "#d699b6",
+      cyan: "#83c092",
+      white: "#9da9a0",
+      brightBlack: "#475258",
+      brightRed: "#e67e80",
+      brightGreen: "#a7c080",
+      brightYellow: "#dbbc7f",
+      brightBlue: "#7fbbb3",
+      brightMagenta: "#d699b6",
+      brightCyan: "#83c092",
+      brightWhite: "#d3c6aa",
+    },
+    shikiTheme: "grove-evergreen",
+    titleBarColor: "#2d353b",
+    titleBarSymbolColor: "#9da9a0",
   },
 };
 

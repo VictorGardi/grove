@@ -1,3 +1,4 @@
+import { useState, useEffect } from "react";
 import { useThemeStore } from "../../stores/useThemeStore";
 import {
   THEMES,
@@ -11,19 +12,30 @@ import { WorkspaceDefaultsForm } from "./WorkspaceDefaultsForm";
 export function Settings(): React.JSX.Element {
   const theme = useThemeStore((s) => s.theme);
   const setTheme = useThemeStore((s) => s.setTheme);
+  const [opacity, setOpacity] = useState(1.0);
+
+  useEffect(() => {
+    window.api.app.getWindowOpacity().then((result) => {
+      if (result.ok) {
+        setOpacity(result.data);
+      }
+    });
+  }, []);
 
   function handleThemeChange(name: ThemeName): void {
     setTheme(name);
-    // Sync Windows titlebar overlay color
     const colors = THEME_COLORS[name];
     window.api.app
       .setTitleBarColor({
         color: colors.titleBarColor,
         symbolColor: colors.titleBarSymbolColor,
       })
-      .catch(() => {
-        // Non-Windows platforms return an error — ignore silently
-      });
+      .catch(() => {});
+  }
+
+  function handleOpacityChange(value: number): void {
+    setOpacity(value);
+    window.api.app.setWindowOpacity(value).catch(() => {});
   }
 
   return (
@@ -109,6 +121,32 @@ export function Settings(): React.JSX.Element {
                 </button>
               );
             })}
+          </div>
+        </section>
+
+        <section className={styles.section}>
+          <h2 className={styles.sectionTitle}>Window</h2>
+          <p className={styles.sectionDesc}>
+            Adjust window transparency. Native controls remain fully visible.
+          </p>
+
+          <div className={styles.opacityRow}>
+            <label className={styles.opacityLabel} htmlFor="opacity-slider">
+              Opacity
+            </label>
+            <input
+              id="opacity-slider"
+              type="range"
+              min="0.1"
+              max="1"
+              step="0.05"
+              value={opacity}
+              onChange={(e) => handleOpacityChange(parseFloat(e.target.value))}
+              className={styles.opacitySlider}
+            />
+            <span className={styles.opacityValue}>
+              {Math.round(opacity * 100)}%
+            </span>
           </div>
         </section>
 

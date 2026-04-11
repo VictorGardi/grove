@@ -5,13 +5,16 @@
   justify-content: center;
   background: var(--bg-base);
   overflow: hidden;
+  height: 100%;
 }
 
 .mainAreaContent {
   flex: 1;
   display: flex;
+  flex-direction: column;
   background: var(--bg-base);
   overflow: hidden;
+  height: 100%;
 }
 
 .placeholder {

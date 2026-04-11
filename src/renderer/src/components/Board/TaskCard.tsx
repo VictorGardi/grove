@@ -6,6 +6,7 @@ import { useWorktreeStore } from "../../stores/useWorktreeStore";
 import { usePlanStore } from "../../stores/usePlanStore";
 import { useWorkspaceStore } from "../../stores/useWorkspaceStore";
 import { useBoardStore } from "../../stores/useBoardStore";
+import { useNavStore } from "../../stores/useNavStore";
 import { useTmuxLivenessStore } from "../../stores/useTmuxLivenessStore";
 import { ContextMenu } from "../Sidebar/ContextMenu";
 import type { ContextMenuItem } from "../Sidebar/ContextMenu";
@@ -29,25 +30,23 @@ export function TaskCard({
   const focusedTaskId = useBoardStore((s) => s.focusedTaskId);
   const isFocused = task.id === focusedTaskId;
 
-  // Read isRunning from the store for both modes
-  const execIsRunning = usePlanStore(
-    (s) => s.sessions[`execute:${task.id}`]?.isRunning ?? false,
-  );
-  const planIsRunning = usePlanStore(
-    (s) => s.sessions[`plan:${task.id}`]?.isRunning ?? false,
-  );
-
   // workspacePath is needed for the ensureModels effect below
   const workspacePath = useWorkspaceStore((s) => s.activeWorkspacePath);
 
-  // Read tmux liveness from the shared store (populated by useWorkspaceStatus poller).
-  // Per-card setInterval timers have been removed — a single workspace-level poll loop
-  // writes into useTmuxLivenessStore and TaskCard reads from it reactively.
+  // Read tmux liveness and agent state from the shared store
   const execTmuxAlive = useTmuxLivenessStore(
     (s) => s.liveness[`execute:${task.id}`]?.alive ?? false,
   );
   const planTmuxAlive = useTmuxLivenessStore(
     (s) => s.liveness[`plan:${task.id}`]?.alive ?? false,
+  );
+
+  // Agent state from terminal parsing
+  const execAgentState = useTmuxLivenessStore(
+    (s) => s.liveness[`execute:${task.id}`]?.state,
+  );
+  const planAgentState = useTmuxLivenessStore(
+    (s) => s.liveness[`plan:${task.id}`]?.state,
   );
 
   // Reviewer sessions (used for the isAgentRunning fallback)
@@ -58,80 +57,13 @@ export function TaskCard({
       false,
   );
 
-  // isAgentRunning: true when the store says running OR when tmux session is alive
-  const isAgentRunning = execIsRunning || execTmuxAlive || reviewerIsRunning;
+  // isAgentRunning: true when tmux session is alive (taskTerminal mode)
+  const isAgentRunning = execTmuxAlive || reviewerIsRunning;
+  const isPlanningRunning = planTmuxAlive;
 
-  const isPlanningRunning = planIsRunning || planTmuxAlive;
-
-  // Read raw session state from the store to derive waiting/error flags below.
-  // Using separate, pure selectors (no external state captured) avoids stale
-  // closure issues that arise when React state values are captured inside a
-  // Zustand selector.
-  const execSession = usePlanStore((s) => s.sessions[`execute:${task.id}`]);
-  const planSession = usePlanStore((s) => s.sessions[`plan:${task.id}`]);
-
-  // "Waiting for input" — agent exited cleanly (or never set exit code) but
-  // is not currently running (store flag + tmux check both say idle).
-  // For restored sessions: if tmuxSession exists but no messages, assume "waiting"
-  // (the session was active, we just lost the state). The actual exit code determines
-  // whether to show "waiting" vs "session failed" - if null, default to "waiting".
-  const isExecuteWaiting =
-    !!execSession &&
-    (execSession.messages.length > 0 ||
-      (execSession.messages.length === 0 && task.execTmuxSession != null)) &&
-    !execSession.isRunning &&
-    !execTmuxAlive &&
-    (execSession.lastExitCode === 0 ||
-      execSession.lastExitCode === null ||
-      task.execLastExitCode === 0 ||
-      (execSession.lastExitCode === null && task.execLastExitCode === null));
-
-  const isPlanWaiting =
-    !!planSession &&
-    (planSession.messages.length > 0 ||
-      (planSession.messages.length === 0 && task.planTmuxSession != null)) &&
-    !planSession.isRunning &&
-    !planTmuxAlive &&
-    (planSession.lastExitCode === 0 ||
-      planSession.lastExitCode === null ||
-      task.planLastExitCode === 0 ||
-      (planSession.lastExitCode === null && task.planLastExitCode === null));
-
-  // "Session failed" — agent exited with non-zero code AND is not currently
-  // running (tmux alive takes precedence — a new run supersedes old exit code).
-  // For restored sessions: only show "session failed" if we have explicit non-zero
-  // exit code (either from store or task frontmatter).
-  const isExecuteErrored =
-    !!execSession &&
-    (execSession.messages.length > 0 ||
-      (execSession.messages.length === 0 &&
-        task.execTmuxSession != null &&
-        (execSession.lastExitCode !== null ||
-          task.execLastExitCode !== null))) &&
-    !execSession.isRunning &&
-    !execTmuxAlive &&
-    ((execSession.lastExitCode !== null && execSession.lastExitCode !== 0) ||
-      (task.execLastExitCode !== null && task.execLastExitCode !== 0));
-
-  const isPlanErrored =
-    !!planSession &&
-    (planSession.messages.length > 0 ||
-      (planSession.messages.length === 0 &&
-        task.planTmuxSession != null &&
-        (planSession.lastExitCode !== null ||
-          task.planLastExitCode !== null))) &&
-    !planSession.isRunning &&
-    !planTmuxAlive &&
-    ((planSession.lastExitCode !== null && planSession.lastExitCode !== 0) ||
-      (task.planLastExitCode !== null && task.planLastExitCode !== 0));
+  // Agent state from terminal parsing (active/interrupted/waiting/idle)
 
   const isDodComplete = task.dodTotal > 0 && task.dodDone >= task.dodTotal;
-
-  const reviewerLastExitCode = usePlanStore((s) => {
-    const r1 = s.sessions[`execute-review:${task.id}`];
-    const r2 = s.sessions[`execute:review:${task.id}`];
-    return r1?.lastExitCode ?? r2?.lastExitCode ?? null;
-  });
 
   // Resolve which agent is displayed on this card
   const cardAgent = task.execSessionAgent ?? "opencode";
@@ -161,6 +93,7 @@ export function TaskCard({
   function handleClick(): void {
     useBoardStore.getState().clearFocusedTask();
     useDataStore.getState().setSelectedTask(task.id);
+    useNavStore.getState().setActiveView("task");
   }
 
   function handleContextMenu(e: React.MouseEvent): void {
@@ -213,30 +146,90 @@ export function TaskCard({
         </div>
       )}
 
-      {/* Row 3: Agent running indicator — doing tasks (execution) or backlog tasks (planning) */}
-      {task.status === "doing" && isAgentRunning && (
-        <div className={styles.agentRunningRow}>
-          <span className={styles.agentRunningDot} />
-          <span className={styles.agentRunningLabel}>agent running</span>
-        </div>
-      )}
-      {task.status === "backlog" && isPlanningRunning && (
-        <div className={styles.agentRunningRow}>
-          <span className={styles.agentRunningDot} />
-          <span className={styles.agentRunningLabel}>agent running</span>
-        </div>
-      )}
-      {task.status === "review" && isAgentRunning && (
-        <div className={styles.agentRunningRow}>
-          <span className={styles.agentRunningDot} />
-          <span className={styles.agentRunningLabel}>agent running</span>
-        </div>
-      )}
+      {/* Row 3: Agent state indicators */}
+      {task.status === "doing" &&
+        execTmuxAlive &&
+        (execAgentState === "starting" || planAgentState === "starting") && (
+          <div className={styles.startingRow}>
+            <span className={styles.startingDot} />
+            <span className={styles.startingLabel}>Starting agent session</span>
+          </div>
+        )}
+      {task.status === "doing" &&
+        execTmuxAlive &&
+        (execAgentState === "active" || planAgentState === "active") && (
+          <div className={styles.agentRunningRow}>
+            <span className={styles.agentRunningDot} />
+            <span className={styles.agentRunningLabel}>agent running</span>
+          </div>
+        )}
+      {task.status === "doing" &&
+        execTmuxAlive &&
+        execAgentState !== "active" &&
+        planAgentState !== "active" &&
+        execAgentState !== "starting" &&
+        planAgentState !== "starting" && (
+          <div className={styles.waitingRow}>
+            <span className={styles.waitingDot} />
+            <span className={styles.waitingLabel}>Waiting for input</span>
+          </div>
+        )}
+      {task.status === "backlog" &&
+        planTmuxAlive &&
+        (planAgentState === "starting" || execAgentState === "starting") && (
+          <div className={styles.startingRow}>
+            <span className={styles.startingDot} />
+            <span className={styles.startingLabel}>Starting agent session</span>
+          </div>
+        )}
+      {task.status === "backlog" &&
+        planTmuxAlive &&
+        (planAgentState === "active" || execAgentState === "active") && (
+          <div className={styles.agentRunningRow}>
+            <span className={styles.agentRunningDot} />
+            <span className={styles.agentRunningLabel}>agent running</span>
+          </div>
+        )}
+      {task.status === "backlog" &&
+        planTmuxAlive &&
+        planAgentState !== "active" &&
+        execAgentState !== "active" &&
+        planAgentState !== "starting" &&
+        execAgentState !== "starting" && (
+          <div className={styles.waitingRow}>
+            <span className={styles.waitingDot} />
+            <span className={styles.waitingLabel}>Waiting for input</span>
+          </div>
+        )}
+      {task.status === "review" &&
+        execTmuxAlive &&
+        (execAgentState === "starting" || planAgentState === "starting") && (
+          <div className={styles.startingRow}>
+            <span className={styles.startingDot} />
+            <span className={styles.startingLabel}>Starting agent session</span>
+          </div>
+        )}
+      {task.status === "review" &&
+        execTmuxAlive &&
+        (execAgentState === "active" || planAgentState === "active") && (
+          <div className={styles.agentRunningRow}>
+            <span className={styles.agentRunningDot} />
+            <span className={styles.agentRunningLabel}>agent running</span>
+          </div>
+        )}
+      {task.status === "review" &&
+        execTmuxAlive &&
+        execAgentState !== "active" &&
+        planAgentState !== "active" &&
+        execAgentState !== "starting" &&
+        planAgentState !== "starting" && (
+          <div className={styles.waitingRow}>
+            <span className={styles.waitingDot} />
+            <span className={styles.waitingLabel}>Waiting for input</span>
+          </div>
+        )}
 
-      {/* Row 3b: Review / ship-it indicator
-          - Do not show "waiting for you" for doing tasks anymore.
-          - While a reviewer subagent is running show an optional "review pending" badge.
-          - After reviewer ends, show ship it if DoD complete, or session failed if reviewer signalled failure. */}
+      {/* Row 3b: Review pending / ship-it */}
       {task.status === "doing" && reviewerIsRunning && (
         <div className={styles.waitingRow}>
           <span className={styles.reviewPendingLabel}>review pending</span>
@@ -245,55 +238,12 @@ export function TaskCard({
       {task.status === "doing" &&
         !reviewerIsRunning &&
         isDodComplete &&
-        (reviewerLastExitCode === 0 ||
-          (isExecuteWaiting && reviewerLastExitCode === null)) && (
+        !execTmuxAlive && (
           <div className={styles.shipItRow}>
             <span className={styles.shipItDot} />
             <span className={styles.shipItLabel}>ship it 🚢</span>
           </div>
         )}
-      {task.status === "doing" &&
-        isExecuteWaiting &&
-        task.dodTotal > 0 &&
-        task.dodDone < task.dodTotal &&
-        !reviewerIsRunning && (
-          <div className={styles.waitingRow}>
-            <span className={styles.waitingDot} />
-            <span className={styles.waitingLabel}>Waiting for input</span>
-          </div>
-        )}
-      {task.status === "backlog" && isPlanWaiting && (
-        <div className={styles.waitingRow}>
-          <span className={styles.waitingDot} />
-          <span className={styles.waitingLabel}>Waiting for input</span>
-        </div>
-      )}
-      {task.status === "review" && (isExecuteWaiting || isPlanWaiting) && (
-        <div className={styles.waitingRow}>
-          <span className={styles.waitingDot} />
-          <span className={styles.waitingLabel}>Waiting for input</span>
-        </div>
-      )}
-
-      {/* Row 3c: Error indicator */}
-      {task.status === "doing" && isExecuteErrored && (
-        <div className={styles.errorRow}>
-          <span className={styles.errorDot} />
-          <span className={styles.errorLabel}>session failed</span>
-        </div>
-      )}
-      {task.status === "backlog" && isPlanErrored && (
-        <div className={styles.errorRow}>
-          <span className={styles.errorDot} />
-          <span className={styles.errorLabel}>session failed</span>
-        </div>
-      )}
-      {task.status === "review" && (isExecuteErrored || isPlanErrored) && (
-        <div className={styles.errorRow}>
-          <span className={styles.errorDot} />
-          <span className={styles.errorLabel}>session failed</span>
-        </div>
-      )}
 
       {/* Row 4: Description preview */}
       {task.description && (

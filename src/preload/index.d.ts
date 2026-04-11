@@ -17,6 +17,7 @@ import type {
   PlanAgent,
   PlanChunk,
   PlanMode,
+  TmuxSessionInfo,
 } from "@shared/types";
 
 export interface ElectronAPI {
@@ -105,6 +106,8 @@ export interface ElectronAPI {
       color: string;
       symbolColor: string;
     }) => Promise<void>;
+    getWindowOpacity: () => Promise<IpcResult<number>>;
+    setWindowOpacity: (opacity: number) => Promise<IpcResult<number>>;
   };
   git: {
     listWorktrees: (repoPath: string) => Promise<IpcResult<WorktreeInfo[]>>;
@@ -144,6 +147,50 @@ export interface ElectronAPI {
     onExit: (
       callback: (id: string, exitCode: number, signal?: number) => void,
     ) => () => void;
+  };
+  taskterm: {
+    create: (params: {
+      ptyId: string;
+      taskId: string;
+      taskFilePath: string;
+      workspacePath: string;
+      agent: string;
+      model: string | null;
+      cwd: string;
+      sessionMode: "plan" | "exec";
+      cols?: number;
+      rows?: number;
+    }) => Promise<{ ok: boolean; sessionName?: string; error?: string }>;
+    reconnect: (params: {
+      ptyId: string;
+      sessionName: string;
+      cwd: string;
+      cols?: number;
+      rows?: number;
+    }) => Promise<{ ok: boolean; error?: string }>;
+    capture: (sessionName: string) => Promise<{ ok: boolean; content: string }>;
+    isAlive: (sessionName: string) => Promise<boolean>;
+    kill: (params: {
+      ptyId: string;
+      sessionName: string;
+    }) => Promise<{ ok: true }>;
+    paneCommand: (sessionName: string) => Promise<string>;
+    state: (
+      sessionName: string,
+      agent: string,
+    ) => Promise<"active" | "interrupted" | "waiting" | "idle">;
+    refresh: (sessionName: string) => Promise<void>;
+    writeContext: (params: {
+      sessionName: string;
+      content: string;
+    }) => Promise<{ ok: boolean; filePath?: string; error?: string }>;
+    cleanContext: (sessionName: string) => Promise<void>;
+  };
+  tmux: {
+    listGroveSessions: () => Promise<TmuxSessionInfo[]>;
+    killSession: (params: {
+      sessionName: string;
+    }) => Promise<{ ok: boolean; error?: string }>;
   };
   plan: {
     send: (input: {

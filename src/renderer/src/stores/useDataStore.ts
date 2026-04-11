@@ -19,7 +19,8 @@ interface DataState {
   // Immediately patch a single task in the store after a confirmed write,
   // avoiding the chokidar round-trip (~350ms) for user-initiated changes.
   patchTask: (updated: TaskInfo) => void;
-  setSelectedTask: (id: string | null) => void;
+  setTasks: (tasks: TaskInfo[]) => void;
+  setSelectedTask: (id: string | null, filePathOverride?: string) => void;
   setTaskDetailDirty: (dirty: boolean) => void;
   clearSelectedTask: () => void;
   clear: () => void;
@@ -99,7 +100,9 @@ export const useDataStore = create<DataState>()((set, get) => ({
       return { tasks: [updated, ...state.tasks] };
     }),
 
-  setSelectedTask: (id) => {
+  setTasks: (tasks) => set({ tasks }),
+
+  setSelectedTask: (id, filePathOverride?: string) => {
     if (id === null) {
       set({
         selectedTaskId: null,
@@ -116,25 +119,42 @@ export const useDataStore = create<DataState>()((set, get) => ({
       taskDetailDirty: false,
     });
 
-    // Fetch the full body — use get() fresh, not a stale closure variable
+    console.log(
+      "[DataStore] setSelectedTask ENTRY, current selectedTaskId:",
+      get().selectedTaskId,
+    );
+    console.log("[DataStore] setSelectedTask state set, id:", id);
     const workspacePath = useWorkspaceStore.getState().activeWorkspacePath;
-    const task = get().tasks.find((t) => t.id === id);
+    const task = filePathOverride
+      ? undefined
+      : get().tasks.find((t) => t.id === id);
+    const filePath = filePathOverride ?? task?.filePath;
     console.log("[DataStore] setSelectedTask:", {
       id,
       workspacePath,
-      filePath: task?.filePath,
+      filePath,
       taskFound: !!task,
     });
-    if (!workspacePath || !task) {
+    if (!workspacePath || !filePath) {
       set({ taskDetailLoading: false });
       return;
     }
 
     window.api.tasks
-      .readBody(workspacePath, task.filePath)
+      .readBody(workspacePath, filePath)
       .then((result) => {
         // Only update if this task is still selected
-        if (get().selectedTaskId !== id) return;
+        const currentId = get().selectedTaskId;
+        console.log(
+          "[DataStore] body fetch resolved, currentId:",
+          currentId,
+          "expecting:",
+          id,
+        );
+        if (currentId !== id) {
+          console.log("[DataStore] SKIPPING - task changed!");
+          return;
+        }
         if (result.ok) {
           console.log("[DataStore] body fetched OK, len:", result.data.length);
           set({ selectedTaskBody: result.data, taskDetailLoading: false });

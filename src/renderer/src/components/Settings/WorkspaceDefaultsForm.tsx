@@ -32,10 +32,10 @@ export function WorkspaceDefaultsForm({
       if (ws) {
         setSelectedPath(activeWorkspacePath); // eslint-disable-line react-hooks/set-state-in-effect
       } else {
-        setSelectedPath(workspaces[0]?.path ?? ""); // eslint-disable-line react-hooks/set-state-in-effect
+        setSelectedPath(workspaces[0]?.path ?? "");
       }
     } else if (workspaces.length > 0) {
-      setSelectedPath(workspaces[0].path); // eslint-disable-line react-hooks/set-state-in-effect
+      setSelectedPath(workspaces[0].path);
     }
   }, [activeWorkspacePath, workspaces]);
 
@@ -43,7 +43,7 @@ export function WorkspaceDefaultsForm({
   useEffect(() => {
     if (selectedPath && !workspaces.find((w) => w.path === selectedPath)) {
       setSelectedPath(workspaces[0]?.path ?? ""); // eslint-disable-line react-hooks/set-state-in-effect
-      setWarning(null); // eslint-disable-line react-hooks/set-state-in-effect
+      setWarning(null);
     }
   }, [workspaces, selectedPath]);
 
@@ -56,14 +56,14 @@ export function WorkspaceDefaultsForm({
 
     const ws = workspaces.find((w) => w.path === selectedPath);
     if (!ws) {
-      setWarning("Workspace not found in config. It may have been removed."); // eslint-disable-line react-hooks/set-state-in-effect
+      setWarning("Workspace not found in config. It may have been removed.");
       return;
     }
 
     if (!ws.exists) {
-      setWarning("This workspace no longer exists on disk."); // eslint-disable-line react-hooks/set-state-in-effect
+      setWarning("This workspace no longer exists on disk.");
     } else {
-      setWarning(null); // eslint-disable-line react-hooks/set-state-in-effect
+      setWarning(null);
     }
   }, [selectedPath, workspaces]);
 

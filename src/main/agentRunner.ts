@@ -4,10 +4,7 @@ import type { PlanAgent, PlanChunk, PlanMode } from "@shared/types";
 import * as tasks from "./tasks";
 import { TmuxSupervisor, buildTmuxSessionName } from "./tmuxSupervisor";
 import { buildEnvPath } from "./env";
-import {
-  parseOpencodeLine,
-  CopilotLineParser,
-} from "./agentOutputParser";
+import { parseOpencodeLine, CopilotLineParser } from "./agentOutputParser";
 import type { GroveErrorChunk } from "./agentOutputParser";
 import { writeOpencodeConfig, cleanupGroveConfig } from "./opencodeConfig";
 
@@ -43,7 +40,7 @@ interface RunOpts {
   onComplete?: () => void;
 }
 
-interface PlanRunner {
+interface IAgentRunner {
   start(opts: RunOpts): Promise<void>;
   cancel(runKey: string): void;
   detach(): void;
@@ -133,7 +130,7 @@ function parseLine(
   }
 }
 
-class SpawnPlanRunner implements PlanRunner {
+class SpawnAgentRunner implements IAgentRunner {
   private activeRuns = new Map<string, ActiveRun>();
   /** Tracks opencode.json files written by Grove so we can clean them up. */
   private wroteConfigFiles = new Map<string, string>(); // runKey -> filePath
@@ -152,7 +149,7 @@ class SpawnPlanRunner implements PlanRunner {
     this.cancel(runKey);
 
     console.log(
-      `[SpawnPlanRunner][${runKey}] start() agent=${opts.agent} model=${opts.model ?? "default"} sessionId=${opts.sessionId ?? "null"}`,
+      `[SpawnAgentRunner][${runKey}] start() agent=${opts.agent} model=${opts.model ?? "default"} sessionId=${opts.sessionId ?? "null"}`,
     );
 
     // Write a project opencode.json to suppress ask-permission prompts that
@@ -186,7 +183,7 @@ class SpawnPlanRunner implements PlanRunner {
     }
 
     console.log(
-      `[SpawnPlanRunner][${runKey}] spawned pid=${proc.pid ?? "?"} agent=${opts.agent}`,
+      `[SpawnAgentRunner][${runKey}] spawned pid=${proc.pid ?? "?"} agent=${opts.agent}`,
     );
 
     const rl = readline.createInterface({ input: proc.stdout });
@@ -234,7 +231,7 @@ class SpawnPlanRunner implements PlanRunner {
       // the effective exit code as 1 so the UI shows it as a failure.
       const exitCode = turnHadError && rawExitCode === 0 ? 1 : rawExitCode;
       console.log(
-        `[SpawnPlanRunner][${runKey}] readline closed, exitCode=${exitCode} (raw=${rawExitCode})`,
+        `[SpawnAgentRunner][${runKey}] readline closed, exitCode=${exitCode} (raw=${rawExitCode})`,
       );
       this.activeRuns.delete(runKey);
       this.cleanupGroveConfig(runKey);
@@ -258,11 +255,11 @@ class SpawnPlanRunner implements PlanRunner {
     proc.stderr?.on("data", (data: Buffer) => {
       const text = data.toString();
       stderrBuffer += text;
-      console.warn(`[SpawnPlanRunner][${runKey}] stderr:`, text);
+      console.warn(`[SpawnAgentRunner][${runKey}] stderr:`, text);
     });
 
     proc.on("error", (err) => {
-      console.error(`[SpawnPlanRunner][${runKey}] proc error:`, err.message);
+      console.error(`[SpawnAgentRunner][${runKey}] proc error:`, err.message);
       rl.close();
       this.activeRuns.delete(runKey);
       opts.onChunk(opts.taskId, opts.mode, {
@@ -311,12 +308,12 @@ class SpawnPlanRunner implements PlanRunner {
   }
 }
 
-class TmuxPlanRunner implements PlanRunner {
+class TmuxAgentRunner implements IAgentRunner {
   private tmux: TmuxSupervisor;
   private activeKeys = new Set<string>();
   /**
    * Callbacks captured per run so cancel() can emit a synthetic done chunk
-   * without needing to route through PlanManager.onChunkCb.
+   * without needing to route through AgentRunner.onChunkCb.
    */
   private runCallbacks = new Map<
     string,
@@ -431,15 +428,15 @@ class TmuxPlanRunner implements PlanRunner {
   }
 }
 
-export class PlanManager {
-  private spawnRunner: SpawnPlanRunner;
-  private tmuxRunner: TmuxPlanRunner | null = null;
+export class AgentRunner {
+  private spawnRunner: SpawnAgentRunner;
+  private tmuxRunner: TmuxAgentRunner | null = null;
   private onChunkCb: ChunkCallback | null = null;
   private tmuxAvailable: boolean | null = null;
   private tmuxSupervisor: TmuxSupervisor;
 
   constructor() {
-    this.spawnRunner = new SpawnPlanRunner();
+    this.spawnRunner = new SpawnAgentRunner();
     this.tmuxSupervisor = new TmuxSupervisor({
       updateTask: tasks.updateTask,
     });
@@ -468,7 +465,7 @@ export class PlanManager {
 
   async ensureTmuxRunner(): Promise<void> {
     if (!this.tmuxRunner) {
-      this.tmuxRunner = new TmuxPlanRunner(this.tmuxSupervisor);
+      this.tmuxRunner = new TmuxAgentRunner(this.tmuxSupervisor);
     }
   }
 
@@ -593,7 +590,7 @@ export class PlanManager {
       });
 
       proc.on("error", (err) => {
-        console.warn("[PlanManager] listModels spawn error:", err.message);
+        console.warn("[AgentRunner] listModels spawn error:", err.message);
         resolve([]);
       });
 

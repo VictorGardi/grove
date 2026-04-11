@@ -10,68 +10,26 @@ import {
   type DragEndEvent,
 } from "@dnd-kit/core";
 import { useDataStore } from "../../stores/useDataStore";
-import { useWorkspaceStore } from "../../stores/useWorkspaceStore";
-import { useWorktreeStore } from "../../stores/useWorktreeStore";
-import { useDialogStore } from "../../stores/useDialogStore";
 import { useBoardStore } from "../../stores/useBoardStore";
-import { usePlanStore } from "../../stores/usePlanStore";
-import {
-  useLaunchModalStore,
-  type LaunchConfig,
-} from "../../stores/useLaunchModalStore";
-import { showToast } from "../../stores/useToastStore";
 import type { TaskInfo, TaskStatus } from "@shared/types";
-import { createTask, moveTask, updateTask } from "../../actions/taskActions";
+import { createTask, moveTask } from "../../actions/taskActions";
 import {
-  buildFirstExecutionMessage,
-  type PromptConfig,
-} from "../../utils/planPrompts";
+  showLaunchModalAndExecute,
+  completeTask,
+} from "../../actions/executionActions";
 import { Column } from "./Column";
 import { BoardToolbar } from "./BoardToolbar";
 import { TaskCard } from "./TaskCard";
 import styles from "./Board.module.css";
 
 const COLUMNS: { status: TaskStatus; label: string; color: string }[] = [
-  { status: "backlog", label: "BACKLOG", color: "var(--text-lo)" },
+  { status: "backlog", label: "BACKLOG", color: "var(--status-backlog)" },
   { status: "doing", label: "DOING", color: "var(--status-green)" },
   { status: "review", label: "REVIEW", color: "var(--status-amber)" },
-  { status: "done", label: "DONE", color: "var(--status-green)" },
+  { status: "done", label: "DONE", color: "var(--status-done)" },
 ];
 
 const VALID_STATUSES = new Set<string>(["backlog", "doing", "review", "done"]);
-
-/** Map WorktreeError codes to user-friendly messages */
-function worktreeErrorMessage(error: string): string {
-  if (error.includes("[NOT_A_REPO]"))
-    return "This workspace is not a git repository. Worktree creation skipped.";
-  if (error.includes("[GIT_NOT_FOUND]"))
-    return "git not found. Install git and restart Grove.";
-  if (error.includes("[EMPTY_REPO]"))
-    return "Cannot create worktree: repository has no commits yet.";
-  if (error.includes("[BRANCH_LOCKED]"))
-    return "Branch already open in another worktree. Close it first.";
-  if (error.includes("[ALREADY_EXISTS]"))
-    return "Worktree directory exists but is not valid. Remove .worktrees/ manually.";
-  if (error.includes("[DETACHED_HEAD]"))
-    return "Repository is in detached HEAD state. Checkout a branch first.";
-  return `Failed to create worktree: ${error}`;
-}
-
-/** Codes that should NOT roll back the task move to Doing */
-const NOROLLBACK_CODES = new Set([
-  "NOT_A_REPO",
-  "GIT_NOT_FOUND",
-  "EMPTY_REPO",
-  "ALREADY_EXISTS",
-  "DETACHED_HEAD",
-]);
-
-function shouldRollback(error: string): boolean {
-  for (const code of NOROLLBACK_CODES) {
-    if (error.includes(`[${code}]`)) return false;
-  }
-  return true;
-}
 
 export function Board(): React.JSX.Element {
   const tasks = useDataStore((s) => s.tasks);
@@ -159,49 +117,17 @@ export function Board(): React.JSX.Element {
       if (!VALID_STATUSES.has(toStatus)) return;
       if (task.status === toStatus) return;
 
-      // Async path for Doing: check isRunning guard, then show modal
       if (toStatus === "doing") {
-        const execSessionKey = `execute:${task.id}`;
-        const isRunning =
-          usePlanStore.getState().sessions[execSessionKey]?.isRunning ?? false;
-        if (isRunning) return; // no-op: task already running
-
-        // Fetch workspace defaults before opening the modal so the agent/model
-        // pre-fill values reflect the workspace config.
-        const wp = useWorkspaceStore.getState().activeWorkspacePath;
-        if (wp) {
-          void useWorkspaceStore
-            .getState()
-            .fetchDefaults(wp)
-            .then(() => {
-              // Show modal; on Execute call handleDragToDoing with confirmed config
-              void useLaunchModalStore
-                .getState()
-                .show(task)
-                .then((config) => {
-                  if (config === null) return; // user cancelled — no side effects
-                  void handleDragToDoing(task, config);
-                });
-            });
-        } else {
-          // No workspace path — open modal without defaults (edge case)
-          void useLaunchModalStore
-            .getState()
-            .show(task)
-            .then((config) => {
-              if (config === null) return;
-              void handleDragToDoing(task, config);
-            });
-        }
+        if (task.terminalExecSession) return;
+        void showLaunchModalAndExecute(task);
         return;
       }
 
-      if (toStatus === "done" && task.worktree) {
-        void handleDragToDone(task);
+      if (toStatus === "done") {
+        void completeTask(task);
         return;
       }
 
-      // Default: plain move (backlog, review, or done without worktree)
       moveTask(task.filePath, toStatus as TaskStatus);
     },
     [tasks],
@@ -279,253 +205,4 @@ export function Board(): React.JSX.Element {
       </DndContext>
     </div>
   );
-}
-
-// ── Worktree drag handlers (module-level async, not hooks) ────────────────────
-
-async function handleDragToDoing(
-  task: TaskInfo,
-  config: LaunchConfig,
-): Promise<void> {
-  const wp = useWorkspaceStore.getState().activeWorkspacePath;
-  if (!wp) return;
-
-  // Persist confirmed agent, model, and useWorktree to frontmatter before any
-  // side effects so they survive a refresh.  useWorktree=false must be written
-  // explicitly (not by omission) — the parser round-trips it correctly.
-  await updateTask(task.filePath, {
-    execSessionAgent: config.agent,
-    execModel: config.model,
-    useWorktree: config.useWorktree,
-  });
-
-  // Re-read task to pick up the updated filePath / metadata
-  const currentTask =
-    useDataStore.getState().tasks.find((t) => t.id === task.id) ?? task;
-
-  // Move to Doing first
-  const moveOk = await moveTask(currentTask.filePath, "doing");
-  if (!moveOk) {
-    showToast(`Failed to move task: ${task.title}`, "error");
-    return;
-  }
-
-  // Get updated task (filePath may have changed after move)
-  let movedTask =
-    useDataStore.getState().tasks.find((t) => t.id === task.id) ?? currentTask;
-
-  // Clear stale exec session fields so a fresh session is started
-  // (not a resume attempt) — especially important when re-dragging
-  // from backlog back to doing.
-  if (movedTask.execSessionId || movedTask.execTmuxSession) {
-    // Cancel any orphaned background process before clearing the session
-    if (movedTask.execTmuxSession) {
-      await window.api.plan.cancel({
-        taskId: task.id,
-        mode: "execute",
-        workspacePath: wp,
-        taskFilePath: movedTask.filePath,
-      });
-    }
-    // Clear in-memory plan store session so a fresh slot is created
-    usePlanStore.getState().clearSession(`execute:${task.id}`);
-    await updateTask(movedTask.filePath, {
-      execSessionId: null,
-      execTmuxSession: null,
-    });
-    // Re-read task after update to get fresh filePath / metadata
-    movedTask =
-      useDataStore.getState().tasks.find((t) => t.id === task.id) ?? movedTask;
-  }
-
-  // Resolve worktree path (absolute) for plan.send
-  let worktreeAbsPath: string | undefined;
-
-  if (config.useWorktree !== false) {
-    // ── Worktree mode (default) ──────────────────────────────────
-    // Create an isolated git worktree so the execute agent works on its own branch.
-    useWorktreeStore.getState().markCreating(task.id);
-
-    const result = await window.api.git.setupWorktreeForTask({
-      workspacePath: wp,
-      taskFilePath: movedTask.filePath,
-      taskId: task.id,
-      taskTitle: task.title,
-    });
-
-    useWorktreeStore.getState().markCreated(task.id);
-
-    if (!result.ok) {
-      if (shouldRollback(result.error)) {
-        await moveTask(movedTask.filePath, task.status);
-      }
-      showToast(worktreeErrorMessage(result.error), "error");
-      return;
-    }
-
-    useDataStore.getState().patchTask({
-      ...movedTask,
-      status: "doing",
-      worktree: result.data.worktreePath,
-      branch: result.data.branchName,
-    });
-
-    if (!result.data.alreadyExisted) {
-      showToast(`Worktree created: ${result.data.branchName}`, "success");
-    }
-
-    // Resolve worktree path to absolute for plan.send
-    const wtp = result.data.worktreePath;
-    worktreeAbsPath = wtp.startsWith("/") ? wtp : `${wp}/${wtp}`;
-  }
-
-  // Open the task detail panel so the execute agent UI is immediately visible.
-  // NOTE: The panel does NOT auto-open on drag. setSelectedTask is intentionally removed.
-
-  // ── Auto-execution ─────────────────────────────────────────────
-  // Skip if the execute session is already running (guard against double-fire)
-  const execSessionKey = `execute:${task.id}`;
-  const isRunning =
-    usePlanStore.getState().sessions[execSessionKey]?.isRunning ?? false;
-  if (isRunning) return;
-
-  // Re-read the latest task state (path and frontmatter may have changed)
-  const latestTask =
-    useDataStore.getState().tasks.find((t) => t.id === task.id) ?? movedTask;
-
-  // Use confirmed agent/model from config
-  const agent = config.agent;
-  const model = config.model;
-
-  // Validate model against cached list — stale selections fall back to null.
-  const cacheKey = `${wp}:${agent}`;
-  const cachedModels = usePlanStore.getState().modelsCache[cacheKey];
-  const resolvedModel =
-    model !== null && Array.isArray(cachedModels) && cachedModels.length > 0
-      ? cachedModels.includes(model)
-        ? model
-        : null
-      : model;
-
-  // Get prompt config from workspace defaults
-  const workspaceDefaults = useWorkspaceStore.getState().workspaceDefaults;
-  const promptConfig = {
-    planPersona: workspaceDefaults[wp]?.planPersona,
-    planReviewPersona: workspaceDefaults[wp]?.planReviewPersona,
-    executePersona: workspaceDefaults[wp]?.executePersona,
-    executeReviewPersona: workspaceDefaults[wp]?.executeReviewPersona,
-    executeReviewInstructions: workspaceDefaults[wp]?.executeReviewInstructions,
-  } as PromptConfig;
-
-  // Read full task content to build the execution prompt
-  const rawResult = await window.api.tasks.readRaw(wp, latestTask.filePath);
-  if (!rawResult.ok) {
-    showToast("Could not read task file — execution not started", "error");
-    return;
-  }
-
-  const message = buildFirstExecutionMessage(
-    latestTask,
-    rawResult.data,
-    promptConfig,
-  );
-
-  // Initialise the in-memory plan session so startAgentMessage has a slot to write to
-  usePlanStore
-    .getState()
-    .initSession(execSessionKey, agent, resolvedModel, null);
-
-  const sendResult = await window.api.plan.send({
-    taskId: task.id,
-    mode: "execute",
-    agent,
-    model: resolvedModel,
-    message,
-    displayMessage: "",
-    sessionId: null,
-    workspacePath: wp,
-    taskFilePath: latestTask.filePath,
-    ...(worktreeAbsPath ? { worktreePath: worktreeAbsPath } : {}),
-  });
-
-  if (!sendResult.ok) {
-    showToast(`Execution failed to start: ${sendResult.error}`, "error");
-  } else {
-    // Append user message BEFORE starting agent message so it appears on top
-    // (user message is last in the array, agent bubble comes after)
-    usePlanStore
-      .getState()
-      .appendUserMessage(
-        execSessionKey,
-        `Sent plan for ticket '${task.title}' to Agent`,
-      );
-    // Create the agent message slot and set isRunning: true so the running
-    // indicator on the card is visible without the user opening the panel.
-    usePlanStore.getState().startAgentMessage(execSessionKey);
-  }
-}
-
-async function handleDragToDone(task: TaskInfo): Promise<void> {
-  const wp = useWorkspaceStore.getState().activeWorkspacePath;
-  if (!wp) return;
-
-  if (task.worktree) {
-    // Show confirmation dialog before tearing down the worktree
-    const confirmed = await useDialogStore.getState().show({
-      title: "Remove worktree?",
-      message: `The branch "${task.branch ?? "(unknown)"}" will be kept.\nThe working tree at ${task.worktree} will be deleted.`,
-      confirmLabel: "Remove worktree",
-      cancelLabel: "Keep worktree",
-    });
-
-    if (!confirmed) return;
-  }
-
-  // Optimistic patch + move
-  useDataStore.getState().patchTask({ ...task, status: "done" });
-  const moveOk = await moveTask(task.filePath, "done");
-  if (!moveOk) {
-    useDataStore.getState().patchTask(task); // rollback
-    showToast("Failed to move task to Done", "error");
-    return;
-  }
-
-  // Get the updated task (filePath changed after move)
-  const movedTask = useDataStore
-    .getState()
-    .tasks.find((t) => t.id === task.id) ?? {
-    ...task,
-    status: "done" as TaskStatus,
-  };
-
-  if (task.worktree) {
-    const result = await window.api.git.teardownWorktreeForTask({
-      workspacePath: wp,
-      taskFilePath: movedTask.filePath,
-      worktreePath: task.worktree,
-    });
-
-    if (!result.ok) {
-      if (result.error.includes("DIRTY_WORKING_TREE")) {
-        showToast(
-          "Worktree has uncommitted changes. Commit or stash, then remove manually.",
-          "warning",
-        );
-      } else {
-        showToast(
-          `Task done, but worktree removal failed: ${result.error}`,
-          "warning",
-        );
-      }
-      return;
-    }
-
-    useDataStore
-      .getState()
-      .patchTask({ ...movedTask, worktree: null, branch: null });
-
-    showToast("Task done. Worktree removed. Branch kept.", "success");
-  } else {
-    showToast("Task done.", "success");
-  }
 }

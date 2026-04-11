@@ -46,10 +46,11 @@ export async function parseTaskFile(
     const id =
       typeof data.id === "string" ? data.id : idMatch ? idMatch[1] : filename;
 
-    // Title: frontmatter > filename slug
+    // Title: frontmatter > filename slug (skip generic "New task")
+    const rawTitle = data.title;
     const title =
-      typeof data.title === "string"
-        ? data.title
+      typeof rawTitle === "string" && rawTitle.toLowerCase() !== "new task"
+        ? rawTitle
         : filename.replace(/^T-\d+-/, "").replace(/-/g, " ");
 
     // DoD checkboxes
@@ -115,10 +116,18 @@ export async function parseTaskFile(
           ? (data.execSessionAgent as PlanAgent)
           : null,
       execModel: typeof data.execModel === "string" ? data.execModel : null,
-      planTmuxSession:
-        typeof data.planTmuxSession === "string" ? data.planTmuxSession : null,
-      execTmuxSession:
-        typeof data.execTmuxSession === "string" ? data.execTmuxSession : null,
+      terminalPlanSession:
+        typeof data.terminalPlanSession === "string"
+          ? data.terminalPlanSession
+          : null,
+      terminalExecSession:
+        typeof data.terminalExecSession === "string"
+          ? data.terminalExecSession
+          : null,
+      terminalExecContextSent:
+        typeof data.terminalExecContextSent === "boolean"
+          ? data.terminalExecContextSent
+          : false,
       planLastExitCode:
         typeof data.planLastExitCode === "number"
           ? data.planLastExitCode
@@ -221,8 +230,12 @@ function buildFrontmatter(fm: TaskFrontmatter): Record<string, unknown> {
   if (fm.execSessionId != null) obj.execSessionId = fm.execSessionId;
   if (fm.execSessionAgent != null) obj.execSessionAgent = fm.execSessionAgent;
   if (fm.execModel != null) obj.execModel = fm.execModel;
-  if (fm.planTmuxSession != null) obj.planTmuxSession = fm.planTmuxSession;
-  if (fm.execTmuxSession != null) obj.execTmuxSession = fm.execTmuxSession;
+  if (fm.terminalPlanSession != null)
+    obj.terminalPlanSession = fm.terminalPlanSession;
+  if (fm.terminalExecSession != null)
+    obj.terminalExecSession = fm.terminalExecSession;
+  if (fm.terminalExecContextSent != null)
+    obj.terminalExecContextSent = fm.terminalExecContextSent;
   if (fm.planLastExitCode != null) obj.planLastExitCode = fm.planLastExitCode;
   if (fm.execLastExitCode != null) obj.execLastExitCode = fm.execLastExitCode;
   if (fm.completed != null) obj.completed = fm.completed;

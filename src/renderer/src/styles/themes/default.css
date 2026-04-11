@@ -28,6 +28,8 @@
   --status-amber: #f9e2af;
   --status-red: #f38ba8;
   --status-blue: #89b4fa;
+  --status-backlog: #818cf8;
+  --status-done: #c084fc;
 
   /* Diff colors */
   --green: #a6e3a1;

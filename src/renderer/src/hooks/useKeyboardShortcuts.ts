@@ -1,10 +1,15 @@
 import { useEffect } from "react";
 import { useWorkspaceStore } from "../stores/useWorkspaceStore";
-import { useNavStore } from "../stores/useNavStore";
+import { useNavStore, type View } from "../stores/useNavStore";
 import { useDataStore } from "../stores/useDataStore";
 import { useFileStore } from "../stores/useFileStore";
 import { useBoardStore } from "../stores/useBoardStore";
-import { createTask, moveTask } from "../actions/taskActions";
+import { useAllTasksStore } from "../stores/useAllTasksStore";
+import {
+  useTaskSwitcherStore,
+  switchToTask,
+} from "../stores/useTaskSwitcherStore";
+import { createTask } from "../actions/taskActions";
 import type { TaskStatus } from "@shared/types";
 
 const COLUMNS: TaskStatus[] = ["backlog", "doing", "review", "done"];
@@ -17,6 +22,15 @@ export function useKeyboardShortcuts(): void {
     function handleKeyDown(e: KeyboardEvent): void {
       const mod = e.metaKey || e.ctrlKey;
 
+      // Cmd+Shift+V: toggle between board and task views
+      if (mod && e.shiftKey && (e.key === "v" || e.key === "V")) {
+        e.preventDefault();
+        const nav = useNavStore.getState();
+        const newView: View = nav.activeView === "board" ? "task" : "board";
+        nav.setActiveView(newView);
+        return;
+      }
+
       // Cmd+P: open file search — works even when input is focused
       if (mod && (e.key === "p" || e.key === "P")) {
         e.preventDefault();
@@ -28,14 +42,27 @@ export function useKeyboardShortcuts(): void {
         return;
       }
 
-      // Cmd+K: navigate to board and focus search input — works even when input is focused
+      // Cmd+K: open task switcher — works even when input is focused
       if (mod && (e.key === "k" || e.key === "K")) {
         e.preventDefault();
-        const nav = useNavStore.getState();
-        if (nav.activeView !== "board") {
-          nav.setActiveView("board");
+        useTaskSwitcherStore.getState().open();
+        return;
+      }
+
+      // Cmd+Shift+Tab: toggle last task
+      if (mod && e.shiftKey && e.key === "Tab") {
+        e.preventDefault();
+        const ts = useTaskSwitcherStore.getState();
+        const workspaces = useWorkspaceStore.getState().workspaces;
+        const allTasks = useAllTasksStore.getState().allTasks;
+        const prevTaskId = ts.toggleLastTask(workspaces, allTasks);
+        if (prevTaskId) {
+          const sortedTasks = ts.getSortedTasks(workspaces, allTasks);
+          const task = sortedTasks.find((t) => t.task.id === prevTaskId);
+          if (task) {
+            switchToTask(task).then(() => ts.close());
+          }
         }
-        useBoardStore.getState().requestSearchFocus();
         return;
       }
 
@@ -108,7 +135,9 @@ export function useKeyboardShortcuts(): void {
         const ds = useDataStore.getState();
         if (ds.selectedTaskId) {
           e.preventDefault();
+          useNavStore.getState().setActiveView("home");
           ds.clearSelectedTask();
+          return;
         }
         // Also clear focus when pressing Escape (even if no task is selected)
         useBoardStore.getState().clearFocusedTask();
@@ -126,14 +155,11 @@ export function useKeyboardShortcuts(): void {
         return;
       }
 
-      // Cmd+T: create new task — works from board view
+      // Cmd+T: create new task
       if (mod && (e.key === "t" || e.key === "T")) {
-        const nav = useNavStore.getState();
-        if (nav.activeView === "board") {
-          e.preventDefault();
-          createTask("New task");
-          return;
-        }
+        e.preventDefault();
+        createTask("New task");
+        return;
       }
 
       // Cmd+digit: switch workspace (existing) — only when not in board search
@@ -144,7 +170,7 @@ export function useKeyboardShortcuts(): void {
           const workspaces = useWorkspaceStore.getState().workspaces;
           const ws = workspaces[digit - 1];
           if (ws) {
-            setActiveWorkspace(ws.path);
+            void setActiveWorkspace(ws.path);
           }
         }
         return;
@@ -276,7 +302,7 @@ export function useKeyboardShortcuts(): void {
               : 0;
             const targetCol = nonEmptyCols[currentNonEmptyIdx] || "backlog";
             const targetTasks = tasksByStatus[targetCol];
-            let currentIdx = currentFocusId
+            const currentIdx = currentFocusId
               ? getIndexInColumn(currentFocusId)
               : -1; // Both start at -1 so ArrowDown goes to 0 and ArrowUp wraps
 
@@ -355,29 +381,6 @@ export function useKeyboardShortcuts(): void {
           }
           return;
         }
-      }
-
-      // B/D/R/F: move selected task to column — do NOT fire when search input is focused
-      const ds = useDataStore.getState();
-      if (!ds.selectedTaskId) return;
-      const task = ds.tasks.find((t) => t.id === ds.selectedTaskId);
-      if (!task) return;
-
-      const keyMap: Record<string, "backlog" | "doing" | "review" | "done"> = {
-        b: "backlog",
-        B: "backlog",
-        d: "doing",
-        D: "doing",
-        r: "review",
-        R: "review",
-        f: "done",
-        F: "done",
-      };
-
-      const toStatus = keyMap[e.key];
-      if (toStatus && toStatus !== task.status) {
-        e.preventDefault();
-        moveTask(task.filePath, toStatus);
       }
     }
 

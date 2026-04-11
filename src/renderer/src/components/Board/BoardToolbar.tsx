@@ -19,12 +19,14 @@ export function BoardToolbar({
   const clearSearch = useBoardStore((s) => s.clearSearch);
 
   const inputRef = useRef<HTMLInputElement>(null);
+  const prevFocusCounterRef = useRef(searchFocusCounter);
 
-  // Focus search input whenever the counter increments
+  // Focus search input only when the counter actively increments (not on remount with stale state)
   useEffect(() => {
-    if (searchFocusCounter > 0) {
+    if (searchFocusCounter > prevFocusCounterRef.current) {
       inputRef.current?.focus();
     }
+    prevFocusCounterRef.current = searchFocusCounter;
   }, [searchFocusCounter]);
 
   function handleNewTask(): void {
@@ -66,6 +68,7 @@ export function BoardToolbar({
         <input
           ref={inputRef}
           type="text"
+          tabIndex={-1}
           className={styles.searchInput}
           placeholder="Search tasks…"
           value={searchQuery}

@@ -414,3 +414,47 @@
   text-align: right;
   margin-top: 4px;
 }
+
+/* ── Window opacity ─────────────────────────────────────────────── */
+
+.opacityRow {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+.opacityLabel {
+  font-size: 12px;
+  color: var(--text-primary);
+  min-width: 60px;
+}
+
+.opacitySlider {
+  flex: 1;
+  height: 4px;
+  appearance: none;
+  background: var(--border);
+  border-radius: 2px;
+  cursor: pointer;
+}
+
+.opacitySlider::-webkit-slider-thumb {
+  appearance: none;
+  width: 14px;
+  height: 14px;
+  background: var(--accent);
+  border-radius: 50%;
+  cursor: pointer;
+  transition: transform var(--transition-fast);
+}
+
+.opacitySlider::-webkit-slider-thumb:hover {
+  transform: scale(1.1);
+}
+
+.opacityValue {
+  font-size: 12px;
+  color: var(--text-secondary);
+  min-width: 40px;
+  text-align: right;
+}

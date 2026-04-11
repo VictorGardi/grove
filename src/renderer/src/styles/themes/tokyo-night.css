@@ -1,0 +1,39 @@
+/* ── Tokyo Night theme ────────────────────────────────────────────
+   https://github.com/folke/tokyo-night
+   ───────────────────────────────────────────────────────────────── */
+:root[data-theme="tokyo-night"] {
+  /* Backgrounds */
+  --bg-base: #1a1b26; /* Main background */
+  --bg-surface: #16161e; /* Sidebar / recessed panels */
+  --bg-elevated: #24283b; /* Elevated above Base (cards, dialogs) */
+  --bg-hover: #414868; /* Hover state */
+  --bg-active: #292e42; /* Active / selected item */
+
+  /* Borders */
+  --border: #292e42;
+  --border-dim: #24283b;
+
+  /* Text */
+  --text-primary: #c0caf5;
+  --text-secondary: #a9b1d6;
+  --text-lo: #565f89;
+
+  /* Accent */
+  --accent: #7aa2f7;
+  --accent-dim: rgba(122, 162, 247, 0.15);
+  --accent-selection: rgba(122, 162, 247, 0.3);
+
+  /* Status */
+  --status-green: #9ece6a;
+  --status-amber: #e0af68;
+  --status-red: #f7768e;
+  --status-blue: #7aa2f7;
+  --status-backlog: #7aa2f7;
+  --status-done: #bb9af7;
+
+  /* Diff colors */
+  --green: #9ece6a;
+  --green-dim: rgba(158, 206, 106, 0.12);
+  --red: #f7768e;
+  --red-dim: rgba(247, 118, 142, 0.12);
+}

@@ -4,11 +4,11 @@ import { TitleBar } from "./components/TitleBar/TitleBar";
 import { Sidebar } from "./components/Sidebar/Sidebar";
 import { MainArea } from "./components/MainArea/MainArea";
 import { TerminalPanel } from "./components/Terminal/TerminalPanel";
-import { Toast } from "./components/shared/Toast";
 import { ConfirmDialog } from "./components/shared/ConfirmDialog";
 import { LaunchModal } from "./components/shared/LaunchModal";
 import { useWorkspaceStore } from "./stores/useWorkspaceStore";
 import { useDataStore } from "./stores/useDataStore";
+import { useAllTasksStore } from "./stores/useAllTasksStore";
 import { useFileStore } from "./stores/useFileStore";
 import { useNavStore } from "./stores/useNavStore";
 import { useWorktreeStore } from "./stores/useWorktreeStore";
@@ -16,13 +16,14 @@ import { useTerminalStore } from "./stores/useTerminalStore";
 import { usePlanStore, queueChunk } from "./stores/usePlanStore";
 import { useKeyboardShortcuts } from "./hooks/useKeyboardShortcuts";
 import { ShortcutsModal } from "./components/shared/ShortcutsModal";
+import { TaskSwitcherModal } from "./components/shared/TaskSwitcherModal";
 import { HelpButton } from "./components/shared/HelpButton";
+import { useTmuxLivenessStore } from "./stores/useTmuxLivenessStore";
 
 function AppContent(): React.JSX.Element {
   useKeyboardShortcuts();
 
   const [platform, setPlatform] = useState<NodeJS.Platform | null>(null);
-  const restoredWorkspaces = useRef(new Set<string>());
   const fetchWorkspaces = useWorkspaceStore((s) => s.fetchWorkspaces);
   const activeWorkspacePath = useWorkspaceStore((s) => s.activeWorkspacePath);
   const updateBranch = useWorkspaceStore((s) => s.updateBranch);
@@ -30,6 +31,10 @@ function AppContent(): React.JSX.Element {
   const fetchData = useDataStore((s) => s.fetchData);
   const clearData = useDataStore((s) => s.clear);
   const tasks = useDataStore((s) => s.tasks);
+  const fetchTasksForWorkspace = useAllTasksStore(
+    (s) => s.fetchTasksForWorkspace,
+  );
+  const allTasks = useAllTasksStore((s) => s.allTasks);
   const fetched = useDataStore((s) => s.fetched);
   const sidebarVisible = useNavStore((s) => s.sidebarVisible);
   const terminalPanelOpen = useNavStore((s) => s.terminalPanelOpen);
@@ -43,6 +48,26 @@ function AppContent(): React.JSX.Element {
     fetchWorkspaces();
   }, [fetchWorkspaces]);
 
+  // Fetch all tasks for all workspaces (used by task switcher)
+  useEffect(() => {
+    for (const ws of workspaces) {
+      if (!allTasks.has(ws.path)) {
+        void fetchTasksForWorkspace(ws.path);
+      }
+    }
+  }, [workspaces, allTasks, fetchTasksForWorkspace]);
+
+  // Live update listener — re-fetch tasks for all workspaces when files change on disk
+  useEffect(() => {
+    if (!window.api.data) return;
+    const unsub = window.api.data.onChanged(async () => {
+      for (const ws of workspaces) {
+        await fetchTasksForWorkspace(ws.path);
+      }
+    });
+    return unsub;
+  }, [workspaces, fetchTasksForWorkspace]);
+
   // Set up branch change listener
   useEffect(() => {
     if (!window.api.workspaces) return;
@@ -54,6 +79,10 @@ function AppContent(): React.JSX.Element {
 
   // Clear stale data immediately on workspace switch, then fetch fresh
   useEffect(() => {
+    console.log(
+      "[App] workspace changed, clearing. activeWorkspacePath:",
+      activeWorkspacePath,
+    );
     clearData();
     useFileStore.getState().clear();
     useWorktreeStore.getState().clear();
@@ -120,40 +149,45 @@ function AppContent(): React.JSX.Element {
   useEffect(() => {
     if (!activeWorkspacePath || tasks.length === 0) return;
 
-    // Board state restoration (including indicators via initSession)
-    // CRITICAL: Only process "doing" and "backlog" tasks for indicator performance
     const dashboardTasks = tasks.filter(
-      (t) => t.status === "doing" || t.status === "backlog",
+      (t) =>
+        t.status === "doing" || t.status === "backlog" || t.status === "review",
     );
     for (const task of dashboardTasks) {
-      // Initialize plan session if it has a tmux session or session ID
-      if (task.planTmuxSession || task.planSessionId) {
+      // Initialize plan session if it has a terminal session or session ID
+      if (task.terminalPlanSession || task.planSessionId) {
+        const key = `plan:${task.id}`;
         usePlanStore
           .getState()
           .initSession(
-            `plan:${task.id}`,
+            key,
             task.planSessionAgent ?? "opencode",
             task.planModel,
             task.planSessionId,
             task.planLastExitCode,
           );
+        if (!task.planSessionId && task.terminalPlanSession) {
+          usePlanStore.getState().setSessionStatus(key, "paused");
+        }
       }
-      // Initialize exec session if it has a tmux session or session ID
-      if (task.execTmuxSession || task.execSessionId) {
+      // Initialize exec session if it has a terminal session or session ID
+      if (task.terminalExecSession || task.execSessionId) {
+        const key = `execute:${task.id}`;
         usePlanStore
           .getState()
           .initSession(
-            `execute:${task.id}`,
+            key,
             task.execSessionAgent ?? "opencode",
             task.execModel,
             task.execSessionId,
             task.execLastExitCode,
           );
+        // For terminal sessions without existingSessionId, set status to "paused" so tmux polling activates
+        if (!task.execSessionId && task.terminalExecSession) {
+          usePlanStore.getState().setSessionStatus(key, "paused");
+        }
       }
     }
-
-    if (restoredWorkspaces.current.has(activeWorkspacePath)) return;
-    restoredWorkspaces.current.add(activeWorkspacePath);
 
     const doingWithWorktree = tasks.filter(
       (t) => t.status === "doing" && t.worktree,
@@ -220,6 +254,69 @@ function AppContent(): React.JSX.Element {
     });
     return unsub;
   }, [fetchData]);
+
+  // ── Tmux liveness polling: keep the liveness store updated for all tasks
+  // across all workspaces so the running/agent indicators show in the sidebar
+  // and task switcher even for tasks not currently open in the task detail page.
+  useEffect(() => {
+    let cancelled = false;
+
+    async function pollLiveness(): Promise<void> {
+      if (cancelled) return;
+      const allTasksMap = useAllTasksStore.getState().allTasks;
+      const checks: Promise<void>[] = [];
+
+      for (const [_workspacePath, tasks] of allTasksMap) {
+        for (const task of tasks) {
+          if (task.status === "done") continue;
+          const relevantModes = [
+            ["plan", task.terminalPlanSession] as const,
+            ["execute", task.terminalExecSession] as const,
+          ];
+          for (const [mode, session] of relevantModes) {
+            if (!session) continue;
+            const livenessKey = `${mode}:${task.id}`;
+            checks.push(
+              window.api.taskterm
+                .isAlive(session)
+                .then((alive) => {
+                  if (cancelled) return;
+                  useTmuxLivenessStore
+                    .getState()
+                    .setLiveness(livenessKey, alive);
+                })
+                .then(() =>
+                  window.api.taskterm.state(
+                    session,
+                    mode === "execute"
+                      ? (task.execSessionAgent ?? "opencode")
+                      : (task.planSessionAgent ?? "opencode"),
+                  ),
+                )
+                .then((state) => {
+                  if (cancelled) return;
+                  useTmuxLivenessStore
+                    .getState()
+                    .setAgentState(livenessKey, state);
+                })
+                .catch(() => {}),
+            );
+          }
+        }
+      }
+
+      await Promise.all(checks);
+    }
+
+    // Poll immediately then every 1s
+    void pollLiveness();
+    const interval = setInterval(() => void pollLiveness(), 1_000);
+
+    return () => {
+      cancelled = true;
+      clearInterval(interval);
+    };
+  }, []);
 
   // File tree structural changes (files added/removed on disk)
   useEffect(() => {
@@ -343,15 +440,22 @@ function AppContent(): React.JSX.Element {
       }}
     >
       <TitleBar platform={platform} workspaceName={activeWorkspace?.name} />
-      <div style={{ display: "flex", flex: 1, overflow: "hidden" }}>
+      <div
+        style={{
+          display: "flex",
+          flex: 1,
+          overflow: "hidden",
+          minHeight: 0,
+        }}
+      >
         {sidebarVisible && <Sidebar />}
         <MainArea />
       </div>
       <TerminalPanel visible={terminalPanelOpen} />
-      <Toast />
       <ConfirmDialog />
       <LaunchModal />
       <ShortcutsModal />
+      <TaskSwitcherModal />
       <HelpButton />
     </div>
   );

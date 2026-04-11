@@ -173,10 +173,7 @@ export class CopilotLineParser {
       chunks.push({ type: "text", content: obj.content });
     }
 
-    if (
-      obj.data !== null &&
-      typeof obj.data === "object"
-    ) {
+    if (obj.data !== null && typeof obj.data === "object") {
       const data = obj.data as Record<string, unknown>;
 
       // Streaming text delta
@@ -232,8 +229,7 @@ export class CopilotLineParser {
         const MAX_OUTPUT = 5 * 1024;
         const truncated = rawOutput.length > MAX_OUTPUT;
         const output = truncated ? rawOutput.slice(0, MAX_OUTPUT) : rawOutput;
-        const success =
-          typeof data.success === "boolean" ? data.success : true;
+        const success = typeof data.success === "boolean" ? data.success : true;
 
         const toolName = pending?.name ?? "unknown";
         const toolData: ToolUseData = {

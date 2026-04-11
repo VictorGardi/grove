@@ -190,9 +190,12 @@ export function LaunchModal(): React.JSX.Element | null {
   const cancel = useLaunchModalStore((s) => s.cancel);
 
   const workspacePath = useWorkspaceStore((s) => s.activeWorkspacePath);
-  const workspaceDefaults = useWorkspaceStore(
-    (s) => s.workspaceDefaults[s.activeWorkspacePath ?? ""],
-  );
+  const workspaceDefaults =
+    useWorkspaceStore((s) =>
+      s.activeWorkspacePath
+        ? (s.workspaceDefaults[s.activeWorkspacePath] ?? null)
+        : null,
+    ) ?? {};
 
   // Keyboard handler: Escape = cancel
   useEffect(() => {

@@ -1,22 +1,26 @@
 import { useWorkspaceStore } from "../stores/useWorkspaceStore";
 import { useDataStore } from "../stores/useDataStore";
+import { useNavStore } from "../stores/useNavStore";
 import type { TaskStatus, TaskFrontmatter } from "@shared/types";
 
 function getWorkspacePath(): string | null {
   return useWorkspaceStore.getState().activeWorkspacePath;
 }
 
-export async function createTask(title: string): Promise<string | null> {
-  const wp = getWorkspacePath();
+export async function createTask(
+  title: string,
+  workspacePath?: string,
+): Promise<string | null> {
+  const wp = workspacePath ?? getWorkspacePath();
   if (!wp) return null;
   const result = await window.api.tasks.create(wp, title);
   if (!result.ok) {
     console.error("[taskActions] Failed to create task:", result.error);
     return null;
   }
-  // Patch the store immediately with confirmed disk state — no chokidar wait
   useDataStore.getState().patchTask(result.data);
   useDataStore.getState().setSelectedTask(result.data.id);
+  useNavStore.getState().setActiveView("task");
   return result.data.id;
 }
 

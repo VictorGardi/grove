@@ -5,8 +5,12 @@ import { WebLinksAddon } from "@xterm/addon-web-links";
 import "@xterm/xterm/css/xterm.css";
 import {
   registerXterm,
+  unregisterXterm,
   getXterm,
   useTerminalStore,
+  getFitAddon,
+  registerFitAddon,
+  unregisterFitAddon,
 } from "../../stores/useTerminalStore";
 import { useThemeStore } from "../../stores/useThemeStore";
 
@@ -59,21 +63,38 @@ export function TerminalTabView({
     const existingTerm = getXterm(id);
 
     if (existingTerm) {
-      terminalRef.current = existingTerm;
-      fitAddonRef.current = null;
-      registerXterm(id, existingTerm);
+      const termElement = existingTerm.element;
 
-      const termElement = (
-        existingTerm as unknown as { _core: { _terminalEl: HTMLElement } }
-      )._core._terminalEl;
-      if (termElement.parentElement !== containerRef.current) {
-        if (termElement.parentElement) {
-          termElement.parentElement.removeChild(termElement);
+      if (termElement) {
+        const existingFitAddon = getFitAddon(id);
+        if (existingFitAddon) {
+          existingFitAddon.dispose();
         }
-        containerRef.current.appendChild(termElement);
+
+        const fitAddon = new FitAddon();
+        existingTerm.loadAddon(fitAddon);
+        registerFitAddon(id, fitAddon);
+        fitAddonRef.current = fitAddon;
+
+        terminalRef.current = existingTerm;
+        registerXterm(id, existingTerm);
+
+        if (termElement.parentElement !== containerRef.current) {
+          if (termElement.parentElement) {
+            termElement.parentElement.removeChild(termElement);
+          }
+          containerRef.current.appendChild(termElement);
+        }
+
+        existingTerm.focus();
+      } else {
+        existingTerm.dispose();
+        unregisterXterm(id);
+        unregisterFitAddon(id);
       }
-      existingTerm.focus();
-    } else {
+    }
+
+    if (!terminalRef.current) {
       const term = new Terminal({
         theme: useThemeStore.getState().colors.xterm,
         fontFamily: "'JetBrains Mono', monospace",
@@ -94,6 +115,7 @@ export function TerminalTabView({
 
       terminalRef.current = term;
       fitAddonRef.current = fitAddon;
+      registerFitAddon(id, fitAddon);
 
       registerXterm(id, term);
     }
