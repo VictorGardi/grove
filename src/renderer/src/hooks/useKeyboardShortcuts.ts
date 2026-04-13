@@ -1,4 +1,4 @@
-import { useEffect } from "react";
+import { useEffect, useCallback } from "react";
 import { useWorkspaceStore } from "../stores/useWorkspaceStore";
 import { useNavStore, type View } from "../stores/useNavStore";
 import { useDataStore } from "../stores/useDataStore";
@@ -18,8 +18,8 @@ export function useKeyboardShortcuts(): void {
   const addWorkspace = useWorkspaceStore((s) => s.addWorkspace);
   const setActiveWorkspace = useWorkspaceStore((s) => s.setActiveWorkspace);
 
-  useEffect(() => {
-    function handleKeyDown(e: KeyboardEvent): void {
+  const handleKeyDown = useCallback(
+    (e: KeyboardEvent): void => {
       const mod = e.metaKey || e.ctrlKey;
 
       // Cmd+Shift+V: toggle between board and task views
@@ -49,18 +49,18 @@ export function useKeyboardShortcuts(): void {
         return;
       }
 
-      // Cmd+Shift+Tab: toggle last task
-      if (mod && e.shiftKey && e.key === "Tab") {
+      // Cmd+E: go to previous task
+      if (mod && (e.key === "e" || e.key === "E")) {
         e.preventDefault();
         const ts = useTaskSwitcherStore.getState();
-        const workspaces = useWorkspaceStore.getState().workspaces;
-        const allTasks = useAllTasksStore.getState().allTasks;
-        const prevTaskId = ts.toggleLastTask(workspaces, allTasks);
+        const prevTaskId = ts.recentTaskIds.find((id) => id !== ts.lastTaskId);
         if (prevTaskId) {
+          const workspaces = useWorkspaceStore.getState().workspaces;
+          const allTasks = useAllTasksStore.getState().allTasks;
           const sortedTasks = ts.getSortedTasks(workspaces, allTasks);
           const task = sortedTasks.find((t) => t.task.id === prevTaskId);
           if (task) {
-            switchToTask(task).then(() => ts.close());
+            switchToTask(task);
           }
         }
         return;
@@ -124,8 +124,14 @@ export function useKeyboardShortcuts(): void {
       const inBoardSearch =
         inInput && target.getAttribute("data-board-search") === "true";
 
-      // Escape: handle search clearing or close task detail panel
+      // Escape: handle task switcher, search clearing, or close task detail panel
       if (e.key === "Escape") {
+        const ts = useTaskSwitcherStore.getState();
+        if (ts.isOpen) {
+          e.preventDefault();
+          ts.close();
+          return;
+        }
         const bs = useBoardStore.getState();
         if (bs.searchActive || bs.searchQuery) {
           e.preventDefault();
@@ -382,9 +388,12 @@ export function useKeyboardShortcuts(): void {
           return;
         }
       }
-    }
+    },
+    [addWorkspace, setActiveWorkspace],
+  );
 
+  useEffect(() => {
     document.addEventListener("keydown", handleKeyDown);
     return () => document.removeEventListener("keydown", handleKeyDown);
-  }, [addWorkspace, setActiveWorkspace]);
+  }, [handleKeyDown]);
 }

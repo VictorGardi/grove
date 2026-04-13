@@ -40,9 +40,6 @@ export function registerPlanHandlers(
   };
 
   planManager.setOnChunk((taskId, mode, chunk) => {
-    console.log(
-      `[PlanIPC] queuing chunk type=${chunk.type} taskId=${taskId} mode=${mode}`,
-    );
     pendingChunks.push({ taskId, mode, chunk });
     if (!flushScheduled) {
       flushScheduled = true;

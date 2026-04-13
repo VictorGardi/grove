@@ -102,8 +102,8 @@
 
 .item {
   display: flex;
-  justify-content: space-between;
   align-items: center;
+  gap: 8px;
   padding: 14px 16px;
   cursor: pointer;
   border-bottom: 1px solid var(--border);
@@ -116,6 +116,12 @@
 
 .item:hover {
   background: var(--bg-hover);
+}
+
+.separator {
+  height: 1px;
+  background: var(--text-lo);
+  margin: 4px 16px;
 }
 
 .selected {
@@ -132,12 +138,19 @@
   background: var(--accent);
 }
 
-.itemMain {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  min-width: 220px;
-  flex: 1;
+.runningDot {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  flex-shrink: 0;
+}
+
+.runningDotActive {
+  animation: dotPulse 1.2s ease-in-out infinite;
+}
+
+.runningDotWaiting {
+  animation: dotPulseSlow 2s ease-in-out infinite;
 }
 
 .taskId {
@@ -145,6 +158,7 @@
   font-size: 12px;
   color: var(--text-lo);
   flex-shrink: 0;
+  min-width: 36px;
 }
 
 .taskTitle {
@@ -155,31 +169,20 @@
   overflow: hidden;
   text-overflow: ellipsis;
   min-width: 0;
+  flex: 1;
 }
 
-.itemMeta {
-  display: flex;
-  align-items: center;
-  gap: 8px;
+.workspaceName {
+  font-family: var(--font-ui);
+  font-size: 11px;
+  color: var(--text-lo);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  text-align: right;
   flex-shrink: 0;
-  margin-left: 8px;
-}
-
-.statusColumn {
-  width: 100px;
-  display: flex;
-  align-items: center;
-  justify-content: flex-end;
-  gap: 8px;
-  flex-shrink: 0;
-}
-
-.workspaceColumn {
-  width: 90px;
-  display: flex;
-  align-items: center;
-  justify-content: flex-end;
-  flex-shrink: 0;
+  min-width: 70px;
+  max-width: 90px;
 }
 
 .statusBadge {
@@ -264,16 +267,6 @@
 
 .runningTextWaiting {
   color: var(--status-yellow, #f0c060);
-}
-
-@keyframes dotPulse {
-  0%,
-  100% {
-    opacity: 1;
-  }
-  50% {
-    opacity: 0.4;
-  }
 }
 
 .reviewDot {

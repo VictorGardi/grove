@@ -20,6 +20,8 @@ export interface WorkspaceEntry {
   executeReviewPersona?: string;
   /** Custom instructions for execution review phase */
   executeReviewInstructions?: string;
+  /** Hide workspace tasks from views */
+  hidden?: boolean;
 }
 
 /** Returned from workspace:list with runtime info */

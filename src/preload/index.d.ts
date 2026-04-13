@@ -46,6 +46,8 @@ export interface ElectronAPI {
         defaultExecutionModel?: string;
       },
     ) => Promise<IpcResult<void>>;
+    getHidden: (path: string) => Promise<IpcResult<boolean>>;
+    setHidden: (path: string, hidden: boolean) => Promise<IpcResult<void>>;
     onBranchChanged: (
       callback: (data: { path: string; branch: string }) => void,
     ) => () => void;
@@ -143,6 +145,8 @@ export interface ElectronAPI {
     resize: (id: string, cols: number, rows: number) => void;
     kill: (id: string) => Promise<IpcResult<void>>;
     isIdle: (id: string) => Promise<IpcResult<boolean>>;
+    getOutput: (id: string) => Promise<IpcResult<string>>;
+    clearOutput: (id: string) => Promise<IpcResult<void>>;
     onData: (callback: (id: string, data: string) => void) => () => void;
     onExit: (
       callback: (id: string, exitCode: number, signal?: number) => void,

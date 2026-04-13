@@ -59,9 +59,6 @@ export function writeOpencodeConfig(
       "utf-8",
     );
     wroteConfigFiles.set(runKey, OPENCODE_CONFIG_PATH);
-    console.log(
-      `[OpencodeConfig] Wrote opencode.json to ${OPENCODE_CONFIG_PATH}`,
-    );
   } catch (e) {
     console.warn(`[OpencodeConfig] Could not write opencode.json:`, e);
   }
@@ -75,7 +72,6 @@ export function cleanupGroveConfig(
   if (!configPath) return;
   try {
     fs.unlinkSync(configPath);
-    console.log(`[OpencodeConfig] Cleaned up opencode.json: ${configPath}`);
   } catch {
     // ignore
   }

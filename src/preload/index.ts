@@ -22,6 +22,10 @@ contextBridge.exposeInMainWorld("api", {
         defaultExecutionModel?: string;
       },
     ) => ipcRenderer.invoke("workspace:setDefaults", path, defaults),
+    getHidden: (path: string) =>
+      ipcRenderer.invoke("workspace:getHidden", path),
+    setHidden: (path: string, hidden: boolean) =>
+      ipcRenderer.invoke("workspace:setHidden", path, hidden),
     onBranchChanged: (
       callback: (data: { path: string; branch: string }) => void,
     ) => {
@@ -126,6 +130,8 @@ contextBridge.exposeInMainWorld("api", {
       ipcRenderer.send("pty:resize", id, cols, rows),
     kill: (id: string) => ipcRenderer.invoke("pty:kill", id),
     isIdle: (id: string) => ipcRenderer.invoke("pty:isIdle", id),
+    getOutput: (id: string) => ipcRenderer.invoke("pty:getOutput", id),
+    clearOutput: (id: string) => ipcRenderer.invoke("pty:clearOutput", id),
     onData: (callback: (id: string, data: string) => void) => {
       const handler = (
         _event: Electron.IpcRendererEvent,

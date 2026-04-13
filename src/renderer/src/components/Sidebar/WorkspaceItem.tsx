@@ -1,8 +1,9 @@
-import { useState } from "react";
+import { useState, useCallback } from "react";
 import type { WorkspaceInfo } from "@shared/types";
 import { ContextMenu } from "./ContextMenu";
 import type { ContextMenuItem } from "./ContextMenu";
 import { useWorkspaceStore } from "../../stores/useWorkspaceStore";
+import { useDataStore } from "../../stores/useDataStore";
 
 interface WorkspaceItemProps {
   workspace: WorkspaceInfo;
@@ -23,6 +24,31 @@ export function WorkspaceItem({
     y: number;
   } | null>(null);
   const removeWorkspace = useWorkspaceStore((s) => s.removeWorkspace);
+  const toggleWorkspaceHidden = useWorkspaceStore(
+    (s) => s.toggleWorkspaceHidden,
+  );
+  const hiddenWorkspaces = useWorkspaceStore((s) => s.hiddenWorkspaces);
+  const getCachedTasks = useDataStore((s) => s.getCachedTasks);
+  const activeWorkspacePath = useWorkspaceStore((s) => s.activeWorkspacePath);
+
+  const isHidden = hiddenWorkspaces.has(workspace.path);
+
+  const handlePreload = useCallback(async () => {
+    if (workspace.path === activeWorkspacePath) return;
+    const cached = getCachedTasks(workspace.path);
+    if (!cached) {
+      try {
+        const result = await window.api.data.fetch(workspace.path);
+        if (result.ok && result.data) {
+          useDataStore
+            .getState()
+            .setCachedTasks(workspace.path, result.data.tasks);
+        }
+      } catch {
+        // Best-effort preload
+      }
+    }
+  }, [workspace.path, activeWorkspacePath, getCachedTasks]);
 
   function handleContextMenu(e: React.MouseEvent): void {
     e.preventDefault();
@@ -36,7 +62,16 @@ export function WorkspaceItem({
     setContextMenu(null);
   }
 
+  function handleToggleHidden(): void {
+    void toggleWorkspaceHidden(workspace.path);
+    setContextMenu(null);
+  }
+
   const menuItems: ContextMenuItem[] = [
+    {
+      label: isHidden ? "Show Tasks" : "Hide Tasks",
+      onClick: handleToggleHidden,
+    },
     {
       label: "Remove workspace",
       onClick: handleRemove,
@@ -52,14 +87,17 @@ export function WorkspaceItem({
         aria-label={`Workspace: ${workspace.name}`}
         onClick={onClick}
         onKeyDown={(e) => (e.key === "Enter" || e.key === " ") && onClick()}
-        onMouseEnter={() => setHovered(true)}
+        onMouseEnter={() => {
+          setHovered(true);
+          handlePreload();
+        }}
         onMouseLeave={() => setHovered(false)}
         onContextMenu={handleContextMenu}
         title={workspace.exists ? undefined : "Directory not found"}
         style={{
           padding: "5px 12px",
           cursor: "pointer",
-          opacity: workspace.exists ? 1 : 0.4,
+          opacity: workspace.exists && !isHidden ? 1 : 0.4,
           background: isActive
             ? "var(--bg-active)"
             : hovered

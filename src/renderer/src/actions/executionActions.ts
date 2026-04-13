@@ -186,6 +186,7 @@ export async function startTaskExecution(
         executeReviewPersona: workspaceDefaults.executeReviewPersona,
         executeReviewInstructions: workspaceDefaults.executeReviewInstructions,
       },
+      agent: agent as "opencode" | "copilot" | "claude",
     });
   }
 }
@@ -206,7 +207,7 @@ export async function showLaunchModalAndExecute(task: TaskInfo): Promise<void> {
 
 export async function completeTask(task: TaskInfo): Promise<void> {
   const wp = useWorkspaceStore.getState().activeWorkspacePath;
-  if (!wp) return;
+  if (!wp) throw new Error("No active workspace");
 
   if (task.worktree) {
     const confirmed = await useDialogStore.getState().show({
@@ -216,7 +217,7 @@ export async function completeTask(task: TaskInfo): Promise<void> {
       cancelLabel: "Keep worktree",
     });
 
-    if (!confirmed) return;
+    if (!confirmed) throw new Error("User cancelled");
   }
 
   useDataStore.getState().patchTask({ ...task, status: "done" });
@@ -224,7 +225,7 @@ export async function completeTask(task: TaskInfo): Promise<void> {
   if (!moveOk) {
     useDataStore.getState().patchTask(task);
     showToast("Failed to move task to Done", "error");
-    return;
+    throw new Error("Failed to move task to Done");
   }
 
   let movedTask = useDataStore

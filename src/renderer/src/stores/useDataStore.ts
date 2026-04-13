@@ -15,12 +15,21 @@ interface DataState {
   taskDetailLoading: boolean;
   taskDetailDirty: boolean;
 
+  // Cache for task metadata across workspaces - avoids disk re-fetch on switch
+  workspaceTasksCache: Map<string, TaskInfo[]>;
+
   fetchData: () => void;
   // Immediately patch a single task in the store after a confirmed write,
   // avoiding the chokidar round-trip (~350ms) for user-initiated changes.
   patchTask: (updated: TaskInfo) => void;
   setTasks: (tasks: TaskInfo[]) => void;
-  setSelectedTask: (id: string | null, filePathOverride?: string) => void;
+  getCachedTasks: (workspacePath: string) => TaskInfo[] | undefined;
+  setCachedTasks: (workspacePath: string, tasks: TaskInfo[]) => void;
+  setSelectedTask: (
+    id: string | null,
+    filePathOverride?: string,
+    workspacePathOverride?: string,
+  ) => void;
   setTaskDetailDirty: (dirty: boolean) => void;
   clearSelectedTask: () => void;
   clear: () => void;
@@ -37,6 +46,19 @@ export const useDataStore = create<DataState>()((set, get) => ({
   selectedTaskBody: null,
   taskDetailLoading: false,
   taskDetailDirty: false,
+  workspaceTasksCache: new Map(),
+
+  getCachedTasks: (workspacePath: string) => {
+    return get().workspaceTasksCache.get(workspacePath);
+  },
+
+  setCachedTasks: (workspacePath: string, tasks: TaskInfo[]) => {
+    set((state) => {
+      const newCache = new Map(state.workspaceTasksCache);
+      newCache.set(workspacePath, tasks);
+      return { workspaceTasksCache: newCache };
+    });
+  },
 
   fetchData: () => {
     // Debounce: wait 200ms before executing. If called again within that
@@ -100,9 +122,22 @@ export const useDataStore = create<DataState>()((set, get) => ({
       return { tasks: [updated, ...state.tasks] };
     }),
 
-  setTasks: (tasks) => set({ tasks }),
+  setTasks: (tasks) => {
+    const workspacePath = useWorkspaceStore.getState().activeWorkspacePath;
+    set((state) => {
+      const newCache = new Map(state.workspaceTasksCache);
+      if (workspacePath) {
+        newCache.set(workspacePath, tasks);
+      }
+      return { tasks, workspaceTasksCache: newCache };
+    });
+  },
 
-  setSelectedTask: (id, filePathOverride?: string) => {
+  setSelectedTask: (
+    id,
+    filePathOverride?: string,
+    workspacePathOverride?: string,
+  ) => {
     if (id === null) {
       set({
         selectedTaskId: null,
@@ -119,22 +154,12 @@ export const useDataStore = create<DataState>()((set, get) => ({
       taskDetailDirty: false,
     });
 
-    console.log(
-      "[DataStore] setSelectedTask ENTRY, current selectedTaskId:",
-      get().selectedTaskId,
-    );
-    console.log("[DataStore] setSelectedTask state set, id:", id);
-    const workspacePath = useWorkspaceStore.getState().activeWorkspacePath;
+    const workspacePath =
+      workspacePathOverride ?? useWorkspaceStore.getState().activeWorkspacePath;
     const task = filePathOverride
       ? undefined
       : get().tasks.find((t) => t.id === id);
     const filePath = filePathOverride ?? task?.filePath;
-    console.log("[DataStore] setSelectedTask:", {
-      id,
-      workspacePath,
-      filePath,
-      taskFound: !!task,
-    });
     if (!workspacePath || !filePath) {
       set({ taskDetailLoading: false });
       return;
@@ -145,26 +170,16 @@ export const useDataStore = create<DataState>()((set, get) => ({
       .then((result) => {
         // Only update if this task is still selected
         const currentId = get().selectedTaskId;
-        console.log(
-          "[DataStore] body fetch resolved, currentId:",
-          currentId,
-          "expecting:",
-          id,
-        );
         if (currentId !== id) {
-          console.log("[DataStore] SKIPPING - task changed!");
           return;
         }
         if (result.ok) {
-          console.log("[DataStore] body fetched OK, len:", result.data.length);
           set({ selectedTaskBody: result.data, taskDetailLoading: false });
         } else {
-          console.error("[DataStore] Failed to read task body:", result.error);
           set({ selectedTaskBody: null, taskDetailLoading: false });
         }
       })
-      .catch((err) => {
-        console.error("[DataStore] body fetch exception:", err);
+      .catch(() => {
         if (get().selectedTaskId !== id) return;
         set({ taskDetailLoading: false });
       });
@@ -193,6 +208,7 @@ export const useDataStore = create<DataState>()((set, get) => ({
       selectedTaskBody: null,
       taskDetailLoading: false,
       taskDetailDirty: false,
+      workspaceTasksCache: new Map(),
     });
   },
 }));

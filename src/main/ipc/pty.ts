@@ -38,7 +38,6 @@ export function registerPtyHandlers(
 
   // pty:write — fire-and-forget (ipcMain.on)
   ipcMain.on("pty:write", (_event, id: string, data: string) => {
-    console.log("[IPC pty:write] id:", id, "data:", JSON.stringify(data));
     ptyManager.write(id, data);
   });
 
@@ -70,6 +69,38 @@ export function registerPtyHandlers(
       try {
         const idle = ptyManager.isIdle(id);
         return { ok: true, data: idle };
+      } catch (err) {
+        return {
+          ok: false,
+          error: err instanceof Error ? err.message : String(err),
+        };
+      }
+    },
+  );
+
+  // pty:getOutput — get accumulated output
+  ipcMain.handle(
+    "pty:getOutput",
+    async (_event, id: string): Promise<IpcResult<string>> => {
+      try {
+        const output = ptyManager.getOutput(id);
+        return { ok: true, data: output };
+      } catch (err) {
+        return {
+          ok: false,
+          error: err instanceof Error ? err.message : String(err),
+        };
+      }
+    },
+  );
+
+  // pty:clearOutput — clear accumulated output
+  ipcMain.handle(
+    "pty:clearOutput",
+    async (_event, id: string): Promise<IpcResult<void>> => {
+      try {
+        ptyManager.clearOutput(id);
+        return { ok: true, data: undefined };
       } catch (err) {
         return {
           ok: false,

@@ -1,6 +1,6 @@
 import { create } from "zustand";
 
-interface BoardState {
+interface SearchState {
   /** Current search query string */
   searchQuery: string;
   /** Whether the search input is active/visible */
@@ -18,7 +18,7 @@ interface BoardState {
   clearFocusedTask: () => void;
 }
 
-export const useBoardStore = create<BoardState>()((set) => ({
+export const useBoardStore = create<SearchState>()((set) => ({
   searchQuery: "",
   searchActive: false,
   searchFocusCounter: 0,

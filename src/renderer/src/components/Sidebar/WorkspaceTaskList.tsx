@@ -1,11 +1,15 @@
 import { useEffect, useMemo } from "react";
+import type { TaskInfo } from "@shared/types";
 import {
   useAllTasksStore,
   type TaskWithWorkspace,
 } from "../../stores/useAllTasksStore";
 import { useWorkspaceStore } from "../../stores/useWorkspaceStore";
 import { useDataStore } from "../../stores/useDataStore";
-import { useNavStore } from "../../stores/useNavStore";
+import {
+  switchToTask,
+  type SortedTask,
+} from "../../stores/useTaskSwitcherStore";
 import styles from "./WorkspaceTaskList.module.css";
 import { useTmuxLivenessStore } from "../../stores/useTmuxLivenessStore";
 
@@ -32,7 +36,6 @@ export function WorkspaceTaskList({
   const liveness = useTmuxLivenessStore((s) => s.liveness);
   const activeWorkspacePath = useWorkspaceStore((s) => s.activeWorkspacePath);
   const selectedTaskId = useDataStore((s) => s.selectedTaskId);
-  const setSelectedTask = useDataStore((s) => s.setSelectedTask);
 
   useEffect(() => {
     if (!allTasks.has(workspacePath)) {
@@ -59,15 +62,17 @@ export function WorkspaceTaskList({
       const hasPlanSession = !!task.terminalPlanSession;
       const hasExecSession = !!task.terminalExecSession;
       const planAlive = hasPlanSession
-        ? (liveness[`plan:${task.id}`]?.alive ?? false)
+        ? (liveness[`${workspacePath}:plan:${task.id}`]?.alive ?? false)
         : false;
       const execAlive = hasExecSession
-        ? (liveness[`execute:${task.id}`]?.alive ?? false)
+        ? (liveness[`${workspacePath}:execute:${task.id}`]?.alive ?? false)
         : false;
       const isActiveTmux =
         (hasPlanSession && planAlive) || (hasExecSession && execAlive);
-      const execAgentState = liveness[`execute:${task.id}`]?.state ?? null;
-      const planAgentState = liveness[`plan:${task.id}`]?.state ?? null;
+      const execAgentState =
+        liveness[`${workspacePath}:execute:${task.id}`]?.state ?? null;
+      const planAgentState =
+        liveness[`${workspacePath}:plan:${task.id}`]?.state ?? null;
       const lastViewedAt = 0;
 
       grouped[status].push({
@@ -86,19 +91,45 @@ export function WorkspaceTaskList({
   }, [tasks, workspacePath, workspaceName, liveness]);
 
   const hasTasks = tasks.filter((t) => t.status !== "done").length > 0;
-  const setActiveView = useNavStore((s) => s.setActiveView);
 
   function handleTaskClick(task: TaskWithWorkspace): void {
-    if (task.workspacePath !== activeWorkspacePath) {
-      useWorkspaceStore.getState().setActiveWorkspace(task.workspacePath);
-      setTimeout(() => {
-        setSelectedTask(task.id);
-        setActiveView("task");
-      }, 100);
-    } else {
-      setSelectedTask(task.id);
-      setActiveView("task");
-    }
+    const taskInfo: TaskInfo = {
+      id: task.id,
+      title: task.title,
+      status: task.status,
+      filePath: task.filePath,
+      created: task.created,
+      agent: task.agent,
+      worktree: task.worktree,
+      branch: task.branch,
+      tags: task.tags,
+      decisions: task.decisions,
+      description: task.description,
+      dodTotal: task.dodTotal,
+      dodDone: task.dodDone,
+      workspacePath: task.workspacePath,
+      useWorktree: task.useWorktree,
+      planSessionId: task.planSessionId,
+      planSessionAgent: task.planSessionAgent,
+      planModel: task.planModel,
+      execSessionId: task.execSessionId,
+      execSessionAgent: task.execSessionAgent,
+      execModel: task.execModel,
+      terminalPlanSession: task.terminalPlanSession,
+      terminalExecSession: task.terminalExecSession,
+      terminalExecContextSent: task.terminalExecContextSent,
+      planLastExitCode: task.planLastExitCode,
+      execLastExitCode: task.execLastExitCode,
+      completed: task.completed,
+    };
+    const sortedTask: SortedTask = {
+      ...task,
+      task: taskInfo,
+      sortScore: 0,
+      recentGroup: "other",
+      groupSort: 0,
+    };
+    void switchToTask(sortedTask);
   }
 
   if (!hasTasks) return <></>;
@@ -120,8 +151,8 @@ export function WorkspaceTaskList({
               {statusTasks.map((task) => {
                 const hasPlanSession = !!task.terminalPlanSession;
                 const hasExecSession = !!task.terminalExecSession;
-                const planKey = `plan:${task.id}`;
-                const execKey = `execute:${task.id}`;
+                const planKey = `${workspacePath}:plan:${task.id}`;
+                const execKey = `${workspacePath}:execute:${task.id}`;
                 const planEntry = liveness[planKey];
                 const execEntry = liveness[execKey];
                 const planAlive = !!planEntry?.alive;

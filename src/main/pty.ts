@@ -3,6 +3,7 @@ import * as pty from "node-pty";
 interface PtyEntry {
   process: pty.IPty;
   lastOutputTime: number;
+  output: string;
 }
 
 type DataCallback = (id: string, data: string) => void;
@@ -55,16 +56,6 @@ export class PtyManager {
     }
 
     const shell = this.resolveShell();
-    console.log(
-      "[PtyManager.create] id:",
-      id,
-      "cwd:",
-      cwd,
-      "shell:",
-      shell,
-      "PATH:",
-      process.env.PATH,
-    );
     const args: string[] = [];
 
     // Use login shell on macOS/Linux for proper env loading
@@ -86,6 +77,7 @@ export class PtyManager {
     const entry: PtyEntry = {
       process: ptyProcess,
       lastOutputTime: Date.now(),
+      output: "",
     };
 
     this.ptys.set(id, entry);
@@ -93,20 +85,13 @@ export class PtyManager {
     // Forward data output
     ptyProcess.onData((data: string) => {
       entry.lastOutputTime = Date.now();
+      entry.output += data;
       this.onDataCallback?.(id, data);
     });
 
     // Forward exit — but only if the PTY exited naturally, not via explicit kill().
     // Use entry-scoped comparison to avoid stomping on a newer PTY with the same ID.
     ptyProcess.onExit(({ exitCode, signal }) => {
-      console.log(
-        "[PtyManager] PTY exited, id:",
-        id,
-        "exitCode:",
-        exitCode,
-        "signal:",
-        signal,
-      );
       const isCurrent = this.ptys.get(id) === entry;
       if (isCurrent) this.ptys.delete(id);
       if (!this.killedEntries.has(entry)) {
@@ -145,12 +130,14 @@ export class PtyManager {
     const entry: PtyEntry = {
       process: ptyProcess,
       lastOutputTime: Date.now(),
+      output: "",
     };
 
     this.ptys.set(id, entry);
 
     ptyProcess.onData((data: string) => {
       entry.lastOutputTime = Date.now();
+      entry.output += data;
       this.onDataCallback?.(id, data);
     });
 
@@ -169,12 +156,7 @@ export class PtyManager {
   write(id: string, data: string): void {
     const entry = this.ptys.get(id);
     if (entry) {
-      if (process.env.DEBUG_PTY) {
-        console.log("[PtyManager.write] Writing to PTY:", JSON.stringify(data));
-      }
       entry.process.write(data);
-    } else {
-      console.warn("[PtyManager.write] No PTY found for id:", id);
     }
   }
 
@@ -238,5 +220,23 @@ export class PtyManager {
    */
   exists(id: string): boolean {
     return this.ptys.has(id);
+  }
+
+  /**
+   * Get all accumulated output for a PTY since creation or last clear.
+   */
+  getOutput(id: string): string {
+    const entry = this.ptys.get(id);
+    return entry?.output ?? "";
+  }
+
+  /**
+   * Clear the accumulated output for a PTY.
+   */
+  clearOutput(id: string): void {
+    const entry = this.ptys.get(id);
+    if (entry) {
+      entry.output = "";
+    }
   }
 }

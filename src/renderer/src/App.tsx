@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useState } from "react";
 import { ErrorBoundary } from "./components/ErrorBoundary/ErrorBoundary";
 import { TitleBar } from "./components/TitleBar/TitleBar";
 import { Sidebar } from "./components/Sidebar/Sidebar";
@@ -38,7 +38,6 @@ function AppContent(): React.JSX.Element {
   const fetched = useDataStore((s) => s.fetched);
   const sidebarVisible = useNavStore((s) => s.sidebarVisible);
   const terminalPanelOpen = useNavStore((s) => s.terminalPanelOpen);
-  const previousWorkspacePath = useRef<string | null>(null);
 
   useEffect(() => {
     // Get platform for titlebar padding
@@ -96,53 +95,27 @@ function AppContent(): React.JSX.Element {
     }
   }, [activeWorkspacePath, clearData, fetchData]);
 
-  // Restore board state after tasks load for the new workspace
-  // MUST run AFTER clear/fetch so tasks are populated with the new workspace's data
+  // Restore terminal state after workspace switch (not initial load)
   useEffect(() => {
-    const previousPath = previousWorkspacePath.current;
-    const currentPath = activeWorkspacePath;
+    if (!activeWorkspacePath) return;
+    useWorkspaceStore.getState().restoreTerminalState(activeWorkspacePath);
+  }, [activeWorkspacePath]);
 
-    // First load - just record the current path
-    if (!previousPath) {
-      previousWorkspacePath.current = currentPath;
-      return;
+  // Initial task validation: on first load (Cmd+R), verify the currently
+  // selected task still exists. If not, redirect to home to avoid showing
+  // "No task selected" page.
+  useEffect(() => {
+    if (!activeWorkspacePath || tasks.length === 0) return;
+    if (!tasks[0].filePath.startsWith(activeWorkspacePath)) return;
+
+    const saved =
+      useWorkspaceStore.getState().workspaceBoardStates[activeWorkspacePath];
+    if (!saved?.selectedTaskId) return;
+    if (!tasks.some((t) => t.id === saved.selectedTaskId)) {
+      useDataStore.getState().clearSelectedTask();
+      useNavStore.getState().setActiveView("home");
     }
-
-    // Same workspace - no need to restore
-    if (previousPath === currentPath) {
-      return;
-    }
-
-    // Different workspace - restore state
-    if (!currentPath) {
-      return;
-    }
-
-    // CRITICAL: We must wait until the tasks match the expected workspace
-    // The data store is shared across workspaces, so we need to verify that:
-    // 1. We have fetched data for the current workspace
-    // 2. The loaded tasks belong to the current workspace (not stale from previous)
-    //
-    // If fetched is false, data is still loading - don't attempt restore
-    if (!fetched) {
-      return;
-    }
-
-    // Once fetched, verify the tasks belong to the current workspace
-    // We check by looking at the first task's filePath - if it starts with
-    // currentPath, then the tasks are for the current workspace
-    const hasTasksForCurrentWorkspace =
-      tasks.length > 0 && tasks[0].filePath.startsWith(currentPath);
-    if (!hasTasksForCurrentWorkspace) {
-      return;
-    }
-
-    useWorkspaceStore.getState().restoreBoardState(currentPath, tasks);
-    useWorkspaceStore.getState().restoreTerminalState(currentPath);
-
-    // Update tracking AFTER restore attempt
-    previousWorkspacePath.current = currentPath;
-  }, [activeWorkspacePath, fetched, tasks]);
+  }, [activeWorkspacePath, tasks]);
 
   // Session restoration: when tasks load for a workspace, auto-create terminal tabs
   // for any doing tasks with worktrees that don't already have terminal tabs
@@ -266,7 +239,7 @@ function AppContent(): React.JSX.Element {
       const allTasksMap = useAllTasksStore.getState().allTasks;
       const checks: Promise<void>[] = [];
 
-      for (const [_workspacePath, tasks] of allTasksMap) {
+      for (const [workspacePath, tasks] of allTasksMap) {
         for (const task of tasks) {
           if (task.status === "done") continue;
           const relevantModes = [
@@ -275,7 +248,7 @@ function AppContent(): React.JSX.Element {
           ];
           for (const [mode, session] of relevantModes) {
             if (!session) continue;
-            const livenessKey = `${mode}:${task.id}`;
+            const livenessKey = `${workspacePath}:${mode}:${task.id}`;
             checks.push(
               window.api.taskterm
                 .isAlive(session)

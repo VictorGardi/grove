@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import styles from "./TerminalPanel.module.css";
 import { TerminalTabView } from "./TerminalTab";
 import { useTerminalStore } from "../../stores/useTerminalStore";
@@ -64,6 +64,18 @@ export function TerminalPanel({
     }
   }, [visible, activeTabId]);
 
+  // Preserve hidden tabs when panel is hidden (don't destroy PTY)
+  const prevVisible = useRef(visible);
+  useEffect(() => {
+    if (!visible && prevVisible.current) {
+      // Panel just became hidden - preserve tabs
+      tabs.forEach((tab) => {
+        useTerminalStore.getState().removeTab(tab.id, true);
+      });
+    }
+    prevVisible.current = visible;
+  }, [visible]);
+
   // Persist height to localStorage
   useEffect(() => {
     try {
@@ -73,10 +85,11 @@ export function TerminalPanel({
     }
   }, [height]);
 
-  // Filter tabs for current workspace
-  const workspaceTabs = activeWorkspacePath
-    ? tabs.filter((t) => t.workspacePath === activeWorkspacePath)
-    : [];
+  // Filter tabs for current workspace - memoized to avoid re-filtering on every render
+  const workspaceTabs = useMemo(() => {
+    if (!activeWorkspacePath) return [];
+    return tabs.filter((t) => t.workspacePath === activeWorkspacePath);
+  }, [tabs, activeWorkspacePath]);
 
   // Resize handle drag
   const onMouseDown = useCallback(

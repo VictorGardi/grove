@@ -1,6 +1,7 @@
 import { create } from "zustand";
 import type { TaskInfo, TaskStatus } from "@shared/types";
 import { useTmuxLivenessStore } from "./useTmuxLivenessStore";
+import { enrichTaskWithWorkspace, type EnrichedTask } from "./taskEnrichment";
 
 interface AllTasksState {
   allTasks: Map<string, TaskInfo[]>;
@@ -45,16 +46,7 @@ export const useAllTasksStore = create<AllTasksState>()((set, get) => ({
   clear: () => set({ allTasks: new Map(), fetchingTasks: new Map() }),
 }));
 
-export interface TaskWithWorkspace extends TaskInfo {
-  workspacePath: string;
-  workspaceName: string;
-  isRunning: boolean;
-  execTmuxAlive: boolean;
-  planTmuxAlive: boolean;
-  execAgentState: string | null;
-  planAgentState: string | null;
-  lastViewedAt: number;
-}
+export type TaskWithWorkspace = EnrichedTask;
 
 export function getAllTasksGrouped(
   allTasks: Map<string, TaskInfo[]>,
@@ -76,32 +68,13 @@ export function getAllTasksGrouped(
       const status = task.status as TaskStatus;
       const key = `${ws.name} - ${statusLabels[status]}`;
 
-      const hasPlanSession = !!task.terminalPlanSession;
-      const hasExecSession = !!task.terminalExecSession;
-
-      const planAlive = hasPlanSession
-        ? (liveness[`plan:${task.id}`]?.alive ?? false)
-        : false;
-      const execAlive = hasExecSession
-        ? (liveness[`execute:${task.id}`]?.alive ?? false)
-        : false;
-      const isActiveTmux =
-        (hasPlanSession && planAlive) || (hasExecSession && execAlive);
-      const execAgentState = liveness[`execute:${task.id}`]?.state;
-      const planAgentState = liveness[`plan:${task.id}`]?.state;
-      const lastViewedAt = 0; // This would come from task switcher store
-
-      const taskWithWs: TaskWithWorkspace = {
-        ...task,
-        workspacePath: ws.path,
-        workspaceName: ws.name,
-        isRunning: isActiveTmux,
-        execTmuxAlive: execAlive,
-        planTmuxAlive: planAlive,
-        execAgentState: execAgentState ?? null,
-        planAgentState: planAgentState ?? null,
-        lastViewedAt,
-      };
+      const taskWithWs = enrichTaskWithWorkspace(
+        task,
+        ws.path,
+        ws.name,
+        liveness,
+        0,
+      );
       const existing = grouped.get(key) || [];
       existing.push(taskWithWs);
       grouped.set(key, existing);

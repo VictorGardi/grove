@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useState, useCallback, memo } from "react";
 import { useDraggable } from "@dnd-kit/core";
 import type { TaskInfo } from "@shared/types";
 import { useDataStore } from "../../stores/useDataStore";
@@ -19,7 +19,7 @@ interface TaskCardProps {
   isSearchMatch?: boolean;
 }
 
-export function TaskCard({
+export const TaskCard = memo(function TaskCard({
   task,
   isSearchMatch,
 }: TaskCardProps): React.JSX.Element {
@@ -35,18 +35,18 @@ export function TaskCard({
 
   // Read tmux liveness and agent state from the shared store
   const execTmuxAlive = useTmuxLivenessStore(
-    (s) => s.liveness[`execute:${task.id}`]?.alive ?? false,
+    (s) => s.liveness[`${workspacePath}:execute:${task.id}`]?.alive ?? false,
   );
   const planTmuxAlive = useTmuxLivenessStore(
-    (s) => s.liveness[`plan:${task.id}`]?.alive ?? false,
+    (s) => s.liveness[`${workspacePath}:plan:${task.id}`]?.alive ?? false,
   );
 
   // Agent state from terminal parsing
   const execAgentState = useTmuxLivenessStore(
-    (s) => s.liveness[`execute:${task.id}`]?.state,
+    (s) => s.liveness[`${workspacePath}:execute:${task.id}`]?.state,
   );
   const planAgentState = useTmuxLivenessStore(
-    (s) => s.liveness[`plan:${task.id}`]?.state,
+    (s) => s.liveness[`${workspacePath}:plan:${task.id}`]?.state,
   );
 
   // Reviewer sessions (used for the isAgentRunning fallback)
@@ -90,25 +90,25 @@ export function TaskCard({
     y: number;
   } | null>(null);
 
-  function handleClick(): void {
+  const handleClick = useCallback(() => {
     useBoardStore.getState().clearFocusedTask();
     useDataStore.getState().setSelectedTask(task.id);
     useNavStore.getState().setActiveView("task");
-  }
+  }, [task.id]);
 
-  function handleContextMenu(e: React.MouseEvent): void {
+  const handleContextMenu = useCallback((e: React.MouseEvent) => {
     e.preventDefault();
     setContextMenu({ x: e.clientX, y: e.clientY });
-  }
+  }, []);
 
-  function handleArchive(): void {
+  const handleArchive = useCallback(() => {
     if (
       window.confirm("Archive this task? It will be moved to .tasks/archive/")
     ) {
       archiveTask(task.filePath);
     }
     setContextMenu(null);
-  }
+  }, [task.filePath]);
 
   const contextMenuItems: ContextMenuItem[] = [
     {
@@ -270,4 +270,4 @@ export function TaskCard({
       )}
     </div>
   );
-}
+});

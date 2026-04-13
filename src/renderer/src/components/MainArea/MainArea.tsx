@@ -71,13 +71,7 @@ export function MainArea(): React.JSX.Element {
   if (activeView === "task") {
     return (
       <div className={styles.mainAreaContent}>
-        {selectedTaskId ? (
-          <TaskDetailPanel />
-        ) : (
-          <div className={styles.placeholder}>
-            <div className={styles.placeholderText}>No task selected</div>
-          </div>
-        )}
+        {selectedTaskId ? <TaskDetailPanel /> : <HomePage />}
       </div>
     );
   }

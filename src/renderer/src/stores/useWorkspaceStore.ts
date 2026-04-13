@@ -5,9 +5,9 @@ import { useNavStore } from "./useNavStore";
 import { useBoardStore } from "./useBoardStore";
 import { useTerminalStore } from "./useTerminalStore";
 
-export type DetailTab = "edit" | "plan" | "changes" | "debug";
+export type DetailTab = "edit" | "agent" | "changes" | "debug";
 
-interface BoardState {
+interface TaskDetailState {
   selectedTaskId: string | null;
   selectedTaskBody: string | null;
   taskDetailTab: DetailTab;
@@ -39,7 +39,8 @@ interface WorkspaceState {
   loading: boolean;
   error: string | null;
   workspaceDefaults: Record<string, WorkspaceDefaults>;
-  workspaceBoardStates: Record<string, BoardState>;
+  hiddenWorkspaces: Set<string>;
+  workspaceBoardStates: Record<string, TaskDetailState>;
   workspaceTerminalStates: Record<string, TerminalState>;
 
   // Actions
@@ -48,7 +49,11 @@ interface WorkspaceState {
   removeWorkspace: (path: string) => Promise<void>;
   setActiveWorkspace: (path: string) => Promise<void>;
   saveCurrentBoardState: () => void;
-  restoreBoardState: (workspacePath: string, tasks: { id: string }[]) => void;
+  restoreBoardState: (
+    workspacePath: string,
+    tasks: { id: string }[],
+    skipInitialValidation?: boolean,
+  ) => void;
   saveCurrentTerminalState: () => void;
   restoreTerminalState: (workspacePath: string) => void;
   updateBoardTab: (tab: DetailTab) => void;
@@ -56,6 +61,8 @@ interface WorkspaceState {
   updateBranch: (path: string, branch: string) => void;
   fetchDefaults: (path: string) => Promise<void>;
   updateDefaults: (path: string, defaults: WorkspaceDefaults) => Promise<void>;
+  toggleWorkspaceHidden: (path: string) => Promise<void>;
+  fetchHiddenWorkspaces: () => Promise<void>;
 }
 
 export const useWorkspaceStore = create<WorkspaceState>()((set, get) => ({
@@ -64,6 +71,7 @@ export const useWorkspaceStore = create<WorkspaceState>()((set, get) => ({
   loading: false,
   error: null,
   workspaceDefaults: {},
+  hiddenWorkspaces: new Set<string>(),
   workspaceBoardStates: {},
   workspaceTerminalStates: {},
 
@@ -87,6 +95,16 @@ export const useWorkspaceStore = create<WorkspaceState>()((set, get) => ({
         activeWorkspacePath,
         loading: false,
       });
+
+      // Load hidden state for each workspace
+      for (const ws of listResult.data) {
+        const result = await window.api.workspaces.getHidden(ws.path);
+        if (result.ok && result.data) {
+          set((state) => ({
+            hiddenWorkspaces: new Set([...state.hiddenWorkspaces, ws.path]),
+          }));
+        }
+      }
     } catch (err) {
       const msg = err instanceof Error ? err.message : String(err);
       set({ loading: false, error: msg });
@@ -129,7 +147,7 @@ export const useWorkspaceStore = create<WorkspaceState>()((set, get) => ({
             selectedTaskId: dataState.selectedTaskId,
             selectedTaskBody: dataState.selectedTaskBody,
             taskDetailTab: (state.workspaceBoardStates[currentPath]
-              ?.taskDetailTab ?? "edit") as DetailTab,
+              ?.taskDetailTab ?? "agent") as DetailTab,
             scrollPosition:
               state.workspaceBoardStates[currentPath]?.scrollPosition ?? 0,
           },
@@ -175,8 +193,19 @@ export const useWorkspaceStore = create<WorkspaceState>()((set, get) => ({
     });
   },
 
-  restoreBoardState: (workspacePath: string, tasks: { id: string }[]) => {
+  restoreBoardState: (
+    workspacePath: string,
+    tasks: { id: string }[],
+    skipInitialValidation?: boolean,
+  ) => {
     const state = get();
+
+    // When skipInitialValidation is true, don't validate/clear the selected task
+    // This is used on workspace switch where user just clicked a task - leave it be
+    if (skipInitialValidation) {
+      return;
+    }
+
     const saved = state.workspaceBoardStates[workspacePath];
     if (!saved) return;
 
@@ -185,9 +214,10 @@ export const useWorkspaceStore = create<WorkspaceState>()((set, get) => ({
       tasks.some((t) => t.id === saved.selectedTaskId)
     ) {
       useDataStore.getState().setSelectedTask(saved.selectedTaskId);
+    } else if (saved.selectedTaskId) {
+      useDataStore.getState().setSelectedTask(null);
+      useNavStore.getState().setActiveView("home");
     }
-    // Don't clear selectedTask if there's no saved state - that means the user
-    // just selected a task (e.g., via task switcher) and we shouldn't clobber it
   },
 
   saveCurrentTerminalState: () => {
@@ -261,7 +291,7 @@ export const useWorkspaceStore = create<WorkspaceState>()((set, get) => ({
           ...(state.workspaceBoardStates[currentPath] ?? {
             selectedTaskId: null,
             selectedTaskBody: null,
-            taskDetailTab: "edit" as DetailTab,
+            taskDetailTab: "agent" as DetailTab,
           }),
           scrollPosition: position,
         },
@@ -298,6 +328,49 @@ export const useWorkspaceStore = create<WorkspaceState>()((set, get) => ({
           [path]: defaults,
         },
       }));
+    }
+  },
+
+  isWorkspaceVisible: (path: string): boolean => {
+    return !get().hiddenWorkspaces.has(path);
+  },
+
+  getVisibleWorkspaces: (): WorkspaceInfo[] => {
+    const state = get();
+    return state.workspaces.filter(
+      (ws) => !state.hiddenWorkspaces.has(ws.path),
+    );
+  },
+
+  isWorkspaceHidden: (path: string): boolean => {
+    return get().hiddenWorkspaces.has(path);
+  },
+
+  toggleWorkspaceHidden: async (path: string) => {
+    const isHidden = get().hiddenWorkspaces.has(path);
+    const result = await window.api.workspaces.setHidden(path, !isHidden);
+    if (result.ok) {
+      set((state) => {
+        const newSet = new Set(state.hiddenWorkspaces);
+        if (isHidden) {
+          newSet.delete(path);
+        } else {
+          newSet.add(path);
+        }
+        return { hiddenWorkspaces: newSet };
+      });
+    }
+  },
+
+  fetchHiddenWorkspaces: async () => {
+    const state = get();
+    for (const ws of state.workspaces) {
+      const result = await window.api.workspaces.getHidden(ws.path);
+      if (result.ok && result.data) {
+        set((state) => ({
+          hiddenWorkspaces: new Set([...state.hiddenWorkspaces, ws.path]),
+        }));
+      }
     }
   },
 }));

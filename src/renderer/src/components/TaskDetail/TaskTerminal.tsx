@@ -475,7 +475,7 @@ export function TaskTerminal({
     setErrorMsg(null);
     contextSentRef.current = false; // allow fresh injection for this session
 
-    const livenessKey = `${sessionMode}:${task.id}`;
+    const livenessKey = `${workspacePath}:${sessionMode}:${task.id}`;
     useTmuxLivenessStore.getState().setAgentState(livenessKey, "starting");
 
     startingTimeoutRef.current = setTimeout(() => {
@@ -610,7 +610,7 @@ export function TaskTerminal({
           clearTimeout(startingTimeoutRef.current);
           startingTimeoutRef.current = null;
         }
-        const livenessKey = `${sessionMode}:${task.id}`;
+        const livenessKey = `${workspacePath}:${sessionMode}:${task.id}`;
         useTmuxLivenessStore.getState().setAgentState(livenessKey, "active");
       }
     });

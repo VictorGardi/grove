@@ -15,10 +15,13 @@ interface TerminalState {
   activeTabId: string | null;
   idleMap: Record<string, boolean>;
   deadSet: Record<string, boolean>;
+  // Tracks tabs that were hidden (not removed) - PTY kept alive
+  hiddenTabs: Map<string, TerminalTab>;
 
   // Actions
   addTab: (tab: TerminalTab) => void;
-  removeTab: (id: string) => void;
+  removeTab: (id: string, preserve?: boolean) => void;
+  restoreTab: (id: string) => void;
   setActiveTab: (id: string) => void;
   setIdle: (id: string, idle: boolean) => void;
   markDead: (id: string) => void;
@@ -115,9 +118,19 @@ export const useTerminalStore = create<TerminalState>()((set, get) => ({
   activeTabId: null,
   idleMap: {},
   deadSet: {},
+  hiddenTabs: new Map(),
 
   addTab: (tab: TerminalTab) =>
     set((s) => {
+      // Check hidden tabs first - restore if exists
+      if (s.hiddenTabs.has(tab.id)) {
+        s.hiddenTabs.delete(tab.id);
+        return {
+          tabs: [...s.tabs, tab],
+          activeTabId: tab.id,
+          hiddenTabs: new Map(s.hiddenTabs),
+        };
+      }
       // Idempotent: don't add duplicate tabs
       if (s.tabs.some((t) => t.id === tab.id)) {
         return { activeTabId: tab.id };
@@ -128,22 +141,67 @@ export const useTerminalStore = create<TerminalState>()((set, get) => ({
       };
     }),
 
-  removeTab: (id: string) => {
-    // Kill the PTY
+  restoreTab: (id: string) => {
+    const state = get();
+    const hiddenTab = state.hiddenTabs.get(id);
+    if (hiddenTab) {
+      set((s) => {
+        const newHidden = new Map(s.hiddenTabs);
+        newHidden.delete(id);
+        return {
+          tabs: [...s.tabs, hiddenTab],
+          activeTabId: id,
+          hiddenTabs: newHidden,
+        };
+      });
+    }
+  },
+
+  removeTab: (id: string, preserve = false) => {
+    const tab = get().tabs.find((t) => t.id === id);
+    if (!tab) return;
+
+    if (preserve) {
+      // Hide tab but keep PTY alive
+      set((s) => {
+        const newTabs = s.tabs.filter((t) => t.id !== id);
+        let newActiveId = s.activeTabId;
+
+        if (s.activeTabId === id) {
+          const oldIndex = s.tabs.findIndex((t) => t.id === id);
+          if (newTabs.length > 0) {
+            const nextIndex = Math.min(oldIndex, newTabs.length - 1);
+            newActiveId = newTabs[nextIndex].id;
+          } else {
+            newActiveId = null;
+          }
+        }
+
+        const newHidden = new Map(s.hiddenTabs);
+        newHidden.set(id, tab);
+
+        return {
+          tabs: newTabs,
+          activeTabId: newActiveId,
+          hiddenTabs: newHidden,
+        };
+      });
+      return;
+    }
+
+    // Full remove - kill PTY and dispose
     window.api.pty.kill(id);
-    // Dispose and unregister xterm
     xtermRefs.get(id)?.dispose();
     unregisterXterm(id);
-    // Dispose and unregister FitAddon
     fitAddonRefs.get(id)?.dispose();
     unregisterFitAddon(id);
 
+    // Also remove from hidden if present
     set((s) => {
       const newTabs = s.tabs.filter((t) => t.id !== id);
       let newActiveId = s.activeTabId;
 
       if (s.activeTabId === id) {
-        // Select the next or previous tab
         const oldIndex = s.tabs.findIndex((t) => t.id === id);
         if (newTabs.length > 0) {
           const nextIndex = Math.min(oldIndex, newTabs.length - 1);
@@ -158,11 +216,15 @@ export const useTerminalStore = create<TerminalState>()((set, get) => ({
       const newDeadSet = { ...s.deadSet };
       delete newDeadSet[id];
 
+      const newHidden = new Map(s.hiddenTabs);
+      newHidden.delete(id);
+
       return {
         tabs: newTabs,
         activeTabId: newActiveId,
         idleMap: newIdleMap,
         deadSet: newDeadSet,
+        hiddenTabs: newHidden,
       };
     });
   },

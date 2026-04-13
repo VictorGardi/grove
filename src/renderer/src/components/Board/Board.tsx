@@ -94,7 +94,10 @@ export function Board(): React.JSX.Element {
   );
 
   // When search is active, filter displayed tasks; otherwise show all
-  const filtered = searchResults ? searchResults.map((r) => r.item) : tasks;
+  const filtered = useMemo(
+    () => (searchResults ? searchResults.map((r) => r.item) : tasks),
+    [tasks, searchResults],
+  );
 
   const handleDragStart = useCallback(
     (event: DragStartEvent) => {

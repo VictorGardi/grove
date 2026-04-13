@@ -33,6 +33,12 @@
   margin-bottom: 40px;
 }
 
+.sectionSeparator {
+  height: 1px;
+  background: var(--border-dim);
+  margin: 20px 0;
+}
+
 .sectionTitle {
   font-family: var(--font-ui);
   font-size: 11px;
@@ -127,6 +133,7 @@
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
+  text-align: right;
 }
 
 .statusPill {

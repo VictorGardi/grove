@@ -439,6 +439,48 @@ export function registerWorkspaceHandlers(
       }
     },
   );
+
+  // workspace:getHidden
+  ipcMain.handle(
+    "workspace:getHidden",
+    async (_event, wPath: string): Promise<IpcResult<boolean>> => {
+      try {
+        const config = configManager.get();
+        const workspace = config.workspaces.find((w) => w.path === wPath);
+        if (!workspace) {
+          return { ok: false, error: "Workspace not found" };
+        }
+        return { ok: true, data: workspace.hidden ?? false };
+      } catch (err) {
+        const msg = err instanceof Error ? err.message : String(err);
+        return { ok: false, error: msg };
+      }
+    },
+  );
+
+  // workspace:setHidden
+  ipcMain.handle(
+    "workspace:setHidden",
+    async (
+      _event,
+      wPath: string,
+      hidden: boolean,
+    ): Promise<IpcResult<void>> => {
+      try {
+        configManager.update((c) => {
+          const workspace = c.workspaces.find((w) => w.path === wPath);
+          if (workspace) {
+            workspace.hidden = hidden;
+          }
+        });
+        configManager.flushSync();
+        return { ok: true, data: undefined };
+      } catch (err) {
+        const msg = err instanceof Error ? err.message : String(err);
+        return { ok: false, error: msg };
+      }
+    },
+  );
 }
 
 export { stopBranchWatcher, startBranchWatcher };

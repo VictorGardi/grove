@@ -86,12 +86,6 @@ export function registerTaskHandlers(): void {
       changes: Partial<TaskFrontmatter>,
       body?: string,
     ): Promise<IpcResult<TaskInfo>> => {
-      console.log("[IPC task:update]", {
-        workspacePath,
-        filePath,
-        changes,
-        bodyLen: body?.length,
-      });
       try {
         const task = await updateTask(workspacePath, filePath, changes, body);
         return { ok: true, data: task };

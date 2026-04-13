@@ -4,6 +4,8 @@ import { useWorkspaceStore } from "./useWorkspaceStore";
 import { useDataStore } from "./useDataStore";
 import { useTmuxLivenessStore } from "./useTmuxLivenessStore";
 import { useNavStore } from "./useNavStore";
+import { enrichTaskWithWorkspace, type EnrichedTask } from "./taskEnrichment";
+import { useDataStore as useDataStoreRef } from "./useDataStore";
 
 interface TaskSwitcherState {
   isOpen: boolean;
@@ -35,17 +37,11 @@ interface TaskSwitcherState {
   ) => SortedTask[];
 }
 
-export interface SortedTask {
+export interface SortedTask extends EnrichedTask {
   task: TaskInfo;
-  workspacePath: string;
-  workspaceName: string;
-  isRunning: boolean;
-  execTmuxAlive: boolean;
-  planTmuxAlive: boolean;
-  execAgentState: string | undefined;
-  planAgentState: string | undefined;
-  lastViewedAt: number;
   sortScore: number;
+  recentGroup: "recent" | "active" | "other";
+  groupSort: number;
 }
 
 const MAX_RECENT = 10;
@@ -60,13 +56,20 @@ export const useTaskSwitcherStore = create<TaskSwitcherState>()((set, get) => ({
   includeDoneTasks: false,
   createWorkspaceIndex: 0,
 
-  open: () => set({ isOpen: true, selectedIndex: 0, createWorkspaceIndex: 0 }),
+  open: () =>
+    set({
+      isOpen: true,
+      selectedIndex: 0,
+      createWorkspaceIndex: 0,
+      includeDoneTasks: false,
+    }),
   close: () => set({ isOpen: false, searchQuery: "" }),
   toggle: () =>
     set((state) => ({
       isOpen: !state.isOpen,
       selectedIndex: 0,
       createWorkspaceIndex: 0,
+      includeDoneTasks: state.isOpen ? state.includeDoneTasks : false,
     })),
   setSearchQuery: (query) =>
     set({ searchQuery: query, selectedIndex: 0, createWorkspaceIndex: 0 }),
@@ -81,7 +84,6 @@ export const useTaskSwitcherStore = create<TaskSwitcherState>()((set, get) => ({
     }),
 
   recordTaskView: (taskId) => {
-    const now = Date.now();
     set((state) => {
       const newRecent = [
         taskId,
@@ -90,7 +92,7 @@ export const useTaskSwitcherStore = create<TaskSwitcherState>()((set, get) => ({
       return {
         recentTaskIds: newRecent,
         lastTaskId: state.lastTaskId === taskId ? state.lastTaskId : taskId,
-        taskLastViewedAt: { ...state.taskLastViewedAt, [taskId]: now },
+        taskLastViewedAt: { ...state.taskLastViewedAt, [taskId]: Date.now() },
       };
     });
   },
@@ -145,12 +147,9 @@ export const useTaskSwitcherStore = create<TaskSwitcherState>()((set, get) => ({
   getSortedTasks: (workspaces, allTasksMap) => {
     const state = get();
     const liveness = useTmuxLivenessStore.getState().liveness;
+    const currentTaskId = useDataStoreRef.getState().selectedTaskId;
     const tasksWithWs: SortedTask[] = [];
     const seen = new Set<string>();
-
-    const now = Date.now();
-    const HOUR_MS = 60 * 60 * 1000;
-    const TWENTY_FOUR_HOURS = 24 * HOUR_MS;
 
     for (const ws of workspaces) {
       const tasks = allTasksMap.get(ws.path) || [];
@@ -164,30 +163,21 @@ export const useTaskSwitcherStore = create<TaskSwitcherState>()((set, get) => ({
         }
 
         const lastViewedAt = state.taskLastViewedAt[task.id] || 0;
-        const hasPlanSession = !!task.terminalPlanSession;
-        const hasExecSession = !!task.terminalExecSession;
 
-        const planAlive = hasPlanSession
-          ? (liveness[`plan:${task.id}`]?.alive ?? false)
-          : false;
-        const execAlive = hasExecSession
-          ? (liveness[`execute:${task.id}`]?.alive ?? false)
-          : false;
-        const isActiveTmux =
-          (hasPlanSession && planAlive) || (hasExecSession && execAlive);
-        const execAgentState = liveness[`execute:${task.id}`]?.state;
-        const planAgentState = liveness[`plan:${task.id}`]?.state;
+        const enriched = enrichTaskWithWorkspace(
+          task,
+          ws.path,
+          ws.name,
+          liveness,
+          lastViewedAt,
+        );
+
         const isAgentActive =
-          execAgentState === "active" || planAgentState === "active";
-        const isWaitingForInput = isActiveTmux && !isAgentActive;
+          enriched.execAgentState === "active" ||
+          enriched.planAgentState === "active";
+        const isWaitingForInput = enriched.isRunning && !isAgentActive;
 
-        const tier = isActiveTmux
-          ? 3
-          : lastViewedAt > 0 && now - lastViewedAt < TWENTY_FOUR_HOURS
-            ? 2
-            : lastViewedAt > 0
-              ? 1
-              : 0;
+        const tier = enriched.isRunning ? 3 : lastViewedAt > 0 ? 2 : 0;
 
         const priorityBonus = isWaitingForInput
           ? 500_000_000
@@ -205,16 +195,15 @@ export const useTaskSwitcherStore = create<TaskSwitcherState>()((set, get) => ({
           tier * 1_000_000_000_000_000 + priorityBonus + secondaryScore;
 
         tasksWithWs.push({
+          ...enriched,
           task,
-          workspacePath: ws.path,
-          workspaceName: ws.name,
-          isRunning: isActiveTmux,
-          execTmuxAlive: execAlive,
-          planTmuxAlive: planAlive,
-          execAgentState: liveness[`execute:${task.id}`]?.state,
-          planAgentState: liveness[`plan:${task.id}`]?.state,
-          lastViewedAt,
           sortScore,
+          recentGroup: enriched.isRunning
+            ? "active"
+            : lastViewedAt > 0
+              ? "recent"
+              : "other",
+          groupSort: enriched.isRunning ? 1 : lastViewedAt > 0 ? 2 : 0,
         });
       }
     }
@@ -228,9 +217,24 @@ export const useTaskSwitcherStore = create<TaskSwitcherState>()((set, get) => ({
           t.task.id.toLowerCase().includes(query) ||
           t.workspaceName.toLowerCase().includes(query),
       );
+    } else {
+      filtered = filtered.filter(
+        (t) =>
+          t.task.status !== "done" &&
+          (t.isRunning || (state.taskLastViewedAt[t.task.id] || 0) > 0),
+      );
     }
 
-    return filtered.sort((a, b) => b.sortScore - a.sortScore);
+    const others = filtered.filter((t) => t.task.id !== currentTaskId);
+    const current = filtered.filter((t) => t.task.id === currentTaskId);
+
+    const sorted = others.sort((a, b) => {
+      if (a.groupSort !== b.groupSort) {
+        return b.groupSort - a.groupSort;
+      }
+      return b.sortScore - a.sortScore;
+    });
+    return [...sorted, ...current];
   },
 }));
 
@@ -250,21 +254,19 @@ export async function switchToTask(
     if (!exists) {
       return { success: false, error: "Workspace no longer exists" };
     }
+
+    const cachedTasks = dataStore.getCachedTasks(sortedTask.workspacePath);
+
     try {
-      console.log(
-        "[switchToTask] Switching to workspace:",
-        sortedTask.workspacePath,
-      );
       await workspaceStore.setActiveWorkspace(sortedTask.workspacePath);
-      console.log("[switchToTask] Workspace switched, fetching tasks...");
-      const result = await window.api.data.fetch(sortedTask.workspacePath);
-      console.log("[switchToTask] Tasks fetched, ok:", result.ok);
-      if (result.ok && result.data) {
-        console.log(
-          "[switchToTask] Setting tasks, count:",
-          result.data.tasks.length,
-        );
-        dataStore.setTasks(result.data.tasks);
+
+      if (cachedTasks) {
+        dataStore.setTasks(cachedTasks);
+      } else {
+        const result = await window.api.data.fetch(sortedTask.workspacePath);
+        if (result.ok && result.data) {
+          dataStore.setTasks(result.data.tasks);
+        }
       }
     } catch (error) {
       return {
@@ -276,7 +278,11 @@ export async function switchToTask(
   }
 
   recordTaskView(sortedTask.task.id);
-  dataStore.setSelectedTask(sortedTask.task.id, sortedTask.task.filePath);
+  dataStore.setSelectedTask(
+    sortedTask.task.id,
+    sortedTask.task.filePath,
+    sortedTask.workspacePath,
+  );
   useNavStore.getState().setActiveView("task");
 
   return { success: true };

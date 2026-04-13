@@ -39,11 +39,26 @@ export function useWorkspaceStatus(
     [],
   );
 
+  const tasks = isActiveWorkspace ? dataStoreTasks : workspaceTasks;
+
+  // Sync workspaceTasks when switching to active workspace - defer to next render
+  // to avoid calling setState within useEffect
+  const prevIsActiveRef = useRef(isActiveWorkspace);
   useEffect(() => {
-    if (isActiveWorkspace) {
-      setWorkspaceTasks(dataStoreTasks);
-      return;
+    if (isActiveWorkspace && !prevIsActiveRef.current) {
+      const timer = setTimeout(() => {
+        setWorkspaceTasks(dataStoreTasks);
+      }, 0);
+      prevIsActiveRef.current = isActiveWorkspace;
+      return () => clearTimeout(timer);
     }
+    prevIsActiveRef.current = isActiveWorkspace;
+    return undefined;
+  }, [isActiveWorkspace, dataStoreTasks]);
+
+  // Fetch tasks for non-active workspaces
+  useEffect(() => {
+    if (isActiveWorkspace) return;
 
     let cancelled = false;
     async function fetchWorkspaceTasks(): Promise<void> {
@@ -63,15 +78,9 @@ export function useWorkspaceStatus(
     };
   }, [workspacePath, isActiveWorkspace]);
 
-  const tasks = isActiveWorkspace ? dataStoreTasks : workspaceTasks;
-
   // Read liveness from the shared store reactively so derived status updates
   // when the poller writes new values.
   const liveness = useTmuxLivenessStore((s) => s.liveness);
-
-  // Render-trigger: increment to force a re-render after cache writes without
-  // storing the cache itself in state (avoids the self-reinforcing loop).
-  const [, setRenderTick] = useState(0);
 
   // Cache lives in a ref — no state update on write, no callback churn.
   // Shape: tmuxSessionName → { alive, checkedAt }
@@ -91,7 +100,7 @@ export function useWorkspaceStatus(
     useTmuxLivenessStore.getState().clearAll();
   }, [workspacePath]);
 
-  const checkTmuxSessions = useCallback(async () => {
+  const checkTmuxSessions = useCallback(async (): Promise<void> => {
     const relevantTasks = tasks.filter(
       (t) =>
         t.status === "doing" || t.status === "backlog" || t.status === "review",
@@ -99,7 +108,6 @@ export function useWorkspaceStatus(
     const cache = tmuxAliveCacheRef.current;
     const inFlight = inFlightRef.current;
     const now = Date.now();
-    let changed = false;
 
     const checks: Promise<void>[] = [];
 
@@ -110,7 +118,7 @@ export function useWorkspaceStatus(
       ] as [PlanMode, string | null][]) {
         if (!tmuxSession) continue;
 
-        const livenessKey = `${mode}:${task.id}`;
+        const livenessKey = `${workspacePath}:${mode}:${task.id}`;
 
         // Skip if entry is fresh (within TTL) - but if we need to force a check, skip cache
         const cached = cache.get(tmuxSession);
@@ -133,7 +141,6 @@ export function useWorkspaceStatus(
             .then((alive) => {
               cache.set(tmuxSession, { alive, checkedAt: Date.now() });
               useTmuxLivenessStore.getState().setLiveness(livenessKey, alive);
-              changed = true;
             })
             .then(() =>
               window.api.taskterm.state(
@@ -148,7 +155,6 @@ export function useWorkspaceStatus(
                 return;
               }
               useTmuxLivenessStore.getState().setAgentState(livenessKey, state);
-              changed = true;
             })
             .finally(() => {
               inFlight.delete(tmuxSession);
@@ -159,13 +165,9 @@ export function useWorkspaceStatus(
 
     if (checks.length > 0) {
       await Promise.all(checks);
-      if (changed) {
-        // Bump the render-trigger so derived status re-evaluates
-        setRenderTick((t) => t + 1);
-      }
     }
-  }, [tasks, workspacePath]);
-  // NOTE: tmuxAliveCacheRef and inFlightRef are refs — intentionally omitted
+  }, [tasks]);
+  // NOTE: tmuxAliveCacheRef, inFlightRef, and workspacePath are refs — intentionally omitted
   // from deps to avoid recreating this callback on every cache write.
 
   // Poll tmux sessions when needed; restart interval only when tasks/sessions change.
@@ -195,7 +197,7 @@ export function useWorkspaceStatus(
     };
   }, [tasks, checkTmuxSessions]);
 
-  // Derive aggregate status using the shared liveness store (reactive via `liveness` dep)
+  // Derive aggregate status and count using the shared liveness store
   let aggregateStatus: WorkspaceStatus = "idle";
   let aggregateCount = 0;
 
@@ -204,6 +206,7 @@ export function useWorkspaceStatus(
       t.status === "doing" || t.status === "backlog" || t.status === "review",
   );
 
+  // Single pass to compute both status and count
   for (const task of relevantTasks) {
     let taskStatus: WorkspaceStatus = "idle";
 
@@ -212,7 +215,7 @@ export function useWorkspaceStatus(
       ["execute" as PlanMode, task.terminalExecSession],
     ] as [PlanMode, string | null][]) {
       if (!tmuxSession) continue;
-      const livenessKey = `${mode}:${task.id}`;
+      const livenessKey = `${workspacePath}:${mode}:${task.id}`;
       const entry = liveness[livenessKey];
       const isAlive = entry?.alive ?? false;
       const agentState = entry?.state;
@@ -229,29 +232,8 @@ export function useWorkspaceStatus(
     if (taskStatus !== "idle") {
       aggregateStatus = higherPriority(aggregateStatus, taskStatus);
     }
-  }
 
-  // Count tasks matching the aggregate status
-  for (const task of relevantTasks) {
-    let taskStatus: WorkspaceStatus = "idle";
-    for (const [mode, tmuxSession] of [
-      ["plan" as PlanMode, task.terminalPlanSession],
-      ["execute" as PlanMode, task.terminalExecSession],
-    ] as [PlanMode, string | null][]) {
-      if (!tmuxSession) continue;
-      const livenessKey = `${mode}:${task.id}`;
-      const entry = liveness[livenessKey];
-      const isAlive = entry?.alive ?? false;
-      const agentState = entry?.state;
-
-      let status: WorkspaceStatus = "idle";
-      if (agentState === "waiting") {
-        status = "waiting";
-      } else if (isAlive) {
-        status = "running";
-      }
-      taskStatus = higherPriority(taskStatus, status);
-    }
+    // Count tasks matching aggregate status in the same pass
     if (taskStatus === aggregateStatus) {
       aggregateCount++;
     }

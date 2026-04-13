@@ -212,7 +212,6 @@ export function TaskDetailPanel(): React.JSX.Element {
       workspacePath ? (s.workspaceDefaults[workspacePath] ?? null) : null,
     ) ?? {};
   const [loading, setLoading] = useState(true);
-  console.log("[TaskDetailPanel] render, task:", task?.id, "loading:", loading);
   const activeWorkspaceName = useMemo(() => {
     if (!workspacePath || workspaces.length === 0) return null;
     const active = workspaces.find((w) => w.path === workspacePath);
@@ -222,13 +221,9 @@ export function TaskDetailPanel(): React.JSX.Element {
   const activeTab: DetailTab =
     workspacePath && workspaceBoardStates[workspacePath]?.taskDetailTab
       ? workspaceBoardStates[workspacePath].taskDetailTab
-      : "edit";
+      : "agent";
 
-  function setActiveTab(tab: DetailTab): void {
-    updateBoardTab(tab);
-  }
-
-  // Raw markdown content
+  // ── Raw markdown content
   const [rawContent, setRawContent] = useState("");
   const [savedContent, setSavedContent] = useState("");
   const [loadError, setLoadError] = useState<string | null>(null);
@@ -260,13 +255,22 @@ export function TaskDetailPanel(): React.JSX.Element {
 
   // Default to plan (Agent) tab for all tasks
   // Only set when a task is present to avoid updating state when no task is selected
+  // Use a ref to hold the stable callback to avoid useEffect dependency instability
+  // caused by updateBoardTab changing identity between renders.
+  const updateBoardTabRef = useRef(updateBoardTab);
   useEffect(() => {
-    if (!task) return;
-    setActiveTab("plan");
-  }, [task?.id]);
+    updateBoardTabRef.current = updateBoardTab;
+  }, [updateBoardTab]);
+
+  const setActiveTab = useCallback((tab: DetailTab) => {
+    updateBoardTabRef.current(tab);
+  }, []);
 
   // ── Load raw file content ─────────────────────────────────────
 
+  const loadedKeyRef = useRef<string | null>(null);
+
+  // Load on task change
   useEffect(() => {
     if (!task || !workspacePath) {
       setRawContent("");
@@ -275,20 +279,18 @@ export function TaskDetailPanel(): React.JSX.Element {
       return;
     }
 
+    const key = `${workspacePath}:${task.id}:${task.filePath}`;
+    if (loadedKeyRef.current === key) {
+      setLoading(false);
+      return;
+    }
+
+    loadedKeyRef.current = key;
     setLoading(true);
     setLoadError(null);
-    console.log("[TaskDetailPanel] calling readRaw:", {
-      workspacePath,
-      filePath: task.filePath,
-    });
     window.api.tasks
       .readRaw(workspacePath, task.filePath)
       .then((result) => {
-        console.log("[TaskDetailPanel] readRaw result:", {
-          ok: result.ok,
-          len: result.ok ? result.data?.length : undefined,
-          error: result.ok ? undefined : result.error,
-        });
         if (result.ok) {
           setRawContent(result.data);
           setSavedContent(result.data);
@@ -299,11 +301,40 @@ export function TaskDetailPanel(): React.JSX.Element {
       })
       .catch((err: unknown) => {
         const msg = err instanceof Error ? err.message : String(err);
-        console.error("[TaskDetailPanel] readRaw threw:", msg);
         setLoadError(msg);
         setLoading(false);
       });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [task?.id, task?.filePath, workspacePath]);
+
+  // Also load when switching to edit tab (in case task hasn't changed but tab was agent)
+  useEffect(() => {
+    if (activeTab !== "edit" || !task || !workspacePath) return;
+
+    const key = `${workspacePath}:${task.id}:${task.filePath}`;
+    if (loadedKeyRef.current === key) return;
+
+    loadedKeyRef.current = key;
+    setLoading(true);
+    setLoadError(null);
+    window.api.tasks
+      .readRaw(workspacePath, task.filePath)
+      .then((result) => {
+        if (result.ok) {
+          setRawContent(result.data);
+          setSavedContent(result.data);
+        } else {
+          setLoadError(result.error ?? "Failed to read file");
+        }
+        setLoading(false);
+      })
+      .catch((err: unknown) => {
+        const msg = err instanceof Error ? err.message : String(err);
+        setLoadError(msg);
+        setLoading(false);
+      });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [activeTab]);
 
   // ── Cleanup timer ─────────────────────────────────────────────
 
@@ -335,6 +366,7 @@ export function TaskDetailPanel(): React.JSX.Element {
         });
     });
     return unsub;
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [task?.id, task?.filePath, workspacePath]);
 
   // ── Save raw content ──────────────────────────────────────────
@@ -350,8 +382,8 @@ export function TaskDetailPanel(): React.JSX.Element {
             useDataStore.getState().patchTask(result.data);
           }
         })
-        .catch((err) => {
-          console.error("[TaskDetailPanel] save failed:", err);
+        .catch(() => {
+          /* ignore save errors */
         });
     },
     [task, workspacePath],
@@ -423,12 +455,18 @@ export function TaskDetailPanel(): React.JSX.Element {
         if (task.terminalExecSession) return;
         void showLaunchModalAndExecute(task);
       } else if (newStatus === "done") {
-        void completeTask(task);
+        try {
+          await completeTask(task);
+          clearSelectedTask();
+          setActiveView("home");
+        } catch {
+          // Navigation cancelled - keep task selected for error visibility
+        }
       } else if (newStatus !== task.status) {
         await moveTask(task.filePath, newStatus);
       }
     },
-    [task, workspacePath],
+    [task, workspacePath, clearSelectedTask, setActiveView],
   );
 
   // ── Archive handler ───────────────────────────────────────────
@@ -603,8 +641,8 @@ export function TaskDetailPanel(): React.JSX.Element {
           Edit
         </button>
         <button
-          className={`${styles.tab} ${activeTab === "plan" ? styles.tabActive : ""}`}
-          onClick={() => setActiveTab("plan")}
+          className={`${styles.tab} ${activeTab === "agent" ? styles.tabActive : ""}`}
+          onClick={() => setActiveTab("agent")}
         >
           Agent
         </button>
@@ -643,7 +681,7 @@ export function TaskDetailPanel(): React.JSX.Element {
           task.status === "doing"
             ? (workspaceDefaults.defaultExecutionModel ?? null)
             : (workspaceDefaults.defaultPlanningModel ?? null);
-        // Plan session for backlog; exec session for doing/review
+        // Agent session for backlog; exec session for doing/review
         const sessionMode: "plan" | "exec" =
           task.status === "doing" || task.status === "review" ? "exec" : "plan";
         const initialSessionName =
@@ -653,7 +691,7 @@ export function TaskDetailPanel(): React.JSX.Element {
         return (
           <div
             style={
-              activeTab === "plan"
+              activeTab === "agent"
                 ? {
                     display: "flex",
                     flex: 1,
@@ -666,7 +704,7 @@ export function TaskDetailPanel(): React.JSX.Element {
             <TaskTerminal
               key={task.id}
               task={task}
-              visible={activeTab === "plan"}
+              visible={activeTab === "agent"}
               workspacePath={workspacePath ?? ""}
               cwd={effectiveCwd}
               agent={effectiveAgent}

@@ -84,8 +84,8 @@ function buildArgs(
       args.push("--deny-tool=shell");
       args.push(`--allow-tool=write(${taskFilePath})`);
     } else {
-      // Execute mode: allow all tools for unattended headless runs.
-      // Copilot defaults to asking for approval; --allow-all-tools suppresses prompts.
+      // Autopilot mode: copilot works autonomously without waiting for user input.
+      args.push("--autopilot");
       args.push("--allow-all-tools");
     }
     if (model) {

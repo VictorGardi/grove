@@ -34,11 +34,6 @@ export async function updateTask(
     console.error("[taskActions] updateTask: no active workspace");
     return false;
   }
-  console.log("[taskActions] updateTask:", {
-    filePath,
-    changes,
-    bodyLen: body?.length,
-  });
   const result = await window.api.tasks.update(wp, filePath, changes, body);
   if (!result.ok) {
     console.error("[taskActions] Failed to update task:", result.error);

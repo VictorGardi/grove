@@ -1,3 +1,4 @@
+import React from "react";
 import { createPortal } from "react-dom";
 import { useEffect, useRef, useMemo } from "react";
 import {
@@ -7,6 +8,7 @@ import {
 } from "../../stores/useTaskSwitcherStore";
 import { useWorkspaceStore } from "../../stores/useWorkspaceStore";
 import { useAllTasksStore } from "../../stores/useAllTasksStore";
+import { useNavStore } from "../../stores/useNavStore";
 import { createTask } from "../../actions/taskActions";
 import styles from "./TaskSwitcherModal.module.css";
 
@@ -25,33 +27,55 @@ export function TaskSwitcherModal(): React.JSX.Element | null {
   const cycleCreateWorkspace = useTaskSwitcherStore(
     (s) => s.cycleCreateWorkspace,
   );
+  const includeDoneTasks = useTaskSwitcherStore((s) => s.includeDoneTasks);
+  const toggleIncludeDoneTasks = useTaskSwitcherStore(
+    (s) => s.toggleIncludeDoneTasks,
+  );
 
   const workspaces = useWorkspaceStore((s) => s.workspaces);
+  const hiddenWorkspaces = useWorkspaceStore((s) => s.hiddenWorkspaces);
   const allTasks = useAllTasksStore((s) => s.allTasks);
   const fetchingTasks = useAllTasksStore((s) => s.fetchingTasks);
   const fetchAllWorkspaceTasks = useAllTasksStore(
     (s) => s.fetchAllWorkspaceTasks,
   );
 
+  const visibleWorkspaces = useMemo(() => {
+    return workspaces.filter((ws) => !hiddenWorkspaces.has(ws.path));
+  }, [workspaces, hiddenWorkspaces]);
+
+  type SpecialPage = "settings" | "agents";
+  const specialPages: { page: SpecialPage; name: string }[] = [
+    { page: "settings", name: "Settings" },
+    { page: "agents", name: "Agents" },
+  ];
+
+  const matchingSpecialPages = useMemo(() => {
+    const query = searchQuery.toLowerCase().trim();
+    if (!query) return [];
+    return specialPages.filter((sp) => sp.name.toLowerCase().startsWith(query));
+  }, [searchQuery]);
+
   const isLoading = useMemo(() => {
-    for (const ws of workspaces) {
+    for (const ws of visibleWorkspaces) {
       if (fetchingTasks.get(ws.path)) {
         return true;
       }
     }
     return false;
-  }, [workspaces, fetchingTasks]);
+  }, [visibleWorkspaces, fetchingTasks]);
 
   useEffect(() => {
     if (isOpen) {
-      void fetchAllWorkspaceTasks(workspaces);
+      void fetchAllWorkspaceTasks(visibleWorkspaces);
     }
-  }, [isOpen, workspaces, fetchAllWorkspaceTasks]);
+  }, [isOpen, visibleWorkspaces, fetchAllWorkspaceTasks]);
 
-  const sortedTasks = getSortedTasks(workspaces, allTasks);
+  const sortedTasks = getSortedTasks(visibleWorkspaces, allTasks);
+  const totalItems = sortedTasks.length + matchingSpecialPages.length;
   const noResults =
-    sortedTasks.length === 0 && searchQuery.trim().length > 0 && !isLoading;
-  const createWorkspace = workspaces[createWorkspaceIndex] ?? null;
+    totalItems === 0 && searchQuery.trim().length > 0 && !isLoading;
+  const createWorkspace = visibleWorkspaces[createWorkspaceIndex] ?? null;
   const dialogRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLInputElement>(null);
   const listRef = useRef<HTMLDivElement>(null);
@@ -72,36 +96,49 @@ export function TaskSwitcherModal(): React.JSX.Element | null {
         return;
       }
 
+      if (mod && e.shiftKey && e.key.toLowerCase() === "d") {
+        e.preventDefault();
+        toggleIncludeDoneTasks();
+        return;
+      }
+
       if (e.key === "ArrowDown") {
         e.preventDefault();
-        moveSelection(1, sortedTasks.length);
+        moveSelection(1, totalItems);
         return;
       }
 
       if (e.key === "ArrowUp") {
         e.preventDefault();
-        moveSelection(-1, sortedTasks.length);
+        moveSelection(-1, totalItems);
         return;
       }
 
       if (e.key === "ArrowRight" || e.key === "ArrowLeft") {
-        if (noResults && workspaces.length > 0) {
+        if (noResults && visibleWorkspaces.length > 0) {
           e.preventDefault();
           const delta = e.key === "ArrowRight" ? 1 : -1;
-          cycleCreateWorkspace(delta, workspaces.length);
+          cycleCreateWorkspace(delta, visibleWorkspaces.length);
         }
         return;
       }
 
       if (e.key === "Enter") {
         e.preventDefault();
+        // Check if a special page is selected (Settings or Agents)
+        if (selectedIndex < matchingSpecialPages.length) {
+          const sp = matchingSpecialPages[selectedIndex];
+          useNavStore.getState().setActiveView(sp.page);
+          close();
+          return;
+        }
         if (noResults && createWorkspace) {
           void createTask(searchQuery.trim(), createWorkspace.path).then(() =>
             close(),
           );
           return;
         }
-        const task = sortedTasks[selectedIndex];
+        const task = sortedTasks[selectedIndex - matchingSpecialPages.length];
         if (task) {
           switchToTask(task).then(() => close());
         }
@@ -114,10 +151,11 @@ export function TaskSwitcherModal(): React.JSX.Element | null {
   }, [
     isOpen,
     sortedTasks,
-    sortedTasks.length,
+    totalItems,
     selectedIndex,
     close,
     moveSelection,
+    toggleIncludeDoneTasks,
   ]);
 
   useEffect(() => {
@@ -127,17 +165,17 @@ export function TaskSwitcherModal(): React.JSX.Element | null {
   }, [isOpen]);
 
   useEffect(() => {
-    if (!listRef.current || sortedTasks.length === 0) return;
-    const index = Math.min(selectedIndex, sortedTasks.length - 1);
+    if (!listRef.current || totalItems === 0) return;
+    const index = Math.min(selectedIndex, totalItems - 1);
     const selectedEl = listRef.current.children[index] as HTMLElement;
     if (selectedEl) {
       selectedEl.scrollIntoView({ block: "nearest", behavior: "smooth" });
     }
-  }, [selectedIndex, sortedTasks.length]);
+  }, [selectedIndex, totalItems]);
 
   if (!isOpen) return null;
 
-  const renderStatus = (task: SortedTask): React.ReactNode => {
+  const renderRunningDot = (task: SortedTask): React.ReactNode => {
     const hasPlanSession = !!task.task.terminalPlanSession;
     const hasExecSession = !!task.task.terminalExecSession;
     const isAgentRunning =
@@ -146,24 +184,19 @@ export function TaskSwitcherModal(): React.JSX.Element | null {
     const isAgentActive =
       task.execAgentState === "active" || task.planAgentState === "active";
 
+    if (!isAgentRunning) return null;
+
     return (
-      <>
-        <span className={`${styles.statusBadge} ${styles[task.task.status]}`}>
-          {task.task.status}
-        </span>
-        {isAgentRunning && (
-          <span
-            className={`${styles.runningDot} ${
-              isAgentActive ? styles.runningDotActive : styles.runningDotWaiting
-            }`}
-            style={{
-              background: isAgentActive
-                ? "var(--status-green)"
-                : "var(--status-yellow, #f0c060)",
-            }}
-          />
-        )}
-      </>
+      <span
+        className={`${styles.runningDot} ${
+          isAgentActive ? styles.runningDotActive : styles.runningDotWaiting
+        }`}
+        style={{
+          background: isAgentActive
+            ? "var(--status-green)"
+            : "var(--status-yellow, #f0c060)",
+        }}
+      />
     );
   };
 
@@ -227,8 +260,8 @@ export function TaskSwitcherModal(): React.JSX.Element | null {
             <div className={styles.empty}>Loading tasks...</div>
           ) : noResults ? (
             <div className={styles.createPrompt}>
-              Press <kbd>Enter</kbd> to create "{searchQuery}"
-              {workspaces.length > 1 && (
+              Press <kbd>Enter</kbd> to create &ldquo;{searchQuery}&rdquo;
+              {visibleWorkspaces.length > 1 && (
                 <span className={styles.workspaceHint}>
                   {" "}
                   in{" "}
@@ -240,51 +273,79 @@ export function TaskSwitcherModal(): React.JSX.Element | null {
                 </span>
               )}
             </div>
-          ) : sortedTasks.length === 0 ? (
+          ) : sortedTasks.length === 0 && matchingSpecialPages.length === 0 ? (
             <div className={styles.empty}>No tasks found</div>
           ) : (
-            sortedTasks.map((task, index) => (
-              <div
-                key={`${task.workspacePath}:${task.task.id}`}
-                className={`${styles.item} ${
-                  index === selectedIndex ? styles.selected : ""
-                }`}
-                onClick={() => {
-                  switchToTask(task).then(() => close());
-                }}
-                onMouseEnter={() => setSelectedIndex(index)}
-              >
-                <div className={styles.itemMain}>
-                  <span className={styles.taskTitle}>{task.task.title}</span>
-                  <span className={styles.taskId}>
-                    #{task.task.id.replace(/^T-/, "")}
-                  </span>
+            <>
+              {matchingSpecialPages.map((sp, index) => (
+                <div
+                  key={sp.page}
+                  className={`${styles.item} ${
+                    index === selectedIndex ? styles.selected : ""
+                  }`}
+                  onClick={() => {
+                    useNavStore.getState().setActiveView(sp.page);
+                    close();
+                  }}
+                  onMouseEnter={() => setSelectedIndex(index)}
+                >
+                  <span className={styles.taskId}>{sp.page}</span>
+                  <span className={styles.taskTitle}>{sp.name}</span>
                 </div>
-                <div className={styles.itemMeta}>
-                  <div className={styles.statusColumn}>
-                    {renderStatus(task)}
-                  </div>
-                  <div className={styles.workspaceColumn}>
-                    <span className={styles.workspace}>
-                      {task.workspaceName}
-                    </span>
-                  </div>
-                </div>
-              </div>
-            ))
+              ))}
+              {matchingSpecialPages.length > 0 && sortedTasks.length > 0 && (
+                <div className={styles.separator} />
+              )}
+              {sortedTasks.map((task, index) => {
+                const taskIndex = matchingSpecialPages.length + index;
+                const prevTask = index > 0 ? sortedTasks[index - 1] : null;
+                const showSeparator =
+                  prevTask && prevTask.groupSort > task.groupSort;
+                return (
+                  <React.Fragment key={`${task.workspacePath}:${task.task.id}`}>
+                    {showSeparator && <div className={styles.separator} />}
+                    <div
+                      className={`${styles.item} ${
+                        taskIndex === selectedIndex ? styles.selected : ""
+                      }`}
+                      onClick={() => {
+                        switchToTask(task).then(() => close());
+                      }}
+                      onMouseEnter={() => setSelectedIndex(taskIndex)}
+                    >
+                      {renderRunningDot(task)}
+                      <span className={styles.taskId}>{task.task.id}</span>
+                      <span className={styles.taskTitle}>
+                        {task.task.title}
+                      </span>
+                      <span className={styles.workspaceName}>
+                        {task.workspaceName}
+                      </span>
+                      <span
+                        className={`${styles.statusBadge} ${styles[task.task.status]}`}
+                      >
+                        {task.task.status}
+                      </span>
+                    </div>
+                  </React.Fragment>
+                );
+              })}
+            </>
           )}
         </div>
         <div className={styles.hint}>
-          {noResults && workspaces.length > 1 ? (
+          {noResults && visibleWorkspaces.length > 1 ? (
             <>
               <kbd>←</kbd>
               <kbd>→</kbd> Workspace · <kbd>Enter</kbd> Create · <kbd>Esc</kbd>{" "}
-              Close
+              Close · <kbd>Cmd+Shift+D</kbd>{" "}
+              {includeDoneTasks ? "Hide" : "Show"} Done
             </>
           ) : (
             <>
               <kbd>↑↓</kbd> Navigate · <kbd>Enter</kbd> Select · <kbd>Esc</kbd>{" "}
-              Close
+              Close · <kbd>Cmd+Shift+D</kbd>{" "}
+              {includeDoneTasks ? "Hide" : "Show"} Done
             </>
           )}
         </div>

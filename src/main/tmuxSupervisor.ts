@@ -251,9 +251,6 @@ export class TmuxSupervisor {
       return false;
     }
 
-    console.log(
-      `[TmuxSupervisor] Started session ${tmuxSession} for ${agent} (${mode})`,
-    );
     return true;
   }
 
@@ -402,9 +399,6 @@ exit $EXIT_CODE
 
           if (isLastSentinel) {
             // Final sentinel — stop tailing and signal completion.
-            console.log(
-              `[TmuxSupervisor] Agent exited in ${tmuxSession} code=${result.code} effective=${effectiveCode}`,
-            );
             this.stopTailer(tmuxSession);
             this.cleanupGroveConfig(tmuxSession);
 
@@ -456,9 +450,6 @@ exit $EXIT_CODE
           } else {
             // Intermediate sentinel (multi-turn log) — close this turn's agent
             // bubble and continue tailing for the next turn.
-            console.log(
-              `[TmuxSupervisor] Intermediate exit in ${tmuxSession} code=${result.code} — more turns follow`,
-            );
             onChunk(taskId, mode, {
               type: "done",
               content: String(effectiveCode),
@@ -550,9 +541,6 @@ exit $EXIT_CODE
   ): Promise<{ alive: boolean; sessionAlive: boolean }> {
     const logPath = buildLogPath(tmuxSession);
     if (!fs.existsSync(logPath)) {
-      console.warn(
-        `[TmuxSupervisor] Log file not found for reconnect: ${logPath}`,
-      );
       return { alive: false, sessionAlive: false };
     }
 
@@ -562,9 +550,6 @@ exit $EXIT_CODE
       // Agent finished while the app was closed. Replay the entire log
       // so the renderer gets all output including the grove_exit sentinel
       // (which fires a "done" chunk and resets isRunning).
-      console.log(
-        `[TmuxSupervisor] Session ${tmuxSession} is gone — replaying log file for history`,
-      );
     }
 
     // Replay entire log from offset 0 — the log file retains all output.
@@ -629,7 +614,6 @@ exit $EXIT_CODE
 
   detachAll(): void {
     for (const [session] of this.tailers) {
-      console.log(`[TmuxSupervisor] Detaching tailer for ${session}`);
       this.stopTailer(session);
     }
     // Clean up any Grove-written opencode.json files — the agent already
@@ -637,9 +621,6 @@ exit $EXIT_CODE
     for (const [session, configPath] of this.wroteConfigFiles) {
       try {
         fs.unlinkSync(configPath);
-        console.log(
-          `[TmuxSupervisor] Cleaned up opencode.json on detach: ${configPath}`,
-        );
       } catch {
         // ignore
       }
@@ -763,7 +744,6 @@ exit $EXIT_CODE
       const p = path.join(RUNS_DIR, `${tmuxSession}.${ext}`);
       try {
         fs.unlinkSync(p);
-        console.log(`[TmuxSupervisor] Cleaned up: ${p}`);
       } catch {
         // ignore
       }
