@@ -458,3 +458,107 @@
   min-width: 40px;
   text-align: right;
 }
+
+/* ── Container Settings ──────────────────────────────────────────── */
+
+.containerFormGroup {
+  margin-bottom: 24px;
+}
+
+.containerFormTitle {
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--text-primary);
+  margin-bottom: 8px;
+}
+
+.containerFormDesc {
+  font-size: 11px;
+  color: var(--text-secondary);
+  margin-bottom: 16px;
+  line-height: 1.5;
+}
+
+.checkboxLabel {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 12px;
+  color: var(--text-primary);
+  margin-bottom: 16px;
+  cursor: pointer;
+}
+
+.checkboxLabel input[type="checkbox"] {
+  width: 16px;
+  height: 16px;
+  accent-color: var(--accent);
+  cursor: pointer;
+}
+
+.selectLabel,
+.inputLabel {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  margin-bottom: 12px;
+}
+
+.selectLabel span,
+.inputLabel span {
+  font-size: 11px;
+  color: var(--text-secondary);
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+}
+
+.selectLabel select,
+.inputLabel input[type="text"] {
+  width: 100%;
+  padding: 8px 12px;
+  font-size: 13px;
+  background: var(--bg-elevated);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  color: var(--text-primary);
+  box-sizing: border-box;
+}
+
+.selectLabel select:disabled,
+.inputLabel input[type="text"]:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.inputLabel input[type="text"]:focus {
+  outline: none;
+  border-color: var(--accent);
+}
+
+.saveButton {
+  margin-top: 16px;
+  padding: 8px 16px;
+  font-size: 12px;
+  font-weight: 500;
+  background: var(--accent);
+  border: none;
+  border-radius: var(--radius-sm);
+  color: #fff;
+  cursor: pointer;
+  transition: opacity var(--transition-fast);
+}
+
+.saveButton:hover {
+  opacity: 0.9;
+}
+
+.saveButton:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.loading {
+  font-size: 12px;
+  color: var(--text-secondary);
+  padding: 12px;
+}

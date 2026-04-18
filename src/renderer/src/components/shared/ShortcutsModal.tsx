@@ -19,6 +19,7 @@ const shortcutSections: ShortcutSection[] = [
     shortcuts: [
       { key: "⌘ P", action: "Open file search" },
       { key: "⌘ K", action: "Navigate to board and focus search" },
+      { key: "⌘ E", action: "Switch to previous task" },
       { key: "⌘ ,", action: "Open settings" },
       { key: "⌘ B", action: "Toggle sidebar" },
       { key: "⌘ J", action: "Toggle terminal panel" },

@@ -49,14 +49,16 @@ export function useKeyboardShortcuts(): void {
         return;
       }
 
-      // Cmd+E: go to previous task
+      // Cmd+E: go to previous task (toggle)
       if (mod && (e.key === "e" || e.key === "E")) {
         e.preventDefault();
-        const ts = useTaskSwitcherStore.getState();
-        const prevTaskId = ts.recentTaskIds.find((id) => id !== ts.lastTaskId);
+        const workspaces = useWorkspaceStore.getState().workspaces;
+        const allTasks = useAllTasksStore.getState().allTasks;
+        const prevTaskId = useTaskSwitcherStore
+          .getState()
+          .toggleLastTask(workspaces, allTasks);
         if (prevTaskId) {
-          const workspaces = useWorkspaceStore.getState().workspaces;
-          const allTasks = useAllTasksStore.getState().allTasks;
+          const ts = useTaskSwitcherStore.getState();
           const sortedTasks = ts.getSortedTasks(workspaces, allTasks);
           const task = sortedTasks.find((t) => t.task.id === prevTaskId);
           if (task) {

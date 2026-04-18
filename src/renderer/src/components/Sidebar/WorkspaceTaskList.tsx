@@ -166,7 +166,7 @@ export function WorkspaceTaskList({
 
                 return (
                   <div
-                    key={task.id}
+                    key={`${workspacePath}:${task.id}`}
                     className={`${styles.taskItem} ${task.id === selectedTaskId && task.workspacePath === activeWorkspacePath ? styles.taskItemSelected : ""}`}
                     onClick={() => handleTaskClick(task)}
                   >

@@ -4,6 +4,7 @@ import styles from "./Settings.module.css";
 import { WorkspaceCardGrid } from "./WorkspaceCardGrid";
 import { AgentModelForm } from "./AgentModelForm";
 import { WorkspacePromptsForm } from "./WorkspacePromptsForm";
+import { ContainerSettingsForm } from "./ContainerSettingsForm";
 
 interface WorkspaceDefaultsFormProps {
   isDisabled?: boolean;
@@ -89,6 +90,10 @@ export function WorkspaceDefaultsForm({
             isDisabled={isDisabled}
           />
           <WorkspacePromptsForm
+            workspacePath={selectedPath}
+            isDisabled={isDisabled}
+          />
+          <ContainerSettingsForm
             workspacePath={selectedPath}
             isDisabled={isDisabled}
           />

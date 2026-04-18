@@ -22,6 +22,12 @@ export interface WorkspaceEntry {
   executeReviewInstructions?: string;
   /** Hide workspace tasks from views */
   hidden?: boolean;
+  /** Enable containerized execution for this workspace */
+  containerEnabled?: boolean;
+  /** Container runtime to use (docker or podman) */
+  containerRuntime?: ContainerRuntime;
+  /** Default image to use when no devcontainer.json exists */
+  containerDefaultImage?: string;
 }
 
 /** Returned from workspace:list with runtime info */
@@ -57,7 +63,7 @@ export interface WindowState {
 export type TaskStatus = "backlog" | "doing" | "review" | "done";
 
 /** Supported agents for in-app planning */
-export type PlanAgent = "opencode" | "copilot";
+export type PlanAgent = "opencode" | "copilot" | "claude";
 
 /** Mode for the plan/execution agent chat */
 export type PlanMode = "plan" | "execute";
@@ -397,4 +403,75 @@ export interface TmuxSessionInfo {
   paneActivityTs: number; // Unix seconds
   idleSeconds: number; // computed
   durationSeconds: number; // computed
+}
+
+// ── Container Runtime ─────────────────────────────────────────────
+
+export type ContainerRuntime = "docker" | "podman";
+
+export interface DevcontainerConfig {
+  image?: string;
+  build?: {
+    dockerfile: string;
+    context?: string;
+    args?: Record<string, string>;
+  };
+  containerEnv?: Record<string, string>;
+  containerUser?: string;
+  forwardPorts?: (number | string)[];
+  mount?: string[];
+  postCreateCommand?: string;
+  updateContentCommand?: string;
+  postStartCommand?: string;
+  customizations?: Record<string, unknown>;
+}
+
+export interface ContainerSession {
+  containerId: string;
+  containerName: string;
+  taskId: string;
+  workspacePath: string;
+  mode: "ephemeral" | "task-bound";
+  startedAt: number;
+  image: string;
+  sessionId?: string;
+  runtime?: ContainerRuntime;
+  createdAt?: number;
+}
+
+export interface ContainerServiceConfig {
+  enabled: boolean;
+  runtime: ContainerRuntime;
+  defaultImage: string;
+  autoCleanup: boolean;
+  mountAuthConfig?: boolean;
+}
+
+export interface ContainerStartOptions {
+  taskId: string;
+  workspacePath: string;
+  image?: string;
+  mountWorktree?: boolean;
+  additionalMounts?: string[];
+  network?: string;
+  ports?: string[];
+  env?: Record<string, string>;
+  detach?: boolean;
+  workdir?: string;
+  mountAuthConfig?: boolean;
+  devcontainerConfig?: DevcontainerConfig;
+  mountWorkspace?: boolean;
+  sessionId?: string;
+  requireDevcontainer?: boolean;
+}
+
+export type ExecutionEnvironmentType = "local" | "container";
+
+export interface ExecutionEnvironment {
+  type: ExecutionEnvironmentType;
+  runtime?: ContainerRuntime;
+  containerName?: string;
+  containerId?: string;
+  workspacePath?: string;
+  workingDirectory: string;
 }

@@ -27,6 +27,12 @@
   flex: 1;
   overflow-y: auto;
   min-height: 0;
+  scrollbar-width: none;
+  -ms-overflow-style: none;
+}
+
+.workspaceListArea::-webkit-scrollbar {
+  display: none;
 }
 
 .worktreeListArea {
@@ -34,6 +40,12 @@
   overflow-y: auto;
   max-height: 40%;
   min-height: 0;
+  scrollbar-width: none;
+  -ms-overflow-style: none;
+}
+
+.worktreeListArea::-webkit-scrollbar {
+  display: none;
 }
 
 .spacer {

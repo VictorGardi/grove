@@ -6,51 +6,6 @@ import type {
   MessageContentBlock,
 } from "@shared/types";
 
-// ── RAF-based streaming throttle ──────────────────────────────────────────────
-// Content chunks (text, thinking, tool_use) are buffered here and flushed to
-// Zustand state in a single set() call per animation frame (~60 fps). Control-
-// flow chunks (done, session_id, replay_done, user_message, stderr, error,
-// tokens) are NOT buffered — they are applied synchronously via applyChunk.
-
-interface BufferedChunk {
-  sessionKey: string;
-  chunk: PlanChunk;
-}
-
-const CONTENT_CHUNK_TYPES = new Set(["text", "thinking", "tool_use"]);
-
-let rafPending = false;
-const chunkQueue: BufferedChunk[] = [];
-
-function scheduleFlush(): void {
-  if (rafPending) return;
-  rafPending = true;
-  requestAnimationFrame(() => {
-    rafPending = false;
-    const toFlush = chunkQueue.splice(0); // drain atomically
-    if (toFlush.length === 0) return;
-    // Apply all buffered chunks in arrival order via a single store update loop.
-    // Each chunk is still applied through applyChunk so all existing logic is
-    // preserved — we just batch multiple Zustand set() calls into one rAF.
-    for (const { sessionKey, chunk } of toFlush) {
-      usePlanStore.getState().applyChunk(sessionKey, chunk);
-    }
-  });
-}
-
-/**
- * Queue a content chunk for batched delivery at ~60 fps.
- * Control-flow chunks are not buffered and are applied synchronously.
- */
-export function queueChunk(sessionKey: string, chunk: PlanChunk): void {
-  if (CONTENT_CHUNK_TYPES.has(chunk.type)) {
-    chunkQueue.push({ sessionKey, chunk });
-    scheduleFlush();
-  } else {
-    usePlanStore.getState().applyChunk(sessionKey, chunk);
-  }
-}
-
 interface PlanSession {
   sessionKey: string; // `${mode}:${taskId}`
   agent: PlanAgent;

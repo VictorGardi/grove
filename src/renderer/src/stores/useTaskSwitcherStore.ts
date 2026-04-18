@@ -46,197 +46,252 @@ export interface SortedTask extends EnrichedTask {
 
 const MAX_RECENT = 10;
 
-export const useTaskSwitcherStore = create<TaskSwitcherState>()((set, get) => ({
-  isOpen: false,
-  searchQuery: "",
-  recentTaskIds: [],
-  lastTaskId: null,
-  taskLastViewedAt: {},
-  selectedIndex: 0,
-  includeDoneTasks: false,
-  createWorkspaceIndex: 0,
+const STORAGE_KEY = "grove:taskSwitcher";
 
-  open: () =>
-    set({
-      isOpen: true,
-      selectedIndex: 0,
-      createWorkspaceIndex: 0,
-      includeDoneTasks: false,
-    }),
-  close: () => set({ isOpen: false, searchQuery: "" }),
-  toggle: () =>
-    set((state) => ({
-      isOpen: !state.isOpen,
-      selectedIndex: 0,
-      createWorkspaceIndex: 0,
-      includeDoneTasks: state.isOpen ? state.includeDoneTasks : false,
-    })),
-  setSearchQuery: (query) =>
-    set({ searchQuery: query, selectedIndex: 0, createWorkspaceIndex: 0 }),
-  setSelectedIndex: (index) => set({ selectedIndex: index }),
-  moveSelection: (delta, max) =>
-    set((state) => {
-      if (max === 0) return { selectedIndex: 0 };
-      let newIndex = state.selectedIndex + delta;
-      if (newIndex < 0) newIndex = max - 1;
-      if (newIndex >= max) newIndex = 0;
-      return { selectedIndex: newIndex };
-    }),
+interface PersistedState {
+  recentTaskIds: string[];
+  lastTaskId: string | null;
+  taskLastViewedAt: Record<string, number>;
+}
 
-  recordTaskView: (taskId) => {
-    set((state) => {
-      const newRecent = [
-        taskId,
-        ...state.recentTaskIds.filter((id) => id !== taskId),
-      ].slice(0, MAX_RECENT);
-      return {
-        recentTaskIds: newRecent,
-        lastTaskId: state.lastTaskId === taskId ? state.lastTaskId : taskId,
-        taskLastViewedAt: { ...state.taskLastViewedAt, [taskId]: Date.now() },
-      };
-    });
-  },
-
-  toggleLastTask: (workspaces, allTasksMap) => {
-    const state = get();
-    const prevTaskId = state.recentTaskIds.find(
-      (id) => id !== state.lastTaskId,
-    );
-    if (!prevTaskId) return null;
-
-    for (const ws of workspaces) {
-      const tasks = allTasksMap.get(ws.path) || [];
-      const found = tasks.find((t) => t.id === prevTaskId);
-      if (found) {
-        set({
-          lastTaskId: state.lastTaskId,
-          recentTaskIds: [
-            state.lastTaskId!,
-            ...state.recentTaskIds.filter((id) => id !== state.lastTaskId),
-          ].slice(0, MAX_RECENT),
-        });
-        return prevTaskId;
-      }
+function getPersistedState(): PersistedState {
+  try {
+    const stored = localStorage.getItem(STORAGE_KEY);
+    if (stored) {
+      return JSON.parse(stored);
     }
+  } catch {
+    // Ignore localStorage errors
+  }
+  return {
+    recentTaskIds: [],
+    lastTaskId: null,
+    taskLastViewedAt: {},
+  };
+}
 
-    const newRecent = state.recentTaskIds.filter((id) => id !== prevTaskId);
-    set({ recentTaskIds: newRecent });
-    return null;
-  },
+function persistState(state: PersistedState): void {
+  try {
+    localStorage.setItem(STORAGE_KEY, JSON.stringify(state));
+  } catch {
+    // Ignore localStorage errors
+  }
+}
 
-  removeFromRecent: (taskId) =>
-    set((state) => ({
-      recentTaskIds: state.recentTaskIds.filter((id) => id !== taskId),
-    })),
+export const useTaskSwitcherStore = create<TaskSwitcherState>()((set, get) => {
+  const persisted = getPersistedState();
+  return {
+    isOpen: false,
+    searchQuery: "",
+    recentTaskIds: persisted.recentTaskIds,
+    lastTaskId: persisted.lastTaskId,
+    taskLastViewedAt: persisted.taskLastViewedAt,
+    selectedIndex: 0,
+    includeDoneTasks: false,
+    createWorkspaceIndex: 0,
 
-  toggleIncludeDoneTasks: () =>
-    set((state) => ({
-      includeDoneTasks: !state.includeDoneTasks,
-      selectedIndex: 0,
-    })),
+    open: () =>
+      set({
+        isOpen: true,
+        selectedIndex: 0,
+        createWorkspaceIndex: 0,
+        includeDoneTasks: false,
+      }),
+    close: () => set({ isOpen: false, searchQuery: "" }),
+    toggle: () =>
+      set((state) => ({
+        isOpen: !state.isOpen,
+        selectedIndex: 0,
+        createWorkspaceIndex: 0,
+        includeDoneTasks: state.isOpen ? state.includeDoneTasks : false,
+      })),
+    setSearchQuery: (query) =>
+      set({ searchQuery: query, selectedIndex: 0, createWorkspaceIndex: 0 }),
+    setSelectedIndex: (index) => set({ selectedIndex: index }),
+    moveSelection: (delta, max) =>
+      set((state) => {
+        if (max === 0) return { selectedIndex: 0 };
+        let newIndex = state.selectedIndex + delta;
+        if (newIndex < 0) newIndex = max - 1;
+        if (newIndex >= max) newIndex = 0;
+        return { selectedIndex: newIndex };
+      }),
 
-  cycleCreateWorkspace: (delta, total) =>
-    set((state) => {
-      if (total === 0) return { createWorkspaceIndex: 0 };
-      let newIndex = state.createWorkspaceIndex + delta;
-      if (newIndex < 0) newIndex = total - 1;
-      if (newIndex >= total) newIndex = 0;
-      return { createWorkspaceIndex: newIndex };
-    }),
+    recordTaskView: (taskId) => {
+      set((state) => {
+        const newRecent = [
+          taskId,
+          ...state.recentTaskIds.filter((id) => id !== taskId),
+        ].slice(0, MAX_RECENT);
+        const newState = {
+          recentTaskIds: newRecent,
+          lastTaskId: taskId,
+          taskLastViewedAt: { ...state.taskLastViewedAt, [taskId]: Date.now() },
+        };
+        persistState({
+          recentTaskIds: newState.recentTaskIds,
+          lastTaskId: newState.lastTaskId,
+          taskLastViewedAt: newState.taskLastViewedAt,
+        });
+        return newState;
+      });
+    },
 
-  getSortedTasks: (workspaces, allTasksMap) => {
-    const state = get();
-    const liveness = useTmuxLivenessStore.getState().liveness;
-    const currentTaskId = useDataStoreRef.getState().selectedTaskId;
-    const tasksWithWs: SortedTask[] = [];
-    const seen = new Set<string>();
+    toggleLastTask: (workspaces, allTasksMap) => {
+      const state = get();
+      const prevTaskId = state.recentTaskIds.find(
+        (id) => id !== state.lastTaskId,
+      );
+      if (!prevTaskId) return null;
 
-    for (const ws of workspaces) {
-      const tasks = allTasksMap.get(ws.path) || [];
-      for (const task of tasks) {
-        const dedupeKey = `${ws.path}:${task.id}`;
-        if (seen.has(dedupeKey)) continue;
-        seen.add(dedupeKey);
-
-        if (task.status === "done" && !state.includeDoneTasks) {
-          continue;
+      for (const ws of workspaces) {
+        const tasks = allTasksMap.get(ws.path) || [];
+        const found = tasks.find((t) => t.id === prevTaskId);
+        if (found) {
+          const prevLastTaskId = state.lastTaskId;
+          const newRecentTaskIds = [
+            prevLastTaskId !== null ? prevLastTaskId : prevTaskId,
+            ...state.recentTaskIds.filter(
+              (id) => id !== prevLastTaskId && id !== prevTaskId,
+            ),
+          ].slice(0, MAX_RECENT);
+          set({
+            lastTaskId: prevTaskId,
+            recentTaskIds: newRecentTaskIds,
+          });
+          persistState({
+            recentTaskIds: newRecentTaskIds,
+            lastTaskId: prevTaskId,
+            taskLastViewedAt: state.taskLastViewedAt,
+          });
+          return prevTaskId;
         }
+      }
 
-        const lastViewedAt = state.taskLastViewedAt[task.id] || 0;
+      const newRecent = state.recentTaskIds.filter((id) => id !== prevTaskId);
+      set({ recentTaskIds: newRecent });
+      persistState({
+        recentTaskIds: newRecent,
+        lastTaskId: state.lastTaskId,
+        taskLastViewedAt: state.taskLastViewedAt,
+      });
+      return null;
+    },
 
-        const enriched = enrichTaskWithWorkspace(
-          task,
-          ws.path,
-          ws.name,
-          liveness,
-          lastViewedAt,
-        );
+    removeFromRecent: (taskId) =>
+      set((state) => ({
+        recentTaskIds: state.recentTaskIds.filter((id) => id !== taskId),
+      })),
 
-        const isAgentActive =
-          enriched.execAgentState === "active" ||
-          enriched.planAgentState === "active";
-        const isWaitingForInput = enriched.isRunning && !isAgentActive;
+    toggleIncludeDoneTasks: () =>
+      set((state) => ({
+        includeDoneTasks: !state.includeDoneTasks,
+        selectedIndex: 0,
+      })),
 
-        const tier = enriched.isRunning ? 3 : lastViewedAt > 0 ? 2 : 0;
+    cycleCreateWorkspace: (delta, total) =>
+      set((state) => {
+        if (total === 0) return { createWorkspaceIndex: 0 };
+        let newIndex = state.createWorkspaceIndex + delta;
+        if (newIndex < 0) newIndex = total - 1;
+        if (newIndex >= total) newIndex = 0;
+        return { createWorkspaceIndex: newIndex };
+      }),
 
-        const priorityBonus = isWaitingForInput
-          ? 500_000_000
-          : isAgentActive
-            ? 0
-            : 0;
+    getSortedTasks: (workspaces, allTasksMap) => {
+      const state = get();
+      const liveness = useTmuxLivenessStore.getState().liveness;
+      const currentTaskId = useDataStoreRef.getState().selectedTaskId;
+      const tasksWithWs: SortedTask[] = [];
+      const seen = new Set<string>();
 
-        const secondaryScore =
-          lastViewedAt > 0
-            ? lastViewedAt
-            : task.created
-              ? new Date(task.created).getTime()
+      for (const ws of workspaces) {
+        const tasks = allTasksMap.get(ws.path) || [];
+        for (const task of tasks) {
+          const dedupeKey = `${ws.path}:${task.id}`;
+          if (seen.has(dedupeKey)) continue;
+          seen.add(dedupeKey);
+
+          if (task.status === "done" && !state.includeDoneTasks) {
+            continue;
+          }
+
+          const lastViewedAt = state.taskLastViewedAt[task.id] || 0;
+
+          const enriched = enrichTaskWithWorkspace(
+            task,
+            ws.path,
+            ws.name,
+            liveness,
+            lastViewedAt,
+          );
+
+          const isAgentActive =
+            enriched.execAgentState === "active" ||
+            enriched.planAgentState === "active";
+          const isWaitingForInput = enriched.isRunning && !isAgentActive;
+
+          const tier = enriched.isRunning ? 3 : lastViewedAt > 0 ? 2 : 0;
+
+          const priorityBonus = isWaitingForInput
+            ? 500_000_000
+            : isAgentActive
+              ? 0
               : 0;
-        const sortScore =
-          tier * 1_000_000_000_000_000 + priorityBonus + secondaryScore;
 
-        tasksWithWs.push({
-          ...enriched,
-          task,
-          sortScore,
-          recentGroup: enriched.isRunning
-            ? "active"
-            : lastViewedAt > 0
-              ? "recent"
-              : "other",
-          groupSort: enriched.isRunning ? 1 : lastViewedAt > 0 ? 2 : 0,
-        });
+          const secondaryScore =
+            lastViewedAt > 0
+              ? lastViewedAt
+              : task.created
+                ? new Date(task.created).getTime()
+                : 0;
+          const sortScore =
+            tier * 1_000_000_000_000_000 + priorityBonus + secondaryScore;
+
+          tasksWithWs.push({
+            ...enriched,
+            task,
+            sortScore,
+            recentGroup: enriched.isRunning
+              ? "active"
+              : lastViewedAt > 0
+                ? "recent"
+                : "other",
+            groupSort: enriched.isRunning ? 1 : lastViewedAt > 0 ? 2 : 0,
+          });
+        }
       }
-    }
 
-    const query = state.searchQuery.toLowerCase();
-    let filtered = tasksWithWs;
-    if (query) {
-      filtered = tasksWithWs.filter(
-        (t) =>
-          t.task.title.toLowerCase().includes(query) ||
-          t.task.id.toLowerCase().includes(query) ||
-          t.workspaceName.toLowerCase().includes(query),
-      );
-    } else {
-      filtered = filtered.filter(
-        (t) =>
-          t.task.status !== "done" &&
-          (t.isRunning || (state.taskLastViewedAt[t.task.id] || 0) > 0),
-      );
-    }
-
-    const others = filtered.filter((t) => t.task.id !== currentTaskId);
-    const current = filtered.filter((t) => t.task.id === currentTaskId);
-
-    const sorted = others.sort((a, b) => {
-      if (a.groupSort !== b.groupSort) {
-        return b.groupSort - a.groupSort;
+      const query = state.searchQuery.toLowerCase();
+      let filtered = tasksWithWs;
+      if (query) {
+        filtered = tasksWithWs.filter(
+          (t) =>
+            t.task.title.toLowerCase().includes(query) ||
+            t.task.id.toLowerCase().includes(query) ||
+            t.workspaceName.toLowerCase().includes(query),
+        );
+      } else {
+        filtered = filtered.filter(
+          (t) =>
+            t.task.status !== "done" &&
+            (t.isRunning || (state.taskLastViewedAt[t.task.id] || 0) > 0),
+        );
       }
-      return b.sortScore - a.sortScore;
-    });
-    return [...sorted, ...current];
-  },
-}));
+
+      const others = filtered.filter((t) => t.task.id !== currentTaskId);
+      const current = filtered.filter((t) => t.task.id === currentTaskId);
+
+      const sorted = others.sort((a, b) => {
+        if (a.groupSort !== b.groupSort) {
+          return b.groupSort - a.groupSort;
+        }
+        return b.sortScore - a.sortScore;
+      });
+      return [...sorted, ...current];
+    },
+  };
+});
 
 export async function switchToTask(
   sortedTask: SortedTask,

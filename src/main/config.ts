@@ -1,6 +1,6 @@
-import { app } from "electron";
 import * as fs from "fs";
 import * as path from "path";
+import * as os from "os";
 import type { AppConfig } from "@shared/types";
 
 const DEFAULT_CONFIG: AppConfig = {
@@ -29,8 +29,13 @@ export class ConfigManager {
   private saveTimer: NodeJS.Timeout | null = null;
 
   constructor() {
-    this.configPath = path.join(app.getPath("userData"), "config.json");
+    this.configPath = path.join(os.homedir(), ".grove", "config.json");
+    console.log("[ConfigManager] Loading from:", this.configPath);
     this.config = this.loadFromDisk();
+    console.log(
+      "[ConfigManager] Loaded workspaces:",
+      this.config.workspaces.length,
+    );
   }
 
   get(): AppConfig {
@@ -42,13 +47,11 @@ export class ConfigManager {
     this.scheduleSave();
   }
 
-  /** Debounced save — coalesces rapid updates */
   private scheduleSave(): void {
     if (this.saveTimer) clearTimeout(this.saveTimer);
     this.saveTimer = setTimeout(() => this.writeToDisk(), 300);
   }
 
-  /** Synchronous flush — called on app quit */
   flushSync(): void {
     if (this.saveTimer) {
       clearTimeout(this.saveTimer);
@@ -63,6 +66,7 @@ export class ConfigManager {
         return { ...DEFAULT_CONFIG, workspaces: [] };
       }
       const raw = fs.readFileSync(this.configPath, "utf-8");
+      console.log("[ConfigManager] Raw config:", raw.substring(0, 500));
       const parsed = JSON.parse(raw) as Partial<AppConfig>;
       const theme =
         typeof parsed.theme === "string" && isValidTheme(parsed.theme)
@@ -100,6 +104,14 @@ export class ConfigManager {
       if (!fs.existsSync(dir)) {
         fs.mkdirSync(dir, { recursive: true });
       }
+      console.log(
+        "[ConfigManager] Writing config, workspaces:",
+        this.config.workspaces.length,
+      );
+      console.log(
+        "[ConfigManager] First workspace:",
+        JSON.stringify(this.config.workspaces[0], null, 2),
+      );
       fs.writeFileSync(tmpPath, JSON.stringify(this.config, null, 2), "utf-8");
       fs.renameSync(tmpPath, this.configPath);
     } catch (err) {

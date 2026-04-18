@@ -115,6 +115,7 @@ function LaunchForm({
           >
             <option value="opencode">opencode</option>
             <option value="copilot">copilot</option>
+            <option value="claude">claude</option>
           </select>
         </div>
 

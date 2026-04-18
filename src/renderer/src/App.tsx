@@ -13,7 +13,7 @@ import { useFileStore } from "./stores/useFileStore";
 import { useNavStore } from "./stores/useNavStore";
 import { useWorktreeStore } from "./stores/useWorktreeStore";
 import { useTerminalStore } from "./stores/useTerminalStore";
-import { usePlanStore, queueChunk } from "./stores/usePlanStore";
+import { usePlanStore } from "./stores/usePlanStore";
 import { useKeyboardShortcuts } from "./hooks/useKeyboardShortcuts";
 import { ShortcutsModal } from "./components/shared/ShortcutsModal";
 import { TaskSwitcherModal } from "./components/shared/TaskSwitcherModal";
@@ -309,94 +309,6 @@ function AppContent(): React.JSX.Element {
     return unsub;
   }, []);
 
-  // Plan chat: route streamed chunks from the main process to the plan store
-  useEffect(() => {
-    if (!window.api.plan) return;
-    const unsub = window.api.plan.onChunk((taskId, mode, chunk) => {
-      const sessionKey = `${mode}:${taskId}`;
-      const store = usePlanStore.getState();
-
-      if (chunk.type === "session_id") {
-        store.setSessionId(sessionKey, chunk.content);
-        // Persist session ID to task frontmatter
-        const task = useDataStore.getState().tasks.find((t) => t.id === taskId);
-        const wp = useWorkspaceStore.getState().activeWorkspacePath;
-        if (task && wp) {
-          const session = store.sessions[sessionKey];
-          const agent = session?.agent ?? "opencode";
-          const model = session?.model ?? null;
-          window.api.plan.saveSession({
-            workspacePath: wp,
-            filePath: task.filePath,
-            sessionId: chunk.content,
-            agent,
-            model,
-            mode,
-          });
-        }
-        return;
-      }
-
-      // user_message chunk: emitted during log replay from the first line of the
-      // log file (and before each subsequent turn). Only add the bubble when
-      // replaying — a fresh send already added the user message via handleSend.
-      if (chunk.type === "user_message") {
-        const session = store.sessions[sessionKey];
-        if (session?.isReplaying) {
-          store.appendUserMessage(sessionKey, chunk.content);
-        }
-        return;
-      }
-
-      // replay_done: emitted after the final grove_exit sentinel in the log.
-      // Resets isReplaying so subsequent user_message chunks (from live sends)
-      // are not mistakenly treated as replay content.
-      //
-      // Always clear isRunning here. replay_done is only emitted once the
-      // grove_exit sentinel has been found AND there is no more data in the
-      // log after it — meaning the agent has definitively finished. For live
-      // sessions replay_done is not emitted until the agent actually writes its
-      // sentinel, so there is no risk of prematurely clearing a running session.
-      // Also clear sessionStatus so the "Agent running — reconnected" banner
-      // is dismissed for dead sessions that were replayed.
-      if (chunk.type === "replay_done") {
-        store.setReplaying(sessionKey, false);
-        store.setRunning(sessionKey, false);
-        store.setSessionStatus(sessionKey, "idle");
-        return;
-      }
-
-      // For content chunks (text / thinking / tool_use / error), ensure an
-      // agent bubble exists before applying. During log replay the bubble is
-      // NOT pre-created by the reconnect effect (that call was removed); instead
-      // we lazily create it here the moment the first content chunk arrives.
-      //
-      // NOTE: "done" is intentionally excluded — a done chunk closes the
-      // current bubble; it should never create a new empty one. If a done
-      // chunk arrives when the last message is a user bubble it means the
-      // agent turn produced no output, which is handled by applyChunk itself.
-      if (
-        chunk.type === "text" ||
-        chunk.type === "thinking" ||
-        chunk.type === "tool_use" ||
-        chunk.type === "error"
-      ) {
-        const session = store.sessions[sessionKey];
-        const lastMsg = session?.messages[session.messages.length - 1];
-        if (!lastMsg || lastMsg.role === "user") {
-          store.startAgentMessage(sessionKey);
-        }
-      }
-
-      // Route content chunks (text/thinking/tool_use) through the RAF-based
-      // queue so Zustand set() fires at most once per animation frame (~60 fps).
-      // Control-flow chunks (done, error, tokens, stderr) are applied
-      // synchronously via applyChunk inside queueChunk's fallback path.
-      queueChunk(sessionKey, chunk);
-    });
-    return unsub;
-  }, []);
-
   // Get active workspace name for title bar
   const activeWorkspace = workspaces.find(
     (w) => w.path === activeWorkspacePath,
@@ -415,6 +327,7 @@ function AppContent(): React.JSX.Element {
       <TitleBar platform={platform} workspaceName={activeWorkspace?.name} />
       <div
         style={{
+          position: "relative",
           display: "flex",
           flex: 1,
           overflow: "hidden",
@@ -423,8 +336,18 @@ function AppContent(): React.JSX.Element {
       >
         {sidebarVisible && <Sidebar />}
         <MainArea />
+        <div
+          style={{
+            position: "absolute",
+            bottom: 0,
+            left: 0,
+            right: 0,
+            zIndex: 100,
+          }}
+        >
+          <TerminalPanel visible={terminalPanelOpen} />
+        </div>
       </div>
-      <TerminalPanel visible={terminalPanelOpen} />
       <ConfirmDialog />
       <LaunchModal />
       <ShortcutsModal />

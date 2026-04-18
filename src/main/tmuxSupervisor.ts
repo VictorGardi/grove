@@ -5,7 +5,6 @@ import * as path from "path";
 import * as crypto from "crypto";
 import type { PlanAgent, PlanMode, PlanChunk } from "@shared/types";
 import { buildEnvPath } from "./env";
-import { parseOpencodeLine, CopilotLineParser } from "./agentOutputParser";
 import { writeOpencodeConfig, cleanupGroveConfig } from "./opencodeConfig";
 
 /**
@@ -37,8 +36,6 @@ interface LogTailer {
   stopped: boolean;
   /** Captured task file path for persisting exit code */
   taskFilePath?: string;
-  /** Stateful Copilot stream parser (undefined for opencode runs) */
-  copilotParser?: CopilotLineParser;
 }
 
 // ── Public helpers ──────────────────────────────────────────────
@@ -221,7 +218,6 @@ export class TmuxSupervisor {
     this.startTailer(
       tmuxSession,
       logPath,
-      agent,
       taskId,
       mode,
       onChunk,
@@ -342,7 +338,6 @@ exit $EXIT_CODE
   private startTailer(
     tmuxSession: string,
     logPath: string,
-    agent: PlanAgent,
     taskId: string,
     mode: PlanMode,
     onChunk: ChunkCallback,
@@ -364,19 +359,12 @@ exit $EXIT_CODE
       lineBufferOffset: startOffset,
       stopped: false,
       taskFilePath,
-      copilotParser: agent !== "opencode" ? new CopilotLineParser() : undefined,
     };
     this.tailers.set(tmuxSession, tailer);
 
-    let sessionIdEmitted = false;
-    // Track opencode errors within a turn so we can surface them and correct
-    // the exit code when opencode exits cleanly (code 0) after an error.
-    let turnHadError = false;
-
     const processLine = (line: string, afterLineOffset: number): void => {
-      const results = this.parseLine(agent, line, tailer.copilotParser);
+      const results = this.parseLine(line);
       for (const result of results) {
-        // Detect the internal sentinel written by our script
         if (result.type === "__grove_exit") {
           // Peek one byte immediately after this sentinel line to determine
           // whether more content has been written to the log (intermediate
@@ -392,11 +380,6 @@ exit $EXIT_CODE
           const peeked = fs.readSync(tailer.fd, peek, 0, 1, afterLineOffset);
           const isLastSentinel = peeked === 0;
 
-          // When opencode emits an error event then exits with code 0, treat
-          // the effective exit code as 1 so the UI shows it as a failure.
-          const effectiveCode =
-            turnHadError && result.code === 0 ? 1 : result.code;
-
           if (isLastSentinel) {
             // Final sentinel — stop tailing and signal completion.
             this.stopTailer(tmuxSession);
@@ -404,7 +387,7 @@ exit $EXIT_CODE
 
             // Surface stderr so the user sees the actual error in the exit
             // warning section rather than the generic "exited without output".
-            if (effectiveCode !== 0) {
+            if (result.code !== 0) {
               try {
                 const errPath = buildErrPath(tmuxSession);
                 const stderr = fs.existsSync(errPath)
@@ -420,7 +403,7 @@ exit $EXIT_CODE
 
             onChunk(taskId, mode, {
               type: "done",
-              content: String(effectiveCode),
+              content: String(result.code),
             });
 
             // Persist the exit code to task frontmatter so indicators survive app restart
@@ -434,8 +417,8 @@ exit $EXIT_CODE
                 wsRoot,
                 tailer.taskFilePath,
                 mode === "execute"
-                  ? { execLastExitCode: effectiveCode }
-                  : { planLastExitCode: effectiveCode },
+                  ? { execLastExitCode: result.code }
+                  : { planLastExitCode: result.code },
               ).catch((err: unknown) => {
                 console.warn(
                   `[TmuxSupervisor] Failed to persist exit code for ${taskId}:`,
@@ -452,25 +435,14 @@ exit $EXIT_CODE
             // bubble and continue tailing for the next turn.
             onChunk(taskId, mode, {
               type: "done",
-              content: String(effectiveCode),
+              content: String(result.code),
             });
-            // Reset error tracking for the next turn
-            turnHadError = false;
           }
           return;
         }
-        // Intercept __grove_error: emit the error message to the user and flag
-        // this turn as failed so the exit code is corrected above.
-        if (result.type === "__grove_error") {
-          turnHadError = true;
-          onChunk(taskId, mode, { type: "error", content: result.message });
-          continue;
+        if (result.type === "user_message") {
+          onChunk(taskId, mode, result);
         }
-        if (result.type === "session_id") {
-          if (sessionIdEmitted) continue;
-          sessionIdEmitted = true;
-        }
-        onChunk(taskId, mode, result);
       }
     };
 
@@ -535,7 +507,6 @@ exit $EXIT_CODE
     tmuxSession: string,
     taskId: string,
     mode: PlanMode,
-    agent: PlanAgent,
     onChunk: ChunkCallback,
     onComplete?: () => void,
   ): Promise<{ alive: boolean; sessionAlive: boolean }> {
@@ -559,7 +530,6 @@ exit $EXIT_CODE
     this.startTailer(
       tmuxSession,
       logPath,
-      agent,
       taskId,
       mode,
       onChunk,
@@ -750,46 +720,29 @@ exit $EXIT_CODE
     }
   }
 
-  // ── Line parsing (shared between start and reconnect) ──────
-
-  /** Parse result can be a regular PlanChunk or an internal sentinel. */
   private parseLine(
-    agent: PlanAgent,
     line: string,
-    copilotParser?: CopilotLineParser,
-  ): Array<
-    | PlanChunk
-    | { type: "__grove_exit"; code: number }
-    | { type: "__grove_error"; message: string }
-  > {
+  ): Array<PlanChunk | { type: "__grove_exit"; code: number }> {
     const trimmed = line.trim();
     if (!trimmed) return [];
 
     try {
       const obj = JSON.parse(trimmed);
 
-      // Detect our sentinel line
       if (obj.type === "grove_exit" && typeof obj.code === "number") {
         return [{ type: "__grove_exit", code: obj.code }];
       }
 
-      // Detect the user message line we write at the start of each log
       if (
         obj.type === "grove_user_message" &&
         typeof obj.content === "string"
       ) {
         return [{ type: "user_message", content: obj.content }];
       }
-
-      if (agent === "opencode") {
-        return parseOpencodeLine(obj);
-      } else {
-        return (copilotParser ?? new CopilotLineParser()).parse(obj);
-      }
     } catch {
-      const stripped = trimmed.replace(/\x1b\[[0-9;]*[mGKHF]/g, "");
-      if (!stripped) return [];
-      return [{ type: "text", content: stripped }];
+      // Not JSON, ignore
     }
+
+    return [];
   }
 }

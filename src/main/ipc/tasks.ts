@@ -15,7 +15,10 @@ import {
   readTaskBody,
   readTaskRaw,
   writeTaskRaw,
-} from "../tasks";
+} from "../../runtime/taskService";
+import { getContainerService } from "../../runtime/containerService";
+import * as state from "../../runtime/state";
+import * as path from "path";
 
 export function registerTaskHandlers(): void {
   // Atomic data fetch — returns tasks in one response
@@ -108,6 +111,17 @@ export function registerTaskHandlers(): void {
     ): Promise<IpcResult<TaskInfo>> => {
       try {
         const task = await moveTask(workspacePath, filePath, toStatus);
+
+        if (toStatus === "done") {
+          const taskId = path.basename(filePath, ".md");
+          const containerInfo = state.getContainerSession(taskId);
+          if (containerInfo) {
+            const service = getContainerService();
+            await service.stopContainer(taskId);
+            state.removeContainerSession(taskId);
+          }
+        }
+
         return { ok: true, data: task };
       } catch (err) {
         return {
@@ -126,6 +140,14 @@ export function registerTaskHandlers(): void {
       filePath: string,
     ): Promise<IpcResult<void>> => {
       try {
+        const taskId = path.basename(filePath, ".md");
+        const containerInfo = state.getContainerSession(taskId);
+        if (containerInfo) {
+          const service = getContainerService();
+          await service.stopContainer(taskId);
+          state.removeContainerSession(taskId);
+        }
+
         await archiveTask(workspacePath, filePath);
         return { ok: true, data: undefined };
       } catch (err) {

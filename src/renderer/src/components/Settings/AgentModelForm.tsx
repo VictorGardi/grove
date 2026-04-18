@@ -155,6 +155,7 @@ export function AgentModelForm({
           >
             <option value="opencode">opencode</option>
             <option value="copilot">copilot</option>
+            <option value="claude">claude</option>
           </select>
         </div>
 
@@ -196,6 +197,7 @@ export function AgentModelForm({
           >
             <option value="opencode">opencode</option>
             <option value="copilot">copilot</option>
+            <option value="claude">claude</option>
           </select>
         </div>
 

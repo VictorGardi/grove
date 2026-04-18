@@ -14,9 +14,6 @@ import type {
   TeardownWorktreeInput,
   DiffSummary,
   BranchInfo,
-  PlanAgent,
-  PlanChunk,
-  PlanMode,
   TmuxSessionInfo,
 } from "@shared/types";
 
@@ -31,18 +28,18 @@ export interface ElectronAPI {
     getBranch: (path: string) => Promise<IpcResult<string>>;
     getDefaults: (path: string) => Promise<
       IpcResult<{
-        defaultPlanningAgent?: PlanAgent;
+        defaultPlanningAgent?: string;
         defaultPlanningModel?: string;
-        defaultExecutionAgent?: PlanAgent;
+        defaultExecutionAgent?: string;
         defaultExecutionModel?: string;
       }>
     >;
     setDefaults: (
       path: string,
       defaults: {
-        defaultPlanningAgent?: PlanAgent;
+        defaultPlanningAgent?: string;
         defaultPlanningModel?: string;
-        defaultExecutionAgent?: PlanAgent;
+        defaultExecutionAgent?: string;
         defaultExecutionModel?: string;
       },
     ) => Promise<IpcResult<void>>;
@@ -197,56 +194,21 @@ export interface ElectronAPI {
     }) => Promise<{ ok: boolean; error?: string }>;
   };
   plan: {
-    send: (input: {
-      taskId: string;
-      mode: PlanMode;
-      agent: PlanAgent;
-      model: string | null;
-      message: string;
-      /** Short user-facing text for chat history (not the full prompt) */
-      displayMessage: string;
-      sessionId: string | null;
-      workspacePath: string;
-      taskFilePath: string;
-      worktreePath?: string;
-    }) => Promise<IpcResult<void>>;
-    cancel: (input: {
-      taskId: string;
-      mode: PlanMode;
-      workspacePath: string;
-      taskFilePath: string;
-    }) => Promise<IpcResult<void>>;
     listModels: (input: {
-      agent: PlanAgent;
+      agent: string;
       workspacePath: string;
     }) => Promise<IpcResult<string[]>>;
     saveSession: (input: {
       workspacePath: string;
       filePath: string;
       sessionId: string;
-      agent: PlanAgent;
+      agent: string;
       model: string | null;
-      mode: PlanMode;
+      mode: string;
     }) => Promise<IpcResult<void>>;
-    isTmuxAvailable: () => Promise<IpcResult<boolean>>;
-    tmuxCheck: (input: {
-      workspacePath: string;
-      taskId: string;
-      mode: PlanMode;
-    }) => Promise<IpcResult<{ alive: boolean }>>;
     captureTmuxPane: (input: {
       session: string;
     }) => Promise<IpcResult<{ content: string }>>;
-    reconnect: (input: {
-      taskId: string;
-      mode: PlanMode;
-      agent: PlanAgent;
-      workspacePath: string;
-      taskFilePath: string;
-    }) => Promise<IpcResult<{ reconnected: boolean; sessionAlive: boolean }>>;
-    onChunk: (
-      callback: (taskId: string, mode: PlanMode, chunk: PlanChunk) => void,
-    ) => () => void;
   };
 }
 

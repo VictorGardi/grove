@@ -9,7 +9,7 @@ import type {
   WorkspaceEntry,
   PlanAgent,
 } from "@shared/types";
-import { initTaskDirs, parseTaskFile } from "../tasks";
+import { initTaskDirs, parseTaskFile } from "../../runtime/taskService";
 import { startWatchers, stopWatchers } from "../watchers";
 import { startWorktreeTaskWatcher } from "./git";
 
@@ -131,6 +131,10 @@ export function registerWorkspaceHandlers(
     async (): Promise<IpcResult<WorkspaceInfo[]>> => {
       try {
         const config = configManager.get();
+        console.log(
+          "[workspace:list] Config has workspaces:",
+          config.workspaces.length,
+        );
         const workspaces: WorkspaceInfo[] = [];
 
         for (const entry of config.workspaces) {
@@ -157,6 +161,9 @@ export function registerWorkspaceHandlers(
             branch,
             isGitRepo,
             exists,
+            containerEnabled: entry.containerEnabled,
+            containerRuntime: entry.containerRuntime,
+            containerDefaultImage: entry.containerDefaultImage,
           });
         }
 
@@ -393,6 +400,9 @@ export function registerWorkspaceHandlers(
         executePersona?: string;
         executeReviewPersona?: string;
         executeReviewInstructions?: string;
+        containerEnabled?: boolean;
+        containerRuntime?: "docker" | "podman";
+        containerDefaultImage?: string;
       },
     ): Promise<IpcResult<void>> => {
       try {
@@ -428,6 +438,19 @@ export function registerWorkspaceHandlers(
             if (defaults.executeReviewInstructions !== undefined) {
               workspace.executeReviewInstructions =
                 defaults.executeReviewInstructions || undefined;
+            }
+            if (defaults.containerEnabled !== undefined) {
+              console.log(
+                "[workspace:setDefaults] Setting containerEnabled:",
+                defaults.containerEnabled,
+              );
+              workspace.containerEnabled = defaults.containerEnabled;
+            }
+            if (defaults.containerRuntime !== undefined) {
+              workspace.containerRuntime = defaults.containerRuntime;
+            }
+            if (defaults.containerDefaultImage !== undefined) {
+              workspace.containerDefaultImage = defaults.containerDefaultImage;
             }
           }
         });

@@ -205,25 +205,6 @@ contextBridge.exposeInMainWorld("api", {
       ipcRenderer.invoke("tmux:killSession", params),
   },
   plan: {
-    send: (input: {
-      taskId: string;
-      mode: string;
-      agent: string;
-      model: string | null;
-      message: string;
-      sessionId: string | null;
-      workspacePath: string;
-      taskFilePath: string;
-      worktreePath?: string;
-    }) => ipcRenderer.invoke("plan:send", input),
-
-    cancel: (input: {
-      taskId: string;
-      mode: string;
-      workspacePath: string;
-      taskFilePath: string;
-    }) => ipcRenderer.invoke("plan:cancel", input),
-
     listModels: (input: { agent: string; workspacePath: string }) =>
       ipcRenderer.invoke("plan:listModels", input),
 
@@ -236,46 +217,7 @@ contextBridge.exposeInMainWorld("api", {
       mode: string;
     }) => ipcRenderer.invoke("plan:saveSession", input),
 
-    isTmuxAvailable: () => ipcRenderer.invoke("plan:is-tmux-available"),
-
-    tmuxCheck: (input: {
-      workspacePath: string;
-      taskId: string;
-      mode: string;
-    }) => ipcRenderer.invoke("plan:tmux-check", input),
-
     captureTmuxPane: (input: { session: string }) =>
       ipcRenderer.invoke("plan:tmux-capture-pane", input),
-
-    reconnect: (input: {
-      taskId: string;
-      mode: string;
-      agent: string;
-      workspacePath: string;
-      taskFilePath: string;
-    }) => ipcRenderer.invoke("plan:reconnect", input),
-
-    onChunk: (
-      callback: (
-        taskId: string,
-        mode: string,
-        chunk: { type: string; content: string },
-      ) => void,
-    ) => {
-      const handler = (
-        _event: Electron.IpcRendererEvent,
-        batch: Array<{
-          taskId: string;
-          mode: string;
-          chunk: { type: string; content: string };
-        }>,
-      ) => {
-        for (const entry of batch) {
-          callback(entry.taskId, entry.mode, entry.chunk);
-        }
-      };
-      ipcRenderer.on("plan:chunks", handler);
-      return () => ipcRenderer.removeListener("plan:chunks", handler);
-    },
   },
 });

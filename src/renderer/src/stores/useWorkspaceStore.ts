@@ -31,6 +31,9 @@ interface WorkspaceDefaults {
   executePersona?: string;
   executeReviewPersona?: string;
   executeReviewInstructions?: string;
+  containerEnabled?: boolean;
+  containerRuntime?: "docker" | "podman";
+  containerDefaultImage?: string;
 }
 
 interface WorkspaceState {
@@ -327,6 +330,14 @@ export const useWorkspaceStore = create<WorkspaceState>()((set, get) => ({
           ...state.workspaceDefaults,
           [path]: defaults,
         },
+        workspaces: state.workspaces.map((ws) =>
+          ws.path === path
+            ? {
+                ...ws,
+                ...defaults,
+              }
+            : ws,
+        ),
       }));
     }
   },

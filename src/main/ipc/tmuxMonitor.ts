@@ -2,7 +2,7 @@ import { ipcMain } from "electron";
 import { spawnSync } from "child_process";
 import * as crypto from "crypto";
 import type { TmuxSessionInfo, TaskStatus } from "@shared/types";
-import { scanTasks } from "../tasks";
+import { scanTasks } from "../../runtime/taskService";
 import type { ConfigManager } from "../config";
 
 function isTmuxAvailable(): boolean {

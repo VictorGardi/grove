@@ -26,10 +26,14 @@ import {
   listBranches,
   buildFileTreeFromGitPaths,
   readFileAtBranch,
-} from "../git";
-import { updateTask, readTaskBody, parseTaskFile } from "../tasks";
-import { generateContextFile } from "../contextGenerator";
-import { atomicWrite } from "../fileWriter";
+} from "../../runtime/gitService";
+import {
+  updateTask,
+  readTaskBody,
+  parseTaskFile,
+} from "../../runtime/taskService";
+import { generateContextFile } from "../../runtime/contextGenerator";
+import { atomicWrite } from "../../runtime/fileWriter";
 
 // ── Worktree task file watchers ───────────────────────────────────────────────
 // Key: `${workspacePath}:${taskId}`
