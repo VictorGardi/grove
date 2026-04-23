@@ -9,7 +9,6 @@ export interface OpencodeConfigOptions {
   externalDirectory?: string;
 }
 
-const GROVE_CONTEXT_PATTERN = "~/.grove/**";
 const OPENCODE_CONFIG_DIR = path.join(os.homedir(), ".config", "opencode");
 const OPENCODE_CONFIG_PATH = path.join(OPENCODE_CONFIG_DIR, "opencode.json");
 
@@ -38,9 +37,6 @@ export function writeOpencodeConfig(
 
   const permission =
     (existingConfig.permission as Record<string, unknown>) ?? {};
-  const extDir =
-    (permission.external_directory as Record<string, string>) ?? {};
-  extDir[GROVE_CONTEXT_PATTERN] = "allow";
 
   const newConfig = {
     ...existingConfig,
@@ -48,7 +44,6 @@ export function writeOpencodeConfig(
     permission: {
       ...permission,
       doom_loop: permission.doom_loop ?? options.doomLoop ?? "allow",
-      external_directory: extDir,
     },
   };
 

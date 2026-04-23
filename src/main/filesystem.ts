@@ -10,8 +10,6 @@ export const ALWAYS_EXCLUDED = [
   ".git",
   "node_modules",
   ".worktrees",
-  ".tasks",
-  ".decisions",
   ".grove",
 ];
 

@@ -290,7 +290,6 @@ export class TmuxSupervisor {
         "--stream",
         "on",
         "--no-color",
-        "--add-dir=$HOME/.grove",
       ];
       if (mode === "plan") {
         parts.push("--deny-tool=shell");

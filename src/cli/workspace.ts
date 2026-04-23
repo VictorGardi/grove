@@ -33,6 +33,10 @@ const DEFAULT_CONFIG: GroveCliConfig = {
   lastActiveWorkspace: null,
 };
 
+function hasTasksDir(dirPath: string): boolean {
+  return fs.existsSync(path.join(dirPath, ".grove", "tasks"));
+}
+
 function loadConfig(): GroveCliConfig {
   try {
     if (!fs.existsSync(GROVE_CONFIG_PATH)) {
@@ -110,8 +114,7 @@ export function resolveWorkspace(
         code: 2,
       };
     }
-    const tasksPath = path.join(explicitPath, ".tasks");
-    if (!fs.existsSync(tasksPath)) {
+    if (!hasTasksDir(explicitPath)) {
       return {
         ok: false,
         error: `Not a workspace (no .tasks directory): ${explicitPath}`,
@@ -127,8 +130,7 @@ export function resolveWorkspace(
 
   const config = loadConfig();
   const cwd = process.cwd();
-  const cwdTasksPath = path.join(cwd, ".tasks");
-  if (fs.existsSync(cwdTasksPath)) {
+  if (hasTasksDir(cwd)) {
     const existing = config.workspaces.find((w) => w.path === cwd);
     const entry: WorkspaceEntry = {
       name: path.basename(cwd),
@@ -140,8 +142,7 @@ export function resolveWorkspace(
   }
 
   if (config.lastActiveWorkspace && fs.existsSync(config.lastActiveWorkspace)) {
-    const tasksPath = path.join(config.lastActiveWorkspace, ".tasks");
-    if (fs.existsSync(tasksPath)) {
+    if (hasTasksDir(config.lastActiveWorkspace)) {
       const entry = config.workspaces.find(
         (w) => w.path === config.lastActiveWorkspace,
       );
@@ -160,11 +161,8 @@ export function resolveWorkspace(
 
   if (config.workspaces.length > 0) {
     for (const ws of config.workspaces) {
-      if (fs.existsSync(ws.path)) {
-        const tasksPath = path.join(ws.path, ".tasks");
-        if (fs.existsSync(tasksPath)) {
-          return { ok: true, workspace: ws };
-        }
+      if (fs.existsSync(ws.path) && hasTasksDir(ws.path)) {
+        return { ok: true, workspace: ws };
       }
     }
   }
@@ -227,11 +225,21 @@ export function findTaskInWorkspaces(
 }
 
 function resolveTaskPath(workspacePath: string, taskId: string): string | null {
-  const taskBase = path.join(workspacePath, ".tasks");
   const statuses = ["backlog", "doing", "review", "done"];
 
+  // Check new location first (.grove/tasks)
+  const newTaskBase = path.join(workspacePath, ".grove", "tasks");
   for (const status of statuses) {
-    const candidate = path.join(taskBase, status, `${taskId}.md`);
+    const candidate = path.join(newTaskBase, status, `${taskId}.md`);
+    if (fs.existsSync(candidate)) {
+      return candidate;
+    }
+  }
+
+  // Check old location for backward compatibility (.tasks)
+  const oldTaskBase = path.join(workspacePath, ".tasks");
+  for (const status of statuses) {
+    const candidate = path.join(oldTaskBase, status, `${taskId}.md`);
     if (fs.existsSync(candidate)) {
       return candidate;
     }

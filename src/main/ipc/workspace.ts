@@ -12,12 +12,11 @@ import type {
 import { initTaskDirs, parseTaskFile } from "../../runtime/taskService";
 import { startWatchers, stopWatchers } from "../watchers";
 import { startWorktreeTaskWatcher } from "./git";
+import { TASKS_DIR, ALL_TASK_DIRS } from "../paths";
 
 // Branch watcher state
 let headWatcher: fs.FSWatcher | null = null;
 let watchedWorkspacePath: string | null = null;
-
-const ALL_TASK_STATUS_DIRS = ["doing", "review", "done", "backlog", "archive"];
 
 /**
  * After workspace activation, scan all task files for tasks that have an
@@ -27,8 +26,8 @@ const ALL_TASK_STATUS_DIRS = ["doing", "review", "done", "backlog", "archive"];
 async function reestablishWorktreeTaskWatchers(
   workspacePath: string,
 ): Promise<void> {
-  for (const dir of ALL_TASK_STATUS_DIRS) {
-    const dirPath = path.join(workspacePath, ".tasks", dir);
+  for (const dir of ALL_TASK_DIRS) {
+    const dirPath = path.join(workspacePath, TASKS_DIR, dir);
     let entries: string[];
     try {
       entries = await fs.promises.readdir(dirPath);
@@ -43,13 +42,13 @@ async function reestablishWorktreeTaskWatchers(
       const task = await parseTaskFile(filePath, "doing", workspacePath).catch(
         () => null,
       );
-      if (!task || !task.worktree || !task.id) continue;
+if (!task || !task.worktree || !task.id) continue;
 
-      // The worktree copy always lives at .tasks/doing/<filename> inside the worktree
+      // The worktree copy always lives at .grove/tasks/doing/ inside the worktree
       const worktreeTaskFilePath = path.join(
         workspacePath,
         task.worktree,
-        ".tasks",
+        TASKS_DIR,
         "doing",
         entry,
       );
@@ -204,7 +203,7 @@ export function registerWorkspaceHandlers(
           c.lastActiveWorkspace = selectedPath;
         });
 
-        // Initialize directories and start watchers for the new active workspace
+        // Run migration if needed, then ensure directories exist
         await initTaskDirs(selectedPath);
         startWatchers(selectedPath, mainWindow);
         startBranchWatcher(selectedPath, mainWindow);
@@ -235,6 +234,9 @@ export function registerWorkspaceHandlers(
           c.workspaces.push(entry);
           c.lastActiveWorkspace = wPath;
         });
+
+        // Run migration if needed, then ensure directories exist
+        await initTaskDirs(wPath);
 
         return { ok: true, data: entry };
       } catch (err) {
@@ -280,7 +282,7 @@ export function registerWorkspaceHandlers(
           c.lastActiveWorkspace = wPath;
         });
 
-        // Initialize task directories
+        // Run migration if needed, then ensure directories exist
         await initTaskDirs(wPath);
 
         // Start file watchers for the new active workspace
@@ -308,6 +310,9 @@ export function registerWorkspaceHandlers(
 
         // Start watchers for the restored active workspace on app launch
         if (activePath && fs.existsSync(activePath)) {
+          // Run migration if needed, then ensure directories exist
+          await initTaskDirs(activePath);
+
           startWatchers(activePath, mainWindow);
           startBranchWatcher(activePath, mainWindow);
           // Re-establish worktree task file sync watchers for any in-flight tasks

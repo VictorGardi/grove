@@ -59,7 +59,7 @@ export interface WindowState {
 
 // ── Phase 2: Tasks ───────────────────────────────────────────────
 
-/** Status columns — maps to directory names in .tasks/ */
+/** Status columns — maps to directory names in .grove/tasks/ */
 export type TaskStatus = "backlog" | "doing" | "review" | "done";
 
 /** Supported agents for in-app planning */

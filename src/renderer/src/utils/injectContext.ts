@@ -144,6 +144,7 @@ export async function injectExecutionContext(
     const writeResult = await window.api.taskterm.writeContext({
       sessionName,
       content: promptContent,
+      workspacePath: params.workspacePath,
     });
     if (!writeResult.ok || !writeResult.filePath) {
       console.error(

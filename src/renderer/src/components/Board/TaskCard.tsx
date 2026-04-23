@@ -103,7 +103,7 @@ export const TaskCard = memo(function TaskCard({
 
   const handleArchive = useCallback(() => {
     if (
-      window.confirm("Archive this task? It will be moved to .tasks/archive/")
+      window.confirm("Archive this task? It will be moved to .grove/tasks/archive/")
     ) {
       archiveTask(task.filePath);
     }

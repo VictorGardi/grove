@@ -456,6 +456,7 @@ export function TaskTerminal({
     const writeResult = await window.api.taskterm.writeContext({
       sessionName: sName,
       content: promptContent,
+      workspacePath,
     });
     if (!writeResult.ok || !writeResult.filePath) return;
 
@@ -745,6 +746,7 @@ export function TaskTerminal({
                 >
                   <option value="opencode">opencode</option>
                   <option value="copilot">copilot</option>
+                  <option value="claude">claude</option>
                 </select>
                 <select
                   value={selectedModel}

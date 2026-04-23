@@ -184,7 +184,7 @@ contextBridge.exposeInMainWorld("api", {
       ipcRenderer.invoke("taskterm:state", sessionName, agent),
     refresh: (sessionName: string) =>
       ipcRenderer.invoke("taskterm:refresh", sessionName),
-    writeContext: (params: { sessionName: string; content: string }) =>
+    writeContext: (params: { sessionName: string; content: string; workspacePath: string }) =>
       ipcRenderer.invoke("taskterm:writecontext", params),
     cleanContext: (sessionName: string) =>
       ipcRenderer.invoke("taskterm:cleancontext", sessionName),

@@ -38,18 +38,9 @@ import {
 } from "../../runtime/containerService";
 import * as state from "../../runtime/state";
 import type { ConfigManager } from "../config";
+import { CONTEXT_DIR } from "../paths";
 
-const GROVE_DIR = path.join(os.homedir(), ".grove");
 const wroteConfigFiles = new Map<string, string>();
-
-async function ensureGroveDir(): Promise<boolean> {
-  try {
-    await fs.promises.mkdir(GROVE_DIR, { recursive: true });
-    return true;
-  } catch {
-    return false;
-  }
-}
 
 // ── Session name helpers ──────────────────────────────────────────
 
@@ -570,16 +561,28 @@ export function registerTaskTerminalHandlers(
         sessionName: string;
         taskId?: string;
         killContainer?: boolean;
+        workspacePath?: string;
       },
     ) => {
       ptyManager.kill(params.ptyId);
       tmuxKillSession(params.sessionName);
       cleanupGroveConfig(wroteConfigFiles, params.sessionName);
-      const filePath = path.join(GROVE_DIR, `context-${params.sessionName}.md`);
-      try {
-        if (fs.existsSync(filePath)) fs.unlinkSync(filePath);
-      } catch {
-        // Best-effort cleanup
+
+      // Clean up context files from both old and new locations
+      const cleanupPaths = [
+        path.join(os.homedir(), ".grove", `context-${params.sessionName}.md`),
+      ];
+      if (params.workspacePath) {
+        cleanupPaths.push(
+          path.join(params.workspacePath, CONTEXT_DIR, `context-${params.sessionName}.md`),
+        );
+      }
+      for (const filePath of cleanupPaths) {
+        try {
+          if (fs.existsSync(filePath)) fs.unlinkSync(filePath);
+        } catch {
+          // Best-effort cleanup
+        }
       }
 
       if (params.killContainer && params.taskId) {
@@ -620,18 +623,15 @@ export function registerTaskTerminalHandlers(
    * Write the initial context/instructions for a session to a temp file.
    * Returns the absolute path so the renderer can inject a "read this file"
    * instruction into the agent's input.
+   * Writes to workspace-local .grove/context/ directory.
    */
   ipcMain.handle(
     "taskterm:writecontext",
-    async (_event, params: { sessionName: string; content: string }) => {
+    async (_event, params: { sessionName: string; content: string; workspacePath: string }) => {
       try {
-        if (!(await ensureGroveDir())) {
-          return { ok: false, error: "Failed to create grove directory" };
-        }
-        const filePath = path.join(
-          GROVE_DIR,
-          `context-${params.sessionName}.md`,
-        );
+        const contextDir = path.join(params.workspacePath, CONTEXT_DIR);
+        await fs.promises.mkdir(contextDir, { recursive: true });
+        const filePath = path.join(contextDir, `context-${params.sessionName}.md`);
         fs.writeFileSync(filePath, params.content, "utf-8");
         return { ok: true, filePath };
       } catch (err) {

@@ -8,9 +8,7 @@ import type {
   PlanAgent,
 } from "@shared/types";
 import { atomicWrite } from "./fileWriter";
-
-const STATUS_DIRS: TaskStatus[] = ["backlog", "doing", "review", "done"];
-const ALL_TASK_DIRS = ["backlog", "doing", "review", "done", "archive"];
+import { TASKS_DIR, STATUS_DIRS, ALL_TASK_DIRS } from "./paths";
 
 /**
  * Per-file write lock: chains write operations so they execute serially.
@@ -146,7 +144,7 @@ export async function parseTaskFile(
 
 export async function scanTasks(workspacePath: string): Promise<TaskInfo[]> {
   const tasks: TaskInfo[] = [];
-  const taskBase = path.join(workspacePath, ".tasks");
+  const taskBase = path.join(workspacePath, TASKS_DIR);
 
   for (const status of STATUS_DIRS) {
     const dirPath = path.join(taskBase, status);
@@ -167,7 +165,7 @@ export async function scanTasks(workspacePath: string): Promise<TaskInfo[]> {
 }
 
 export async function initTaskDirs(workspacePath: string): Promise<void> {
-  const taskBase = path.join(workspacePath, ".tasks");
+  const taskBase = path.join(workspacePath, TASKS_DIR);
   for (const dir of ALL_TASK_DIRS) {
     await fs.promises.mkdir(path.join(taskBase, dir), { recursive: true });
   }
@@ -180,7 +178,7 @@ export async function initTaskDirs(workspacePath: string): Promise<void> {
  * Uses a session-level counter to prevent duplicate IDs on rapid successive creates.
  */
 export async function nextTaskId(workspacePath: string): Promise<string> {
-  const taskBase = path.join(workspacePath, ".tasks");
+  const taskBase = path.join(workspacePath, TASKS_DIR);
   let maxId = 0;
 
   for (const dir of ALL_TASK_DIRS) {
@@ -243,7 +241,7 @@ function buildFrontmatter(fm: TaskFrontmatter): Record<string, unknown> {
 }
 
 /**
- * Create a new task file in .tasks/backlog/ with a generated ID.
+ * Create a new task file in .grove/tasks/backlog/ with a generated ID.
  * Returns the parsed TaskInfo for the created task.
  */
 export async function createTask(
@@ -270,7 +268,7 @@ export async function createTask(
   const body = `\n## Description\n\n\n## Definition of Done\n\n- [ ] Define acceptance criteria\n\n## Context for agent\n\n`;
 
   const content = matter.stringify(body, buildFrontmatter(frontmatter));
-  const filePath = path.join(workspacePath, ".tasks", "backlog", filename);
+  const filePath = path.join(workspacePath, TASKS_DIR, "backlog", filename);
   await initTaskDirs(workspacePath);
   await atomicWrite(filePath, content);
 
@@ -365,7 +363,7 @@ export function moveTask(
 
     const content = matter.stringify(parsed.content, parsed.data);
     const filename = path.basename(filePath);
-    const newPath = path.join(workspacePath, ".tasks", toStatus, filename);
+    const newPath = path.join(workspacePath, TASKS_DIR, toStatus, filename);
 
     // Ensure target directory exists
     await fs.promises.mkdir(path.dirname(newPath), { recursive: true });
@@ -392,7 +390,7 @@ export function moveTask(
 }
 
 /**
- * Archive a task — moves to .tasks/archive/, never hard-delete.
+ * Archive a task — moves to .grove/tasks/archive/, never hard-delete.
  */
 export async function archiveTask(
   workspacePath: string,
@@ -410,7 +408,7 @@ export async function archiveTask(
 
   const content = matter.stringify(parsed.content, parsed.data);
   const filename = path.basename(filePath);
-  const archivePath = path.join(workspacePath, ".tasks", "archive", filename);
+  const archivePath = path.join(workspacePath, TASKS_DIR, "archive", filename);
 
   await fs.promises.mkdir(path.dirname(archivePath), { recursive: true });
   await atomicWrite(archivePath, content);

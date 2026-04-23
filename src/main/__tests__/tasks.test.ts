@@ -35,7 +35,7 @@ describe("nextTaskId", () => {
 
   it("existing tasks with higher IDs are respected (if T-072 exists, next is T-073)", async () => {
     // Create a task file with ID T-072 in workspace 1
-    const tasksDir = path.join(tempDir1, ".tasks", "backlog");
+    const tasksDir = path.join(tempDir1, ".grove", "tasks", "backlog");
     fs.mkdirSync(tasksDir, { recursive: true });
     fs.writeFileSync(
       path.join(tasksDir, "T-072.md"),

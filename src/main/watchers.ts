@@ -1,6 +1,7 @@
 import chokidar from "chokidar";
 import * as path from "path";
 import type { BrowserWindow } from "electron";
+import { TASKS_DIR } from "./paths";
 
 let taskWatcher: chokidar.FSWatcher | null = null;
 let fileTreeWatcher: chokidar.FSWatcher | null = null;
@@ -15,7 +16,7 @@ export function startWatchers(
 
   // Task file watcher
   taskWatcher = chokidar.watch(
-    path.join(workspacePath, ".tasks", "**", "*.md"),
+    path.join(workspacePath, TASKS_DIR, "**", "*.md"),
     {
       ignoreInitial: true,
       ignored: /\.tmp$/,
@@ -36,8 +37,6 @@ export function startWatchers(
       "**/node_modules/**",
       "**/.git/**",
       "**/.worktrees/**",
-      "**/.tasks/**",
-      "**/.decisions/**",
       "**/.grove/**",
     ],
     depth: 20,

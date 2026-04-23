@@ -154,7 +154,7 @@ export function Board(): React.JSX.Element {
         <div className={styles.empty}>
           <div className={styles.emptyTitle}>No tasks yet</div>
           <div className={styles.emptyHint}>
-            Create a Markdown file in .tasks/backlog/ to get started
+            Create a Markdown file in .grove/tasks/backlog/ to get started
           </div>
           <button
             className={styles.createFirstTaskBtn}

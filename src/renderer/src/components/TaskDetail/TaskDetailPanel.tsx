@@ -473,7 +473,7 @@ export function TaskDetailPanel(): React.JSX.Element {
 
   function handleArchive(): void {
     if (
-      window.confirm("Archive this task? It will be moved to .tasks/archive/")
+      window.confirm("Archive this task? It will be moved to .grove/tasks/archive/")
     ) {
       archiveTask(task!.filePath);
     }

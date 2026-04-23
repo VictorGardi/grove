@@ -54,6 +54,16 @@ export function AgentModelForm({
   }, [planningModelsCacheEntry]);
 
   useEffect(() => {
+    setPlanningModels([]);
+    setPlanningModelsLoading(true);
+  }, [planningAgent]);
+
+  useEffect(() => {
+    setExecutionModels([]);
+    setExecutionModelsLoading(true);
+  }, [executionAgent]);
+
+  useEffect(() => {
     if (Array.isArray(executionModelsCacheEntry)) {
       setExecutionModels(executionModelsCacheEntry);
       setExecutionModelsLoading(false);

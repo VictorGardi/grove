@@ -34,12 +34,11 @@ import {
 } from "../../runtime/taskService";
 import { generateContextFile } from "../../runtime/contextGenerator";
 import { atomicWrite } from "../../runtime/fileWriter";
+import { TASKS_DIR, ALL_TASK_DIRS } from "../paths";
 
 // ── Worktree task file watchers ───────────────────────────────────────────────
 // Key: `${workspacePath}:${taskId}`
 const worktreeTaskWatchers = new Map<string, chokidar.FSWatcher>();
-
-const ALL_TASK_STATUS_DIRS = ["doing", "review", "done", "backlog", "archive"];
 
 /**
  * Scan all 5 task status directories to find the current root path for a
@@ -50,8 +49,8 @@ async function resolveRootTaskPath(
   workspacePath: string,
   filename: string,
 ): Promise<string | null> {
-  for (const dir of ALL_TASK_STATUS_DIRS) {
-    const candidate = path.join(workspacePath, ".tasks", dir, filename);
+  for (const dir of ALL_TASK_DIRS) {
+    const candidate = path.join(workspacePath, TASKS_DIR, dir, filename);
     try {
       await fs.promises.access(candidate);
       return candidate;
@@ -248,13 +247,13 @@ export function registerGitHandlers(): void {
 
       // Copy task file into worktree so agent can access it (main repo may have uncommitted tasks)
       const relativeTaskFilePath = path.join(
-        ".tasks",
+        TASKS_DIR,
         "doing",
         path.basename(taskFilePath),
       );
       const absoluteTaskDestPath = path.join(
         absoluteWorktreePath,
-        ".tasks",
+        TASKS_DIR,
         "doing",
       );
       const taskBasename = path.basename(taskFilePath);

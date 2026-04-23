@@ -184,6 +184,7 @@ export interface ElectronAPI {
     writeContext: (params: {
       sessionName: string;
       content: string;
+      workspacePath: string;
     }) => Promise<{ ok: boolean; filePath?: string; error?: string }>;
     cleanContext: (sessionName: string) => Promise<void>;
   };

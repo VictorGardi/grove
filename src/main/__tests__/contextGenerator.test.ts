@@ -29,7 +29,7 @@ function makeTask(overrides: Partial<TaskInfo> = {}): TaskInfo {
     description: "A task description",
     dodTotal: 0,
     dodDone: 0,
-    filePath: ".tasks/doing/T-001-test-task.md",
+    filePath: ".grove/tasks/doing/T-001-test-task.md",
     workspacePath: "/test/workspace",
     useWorktree: true,
     planSessionId: null,
@@ -145,7 +145,7 @@ describe("generateContextFile", () => {
 
   it("renders decision not-found note when decision file is missing", async () => {
     const task = makeTask({ decisions: ["D-999"] });
-    // workspacePath has no .decisions/ dir, so file lookup will fail
+    // workspacePath has no .grove/decisions/ dir, so file lookup will fail
     await generateContextFile(tmpDir, task, BODY_WITH_SECTIONS, tmpDir);
 
     const [, content] = vi.mocked(atomicWrite).mock.calls[0] as [

@@ -12,7 +12,7 @@ import { useAllTasksStore } from "./stores/useAllTasksStore";
 import { useFileStore } from "./stores/useFileStore";
 import { useNavStore } from "./stores/useNavStore";
 import { useWorktreeStore } from "./stores/useWorktreeStore";
-import { useTerminalStore } from "./stores/useTerminalStore";
+import { useTerminalStore, type TerminalTab } from "./stores/useTerminalStore";
 import { usePlanStore } from "./stores/usePlanStore";
 import { useKeyboardShortcuts } from "./hooks/useKeyboardShortcuts";
 import { ShortcutsModal } from "./components/shared/ShortcutsModal";
@@ -199,13 +199,36 @@ function AppContent(): React.JSX.Element {
   // this effect second in the same batch — meaning we can read the live Zustand state
   // that session restoration already populated and avoid creating a duplicate tab.
   // Gated on `fetched` so it never fires before the first data load completes.
+  // Also restores hidden tabs when the panel is re-opened.
   useEffect(() => {
     if (!terminalPanelOpen || !activeWorkspacePath || !fetched) return;
-    const liveTabs = useTerminalStore.getState().tabs;
-    const hasTabsForWorkspace = liveTabs.some(
+
+    const store = useTerminalStore.getState();
+    const hiddenTabs = store.hiddenTabs;
+
+    // Check for hidden tabs for this workspace - collect in insertion order
+    const hiddenTabsForWorkspace: TerminalTab[] = [];
+    hiddenTabs.forEach((tab) => {
+      if (tab.workspacePath === activeWorkspacePath) {
+        hiddenTabsForWorkspace.push(tab);
+      }
+    });
+
+    // Restore hidden tabs in original insertion order
+    for (const tab of hiddenTabsForWorkspace) {
+      useTerminalStore.getState().restoreTab(tab.id);
+    }
+
+    // Re-fetch state after restore - Zustand batches updates so store.tabs is stale
+    const currentTabs = useTerminalStore.getState().tabs;
+
+    // Check if any tabs exist for this workspace (including just-restored ones)
+    const hasTabsForWorkspace = currentTabs.some(
       (t) => t.workspacePath === activeWorkspacePath,
     );
-    if (!hasTabsForWorkspace) {
+
+    // Only create a new free tab if no live tabs AND no hidden tabs
+    if (!hasTabsForWorkspace && hiddenTabsForWorkspace.length === 0) {
       const id = `free-${Date.now()}`;
       window.api.pty.create(id, activeWorkspacePath).then(() => {
         useTerminalStore.getState().addTab({

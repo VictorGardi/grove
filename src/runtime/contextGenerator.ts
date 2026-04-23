@@ -4,6 +4,7 @@ import matter from "gray-matter";
 import { atomicWrite } from "./fileWriter";
 import { parseTaskBody } from "@shared/taskBodyParser";
 import type { TaskInfo } from "@shared/types";
+import { DECISIONS_DIR } from "../main/paths";
 
 export interface DecisionContent {
   id: string;
@@ -15,7 +16,7 @@ async function readDecisionContent(
   workspacePath: string,
   decisionId: string,
 ): Promise<DecisionContent> {
-  const decisionDir = path.join(workspacePath, ".decisions");
+  const decisionDir = path.join(workspacePath, DECISIONS_DIR);
   try {
     const entries = await fs.promises.readdir(decisionDir);
     const match = entries.find(
