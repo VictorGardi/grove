@@ -149,40 +149,4 @@ export function registerPlanHandlers(): void {
       }
     },
   );
-
-  ipcMain.handle(
-    "plan:tmux-capture-pane",
-    async (
-      _event,
-      input: { session: string },
-    ): Promise<IpcResult<{ content: string }>> => {
-      try {
-        if (!input.session) {
-          return { ok: false, error: "No session name provided" };
-        }
-        return new Promise((resolve) => {
-          const proc = spawn("tmux", [
-            "capture-pane",
-            "-pt",
-            input.session,
-            "-S",
-            "-",
-            "-e",
-          ]);
-          let stdout = "";
-          proc.stdout?.on("data", (data: Buffer) => {
-            stdout += data.toString("utf-8");
-          });
-          proc.on("close", () => {
-            resolve({ ok: true, data: { content: stdout } });
-          });
-          proc.on("error", () => {
-            resolve({ ok: false, error: "Failed to capture pane" });
-          });
-        });
-      } catch (err) {
-        return { ok: false, error: String(err) };
-      }
-    },
-  );
 }

@@ -188,12 +188,6 @@ export interface ElectronAPI {
     }) => Promise<{ ok: boolean; filePath?: string; error?: string }>;
     cleanContext: (sessionName: string) => Promise<void>;
   };
-  tmux: {
-    listGroveSessions: () => Promise<TmuxSessionInfo[]>;
-    killSession: (params: {
-      sessionName: string;
-    }) => Promise<{ ok: boolean; error?: string }>;
-  };
   plan: {
     listModels: (input: {
       agent: string;
@@ -207,9 +201,6 @@ export interface ElectronAPI {
       model: string | null;
       mode: string;
     }) => Promise<IpcResult<void>>;
-    captureTmuxPane: (input: {
-      session: string;
-    }) => Promise<IpcResult<{ content: string }>>;
   };
 }
 

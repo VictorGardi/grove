@@ -32,11 +32,6 @@ import type { PtyManager } from "../pty";
 import { buildEnvPath } from "../env";
 import { updateTask } from "../../runtime/taskService";
 import { writeOpencodeConfig, cleanupGroveConfig } from "../opencodeConfig";
-import {
-  getContainerService,
-  DevcontainerManager,
-} from "../../runtime/containerService";
-import * as state from "../../runtime/state";
 import type { ConfigManager } from "../config";
 import { CONTEXT_DIR } from "../paths";
 
@@ -178,26 +173,6 @@ function tmuxParseAgentState(sessionName: string, agent: string): AgentState {
 
 // ── IPC registration ─────────────────────────────────────────────
 
-function getWorkspaceContainerConfig(
-  configManager: ConfigManager | undefined,
-  workspacePath: string,
-): {
-  containerEnabled: boolean;
-  containerRuntime?: string;
-  containerDefaultImage?: string;
-} {
-  if (!configManager) {
-    return { containerEnabled: false };
-  }
-  const workspaces = configManager.get().workspaces;
-  const workspace = workspaces.find((w) => w.path === workspacePath);
-  return {
-    containerEnabled: workspace?.containerEnabled ?? false,
-    containerRuntime: workspace?.containerRuntime,
-    containerDefaultImage: workspace?.containerDefaultImage,
-  };
-}
-
 export function registerTaskTerminalHandlers(
   ptyManager: PtyManager,
   mainWindow: BrowserWindow,
@@ -246,136 +221,6 @@ export function registerTaskTerminalHandlers(
 
       const cols = params.cols ?? 220;
       const rows = params.rows ?? 50;
-
-      const wsConfig = getWorkspaceContainerConfig(
-        configManager,
-        workspacePath,
-      );
-      const containerEnabled = wsConfig.containerEnabled;
-
-      if (containerEnabled) {
-        const service = getContainerService({
-          enabled: true,
-          runtime:
-            (wsConfig.containerRuntime as "docker" | "podman") ?? "docker",
-          defaultImage: wsConfig.containerDefaultImage ?? "ubuntu:22.04",
-        });
-        const ok = await service.initialize();
-        if (!ok) {
-          return { ok: false, error: "Container runtime not available" };
-        }
-
-        const devcontainerManager = new DevcontainerManager();
-        const devcontainer =
-          await devcontainerManager.parseDevcontainer(workspacePath);
-        if (!devcontainer) {
-          return {
-            ok: false,
-            error: "Container mode requires .devcontainer/devcontainer.json",
-          };
-        }
-
-        const imageHash =
-          await devcontainerManager.computeImageHash(workspacePath);
-        const imageName = `grove-dev:${imageHash}`;
-
-        console.log(`[taskTerminal] Ensuring image: ${imageName}`);
-
-        const imageResult = await service.ensureImage(
-          workspacePath,
-          imageName,
-          devcontainer,
-        );
-        if (!imageResult.ok) {
-          return { ok: false, error: imageResult.error };
-        }
-
-        console.log(
-          `[taskTerminal] Getting/starting container for task ${taskId}`,
-        );
-
-        const containerResult = await service.getOrStartContainer(
-          taskId,
-          workspacePath,
-          {
-            image: imageName,
-            devcontainerConfig: devcontainer,
-            additionalMounts: [
-              `${os.homedir()}/.config:/home/dev/.config:ro`,
-              `${os.homedir()}/.local/share/opencode:/home/dev/.local/share/opencode:ro`,
-            ],
-          },
-        );
-
-        if (!containerResult.ok) {
-          return { ok: false, error: containerResult.error };
-        }
-
-        console.log(
-          `[taskTerminal] Container ready (${containerResult.containerId}), starting tmux session ${sessionName}`,
-        );
-
-        const tmuxResult = await service.runTmuxCommand(
-          containerResult.containerId,
-          sessionName,
-          agent,
-          "/workspace",
-          cols,
-          rows,
-        );
-
-        if (tmuxResult.exitCode !== 0) {
-          return {
-            ok: false,
-            error: `Failed to start tmux: ${tmuxResult.stderr}`,
-          };
-        }
-
-        state.saveContainerSession({
-          taskId,
-          containerId: containerResult.containerId,
-          containerName: containerResult.containerName,
-          workspacePath,
-          mode: "task-bound",
-          startedAt: Date.now(),
-          image: imageName,
-        });
-
-        ptyManager.createWithCommand(
-          ptyId,
-          "docker",
-          [
-            "exec",
-            "-it",
-            containerResult.containerName,
-            "tmux",
-            "attach-session",
-            "-t",
-            sessionName,
-          ],
-          cwd,
-          { cols, rows, env: { TERM: "xterm-256color" } },
-        );
-
-        try {
-          const frontmatterUpdate =
-            sessionMode === "plan"
-              ? { terminalPlanSession: sessionName }
-              : { terminalExecSession: sessionName };
-          await updateTask(workspacePath, taskFilePath, frontmatterUpdate);
-        } catch (err) {
-          console.warn(
-            "[taskterm:create] Failed to persist session name:",
-            err,
-          );
-        }
-
-        return {
-          ok: true,
-          sessionName,
-          containerName: containerResult.containerName,
-        };
-      }
 
       // Kill any stale session
       if (tmuxSessionExists(sessionName)) {

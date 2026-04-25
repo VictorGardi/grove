@@ -9,8 +9,6 @@ import { registerGitHandlers } from "./git";
 import { registerPtyHandlers } from "./pty";
 import { registerPlanHandlers } from "./plan";
 import { registerTaskTerminalHandlers } from "./taskTerminal";
-import { registerTmuxMonitorHandlers } from "./tmuxMonitor";
-import { registerContainerHandlers } from "./container";
 
 let ptyManager: PtyManager | null = null;
 
@@ -29,10 +27,6 @@ export function registerIpcHandlers(
   registerPlanHandlers();
 
   registerTaskTerminalHandlers(ptyManager, mainWindow, configManager);
-
-  registerTmuxMonitorHandlers(configManager);
-
-  registerContainerHandlers();
 
   ipcMain.handle("app:getPlatform", () => process.platform);
 

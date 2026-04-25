@@ -199,11 +199,6 @@ contextBridge.exposeInMainWorld("api", {
     setWindowOpacity: (opacity: number) =>
       ipcRenderer.invoke("app:setWindowOpacity", opacity),
   },
-  tmux: {
-    listGroveSessions: () => ipcRenderer.invoke("tmux:listGroveSessions"),
-    killSession: (params: { sessionName: string }) =>
-      ipcRenderer.invoke("tmux:killSession", params),
-  },
   plan: {
     listModels: (input: { agent: string; workspacePath: string }) =>
       ipcRenderer.invoke("plan:listModels", input),
@@ -216,8 +211,5 @@ contextBridge.exposeInMainWorld("api", {
       model: string | null;
       mode: string;
     }) => ipcRenderer.invoke("plan:saveSession", input),
-
-    captureTmuxPane: (input: { session: string }) =>
-      ipcRenderer.invoke("plan:tmux-capture-pane", input),
   },
 });

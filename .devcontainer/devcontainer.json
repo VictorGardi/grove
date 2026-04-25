@@ -1,6 +1,0 @@
-{
-  "name": "grove-dev",
-  "build": {
-    "dockerfile": "Dockerfile"
-  }
-}

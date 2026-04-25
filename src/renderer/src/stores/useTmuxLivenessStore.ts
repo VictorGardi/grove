@@ -1,17 +1,15 @@
 /**
  * Shared per-task, per-mode tmux liveness and agent state store.
  *
- * Replaces the two per-card setInterval timers that previously lived inside
- * TaskCard.tsx. A single polling loop (driven by useWorkspaceStatus or a
- * dedicated hook) writes into this store; TaskCard reads from it reactively
- * with fine-grained selectors.
+ * Keeps track of interactive terminal session liveness for task cards
+ * and terminal indicators.
  *
  * Entry shape:
- *   key  = `${mode}:${taskId}`  e.g. "execute:T-42"
+ *   key  = `${workspacePath}:${mode}:${taskId}`  e.g. "/path:execute:T-42"
  *   value = { alive: boolean; checkedAt: number; state?: AgentState }
  *
  * TTL: entries older than LIVENESS_TTL_MS are considered stale and will be
- * re-checked by the next polling cycle (see useWorkspaceStatus.ts).
+ * re-checked by the polling cycle (see useWorkspaceStatus.ts).
  */
 
 import { create } from "zustand";
@@ -32,7 +30,7 @@ export interface LivenessEntry {
 }
 
 interface TmuxLivenessState {
-  /** Map of `${mode}:${taskId}` → liveness entry */
+  /** Map of `${workspacePath}:${mode}:${taskId}` → liveness entry */
   liveness: Record<string, LivenessEntry>;
 
   /** Write a liveness result for a given task+mode */

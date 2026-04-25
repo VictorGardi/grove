@@ -7,8 +7,6 @@ import { registerIpcHandlers, killAllPtys } from "./ipc/index";
 import { stopBranchWatcher } from "./ipc/workspace";
 import { stopWatchers } from "./watchers";
 import { closeAllWorktreeTaskWatchers } from "./ipc/git";
-import { initializeState } from "../runtime/state";
-import { getContainerService } from "../runtime/containerService";
 
 let mainWindow: BrowserWindow | null = null;
 let configManager: ConfigManager | null = null;
@@ -27,7 +25,6 @@ if (!gotTheLock) {
   });
 
   function createWindow(): void {
-    initializeState();
     configManager = new ConfigManager();
     const windowStateKeeper = createWindowStateKeeper();
 
@@ -108,13 +105,6 @@ if (!gotTheLock) {
     stopWatchers();
     closeAllWorktreeTaskWatchers();
     killAllPtys();
-
-    try {
-      const service = getContainerService();
-      await service.cleanupAll();
-    } catch (err) {
-      console.warn("[main] Failed to cleanup containers:", err);
-    }
 
     if (configManager) {
       configManager.flushSync();
