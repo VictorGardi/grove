@@ -57,7 +57,6 @@ export function TaskListInSidebar(): React.JSX.Element {
       agent: task.agent,
       worktree: task.worktree,
       branch: task.branch,
-      tags: task.tags,
       decisions: task.decisions,
       description: task.description,
       dodTotal: task.dodTotal,

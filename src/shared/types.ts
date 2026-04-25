@@ -77,7 +77,6 @@ export interface TaskInfo {
   worktree: string | null;
   branch: string | null;
   created: string | null;
-  tags: string[];
   decisions: string[];
   description: string;
   dodTotal: number;
@@ -153,7 +152,6 @@ export interface TaskFrontmatter {
   worktree: string | null;
   branch: string | null;
   created: string | null;
-  tags: string[];
   decisions: string[];
   /** Only persisted when true; omitted (default false) otherwise */
   useWorktree?: boolean;

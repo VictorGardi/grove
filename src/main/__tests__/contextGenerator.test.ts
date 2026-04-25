@@ -24,7 +24,6 @@ function makeTask(overrides: Partial<TaskInfo> = {}): TaskInfo {
     worktree: ".worktrees/T-001",
     branch: "feat/t-001-test-task",
     created: "2026-04-03",
-    tags: [],
     decisions: [],
     description: "A task description",
     dodTotal: 0,

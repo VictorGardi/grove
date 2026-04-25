@@ -50,7 +50,7 @@ export function Board(): React.JSX.Element {
   const fuse = useMemo(
     () =>
       new Fuse(tasks, {
-        keys: ["title", "description", "tags", "id"],
+        keys: ["title", "description", "id"],
         threshold: 0.35,
         includeScore: true,
       }),

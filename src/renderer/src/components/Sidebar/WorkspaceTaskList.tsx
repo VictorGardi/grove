@@ -102,7 +102,6 @@ export function WorkspaceTaskList({
       agent: task.agent,
       worktree: task.worktree,
       branch: task.branch,
-      tags: task.tags,
       decisions: task.decisions,
       description: task.description,
       dodTotal: task.dodTotal,

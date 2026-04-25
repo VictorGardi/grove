@@ -128,12 +128,6 @@
   border-color: var(--accent);
 }
 
-.tagsInline {
-  flex: 1;
-  min-width: 120px;
-  max-width: 300px;
-}
-
 .dirtyIndicator {
   font-family: var(--font-mono);
   font-size: 10px;

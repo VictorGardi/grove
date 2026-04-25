@@ -60,22 +60,6 @@
   overflow: hidden;
 }
 
-.tags {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 4px;
-  margin-top: 8px;
-}
-
-.tag {
-  border: 1px solid var(--border);
-  color: var(--text-lo);
-  font-family: var(--font-mono);
-  font-size: 10px;
-  border-radius: var(--radius-sm);
-  padding: 1px 6px;
-}
-
 .branchRow {
   display: flex;
   align-items: center;

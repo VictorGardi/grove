@@ -11,7 +11,7 @@ import {
 } from "../../actions/executionActions";
 import { InlineEdit } from "../shared/InlineEdit";
 import { formatTimestamp } from "../../utils/date";
-import { TagInput } from "../shared/TagInput";
+
 import { ChangesTab } from "./ChangesTab";
 import { TaskTerminal } from "./TaskTerminal";
 import type { TaskInfo, TaskStatus } from "@shared/types";
@@ -407,10 +407,6 @@ export function TaskDetailPanel(): React.JSX.Element {
     updateTask(task!.filePath, { title });
   }
 
-  function handleTagsChange(tags: string[]): void {
-    updateTask(task!.filePath, { tags });
-  }
-
   // ── Scroll sync ───────────────────────────────────────────────
 
   function handleEditorScroll(): void {
@@ -569,14 +565,7 @@ export function TaskDetailPanel(): React.JSX.Element {
             <option value="done">Done</option>
           </select>
 
-          {/* Tags */}
-          <div className={styles.tagsInline}>
-            <TagInput
-              tags={task.tags || []}
-              onChange={handleTagsChange}
-              placeholder="Add tag..."
-            />
-          </div>
+          
 
           {/* Worktree toggle — backlog and doing */}
           {(task.status === "backlog" || task.status === "doing") && (

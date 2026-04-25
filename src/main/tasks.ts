@@ -87,7 +87,6 @@ export async function parseTaskFile(
           : data.created instanceof Date
             ? data.created.toISOString()
             : null,
-      tags: Array.isArray(data.tags) ? data.tags.map(String) : [],
       decisions: Array.isArray(data.decisions)
         ? data.decisions.map(String)
         : [],
@@ -218,7 +217,6 @@ function buildFrontmatter(fm: TaskFrontmatter): Record<string, unknown> {
   if (fm.worktree) obj.worktree = fm.worktree;
   if (fm.branch) obj.branch = fm.branch;
   if (fm.created) obj.created = fm.created;
-  if (fm.tags.length > 0) obj.tags = fm.tags;
   if (fm.decisions.length > 0) obj.decisions = fm.decisions;
   // Only persist useWorktree when explicitly true (default is false)
   if (fm.useWorktree === true) obj.useWorktree = true;
@@ -260,7 +258,6 @@ export async function createTask(
     worktree: null,
     branch: null,
     created,
-    tags: [],
     decisions: [],
     useWorktree: false,
   };

@@ -249,17 +249,6 @@ export const TaskCard = memo(function TaskCard({
       {task.description && (
         <div className={styles.description}>{task.description}</div>
       )}
-
-      {/* Row 4: Tag pills */}
-      {task.tags.length > 0 && (
-        <div className={styles.tags}>
-          {task.tags.map((tag) => (
-            <span key={tag} className={styles.tag}>
-              {tag}
-            </span>
-          ))}
-        </div>
-      )}
       {contextMenu && (
         <ContextMenu
           x={contextMenu.x}
