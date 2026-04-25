@@ -47,8 +47,12 @@ export async function startTaskExecution(
   task: TaskInfo,
   config: LaunchConfig,
 ): Promise<void> {
-  const wp = useWorkspaceStore.getState().activeWorkspacePath;
-  if (!wp) return;
+  const wp = task.workspacePath;
+  if (!wp) {
+    console.error("startTaskExecution: task.workspacePath is missing", task.id);
+    showToast("Cannot start task: workspace path unknown", "error");
+    return;
+  }
 
   await updateTask(task.filePath, {
     execSessionAgent: config.agent,
@@ -192,8 +196,12 @@ export async function startTaskExecution(
 }
 
 export async function showLaunchModalAndExecute(task: TaskInfo): Promise<void> {
-  const wp = useWorkspaceStore.getState().activeWorkspacePath;
-  if (!wp) return;
+  const wp = task.workspacePath;
+  if (!wp) {
+    console.error("showLaunchModalAndExecute: task.workspacePath is missing", task.id);
+    showToast("Cannot start task: workspace path unknown", "error");
+    return;
+  }
 
   if (task.terminalExecSession) return;
 
@@ -206,8 +214,12 @@ export async function showLaunchModalAndExecute(task: TaskInfo): Promise<void> {
 }
 
 export async function completeTask(task: TaskInfo): Promise<void> {
-  const wp = useWorkspaceStore.getState().activeWorkspacePath;
-  if (!wp) throw new Error("No active workspace");
+  const wp = task.workspacePath;
+  if (!wp) {
+    console.error("completeTask: task.workspacePath is missing", task.id);
+    showToast("Cannot complete task: workspace path unknown", "error");
+    throw new Error("No workspace path");
+  }
 
   if (task.worktree) {
     const confirmed = await useDialogStore.getState().show({

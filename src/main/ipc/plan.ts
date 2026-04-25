@@ -23,19 +23,60 @@ const CLAUDE_MODELS = [
   "claude-haiku-4-5",
 ];
 
+/**
+ * Spawn `opencode models` and parse the output.
+ *
+ * Expected output format (one model ID per line, or space-separated):
+ *   anthropic/claude-3-5-sonnet-latest
+ *   openai/gpt-4o
+ *   google/gemini-2.0-flash
+ *
+ * The regex extracts `provider/model` tokens — any `word/word` pattern where
+ * word characters include letters, digits, underscores, hyphens, and dots
+ * (for version numbers like `claude-3-5-sonnet-20241022`).
+ *
+ * Resolves with `[]` after `OPENCODE_MODELS_TIMEOUT_MS` if the subprocess has
+ * not closed, and kills it to prevent zombie processes.
+ */
+const OPENCODE_MODELS_TIMEOUT_MS = 15_000;
+
 function spawnOpencodeModels(workspacePath: string): Promise<string[]> {
   return new Promise((resolve) => {
+    let settled = false;
+
     const proc = spawn("opencode", ["models"], {
       cwd: workspacePath,
       stdio: ["ignore", "pipe", "pipe"],
       env: { ...process.env, PATH: buildEnvPath() },
     });
+
+    const timer = setTimeout(() => {
+      if (settled) return;
+      settled = true;
+      try {
+        proc.kill();
+      } catch {
+        // ignore kill errors
+      }
+      resolve([]);
+    }, OPENCODE_MODELS_TIMEOUT_MS);
+
     let stdout = "";
     proc.stdout?.on("data", (chunk: Buffer) => {
       stdout += chunk.toString();
     });
-    proc.on("error", () => resolve([]));
+
+    proc.on("error", () => {
+      if (settled) return;
+      settled = true;
+      clearTimeout(timer);
+      resolve([]);
+    });
+
     proc.on("close", () => {
+      if (settled) return;
+      settled = true;
+      clearTimeout(timer);
       const modelRe = /\b([a-zA-Z0-9_-]+\/[a-zA-Z0-9._-]+)\b/g;
       const seen = new Set<string>();
       const models: string[] = [];

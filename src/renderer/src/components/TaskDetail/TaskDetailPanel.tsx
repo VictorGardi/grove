@@ -204,7 +204,7 @@ export function TaskDetailPanel(): React.JSX.Element {
   const clearSelectedTask = useDataStore((s) => s.clearSelectedTask);
   const setActiveView = useNavStore((s) => s.setActiveView);
   const workspaces = useWorkspaceStore((s) => s.workspaces);
-  const workspacePath = useWorkspaceStore((s) => s.activeWorkspacePath);
+  const workspacePath = task?.workspacePath ?? useWorkspaceStore((s) => s.activeWorkspacePath);
   const workspaceBoardStates = useWorkspaceStore((s) => s.workspaceBoardStates);
   const updateBoardTab = useWorkspaceStore((s) => s.updateBoardTab);
   const workspaceDefaults =

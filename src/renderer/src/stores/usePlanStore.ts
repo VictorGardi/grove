@@ -65,6 +65,12 @@ interface PlanState {
    * - Otherwise fires one IPC call and stores the result.
    */
   ensureModels: (workspacePath: string, agent: PlanAgent) => Promise<void>;
+
+  /**
+   * Clear the cache entry for `(workspacePath, agent)` so the next
+   * `ensureModels` call triggers a fresh IPC fetch.
+   */
+  clearModelsCache: (workspacePath: string, agent: PlanAgent) => void;
 }
 
 function nextId(): string {
@@ -535,5 +541,14 @@ export const usePlanStore = create<PlanState>()((set, get) => ({
         modelsCache: { ...s.modelsCache, [cacheKey]: [] },
       }));
     }
+  },
+
+  clearModelsCache: (workspacePath, agent) => {
+    const cacheKey = `${workspacePath}:${agent}`;
+    set((s) => {
+      const next = { ...s.modelsCache };
+      delete next[cacheKey];
+      return { modelsCache: next };
+    });
   },
 }));

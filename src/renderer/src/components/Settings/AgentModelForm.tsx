@@ -1,4 +1,4 @@
-import { useState, useEffect } from "react";
+import { useState, useEffect, useCallback } from "react";
 import { usePlanStore } from "../../stores/usePlanStore";
 import { useWorkspaceStore } from "../../stores/useWorkspaceStore";
 import type { PlanAgent } from "@shared/types";
@@ -18,18 +18,26 @@ export function AgentModelForm({
   const [executionAgent, setExecutionAgent] = useState<PlanAgent>("opencode");
   const [executionModel, setExecutionModel] = useState<string>("");
 
-  const [planningModels, setPlanningModels] = useState<string[]>([]);
-  const [executionModels, setExecutionModels] = useState<string[]>([]);
-  const [planningModelsLoading, setPlanningModelsLoading] = useState(false);
-  const [executionModelsLoading, setExecutionModelsLoading] = useState(false);
-
   const ensureModels = usePlanStore((s) => s.ensureModels);
+  const clearModelsCache = usePlanStore((s) => s.clearModelsCache);
   const planningModelsCacheEntry = usePlanStore(
     (s) => s.modelsCache[`${workspacePath}:${planningAgent}`],
   );
   const executionModelsCacheEntry = usePlanStore(
     (s) => s.modelsCache[`${workspacePath}:${executionAgent}`],
   );
+
+  // Derive loading state and model list directly from cache — no redundant
+  // local state that can race with cache updates.
+  // undefined = not yet fetched (treat as loading); null = in-flight; array = done
+  const planningModelsLoading = !Array.isArray(planningModelsCacheEntry);
+  const planningModels = Array.isArray(planningModelsCacheEntry)
+    ? planningModelsCacheEntry
+    : [];
+  const executionModelsLoading = !Array.isArray(executionModelsCacheEntry);
+  const executionModels = Array.isArray(executionModelsCacheEntry)
+    ? executionModelsCacheEntry
+    : [];
 
   const fetchDefaults = useWorkspaceStore((s) => s.fetchDefaults);
   const updateDefaults = useWorkspaceStore((s) => s.updateDefaults);
@@ -45,40 +53,17 @@ export function AgentModelForm({
   }, [workspacePath, planningAgent, executionAgent, ensureModels]);
 
   useEffect(() => {
-    if (Array.isArray(planningModelsCacheEntry)) {
-      setPlanningModels(planningModelsCacheEntry);
-      setPlanningModelsLoading(false);
-    } else if (planningModelsCacheEntry === null) {
-      setPlanningModelsLoading(true);
-    }
-  }, [planningModelsCacheEntry]);
-
-  useEffect(() => {
-    setPlanningModels([]);
-    setPlanningModelsLoading(true);
-  }, [planningAgent]);
-
-  useEffect(() => {
-    setExecutionModels([]);
-    setExecutionModelsLoading(true);
-  }, [executionAgent]);
-
-  useEffect(() => {
-    if (Array.isArray(executionModelsCacheEntry)) {
-      setExecutionModels(executionModelsCacheEntry);
-      setExecutionModelsLoading(false);
-    } else if (executionModelsCacheEntry === null) {
-      setExecutionModelsLoading(true);
-    }
-  }, [executionModelsCacheEntry]);
-
-  useEffect(() => {
     if (!workspacePath) {
       setInitialized(false);
       return;
     }
 
-    fetchDefaults(workspacePath).then(() => setInitialized(true));
+    // Reset so the defaults effect re-runs with fresh data when workspacePath changes.
+    setInitialized(false);
+    fetchDefaults(workspacePath).then(
+      () => setInitialized(true),
+      () => setInitialized(true), // don't leave the form permanently non-initialized on error
+    );
   }, [workspacePath, fetchDefaults]);
 
   useEffect(() => {
@@ -94,6 +79,16 @@ export function AgentModelForm({
     setExecutionModel(defaults?.defaultExecutionModel ?? "");
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [workspacePath, initialized]);
+
+  const handleRefreshModels = useCallback(
+    (type: "planning" | "execution") => {
+      if (!workspacePath) return;
+      const agent = type === "planning" ? planningAgent : executionAgent;
+      clearModelsCache(workspacePath, agent);
+      void ensureModels(workspacePath, agent);
+    },
+    [workspacePath, planningAgent, executionAgent, clearModelsCache, ensureModels],
+  );
 
   const handleAgentChange = async (
     type: "planning" | "execution",
@@ -189,6 +184,14 @@ export function AgentModelForm({
               </option>
             ))}
           </select>
+          <button
+            className={styles.resetBtn}
+            onClick={() => handleRefreshModels("planning")}
+            disabled={disabled || planningModelsLoading}
+            title="Refresh model list"
+          >
+            Refresh
+          </button>
         </div>
       </div>
 
@@ -231,6 +234,14 @@ export function AgentModelForm({
               </option>
             ))}
           </select>
+          <button
+            className={styles.resetBtn}
+            onClick={() => handleRefreshModels("execution")}
+            disabled={disabled || executionModelsLoading}
+            title="Refresh model list"
+          >
+            Refresh
+          </button>
         </div>
       </div>
     </>
