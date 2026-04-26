@@ -448,7 +448,17 @@ export function TaskDetailPanel(): React.JSX.Element {
       if (!task || !workspacePath) return;
 
       if (newStatus === "doing" && task.status !== "doing") {
-        if (task.terminalExecSession) return;
+        if (task.terminalExecSession) {
+          const alive = await window.api.taskterm.isAlive(task.terminalExecSession);
+          if (alive) {
+            await moveTask(task.filePath, "doing");
+            return;
+          }
+          await updateTask(task.filePath, {
+            terminalExecSession: null,
+            terminalExecContextSent: false,
+          });
+        }
         void showLaunchModalAndExecute(task);
       } else if (newStatus === "done") {
         try {
@@ -691,7 +701,7 @@ export function TaskDetailPanel(): React.JSX.Element {
             }
           >
             <TaskTerminal
-              key={task.id}
+              key={`${task.id}-${sessionMode}`}
               task={task}
               visible={activeTab === "agent"}
               workspacePath={workspacePath ?? ""}

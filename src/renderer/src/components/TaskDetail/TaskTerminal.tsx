@@ -394,6 +394,12 @@ export function TaskTerminal({
     term.onData((data: string) => {
       window.api.pty.write(ptyId, data);
     });
+
+    return () => {
+      termRef.current?.dispose();
+      termRef.current = null;
+      fitAddonRef.current = null;
+    };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
@@ -563,6 +569,8 @@ export function TaskTerminal({
   async function readFreshFrontmatter(taskFilePath: string): Promise<{
     terminalExecContextSent: boolean | null;
     terminalExecSession: string | null;
+    terminalPlanContextSent: boolean | null;
+    terminalPlanSession: string | null;
   } | null> {
     try {
       const rawResult = await window.api.tasks.readRaw(
@@ -576,21 +584,34 @@ export function TaskTerminal({
       if (!match) return null;
 
       const fm = match[1];
-      const contextSentMatch = fm.match(
+      const execContextSentMatch = fm.match(
         /terminalExecContextSent:\s*(["']?)(true|false)\1(?:\s*(?:#.*)?)$/im,
       );
-      const sessionMatch = fm.match(
+      const execSessionMatch = fm.match(
         /terminalExecSession:\s*(["']?)(.+?)\1(?:\s*(?:#.*)?)$/m,
+      );
+      const planContextSentMatch = fm.match(
+        /terminalPlanContextSent:\s*(["']?)(true|false)\1(?:\s*(?:#.*)?)$/im,
+      );
+      const planSessionMatch = fm.match(
+        /terminalPlanSession:\s*(["']?)(.+?)\1(?:\s*(?:#.*)?)$/m,
       );
 
       return {
         terminalExecContextSent:
-          contextSentMatch?.[2]?.toLowerCase() === "true"
+          execContextSentMatch?.[2]?.toLowerCase() === "true"
             ? true
-            : contextSentMatch?.[2]?.toLowerCase() === "false"
+            : execContextSentMatch?.[2]?.toLowerCase() === "false"
               ? false
               : null,
-        terminalExecSession: sessionMatch?.[2]?.trim() ?? null,
+        terminalExecSession: execSessionMatch?.[2]?.trim() ?? null,
+        terminalPlanContextSent:
+          planContextSentMatch?.[2]?.toLowerCase() === "true"
+            ? true
+            : planContextSentMatch?.[2]?.toLowerCase() === "false"
+              ? false
+              : null,
+        terminalPlanSession: planSessionMatch?.[2]?.trim() ?? null,
       };
     } catch {
       return null;
@@ -634,7 +655,10 @@ export function TaskTerminal({
           return;
         }
 
-        const storedSession = fresh.terminalExecSession;
+        const storedSession =
+          sessionMode === "exec"
+            ? fresh.terminalExecSession
+            : fresh.terminalPlanSession;
         let sessionToReconnect = existing;
         if (storedSession) {
           const isStoredSessionAlive =
@@ -644,7 +668,10 @@ export function TaskTerminal({
           }
         }
 
-        contextSentRef.current = fresh.terminalExecContextSent === true;
+        contextSentRef.current =
+          sessionMode === "exec"
+            ? fresh.terminalExecContextSent === true
+            : fresh.terminalPlanContextSent === true;
         reconnectSession(sessionToReconnect);
       })();
     } else if (sessionMode === "exec") {

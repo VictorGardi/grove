@@ -12,7 +12,7 @@ import {
 import { useDataStore } from "../../stores/useDataStore";
 import { useBoardStore } from "../../stores/useBoardStore";
 import type { TaskInfo, TaskStatus } from "@shared/types";
-import { createTask, moveTask } from "../../actions/taskActions";
+import { createTask, moveTask, updateTask } from "../../actions/taskActions";
 import {
   showLaunchModalAndExecute,
   completeTask,
@@ -121,7 +121,17 @@ export function Board(): React.JSX.Element {
       if (task.status === toStatus) return;
 
       if (toStatus === "doing") {
-        if (task.terminalExecSession) return;
+        if (task.terminalExecSession) {
+          const alive = await window.api.taskterm.isAlive(task.terminalExecSession);
+          if (alive) {
+            await moveTask(task.filePath as string, "doing");
+            return;
+          }
+          await updateTask(task.filePath as string, {
+            terminalExecSession: null,
+            terminalExecContextSent: false,
+          });
+        }
         void showLaunchModalAndExecute(task);
         return;
       }

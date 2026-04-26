@@ -172,6 +172,7 @@ export async function startTaskExecution(
 
   const sessionName = createResult.sessionName;
   if (sessionName) {
+    await updateTask(latestTask.filePath, { terminalExecSession: sessionName });
     const workspaceDefaults =
       useWorkspaceStore.getState().workspaceDefaults[wp] ?? {};
     await injectExecutionContext({
@@ -203,7 +204,17 @@ export async function showLaunchModalAndExecute(task: TaskInfo): Promise<void> {
     return;
   }
 
-  if (task.terminalExecSession) return;
+  if (task.terminalExecSession) {
+    const alive = await window.api.taskterm.isAlive(task.terminalExecSession);
+    if (alive) {
+      showToast("Existing session reattached", "success");
+      return;
+    }
+    await updateTask(task.filePath, {
+      terminalExecSession: null,
+      terminalExecContextSent: false,
+    });
+  }
 
   await useWorkspaceStore.getState().fetchDefaults(wp);
 
