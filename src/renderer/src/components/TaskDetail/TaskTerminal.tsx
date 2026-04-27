@@ -9,6 +9,7 @@ import { useThemeStore } from "../../stores/useThemeStore";
 import { usePlanStore } from "../../stores/usePlanStore";
 import { useFileStore } from "../../stores/useFileStore";
 import { useTmuxLivenessStore } from "../../stores/useTmuxLivenessStore";
+import { injectExecutionContext } from "../../utils/injectContext";
 import styles from "./TaskTerminal.module.css";
 
 interface TaskTerminalProps {
@@ -405,55 +406,30 @@ export function TaskTerminal({
   // booting), then:
   //   1. Read the task file to get the full content
   //   2. Build the appropriate prompt (plan vs execution) with workspace personas
-  //   3. Write it to a temp file
-  //   4. Inject a single-line "read this file" instruction + \r (auto-submit,
-  //      since the user already confirmed intent: Send click for plan, drag for exec)
+  //   3. Inject the preamble + task content directly into the PTY
 
-  async function sendInitialContext(
+async function sendInitialContext(
     sName: string,
-    userText: string,
-): Promise<void> {
-    // Prevent double-injection (React strict mode, rapid re-renders, etc.)
+    _userText: string,
+  ): Promise<void> {
     if (contextSentRef.current) return;
     contextSentRef.current = true;
 
-    // Poll until idle (agent finished booting), max 30 seconds.
-    // Poll every 500ms — faster than the 3s idle threshold so we catch the
-    // first quiet window quickly.
-    const maxAttempts = 60;
-    for (let i = 0; i < maxAttempts; i++) {
-      await new Promise<void>((r) => setTimeout(r, 500));
-      const idleResult = await window.api.pty.isIdle(ptyId);
-      if (idleResult.ok && idleResult.data === true) break;
-      if (i === maxAttempts - 1) return;
-    }
+    const rawResult = await window.api.tasks.readRaw(workspacePath, task.filePath);
+    const taskContent =
+      rawResult.ok && rawResult.data
+        ? rawResult.data
+        : `# ${task.title}\n\n${task.description ?? ""}`;
 
-    const stage = sessionMode === "exec" ? "execution" : "planning";
-    const instructionsFile = sessionMode === "exec"
-      ? ".grove/instructions/executor.md"
-      : ".grove/instructions/planner.md";
-
-    const preamble = `Task ID: ${task.id}
-Stage: ${stage}
-Task file: ${task.filePath}
-Instructions: ${instructionsFile}`;
-
-    const writeResult = await window.api.taskterm.writeContext({
+    await injectExecutionContext({
       sessionName: sName,
-      content: preamble,
-      workspacePath,
-    });
-    if (!writeResult.ok || !writeResult.filePath) return;
-
-    // Write the instruction first, then submit after a short delay.
-    // Sending text + \r as a single write can race against the TUI's input
-    // handler — splitting ensures the text is fully rendered before Enter fires.
-    window.api.pty.write(
       ptyId,
-      `Please read ${writeResult.filePath} for your task context and instructions.`,
-    );
-    await new Promise<void>((r) => setTimeout(r, 300));
-    window.api.pty.write(ptyId, "\r");
+      task,
+      workspacePath,
+      taskContent,
+      sessionMode,
+      agent: selectedAgent as "opencode" | "copilot" | "claude",
+    });
   }
 
   async function startNewSession(userText = ""): Promise<void> {

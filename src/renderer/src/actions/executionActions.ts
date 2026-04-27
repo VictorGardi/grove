@@ -1,7 +1,6 @@
 import { useWorkspaceStore } from "../stores/useWorkspaceStore";
 import { useDataStore } from "../stores/useDataStore";
 import { useWorktreeStore } from "../stores/useWorktreeStore";
-import { usePlanStore } from "../stores/usePlanStore";
 import { useDialogStore } from "../stores/useDialogStore";
 import {
   useLaunchModalStore,
@@ -10,7 +9,6 @@ import {
 import { showToast } from "../stores/useToastStore";
 import type { TaskInfo } from "@shared/types";
 import { moveTask, updateTask } from "./taskActions";
-import { injectExecutionContext } from "../utils/injectContext";
 
 function worktreeErrorMessage(error: string): string {
   if (error.includes("[NOT_A_REPO]"))
@@ -97,8 +95,6 @@ export async function startTaskExecution(
       useDataStore.getState().tasks.find((t) => t.id === task.id) ?? movedTask;
   }
 
-  let worktreeAbsPath: string | undefined;
-
   if (config.useWorktree !== false) {
     useWorktreeStore.getState().markCreating(task.id);
 
@@ -129,70 +125,6 @@ export async function startTaskExecution(
     if (!result.data.alreadyExisted) {
       showToast(`Worktree created: ${result.data.branchName}`, "success");
     }
-
-    const wtp = result.data.worktreePath;
-    worktreeAbsPath = wtp.startsWith("/") ? wtp : `${wp}/${wtp}`;
-  }
-
-  const execSessionKey = `execute:${task.id}`;
-  const isRunning =
-    usePlanStore.getState().sessions[execSessionKey]?.isRunning ?? false;
-  if (isRunning) return;
-
-  const latestTask =
-    useDataStore.getState().tasks.find((t) => t.id === task.id) ?? movedTask;
-
-  const agent = config.agent;
-  const model = config.model;
-
-  const rawResult = await window.api.tasks.readRaw(wp, latestTask.filePath);
-  if (!rawResult.ok) {
-    showToast("Could not read task file — execution not started", "error");
-    return;
-  }
-
-  const cwd = worktreeAbsPath ?? wp;
-  const createResult = await window.api.taskterm.create({
-    ptyId: `taskterm-exec-${task.id}`,
-    taskId: task.id,
-    agent,
-    model,
-    cwd,
-    sessionMode: "exec",
-    taskFilePath: latestTask.filePath,
-    workspacePath: wp,
-  });
-
-  if (!createResult.ok) {
-    showToast(`Execution failed to start: ${createResult.error}`, "error");
-    return;
-  }
-
-  await updateTask(latestTask.filePath, { terminalExecContextSent: false });
-
-  const sessionName = createResult.sessionName;
-  if (sessionName) {
-    await updateTask(latestTask.filePath, { terminalExecSession: sessionName });
-    const workspaceDefaults =
-      useWorkspaceStore.getState().workspaceDefaults[wp] ?? {};
-    await injectExecutionContext({
-      sessionName,
-      ptyId: `taskterm-exec-${task.id}`,
-      task: latestTask,
-      workspacePath: wp,
-      taskContent:
-        rawResult.data ??
-        `# ${latestTask.title}\n\n${latestTask.description ?? ""}`,
-      sessionMode: "exec",
-      promptConfig: {
-        planPersona: workspaceDefaults.planPersona,
-        planReviewPersona: workspaceDefaults.planReviewPersona,
-        executePersona: workspaceDefaults.executePersona,
-        executeReviewPersona: workspaceDefaults.executeReviewPersona,
-        executeReviewInstructions: workspaceDefaults.executeReviewInstructions,
-      },
-      agent: agent as "opencode" | "copilot" | "claude",
-    });
   }
 }
 
@@ -204,13 +136,17 @@ export async function showLaunchModalAndExecute(task: TaskInfo): Promise<void> {
     return;
   }
 
-  if (task.terminalExecSession) {
-    const alive = await window.api.taskterm.isAlive(task.terminalExecSession);
+  // Re-fetch the latest task from the data store to get any previously
+  // set execSessionAgent/execModel (from prior executions)
+  const latestTask = useDataStore.getState().tasks.find((t) => t.id === task.id) ?? task;
+
+  if (latestTask.terminalExecSession) {
+    const alive = await window.api.taskterm.isAlive(latestTask.terminalExecSession);
     if (alive) {
       showToast("Existing session reattached", "success");
       return;
     }
-    await updateTask(task.filePath, {
+    await updateTask(latestTask.filePath, {
       terminalExecSession: null,
       terminalExecContextSent: false,
     });
@@ -218,7 +154,10 @@ export async function showLaunchModalAndExecute(task: TaskInfo): Promise<void> {
 
   await useWorkspaceStore.getState().fetchDefaults(wp);
 
-  const config = await useLaunchModalStore.getState().show(task);
+  // Re-fetch latest task after any updates above, so modal gets fresh agent/model
+  const freshTask = useDataStore.getState().tasks.find((t) => t.id === task.id) ?? latestTask;
+
+  const config = await useLaunchModalStore.getState().show(freshTask);
   if (config === null) return;
 
   await startTaskExecution(task, config);

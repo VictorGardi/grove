@@ -1,0 +1,63 @@
+/* ── Forest (Dark) theme ───────────────────────────────────────────
+    Grove's native forest-dark palette — inspired by the app's name.
+    ─────────────────────────────────────────────────────────────── */
+:root[data-theme="forest"] {
+  /* Backgrounds */
+  --bg-base: #0c1010;
+  --bg-surface: #131a15;
+  --bg-elevated: #1c2520;
+  --bg-hover: #243028;
+  --bg-active: #2a3830;
+
+  /* Borders */
+  --border: #2e3d35;
+  --border-dim: #1e2d25;
+
+  /* Text */
+  --text-primary: #e2ede2;
+  --text-secondary: #98ab98;
+  --text-lo: #5a6b5a;
+
+  /* Accent */
+  --accent: #3d9970;
+  --accent-dim: rgba(61, 153, 112, 0.15);
+  --accent-selection: rgba(61, 153, 112, 0.3);
+
+  /* Status */
+  --status-green: #52b788;
+  --status-amber: #e8a838;
+  --status-red: #e05c5c;
+  --status-blue: #4d96b8;
+  --status-backlog: #6b7fa3;
+  --status-done: #3d9970;
+
+  /* Diff colors */
+  --green: #52b788;
+  --green-dim: rgba(82, 183, 136, 0.12);
+  --red: #e05c5c;
+  --red-dim: rgba(224, 92, 92, 0.12);
+
+  /* xterm.js 16-color ANSI palette */
+  --xterm-background: #0c1010;
+  --xterm-foreground: #e2ede2;
+  --xterm-cursor: #3d9970;
+  --xterm-cursor-accel: #0c1010;
+  --xterm-selection-background: rgba(61, 153, 112, 0.3);
+  --xterm-selection-foreground: #e2ede2;
+  --xterm-black: #2e3d35;
+  --xterm-red: #e05c5c;
+  --xterm-green: #52b788;
+  --xterm-yellow: #e8a838;
+  --xterm-blue: #4d96b8;
+  --xterm-magenta: #9b6d9d;
+  --xterm-cyan: #5a9a9a;
+  --xterm-white: #98ab98;
+  --xterm-bright-black: #3d5045;
+  --xterm-bright-red: #e05c5c;
+  --xterm-bright-green: #52b788;
+  --xterm-bright-yellow: #e8a838;
+  --xterm-bright-blue: #4d96b8;
+  --xterm-bright-magenta: #b08db8;
+  --xterm-bright-cyan: #7ab8b8;
+  --xterm-bright-white: #c2d1c2;
+}

@@ -101,7 +101,8 @@ export async function parseTaskFile(
         typeof data.planSessionId === "string" ? data.planSessionId : null,
       planSessionAgent:
         data.planSessionAgent === "opencode" ||
-        data.planSessionAgent === "copilot"
+        data.planSessionAgent === "copilot" ||
+        data.planSessionAgent === "claude"
           ? (data.planSessionAgent as PlanAgent)
           : null,
       planModel: typeof data.planModel === "string" ? data.planModel : null,
@@ -109,7 +110,8 @@ export async function parseTaskFile(
         typeof data.execSessionId === "string" ? data.execSessionId : null,
       execSessionAgent:
         data.execSessionAgent === "opencode" ||
-        data.execSessionAgent === "copilot"
+        data.execSessionAgent === "copilot" ||
+        data.execSessionAgent === "claude"
           ? (data.execSessionAgent as PlanAgent)
           : null,
       execModel: typeof data.execModel === "string" ? data.execModel : null,

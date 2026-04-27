@@ -80,6 +80,7 @@ export async function injectExecutionContext(
     ptyId,
     task,
     workspacePath,
+    taskContent,
     sessionMode,
     agent = "opencode",
   } = params;
@@ -126,22 +127,11 @@ export async function injectExecutionContext(
     const preamble = `Task ID: ${task.id}
 Stage: ${stage}
 Task file: ${task.filePath}
-Instructions: ${instructionsFile}`;
+Instructions: ${instructionsFile}
 
-    const writeResult = await window.api.taskterm.writeContext({
-      sessionName,
-      content: preamble,
-      workspacePath,
-    });
-    if (!writeResult.ok || !writeResult.filePath) {
-      console.error(
-        `[injectContext:${ptyId}] Failed to write context for session ${sessionName}`,
-      );
-      if (attempt === maxRetries) {
-        return;
-      }
-      continue;
-    }
+## Task Description
+
+${taskContent}`;
 
     const marker = generateMarker();
 
@@ -160,12 +150,7 @@ Instructions: ${instructionsFile}`;
       continue;
     }
 
-    const contextPath = writeResult.filePath;
-
-    window.api.pty.write(
-      ptyId,
-      `Please read ${contextPath} for your task context and instructions.`,
-    );
+    window.api.pty.write(ptyId, preamble);
     await new Promise<void>((r) => setTimeout(r, 100));
     window.api.pty.write(ptyId, "\r");
 

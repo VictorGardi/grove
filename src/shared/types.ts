@@ -396,3 +396,27 @@ export interface TmuxSessionInfo {
   idleSeconds: number; // computed
   durationSeconds: number; // computed
 }
+
+// ── OpenCode SDK types (re-exported for renderer/preload use) ──────
+
+export interface OpencodeMessage {
+  id: string;
+  sessionID: string;
+  role: "user" | "assistant";
+  time: {
+    created: number;
+  };
+  agent: string;
+  model: {
+    providerID: string;
+    modelID: string;
+    variant?: string;
+  };
+  system?: string;
+}
+
+export interface OpencodePart {
+  id: string;
+  type: string;
+  text?: string;
+}

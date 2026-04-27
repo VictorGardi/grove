@@ -4,6 +4,7 @@ import { is } from "@electron-toolkit/utils";
 import { ConfigManager } from "./config";
 import { createWindowStateKeeper } from "./window-state";
 import { registerIpcHandlers, killAllPtys } from "./ipc/index";
+import { killServer } from "./opencodeServerManager";
 import { stopBranchWatcher } from "./ipc/workspace";
 import { stopWatchers } from "./watchers";
 import { closeAllWorktreeTaskWatchers } from "./ipc/git";
@@ -105,6 +106,7 @@ if (!gotTheLock) {
     stopWatchers();
     closeAllWorktreeTaskWatchers();
     killAllPtys();
+    killServer();
 
     if (configManager) {
       configManager.flushSync();

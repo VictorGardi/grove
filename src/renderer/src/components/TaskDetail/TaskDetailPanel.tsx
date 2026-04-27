@@ -671,15 +671,17 @@ export function TaskDetailPanel(): React.JSX.Element {
               : `${workspacePath}/${task.worktree}`
             : (workspacePath ?? "");
         const effectiveAgent =
-          task.agent ??
-          (task.status === "doing"
-            ? workspaceDefaults.defaultExecutionAgent
-            : workspaceDefaults.defaultPlanningAgent) ??
-          "opencode";
+          task.status === "doing" || task.status === "review"
+            ? task.execSessionAgent ??
+              workspaceDefaults.defaultExecutionAgent ??
+              "opencode"
+            : task.planSessionAgent ??
+              workspaceDefaults.defaultPlanningAgent ??
+              "opencode";
         const effectiveModel =
-          task.status === "doing"
-            ? (workspaceDefaults.defaultExecutionModel ?? null)
-            : (workspaceDefaults.defaultPlanningModel ?? null);
+          task.status === "doing" || task.status === "review"
+            ? task.execModel ?? workspaceDefaults.defaultExecutionModel ?? null
+            : task.planModel ?? workspaceDefaults.defaultPlanningModel ?? null;
         // Agent session for backlog; exec session for doing/review
         const sessionMode: "plan" | "exec" =
           task.status === "doing" || task.status === "review" ? "exec" : "plan";

@@ -184,10 +184,6 @@ contextBridge.exposeInMainWorld("api", {
       ipcRenderer.invoke("taskterm:state", sessionName, agent),
     refresh: (sessionName: string) =>
       ipcRenderer.invoke("taskterm:refresh", sessionName),
-    writeContext: (params: { sessionName: string; content: string; workspacePath: string }) =>
-      ipcRenderer.invoke("taskterm:writecontext", params),
-    cleanContext: (sessionName: string) =>
-      ipcRenderer.invoke("taskterm:cleancontext", sessionName),
   },
   app: {
     getPlatform: () => ipcRenderer.invoke("app:getPlatform"),
@@ -211,5 +207,37 @@ contextBridge.exposeInMainWorld("api", {
       model: string | null;
       mode: string;
     }) => ipcRenderer.invoke("plan:saveSession", input),
+  },
+  opencodeServer: {
+    ensure: () => ipcRenderer.invoke("opencodeServer:ensure"),
+    kill: () => ipcRenderer.invoke("opencodeServer:kill"),
+    status: () => ipcRenderer.invoke("opencodeServer:status"),
+  },
+  opencodeSession: {
+    create: (params: {
+      taskId: string;
+      workspacePath: string;
+      worktreePath: string;
+    }) => ipcRenderer.invoke("opencodeSession:create", params),
+    prompt: (params: { taskId: string; promptText: string }) =>
+      ipcRenderer.invoke("opencodeSession:prompt", params),
+    stop: (params: { taskId: string }) =>
+      ipcRenderer.invoke("opencodeSession:stop", params),
+    get: (params: { taskId: string }) =>
+      ipcRenderer.invoke("opencodeSession:get", params),
+    messages: (params: { taskId: string }) =>
+      ipcRenderer.invoke("opencodeSession:messages", params),
+  },
+  opencodeEvents: {
+    subscribe: (params: { taskId: string }) =>
+      ipcRenderer.invoke("opencodeEvents:subscribe", params),
+    unsubscribe: (params: { taskId: string }) =>
+      ipcRenderer.invoke("opencodeEvents:unsubscribe", params),
+    onEvent: (taskId: string, callback: (events: unknown[]) => void) => {
+      const channel = `opencode:event:${taskId}`;
+      const handler = (_: Electron.IpcRendererEvent, events: unknown[]) => callback(events);
+      ipcRenderer.on(channel, handler);
+      return () => ipcRenderer.removeListener(channel, handler);
+    },
   },
 });
