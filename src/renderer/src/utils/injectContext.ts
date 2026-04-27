@@ -1,9 +1,4 @@
 import type { TaskInfo } from "@shared/types";
-import type { PromptConfig } from "../utils/planPrompts";
-import {
-  buildFirstExecutionMessage,
-  buildFirstPlanMessage,
-} from "../utils/planPrompts";
 import { updateTask } from "../actions/taskActions";
 import { showToast } from "../stores/useToastStore";
 
@@ -14,7 +9,6 @@ export interface InjectContextParams {
   workspacePath: string;
   taskContent: string;
   sessionMode: "plan" | "exec";
-  promptConfig: PromptConfig;
   agent?: "opencode" | "copilot" | "claude";
 }
 
@@ -85,9 +79,8 @@ export async function injectExecutionContext(
     sessionName,
     ptyId,
     task,
-    taskContent,
+    workspacePath,
     sessionMode,
-    promptConfig,
     agent = "opencode",
   } = params;
 
@@ -125,26 +118,20 @@ export async function injectExecutionContext(
 
     await waitForReady(ptyId, agent, 5000);
 
-    let promptContent: string;
-    if (sessionMode === "exec") {
-      promptContent = buildFirstExecutionMessage(
-        task,
-        taskContent,
-        promptConfig,
-      );
-    } else {
-      promptContent = buildFirstPlanMessage(
-        task,
-        "Please help me work on this task.",
-        taskContent,
-        promptConfig,
-      );
-    }
+    const stage = sessionMode === "exec" ? "execution" : "planning";
+    const instructionsFile = sessionMode === "exec"
+      ? ".grove/instructions/executor.md"
+      : ".grove/instructions/planner.md";
+
+    const preamble = `Task ID: ${task.id}
+Stage: ${stage}
+Task file: ${task.filePath}
+Instructions: ${instructionsFile}`;
 
     const writeResult = await window.api.taskterm.writeContext({
       sessionName,
-      content: promptContent,
-      workspacePath: params.workspacePath,
+      content: preamble,
+      workspacePath,
     });
     if (!writeResult.ok || !writeResult.filePath) {
       console.error(

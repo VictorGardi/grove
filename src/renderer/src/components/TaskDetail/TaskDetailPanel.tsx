@@ -710,14 +710,6 @@ export function TaskDetailPanel(): React.JSX.Element {
               model={effectiveModel}
               sessionMode={sessionMode}
               initialSessionName={initialSessionName}
-              promptConfig={{
-                planPersona: workspaceDefaults.planPersona,
-                planReviewPersona: workspaceDefaults.planReviewPersona,
-                executePersona: workspaceDefaults.executePersona,
-                executeReviewPersona: workspaceDefaults.executeReviewPersona,
-                executeReviewInstructions:
-                  workspaceDefaults.executeReviewInstructions,
-              }}
             />
           </div>
         );

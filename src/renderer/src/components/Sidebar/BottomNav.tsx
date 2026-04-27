@@ -1,10 +1,31 @@
+import { useState, useEffect } from "react";
 import { useNavStore, type View } from "../../stores/useNavStore";
 import { useAgentsStore } from "../../stores/useAgentsStore";
+
+const STORAGE_KEY = "grove:nav-expanded";
+
+function getInitialExpanded(): boolean {
+  if (typeof window === "undefined") return false;
+  const stored = localStorage.getItem(STORAGE_KEY);
+  if (stored !== null) return stored === "true";
+  return false;
+}
+
+function usePersistentExpanded(): [boolean, (value: boolean) => void] {
+  const [expanded, setExpanded] = useState<boolean>(getInitialExpanded);
+
+  useEffect(() => {
+    localStorage.setItem(STORAGE_KEY, String(expanded));
+  }, [expanded]);
+
+  return [expanded, setExpanded];
+}
 
 interface NavItem {
   id: View | "terminal";
   label: string;
   icon: React.JSX.Element;
+  alwaysVisible?: boolean;
   bottom?: boolean;
   badge?: number;
 }
@@ -13,6 +34,7 @@ const navItems: NavItem[] = [
   {
     id: "board",
     label: "Task Board",
+    alwaysVisible: true,
     icon: (
       <svg
         width="14"
@@ -161,6 +183,7 @@ const navItems: NavItem[] = [
   {
     id: "settings",
     label: "Settings",
+    alwaysVisible: true,
     bottom: true,
     icon: (
       <svg
@@ -183,16 +206,24 @@ const navItems: NavItem[] = [
 ];
 
 export function BottomNav(): React.JSX.Element {
+  const [expanded, setExpanded] = usePersistentExpanded();
+  const [hoveredId, setHoveredId] = useState<string | null>(null);
   const activeView = useNavStore((s) => s.activeView);
   const setActiveView = useNavStore((s) => s.setActiveView);
   const terminalPanelOpen = useNavStore((s) => s.terminalPanelOpen);
   const toggleTerminalPanel = useNavStore((s) => s.toggleTerminalPanel);
   const runningSessionCount = useAgentsStore((s) => s.runningCount);
 
-  function renderItem(item: NavItem): React.JSX.Element {
+  function renderItem(
+    item: NavItem,
+    isCollapsed: boolean
+  ): React.JSX.Element {
     const isTerminal = item.id === "terminal";
     const isActive = isTerminal ? terminalPanelOpen : activeView === item.id;
-    const showBadge = item.id === "agents" && runningSessionCount > 0;
+    const showBadge =
+      item.id === "agents" &&
+      runningSessionCount > 0 &&
+      !(isCollapsed && !item.alwaysVisible);
 
     function handleClick(): void {
       if (isTerminal) {
@@ -206,6 +237,9 @@ export function BottomNav(): React.JSX.Element {
       if (e.key === "Enter" || e.key === " ") handleClick();
     }
 
+    const showLabel =
+      item.alwaysVisible || expanded || hoveredId === item.id;
+
     return (
       <div
         key={item.id}
@@ -215,13 +249,19 @@ export function BottomNav(): React.JSX.Element {
         aria-pressed={isActive}
         onClick={handleClick}
         onKeyDown={handleKeyDown}
+        onMouseEnter={() => item.alwaysVisible && setHoveredId(item.id)}
+        onMouseLeave={() => item.alwaysVisible && setHoveredId(null)}
         style={{
           display: "flex",
           alignItems: "center",
           gap: "8px",
           padding: "8px 16px",
           cursor: "pointer",
-          background: isActive ? "var(--bg-active)" : "transparent",
+          background: isActive
+            ? "var(--bg-active)"
+            : item.alwaysVisible && hoveredId === item.id
+            ? "var(--bg-hover)"
+            : "transparent",
           color: isActive ? "var(--text-primary)" : "var(--text-secondary)",
           fontFamily: "var(--font-ui)",
           fontSize: "13px",
@@ -229,18 +269,6 @@ export function BottomNav(): React.JSX.Element {
             "background var(--transition-fast), color var(--transition-fast)",
           outline: "none",
           position: "relative",
-        }}
-        onMouseEnter={(e) => {
-          if (!isActive) {
-            (e.currentTarget as HTMLDivElement).style.background =
-              "var(--bg-hover)";
-          }
-        }}
-        onMouseLeave={(e) => {
-          if (!isActive) {
-            (e.currentTarget as HTMLDivElement).style.background =
-              "transparent";
-          }
         }}
       >
         <span
@@ -251,7 +279,7 @@ export function BottomNav(): React.JSX.Element {
         >
           {item.icon}
         </span>
-        {item.label}
+        {showLabel && item.label}
         {showBadge && (
           <div
             style={{
@@ -275,8 +303,37 @@ export function BottomNav(): React.JSX.Element {
     );
   }
 
-  const topItems = navItems.filter((item) => !item.bottom);
-  const bottomItems = navItems.filter((item) => item.bottom);
+  const topAlwaysVisibleItems = navItems.filter(
+    (item) => item.alwaysVisible && !item.bottom
+  );
+  const bottomAlwaysVisibleItems = navItems.filter(
+    (item) => item.alwaysVisible && item.bottom
+  );
+  const collapsibleItems = navItems.filter(
+    (item) => !item.alwaysVisible
+  );
+
+  const ExpandIcon = expanded ? (
+    <svg width="10" height="10" viewBox="0 0 16 16" fill="none">
+      <path
+        d="M4 6L8 10L12 6"
+        stroke="currentColor"
+        strokeWidth="1.3"
+        strokeLinecap="round"
+        strokeLinejoin="round"
+      />
+    </svg>
+  ) : (
+    <svg width="10" height="10" viewBox="0 0 16 16" fill="none">
+      <path
+        d="M4 10L8 6L12 10"
+        stroke="currentColor"
+        strokeWidth="1.3"
+        strokeLinecap="round"
+        strokeLinejoin="round"
+      />
+    </svg>
+  );
 
   return (
     <div
@@ -286,8 +343,42 @@ export function BottomNav(): React.JSX.Element {
         height: "100%",
       }}
     >
-      <div>{topItems.map(renderItem)}</div>
-      <div style={{ marginTop: "auto" }}>{bottomItems.map(renderItem)}</div>
+      <div
+        role="button"
+        tabIndex={0}
+        aria-label={expanded ? "Collapse nav" : "Expand nav"}
+        onClick={() => setExpanded(!expanded)}
+        onKeyDown={(e) => {
+          if (e.key === "Enter" || e.key === " ") setExpanded(!expanded);
+        }}
+        onMouseEnter={() => setHoveredId("more")}
+        onMouseLeave={() => setHoveredId(null)}
+        style={{
+          display: "flex",
+          alignItems: "center",
+          justifyContent: "center",
+          padding: "8px 16px",
+          cursor: "pointer",
+          background:
+            hoveredId === "more" ? "var(--bg-hover)" : "transparent",
+          color: "var(--text-secondary)",
+          fontFamily: "var(--font-ui)",
+          fontSize: "10px",
+          transition: "background var(--transition-fast)",
+          outline: "none",
+        }}
+      >
+        {ExpandIcon}
+      </div>
+      {expanded && (
+        <div>{collapsibleItems.map((item) => renderItem(item, false))}</div>
+      )}
+      <div>
+        {topAlwaysVisibleItems.map((item) => renderItem(item, !expanded))}
+      </div>
+      <div>
+        {bottomAlwaysVisibleItems.map((item) => renderItem(item, !expanded))}
+      </div>
     </div>
   );
 }

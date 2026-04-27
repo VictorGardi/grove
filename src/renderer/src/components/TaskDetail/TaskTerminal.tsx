@@ -5,11 +5,6 @@ import { WebLinksAddon } from "@xterm/addon-web-links";
 import "@xterm/xterm/css/xterm.css";
 import Fuse from "fuse.js";
 import type { TaskInfo, PlanAgent, FileTreeNode } from "@shared/types";
-import {
-  buildFirstPlanMessage,
-  buildFirstExecutionMessage,
-  type PromptConfig,
-} from "../../utils/planPrompts";
 import { useThemeStore } from "../../stores/useThemeStore";
 import { usePlanStore } from "../../stores/usePlanStore";
 import { useFileStore } from "../../stores/useFileStore";
@@ -28,8 +23,6 @@ interface TaskTerminalProps {
   sessionMode: "plan" | "exec";
   /** Existing tmux session name from frontmatter (null if no session yet) */
   initialSessionName: string | null;
-  /** Workspace-level persona / instruction overrides */
-  promptConfig?: PromptConfig;
 }
 
 type SessionState = "none" | "starting" | "active" | "reconnecting" | "ended";
@@ -54,7 +47,6 @@ export function TaskTerminal({
   model,
   sessionMode,
   initialSessionName,
-  promptConfig,
 }: TaskTerminalProps): React.JSX.Element {
   const containerRef = useRef<HTMLDivElement>(null);
   const termRef = useRef<Terminal | null>(null);
@@ -420,7 +412,7 @@ export function TaskTerminal({
   async function sendInitialContext(
     sName: string,
     userText: string,
-  ): Promise<void> {
+): Promise<void> {
     // Prevent double-injection (React strict mode, rapid re-renders, etc.)
     if (contextSentRef.current) return;
     contextSentRef.current = true;
@@ -436,32 +428,19 @@ export function TaskTerminal({
       if (i === maxAttempts - 1) return;
     }
 
-    const taskRelPath = task.filePath.replace(workspacePath + "/", "");
-    const fileResult = await window.api.fs.readFile(workspacePath, taskRelPath);
-    const taskContent =
-      fileResult.ok && "content" in fileResult.data
-        ? fileResult.data.content
-        : `# ${task.title}\n\n${task.description ?? ""}`;
+    const stage = sessionMode === "exec" ? "execution" : "planning";
+    const instructionsFile = sessionMode === "exec"
+      ? ".grove/instructions/executor.md"
+      : ".grove/instructions/planner.md";
 
-    let promptContent: string;
-    if (sessionMode === "exec") {
-      promptContent = buildFirstExecutionMessage(
-        task,
-        taskContent,
-        promptConfig,
-      );
-    } else {
-      promptContent = buildFirstPlanMessage(
-        task,
-        userText || "Please help me work on this task.",
-        taskContent,
-        promptConfig,
-      );
-    }
+    const preamble = `Task ID: ${task.id}
+Stage: ${stage}
+Task file: ${task.filePath}
+Instructions: ${instructionsFile}`;
 
     const writeResult = await window.api.taskterm.writeContext({
       sessionName: sName,
-      content: promptContent,
+      content: preamble,
       workspacePath,
     });
     if (!writeResult.ok || !writeResult.filePath) return;

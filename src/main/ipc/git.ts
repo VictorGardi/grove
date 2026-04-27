@@ -27,12 +27,7 @@ import {
   buildFileTreeFromGitPaths,
   readFileAtBranch,
 } from "../../runtime/gitService";
-import {
-  updateTask,
-  readTaskBody,
-  parseTaskFile,
-} from "../../runtime/taskService";
-import { generateContextFile } from "../../runtime/contextGenerator";
+import { updateTask } from "../../runtime/taskService";
 import { atomicWrite } from "../../runtime/fileWriter";
 import { TASKS_DIR, ALL_TASK_DIRS } from "../paths";
 
@@ -278,32 +273,6 @@ export function registerGitHandlers(): void {
         worktreeTaskCopyPath,
         taskBasename,
       );
-
-      // Generate CONTEXT.md — failure is non-blocking (warn, don't fail)
-      try {
-        const taskBody = await readTaskBody(workspacePath, taskFilePath);
-        // Re-parse to get fresh TaskInfo (status is now "doing")
-        const taskInfo = await parseTaskFile(
-          taskFilePath,
-          "doing",
-          workspacePath,
-        );
-        if (taskInfo) {
-          // Attach the branch name we just derived (frontmatter not updated yet)
-          await generateContextFile(
-            absoluteWorktreePath,
-            { ...taskInfo, branch: branchName, worktree: relativeWorktreePath },
-            taskBody,
-            workspacePath,
-          );
-        }
-      } catch (ctxErr) {
-        console.warn(
-          "[git:setupWorktreeForTask] CONTEXT.md write failed:",
-          ctxErr,
-        );
-        // Non-fatal: worktree was created, we just warn
-      }
 
       // Update task frontmatter with worktree + branch — failure is non-blocking
       try {
