@@ -108,7 +108,7 @@ export function Board(): React.JSX.Element {
   );
 
   const handleDragEnd = useCallback(
-    (event: DragEndEvent) => {
+    async (event: DragEndEvent) => {
       setActiveTask(null);
       const { active, over } = event;
       if (!over) return;
