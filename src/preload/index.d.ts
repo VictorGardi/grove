@@ -205,29 +205,6 @@ export interface ElectronAPI {
       pid: number | null;
     }>;
   };
-  opencodeSession: {
-    create: (params: {
-      taskId: string;
-      workspacePath: string;
-      worktreePath: string;
-    }) => Promise<IpcResult<{ sessionId: string }>>;
-    prompt: (params: {
-      taskId: string;
-      promptText: string;
-    }) => Promise<IpcResult<void>>;
-    stop: (params: { taskId: string }) => Promise<IpcResult<void>>;
-    get: (params: { taskId: string }) => Promise<
-      IpcResult<{ sessionId: string; status: string }> | null
-    >;
-    messages: (params: { taskId: string }) => Promise<
-      IpcResult<Array<{ info: unknown; parts: unknown[] }>>
-    >;
-  };
-  opencodeEvents: {
-    subscribe: (params: { taskId: string }) => Promise<IpcResult<void>>;
-    unsubscribe: (params: { taskId: string }) => Promise<IpcResult<void>>;
-    onEvent: (taskId: string, callback: (events: unknown[]) => void) => () => void;
-  };
 }
 
 declare global {

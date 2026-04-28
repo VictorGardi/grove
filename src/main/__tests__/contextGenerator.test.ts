@@ -39,6 +39,7 @@ function makeTask(overrides: Partial<TaskInfo> = {}): TaskInfo {
     execModel: null,
     terminalPlanSession: null,
     terminalExecSession: null,
+    terminalPlanContextSent: false,
     terminalExecContextSent: false,
     planLastExitCode: null,
     execLastExitCode: null,

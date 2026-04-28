@@ -10,8 +10,6 @@ import { registerPtyHandlers } from "./pty";
 import { registerPlanHandlers } from "./plan";
 import { registerTaskTerminalHandlers } from "./taskTerminal";
 import { registerOpencodeServerHandlers } from "./opencodeServer";
-import { registerOpencodeSessionHandlers } from "./opencodeSession";
-import { registerOpencodeEventsHandlers } from "./opencodeEvents";
 
 let ptyManager: PtyManager | null = null;
 
@@ -32,10 +30,6 @@ export function registerIpcHandlers(
   registerTaskTerminalHandlers(ptyManager, mainWindow, configManager);
 
   registerOpencodeServerHandlers();
-
-  registerOpencodeSessionHandlers();
-
-  registerOpencodeEventsHandlers(mainWindow);
 
   ipcMain.handle("app:getPlatform", () => process.platform);
 

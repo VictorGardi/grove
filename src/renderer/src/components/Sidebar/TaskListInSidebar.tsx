@@ -71,6 +71,7 @@ export function TaskListInSidebar(): React.JSX.Element {
       execModel: task.execModel,
       terminalPlanSession: task.terminalPlanSession,
       terminalExecSession: task.terminalExecSession,
+      terminalPlanContextSent: task.terminalPlanContextSent ?? false,
       terminalExecContextSent: task.terminalExecContextSent,
       planLastExitCode: task.planLastExitCode,
       execLastExitCode: task.execLastExitCode,

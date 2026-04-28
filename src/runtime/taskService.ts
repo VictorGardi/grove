@@ -109,6 +109,10 @@ export async function parseTaskFile(
         typeof data.terminalExecSession === "string"
           ? data.terminalExecSession
           : null,
+      terminalPlanContextSent:
+        typeof data.terminalPlanContextSent === "boolean"
+          ? data.terminalPlanContextSent
+          : false,
       terminalExecContextSent:
         typeof data.terminalExecContextSent === "boolean"
           ? data.terminalExecContextSent
@@ -208,6 +212,8 @@ function buildFrontmatter(fm: TaskFrontmatter): Record<string, unknown> {
     obj.terminalPlanSession = fm.terminalPlanSession;
   if (fm.terminalExecSession != null)
     obj.terminalExecSession = fm.terminalExecSession;
+  if (fm.terminalPlanContextSent != null)
+    obj.terminalPlanContextSent = fm.terminalPlanContextSent;
   if (fm.terminalExecContextSent != null)
     obj.terminalExecContextSent = fm.terminalExecContextSent;
   if (fm.planLastExitCode != null) obj.planLastExitCode = fm.planLastExitCode;

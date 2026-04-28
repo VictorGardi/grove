@@ -14,6 +14,7 @@ import { formatTimestamp } from "../../utils/date";
 
 import { ChangesTab } from "./ChangesTab";
 import { TaskTerminal } from "./TaskTerminal";
+import { TaskEventStream } from "./TaskEventStream";
 import type { TaskInfo, TaskStatus } from "@shared/types";
 import styles from "./TaskDetailPanel.module.css";
 
@@ -689,6 +690,10 @@ export function TaskDetailPanel(): React.JSX.Element {
           sessionMode === "plan"
             ? (task.terminalPlanSession ?? null)
             : (task.terminalExecSession ?? null);
+        
+        const isOpencodeAgent = effectiveAgent === "opencode";
+        const eventStreamMode: "plan" | "execute" = sessionMode === "exec" ? "execute" : "plan";
+        
         return (
           <div
             style={
@@ -702,17 +707,24 @@ export function TaskDetailPanel(): React.JSX.Element {
                 : { display: "none" }
             }
           >
-            <TaskTerminal
-              key={`${task.id}-${sessionMode}`}
-              task={task}
-              visible={activeTab === "agent"}
-              workspacePath={workspacePath ?? ""}
-              cwd={effectiveCwd}
-              agent={effectiveAgent}
-              model={effectiveModel}
-              sessionMode={sessionMode}
-              initialSessionName={initialSessionName}
-            />
+            {isOpencodeAgent ? (
+              <TaskEventStream
+                taskId={task.id}
+                mode={eventStreamMode}
+              />
+            ) : (
+              <TaskTerminal
+                key={`${task.id}-${sessionMode}`}
+                task={task}
+                visible={activeTab === "agent"}
+                workspacePath={workspacePath ?? ""}
+                cwd={effectiveCwd}
+                agent={effectiveAgent}
+                model={effectiveModel}
+                sessionMode={sessionMode}
+                initialSessionName={initialSessionName}
+              />
+            )}
           </div>
         );
       })()}

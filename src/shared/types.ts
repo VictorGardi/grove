@@ -97,6 +97,8 @@ export interface TaskInfo {
   terminalPlanSession: string | null;
   /** Tmux session name for execution terminal session (persisted in frontmatter) */
   terminalExecSession: string | null;
+  /** Whether initial context has been sent to the plan session */
+  terminalPlanContextSent: boolean;
   /** Whether initial context has been sent to the exec session */
   terminalExecContextSent: boolean;
   /** Last exit code for plan mode (persisted in frontmatter) */
@@ -165,6 +167,8 @@ export interface TaskFrontmatter {
   terminalPlanSession?: string | null;
   /** Tmux session name for execution terminal mode */
   terminalExecSession?: string | null;
+  /** Whether initial context has been sent to the plan session */
+  terminalPlanContextSent?: boolean;
   /** Whether initial context has been sent to the exec session */
   terminalExecContextSent?: boolean;
   /** Last exit code for plan mode */

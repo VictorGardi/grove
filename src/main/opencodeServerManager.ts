@@ -33,7 +33,7 @@ async function checkHealth(url: string, timeout = 500): Promise<boolean> {
 async function checkPort4096(): Promise<boolean> {
   return new Promise((resolve) => {
     const req = http.get(
-      "http://localhost:4096/health",
+      "http://127.0.0.1:4096/health",
       { timeout: 500 },
       (res) => {
         let data = "";
@@ -74,7 +74,7 @@ function generateConfigContent(): string {
 }
 
 function parseUrlFromOutput(output: string): string | null {
-  const match = output.match(/http:\/\/localhost:\d+/);
+  const match = output.match(/http:\/\/(localhost|127\.0\.0\.1):\d+/);
   return match ? match[0] : null;
 }
 
@@ -102,7 +102,7 @@ async function doStartServer(): Promise<{ url: string } | { error: string }> {
     let output = "";
     let hasResolved = false;
 
-    child.stdout?.on("data", (data) => {
+    const collectOutput = (data: Buffer) => {
       output += data.toString();
       const url = parseUrlFromOutput(output);
       if (url && !hasResolved) {
@@ -114,11 +114,10 @@ async function doStartServer(): Promise<{ url: string } | { error: string }> {
         };
         resolve({ url });
       }
-    });
+    };
 
-    child.stderr?.on("data", (data) => {
-      console.error("[opencodeServer]", data.toString());
-    });
+    child.stdout?.on("data", collectOutput);
+    child.stderr?.on("data", collectOutput);
 
     child.on("exit", (code) => {
       if (!hasResolved && code !== 0 && code !== null) {
