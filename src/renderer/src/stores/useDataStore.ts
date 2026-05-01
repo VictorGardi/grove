@@ -73,12 +73,20 @@ export const useDataStore = create<DataState>()((set, get) => ({
         const result = await window.api.data.fetch(workspacePath);
         if (result.ok) {
           const state = get();
+          const existingById = new Map(state.tasks.map((t) => [t.id, t]));
+          const merged = result.data.tasks.map((fetched) => {
+            const existing = existingById.get(fetched.id);
+            return existing ? { ...existing, ...fetched } : fetched;
+          });
           set({
-            tasks: result.data.tasks,
+            tasks: merged,
             loading: false,
             fetched: true,
             error: null,
           });
+
+          // Update workspace cache with fresh data
+          get().setCachedTasks(workspacePath, merged);
 
           // Re-fetch the selected task body if not dirty (no in-flight edits)
           if (state.selectedTaskId && !state.taskDetailDirty) {

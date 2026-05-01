@@ -93,6 +93,10 @@ export interface TaskInfo {
   execSessionAgent: PlanAgent | null;
   /** Model used in the current execution session */
   execModel: string | null;
+  /** All session IDs associated with this task (persisted in frontmatter) */
+  sessionIds: string[];
+  /** Last active session ID to show by default (persisted in frontmatter) */
+  lastSessionId: string | null;
   /** Tmux session name for planning terminal session (persisted in frontmatter) */
   terminalPlanSession: string | null;
   /** Tmux session name for execution terminal session (persisted in frontmatter) */
@@ -163,6 +167,10 @@ export interface TaskFrontmatter {
   execSessionAgent?: PlanAgent | null;
   /** Model used in the current execution session */
   execModel?: string | null;
+  /** All session IDs associated with this task */
+  sessionIds?: string[];
+  /** Last active session ID to show by default */
+  lastSessionId?: string | null;
   /** Tmux session name for planning terminal mode */
   terminalPlanSession?: string | null;
   /** Tmux session name for execution terminal mode */

@@ -4,6 +4,7 @@ import remarkGfm from "remark-gfm";
 import type { ThemedToken, BundledLanguage } from "shiki";
 import { getHighlighter, SUPPORTED_LANGS } from "./shikiHighlighter";
 import { MermaidDiagram } from "./MermaidDiagram";
+import { useThemeStore } from "../../stores/useThemeStore";
 import styles from "./MarkdownViewer.module.css";
 
 // ── Shiki-powered code block inside markdown ───────────────────
@@ -15,13 +16,11 @@ function CodeBlock({
   lang: string;
   code: string;
 }): React.JSX.Element {
-  if (lang === "mermaid") {
-    return <MermaidDiagram code={code} />;
-  }
-
+  const shikiTheme = useThemeStore((s) => s.colors.shikiTheme);
   const [tokenLines, setTokenLines] = useState<ThemedToken[][] | null>(null);
 
   useEffect(() => {
+    if (lang === "mermaid") return;
     const normalizedLang =
       lang && SUPPORTED_LANGS.has(lang) && lang !== "text" ? lang : "text";
     if (normalizedLang === "text") {
@@ -34,7 +33,7 @@ function CodeBlock({
       try {
         const { tokens } = highlighter.codeToTokens(code, {
           lang: normalizedLang as BundledLanguage,
-          theme: "grove-dark",
+          theme: shikiTheme,
         });
         if (!cancelled) setTokenLines(tokens);
       } catch {
@@ -44,7 +43,11 @@ function CodeBlock({
     return () => {
       cancelled = true;
     };
-  }, [lang, code]);
+  }, [lang, code, shikiTheme]);
+
+  if (lang === "mermaid") {
+    return <MermaidDiagram code={code} />;
+  }
 
   return (
     <div className={styles.codeBlock}>

@@ -43,6 +43,41 @@ function replacePersonaPlaceholder(
   return text.split(`{${key}}`).join(persona);
 }
 
+// ── Persona extractors (for system prompt) ───────────────────────────────
+
+export function getPlanPersona(prompts?: PromptConfig): string {
+  const planPersona = resolvePersona(
+    prompts?.planPersona,
+    DEFAULT_PLAN_PERSONA,
+  );
+  return `You are a ${planPersona} for a software task.
+
+Rules:
+- Do NOT write any code.
+- Do NOT create, delete, or modify any file except the task markdown.
+- Do NOT run shell commands that read or modify the codebase.
+- You may use read-only tools (read file, search) to understand the codebase if needed.
+- Only update the "## Description" and "## Definition of Done" sections of the task file when the plan is agreed upon.
+- Ask clarifying questions freely. The user will respond in this same session.
+- Before writing to the task file, spawn a subagent to critically review the proposed plan.`;
+}
+
+export function getExecutionPersona(prompts?: PromptConfig): string {
+  const executePersona = resolvePersona(
+    prompts?.executePersona,
+    DEFAULT_EXECUTE_PERSONA,
+  );
+  return `You are an ${executePersona} for a software task.
+
+Work through the task's Definition of Done checkboxes systematically:
+1. Read the task description carefully and understand the full scope.
+2. Implement the required changes in the codebase.
+3. After completing each DoD item, update the task file to check it off.
+4. When all items are complete, verify your work against the acceptance criteria.
+
+You have full access to read files, write files, and run shell commands. Work autonomously through the entire Definition of Done without waiting for confirmation unless you encounter a genuine blocker.`;
+}
+
 // ── Prompt builders ───────────────────────────────────────────────
 
 export function buildFirstPlanMessage(

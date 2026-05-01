@@ -12,6 +12,7 @@
 .eventContainer {
   flex: 1;
   overflow-y: auto;
+  overflow-x: hidden;
   padding: 12px;
   display: flex;
   flex-direction: column;
@@ -29,11 +30,6 @@
   text-align: center;
 }
 
-.emptyIcon {
-  font-size: 48px;
-  opacity: 0.5;
-}
-
 .emptyText {
   font-size: 14px;
   color: var(--text-muted);
@@ -46,13 +42,22 @@
   gap: 16px;
 }
 
-.inputArea {
+.thinkingRow {
   display: flex;
-  flex-direction: column;
+  align-items: center;
   gap: 8px;
-  padding: 12px;
-  background: var(--bg-elevated);
-  border-top: 1px solid var(--border-subtle);
+}
+
+.thinkingLabel {
+  font-size: 11px;
+  text-transform: uppercase;
+  color: var(--accent-blue);
+  font-weight: 600;
+}
+
+.inputArea {
+  padding: 0 16px 16px;
+  background: var(--bg-base);
 }
 
 .message {
@@ -61,11 +66,45 @@
   gap: 4px;
 }
 
+/* New message entrance animation */
+@keyframes messageFadeIn {
+  from {
+    opacity: 0;
+    transform: translateY(6px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+.messageNew {
+  animation: messageFadeIn 280ms cubic-bezier(0.22, 1, 0.36, 1) both;
+}
+
+/* ── Agent message header ── */
+.messageHeader {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin-bottom: 2px;
+}
+
+.messageHeaderIcon {
+  font-size: 10px;
+  color: var(--accent-blue);
+  flex-shrink: 0;
+  opacity: 0.8;
+}
+
 .messageRole {
   font-size: 11px;
   text-transform: uppercase;
   color: var(--text-muted);
   font-weight: 600;
+  display: flex;
+  align-items: center;
+  gap: 4px;
 }
 
 .messageAssistant .messageRole {
@@ -76,6 +115,66 @@
   color: var(--accent-green);
 }
 
+.modelName {
+  font-size: 10px;
+  color: var(--text-muted);
+  font-weight: 400;
+  margin-left: 2px;
+  opacity: 0.6;
+  font-family: var(--font-mono);
+  text-transform: none;
+}
+
+.modeBadge {
+  font-size: 9px;
+  font-weight: 600;
+  padding: 1px 5px;
+  border-radius: 3px;
+  border: 1px solid;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  flex-shrink: 0;
+}
+
+.modeBadgePlan {
+  color: var(--accent-blue);
+  border-color: color-mix(in srgb, var(--accent-blue) 30%, transparent);
+  background: color-mix(in srgb, var(--accent-blue) 8%, transparent);
+}
+
+.modeBadgeBuild {
+  color: var(--accent-green);
+  border-color: color-mix(in srgb, var(--accent-green) 30%, transparent);
+  background: color-mix(in srgb, var(--accent-green) 8%, transparent);
+}
+
+/* Working status text */
+.workingText {
+  display: inline-flex;
+  align-items: center;
+  gap: 2px;
+  font-size: 11px;
+  color: var(--text-muted);
+  font-style: italic;
+  font-weight: 400;
+  text-transform: none;
+}
+
+/* ── User bubble ── */
+.messageUser {
+  align-items: flex-end;
+}
+
+.userBubble {
+  background: color-mix(in srgb, var(--accent) 10%, transparent);
+  border: 1px solid color-mix(in srgb, var(--accent) 20%, transparent);
+  border-radius: 12px;
+  border-bottom-right-radius: 3px;
+  padding: 10px 14px;
+  max-width: 82%;
+  word-break: break-word;
+}
+
 .parts {
   display: flex;
   flex-direction: column;
@@ -83,13 +182,199 @@
 }
 
 .textPart {
-  line-height: 1.5;
+  line-height: 1.6;
+  font-size: 14px;
+  min-width: 0;
+  overflow: hidden;
+}
+
+/* Markdown prose resets */
+.textPart :global(p) {
+  margin: 0 0 0.75em;
+}
+.textPart :global(p:last-child) {
+  margin-bottom: 0;
+}
+.textPart :global(ul),
+.textPart :global(ol) {
+  margin: 0 0 0.75em;
+  padding-left: 1.5em;
+}
+.textPart :global(li) {
+  margin-bottom: 0.2em;
+}
+.textPart :global(h1),
+.textPart :global(h2),
+.textPart :global(h3),
+.textPart :global(h4) {
+  margin: 1em 0 0.4em;
+  font-weight: 600;
+  line-height: 1.3;
+}
+.textPart :global(h1):first-child,
+.textPart :global(h2):first-child,
+.textPart :global(h3):first-child {
+  margin-top: 0;
+}
+.textPart :global(blockquote) {
+  margin: 0 0 0.75em;
+  padding: 4px 12px;
+  border-left: 3px solid var(--border-dim);
+  color: var(--text-muted);
+}
+.textPart :global(hr) {
+  border: none;
+  border-top: 1px solid var(--border-subtle);
+  margin: 1em 0;
+}
+.textPart :global(table) {
+  border-collapse: collapse;
+  width: 100%;
+  margin-bottom: 0.75em;
+  font-size: 13px;
+}
+.textPart :global(th),
+.textPart :global(td) {
+  border: 1px solid var(--border-subtle);
+  padding: 5px 10px;
+  text-align: left;
+}
+.textPart :global(th) {
+  background: var(--bg-subtle);
+  font-weight: 600;
+}
+.textPart :global(a) {
+  color: var(--accent-blue);
+  text-decoration: underline dotted;
+}
+.textPart :global(a:hover) {
+  text-decoration: underline solid;
+}
+
+/* Streaming cursor — blinks at end of streaming text */
+@keyframes blink {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0; }
+}
+
+.textPartStreaming::after {
+  content: "▋";
+  display: inline-block;
+  font-size: 0.85em;
+  animation: blink 1s step-end infinite;
+  color: var(--accent-blue);
+  opacity: 0.7;
+  vertical-align: middle;
 }
 
 .textPartStreaming {
+  /* streaming marker class — cursor injected via ::after */
+}
+
+/* Inline code */
+.inlineCode {
+  background: var(--bg-subtle);
+  padding: 2px 5px;
+  border-radius: 4px;
   font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
-  white-space: pre-wrap;
-  word-break: break-word;
+  font-size: 0.88em;
+  word-break: break-all;
+}
+
+/* Code block wrapper */
+.codeBlock {
+  position: relative;
+  border-radius: 8px;
+  border: 1px solid var(--border-subtle);
+  background: var(--bg-subtle);
+  margin: 4px 0 8px;
+  overflow: hidden;
+  min-width: 0;
+}
+
+/* Terminal-style blocks (bash / sh / shell) */
+.terminalBlock {
+  background: #151515;
+  border-color: #333;
+}
+.terminalBlock .codeBlockCode {
+  color: #d4d4d4;
+}
+.terminalBlock .langBadge {
+  color: #888;
+  background: #222;
+}
+.terminalBlock .copyButton {
+  color: #888;
+}
+.terminalBlock .copyButton:hover {
+  color: #ccc;
+}
+.terminalBlock .lineNum {
+  color: #555;
+}
+
+/* Code block top bar */
+.codeBlockHeader {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 4px 10px;
+  border-bottom: 1px solid var(--border-subtle);
+  background: var(--bg-elevated);
+  min-height: 28px;
+}
+
+.langBadge {
+  font-size: 11px;
+  font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+  color: var(--text-muted);
+  text-transform: lowercase;
+}
+
+.copyButton {
+  font-size: 11px;
+  color: var(--text-muted);
+  background: none;
+  border: none;
+  cursor: pointer;
+  padding: 0;
+  transition: color 0.1s;
+  font-family: inherit;
+}
+.copyButton:hover {
+  color: var(--text-primary);
+}
+
+/* The <pre> inside code block */
+.codeBlockPre {
+  margin: 0;
+  padding: 10px 14px;
+  overflow-x: auto;
+  font-size: 12.5px;
+  line-height: 1.55;
+}
+
+.codeBlockCode {
+  font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+  white-space: pre;
+  word-break: normal;
+  display: block;
+}
+
+/* Line numbers */
+.codeLine {
+  display: flex;
+}
+.lineNum {
+  user-select: none;
+  color: var(--text-muted);
+  opacity: 0.5;
+  min-width: 2.5em;
+  text-align: right;
+  padding-right: 1em;
+  flex-shrink: 0;
+  font-size: 11px;
 }
 
 .toolCallCard {
@@ -97,6 +382,141 @@
   border-radius: 6px;
   background: var(--bg-elevated);
   overflow: hidden;
+}
+
+.toolGroupCard {
+  border: 1px solid var(--border-subtle);
+  border-radius: 6px;
+  background: var(--bg-elevated);
+  overflow: hidden;
+}
+
+.toolGroupHeader {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 12px;
+  cursor: pointer;
+  background: var(--bg-subtle);
+  user-select: none;
+}
+
+.toolGroupHeader:hover {
+  background: var(--bg-hover);
+}
+
+.toolGroupLabel {
+  font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--accent-yellow);
+}
+
+.toolGroupNames {
+  font-size: 11px;
+  color: var(--text-muted);
+  margin-right: auto;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.toolGroupPreview {
+  font-size: 11px;
+  color: var(--text-muted);
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  margin-left: 4px;
+}
+
+.toolGroupBody {
+  display: flex;
+  flex-direction: column;
+  border-top: 1px solid var(--border-subtle);
+}
+
+.toolGroupBody > * {
+  border-radius: 0;
+  border-left: none;
+  border-right: none;
+  border-bottom: none;
+}
+
+.toolGroupBody > *:not(:last-child) {
+  border-bottom: 1px solid var(--border-subtle);
+}
+
+/* Phase 3: Compact tool renderers */
+.compactToolCard {
+  border: 1px solid var(--border-subtle);
+  border-radius: 6px;
+  background: var(--bg-elevated);
+  overflow: hidden;
+  margin-bottom: 4px;
+}
+
+.compactToolHeader {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 12px;
+  cursor: pointer;
+  background: var(--bg-subtle);
+  user-select: none;
+}
+
+.compactToolHeader:hover {
+  background: var(--bg-hover);
+}
+
+.compactToolIcon {
+  font-size: 10px;
+  color: var(--text-muted);
+  transition: transform 0.2s;
+}
+
+.compactToolName {
+  font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--accent-yellow);
+}
+
+.compactToolSummary {
+  font-size: 11px;
+  color: var(--text-muted);
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.compactToolBadge {
+  font-size: 10px;
+  padding: 1px 6px;
+  border-radius: 3px;
+  background: var(--bg-base);
+  color: var(--text-muted);
+}
+
+.compactToolBody {
+  padding: 8px 12px;
+  border-top: 1px solid var(--border-subtle);
+  background: var(--bg-base);
+}
+
+.compactToolBody pre {
+  margin: 0;
+  font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+  font-size: 11px;
+  white-space: pre-wrap;
+  word-break: break-word;
+  max-height: 300px;
+  overflow-y: auto;
 }
 
 .toolCallHeader {
@@ -129,8 +549,23 @@
   color: var(--accent-yellow);
 }
 
-.toolStatus {
+.toolElapsed {
+  font-size: 11px;
+  color: var(--text-muted);
+  font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
   margin-left: auto;
+}
+
+.responseDuration {
+  font-size: 10px;
+  color: var(--text-muted);
+  font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+  font-weight: 400;
+  margin-left: 6px;
+  opacity: 0.6;
+}
+
+.toolStatus {
   font-size: 11px;
   font-weight: 500;
   padding: 1px 6px;
@@ -160,6 +595,18 @@
 .toolCallBody {
   display: flex;
   flex-direction: column;
+  overflow: hidden;
+  transition: max-height 0.3s ease, opacity 0.2s ease;
+}
+
+.toolCallBodyCollapsed {
+  max-height: 0;
+  opacity: 0;
+}
+
+.toolCallBodyExpanded {
+  max-height: 2000px;
+  opacity: 1;
 }
 
 .toolCallArgs {
@@ -397,18 +844,78 @@
   color: var(--text-muted);
 }
 
+.reasoningPartStreaming {
+  position: relative;
+}
+
+.reasoningPartStreaming::after {
+  content: "▋";
+  display: inline-block;
+  font-size: 0.85em;
+  animation: blink 1s step-end infinite;
+  color: var(--accent-blue);
+  opacity: 0.7;
+  vertical-align: middle;
+  margin-left: 2px;
+}
+
 .reasoningSummary {
   cursor: pointer;
   user-select: none;
   font-style: italic;
+  padding: 4px 0;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.reasoningLiveTimer {
+  font-size: 10px;
+  font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+  color: var(--text-muted);
+  opacity:0.6;
+}
+
+.reasoningThinking {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  font-style: italic;
+  color: var(--text-muted);
+  font-size: 13px;
   padding: 4px 0;
 }
 
 .reasoningText {
   padding: 8px 0 4px 12px;
   font-style: italic;
-  white-space: pre-wrap;
-  line-height: 1.5;
+  line-height: 1.6;
+  font-size: 13px;
+  min-width: 0;
+  overflow: hidden;
+}
+
+/* Markdown prose resets for reasoning */
+.reasoningText :global(p) {
+  margin: 0 0 0.75em;
+}
+.reasoningText :global(p:last-child) {
+  margin-bottom: 0;
+}
+.reasoningText :global(ul),
+.reasoningText :global(ol) {
+  margin: 0 0 0.75em;
+  padding-left: 1.5em;
+}
+.reasoningText :global(li) {
+  margin-bottom: 0.2em;
+}
+.reasoningText :global(code) {
+  background: var(--bg-subtle);
+  padding: 2px 5px;
+  border-radius: 4px;
+  font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+  font-size: 0.88em;
 }
 
 .stepDivider {
@@ -432,14 +939,15 @@
 }
 
 .stopButton {
-  padding: 8px 16px;
-  font-size: 14px;
+  padding: 6px 14px;
+  font-size: 13px;
   font-weight: 500;
-  background: var(--status-red, #e53e3e);
+  background: var(--status-red);
   color: white;
   border: none;
-  border-radius: 4px;
+  border-radius: 8px;
   cursor: pointer;
+  flex-shrink: 0;
 }
 
 .stopButton:hover {
@@ -482,31 +990,42 @@
   cursor: not-allowed;
 }
 
+/* Wrapper provides the positioning context for the slash dropdown */
+.inputBoxWrapper {
+  position: relative;
+  max-width: 720px;
+  margin: 0 auto;
+}
+
+/* The floating box itself */
 .inputBox {
+  background: var(--bg-elevated);
+  border: 1px solid var(--border-dim);
+  border-radius: 16px;
+  box-shadow: 0 2px 12px rgba(0, 0, 0, 0.18);
   display: flex;
   flex-direction: column;
-  gap: 12px;
-  width: 100%;
-  max-width: 600px;
+  transition: box-shadow 0.15s;
 }
 
+.inputBox:focus-within {
+  border-color: var(--accent);
+  box-shadow: 0 2px 16px rgba(0, 0, 0, 0.22);
+}
+
+/* Transparent textarea — fills the top of the box */
 .inputTextarea {
   width: 100%;
-  min-height: 60px;
-  padding: 10px 12px;
+  padding: 14px 16px 6px;
+  min-height: 72px;
+  background: transparent;
+  border: none;
+  outline: none;
+  resize: none;
   font-size: 14px;
   font-family: inherit;
-  border: 1px solid var(--border-subtle);
-  border-radius: 6px;
-  background: var(--bg-base);
   color: var(--text-primary);
-  resize: none;
   line-height: 1.5;
-}
-
-.inputTextarea:focus {
-  outline: none;
-  border-color: var(--accent-blue);
 }
 
 .inputTextarea:disabled {
@@ -514,26 +1033,88 @@
   cursor: not-allowed;
 }
 
-.inputFooter {
+/* Bottom row: mode pill | agent | model — spacer — thinking | send */
+.inputBoxFooter {
   display: flex;
-  justify-content: space-between;
   align-items: center;
+  gap: 6px;
+  padding: 6px 10px 10px;
 }
 
-.inputHint {
+/* Mode segmented control */
+.modeToggle {
+  display: flex;
+  align-items: center;
+  background: var(--bg-base);
+  border: 1px solid var(--border-subtle);
+  border-radius: 8px;
+  padding: 2px;
+  gap: 2px;
+  flex-shrink: 0;
+}
+
+.modeSegment {
+  padding: 3px 10px;
+  font-size: 11px;
+  font-weight: 500;
+  border-radius: 6px;
+  border: none;
+  cursor: pointer;
+  background: transparent;
+  color: var(--text-muted);
+  transition: background 0.12s, color 0.12s;
+  user-select: none;
+  white-space: nowrap;
+}
+
+.modeSegment:hover:not(.modeSegmentActive) {
+  color: var(--text-primary);
+  background: var(--bg-hover);
+}
+
+.modeSegmentActive {
+  background: var(--bg-elevated);
+  color: var(--text-primary);
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.15);
+}
+
+/* Spacer pushes right-side controls to the end */
+.inputBoxSpacer {
+  flex: 1;
+}
+
+/* Model display — clickable chip showing selected model */
+.modelDisplay {
   font-size: 12px;
   color: var(--text-muted);
+  max-width: 140px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  cursor: pointer;
+  border: none;
+  background: none;
+  font-family: var(--font-mono);
+  text-align: left;
+  flex-shrink: 0;
+  padding: 0;
+  transition: color 0.12s;
+}
+
+.modelDisplay:hover {
+  color: var(--accent-blue);
 }
 
 .sendButton {
-  padding: 8px 16px;
-  font-size: 14px;
+  padding: 6px 14px;
+  font-size: 13px;
   font-weight: 500;
   background: var(--accent-blue);
   color: white;
   border: none;
-  border-radius: 4px;
+  border-radius: 8px;
   cursor: pointer;
+  flex-shrink: 0;
 }
 
 .sendButton:hover:not(:disabled) {
@@ -541,17 +1122,41 @@
 }
 
 .sendButton:disabled {
-  opacity: 0.5;
+  opacity: 0.45;
   cursor: not-allowed;
 }
 
-.controlsBar {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  padding: 6px 12px;
-  background: var(--bg-subtle);
-  border-top: 1px solid var(--border-subtle);
+/* Inline selectors (agent + model) */
+.controlSelect {
+  padding: 3px 6px;
+  font-size: 12px;
+  border: 1px solid var(--border-dim);
+  border-radius: 6px;
+  background: var(--bg-base);
+  color: var(--text-primary);
+  cursor: pointer;
+  max-width: 140px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.controlSelect:disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
+}
+
+/* Keep thinkingBadge / waitingBadge positioning in footer */
+.thinkingBadge {
+  font-size: 12px;
+  color: var(--accent-blue);
+  animation: pulse 1.5s infinite;
+  flex-shrink: 0;
+}
+
+.waitingBadge {
+  font-size: 12px;
+  color: var(--accent-yellow);
+  flex-shrink: 0;
 }
 
 .controlSelect {
@@ -578,6 +1183,23 @@
 @keyframes pulse {
   0%, 100% { opacity: 1; }
   50% { opacity: 0.5; }
+}
+
+.historicalQuestionCard {
+  border: 1px solid var(--border-dim);
+  border-radius: 8px;
+  background: var(--bg-elevated);
+  padding: 16px;
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+  opacity: 0.75;
+}
+
+.historicalQuestionNote {
+  font-size: 11px;
+  color: var(--text-muted);
+  font-style: italic;
 }
 
 .questionCard {
@@ -690,4 +1312,678 @@
 .waitingBadge {
   font-size: 12px;
   color: var(--accent-yellow);
+}
+
+/* ── Slash command dropdown ─────────────────────────────────────── */
+.slashDropdown {
+  position: absolute;
+  bottom: calc(100% + 6px);
+  left: 0;
+  right: 0;
+  background: var(--bg-elevated);
+  border: 1px solid var(--border-dim);
+  border-radius: 12px;
+  box-shadow: 0 -4px 24px rgba(0, 0, 0, 0.22);
+  overflow: hidden;
+  z-index: 200;
+  max-height: 260px;
+  overflow-y: auto;
+}
+
+.slashDropdownHeader {
+  padding: 6px 12px 4px;
+  font-size: 10px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  color: var(--text-muted);
+  border-bottom: 1px solid var(--border-subtle);
+  margin-bottom: 2px;
+}
+
+.slashDropdownItem {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  width: 100%;
+  padding: 8px 12px;
+  background: none;
+  border: none;
+  cursor: pointer;
+  text-align: left;
+  transition: background 0.1s;
+  border-radius: 0;
+}
+
+.slashDropdownItem:hover,
+.slashDropdownActive {
+  background: var(--bg-hover);
+}
+
+.slashDropdownCmdName {
+  font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--accent);
+  flex-shrink: 0;
+}
+
+.slashDropdownCmdDesc {
+  font-size: 12px;
+  color: var(--text-muted);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.slashDropdownModelShort {
+  font-size: 13px;
+  font-weight: 500;
+  color: var(--text-primary);
+  flex-shrink: 0;
+  font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+}
+
+.slashDropdownModelProvider {
+  font-size: 11px;
+  color: var(--text-muted);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.slashDropdownEmpty {
+  padding: 10px 12px;
+  font-size: 12px;
+  color: var(--text-muted);
+  font-style: italic;
+}
+
+/* ── Model label in footer ──────────────────────────────────────── */
+.modelLabel {
+  font-size: 11px;
+  color: var(--text-muted);
+  font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  max-width: 160px;
+  flex-shrink: 0;
+  opacity: 0.7;
+}
+
+/* ── Scroll-to-bottom FAB ───────────────────────────────────────── */
+.scrollFab {
+  position: sticky;
+  bottom: 8px;
+  display: block;
+  margin: 8px auto 0;
+  padding: 6px 14px;
+  font-size: 12px;
+  font-weight: 500;
+  background: var(--bg-elevated);
+  color: var(--text-primary);
+  border: 1px solid var(--border-dim);
+  border-radius: 99px;
+  cursor: pointer;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.15);
+  transition: background 0.15s, box-shadow 0.15s;
+}
+
+.scrollFab:hover {
+  background: var(--bg-hover);
+  box-shadow: 0 3px 12px rgba(0, 0, 0, 0.2);
+}
+
+/* ── Turn Group ───────────────────────────────────────────────────── */
+.turnGroup {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  padding: 8px 0;
+  border-bottom: 1px solid var(--border-subtle);
+}
+
+.turnGroup:last-child {
+  border-bottom: none;
+}
+
+.turnGroupActive {
+  background: color-mix(in srgb, var(--accent-blue) 3%, transparent);
+  border-radius: 8px;
+  margin: 0 -8px;
+  padding: 8px;
+}
+
+/* ── Improved Message Header ─────────────────────────────────────── */
+.messageTimestamp {
+  font-size: 10px;
+  color: var(--text-muted);
+  font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+  opacity: 0.6;
+  margin-left: auto;
+}
+
+.messageActionBtn {
+  font-size: 10px;
+  color: var(--text-muted);
+  background: none;
+  border: none;
+  cursor: pointer;
+  padding: 2px 6px;
+  border-radius: 3px;
+  transition: all 0.15s;
+  font-family: inherit;
+  opacity: 0;
+}
+
+.message:hover .messageActionBtn {
+  opacity: 1;
+}
+
+.messageActionBtn:hover {
+  background: var(--bg-hover);
+  color: var(--text-primary);
+}
+
+.messageUserHeader {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin-bottom: 4px;
+}
+
+/* ── Diff Viewer ───────────────────────────────────────────────────── */
+.diffViewer {
+  border: 1px solid var(--border-subtle);
+  border-radius: 6px;
+  background: var(--bg-elevated);
+  overflow: hidden;
+  margin: 4px 0;
+}
+
+.diffHeader {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 12px;
+  cursor: pointer;
+  background: var(--bg-subtle);
+  user-select: none;
+}
+
+.diffHeader:hover {
+  background: var(--bg-hover);
+}
+
+.diffIcon {
+  font-size: 10px;
+  color: var(--text-muted);
+}
+
+.diffFilePath {
+  font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--accent-yellow);
+}
+
+.diffStats {
+  display: flex;
+  gap: 4px;
+  font-size: 11px;
+  font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+}
+
+.diffAdded {
+  color: var(--accent-green);
+}
+
+.diffRemoved {
+  color: var(--status-red);
+}
+
+.diffHunkCount {
+  font-size: 10px;
+  color: var(--text-muted);
+  margin-left: auto;
+}
+
+.diffCopyBtn {
+  font-size: 10px;
+  color: var(--text-muted);
+  background: none;
+  border: none;
+  cursor: pointer;
+  padding: 2px 6px;
+  border-radius: 3px;
+}
+
+.diffCopyBtn:hover {
+  background: var(--bg-hover);
+  color: var(--text-primary);
+}
+
+.diffBody {
+  border-top: 1px solid var(--border-subtle);
+  background: var(--bg-base);
+  max-height: 400px;
+  overflow-y: auto;
+}
+
+.diffHunk {
+  padding: 8px 12px;
+}
+
+.diffHunkHeader {
+  font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+  font-size: 11px;
+  color: var(--text-muted);
+  background: var(--bg-subtle);
+  padding: 4px 8px;
+  border-radius: 3px;
+  margin-bottom: 8px;
+}
+
+.diffLine {
+  display: flex;
+  font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+  font-size: 12px;
+  line-height: 1.5;
+}
+
+.diffLineNum {
+  min-width: 40px;
+  text-align: right;
+  padding-right: 8px;
+  color: var(--text-muted);
+  opacity: 0.5;
+  user-select: none;
+}
+
+.diffLineMarker {
+  min-width: 16px;
+  text-align: center;
+  color: var(--text-muted);
+}
+
+.diffLineAdded {
+  background: color-mix(in srgb, var(--accent-green) 15%, transparent);
+}
+
+.diffLineAdded .diffLineMarker {
+  color: var(--accent-green);
+}
+
+.diffLineAdded .diffLineContent {
+  color: var(--accent-green);
+}
+
+.toolCommandCode {
+  font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+  font-size: 12px;
+  background: #151515;
+  color: #d4d4d4;
+  padding: 12px;
+  margin: 0;
+  white-space: pre-wrap;
+  word-break: break-all;
+}
+
+.toolOutputCode {
+  font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+  font-size: 12px;
+  color: var(--text-primary);
+  padding: 12px;
+  margin: 0;
+  white-space: pre-wrap;
+  word-break: break-all;
+  background: var(--bg-base);
+  border-top: 1px solid var(--border-subtle);
+}
+
+.toolOutputError {
+  color: var(--status-red);
+  background: color-mix(in srgb, var(--status-red) 8%, var(--bg-base));
+}
+
+.toolInputSection {
+  border-bottom: 1px solid var(--border-subtle);
+}
+
+.toolInputLabel,
+.toolOutputLabel {
+  font-size: 10px;
+  font-weight: 600;
+  text-transform: uppercase;
+  color: var(--text-muted);
+  padding: 6px 12px;
+  background: var(--bg-subtle);
+  letter-spacing: 0.05em;
+}
+
+.toolInputCode {
+  font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+  font-size: 12px;
+  color: var(--text-primary);
+  padding: 12px;
+  margin: 0;
+  white-space: pre-wrap;
+  word-break: break-all;
+}
+
+.diffLineRemoved {
+  background: color-mix(in srgb, var(--status-red) 15%, transparent);
+}
+
+.diffLineRemoved .diffLineMarker {
+  color: var(--status-red);
+}
+
+.diffLineRemoved .diffLineContent {
+  color: var(--status-red);
+}
+
+.diffLineContent {
+  color: var(--text-primary);
+  white-space: pre-wrap;
+  word-break: break-all;
+}
+
+.diffShowMore {
+  display: block;
+  width: 100%;
+  padding: 8px;
+  font-size: 12px;
+  color: var(--accent-blue);
+  background: none;
+  border: none;
+  cursor: pointer;
+  text-align: center;
+}
+
+.diffShowMore:hover {
+  text-decoration: underline;
+}
+
+/* ── Subtask Part ─────────────────────────────────────────────────── */
+.subtaskPart {
+  border: 1px solid var(--border-dim);
+  border-radius: 6px;
+  background: var(--bg-elevated);
+  padding: 12px;
+  margin: 4px 0;
+}
+
+.subtaskHeader {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.subtaskIcon {
+  font-size: 12px;
+  color: var(--accent-blue);
+}
+
+.subtaskLabel {
+  font-size: 11px;
+  font-weight: 600;
+  text-transform: uppercase;
+  color: var(--accent-blue);
+  letter-spacing: 0.05em;
+}
+
+.subtaskCommand {
+  font-size: 11px;
+  font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+  padding: 1px 6px;
+  background: var(--bg-subtle);
+  border-radius: 3px;
+  color: var(--text-muted);
+}
+
+.subtaskAgent {
+  font-size: 11px;
+  font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+  padding: 1px 6px;
+  background: var(--bg-subtle);
+  border-radius: 3px;
+  color: var(--text-muted);
+}
+
+.subtaskModel {
+  font-size: 10px;
+  font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+  color: var(--text-muted);
+  opacity: 0.7;
+}
+
+.subtaskDescription {
+  font-size: 13px;
+  color: var(--text-primary);
+  margin-top: 8px;
+  line-height: 1.5;
+}
+
+.subtaskPromptSection {
+  margin-top: 8px;
+}
+
+.subtaskPromptToggle {
+  font-size: 11px;
+  color: var(--accent-blue);
+  background: none;
+  border: none;
+  cursor: pointer;
+  padding: 0;
+}
+
+.subtaskPromptToggle:hover {
+  text-decoration: underline;
+}
+
+.subtaskPrompt {
+  margin-top: 8px;
+  padding: 8px;
+  background: var(--bg-subtle);
+  border-radius: 4px;
+  font-size: 12px;
+  font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+  white-space: pre-wrap;
+  word-break: break-word;
+  max-height: 200px;
+  overflow-y: auto;
+}
+
+.subtaskOpenSession {
+  margin-top: 8px;
+  font-size: 11px;
+  color: var(--accent-blue);
+  background: none;
+  border: none;
+  cursor: pointer;
+  padding: 0;
+}
+
+.subtaskOpenSession:hover {
+  text-decoration: underline;
+}
+
+/* ── Shell Action Part ─────────────────────────────────────────────── */
+.shellActionPart {
+  border: 1px solid var(--border-subtle);
+  border-radius: 6px;
+  background: var(--bg-elevated);
+  margin: 4px 0;
+  overflow: hidden;
+}
+
+.shellActionHeader {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 12px;
+  background: var(--bg-subtle);
+}
+
+.shellActionIcon {
+  font-size: 12px;
+  color: var(--text-muted);
+}
+
+.shellActionLabel {
+  font-size: 11px;
+  font-weight: 600;
+  text-transform: uppercase;
+  color: var(--accent-yellow);
+  letter-spacing: 0.05em;
+}
+
+.shellActionStatus {
+  font-size: 10px;
+  padding: 1px 6px;
+  border-radius: 3px;
+  margin-left: auto;
+}
+
+.shellActionStatusOk {
+  color: var(--accent-green);
+  background: color-mix(in srgb, var(--accent-green) 15%, transparent);
+}
+
+.shellActionStatusError {
+  color: var(--status-red);
+  background: color-mix(in srgb, var(--status-red) 15%, transparent);
+}
+
+.shellActionCommand {
+  padding: 8px 12px;
+  background: #151515;
+  border-bottom: 1px solid var(--border-subtle);
+}
+
+.shellActionCommand code {
+  font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+  font-size: 12px;
+  color: #d4d4d4;
+  white-space: pre-wrap;
+  word-break: break-all;
+}
+
+.shellActionOutputSection {
+  background: var(--bg-base);
+}
+
+.shellActionOutputHeader {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 6px 12px;
+  border-bottom: 1px solid var(--border-subtle);
+}
+
+.shellActionToggle {
+  font-size: 11px;
+  color: var(--accent-blue);
+  background: none;
+  border: none;
+  cursor: pointer;
+}
+
+.shellActionToggle:hover {
+  text-decoration: underline;
+}
+
+.shellActionCopy {
+  font-size: 10px;
+  color: var(--text-muted);
+  background: none;
+  border: none;
+  cursor: pointer;
+  padding: 2px 6px;
+  border-radius: 3px;
+}
+
+.shellActionCopy:hover {
+  background: var(--bg-hover);
+  color: var(--text-primary);
+}
+
+.shellActionOutput {
+  padding: 12px;
+  font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+  font-size: 12px;
+  white-space: pre-wrap;
+  word-break: break-all;
+  max-height: 300px;
+  overflow-y: auto;
+  margin: 0;
+  color: var(--text-primary);
+}
+
+.shellActionOutputError {
+  color: var(--status-red);
+  background: color-mix(in srgb, var(--status-red) 5%, transparent);
+}
+
+/* ── Updated Tool Group Styles ─────────────────────────────────────── */
+.toolGroupCard {
+  border: 1px solid var(--border-subtle);
+  border-radius: 8px;
+  background: var(--bg-elevated);
+  overflow: hidden;
+  margin: 8px 0;
+}
+
+.toolGroupHeader {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 10px 14px;
+  cursor: pointer;
+  background: var(--bg-subtle);
+  user-select: none;
+}
+
+.toolGroupHeader:hover {
+  background: var(--bg-hover);
+}
+
+.toolGroupLabel {
+  font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+  font-size: 12px;
+  font-weight: 700;
+  color: var(--accent-yellow);
+}
+
+.toolGroupNames {
+  font-size: 11px;
+  color: var(--text-muted);
+  font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+}
+
+.toolGroupPreview {
+  font-size: 11px;
+  color: var(--text-muted);
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  margin-left: 4px;
+  font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+}
+
+/* ── Updated User Bubble ───────────────────────────────────────────── */
+.userBubble {
+  background: color-mix(in srgb, var(--accent) 8%, transparent);
+  border: 1px solid color-mix(in srgb, var(--accent) 20%, transparent);
+  border-radius: 16px;
+  border-bottom-left-radius: 3px;
+  border-bottom-right-radius: 16px;
+  padding: 12px 16px;
+  max-width: 82%;
+  word-break: break-word;
+  margin-left: auto;
 }

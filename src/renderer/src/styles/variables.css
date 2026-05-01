@@ -18,4 +18,13 @@
   /* Transitions */
   --transition-fast: 120ms ease;
   --transition-normal: 200ms ease;
+
+  /* Chat UI aliases — map to actual theme vars so all themes work */
+  --text-muted: var(--text-lo);
+  --bg-subtle: var(--bg-elevated);
+  --border-subtle: var(--border-dim);
+  --accent-hover: var(--bg-hover);
+  --accent-blue: var(--status-blue);
+  --accent-green: var(--status-green);
+  --accent-yellow: var(--status-amber);
 }

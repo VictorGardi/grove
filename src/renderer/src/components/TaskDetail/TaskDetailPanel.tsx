@@ -709,6 +709,7 @@ export function TaskDetailPanel(): React.JSX.Element {
           >
             {isOpencodeAgent ? (
               <TaskEventStream
+                key={task.id}
                 taskId={task.id}
                 mode={eventStreamMode}
               />

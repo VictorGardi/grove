@@ -3,17 +3,13 @@ import {
   useEffect,
   useCallback,
   useRef,
+  useMemo,
 } from "react";
 import type { Part, PermissionRequest, QuestionRequest } from "@opencode-ai/sdk/v2";
-import type { TaskInfo, PlanAgent } from "@shared/types";
+import type { TaskInfo } from "@shared/types";
 import { useDataStore } from "../../stores/useDataStore";
-import { useWorkspaceStore } from "../../stores/useWorkspaceStore";
 import { usePlanStore } from "../../stores/usePlanStore";
 import { updateTask } from "../../actions/taskActions";
-import {
-  buildFirstExecutionMessage,
-  buildFirstPlanMessage,
-} from "../../utils/planPrompts";
 import {
   createClient,
   parseModel,
@@ -22,6 +18,15 @@ import {
 } from "../../utils/opencodeClient";
 import { EventMessage } from "./EventMessage";
 import { QuestionCard } from "./QuestionCard";
+import {
+  CommandAutocomplete,
+  ModelSelector,
+  SessionSelector,
+  type CommandInfo,
+} from "./CommandAutocomplete";
+import { WorkingPlaceholder } from "./WorkingPlaceholder";
+import { groupMessagesIntoTurns } from "./TurnGroup";
+import { SessionPicker } from "./SessionPicker";
 import styles from "./TaskEventStream.module.css";
 
 interface TaskEventStreamProps {
@@ -33,6 +38,8 @@ export interface MessageDisplay {
   id: string;
   role: "user" | "assistant";
   parts: Part[];
+  agentMode?: "plan" | "execute";
+  agentModel?: string;
 }
 
 type SessionStatus = "idle" | "busy" | "retry";
@@ -44,16 +51,19 @@ function extractSessionStatus(status: unknown): SessionStatus {
   return "idle";
 }
 
+const SLASH_COMMANDS: CommandInfo[] = [
+  { name: "model", description: "Select AI model", icon: "M" },
+  { name: "session", description: "Switch session", icon: "S" },
+];
+
 export function TaskEventStream({
   taskId,
   mode,
 }: TaskEventStreamProps): React.JSX.Element {
   const task = useDataStore((s) => s.tasks.find((t) => t.id === taskId));
   const workspacePath = task?.workspacePath ?? "";
-  const workspaceDefaults = useWorkspaceStore(
-    (s) => s.workspaceDefaults[workspacePath] ?? null,
-  );
-  void workspaceDefaults; // used for future default agent/model selection
+
+  const [activeMode, setActiveMode] = useState<"plan" | "execute">(mode);
 
   const [messages, setMessages] = useState<MessageDisplay[]>([]);
   const [sessionStatus, setSessionStatus] = useState<SessionStatus>("idle");
@@ -65,34 +75,41 @@ export function TaskEventStream({
   const [isStarting, setIsStarting] = useState(false);
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
   const [sessionId, setSessionId] = useState<string | null>(null);
+  const [isWaitingForAgent, setIsWaitingForAgent] = useState(false);
+  const [showScrollButton, setShowScrollButton] = useState(false);
+
+  const [slashState, setSlashState] = useState<null | "commands" | "models" | "sessions">(null);
+  const [slashQuery, setSlashQuery] = useState("");
+  const [dropdownPos, setDropdownPos] = useState({ top: 0, left: 0, width: 300 });
+  const [showSessionPicker, setShowSessionPicker] = useState(false);
 
   const messagesEndRef = useRef<HTMLDivElement>(null);
+  const scrollContainerRef = useRef<HTMLDivElement>(null);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
+  const inputBoxRef = useRef<HTMLDivElement>(null);
   const clientRef = useRef<OpencodeSdkClient | null>(null);
   const sessionIdRef = useRef<string | null>(null);
   const streamAbortRef = useRef<(() => void) | null>(null);
+  const skippedUserMessageIdsRef = useRef<Set<string>>(new Set());
+  // Guard: only attempt reattachment once per task id to prevent double-subscription
+  const reattachedForTaskRef = useRef<string | null>(null);
 
-  // Agent + model selection
-  const [selectedAgent, setSelectedAgent] = useState<PlanAgent>(
-    ((mode === "execute" ? task?.execSessionAgent : task?.planSessionAgent) ??
-      "opencode") as PlanAgent,
-  );
   const [selectedModel, setSelectedModel] = useState<string>(
     (mode === "execute" ? task?.execModel : task?.planModel) ?? "",
   );
 
   const modelsCache = usePlanStore((s) => s.modelsCache);
   const ensureModels = usePlanStore((s) => s.ensureModels);
-  const modelCacheKey = `${workspacePath}:${selectedAgent}`;
+  const modelCacheKey = `${workspacePath}:opencode`;
   const availableModels: string[] = Array.isArray(modelsCache[modelCacheKey])
     ? (modelsCache[modelCacheKey] as string[])
     : [];
 
   useEffect(() => {
-    if (workspacePath && selectedAgent) {
-      void ensureModels(workspacePath, selectedAgent);
+    if (workspacePath) {
+      void ensureModels(workspacePath, "opencode");
     }
-  }, [workspacePath, selectedAgent, ensureModels]);
+  }, [workspacePath, ensureModels]);
 
   useEffect(() => {
     if (availableModels.length > 0 && !availableModels.includes(selectedModel)) {
@@ -100,12 +117,10 @@ export function TaskEventStream({
     }
   }, [availableModels, selectedModel]);
 
-  // Keep sessionIdRef in sync for use inside async closures
   useEffect(() => {
     sessionIdRef.current = sessionId;
   }, [sessionId]);
 
-  // Cleanup SSE stream on unmount
   useEffect(() => {
     return () => {
       streamAbortRef.current?.();
@@ -113,38 +128,76 @@ export function TaskEventStream({
     };
   }, []);
 
-  // Auto-scroll to bottom when messages change
   useEffect(() => {
     if (messages.length > 0) {
       messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
     }
   }, [messages]);
 
-  // ── Event handling ────────────────────────────────────────────────
+  const handleScroll = useCallback(() => {
+    if (!scrollContainerRef.current) return;
+    const { scrollTop, scrollHeight, clientHeight } = scrollContainerRef.current;
+    const isNearBottom = scrollHeight - scrollTop - clientHeight < 150;
+    setShowScrollButton(!isNearBottom);
+  }, []);
+
+  const scrollToBottom = useCallback(() => {
+    messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
+  }, []);
 
   const handleEvent = useCallback((event: unknown) => {
     const e = event as { type: string; properties: Record<string, unknown> };
+
     switch (e.type) {
       case "message.part.updated": {
-        const { part } = e.properties as { part: Part; delta?: string };
+        const { part } = e.properties as { part: Part };
         if (!part?.messageID) break;
+
+        // Skip if this is a user message we already added locally
+        if (skippedUserMessageIdsRef.current.has(part.messageID)) break;
+
         setMessages((prev) => {
-          const idx = prev.findIndex((m) => m.id === part.messageID);
-          if (idx === -1) {
-            // First part for this message — create entry
+          const existingIdx = prev.findIndex((m) => m.id === part.messageID);
+
+          if (existingIdx === -1) {
             return [
               ...prev,
               { id: part.messageID, role: "assistant", parts: [part] },
             ];
           }
-          const msg = prev[idx];
+
+          const msg = prev[existingIdx];
           const partIdx = msg.parts.findIndex((p) => p.id === part.id);
-          const newParts =
-            partIdx === -1
-              ? [...msg.parts, part]
-              : msg.parts.map((p, i) => (i === partIdx ? part : p));
+
+          // Skip if this exact part already exists (duplicate during replay)
+          if (partIdx !== -1) return prev;
+
+          const newParts = [...msg.parts, part];
           return prev.map((m, i) =>
-            i === idx ? { ...m, parts: newParts } : m,
+            i === existingIdx ? { ...m, parts: newParts } : m,
+          );
+        });
+
+        if (part?.type === "text" && part.text?.trim()) {
+          setIsWaitingForAgent(false);
+        }
+        break;
+      }
+      case "message.part.delta": {
+        const props = e.properties as { messageID: string; partID: string; field: string; delta: string };
+        if (!props.messageID || !props.partID || props.field !== "text") break;
+        setIsWaitingForAgent(false);
+        setMessages((prev) => {
+          const msgIdx = prev.findIndex((m) => m.id === props.messageID);
+          if (msgIdx === -1) return prev;
+          const msg = prev[msgIdx];
+          const partIdx = msg.parts.findIndex((p) => p.id === props.partID);
+          if (partIdx === -1) return prev;
+          const part = msg.parts[partIdx];
+          if (part.type !== "text") return prev;
+          const newPart = { ...part, text: (part.text || "") + props.delta };
+          return prev.map((m, i) =>
+            i === msgIdx ? { ...m, parts: msg.parts.map((p, j) => j === partIdx ? newPart : p) } : m,
           );
         });
         break;
@@ -154,12 +207,17 @@ export function TaskEventStream({
         if (!info?.id) break;
         const msgId = String(info.id);
         const role = (info.role as "user" | "assistant") ?? "assistant";
+
+        // Only create assistant messages from server events - user messages are added locally
+        if (role === "user") {
+          skippedUserMessageIdsRef.current.add(msgId);
+          break;
+        }
+
         setMessages((prev) => {
-          const idx = prev.findIndex((m) => m.id === msgId);
-          if (idx === -1) {
-            return [...prev, { id: msgId, role, parts: [] }];
-          }
-          return prev.map((m, i) => (i === idx ? { ...m, role } : m));
+          const exists = prev.some((m) => m.id === msgId);
+          if (exists) return prev;
+          return [...prev, { id: msgId, role, parts: [], agentMode: activeMode, agentModel: selectedModel }];
         });
         break;
       }
@@ -173,6 +231,7 @@ export function TaskEventStream({
       }
       case "session.idle": {
         setSessionStatus("idle");
+        setIsWaitingForAgent(false);
         break;
       }
       case "permission.asked": {
@@ -187,22 +246,32 @@ export function TaskEventStream({
         const msg =
           (e.properties as { message?: string }).message ?? "Session error";
         setErrorMsg(msg);
+        setIsWaitingForAgent(false);
         break;
       }
-      default: {
-        console.log("[TaskEventStream] Unknown event type:", e.type);
-      }
+      default:
+        break;
     }
-  }, []);
+  }, [activeMode, selectedModel]);
 
-  // ── Session start ─────────────────────────────────────────────────
+  // Stable ref to always-current handleEvent — lets startSubscription have no deps
+  const handleEventRef = useRef(handleEvent);
+  useEffect(() => {
+    handleEventRef.current = handleEvent;
+  }, [handleEvent]);
 
+  // Stable subscription starter — no deps so the reattachment effect doesn't re-fire
+  // when activeMode/selectedModel change
   const startSubscription = useCallback(
     async (
       client: OpencodeSdkClient,
       directory: string,
       targetSessionId: string,
     ) => {
+      // Cancel any existing stream before opening a new one
+      streamAbortRef.current?.();
+      streamAbortRef.current = null;
+
       const sseResult = await client.event.subscribe({ directory });
       const stream = sseResult.stream;
       let cancelled = false;
@@ -212,15 +281,13 @@ export function TaskEventStream({
         void stream.return(undefined);
       };
 
-      // Background event loop — runs until stream ends or cancelled
       void (async () => {
         try {
           for await (const event of stream) {
             if (cancelled) break;
-            // Filter by session ID
             const evtSessionId = getEventSessionId(event);
             if (evtSessionId && evtSessionId !== targetSessionId) continue;
-            handleEvent(event);
+            handleEventRef.current(event);
           }
         } catch (err) {
           if (!cancelled) {
@@ -229,8 +296,69 @@ export function TaskEventStream({
         }
       })();
     },
-    [handleEvent],
+    [], // stable — no deps
   );
+
+  // Try to reconnect to existing session on mount (once per task id)
+  useEffect(() => {
+    if (!task) return;
+
+    // Only run once per task — prevents double-subscription when selectedModel
+    // updates and causes handleEvent/startSubscription to get new references
+    if (reattachedForTaskRef.current === task.id) return;
+    reattachedForTaskRef.current = task.id;
+
+    const sessionIds = task.sessionIds || [];
+    const lastSessionId = task.lastSessionId;
+
+    if (sessionIds.length === 0) return;
+
+    // Multiple sessions without a clear last-used → show picker for user to choose
+    if (sessionIds.length > 1 && !lastSessionId) {
+      setShowSessionPicker(true);
+      return;
+    }
+
+    const sessionToConnect = lastSessionId || sessionIds[0];
+    if (!sessionToConnect) return;
+
+    const directory = task.worktree ?? workspacePath;
+
+    const tryReattach = async () => {
+      try {
+        const serverResult = await window.api.opencodeServer.ensure();
+        if ("error" in serverResult) return;
+
+        const client = createClient(serverResult.url);
+        // Critical: set clientRef so sendMessage works after reattachment
+        clientRef.current = client;
+
+        await startSubscription(client, directory, sessionToConnect);
+        setSessionId(sessionToConnect);
+        sessionIdRef.current = sessionToConnect;
+        console.log("[TaskEventStream] Reattached to session:", sessionToConnect);
+
+        // Load message history from the session
+        const historyResult = await client.session.messages({
+          sessionID: sessionToConnect,
+        });
+        console.log("[TaskEventStream] History result:", historyResult);
+        if (!historyResult.error && historyResult.data) {
+          console.log("[TaskEventStream] Loading", historyResult.data.length, "messages from history");
+          const historyMessages: MessageDisplay[] = historyResult.data.map((msg) => ({
+            id: msg.info.id,
+            role: msg.info.role as "user" | "assistant",
+            parts: msg.parts,
+          }));
+          setMessages(historyMessages);
+        }
+      } catch (err) {
+        console.error("[TaskEventStream] Failed to reattach to session:", err);
+      }
+    };
+
+    void tryReattach();
+  }, [task, workspacePath, startSubscription]);
 
   const startSession = useCallback(
     async (promptText?: string) => {
@@ -240,7 +368,6 @@ export function TaskEventStream({
       setErrorMsg(null);
 
       try {
-        // Get server URL from main process
         const serverResult = await window.api.opencodeServer.ensure();
         if ("error" in serverResult) {
           throw new Error(serverResult.error);
@@ -252,7 +379,6 @@ export function TaskEventStream({
 
         const directory = task.worktree ?? workspacePath;
 
-        // Create session
         const sessionResult = await client.session.create({ directory });
         if (sessionResult.error) {
           throw new Error(
@@ -263,107 +389,65 @@ export function TaskEventStream({
         setSessionId(sid);
         sessionIdRef.current = sid;
 
-        // Persist session ID + agent/model to task frontmatter
+        // Update task frontmatter with new session
+        const currentSessionIds = task.sessionIds || [];
         const frontmatterUpdate: Partial<TaskInfo> = {
-          execSessionId: sid,
+          sessionIds: [...currentSessionIds, sid],
+          lastSessionId: sid,
         };
-        if (mode === "execute") {
-          frontmatterUpdate.execSessionAgent = selectedAgent;
+        if (activeMode === "execute") {
+          frontmatterUpdate.execSessionId = sid;
+          frontmatterUpdate.execSessionAgent = "opencode";
           frontmatterUpdate.execModel = selectedModel || null;
         } else {
-          frontmatterUpdate.planSessionAgent = selectedAgent;
+          frontmatterUpdate.planSessionId = sid;
+          frontmatterUpdate.planSessionAgent = "opencode";
           frontmatterUpdate.planModel = selectedModel || null;
         }
         await updateTask(task.filePath, frontmatterUpdate);
 
-        // Start event subscription BEFORE sending prompt
         await startSubscription(client, directory, sid);
 
-        // Build and send the initial prompt
-        let actualPrompt: string;
-        if (promptText !== undefined) {
-          if (mode === "execute") {
-            const rawResult = await window.api.tasks.readRaw(
-              workspacePath,
-              task.filePath,
-            );
-            const taskContent = rawResult.ok ? rawResult.data : task.description ?? "";
-            actualPrompt = buildFirstExecutionMessage(task, taskContent);
-          } else {
-            const rawResult = await window.api.tasks.readRaw(
-              workspacePath,
-              task.filePath,
-            );
-            const taskContent = rawResult.ok ? rawResult.data : "";
-            actualPrompt = buildFirstPlanMessage(task, promptText, taskContent);
-          }
-        } else if (mode === "execute") {
-          // No user text provided — build execution prompt from task content
-          const rawResult = await window.api.tasks.readRaw(
-            workspacePath,
-            task.filePath,
-          );
-          const taskContent = rawResult.ok ? rawResult.data : task.description ?? "";
-          actualPrompt = buildFirstExecutionMessage(task, taskContent);
-        } else {
-          return; // plan mode with no text — wait for user input
-        }
+        const actualPrompt = promptText ?? "";
+        if (!actualPrompt) return;
 
-        // Optimistic user message
-        if (mode === "plan") {
-          setMessages((prev) => [
-            ...prev,
-            {
-              id: `user-opt-${Date.now()}`,
-              role: "user",
-              parts: [
-                {
-                  type: "text",
-                  id: `upart-${Date.now()}`,
-                  sessionID: sid,
-                  messageID: `umsg-${Date.now()}`,
-                  text: actualPrompt,
-                } as Part,
-              ],
-            },
-          ]);
-        }
+        setMessages((prev) => [
+          ...prev,
+          {
+            id: `user-${Date.now()}`,
+            role: "user",
+            parts: [
+              {
+                type: "text",
+                id: `utext-${Date.now()}`,
+                sessionID: sid,
+                messageID: `umsg-${Date.now()}`,
+                text: actualPrompt,
+              } as Part,
+            ],
+            agentMode: activeMode,
+            agentModel: selectedModel,
+          },
+        ]);
 
-        // Send prompt (async — returns immediately, events arrive via SSE)
         const model = parseModel(selectedModel);
         await client.session.promptAsync({
           sessionID: sid,
           directory,
           parts: [{ type: "text", text: actualPrompt }],
+          variant: activeMode,
           ...(model ? { model } : {}),
         });
-
-        // Mark context as sent
-        const contextField =
-          mode === "execute"
-            ? "terminalExecContextSent"
-            : "terminalPlanContextSent";
-        await updateTask(task.filePath, {
-          [contextField]: true,
-        } as Partial<TaskInfo>);
       } catch (err) {
         setErrorMsg(err instanceof Error ? err.message : String(err));
         setSessionStatus("idle");
       } finally {
         setIsStarting(false);
+        setIsWaitingForAgent(false);
       }
     },
-    [
-      task,
-      workspacePath,
-      mode,
-      selectedAgent,
-      selectedModel,
-      startSubscription,
-    ],
+    [task, workspacePath, activeMode, selectedModel, startSubscription],
   );
-
-  // ── Follow-up message (session already running) ───────────────────
 
   const sendMessage = useCallback(
     async (text: string) => {
@@ -371,21 +455,22 @@ export function TaskEventStream({
       const sid = sessionIdRef.current;
       const directory = task?.worktree ?? workspacePath;
 
-      // Optimistic user message
       setMessages((prev) => [
         ...prev,
         {
-          id: `user-opt-${Date.now()}`,
+          id: `user-${Date.now()}`,
           role: "user",
           parts: [
             {
               type: "text",
-              id: `upart-${Date.now()}`,
+              id: `utext-${Date.now()}`,
               sessionID: sid,
               messageID: `umsg-${Date.now()}`,
               text,
             } as Part,
           ],
+          agentMode: activeMode,
+          agentModel: selectedModel,
         },
       ]);
 
@@ -395,21 +480,133 @@ export function TaskEventStream({
           sessionID: sid,
           directory,
           parts: [{ type: "text", text }],
+          variant: activeMode,
           ...(model ? { model } : {}),
         });
       } catch (err) {
+        setIsWaitingForAgent(false);
         setErrorMsg(err instanceof Error ? err.message : String(err));
       }
     },
-    [task, workspacePath, selectedModel],
+    [task, workspacePath, activeMode, selectedModel],
   );
 
-  // ── UI handlers ───────────────────────────────────────────────────
+  const handleModeSwitch = useCallback(
+    (newMode: "plan" | "execute") => {
+      if (newMode === activeMode) return;
+
+      const taskData = useDataStore.getState().tasks.find((t) => t.id === taskId);
+      if (taskData) {
+        setSelectedModel(
+          (newMode === "execute" ? taskData.execModel : taskData.planModel) ?? "",
+        );
+      }
+
+      setActiveMode(newMode);
+    },
+    [activeMode, taskId],
+  );
+
+  const computeDropdownPos = useCallback(() => {
+    if (!inputBoxRef.current) return;
+    const rect = inputBoxRef.current.getBoundingClientRect();
+    setDropdownPos({ top: rect.top - 8, left: rect.left, width: rect.width });
+  }, []);
+
+  const handleInputChange = useCallback(
+    (e: React.ChangeEvent<HTMLTextAreaElement>) => {
+      const val = e.target.value;
+      setUserInput(val);
+
+      if (val === "/") {
+        computeDropdownPos();
+        setSlashState("commands");
+        setSlashQuery("");
+      } else if (val.startsWith("/") && !val.includes(" ") && !val.includes("\n")) {
+        computeDropdownPos();
+        setSlashState("commands");
+        setSlashQuery(val.slice(1));
+      } else {
+        setSlashState(null);
+        setSlashQuery("");
+      }
+    },
+    [computeDropdownPos],
+  );
+
+  const handleCommandSelect = useCallback(
+    (cmd: string) => {
+      if (cmd === "model") {
+        computeDropdownPos();
+        setSlashState("models");
+        setSlashQuery("");
+        setUserInput("");
+      } else if (cmd === "session") {
+        computeDropdownPos();
+        const sessionIds = task?.sessionIds ?? [];
+        if (sessionIds.length > 0) {
+          setSlashState("sessions");
+        } else {
+          // No sessions yet — start one directly
+          void startSession();
+        }
+        setSlashQuery("");
+        setUserInput("");
+      }
+    },
+    [computeDropdownPos, task, startSession],
+  );
+
+  const handleSlashModelSelect = useCallback((model: string) => {
+    setSelectedModel(model);
+    setSlashState(null);
+    setSlashQuery("");
+    setUserInput("");
+    textareaRef.current?.focus();
+  }, []);
+
+  const handleSlashClose = useCallback(() => {
+    setSlashState(null);
+    setSlashQuery("");
+    setUserInput("");
+  }, []);
+
+  const handleSessionSelect = useCallback(async (selectedSessionId: string) => {
+    if (!task) return;
+
+    setShowSessionPicker(false);
+    setMessages([]);
+    setSessionId(selectedSessionId);
+    sessionIdRef.current = selectedSessionId;
+
+    // Update lastSessionId so next mount reconnects here
+    await updateTask(task.filePath, { lastSessionId: selectedSessionId });
+
+    const directory = task.worktree ?? workspacePath;
+    try {
+      const serverResult = await window.api.opencodeServer.ensure();
+      if ("error" in serverResult) return;
+
+      const client = createClient(serverResult.url);
+      // Critical: set clientRef so sendMessage works after switching sessions
+      clientRef.current = client;
+
+      await startSubscription(client, directory, selectedSessionId);
+    } catch (err) {
+      console.error("[TaskEventStream] Failed to switch session:", err);
+    }
+  }, [task, workspacePath, startSubscription]);
+
+  const handleNewSessionFromPicker = useCallback(() => {
+    setShowSessionPicker(false);
+    void startSession();
+  }, [startSession]);
 
   const handleSend = useCallback(() => {
     if (!userInput.trim() || sessionStatus === "busy") return;
     const text = userInput.trim();
     setUserInput("");
+    setIsWaitingForAgent(true);
 
     if (!sessionId) {
       void startSession(text);
@@ -465,43 +662,91 @@ export function TaskEventStream({
     setQuestionRequest(null);
   }, [questionRequest, task, workspacePath]);
 
-  // ── Render ────────────────────────────────────────────────────────
-
-  const effectiveAgent = selectedAgent;
   const hasSession = !!sessionId;
-  const isBusy = sessionStatus === "busy" || isStarting;
-  const canSend = userInput.trim().length > 0 && !isBusy;
+  const isBusy = sessionStatus === "busy" || isStarting || isWaitingForAgent;
+  const canSend = userInput.trim().length > 0 && !isBusy && !slashState;
+
+  const turns = useMemo(() => groupMessagesIntoTurns(messages), [messages]);
 
   return (
     <div className={styles.wrapper}>
-      {/* Messages area */}
-      <div className={styles.eventContainer}>
+      {slashState === "commands" && (
+        <CommandAutocomplete
+          query={slashQuery}
+          commands={SLASH_COMMANDS}
+          onSelect={handleCommandSelect}
+          onClose={handleSlashClose}
+          position={dropdownPos}
+        />
+      )}
+      {slashState === "models" && (
+        <ModelSelector
+          models={availableModels}
+          onSelect={handleSlashModelSelect}
+          onClose={handleSlashClose}
+          position={dropdownPos}
+        />
+      )}
+      {slashState === "sessions" && task && (
+        <SessionSelector
+          sessionIds={task.sessionIds ?? []}
+          directory={task.worktree ?? workspacePath}
+          onSelect={(id) => { setSlashState(null); void handleSessionSelect(id); }}
+          onNewSession={() => { setSlashState(null); void startSession(); }}
+          onClose={handleSlashClose}
+          position={dropdownPos}
+        />
+      )}
+
+      {showSessionPicker && task && (
+        <SessionPicker
+          sessionIds={task.sessionIds || []}
+          directory={task.worktree ?? workspacePath}
+          onSelect={handleSessionSelect}
+          onNewSession={handleNewSessionFromPicker}
+          onClose={() => setShowSessionPicker(false)}
+        />
+      )}
+
+      <div className={styles.eventContainer} ref={scrollContainerRef} onScroll={handleScroll}>
         {messages.length === 0 ? (
           <div className={styles.emptyState}>
-            <div className={styles.emptyIcon}>&#x1F4AC;</div>
             <div className={styles.emptyText}>
-              {mode === "execute"
-                ? `Ready to execute with ${effectiveAgent}`
+              {activeMode === "execute"
+                ? "Ready to execute"
                 : "Ask a question or describe what you need help with"}
             </div>
-            {mode === "execute" && !hasSession && (
+            {activeMode === "execute" && !hasSession && (
               <button
                 className={styles.startButton}
                 onClick={() => void startSession()}
                 disabled={isStarting}
               >
-                {isStarting ? "Starting..." : `Start execution with ${effectiveAgent}`}
+                {isStarting ? "Starting..." : "Start execution"}
               </button>
             )}
           </div>
         ) : (
           <div className={styles.messageList}>
-            {messages.map((msg) => (
-              <EventMessage
-                key={msg.id}
-                message={msg}
-                suppressQuestionJson={!!questionRequest}
-              />
+            {turns.map((turn, turnIdx) => (
+              <div key={turn.id} className={styles.turnGroup}>
+                {turn.userMessage && (
+                  <EventMessage
+                    message={turn.userMessage}
+                    isNew={turnIdx === turns.length - 1}
+                  />
+                )}
+                {turn.assistantMessages.map((msg, msgIdx) => (
+                  <EventMessage
+                    key={msg.id}
+                    message={msg}
+                    agentMode={msg.agentMode ?? activeMode}
+                    agentModel={msg.agentModel ?? selectedModel}
+                    showBusyDots={sessionStatus !== "idle" && msgIdx === turn.assistantMessages.length - 1}
+                    isNew={turnIdx === turns.length - 1 && msgIdx === turn.assistantMessages.length - 1}
+                  />
+                ))}
+              </div>
             ))}
           </div>
         )}
@@ -516,7 +761,7 @@ export function TaskEventStream({
 
         {permissionRequest && (
           <div className={styles.permissionDialog}>
-            <span className={styles.permissionIcon}>&#x26A0;</span>
+            <span className={styles.permissionIcon}>!</span>
             <div className={styles.permissionContent}>
               <span className={styles.permissionText}>
                 Permission requested: <strong>{permissionRequest.permission}</strong>
@@ -545,99 +790,122 @@ export function TaskEventStream({
         )}
 
         <div ref={messagesEndRef} />
-      </div>
 
-      {/* Agent + Model selectors */}
-      <div className={styles.controlsBar}>
-        <select
-          className={styles.controlSelect}
-          value={selectedAgent}
-          onChange={(e) => setSelectedAgent(e.target.value as PlanAgent)}
-          disabled={hasSession}
-        >
-          <option value="opencode">opencode</option>
-          <option value="copilot">copilot</option>
-          <option value="claude">claude</option>
-        </select>
-
-        <select
-          className={styles.controlSelect}
-          value={selectedModel}
-          onChange={(e) => setSelectedModel(e.target.value)}
-          disabled={hasSession || availableModels.length === 0}
-        >
-          {availableModels.length === 0 && (
-            <option value="">Loading models...</option>
-          )}
-          {availableModels.map((m) => (
-            <option key={m} value={m}>
-              {m}
-            </option>
-          ))}
-        </select>
-
-        {isBusy && (
-          <span
-            className={
-              questionRequest ? styles.waitingBadge : styles.thinkingBadge
-            }
-          >
-            {questionRequest ? "Waiting for your answer…" : "Thinking..."}
-          </span>
-        )}
-        {sessionStatus === "retry" && (
-          <span className={styles.statusRetry}>Retrying...</span>
+        {showScrollButton && (
+          <button className={styles.scrollFab} onClick={scrollToBottom}>
+            Scroll to bottom
+          </button>
         )}
       </div>
 
-      {/* Input area */}
       <div className={styles.inputArea}>
-        <textarea
-          ref={textareaRef}
-          className={styles.inputTextarea}
-          placeholder={
-            !hasSession && mode === "execute"
-              ? "Click 'Start execution' to begin..."
-              : "Type your message... (⌘↵ to send)"
-          }
-          value={userInput}
-          onChange={(e) => setUserInput(e.target.value)}
-          onKeyDown={(e) => {
-            if ((e.metaKey || e.ctrlKey) && e.key === "Enter") {
-              handleSend();
-            }
-          }}
-          disabled={isBusy || (!hasSession && mode === "execute")}
-          autoFocus
-          rows={3}
-        />
-        <div className={styles.inputFooter}>
-          <span className={styles.inputHint}>⌘↵ to send</span>
-          {isBusy ? (
-            <button className={styles.stopButton} onClick={handleStop}>
-              Stop
-            </button>
-          ) : (
-            <button
-              className={styles.sendButton}
-              onClick={handleSend}
-              disabled={!canSend}
-            >
-              Send
-            </button>
-          )}
+        <div className={styles.inputBoxWrapper}>
+          <div className={styles.inputBox} ref={inputBoxRef}>
+            <textarea
+              ref={textareaRef}
+              className={styles.inputTextarea}
+              placeholder={
+                activeMode === "execute" && !hasSession
+                  ? "Click 'Start execution' to begin..."
+                  : "Type a message... (/ for commands, Cmd+Enter to send)"
+              }
+              value={userInput}
+              onChange={handleInputChange}
+              onKeyDown={(e) => {
+                if (slashState) return;
+                if (e.key === "Tab" && e.shiftKey) {
+                  e.preventDefault();
+                  handleModeSwitch(activeMode === "plan" ? "execute" : "plan");
+                  return;
+                }
+                if ((e.metaKey || e.ctrlKey) && e.key === "Enter") {
+                  handleSend();
+                }
+              }}
+              disabled={isBusy || (activeMode === "execute" && !hasSession && messages.length === 0)}
+              autoFocus
+              rows={3}
+            />
+
+            <div className={styles.inputBoxFooter}>
+              <div className={styles.modeToggle}>
+                <button
+                  className={`${styles.modeSegment} ${activeMode === "plan" ? styles.modeSegmentActive : ""}`}
+                  onClick={() => handleModeSwitch("plan")}
+                  title="Plan mode (Shift+Tab)"
+                >
+                  plan
+                </button>
+                <button
+                  className={`${styles.modeSegment} ${activeMode === "execute" ? styles.modeSegmentActive : ""}`}
+                  onClick={() => handleModeSwitch("execute")}
+                  title="Build mode (Shift+Tab)"
+                >
+                  build
+                </button>
+              </div>
+
+              <button
+                className={styles.modelDisplay}
+                onClick={() => {
+                  computeDropdownPos();
+                  setSlashState("models");
+                }}
+                title={selectedModel || "Select model"}
+              >
+                {selectedModel || (availableModels.length === 0 ? "Loading..." : "Select model")}
+              </button>
+
+              <button
+                className={styles.modelDisplay}
+                onClick={() => {
+                  computeDropdownPos();
+                  const sessionIds = task?.sessionIds ?? [];
+                  if (sessionIds.length > 0) {
+                    setSlashState("sessions");
+                  } else {
+                    void startSession();
+                  }
+                }}
+                title="Switch session"
+              >
+                Session
+              </button>
+
+              <span className={styles.inputBoxSpacer} />
+
+              {questionRequest ? (
+                <span className={styles.waitingBadge}>Waiting...</span>
+              ) : (
+                <WorkingPlaceholder isWorking={isBusy} statusText={null} />
+              )}
+              {sessionStatus === "retry" && (
+                <span className={styles.statusRetry}>Retrying...</span>
+              )}
+
+              {isBusy ? (
+                <button className={styles.stopButton} onClick={handleStop}>
+                  Stop
+                </button>
+              ) : (
+                <button
+                  className={styles.sendButton}
+                  onClick={handleSend}
+                  disabled={!canSend}
+                >
+                  Send
+                </button>
+              )}
+            </div>
+          </div>
         </div>
       </div>
 
-      {/* Status bar */}
       {errorMsg && (
         <div className={styles.statusBar}>
-          <span
-            className={styles.statusError}
-            title={errorMsg}
-          >
+          <span className={styles.statusError} title={errorMsg}>
             Error:{" "}
-            {errorMsg.length > 80 ? errorMsg.slice(0, 80) + "…" : errorMsg}
+            {errorMsg.length > 80 ? errorMsg.slice(0, 80) + "..." : errorMsg}
           </span>
         </div>
       )}

@@ -38,7 +38,6 @@ export const useAllTasksStore = create<AllTasksState>()((set, get) => ({
 
   fetchAllWorkspaceTasks: async (workspaces) => {
     const fetchPromises = workspaces
-      .filter((ws) => !get().allTasks.has(ws.path))
       .map((ws) => get().fetchTasksForWorkspace(ws.path));
     await Promise.all(fetchPromises);
   },

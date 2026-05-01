@@ -115,6 +115,11 @@ export async function parseTaskFile(
           ? (data.execSessionAgent as PlanAgent)
           : null,
       execModel: typeof data.execModel === "string" ? data.execModel : null,
+      sessionIds: Array.isArray(data.sessionIds)
+        ? data.sessionIds.filter((s): s is string => typeof s === "string")
+        : [],
+      lastSessionId:
+        typeof data.lastSessionId === "string" ? data.lastSessionId : null,
       terminalPlanSession:
         typeof data.terminalPlanSession === "string"
           ? data.terminalPlanSession
@@ -232,6 +237,8 @@ function buildFrontmatter(fm: TaskFrontmatter): Record<string, unknown> {
   if (fm.execSessionId != null) obj.execSessionId = fm.execSessionId;
   if (fm.execSessionAgent != null) obj.execSessionAgent = fm.execSessionAgent;
   if (fm.execModel != null) obj.execModel = fm.execModel;
+  if (fm.sessionIds != null && fm.sessionIds.length > 0) obj.sessionIds = fm.sessionIds;
+  if (fm.lastSessionId != null) obj.lastSessionId = fm.lastSessionId;
   if (fm.terminalPlanSession != null)
     obj.terminalPlanSession = fm.terminalPlanSession;
   if (fm.terminalExecSession != null)
