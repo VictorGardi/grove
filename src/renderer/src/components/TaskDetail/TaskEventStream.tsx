@@ -74,7 +74,13 @@ export function TaskEventStream({
   const [userInput, setUserInput] = useState("");
   const [isStarting, setIsStarting] = useState(false);
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
-  const [sessionId, setSessionId] = useState<string | null>(null);
+  // Initialize session ID from frontmatter immediately so hasSession is correct
+  // on first render and before reattachment completes. This prevents the race
+  // condition where the user sends a message while tryReattach is still async,
+  // causing startSession to fire and overwrite the existing session.
+  const [sessionId, setSessionId] = useState<string | null>(() =>
+    useDataStore.getState().tasks.find((t) => t.id === taskId)?.lastSessionId ?? null
+  );
   const [isWaitingForAgent, setIsWaitingForAgent] = useState(false);
   const [showScrollButton, setShowScrollButton] = useState(false);
 
@@ -303,13 +309,17 @@ export function TaskEventStream({
   useEffect(() => {
     if (!task) return;
 
-    // Only run once per task — prevents double-subscription when selectedModel
-    // updates and causes handleEvent/startSubscription to get new references
-    if (reattachedForTaskRef.current === task.id) return;
-    reattachedForTaskRef.current = task.id;
-
     const sessionIds = task.sessionIds || [];
     const lastSessionId = task.lastSessionId;
+
+    // Guard: prevent double-subscription when selectedModel updates
+    // But allow re-run if sessionIds changed (from empty to populated)
+    if (reattachedForTaskRef.current === task.id) {
+      // Already successfully reattached - only return if we have sessions
+      if (sessionIds.length > 0) return;
+      // No sessions last time - clear guard so we can try again
+      reattachedForTaskRef.current = null;
+    }
 
     if (sessionIds.length === 0) return;
 
@@ -330,21 +340,17 @@ export function TaskEventStream({
         if ("error" in serverResult) return;
 
         const client = createClient(serverResult.url);
-        // Critical: set clientRef so sendMessage works after reattachment
         clientRef.current = client;
 
-        await startSubscription(client, directory, sessionToConnect);
         setSessionId(sessionToConnect);
         sessionIdRef.current = sessionToConnect;
-        console.log("[TaskEventStream] Reattached to session:", sessionToConnect);
 
-        // Load message history from the session
+        // Load message history before subscribing so SSE only appends new events
         const historyResult = await client.session.messages({
           sessionID: sessionToConnect,
+          directory,
         });
-        console.log("[TaskEventStream] History result:", historyResult);
         if (!historyResult.error && historyResult.data) {
-          console.log("[TaskEventStream] Loading", historyResult.data.length, "messages from history");
           const historyMessages: MessageDisplay[] = historyResult.data.map((msg) => ({
             id: msg.info.id,
             role: msg.info.role as "user" | "assistant",
@@ -352,6 +358,11 @@ export function TaskEventStream({
           }));
           setMessages(historyMessages);
         }
+
+        await startSubscription(client, directory, sessionToConnect);
+
+        // Mark as successfully reattached
+        reattachedForTaskRef.current = task.id;
       } catch (err) {
         console.error("[TaskEventStream] Failed to reattach to session:", err);
       }
@@ -591,7 +602,21 @@ export function TaskEventStream({
       // Critical: set clientRef so sendMessage works after switching sessions
       clientRef.current = client;
 
+      // Load history before subscribing so SSE only appends new events
+      const historyResult = await client.session.messages({
+        sessionID: selectedSessionId,
+        directory,
+      });
+      if (!historyResult.error && historyResult.data) {
+        setMessages(historyResult.data.map((msg) => ({
+          id: msg.info.id,
+          role: msg.info.role as "user" | "assistant",
+          parts: msg.parts,
+        })));
+      }
+
       await startSubscription(client, directory, selectedSessionId);
+      reattachedForTaskRef.current = task.id;
     } catch (err) {
       console.error("[TaskEventStream] Failed to switch session:", err);
     }
