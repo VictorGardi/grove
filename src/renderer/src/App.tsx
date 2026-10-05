@@ -15,6 +15,7 @@ import { Banner } from './components/ui/Banner'
 import { Button } from './components/ui/Button'
 import { useSlices } from './stores/slices'
 import { sessionGroups, sessionOrder } from './tree'
+import { viewableFiles } from './viewerFiles'
 import s from './App.module.css'
 
 export default function App() {
@@ -50,6 +51,8 @@ export default function App() {
   const title = focusedFeature ? focusedFeature.title : focused?.label
   const board = ui.view === 'board'
   const crumbs = board ? ['Board'] : title ? [...(project ? [project.name] : []), title] : []
+  const v = ui.viewer
+  const viewerFeature = v && features.items.find((f) => f.projectId === v.projectId && f.slug === v.slug)
 
   return (
     <>
@@ -81,7 +84,10 @@ export default function App() {
             )}
           </>
         }
-        viewer={ui.viewer ? <ArtifactViewer target={ui.viewer} onClose={closeViewer} /> : undefined}
+        viewer={v ? (
+          <ArtifactViewer target={v} groups={viewerFeature ? viewableFiles(viewerFeature, features.stages) : []}
+            onOpen={(path) => openArtifact({ projectId: v.projectId, slug: v.slug, path, hash: null })} onClose={closeViewer} />
+        ) : undefined}
         sidebarWidth={ui.sidebarWidth}
       />
       {newFor && <NewSessionModal initialProjectId={newFor.projectId} onClose={() => setNewFor(null)} />}

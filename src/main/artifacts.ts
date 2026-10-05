@@ -1,6 +1,6 @@
 import fs from 'node:fs'
 import path from 'node:path'
-import { app, protocol } from 'electron'
+import { app, type BrowserWindow, protocol, shell } from 'electron'
 import mermaidJs from 'mermaid/dist/mermaid.min.js?asset'
 import { ARTIFACT_SCHEME, ASSETS_HOST, isViewable, parseArtifactUrl } from '@shared/artifactUrl'
 import { rewriteHtml } from '../core/artifacts/html'
@@ -63,5 +63,41 @@ export function handleArtifacts(core: Core): void {
     } catch {
       return respond(REFUSAL, 404)
     }
+  })
+}
+
+const scheme = (url: string) => {
+  try {
+    return new URL(url).protocol
+  } catch {
+    return ''
+  }
+}
+const web = (url: string) => scheme(url) === 'http:' || scheme(url) === 'https:'
+
+// The viewer frame follows ui.viewer: artifact links go through uiSet, http(s) to the browser,
+// everything else is denied. The renderer's own load of ui.viewer is the one navigation let through.
+export function guardNavigation(win: BrowserWindow, core: Core): void {
+  const wc = win.webContents
+  wc.on('will-frame-navigate', (e) => {
+    if (!app.isPackaged) console.debug('[viewer] will-frame-navigate', e.isMainFrame ? 'main' : 'sub', scheme(e.url))
+    if (e.isMainFrame) {
+      if (e.url.split('#')[0] !== wc.getURL().split('#')[0]) e.preventDefault()
+      return
+    }
+    if (scheme(e.url) === `${ARTIFACT_SCHEME}:`) {
+      const t = parseArtifactUrl(e.url)
+      const cur = core.getSlices().ui.viewer
+      if (t && cur && t.projectId === cur.projectId && t.slug === cur.slug && t.path === cur.path && t.hash === cur.hash) return
+      e.preventDefault()
+      if (t) void core.commands.uiSet({ viewer: t })
+      return
+    }
+    e.preventDefault()
+    if (web(e.url)) void shell.openExternal(e.url)
+  })
+  wc.setWindowOpenHandler(({ url }) => {
+    if (web(url)) void shell.openExternal(url)
+    return { action: 'deny' }
   })
 }

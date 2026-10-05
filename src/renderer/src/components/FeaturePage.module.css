@@ -13,6 +13,11 @@
   gap: var(--sp-2);
 }
 
+.actions {
+  display: flex;
+  gap: var(--sp-2);
+}
+
 .title {
   margin: 0;
   font-size: var(--fs-xl);

@@ -91,4 +91,27 @@ Deviations (small, two-way):
   following the link: no page embeds it with `<img>`; `04-structure.html`
   links it.
 
+## Slice 4 — Navigation, switcher, Open review
+
+Verification: `npm test` 185/185 passed (outside the sandbox, as before);
+`npm run typecheck` clean; `npm run build` clean. Manual checks are for the
+human.
+
+Deviations (small, two-way):
+
+- `guardNavigation` lets through a subframe `grove-artifact:` navigation whose
+  target equals the current `ui.viewer` (all four fields). The renderer's own
+  `src` change is renderer-initiated and may fire `will-frame-navigate`;
+  cancelling it would stop the viewer loading anything. Every other artifact
+  navigation is cancelled and routed through `uiSet`, as the design says.
+- Main-frame navigation is compared without the `#fragment`.
+- The dev-only `console.debug` logs the frame kind and scheme, never the path.
+- `FileGroup` type exported from `viewerFiles.ts`; the switcher is a native
+  `<select>` with `<optgroup>`s. A target in no group (sub-path, unknown
+  feature) shows as a disabled first option.
+- The old header title span is gone; the iframe keeps `title={target.path}`.
+- The structure's Open review check named the discovery-sidebar feature, but
+  it is done (no current stage, so no button). The manual check uses this
+  feature instead (current stage implementation → `06-implementation.md`).
+
 ## Open questions

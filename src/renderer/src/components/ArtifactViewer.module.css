@@ -15,14 +15,17 @@
   border-bottom: 1px solid var(--card-border);
 }
 
-.title {
+.switcher {
   flex: 1;
   min-width: 0;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
+  height: 28px;
+  padding: 0 var(--sp-2);
+  font: inherit;
   font-size: var(--fs-sm);
-  color: var(--text-2);
+  color: var(--text);
+  background: var(--panel-bg);
+  border: 1px solid var(--card-border);
+  border-radius: var(--r-md);
 }
 
 .frame {

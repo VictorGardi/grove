@@ -321,4 +321,113 @@ image through the handler (navigation is not intercepted until slice 4).
 - [x] Manual (human): open the epic's `04-structure.html`, click the
   `refs/xirp-reference.png` link → the image shows in the panel.
 
+## Slice 4 — Navigation, switcher, Open review
+
+Context (code at `f6026c0`): `src/main/artifacts.ts` exports
+`registerArtifactScheme`, `handleArtifacts(core)`; `src/main/index.ts` creates
+`win` after `handleArtifacts(core)` and loads the renderer URL
+(`ELECTRON_RENDERER_URL` in dev, `loadFile` otherwise). No
+`will-navigate`/`setWindowOpenHandler` exists yet. `core.getSlices().ui.viewer`
+is the open target; `core.commands.uiSet(partial)` sets it and pushes
+`state:ui`, so the renderer's `ArtifactViewer` re-renders the iframe `src`
+(`artifactUrl(target)`). `parseArtifactUrl` decodes segments and keeps `hash`
+raw, so `parseArtifactUrl(artifactUrl(t))` equals `t`. A relative link such as
+`../../adr/x.md` normalises under the standard scheme to
+`grove-artifact://<pid>/adr/x.md` (slug `adr`, unknown → refusal page).
+`FeaturesSlice.stages` is every workflow stage `{ id, label }` in order;
+`Feature.stages` (effective) carry `artifact` and `review`; `Feature.currentStage`
+is `null` when done; `Feature.artifacts` are top-level files
+`{ name, stage, role }` (`stage` null when untagged). `isViewable` is in
+`@shared/artifactUrl`. Renderer tests run in vitest/node
+(`src/renderer/src/*.test.ts`). Tokens: `--card-border`, `--panel-bg`,
+`--text`, `--text-2`, `--fs-sm`, `--sp-1..6`, `--r-md`.
+
+The iframe guard must let the renderer's own load of `ui.viewer` through:
+a subframe `grove-artifact:` navigation whose parsed target equals the current
+`ui.viewer` (all four fields) proceeds; any other is cancelled and routed
+through `uiSet`, after which the renderer's load matches and proceeds.
+
+- [x] Write failing test `src/renderer/src/viewerFiles.test.ts` with a
+  `feature(partial)` helper building a `Feature` (`projectId 'p'`, `slug 'f'`,
+  `path '/x'`, `title 'f'`, `kind 'feature'`, `group false`, `parent null`,
+  `flow null`, `cardState 'needs-review'`, `progress null`, `flags []`,
+  `warnings []`, overridable `stages`, `currentStage`, `artifacts`). Stages
+  `[{ id: 'questions', label: 'Questions' }, { id: 'research', label: 'Research' }, { id: 'design', label: 'Design' }]`.
+  - `viewableFiles`: artifacts (in this order) `03-design.md` (design/artifact),
+    `01-questions.md` (questions/artifact), `02-research.html` (research/review),
+    `02-research.md` (research/artifact), `feature.md` (untagged),
+    `notes.txt` (untagged), `00-ticket.md` (untagged) → exactly
+    `[{ label: 'Questions', files: ['01-questions.md'] }, { label: 'Research', files: ['02-research.html', '02-research.md'] }, { label: 'Design', files: ['03-design.md'] }, { label: 'Other', files: ['feature.md', '00-ticket.md'] }]`.
+  - a file tagged with a stage id not in `stages` (`stage: 'gone'`) lands in "Other".
+  - no viewable files → `[]` (no empty groups).
+  - `reviewTarget`: current stage `design` with `review: '03-design.html'` and
+    both files present → `'03-design.html'`; review file absent →
+    `'03-design.md'`; neither present → `null`; `currentStage: null` → `null`;
+    stage with `review: null` and its artifact present → the artifact.
+- [x] Create `src/renderer/src/viewerFiles.ts`:
+  - `export type FileGroup = { label: string; files: string[] }`.
+  - `export function viewableFiles(f: Feature, stages: { id: string; label: string }[]): FileGroup[]` →
+    `files = f.artifacts.filter((a) => isViewable(a.name))`; per stage in
+    `stages` order `{ label: st.label, files: files.filter((a) => a.stage === st.id).map((a) => a.name) }`;
+    then `{ label: 'Other', files: <files whose stage is null or not a stages id> }`;
+    drop groups with no files.
+  - `export function reviewTarget(f: Feature): string | null` →
+    `st = f.stages.find((s) => s.id === f.currentStage)`; `null` if none;
+    `has = (n: string) => f.artifacts.some((a) => a.name === n)`;
+    `st.review && has(st.review) ? st.review : has(st.artifact) ? st.artifact : null`.
+- [x] Run `npm test -- src/renderer/src/viewerFiles.test.ts` → passes.
+- [x] In `src/main/artifacts.ts`: import `BrowserWindow` (type) and `shell`
+  from `electron`; add
+  `const scheme = (url: string) => { try { return new URL(url).protocol } catch { return '' } }`,
+  `const web = (url: string) => scheme(url) === 'http:' || scheme(url) === 'https:'`,
+  and `export function guardNavigation(win: BrowserWindow, core: Core): void`:
+  - `const wc = win.webContents`.
+  - `wc.on('will-frame-navigate', (e) => { … })`:
+    - when `!app.isPackaged`: `console.debug('[viewer] will-frame-navigate', e.isMainFrame ? 'main' : 'sub', scheme(e.url))` (no paths).
+    - main frame: `if (e.url.split('#')[0] !== wc.getURL().split('#')[0]) e.preventDefault()`; return.
+    - subframe, `scheme(e.url) === `${ARTIFACT_SCHEME}:``: `t = parseArtifactUrl(e.url)`,
+      `cur = core.getSlices().ui.viewer`; if `t && cur` and `t.projectId === cur.projectId && t.slug === cur.slug && t.path === cur.path && t.hash === cur.hash` → return (the renderer loading `ui.viewer`);
+      else `e.preventDefault()` and, when `t`, `void core.commands.uiSet({ viewer: t })`.
+    - any other subframe URL: `e.preventDefault()`; if `web(e.url)` → `void shell.openExternal(e.url)`.
+  - `wc.setWindowOpenHandler(({ url }) => { if (web(url)) void shell.openExternal(url); return { action: 'deny' } })`.
+- [x] In `src/main/index.ts`: import `guardNavigation`; call
+  `guardNavigation(win, core)` right after `new BrowserWindow(…)`, before `loadURL`/`loadFile`.
+- [x] Replace `src/renderer/src/components/ArtifactViewer.tsx`:
+  props `{ target: ViewerTarget; groups: FileGroup[]; onOpen: (path: string) => void; onClose: () => void }`.
+  Header: a `<select className={s.switcher} aria-label="Artifact" value={target.path} onChange={(e) => onOpen(e.target.value)}>`
+  holding, when `target.path` is in no group, first `<option value={target.path} disabled>{target.path}</option>`,
+  then per group `<optgroup label={g.label}>` with `<option key={n} value={n}>{n}</option>` per file;
+  then a spacer-free close `Button` as today. The iframe stays as is
+  (`title={target.path}`). Remove the `.title` span and its CSS rule.
+- [x] In `ArtifactViewer.module.css` add
+  `.switcher { flex: 1; min-width: 0; height: 28px; padding: 0 var(--sp-2); font: inherit; font-size: var(--fs-sm); color: var(--text); background: var(--panel-bg); border: 1px solid var(--card-border); border-radius: var(--r-md) }`.
+- [x] In `src/renderer/src/App.tsx`: import `viewableFiles` from `./viewerFiles`;
+  `const v = ui.viewer`; `const viewerFeature = v && features.items.find((f) => f.projectId === v.projectId && f.slug === v.slug)`;
+  pass to `ArtifactViewer` `groups={viewerFeature ? viewableFiles(viewerFeature, features.stages) : []}`
+  and `onOpen={(path) => openArtifact({ projectId: v.projectId, slug: v.slug, path, hash: null })}`.
+- [x] In `src/renderer/src/components/FeaturePage.tsx`: import `Button` from
+  `./ui/Button` and `reviewTarget` from `../viewerFiles`; `const review = reviewTarget(f)`;
+  in the header, after the title, render
+  `{review && <div className={s.actions}><Button size="sm" onClick={() => onOpenArtifact(review)}>Open review</Button></div>}`.
+  In `FeaturePage.module.css` add `.actions { display: flex; gap: var(--sp-2) }`.
+- [x] Run `npm test`
+- [x] Run `npm run typecheck`
+- [x] Run `npm run build`
+- [ ] Manual (human), `npm run dev`, in
+  `2026-10-05-02-workflow-discovery-sidebar/03-design.html`: the terminal
+  running `npm run dev` shows `[viewer] will-frame-navigate sub grove-artifact:`
+  lines; click the "Part of epic" link → the epic's `03-design.html` opens and
+  the switcher lists the epic's files; click an ADR link → refusal page; pick
+  another file in the switcher → it opens.
+- [ ] Manual (human): **Open review** on this feature
+  (`2026-10-05-04-artifact-viewer`, current stage implementation, no review
+  file) opens `06-implementation.md`; on `2026-10-05-02-workflow-discovery-sidebar`
+  (done) there is no button.
+- [ ] Manual (human): add `[x](https://example.com)` to a scratch `.md` in a
+  feature folder, open it, click → opens in the system browser, the panel
+  stays put. Delete the scratch file afterwards.
+- [ ] Manual (human): if no `will-frame-navigate … sub` line appears, stop:
+  the design's `did-frame-navigate` fallback replaces the subframe branch
+  before this slice is ticked.
+
 ## Open questions

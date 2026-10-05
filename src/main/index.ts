@@ -5,7 +5,7 @@ import { chromeBackground } from '@shared/theme'
 import { TmuxBackend } from '../core/backend/tmux'
 import { createCore } from '../core/core'
 import { findTmux, minimalEnv } from '../core/env'
-import { handleArtifacts, registerArtifactScheme } from './artifacts'
+import { guardNavigation, handleArtifacts, registerArtifactScheme } from './artifacts'
 import { registerIpc } from './ipc'
 import { buildMenu } from './menu'
 
@@ -46,6 +46,7 @@ app.whenReady().then(async () => {
     show: false,
     webPreferences: { preload: path.join(__dirname, '../preload/index.js'), contextIsolation: true },
   })
+  guardNavigation(win, core)
   win.once('ready-to-show', () => win?.show())
   win.on('focus', () => void core.checkLiveness())
   win.on('closed', () => {
