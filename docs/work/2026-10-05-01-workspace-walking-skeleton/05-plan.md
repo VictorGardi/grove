@@ -609,13 +609,13 @@ otherwise it removes the project and its `gone` sessions.
 ### Verify (slice 4)
 
 - [x] `npm run typecheck` and `npm test` pass (sandbox off).
-- [ ] *Manual:* Cmd+W → Cancel → still running. Cmd+W → Confirm → row `gone`, and
+- [x] *Manual:* Cmd+W → Cancel → still running. Cmd+W → Confirm → row `gone`, and
   `tmux -L grove ls` no longer lists it. **Remove** → row gone. Rename a session,
   then relaunch → the new name is kept.
-- [ ] *Manual:* with two running sessions, Cmd+1 / Cmd+2 switch terminals, and
+- [x] *Manual:* with two running sessions, Cmd+1 / Cmd+2 switch terminals, and
   `tmux -L grove list-clients` shows exactly one client. **Remove project** on a
   project with a running session → the refusal message shows.
-- [ ] Stop for review.
+- [x] Stop for review.
 
 ---
 
@@ -625,29 +625,29 @@ Outcome: WebGL rendering and truecolor. tmux answers OSC 10/11 with the app's
 colours. The menu owns Cmd+T/W/K/1..9/Q, Edit roles work, `macOptionIsMeta` is
 off, and every other key reaches the pane unchanged.
 
-- [ ] `src/shared/theme.ts`: `export const terminalTheme = { foreground: '#d4d4d4', background: '#1e1e1e', cursor: '#d4d4d4', selectionBackground: '#264f78' }`.
-- [ ] **Test first:** in `tmux.test.ts`, after `create('grove-c')` and
+- [x] `src/shared/theme.ts`: `export const terminalTheme = { foreground: '#d4d4d4', background: '#1e1e1e', cursor: '#d4d4d4', selectionBackground: '#264f78' }`.
+- [x] **Test first:** in `tmux.test.ts`, after `create('grove-c')` and
   `setColors('grove-c', '#d4d4d4', '#1e1e1e')`, the combined output of
   `show-options -p -t =grove-c window-style` and `show-options -w -t =grove-c window-style`
   contains `#d4d4d4` and `#1e1e1e` (compare lowercase).
-- [ ] `src/core/backend/tmux.ts` `attach`: spawn env is
+- [x] `src/core/backend/tmux.ts` `attach`: spawn env is
   `{ ...env, TERM: 'xterm-256color', COLORTERM: 'truecolor' }`.
-- [ ] `src/core/core.ts` `sessionCreate`: after `backend.create`, call
+- [x] `src/core/core.ts` `sessionCreate`: after `backend.create`, call
   `backend.setColors(tmuxName, terminalTheme.foreground, terminalTheme.background)`.
   Import the theme from `src/shared/theme.ts`, which has no Electron imports.
   Add a `sessions.test.ts` assertion that the fake recorded `setColors`.
-- [ ] `TerminalView.tsx`:
+- [x] `TerminalView.tsx`:
   - Options `{ allowProposedApi: true, macOptionIsMeta: false, theme: terminalTheme, fontFamily: 'Menlo, monospace', fontSize: 13 }`.
   - After `open()`, `const webgl = new WebglAddon(); webgl.onContextLoss(() => webgl.dispose()); term.loadAddon(webgl)`.
     Wrap it in try/catch: on failure, stay on the DOM renderer.
-- [ ] `src/main/menu.ts`:
+- [x] `src/main/menu.ts`:
   - Add an **Edit** menu with roles `undo`, `redo`, `separator`, `cut`, `copy`, `paste`, `selectAll`.
   - Add to View **Command Palette** `CmdOrCtrl+K` with an empty `click` (child 7).
   - No `before-input-event` handler anywhere.
 
 ### Verify (slice 5)
 
-- [ ] `npm run typecheck` and `npm test` pass (sandbox off).
+- [x] `npm run typecheck` and `npm test` pass (sandbox off).
 - [ ] *Manual (truecolor):* in a Terminal session run
   `awk 'BEGIN{for(i=0;i<80;i++){r=255-i*3;g=i*3;printf "\033[48;2;%d;%d;100m ",r,g}; printf "\033[0m\n"}'`
   → a smooth red-to-green band, not 256-colour steps.

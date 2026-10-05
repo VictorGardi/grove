@@ -65,4 +65,14 @@ describe.skipIf(!tmuxPath)('TmuxBackend', () => {
     await backend.kill('grove-ab')
     expect((await backend.list()).has('grove-abc')).toBe(true)
   })
+
+  it('sets pane colours for OSC 10/11', async () => {
+    await create('grove-c')
+    await backend.setColors('grove-c', '#d4d4d4', '#1e1e1e')
+    const pane = await tmux('show-options', '-p', '-t', '=grove-c:', 'window-style').catch(() => ({ stdout: '' }))
+    const win = await tmux('show-options', '-w', '-t', '=grove-c:', 'window-style').catch(() => ({ stdout: '' }))
+    const out = (pane.stdout + win.stdout).toLowerCase()
+    expect(out).toContain('#d4d4d4')
+    expect(out).toContain('#1e1e1e')
+  })
 })

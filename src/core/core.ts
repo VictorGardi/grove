@@ -3,6 +3,7 @@ import type { Project, Session, SessionKind, Slices, UiState } from '@shared/typ
 import { DEFAULT_UI } from '@shared/types'
 import type { Result } from '@shared/ipc'
 import type { AttachHandle, SessionBackend } from './backend/types'
+import { terminalTheme } from '@shared/theme'
 import { loginShellArgv } from './env'
 import { hasLiveSessions, newProject } from './projects'
 import { markGone, newSession, reconcile, rename } from './sessions'
@@ -99,6 +100,7 @@ export function createCore(opts: CoreOptions): Core {
       const session = newSession({ projectId, kind, now: now(), id: randomUUID() })
       const argv = session.opencodeSessionId ? loginShellArgv(['opencode', '-s', session.opencodeSessionId]) : undefined
       await backend.create({ name: session.tmuxName, cwd: project.path, cols, rows, argv })
+      await backend.setColors(session.tmuxName, terminalTheme.foreground, terminalTheme.background)
       set('sessions', [...slices.sessions, session])
       return { ok: true, data: session }
     },

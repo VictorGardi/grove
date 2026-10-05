@@ -45,7 +45,8 @@ export class TmuxBackend implements SessionBackend {
   }
 
   async setColors(name: string, fg: string, bg: string): Promise<void> {
-    await this.tmux('select-pane', '-t', `=${name}`, '-P', `fg=${fg},bg=${bg}`)
+    // pane targets need the trailing colon: `=name` alone is read as a window name
+    await this.tmux('select-pane', '-t', `=${name}:`, '-P', `fg=${fg},bg=${bg}`)
   }
 
   async list(): Promise<Set<string>> {
@@ -75,7 +76,7 @@ export class TmuxBackend implements SessionBackend {
       cols,
       rows,
       cwd: os.homedir(),
-      env: env as Record<string, string>,
+      env: { ...env, TERM: 'xterm-256color', COLORTERM: 'truecolor' } as Record<string, string>,
     })
     let killed = false
     return {

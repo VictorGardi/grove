@@ -27,7 +27,7 @@ this implementation.
 - [x] Slice 1. Tracer: add a project, open a terminal session in tmux
 - [x] Slice 2. Sessions persist, reconcile on start, and go `gone`
 - [x] Slice 3. OpenCode sessions with a minted id and the user's shell env
-- [ ] Slice 4. Session and project lifecycle in the sidebar
+- [x] Slice 4. Session and project lifecycle in the sidebar
 - [ ] Slice 5. Terminal fidelity and keys
 - [ ] Slice 6. Finder and Dock launch work like `npm run dev`
 
@@ -148,10 +148,10 @@ Reported passing by the human on 2026-10-05.
 
 ### Manual verification
 
-To be done by the human. Results go here.
+Reported passing by the human on 2026-10-05.
 
-- [ ] Cmd+W → Cancel → still running. Cmd+W → Confirm → row `gone`, and `tmux -L grove ls` no longer lists it. **Remove** → row gone. Rename a session, relaunch → the name is kept.
-- [ ] With two running sessions, Cmd+1 / Cmd+2 switch terminals, and `tmux -L grove list-clients` shows exactly one client. **Remove project** on a project with a running session → the refusal message shows.
+- [x] Cmd+W → Cancel → still running. Cmd+W → Confirm → row `gone`, and `tmux -L grove ls` no longer lists it. **Remove** → row gone. Rename a session, relaunch → the name is kept.
+- [x] With two running sessions, Cmd+1 / Cmd+2 switch terminals, and `tmux -L grove list-clients` shows exactly one client. **Remove project** on a project with a running session → the refusal message shows.
 
 ### Deviations (small, two-way)
 
@@ -173,3 +173,42 @@ To be done by the human. Results go here.
    input cancels.
 8. **The "Can't remove" message** stays under the project header until the
    next **Remove project** click on a project.
+
+## Slice 5
+
+### Automated verification (2026-10-05)
+
+- `npm run typecheck` → passes
+- `npm test` (sandbox off) → 7 files, 43 tests pass, including the new real-tmux colour test
+- `grep -rn "from 'electron'" src/core` → no output. `grep -rn before-input-event src` → no output
+- `npm run build` → passes. The `npm run dev` smoke run for 10 s logged no errors
+
+### Manual verification
+
+To be done by the human. Results go here. Only sessions created after this
+slice get the pane colours, so use a **new** Terminal session.
+
+- [ ] Truecolor: the `awk` gradient one-liner from the plan shows a smooth red-to-green band.
+- [ ] OSC 11: `printf '\e]11;?\a'; sleep 0.2` echoes `rgb:1e1e/1e1e/1e1e`.
+- [ ] Keys: `python3 spikes/electron/keylog.py "$TMPDIR/keylog.txt"` matches the plan's table.
+
+### Deviations (small, two-way)
+
+1. **The `setColors` target is `=grove-<id>:` (trailing colon), not
+   `=grove-<id>`.** The new real-tmux test failed with the plan's form:
+   `select-pane -t =grove-c` gives `can't find pane: =grove-c`, because for a
+   pane or window target tmux reads `=name` as an exact *window* name.
+   `=grove-c:` names the session exactly, then takes its current window and
+   pane. Checked by hand: with `grove-c` and `grove-cc` both present, styling
+   `=grove-c:` left `grove-cc` unstyled. This keeps the design's two-way
+   "Targets: always exact match" rule. The design's tmux contract table shows
+   `select-pane -t =grove-<id>`, and that form doesn't work. The session-level
+   commands (`kill-session`, `attach-session`) keep `=grove-<id>`, which tmux
+   reads as a session there. The test's `show-options -p/-w` targets use the
+   same `:` form.
+2. **View menu layout:** **Command Palette** comes first, and in dev a
+   separator comes before the DevTools and reload items.
+3. **Noticed while checking:** in zsh, an unquoted `=grove-<id>` is expanded
+   as a command path (`grove-c not found`). The manual commands in the plan
+   (`tmux -L grove kill-session -t =grove-<id>`) need quotes in zsh:
+   `-t '=grove-<id>'`.

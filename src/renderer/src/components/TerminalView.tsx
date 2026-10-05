@@ -1,16 +1,31 @@
 import { useEffect, useRef } from 'react'
 import { Terminal } from '@xterm/xterm'
 import { FitAddon } from '@xterm/addon-fit'
+import { WebglAddon } from '@xterm/addon-webgl'
+import { terminalTheme } from '@shared/theme'
 
 export function TerminalView({ sessionId }: { sessionId: string }) {
   const ref = useRef<HTMLDivElement>(null)
 
   useEffect(() => {
     const { api } = window
-    const term = new Terminal({ allowProposedApi: true })
+    const term = new Terminal({
+      allowProposedApi: true,
+      macOptionIsMeta: false,
+      theme: terminalTheme,
+      fontFamily: 'Menlo, monospace',
+      fontSize: 13,
+    })
     const fit = new FitAddon()
     term.loadAddon(fit)
     term.open(ref.current!)
+    try {
+      const webgl = new WebglAddon()
+      webgl.onContextLoss(() => webgl.dispose())
+      term.loadAddon(webgl)
+    } catch {
+      // no WebGL: stay on the DOM renderer
+    }
     fit.fit()
     term.focus()
 

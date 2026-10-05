@@ -97,6 +97,14 @@ describe('core sessions', () => {
     expect(argv[4]).toBe(`exec opencode -s ${res.data.opencodeSessionId}`)
   })
 
+  it('sets the terminal colours on create', async () => {
+    const { fake, make } = setup()
+    const a = make()
+    await a.start()
+    const s = await create(a)
+    expect(fake.calls).toContainEqual({ method: 'setColors', args: [s.tmuxName, '#d4d4d4', '#1e1e1e'] })
+  })
+
   it('starts terminal sessions with no argv', async () => {
     const { fake, make } = setup()
     const a = make()

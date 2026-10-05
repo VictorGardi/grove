@@ -22,6 +22,18 @@ export function buildMenu(send: (a: MenuAction) => void): void {
       ],
     },
     {
+      label: 'Edit',
+      submenu: [
+        { role: 'undo' },
+        { role: 'redo' },
+        { type: 'separator' },
+        { role: 'cut' },
+        { role: 'copy' },
+        { role: 'paste' },
+        { role: 'selectAll' },
+      ],
+    },
+    {
       label: 'Session',
       submenu: Array.from({ length: 9 }, (_, i) => ({
         label: `Session ${i + 1}`,
@@ -30,8 +42,10 @@ export function buildMenu(send: (a: MenuAction) => void): void {
       })),
     },
   ]
-  if (!app.isPackaged) {
-    template.push({ label: 'View', submenu: [{ role: 'toggleDevTools' }, { role: 'reload' }] })
-  }
+  const view: MenuItemConstructorOptions[] = [
+    { label: 'Command Palette', accelerator: 'CmdOrCtrl+K', click: () => {} }, // child 7
+  ]
+  if (!app.isPackaged) view.push({ type: 'separator' }, { role: 'toggleDevTools' }, { role: 'reload' })
+  template.push({ label: 'View', submenu: view })
   Menu.setApplicationMenu(Menu.buildFromTemplate(template))
 }
