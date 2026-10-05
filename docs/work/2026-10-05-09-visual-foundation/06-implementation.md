@@ -1,11 +1,11 @@
 ---
 feature: 2026-10-05-09-visual-foundation
 phase: implementation
-status: draft
+status: approved
 version: 1
 created: 2026-10-05
 updated: 2026-10-05
-approved_at:
+approved_at: 2026-10-05
 based_on:
   - 03-design.md@2
   - 04-structure.md@2
