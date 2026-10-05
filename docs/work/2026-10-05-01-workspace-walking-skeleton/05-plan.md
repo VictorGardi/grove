@@ -703,7 +703,7 @@ with the login-shell env, and has a UTF-8 locale.
 ### Verify (slice 6)
 
 - [x] `npm run typecheck`, `npm test` (sandbox off) and `npm run build` pass.
-- [ ] *Manual (Launch Services env):* quit grove. Then run
+- [x] *Manual (Launch Services env):* quit grove. Then run
   `tmux -L grove kill-server`, so the next server starts with the app's env,
   not a shell's. This ends existing sessions: create one Terminal session
   first, and expect it to show `gone`.
@@ -713,7 +713,7 @@ with the login-shell env, and has a UTF-8 locale.
     Terminal session, `locale` shows `LANG="en_US.UTF-8"`, and `echo $PATH`
     contains `/opt/homebrew/bin`.
   - Quit, relaunch the same way → the sessions re-attach.
-- [ ] *Manual (Dock):* `ln -s "$PWD" node_modules/electron/dist/Electron.app/Contents/Resources/app`
+- [x] *Manual (Dock):* `ln -s "$PWD" node_modules/electron/dist/Electron.app/Contents/Resources/app`
   so Electron loads grove with no arguments. Drag that `Electron.app` into the
   Dock, quit grove, then click it in the Dock and repeat the checks above.
   - Afterwards, `rm node_modules/electron/dist/Electron.app/Contents/Resources/app`
@@ -722,6 +722,6 @@ with the login-shell env, and has a UTF-8 locale.
     verifiable with the dev binary; carried to child 8".
   - Record the Dock-launch env result in `06-implementation.md` either way. It
     closes the research's open "Dock-launch env" unknown.
-- [ ] Stop for review. The child is done when all six slices are verified.
+- [x] Stop for review. The child is done when all six slices are verified.
 
 ## Open questions

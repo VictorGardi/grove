@@ -1,7 +1,7 @@
 ---
 feature: 2026-10-05-01-workspace-walking-skeleton
 phase: implementation
-status: in-progress
+status: complete
 version: 1
 created: 2026-10-05
 updated: 2026-10-05
@@ -29,7 +29,7 @@ this implementation.
 - [x] Slice 3. OpenCode sessions with a minted id and the user's shell env
 - [x] Slice 4. Session and project lifecycle in the sidebar
 - [x] Slice 5. Terminal fidelity and keys
-- [ ] Slice 6. Finder and Dock launch work like `npm run dev`
+- [x] Slice 6. Finder and Dock launch work like `npm run dev`
 
 ## Slice 1
 
@@ -232,12 +232,12 @@ slice get the pane colours, so use a **new** Terminal session.
 
 ### Manual verification
 
-To be done by the human. Results go here.
+Reported passing by the human on 2026-10-05.
 
-- [ ] Launch Services env (`env -i /usr/bin/open -n -a …`): an OpenCode session replies to `say hi`. In a Terminal session, `locale` shows `LANG="en_US.UTF-8"` and `$PATH` contains `/opt/homebrew/bin`. Relaunch the same way → the sessions re-attach.
-- [ ] Dock launch: same checks, or "Dock launch not verifiable with the dev binary; carried to child 8".
+- [x] Launch Services env (`env -i /usr/bin/open -n -a …`): an OpenCode session replies to `say hi`. In a Terminal session, `locale` shows `LANG="en_US.UTF-8"` and `$PATH` contains `/opt/homebrew/bin`. Relaunch the same way → the sessions re-attach.
+- [x] Dock launch: same checks, or "Dock launch not verifiable with the dev binary; carried to child 8".
 
-Dock-launch env result: *pending*.
+Dock-launch env result: the human reported that the Dock checks pass. A Dock launch finds tmux, and sessions get `LANG` and Homebrew on `PATH`. This closes the research's open "Dock-launch env" unknown.
 
 ### Deviations (small, two-way)
 
@@ -246,3 +246,62 @@ Dock-launch env result: *pending*.
 2. **Main's startup errors** live in a local `errors` array in `index.ts`.
    `app:errors` returns `[...errors, ...core.getErrors()]` through the
    `getErrors` argument added to `registerIpc` in slice 1.
+
+## Final checks (2026-10-05)
+
+All configured commands pass on `d35597f`:
+
+- `npm run typecheck` → passes
+- `npm test` (sandbox off) → 7 files, 47 tests pass
+- `npm run build` → passes
+- `grep -rn "from 'electron'" src/core` → no output
+
+There is no lint command in this child. The tracker is `none`, so no comment was posted.
+
+## PR description
+
+### Workspace walking skeleton
+
+Child 1 of the `opencode-feature-workspace` epic. This is the thinnest
+end-to-end grove app. Add a repo as a project, start an OpenCode or terminal
+session in tmux, work in it in xterm.js, quit, relaunch, and find it still there.
+
+**Design in brief** (`03-design.md`):
+- Core runs in Electron main behind a seam with no Electron imports (E-D4):
+  projects, sessions, the JSON stores and the tmux backend. It is tested with
+  vitest, including against real tmux on a throwaway socket.
+- Sessions live in tmux on a dedicated socket (`-L grove`), with a shipped
+  `resources/tmux.conf`, and are attached through node-pty (E-D3). Targets are
+  always exact (`=grove-<id>`, `=grove-<id>:` for pane commands).
+- Each session gets the user's login-shell env (D1 / ADR 0010). OpenCode runs
+  as `$SHELL -l -i -c 'exec opencode -s <minted ses_ id>'`.
+- Main → renderer state uses whole-slice snapshots, coalesced per tick (D2 /
+  ADR 0011). Commands are `invoke` calls returning `Result<T>`.
+- State is kept in versioned JSON with atomic writes (E-D7):
+  `~/.config/grove/config.json` (projects) and
+  `~/Library/Application Support/grove/state.json` (sessions, ui). A bad file
+  is moved aside and shown in an error banner.
+
+**Slices:**
+1. Tracer: add a project, open a terminal session in tmux (`61cf125`)
+2. Sessions persist, reconcile on start, and go `gone` (`57023a0`)
+3. OpenCode sessions with a minted id and the user's shell env (`9772ce0`)
+4. Session and project lifecycle in the sidebar: kill, remove, rename,
+   Cmd+1..9, remove project (`c9cc791`)
+5. Terminal fidelity and keys: WebGL, truecolor, OSC 10/11, menu-owned
+   accelerators (`0c4ee4b`, plus the overlay z-index fix `c73a1e9`)
+6. Finder and Dock launches find tmux and set a UTF-8 locale (`d35597f`)
+
+**How to verify:**
+- `npm install`, then `npm run typecheck`, `npm test` (needs access to
+  `/private/tmp/tmux-501`, so run it outside sandboxes) and `npm run build`.
+- `npm run dev`: Add project → Cmd+T → OpenCode → `say hi` gets a reply. Then
+  Cmd+Q, and `npm run dev` again: the session re-attaches.
+- `tmux -L grove kill-session -t '=grove-<id>'` while the app runs → the row
+  shows `gone` within 5 s.
+- The manual checks for each slice are listed above, and all passed on 2026-10-05.
+
+**Notable deviations:** the pane-target form `=grove-<id>:` (slice 5,
+deviation 1), and the overlay stacking fix (slice 5, deviation 4). Everything
+else is a small naming or helper choice, logged per slice.
+
