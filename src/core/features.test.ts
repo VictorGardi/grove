@@ -1,6 +1,7 @@
 import fs from 'node:fs'
 import path from 'node:path'
 import { afterEach, describe, expect, it } from 'vitest'
+import type { FeaturesSlice } from '@shared/types'
 import { loadConfig, saveConfig } from './store/configStore'
 import { createTerminal, setupCore } from './testing/setup'
 
@@ -44,6 +45,26 @@ describe('core features', () => {
 
     await core.commands.uiSet({ sidebarWidth: 300 }) // forces a state write
     expect(JSON.parse(fs.readFileSync(s.statePath, 'utf8'))).not.toHaveProperty('features')
+  })
+
+  it('updates an artifact mtimeMs when its file changes', async () => {
+    const s = setup()
+    s.feature('a')
+    const file = path.join(s.work, 'a', 'x.md')
+    fs.writeFileSync(file, 'one\n')
+    fs.utimesSync(file, new Date('2026-01-01'), new Date('2026-01-01'))
+    const core = s.make()
+    await core.start()
+    const pushed: FeaturesSlice[] = []
+    core.on('slice', (k, v) => { if (k === 'features') pushed.push(v as FeaturesSlice) })
+    const mtime = (f: FeaturesSlice) => f.items[0].artifacts.find((a) => a.name === 'x.md')!.mtimeMs
+    const before = mtime(core.getSlices().features)
+
+    fs.writeFileSync(file, 'two\n')
+    fs.utimesSync(file, new Date('2026-02-01'), new Date('2026-02-01'))
+    s.watchers.roots.get(s.work)!('a')
+    expect(mtime(pushed.at(-1)!)).toBe(new Date('2026-02-01').getTime())
+    expect(mtime(pushed.at(-1)!)).not.toBe(before)
   })
 
   it('re-reads a folder when its watcher fires', async () => {

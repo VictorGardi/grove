@@ -1,3 +1,4 @@
+import { useEffect, useRef } from 'react'
 import type { ViewerTarget } from '@shared/types'
 import { artifactUrl } from '@shared/artifactUrl'
 import type { FileGroup } from '../viewerFiles'
@@ -5,12 +6,25 @@ import { Button } from './ui/Button'
 import s from './ArtifactViewer.module.css'
 
 // Opaque sandboxed frame: no allow-same-origin, so the artifact gets a null origin (ADR 0007).
-export function ArtifactViewer({ target, groups, onOpen, onClose }: {
+export function ArtifactViewer({ target, groups, mtimeMs, expanded, onOpen, onToggleExpanded, onReload, onClose }: {
   target: ViewerTarget
   groups: FileGroup[]
+  mtimeMs: number | undefined // the open file's, from the features slice
+  expanded: boolean
   onOpen: (path: string) => void
+  onToggleExpanded: () => void
+  onReload: () => void
   onClose: () => void
 }) {
+  const url = artifactUrl(target)
+  // the same file changed on disk: reload in place (a new target loads through src instead)
+  const seen = useRef<{ url: string; mtimeMs: number | undefined }>({ url, mtimeMs })
+  useEffect(() => {
+    const prev = seen.current
+    if (prev.url === url && prev.mtimeMs !== undefined && mtimeMs !== undefined && mtimeMs !== prev.mtimeMs) onReload()
+    seen.current = { url, mtimeMs }
+  }, [url, mtimeMs, onReload])
+
   // a linked sub-path or another folder's file isn't listed: show it, unselectable
   const listed = groups.some((g) => g.files.includes(target.path))
   return (
@@ -24,9 +38,11 @@ export function ArtifactViewer({ target, groups, onOpen, onClose }: {
             </optgroup>
           ))}
         </select>
+        <Button variant="ghost" size="sm" icon={expanded ? 'minimize' : 'maximize'} round
+          aria-label={expanded ? 'Collapse viewer' : 'Expand viewer'} onClick={onToggleExpanded} />
         <Button variant="ghost" size="sm" icon="x" round aria-label="Close viewer" onClick={onClose} />
       </div>
-      <iframe className={s.frame} sandbox="allow-scripts" src={artifactUrl(target)} title={target.path} />
+      <iframe className={s.frame} sandbox="allow-scripts" src={url} title={target.path} />
     </div>
   )
 }

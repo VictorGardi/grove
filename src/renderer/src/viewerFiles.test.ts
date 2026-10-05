@@ -24,7 +24,7 @@ const feature = (partial: Partial<Feature>): Feature => ({
 })
 
 const stages = [{ id: 'questions', label: 'Questions' }, { id: 'research', label: 'Research' }, { id: 'design', label: 'Design' }]
-const art = (name: string, stage: string | null = null, role: Artifact['role'] = null): Artifact => ({ name, stage, role })
+const art = (name: string, stage: string | null = null, role: Artifact['role'] = null): Artifact => ({ name, stage, role, mtimeMs: 0 })
 
 describe('viewableFiles', () => {
   it('groups viewable files by stage in workflow order, then Other', () => {

@@ -15,6 +15,7 @@ export interface InvokeMap {
   'session:rename': [{ id: string; label: string }, Session]
   'session:link': [{ id: string; feature: string | null }, Session]
   'ui:set': [Partial<UiState>, UiState]
+  'viewer:reload': [void, void]
   'pty:attach': [{ sessionId: string; cols: number; rows: number }, { attachId: string }]
 }
 // fire-and-forget renderer → main

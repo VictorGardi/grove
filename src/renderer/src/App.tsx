@@ -19,7 +19,8 @@ import { viewableFiles } from './viewerFiles'
 import s from './App.module.css'
 
 export default function App() {
-  const { projects, sessions, ui, features, errors, hydrate, setFocused, setView, openFeature, openArtifact, closeViewer } = useSlices()
+  const { projects, sessions, ui, features, errors, hydrate, setFocused, setView, openFeature, openArtifact, closeViewer,
+    setViewerWidth, toggleViewerExpanded, reloadViewer } = useSlices()
   const [newFor, setNewFor] = useState<{ projectId?: string } | null>(null)
   const [confirmKill, setConfirmKill] = useState<Session | null>(null)
 
@@ -86,9 +87,14 @@ export default function App() {
         }
         viewer={v ? (
           <ArtifactViewer target={v} groups={viewerFeature ? viewableFiles(viewerFeature, features.stages) : []}
+            mtimeMs={viewerFeature ? viewerFeature.artifacts.find((a) => a.name === v.path)?.mtimeMs : undefined}
+            expanded={ui.viewerExpanded} onToggleExpanded={toggleViewerExpanded} onReload={reloadViewer}
             onOpen={(path) => openArtifact({ projectId: v.projectId, slug: v.slug, path, hash: null })} onClose={closeViewer} />
         ) : undefined}
         sidebarWidth={ui.sidebarWidth}
+        viewerWidth={ui.viewerWidth}
+        viewerExpanded={ui.viewerExpanded}
+        onViewerWidth={setViewerWidth}
       />
       {newFor && <NewSessionModal initialProjectId={newFor.projectId} onClose={() => setNewFor(null)} />}
       {confirmKill && (

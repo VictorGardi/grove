@@ -9,6 +9,7 @@ export interface FolderSnapshot {
   path: string
   manifest: Parsed
   files: string[]                  // top-level non-dot files, sorted
+  mtimes: Record<string, number>   // file → mtimeMs, for the viewer's live reload
   artifacts: Record<string, Parsed> // stage files (and all_checked targets) that exist
 }
 
@@ -57,10 +58,11 @@ export function readFolder(dir: string, wf: Workflow): FolderSnapshot | null {
     .filter((e) => e.isFile() && !e.name.startsWith('.'))
     .map((e) => e.name)
     .sort()
+  const mtimes = Object.fromEntries(files.map((f) => [f, fs.statSync(path.join(dir, f), { throwIfNoEntry: false })?.mtimeMs ?? 0]))
   const wanted = stageFiles(wf)
   const artifacts: Record<string, Parsed> = {}
   for (const f of files) {
     if (wanted.has(f)) artifacts[f] = readFrontmatter(fs.readFileSync(path.join(dir, f), 'utf8'))
   }
-  return { slug: path.basename(dir), path: dir, manifest: readFrontmatter(manifest), files, artifacts }
+  return { slug: path.basename(dir), path: dir, manifest: readFrontmatter(manifest), files, mtimes, artifacts }
 }

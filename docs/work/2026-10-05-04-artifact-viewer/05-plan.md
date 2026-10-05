@@ -430,4 +430,114 @@ through `uiSet`, after which the renderer's load matches and proceeds.
   the design's `did-frame-navigate` fallback replaces the subframe branch
   before this slice is ticked.
 
+## Slice 5 — Live reload and layout
+
+Context (code at `1e9d6ca`): `readFolder` (`src/core/discovery/folder.ts`)
+returns `FolderSnapshot { slug, path, manifest, files, artifacts }` with
+`files` the sorted top-level non-dot file names; `deriveFeatures`
+(`src/core/workflow/derive.ts`) maps them to
+`artifacts: f.files.map((name) => ({ name, ...tagged(name) }))`. The root
+watcher re-reads one folder per change (`rereadFolder`) and `set('features', …)`
+pushes the slice; in tests `s.watchers.roots.get(s.work)!(slug)` fires it
+(`src/core/features.test.ts`, `setup()` there). `FolderSnapshot` literals also
+exist in `src/core/workflow/derive.test.ts` (`folder()` helper). `Feature`
+literals: `src/renderer/src/{tags,tree,viewerFiles}.test.ts` (all with
+`artifacts: []` or the `art()` helper). `loadState` merges saved `ui` over
+`DEFAULT_UI`. IPC: `InvokeMap` in `src/shared/ipc.ts`, handlers in
+`src/main/ipc.ts` via `handle(ch, fn)` (wraps plain values in `Result`;
+`getWindow()` gives the window). `WebFrameMain.framesInSubtree` lists every
+frame; `frame.reload()` reloads one. `AppShell` (`src/renderer/src/components/shell/`)
+renders sidebar, `<main className={s.content}>`, and `<aside className={s.viewer}>`
+(fixed 480 px); visual inline styles are banned, but a `style` object of only
+CSS custom properties is allowed (it already sets `--sidebar-w`).
+`TerminalView` refits on `ResizeObserver`; `FitAddon.fit()` does nothing when
+its element has no size, so hiding `main` with `display: none` keeps the
+terminal mounted without resizing the pty. Icons: `IconName` union and
+`shapes` map in `src/renderer/src/components/ui/Icon.tsx` (Lucide shapes;
+`minimize` exists, `maximize` doesn't).
+
+Layout rules from the design: splitter between content and viewer, viewer
+width clamped to `[320, content + viewer − 320]` px; expand hides the content
+area and the viewer fills it; close button as today. The width is committed
+(`ui:set`) on pointer-up only; during the drag a local state drives
+`--viewer-w`.
+
+- [x] Write failing test in `src/core/features.test.ts`: `'updates an artifact mtimeMs when its file changes'` —
+  `setup()`, `s.feature('a')`, write `docs/work/a/x.md` (`'one\n'`) and
+  `fs.utimesSync(file, new Date('2026-01-01'), new Date('2026-01-01'))`;
+  start a core; collect pushed features with
+  `core.on('slice', (k, v) => { if (k === 'features') pushed.push(v as FeaturesSlice) })`;
+  `before = core.getSlices().features.items[0].artifacts.find((a) => a.name === 'x.md')!.mtimeMs`;
+  rewrite the file (`'two\n'`) and `fs.utimesSync(file, new Date('2026-02-01'), new Date('2026-02-01'))`;
+  fire `s.watchers.roots.get(s.work)!('a')`; the last pushed slice's `x.md`
+  `mtimeMs` is `new Date('2026-02-01').getTime()` and differs from `before`.
+- [x] Write failing test in `src/core/store/stateStore.test.ts`:
+  `'loads an old ui without viewer layout keys with the defaults'` — file
+  `{"schemaVersion":1,"sessions":[],"ui":{"sidebarWidth":230,"focusedSessionId":null,"viewer":null}}`
+  → `ui.viewerWidth` is `480`, `ui.viewerExpanded` is `false`. Add
+  `viewerWidth: 600, viewerExpanded: true` to the round-trip fixture.
+- [x] In `src/shared/types.ts`: `Feature.artifacts` items gain `mtimeMs: number`;
+  `UiState` gains `viewerWidth: number` and `viewerExpanded: boolean`;
+  `DEFAULT_UI` gains `viewerWidth: 480, viewerExpanded: false`.
+- [x] In `src/core/discovery/folder.ts`: `FolderSnapshot` gains
+  `mtimes: Record<string, number>` (top-level file → `mtimeMs`); `readFolder`
+  fills it with `fs.statSync(path.join(dir, name), { throwIfNoEntry: false })?.mtimeMs ?? 0`
+  for each of `files`.
+- [x] In `src/core/workflow/derive.ts`: `artifacts: f.files.map((name) => ({ name, ...tagged(name), mtimeMs: f.mtimes[name] ?? 0 }))`.
+- [x] Fix fixtures for the new fields: `derive.test.ts` `folder()` returns
+  `mtimes: {}`; `viewerFiles.test.ts` `art()` adds `mtimeMs: 0`.
+- [x] Run `npm test -- src/core/features.test.ts src/core/store/stateStore.test.ts` → passes.
+- [x] In `src/shared/ipc.ts` add `'viewer:reload': [void, void]` to `InvokeMap`.
+  In `src/main/ipc.ts` import `ARTIFACT_SCHEME` from `@shared/artifactUrl` and add
+  `handle('viewer:reload', () => { const win = getWindow(); if (!win || win.isDestroyed()) return; for (const f of win.webContents.mainFrame.framesInSubtree) if (f.url.startsWith(`${ARTIFACT_SCHEME}:`)) f.reload() })`.
+- [x] In `src/renderer/src/stores/slices.ts` add to the interface and store:
+  `setViewerWidth(px: number)` → `ui:set { viewerWidth: Math.round(px) }`;
+  `toggleViewerExpanded()` → `ui:set { viewerExpanded: !get().ui.viewerExpanded }`;
+  `reloadViewer()` → `invoke('viewer:reload')`.
+- [x] In `src/renderer/src/components/ui/Icon.tsx` add `'maximize'` to `IconName`
+  and `maximize: <><path d="M15 3h6v6" /><path d="M9 21H3v-6" /><path d="m21 3-7 7" /><path d="m3 21 7-7" /></>` to `shapes`.
+- [x] In `src/renderer/src/components/ArtifactViewer.tsx`: new props
+  `mtimeMs: number | undefined`, `expanded: boolean`, `onToggleExpanded: () => void`,
+  `onReload: () => void`. Before the close button, a
+  `Button variant="ghost" size="sm" icon={expanded ? 'minimize' : 'maximize'} round aria-label={expanded ? 'Collapse viewer' : 'Expand viewer'} onClick={onToggleExpanded}`.
+  Reload: `const url = artifactUrl(target)`;
+  `const seen = useRef<{ url: string; mtimeMs: number | undefined }>({ url, mtimeMs })`;
+  `useEffect(() => { const prev = seen.current; if (prev.url === url && prev.mtimeMs !== undefined && mtimeMs !== undefined && mtimeMs !== prev.mtimeMs) onReload(); seen.current = { url, mtimeMs } }, [url, mtimeMs, onReload])`;
+  the iframe uses `src={url}`.
+- [x] In `src/renderer/src/components/shell/AppShell.tsx`: new props
+  `viewerWidth: number`, `viewerExpanded: boolean`, `onViewerWidth: (px: number) => void`.
+  Refs `mainRef` (on `<main>`) and `viewerRef` (on the viewer `<aside>`);
+  state `drag: number | null`. The shell `style` becomes
+  `{ '--sidebar-w': `${sidebarWidth}px`, '--viewer-w': `${drag ?? viewerWidth}px` }`.
+  `.body` gets `cx(s.body, viewer && viewerExpanded && s.expanded)` (import `cx` from `../ui/cx`).
+  When `viewer` is set, render between `<main>` and the viewer
+  `<div className={s.splitter} role="separator" aria-orientation="vertical" aria-label="Resize viewer" onPointerDown={start} onPointerMove={move} onPointerUp={end} onPointerCancel={end} />`:
+  - `start(e)`: `e.currentTarget.setPointerCapture(e.pointerId)`; record
+    `limit.current = { right: viewer.getBoundingClientRect().right, total: main.width + viewer.width }`;
+    `setDrag(viewerRef.current!.getBoundingClientRect().width)`.
+  - `move(e)`: when `limit.current`: `setDrag(Math.min(Math.max(limit.current.right - e.clientX, 320), limit.current.total - 320))`.
+  - `end()`: when `limit.current` and `drag !== null`: `onViewerWidth(drag)`;
+    `limit.current = null`; `setDrag(null)`.
+- [x] In `AppShell.module.css`: `.viewer` becomes `width: var(--viewer-w); min-width: 320px; flex-shrink: 1; display: flex; flex-direction: column`;
+  `.content` gains `min-width: 320px` (replacing `min-width: 0`);
+  `.splitter { width: var(--gutter); margin: 0 calc(-1 * var(--gutter)); flex-shrink: 0; cursor: col-resize; touch-action: none }`;
+  `.expanded .content, .expanded .splitter { display: none }`;
+  `.expanded .viewer { flex: 1; width: auto }`.
+- [x] In `src/renderer/src/App.tsx`: take `setViewerWidth, toggleViewerExpanded, reloadViewer`
+  from `useSlices()`; pass `mtimeMs={viewerFeature ? viewerFeature.artifacts.find((a) => a.name === v.path)?.mtimeMs : undefined}`,
+  `expanded={ui.viewerExpanded}`, `onToggleExpanded={toggleViewerExpanded}`,
+  `onReload={reloadViewer}` to `ArtifactViewer`, and
+  `viewerWidth={ui.viewerWidth}`, `viewerExpanded={ui.viewerExpanded}`,
+  `onViewerWidth={setViewerWidth}` to `AppShell`.
+- [x] Run `npm test`
+- [x] Run `npm run typecheck`
+- [x] Run `npm run build`
+- [ ] Manual (human), `npm run dev`: create a scratch `.md` (40+ lines) in a
+  feature folder, open it, scroll down, append a line from a terminal → the
+  panel reloads within about a second near the same place. Delete it after.
+- [ ] Manual (human): drag the splitter (stops at 320 px on each side),
+  expand → the panel fills the content area, collapse, close; reopen an
+  artifact, set a width and expanded state, quit with Cmd+Q and relaunch →
+  the same artifact, width and expanded state come back.
+
 ## Open questions

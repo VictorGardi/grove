@@ -116,4 +116,65 @@ Deviations (small, two-way):
   it is done (no current stage, so no button). The manual check uses this
   feature instead (current stage implementation → `06-implementation.md`).
 
+## Slice 5 — Live reload and layout
+
+Verification: `npm test` 187/187 passed (outside the sandbox, as before);
+`npm run typecheck` clean; `npm run build` clean. Manual checks are for the
+human.
+
+Deviations (small, two-way):
+
+- `derive.test.ts` "tags files with their stage and role" expectation gained
+  `mtimeMs: 0` per artifact (fixture `mtimes: {}`); the plan named only the
+  `folder()` helper.
+- Expanded mode hides the content area with `display: none` rather than
+  unmounting it, so a focused terminal stays attached (`FitAddon.fit()` is a
+  no-op without size, so the pty isn't resized).
+- The splitter width is held in local state during the drag and saved with
+  `ui:set` on pointer-up only (one state write per drag).
+- The viewer may shrink below its saved width (not below 320 px) when the
+  window narrows; content keeps `min-width: 320px`.
+- `cx(s.body, !!viewer && …)`: `viewer` is a `ReactNode`, cast to boolean for
+  `cx`'s types.
+
+## PR description
+
+**Artifact viewer** (child 4 of `2026-10-05-opencode-feature-workspace`, E-D8
+without the comment script).
+
+Read any artifact of a feature inside the app. From the feature page, open
+any viewable top-level file (markdown, HTML, images) or **Open review** (the
+current stage's review file, else its artifact). It opens in a resizable,
+expandable right-hand panel with a stage-grouped file switcher.
+
+Design:
+- `grove-artifact://<projectId>/<slug>/<path>` custom scheme (standard,
+  secure), served by `protocol.handle` in main. Resolution in core
+  (`artifactPath`): discovered feature only, no absolute / `\` / dot
+  segments, realpath must stay under the folder, regular files only.
+  Everything else gets a 404 refusal page.
+- Every response carries a header CSP: no network, scripts only from
+  `grove-artifact://assets`, `sandbox allow-scripts`. The iframe is
+  `sandbox="allow-scripts"` (opaque origin).
+- grove-render's CDN Mermaid tag is rewritten to a bundled Mermaid 12.1.0
+  plus `mermaid-init.js` (theme from `prefers-color-scheme`), so diagrams render offline.
+- Markdown is rendered in main with markdown-it (`html: false`), with a
+  frontmatter table, task-list checkboxes, Mermaid fences and `markdown.css`.
+- Navigation: artifact links route through `ui.viewer` (one source of truth),
+  `http(s)` opens in the system browser, everything else and popups are
+  denied. The main window can't navigate away.
+- Live reload: `Feature.artifacts[].mtimeMs` changes in the features slice →
+  `viewer:reload` → `frame.reload()` on the artifact frame.
+- `ui.viewer`, `viewerWidth`, `viewerExpanded` persist in app state.
+
+Slices:
+1. Tracer: an HTML artifact opens in the panel (scheme, path checks, CSP).
+2. Mermaid offline.
+3. Markdown and images.
+4. Navigation, switcher, Open review.
+5. Live reload and layout (splitter, expand, persistence).
+
+How to verify: `npm test`, `npm run typecheck`, `npm run build`; then
+`npm run dev` and follow each slice's manual checks in `05-plan.md`.
+
 ## Open questions

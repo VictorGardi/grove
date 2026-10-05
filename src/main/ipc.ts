@@ -1,5 +1,6 @@
 import { randomUUID } from 'node:crypto'
 import { BrowserWindow, dialog, ipcMain } from 'electron'
+import { ARTIFACT_SCHEME } from '@shared/artifactUrl'
 import type { InvokeMap, PushMap, Result, SendMap } from '@shared/ipc'
 import type { Slices } from '@shared/types'
 import type { AttachHandle } from '../core/backend/types'
@@ -41,6 +42,12 @@ export function registerIpc(core: Core, getWindow: () => BrowserWindow | null, g
   handle('session:rename', (a) => core.commands.sessionRename(a), true)
   handle('session:link', (a) => core.commands.sessionLink(a), true)
   handle('ui:set', (a) => core.commands.uiSet(a), true)
+  // Reload the viewer frame in place; Chromium restores scroll where it can.
+  handle('viewer:reload', () => {
+    const win = getWindow()
+    if (!win || win.isDestroyed()) return
+    for (const f of win.webContents.mainFrame.framesInSubtree) if (f.url.startsWith(`${ARTIFACT_SCHEME}:`)) f.reload()
+  })
 
   const attaches = new Map<string, AttachHandle>()
   handle('pty:attach', ({ sessionId, cols, rows }) => {

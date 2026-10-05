@@ -30,6 +30,8 @@ export interface UiState {
   sidebarTab: 'sessions' | 'features'
   collapsed: string[] // tree keys: p:<projectId>, f:<projectId>/<slug>
   viewer: ViewerTarget | null // artifact open in the right-hand panel
+  viewerWidth: number
+  viewerExpanded: boolean     // the viewer fills the content area
 }
 export interface FeatureStage {
   id: string
@@ -54,7 +56,7 @@ export interface Feature {
   progress: { done: number; total: number } | null // group kinds with children only
   flags: { id: string; label: string }[]
   warnings: string[]              // e.g. 'flow?', 'frontmatter?: 03-design.md'
-  artifacts: { name: string; stage: string | null; role: 'artifact' | 'review' | null }[]
+  artifacts: { name: string; stage: string | null; role: 'artifact' | 'review' | null; mtimeMs: number }[]
 }
 export interface FeaturesSlice {
   workflowError: string | null
@@ -64,5 +66,5 @@ export interface FeaturesSlice {
 export type Slices = { projects: Project[]; sessions: Session[]; ui: UiState; features: FeaturesSlice }
 export interface ConfigFile { schemaVersion: 1; projects: Project[]; workflow?: string }
 export interface StateFile { schemaVersion: 1; sessions: Session[]; ui: UiState }
-export const DEFAULT_UI: UiState = { sidebarWidth: 230, focusedSessionId: null, focusedFeature: null, view: 'list', sidebarTab: 'sessions', collapsed: [], viewer: null }
+export const DEFAULT_UI: UiState = { sidebarWidth: 230, focusedSessionId: null, focusedFeature: null, view: 'list', sidebarTab: 'sessions', collapsed: [], viewer: null, viewerWidth: 480, viewerExpanded: false }
 export const EMPTY_FEATURES: FeaturesSlice = { workflowError: null, stages: [], items: [] }

@@ -31,7 +31,7 @@ describe('stateStore', () => {
       schemaVersion: 1,
       sessions: [newSession({ projectId: 'p', kind: 'terminal', now: new Date(), id: 'a' })],
       ui: { sidebarWidth: 300, focusedSessionId: 'a', focusedFeature: null, view: 'list', sidebarTab: 'features', collapsed: ['p:x'],
-        viewer: { projectId: 'p', slug: 'f', path: '03-design.html', hash: 'q1' } },
+        viewer: { projectId: 'p', slug: 'f', path: '03-design.html', hash: 'q1' }, viewerWidth: 600, viewerExpanded: true },
     }
     saveState(file, s)
     expect(loadState(file)).toEqual(s)
@@ -53,5 +53,13 @@ describe('stateStore', () => {
     const file = tmpFile()
     fs.writeFileSync(file, '{"schemaVersion":1,"sessions":[],"ui":{"sidebarWidth":230,"focusedSessionId":null,"view":"board","collapsed":[]}}')
     expect(loadState(file).ui.sidebarTab).toBe('sessions')
+  })
+
+  it('loads an old ui without viewer layout keys with the defaults', () => {
+    const file = tmpFile()
+    fs.writeFileSync(file, '{"schemaVersion":1,"sessions":[],"ui":{"sidebarWidth":230,"focusedSessionId":null,"viewer":null}}')
+    const { ui } = loadState(file)
+    expect(ui.viewerWidth).toBe(480)
+    expect(ui.viewerExpanded).toBe(false)
   })
 })

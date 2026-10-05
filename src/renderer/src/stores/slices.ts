@@ -17,6 +17,9 @@ interface SlicesState {
   setSidebarTab(tab: UiState['sidebarTab']): void
   openArtifact(t: ViewerTarget): void
   closeViewer(): void
+  setViewerWidth(px: number): void
+  toggleViewerExpanded(): void
+  reloadViewer(): void
 }
 
 export const useSlices = create<SlicesState>((set, get) => ({
@@ -43,6 +46,9 @@ export const useSlices = create<SlicesState>((set, get) => ({
   setSidebarTab: (tab) => { void window.api.invoke('ui:set', { sidebarTab: tab }) },
   openArtifact: (t) => { void window.api.invoke('ui:set', { viewer: t }) },
   closeViewer: () => { void window.api.invoke('ui:set', { viewer: null }) },
+  setViewerWidth: (px) => { void window.api.invoke('ui:set', { viewerWidth: Math.round(px) }) },
+  toggleViewerExpanded: () => { void window.api.invoke('ui:set', { viewerExpanded: !get().ui.viewerExpanded }) },
+  reloadViewer: () => { void window.api.invoke('viewer:reload') },
   toggleCollapsed(key) {
     const { collapsed } = get().ui
     const next = collapsed.includes(key) ? collapsed.filter((k) => k !== key) : [...collapsed, key]

@@ -15,7 +15,7 @@ const wf: Workflow = res.workflow
 function folder(slug: string, files: Record<string, string>): FolderSnapshot & { projectId: string } {
   const { 'feature.md': manifest = '', ...rest } = files
   const artifacts = Object.fromEntries(Object.entries(rest).map(([k, v]) => [k, readFrontmatter(v)]))
-  return { projectId: 'p', slug, path: `/x/${slug}`, manifest: readFrontmatter(manifest), files: Object.keys(files).sort(), artifacts }
+  return { projectId: 'p', slug, path: `/x/${slug}`, manifest: readFrontmatter(manifest), files: Object.keys(files).sort(), mtimes: {}, artifacts }
 }
 const fm = (fields: string) => `---\n${fields}\n---\n`
 const approved = fm('status: approved')
@@ -176,10 +176,10 @@ describe('deriveFeatures', () => {
   it('tags files with their stage and role', () => {
     const [f] = deriveFeatures(wf, [folder('a', { 'feature.md': '', '02-research.md': approved, '02-research.html': '', 'notes.md': '' })], [])
     expect(f.artifacts).toEqual([
-      { name: '02-research.html', stage: 'research', role: 'review' },
-      { name: '02-research.md', stage: 'research', role: 'artifact' },
-      { name: 'feature.md', stage: null, role: null },
-      { name: 'notes.md', stage: null, role: null },
+      { name: '02-research.html', stage: 'research', role: 'review', mtimeMs: 0 },
+      { name: '02-research.md', stage: 'research', role: 'artifact', mtimeMs: 0 },
+      { name: 'feature.md', stage: null, role: null, mtimeMs: 0 },
+      { name: 'notes.md', stage: null, role: null, mtimeMs: 0 },
     ])
   })
 })

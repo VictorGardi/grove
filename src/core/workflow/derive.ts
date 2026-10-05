@@ -92,7 +92,7 @@ export function deriveFeatures(
           ...(f.manifest.error ? [`frontmatter?: ${wf.discovery.manifest}`] : []),
           ...Object.keys(f.artifacts).sort().filter((n) => f.artifacts[n].error).map((n) => `frontmatter?: ${n}`),
         ],
-        artifacts: f.files.map((name) => ({ name, ...tagged(name) })),
+        artifacts: f.files.map((name) => ({ name, ...tagged(name), mtimeMs: f.mtimes[name] ?? 0 })),
         progress: null,
       }
     }))
