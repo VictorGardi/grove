@@ -20,7 +20,7 @@ forced: []
 - [x] Slice 1 — Tracer: features from the bundled workflow, read once
 - [x] Slice 2 — Live discovery and a guarded workflow
 - [x] Slice 3 — The tree
-- [x] Slice 4 — Feature page (manual check pending)
+- [x] Slice 4 — Feature page
 - [ ] Slice 5 — Manual link
 - [ ] Slice 6 — Board (appetite cut 1)
 
@@ -131,7 +131,8 @@ Deviations (all small, two-way):
 
 Verification: `npm test` 120/120 passed outside the sandbox (inside it the
 real-tmux tests fail and the real-watcher tests skip, as before);
-`npm run typecheck` clean; `npm run build` clean.
+`npm run typecheck` clean; `npm run build` clean. Manual check passed (human,
+2026-10-05).
 
 Probe over this repo's `docs/work`, as the sidebar rows now read:
 walking-skeleton, this feature and visual-foundation "Implementation ·

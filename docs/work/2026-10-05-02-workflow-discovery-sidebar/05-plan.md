@@ -459,7 +459,7 @@ effective stages in order:
   otherwise the current session content.
 - [x] Run `npm test` (outside the sandbox for the real-tmux and watcher
   tests), `npm run typecheck`, `npm run build`.
-- [ ] Manual in `npm run dev` (human): open the epic's page and
+- [x] Manual in `npm run dev` (human): open the epic's page and
   visual-foundation's page.
 
 ## Open questions
