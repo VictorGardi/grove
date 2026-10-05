@@ -2,13 +2,13 @@
 feature: 2026-10-05-02-workflow-discovery-sidebar
 phase: plan
 status: approved
-version: 6
+version: 7
 created: 2026-10-05
 updated: 2026-10-05
 approved_at:
 based_on:
-  - 03-design.md@1
-  - 04-structure.md@1
+  - 03-design.md@2
+  - 04-structure.md@2
 forced: []
 ---
 
@@ -618,5 +618,88 @@ Rules (design Desired state 7; questions Q4):
 - [x] Manual in `npm run dev` (human): toggle to Board; columns are the
   five stages; epics are not cards; children show their epic's name;
   restart, still Board; click a card → feature page in List view.
+
+## Slice 7 — Sessions | Features tabs (v2)
+
+Context for a cold reader: the sidebar (`src/renderer/src/components/Sidebar.tsx`)
+renders one tree from `buildTree(projects, features, sessions, ui)` in
+`src/renderer/src/tree.ts`: project → features (nested by `parent`) →
+linked sessions, then unlinked sessions. `treeSessionOrder(tree)` flattens
+it for Cmd+1..9, which `App.tsx` handles on `menu:action` `focusIndex`.
+Collapse keys are `p:<projectId>` and `f:<projectId>/<slug>` in
+`ui.collapsed`, toggled by `toggleCollapsed(key)` in `stores/slices.ts`.
+`UiState` and `DEFAULT_UI` live in `src/shared/types.ts`; `loadState`
+(`src/core/store/stateStore.ts`) merges `DEFAULT_UI` under the stored `ui`,
+and core's `uiSet` merges any partial, so a new optional UI field needs no
+core change. `ListRow` (`components/ui/ListRow.tsx`) has
+`tone: 'default' | 'selected' | 'waiting' | 'finished'`. The header shows a
+single "Sessions" tab (`.tab`, accent underline) with a count `Badge`.
+Styles are CSS modules over `styles/tokens.css` variables; no inline
+`style=`.
+
+Rules (design Desired state 4, two-way rows "Sidebar ordering (v2)" and
+"Cmd+1..9 (v2)"):
+- `buildTree(projects, features, ui)`: as today without sessions; a
+  feature's children are only its child features.
+- `sessionGroups(projects, sessions, ui)`: one group per project in
+  `projects` order, `key` = `projectKey(id)` (the same `p:` key the
+  Features tab uses, so collapse is shared), `collapsed` from
+  `ui.collapsed`, `sessions` = that project's sessions (linked or not) by
+  `startedAt` ascending. Sessions of no listed project are left out.
+- `sessionOrder(groups)`: all groups' sessions in order, collapsed groups
+  included.
+- Cmd+1..9 uses `sessionOrder(sessionGroups(...))` whichever tab is shown.
+- Terminals (`kind === 'terminal'`) render muted; a focused terminal shows
+  `selected` instead.
+
+- [x] Write failing tests in `src/renderer/src/tree.test.ts`: replace the
+  `buildTree` cases that pass sessions with the three-argument form
+  (nesting and done-last order unchanged; no node has `type: 'session'`;
+  collapsed marking kept); add `describe('sessionGroups')`: groups follow
+  `projects` order, sessions within a group by `startedAt`, linked sessions
+  included, a session of an unlisted project left out, `collapsed: true`
+  for a key in `ui.collapsed`; add `describe('sessionOrder')`: sessions of
+  a collapsed group are included, in group order.
+- [x] Write failing test in `src/core/store/stateStore.test.ts`: a
+  `state.json` whose `ui` has no `sidebarTab` loads with
+  `sidebarTab: 'sessions'`.
+- [x] `src/shared/types.ts`: add `sidebarTab: 'sessions' | 'features'` to
+  `UiState`; `DEFAULT_UI.sidebarTab = 'sessions'`. Update the round-trip
+  fixture in `stateStore.test.ts` to include it.
+- [x] `src/renderer/src/tree.ts`: drop the `session` variant from
+  `TreeNode`, drop the `sessions` parameter and session children from
+  `buildTree`, remove `treeSessionOrder`; add
+  `export interface SessionGroup { project: Project; key: string; collapsed: boolean; sessions: Session[] }`,
+  `export function sessionGroups(projects: Project[], sessions: Session[], ui: Pick<UiState, 'collapsed'>): SessionGroup[]`
+  and `export function sessionOrder(groups: SessionGroup[]): Session[]`
+  per the rules above.
+- [x] `src/renderer/src/components/ui/ListRow.tsx` + `.module.css`: add
+  `'muted'` to `tone`; `.muted` keeps the row shape with
+  `background: transparent` and `.muted .title { color: var(--text-2); font-weight: var(--fw-semibold) }`.
+- [x] `src/renderer/src/stores/slices.ts`: add
+  `setSidebarTab(tab: UiState['sidebarTab'])` → `ui:set { sidebarTab: tab }`.
+- [x] `src/renderer/src/components/Sidebar.tsx` + `.module.css`: the header
+  holds two tab buttons, "Sessions" with the session-count `Badge` and
+  "Features" (no badge); the active one uses the current `.tab` look, the
+  other `.tabInactive` (same box, `border-bottom-color: transparent`,
+  `color: var(--text-3)`, hover `var(--text-2)`); clicking calls
+  `setSidebarTab`. Extract the project header (folder row, remove/new
+  buttons, refused message) into a `ProjectHeader` function component used
+  by both tabs. Sessions tab: for each `sessionGroups(...)` group, the
+  header, then (unless collapsed) one `SessionCard` per session, with
+  `tone` `selected` when focused, else `muted` for a terminal, else
+  `default`. Features tab: today's tree from
+  `buildTree(projects, features.items, ui)`, `renderNode` without the
+  session branch. The "Add a project" hint shows in both tabs.
+- [x] `src/renderer/src/App.tsx`: `focusIndex` uses
+  `sessionOrder(sessionGroups(projects, sessions, ui))[a.n - 1]`; update
+  the import.
+- [x] Run `npm test` (outside the sandbox for the real-tmux and watcher
+  tests), `npm run typecheck`, `npm run build`.
+- [ ] Manual in `npm run dev` (human): switch tabs, restart, tab kept;
+  Sessions shows every session under its project by start time, terminals
+  muted, no feature rows; Features shows project → epic → feature without
+  sessions; Cmd+2 focuses the second session in Sessions order from either
+  tab.
 
 ## Open questions

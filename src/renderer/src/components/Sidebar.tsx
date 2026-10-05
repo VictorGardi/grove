@@ -1,9 +1,9 @@
 import { useState } from 'react'
-import type { Session } from '@shared/types'
+import type { Project, Session } from '@shared/types'
 import { useSlices } from '../stores/slices'
 import { featureSummary } from '../featureLabels'
 import { colorTags } from '../tags'
-import { buildTree, type TreeNode } from '../tree'
+import { buildTree, sessionGroups, type TreeNode } from '../tree'
 import { Badge } from './ui/Badge'
 import { Button } from './ui/Button'
 import { Icon } from './ui/Icon'
@@ -21,7 +21,7 @@ function toggle(set: Set<string>, id: string): Set<string> {
 
 function SessionCard({ s, focused, compact, onFocus, onToggleCompact, onLink }: {
   s: Session
-  focused: boolean
+  focused: boolean // a focused card shows selected; otherwise terminals are muted
   compact: boolean
   onFocus: () => void
   onToggleCompact: () => void
@@ -35,7 +35,7 @@ function SessionCard({ s, focused, compact, onFocus, onToggleCompact, onLink }: 
       title={s.label}
       icon={<Icon name={opencode ? 'opencode' : 'terminal'} size={14} className={opencode ? css.iconOpencode : css.iconTerminal} />}
       status={{ label: s.lastStatus, tone: s.lastStatus }}
-      tone={focused ? 'selected' : 'default'}
+      tone={focused ? 'selected' : opencode ? 'default' : 'muted'}
       compact={compact}
       onClick={onFocus}
       onTitleDoubleClick={() => setEditing(true)}
@@ -101,12 +101,38 @@ function FeatureRow({ node, tag, focused, onFocus, onToggle }: {
   )
 }
 
+function ProjectHeader({ project: p, collapsed, tag, refused, onToggle, onRemove, onNew }: {
+  project: Project
+  collapsed: boolean
+  tag: number | null
+  refused: boolean
+  onToggle: () => void
+  onRemove: () => void
+  onNew: () => void
+}) {
+  return (
+    <>
+      <div className={css.folder} title={p.path} onClick={onToggle}>
+        <Icon name={collapsed ? 'chevron-right' : 'chevron-down'} size={12} />
+        <Icon name="folder" size={14} className={tagClass(tag, 'fg')} />
+        <span className={css.folderName}>{p.name}</span>
+        <div className={css.folderActions} onClick={(e) => e.stopPropagation()}>
+          <Button variant="ghost" size="sm" round icon="trash" aria-label="Remove project" title="Remove project"
+            className={css.hoverOnly} onClick={onRemove} />
+          <Button variant="ghost" size="sm" round icon="plus" aria-label="New session in project" title="New session"
+            onClick={onNew} />
+        </div>
+      </div>
+      {refused && <div className={css.refused}>Can't remove: project has running sessions</div>}
+    </>
+  )
+}
+
 export function Sidebar({ onNew }: { onNew: (projectId?: string) => void }) {
-  const { projects, sessions, ui, features, setFocused, toggleCollapsed, focusFeature } = useSlices()
+  const { projects, sessions, ui, features, setFocused, toggleCollapsed, focusFeature, setSidebarTab } = useSlices()
   const [refused, setRefused] = useState<string | null>(null)
   const [compact, setCompact] = useState<Set<string>>(new Set())
   const [linking, setLinking] = useState<Session | null>(null)
-  const tree = buildTree(projects, features.items, sessions, ui)
   const tags = colorTags(projects, features.items)
 
   async function removeProject(id: string) {
@@ -114,22 +140,25 @@ export function Sidebar({ onNew }: { onNew: (projectId?: string) => void }) {
     setRefused(res.ok ? null : id)
   }
 
-  // Feature and session nodes; a feature's children follow it, indented.
+  const sessionCard = (s: Session) => (
+    <SessionCard
+      key={s.id}
+      s={s}
+      focused={s.id === ui.focusedSessionId}
+      compact={compact.has(s.id)}
+      onFocus={() => setFocused(s.id)}
+      onToggleCompact={() => setCompact((c) => toggle(c, s.id))}
+      onLink={() => setLinking(s)}
+    />
+  )
+
+  const projectHeader = (p: Project, key: string, collapsed: boolean) => (
+    <ProjectHeader project={p} collapsed={collapsed} tag={tags.project(p.id)} refused={refused === p.id}
+      onToggle={() => toggleCollapsed(key)} onRemove={() => void removeProject(p.id)} onNew={() => onNew(p.id)} />
+  )
+
+  // Features tab: a feature's children follow it, indented.
   function renderNode(n: TreeNode) {
-    if (n.type === 'session') {
-      const s = n.session
-      return (
-        <SessionCard
-          key={n.key}
-          s={s}
-          focused={s.id === ui.focusedSessionId}
-          compact={compact.has(s.id)}
-          onFocus={() => setFocused(s.id)}
-          onToggleCompact={() => setCompact((c) => toggle(c, s.id))}
-          onLink={() => setLinking(s)}
-        />
-      )
-    }
     if (n.type === 'project') return null
     const tag = n.feature.group ? tags.group(n.feature.projectId, n.feature.slug) : null
     return (
@@ -148,38 +177,38 @@ export function Sidebar({ onNew }: { onNew: (projectId?: string) => void }) {
     )
   }
 
+  const tabs = [
+    { id: 'sessions' as const, label: 'Sessions', badge: <Badge>{sessions.length}</Badge> },
+    { id: 'features' as const, label: 'Features', badge: null },
+  ]
+
   return (
     <div className={css.sidebar}>
       <div className={css.header}>
-        <div className={css.tab}>
-          Sessions <Badge>{sessions.length}</Badge>
-        </div>
+        {tabs.map((tab) => (
+          <button key={tab.id} type="button" className={ui.sidebarTab === tab.id ? css.tab : css.tabInactive}
+            aria-pressed={ui.sidebarTab === tab.id} onClick={() => setSidebarTab(tab.id)}>
+            {tab.label} {tab.badge}
+          </button>
+        ))}
         <Button variant="ghost" size="sm" round icon="folder-plus" aria-label="Add project" title="Add project"
           className={css.add} onClick={() => void window.api.invoke('project:add')} />
       </div>
       <div className={css.list}>
         {projects.length === 0 && <div className={css.hint}>Add a project with the folder ＋ above</div>}
-        {tree.map((n) => {
-          if (n.type !== 'project') return null
-          const p = n.project
-          return (
+        {ui.sidebarTab === 'sessions'
+          ? sessionGroups(projects, sessions, ui).map((g) => (
+            <div key={g.key} className={css.project}>
+              {projectHeader(g.project, g.key, g.collapsed)}
+              {!g.collapsed && <div className={css.cards}>{g.sessions.map(sessionCard)}</div>}
+            </div>
+          ))
+          : buildTree(projects, features.items, ui).map((n) => n.type === 'project' && (
             <div key={n.key} className={css.project}>
-              <div className={css.folder} title={p.path} onClick={() => toggleCollapsed(n.key)}>
-                <Icon name={n.collapsed ? 'chevron-right' : 'chevron-down'} size={12} />
-                <Icon name="folder" size={14} className={tagClass(tags.project(p.id), 'fg')} />
-                <span className={css.folderName}>{p.name}</span>
-                <div className={css.folderActions} onClick={(e) => e.stopPropagation()}>
-                  <Button variant="ghost" size="sm" round icon="trash" aria-label="Remove project" title="Remove project"
-                    className={css.hoverOnly} onClick={() => void removeProject(p.id)} />
-                  <Button variant="ghost" size="sm" round icon="plus" aria-label="New session in project" title="New session"
-                    onClick={() => onNew(p.id)} />
-                </div>
-              </div>
-              {refused === p.id && <div className={css.refused}>Can't remove: project has running sessions</div>}
+              {projectHeader(n.project, n.key, n.collapsed)}
               {!n.collapsed && <div className={css.cards}>{n.children.map(renderNode)}</div>}
             </div>
-          )
-        })}
+          ))}
       </div>
       {linking && <LinkPicker session={linking} onClose={() => setLinking(null)} />}
     </div>

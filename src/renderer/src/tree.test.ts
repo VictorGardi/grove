@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import type { Feature, Project, Session } from '@shared/types'
-import { boardColumns, buildTree, treeSessionOrder, type TreeNode } from './tree'
+import { boardColumns, buildTree, sessionGroups, sessionOrder, type TreeNode } from './tree'
 
 const project = (id: string): Project => ({ id, name: id, path: '/' + id })
 
@@ -20,9 +20,8 @@ function session(id: string, over: Partial<Session> = {}): Session {
 }
 
 // Node keys as a nested outline, for compact assertions.
-type Outline = string | [string, Outline[]]
-const outline = (nodes: TreeNode[]): Outline[] =>
-  nodes.map((n) => (n.type === 'session' ? n.key : [n.key, outline(n.children)]))
+type Outline = [string, Outline[]]
+const outline = (nodes: TreeNode[]): Outline[] => nodes.map((n) => [n.key, outline(n.children)])
 
 describe('buildTree', () => {
   it('nests children under their epic and sorts done (not active) features last', () => {
@@ -32,7 +31,7 @@ describe('buildTree', () => {
       feature('c-done', { currentStage: null, cardState: 'done' }),
       feature('d-orphan', { parent: 'missing' }),
       feature('a-done-child', { parent: 'a-epic', currentStage: null, cardState: 'done' }),
-    ], [], { collapsed: [] })
+    ], { collapsed: [] })
     expect(outline(tree)).toEqual([
       ['p:p', [
         ['f:p/a-epic', [['f:p/b-child', []], ['f:p/a-done-child', []]]],
@@ -42,36 +41,48 @@ describe('buildTree', () => {
     ])
   })
 
-  it('puts linked sessions under their feature and the rest under the project', () => {
+  it('keeps features per project and holds no sessions', () => {
     const tree = buildTree([project('p'), project('q')], [
       feature('a-epic', { group: true }),
       feature('b', { parent: 'a-epic' }),
       feature('b', { projectId: 'q' }),
-    ], [
-      session('s3', { feature: 'gone', startedAt: '2026-10-05T10:03:00.000Z' }),
-      session('s1', { feature: 'a-epic' }),
-      session('s2', { feature: 'b', startedAt: '2026-10-05T10:02:00.000Z' }),
-      session('s0', { startedAt: '2026-10-05T09:00:00.000Z' }),
-      session('s4', { projectId: 'q', feature: 'a-epic' }),
     ], { collapsed: [] })
     expect(outline(tree)).toEqual([
-      ['p:p', [
-        ['f:p/a-epic', ['s:s1', ['f:p/b', ['s:s2']]]],
-        's:s0',
-        's:s3',
-      ]],
-      ['p:q', [['f:q/b', []], 's:s4']],
+      ['p:p', [['f:p/a-epic', [['f:p/b', []]]]]],
+      ['p:q', [['f:q/b', []]]],
     ])
   })
 
-  it('marks collapsed nodes but keeps their sessions in order', () => {
-    const tree = buildTree([project('p')], [feature('a')], [
-      session('s1', { feature: 'a' }),
-      session('s2', { startedAt: '2026-10-05T11:00:00.000Z' }),
-    ], { collapsed: ['p:p', 'f:p/a'] })
+  it('marks collapsed nodes', () => {
+    const tree = buildTree([project('p')], [feature('a')], { collapsed: ['p:p', 'f:p/a'] })
     expect(tree[0]).toMatchObject({ collapsed: true })
     expect(tree[0].type === 'project' && tree[0].children[0]).toMatchObject({ key: 'f:p/a', collapsed: true })
-    expect(treeSessionOrder(tree).map((s) => s.id)).toEqual(['s1', 's2'])
+  })
+})
+
+describe('sessionGroups', () => {
+  it('groups by project in config order, sessions by start time, linked ones included', () => {
+    const groups = sessionGroups([project('q'), project('p')], [
+      session('s3', { feature: 'a', startedAt: '2026-10-05T10:03:00.000Z' }),
+      session('s1'),
+      session('s0', { startedAt: '2026-10-05T09:00:00.000Z' }),
+      session('s4', { projectId: 'q', kind: 'opencode' }),
+      session('s5', { projectId: 'gone' }),
+    ], { collapsed: ['p:q'] })
+    expect(groups.map((g) => [g.key, g.collapsed, g.sessions.map((s) => s.id)])).toEqual([
+      ['p:q', true, ['s4']],
+      ['p:p', false, ['s0', 's1', 's3']],
+    ])
+  })
+})
+
+describe('sessionOrder', () => {
+  it('includes collapsed groups, in group order', () => {
+    const groups = sessionGroups([project('p'), project('q')], [
+      session('s2', { projectId: 'q' }),
+      session('s1'),
+    ], { collapsed: ['p:p'] })
+    expect(sessionOrder(groups).map((s) => s.id)).toEqual(['s1', 's2'])
   })
 })
 

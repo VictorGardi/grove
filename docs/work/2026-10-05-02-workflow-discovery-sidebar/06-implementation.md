@@ -2,14 +2,14 @@
 feature: 2026-10-05-02-workflow-discovery-sidebar
 phase: implementation
 status: draft
-version: 4
+version: 5
 created: 2026-10-05
 updated: 2026-10-05
 approved_at:
 based_on:
-  - 03-design.md@1
-  - 04-structure.md@1
-  - 05-plan.md@6
+  - 03-design.md@2
+  - 04-structure.md@2
+  - 05-plan.md@7
 forced: []
 ---
 
@@ -23,6 +23,8 @@ forced: []
 - [x] Slice 4 — Feature page
 - [x] Slice 5 — Manual link
 - [x] Slice 6 — Board (appetite cut 1)
+- [x] Slice 7 — Sessions | Features tabs (v2) (manual check pending)
+- [ ] Slice 8 — Feature line on the session card (v2)
 
 ## Slice 1 — Tracer: features from the bundled workflow, read once
 
@@ -204,6 +206,30 @@ Deviations and readings (all small, two-way):
   project name only when more than one project is registered.
 - The plan's "check `StatusTone` has `idle`" step was dropped while
   planning: it does, so cards use the `idle` tone for their card-state label.
+
+## Slice 7 — Sessions | Features tabs (v2)
+
+Planned after design and structure moved to v2 (human OK to continue,
+2026-10-05; `05-plan.md` re-based on `03-design.md@2`, `04-structure.md@2`).
+Slices 1–6 stay done. This slice replaces slice 3's mixed tree: sessions
+leave the tree for the Sessions tab.
+
+Verification: `npm test` 140/140 passed outside the sandbox (inside it the
+four real-tmux tests fail as before); `npm run typecheck` clean;
+`npm run build` clean. Manual check pending.
+
+Deviations and readings (all small, two-way):
+
+- The Sessions and Features tabs share collapse keys (`p:<projectId>`), so
+  collapsing a project in one tab collapses it in the other. The design
+  lists only `p:` and `f:` keys.
+- Only the Sessions tab has a count badge.
+- `muted` is a `ListRow` tone: transparent background and a `--text-2`,
+  semibold title. A focused terminal shows `selected` instead.
+- The project header (folder row, remove/new buttons, refusal message) is
+  now a `ProjectHeader` component that both tabs use.
+- `treeSessionOrder` is gone; Cmd+1..9 uses
+  `sessionOrder(sessionGroups(...))`.
 
 ## After the last slice: changes the human asked for
 

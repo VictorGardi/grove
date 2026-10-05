@@ -13,7 +13,7 @@ import { ViewToggle } from './components/shell/ViewToggle'
 import { Banner } from './components/ui/Banner'
 import { Button } from './components/ui/Button'
 import { useSlices } from './stores/slices'
-import { buildTree, treeSessionOrder } from './tree'
+import { sessionGroups, sessionOrder } from './tree'
 import s from './App.module.css'
 
 export default function App() {
@@ -28,13 +28,13 @@ export default function App() {
   useEffect(() => {
     return window.api.on('menu:action', (a) => {
       // read the latest state, not this effect's closure
-      const { projects, sessions, ui, features } = useSlices.getState()
+      const { projects, sessions, ui } = useSlices.getState()
       if (a.type === 'newSession') setNewFor({})
       else if (a.type === 'closeSession') {
         const focused = sessions.find((x) => x.id === ui.focusedSessionId)
         if (focused?.lastStatus === 'running') setConfirmKill(focused)
       } else if (a.type === 'focusIndex') {
-        const target = treeSessionOrder(buildTree(projects, features.items, sessions, ui))[a.n - 1]
+        const target = sessionOrder(sessionGroups(projects, sessions, ui))[a.n - 1]
         if (target) setFocused(target.id)
       }
     })

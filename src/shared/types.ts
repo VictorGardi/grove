@@ -20,6 +20,7 @@ export interface UiState {
   focusedSessionId: string | null
   focusedFeature: { projectId: string; slug: string } | null // exclusive with focusedSessionId
   view: 'list' | 'board'
+  sidebarTab: 'sessions' | 'features'
   collapsed: string[] // tree keys: p:<projectId>, f:<projectId>/<slug>
 }
 export interface FeatureStage {
@@ -55,5 +56,5 @@ export interface FeaturesSlice {
 export type Slices = { projects: Project[]; sessions: Session[]; ui: UiState; features: FeaturesSlice }
 export interface ConfigFile { schemaVersion: 1; projects: Project[]; workflow?: string }
 export interface StateFile { schemaVersion: 1; sessions: Session[]; ui: UiState }
-export const DEFAULT_UI: UiState = { sidebarWidth: 230, focusedSessionId: null, focusedFeature: null, view: 'list', collapsed: [] }
+export const DEFAULT_UI: UiState = { sidebarWidth: 230, focusedSessionId: null, focusedFeature: null, view: 'list', sidebarTab: 'sessions', collapsed: [] }
 export const EMPTY_FEATURES: FeaturesSlice = { workflowError: null, stages: [], items: [] }

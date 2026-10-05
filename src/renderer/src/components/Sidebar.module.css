@@ -11,14 +11,29 @@
   padding: var(--sp-3) var(--sp-3) 0;
 }
 
-.tab {
+.tab,
+.tabInactive {
   display: flex;
   align-items: center;
   gap: var(--sp-2);
-  padding-bottom: 6px;
+  padding: 0 0 6px;
+  background: none;
+  border: none;
   border-bottom: 2px solid var(--accent-strong);
+  color: var(--text);
+  font: inherit;
   font-size: var(--fs-xl);
   font-weight: var(--fw-bold);
+  cursor: pointer;
+}
+
+.tabInactive {
+  border-bottom-color: transparent;
+  color: var(--text-3);
+}
+
+.tabInactive:hover {
+  color: var(--text-2);
 }
 
 .add {

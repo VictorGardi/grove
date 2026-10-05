@@ -8,7 +8,7 @@ interface Props {
   icon?: ReactNode
   meta?: ReactNode
   status?: { label: string; tone: StatusTone }
-  tone?: 'default' | 'selected' | 'waiting' | 'finished'
+  tone?: 'default' | 'selected' | 'waiting' | 'finished' | 'muted'
   compact?: boolean
   actions?: ReactNode
   onClick?: () => void

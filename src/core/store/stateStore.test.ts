@@ -30,7 +30,7 @@ describe('stateStore', () => {
     const s: StateFile = {
       schemaVersion: 1,
       sessions: [newSession({ projectId: 'p', kind: 'terminal', now: new Date(), id: 'a' })],
-      ui: { sidebarWidth: 300, focusedSessionId: 'a', focusedFeature: null, view: 'list', collapsed: ['p:x'] },
+      ui: { sidebarWidth: 300, focusedSessionId: 'a', focusedFeature: null, view: 'list', sidebarTab: 'features', collapsed: ['p:x'] },
     }
     saveState(file, s)
     expect(loadState(file)).toEqual(s)
@@ -46,5 +46,11 @@ describe('stateStore', () => {
     const file = tmpFile()
     fs.writeFileSync(file, '{"schemaVersion":1,"sessions":[],"ui":{"sidebarWidth":300,"focusedSessionId":null}}')
     expect(loadState(file).ui).toEqual({ ...DEFAULT_UI, sidebarWidth: 300 })
+  })
+
+  it('loads an old ui without sidebarTab on the sessions tab', () => {
+    const file = tmpFile()
+    fs.writeFileSync(file, '{"schemaVersion":1,"sessions":[],"ui":{"sidebarWidth":230,"focusedSessionId":null,"view":"board","collapsed":[]}}')
+    expect(loadState(file).ui.sidebarTab).toBe('sessions')
   })
 })
