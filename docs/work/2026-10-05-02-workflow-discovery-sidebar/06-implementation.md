@@ -168,5 +168,12 @@ Deviations and readings (all small, two-way):
 - 2026-10-05: may later want to switch the sidebar between a session view
   and a feature view. Not in the design; a candidate for a new ticket or a
   design revision. Not built here.
+- 2026-10-05, after slice 4: an epic should be done only once all its
+  features are done. Today a `group` kind's card state comes from its own
+  stages only (E-D2), so the epic reads "Done" once its structure is
+  approved. Changing it touches E-D2: next step is `grove-design
+  2026-10-05-opencode-feature-workspace` in revise mode (also deciding what
+  an epic shows while its own stages are done but children aren't, e.g.
+  "n / m done"). Not built here.
 
 ## Open questions
