@@ -1,5 +1,5 @@
 import type { Feature, Session } from '@shared/types'
-import { CARD_STATE_LABELS } from '../featureLabels'
+import { CARD_STATE_LABELS, progressLabel } from '../featureLabels'
 import { Badge } from './ui/Badge'
 import { cx } from './ui/cx'
 import { ListRow } from './ui/ListRow'
@@ -19,6 +19,7 @@ export function FeaturePage({ feature: f, sessions, onFocusSession }: {
         <div className={s.meta}>
           <span>{f.slug} · {f.kind} · {f.flow ?? 'default'}</span>
           <Badge>{CARD_STATE_LABELS[f.cardState]}</Badge>
+          {f.progress && <span>{progressLabel(f)}</span>}
           {f.flags.map((fl) => <Badge key={fl.id} tone="muted">{fl.label}</Badge>)}
         </div>
         {f.warnings.length > 0 && <div className={s.warning}>{f.warnings.join(' · ')}</div>}

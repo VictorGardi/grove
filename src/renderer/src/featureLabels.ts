@@ -6,11 +6,15 @@ export const CARD_STATE_LABELS: Record<CardState, string> = {
   waiting: 'Waiting',
   'needs-review': 'Needs review',
   ready: 'Ready',
+  active: 'Active',
   done: 'Done',
 }
 
-// One line for a feature row: "<current stage> · <card state>", or "Done".
+export const progressLabel = (f: Feature) => (f.progress ? `${f.progress.done} / ${f.progress.total} done` : '')
+
+// One line for a feature row: "<current stage> · <card state>", "Active · n / m done", or "Done".
 export function featureSummary(f: Feature): string {
+  if (f.cardState === 'active') return `${CARD_STATE_LABELS.active} · ${progressLabel(f)}`
   const stage = f.stages.find((s) => s.id === f.currentStage)
   return stage ? `${stage.label} · ${CARD_STATE_LABELS[f.cardState]}` : 'Done'
 }

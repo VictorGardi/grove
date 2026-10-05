@@ -2,7 +2,7 @@
 feature: 2026-10-05-02-workflow-discovery-sidebar
 phase: implementation
 status: draft
-version: 3
+version: 4
 created: 2026-10-05
 updated: 2026-10-05
 approved_at:
@@ -205,6 +205,50 @@ Deviations and readings (all small, two-way):
 - The plan's "check `StatusTone` has `idle`" step was dropped while
   planning: it does, so cards use the `idle` tone for their card-state label.
 
+## After the last slice: changes the human asked for
+
+Asked for on 2026-10-05, after slice 6's manual check: "fix the gaps right
+away", and colours for repos and epics. Not in `04-structure.md`; built
+here and logged instead of a new slice.
+
+Verification: `npm test` 137/137 passed outside the sandbox;
+`npm run typecheck` clean; `npm run build` clean. Probe over this repo's
+`docs/work`: the epic reads `Active · 0 / 9 done`; the other rows are
+unchanged. Manual check pending.
+
+- **Epic done only when its children are (one-way, human decision).** This
+  amends E-D2. The human chose a new `active` card state over reusing
+  `ready` or mirroring the busiest child, and chose to amend the epic design
+  and build now. The epic's `03-design.md` is now v4, `draft`, and needs
+  re-approval (`grove-approve 2026-10-05-opencode-feature-workspace design`).
+  ADR 0002 is amended. Rule: a group is `done` only when its own effective
+  stages are complete and every child (same project, by `parent`) is
+  `done`. Until then, with its own stages complete, it is `active`, and the
+  row reads `Active · n / m done`. A group with no children is done by its
+  own stages; nested groups resolve recursively.
+  Code: `CardState` gains `active`; `Feature.progress` (groups with children
+  only); `withGroups` in `derive.ts`; tree sorting uses `cardState === 'done'`,
+  so an active epic sorts with the active features; the feature page shows
+  the progress next to the card state badge.
+- **`implementation` approval unit (`docs/skills-changes.md` §1).** Built in
+  the grove-skills repo (uncommitted there for the human's review): the unit
+  in `shared/approve.md` (validation: every structure slice has a fully
+  ticked `05-plan.md` section; marks nothing stale), the "approved 06 =
+  done" rule in `shared/contract.md`, the unit in `grove-approve`'s inputs,
+  and the hand-off line in `grove-implement`. Copies synced with
+  `scripts/sync-shared.sh`; `scripts/validate.sh` passes. Finished features
+  still need their `06-implementation.md` approved by hand to read `done`.
+- **Colours for repos and epics (two-way).** Eight `--tag-N` colours in
+  `tokens.css`, clear of the accent and status hues. `colorTags` in
+  `src/renderer/src/tags.ts` gives each project the colour at its position
+  and each project's epics (group kinds, by slug) the colours after it, so an
+  epic never shares its own project's colour below eight epics. The sidebar
+  colours the project folder icon, the epic's icon, and a left rail down
+  everything nested under an epic; Board cards show coloured project and epic
+  chips (`ui/Tag.tsx`).
+- Staleness: this feature's `03-design.md` is based on
+  `parent:03-design.md@3`; the epic design is now v4.
+
 ## PR description
 
 **Workflow, discovery and sidebar** (epic child 2,
@@ -247,10 +291,14 @@ How to verify:
   open a feature page; link a terminal to a feature and restart; toggle to
   Board and click a card.
 
-Known gaps: no grove feature reaches `done` until the grove-skills
-`implementation` approval unit lands (ADR 0014); an epic reads `Done` from
-its own stages only (human feedback after slice 4, pending an epic design
-revision).
+Also, at the human's request after the last slice: an epic is `done` only
+once all its children are, and reads `Active · n / m done` until then (E-D2
+amended, epic design v4 awaiting re-approval); repos and epics get their own
+colours in the sidebar and on the Board; the grove-skills `implementation`
+approval unit is built in that repo.
+
+Known gap: existing finished features read `done` only once their
+`06-implementation.md` is approved with `grove-approve <slug> implementation`.
 
 ## Human feedback
 

@@ -24,3 +24,9 @@
 .count {
   font-weight: var(--fw-regular);
 }
+
+.tags {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--sp-2);
+}

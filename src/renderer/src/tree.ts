@@ -9,7 +9,7 @@ export const projectKey = (id: string) => 'p:' + id
 export const featureKey = (f: Feature) => 'f:' + f.projectId + '/' + f.slug
 
 const bySlugDoneLast = (a: Feature, b: Feature) =>
-  Number(a.currentStage === null) - Number(b.currentStage === null) || a.slug.localeCompare(b.slug)
+  Number(a.cardState === 'done') - Number(b.cardState === 'done') || a.slug.localeCompare(b.slug)
 const byStart = (a: Session, b: Session) => a.startedAt.localeCompare(b.startedAt)
 const sessionNode = (session: Session): TreeNode => ({ type: 'session', key: 's:' + session.id, session })
 

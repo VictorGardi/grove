@@ -7,7 +7,7 @@ const project = (id: string): Project => ({ id, name: id, path: '/' + id })
 function feature(slug: string, over: Partial<Feature> = {}): Feature {
   return {
     projectId: 'p', slug, path: '/p/' + slug, title: slug, kind: 'feature', group: false,
-    parent: null, flow: null, stages: [], currentStage: 'questions', cardState: 'ready', flags: [], warnings: [], artifacts: [], ...over,
+    parent: null, flow: null, stages: [], currentStage: 'questions', cardState: 'ready', progress: null, flags: [], warnings: [], artifacts: [], ...over,
   }
 }
 
@@ -25,13 +25,13 @@ const outline = (nodes: TreeNode[]): Outline[] =>
   nodes.map((n) => (n.type === 'session' ? n.key : [n.key, outline(n.children)]))
 
 describe('buildTree', () => {
-  it('nests children under their epic and sorts done features last', () => {
+  it('nests children under their epic and sorts done (not active) features last', () => {
     const tree = buildTree([project('p')], [
       feature('b-child', { parent: 'a-epic' }),
-      feature('a-epic', { kind: 'epic', group: true }),
-      feature('c-done', { currentStage: null }),
+      feature('a-epic', { kind: 'epic', group: true, currentStage: null, cardState: 'active' }), // active sorts with the active ones
+      feature('c-done', { currentStage: null, cardState: 'done' }),
       feature('d-orphan', { parent: 'missing' }),
-      feature('a-done-child', { parent: 'a-epic', currentStage: null }),
+      feature('a-done-child', { parent: 'a-epic', currentStage: null, cardState: 'done' }),
     ], [], { collapsed: [] })
     expect(outline(tree)).toEqual([
       ['p:p', [

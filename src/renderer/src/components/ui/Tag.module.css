@@ -1,0 +1,31 @@
+.t0 { --tag: var(--tag-1); }
+.t1 { --tag: var(--tag-2); }
+.t2 { --tag: var(--tag-3); }
+.t3 { --tag: var(--tag-4); }
+.t4 { --tag: var(--tag-5); }
+.t5 { --tag: var(--tag-6); }
+.t6 { --tag: var(--tag-7); }
+.t7 { --tag: var(--tag-8); }
+
+.fg {
+  color: var(--tag);
+}
+
+.rail {
+  border-left: 2px solid var(--tag);
+  margin-left: var(--sp-1);
+}
+
+.chip {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--sp-1);
+  color: var(--tag);
+}
+
+.dot {
+  width: 6px;
+  height: 6px;
+  border-radius: var(--r-pill);
+  background: currentColor;
+}

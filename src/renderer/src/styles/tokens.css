@@ -36,6 +36,16 @@
   --status-idle: #5e5e66;
   --status-gone: #5e5e66;
 
+  /* tags: project and epic colours (src/renderer/src/tags.ts), clear of accent and status hues */
+  --tag-1: #60a5fa;
+  --tag-2: #f472b6;
+  --tag-3: #4ade80;
+  --tag-4: #a78bfa;
+  --tag-5: #a3e635;
+  --tag-6: #fb7185;
+  --tag-7: #818cf8;
+  --tag-8: #e879f9;
+
   /* card tones */
   --card-selected-bg: #342519;
   --card-selected-border: #fb923c;

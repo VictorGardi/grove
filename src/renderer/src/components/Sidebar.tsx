@@ -2,12 +2,15 @@ import { useState } from 'react'
 import type { Session } from '@shared/types'
 import { useSlices } from '../stores/slices'
 import { featureSummary } from '../featureLabels'
+import { colorTags } from '../tags'
 import { buildTree, type TreeNode } from '../tree'
 import { Badge } from './ui/Badge'
 import { Button } from './ui/Button'
 import { Icon } from './ui/Icon'
 import { LinkPicker } from './LinkPicker'
 import { ListRow } from './ui/ListRow'
+import { cx } from './ui/cx'
+import { tagClass } from './ui/Tag'
 import css from './Sidebar.module.css'
 
 function toggle(set: Set<string>, id: string): Set<string> {
@@ -69,8 +72,9 @@ function SessionCard({ s, focused, compact, onFocus, onToggleCompact, onLink }: 
 
 type FeatureNode = Extract<TreeNode, { type: 'feature' }>
 
-function FeatureRow({ node, focused, onFocus, onToggle }: {
+function FeatureRow({ node, tag, focused, onFocus, onToggle }: {
   node: FeatureNode
+  tag: number | null // set for groups (epics)
   focused: boolean
   onFocus: () => void
   onToggle: () => void
@@ -87,7 +91,7 @@ function FeatureRow({ node, focused, onFocus, onToggle }: {
               <Icon name={node.collapsed ? 'chevron-right' : 'chevron-down'} size={12} />
             </button>
           )}
-          <Icon name="folder" size={14} className={css.iconFeature} />
+          <Icon name="folder" size={14} className={cx(css.iconFeature, tagClass(tag, 'fg'))} />
         </>
       }
       meta={featureSummary(f)}
@@ -103,6 +107,7 @@ export function Sidebar({ onNew }: { onNew: (projectId?: string) => void }) {
   const [compact, setCompact] = useState<Set<string>>(new Set())
   const [linking, setLinking] = useState<Session | null>(null)
   const tree = buildTree(projects, features.items, sessions, ui)
+  const tags = colorTags(projects, features.items)
 
   async function removeProject(id: string) {
     const res = await window.api.invoke('project:remove', { id })
@@ -126,15 +131,19 @@ export function Sidebar({ onNew }: { onNew: (projectId?: string) => void }) {
       )
     }
     if (n.type === 'project') return null
+    const tag = n.feature.group ? tags.group(n.feature.projectId, n.feature.slug) : null
     return (
       <div key={n.key} className={css.cards}>
         <FeatureRow
           node={n}
+          tag={tag}
           focused={ui.focusedFeature?.projectId === n.feature.projectId && ui.focusedFeature.slug === n.feature.slug}
           onFocus={() => focusFeature({ projectId: n.feature.projectId, slug: n.feature.slug })}
           onToggle={() => toggleCollapsed(n.key)}
         />
-        {!n.collapsed && n.children.length > 0 && <div className={css.children}>{n.children.map(renderNode)}</div>}
+        {!n.collapsed && n.children.length > 0 && (
+          <div className={cx(css.children, tagClass(tag, 'rail'))}>{n.children.map(renderNode)}</div>
+        )}
       </div>
     )
   }
@@ -157,7 +166,7 @@ export function Sidebar({ onNew }: { onNew: (projectId?: string) => void }) {
             <div key={n.key} className={css.project}>
               <div className={css.folder} title={p.path} onClick={() => toggleCollapsed(n.key)}>
                 <Icon name={n.collapsed ? 'chevron-right' : 'chevron-down'} size={12} />
-                <Icon name="folder" size={14} />
+                <Icon name="folder" size={14} className={tagClass(tags.project(p.id), 'fg')} />
                 <span className={css.folderName}>{p.name}</span>
                 <div className={css.folderActions} onClick={(e) => e.stopPropagation()}>
                   <Button variant="ghost" size="sm" round icon="trash" aria-label="Remove project" title="Remove project"
