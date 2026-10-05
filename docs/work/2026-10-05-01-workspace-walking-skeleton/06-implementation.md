@@ -212,3 +212,11 @@ slice get the pane colours, so use a **new** Terminal session.
    as a command path (`grove-c not found`). The manual commands in the plan
    (`tmux -L grove kill-session -t =grove-<id>`) need quotes in zsh:
    `-t '=grove-<id>'`.
+4. **Bug fix (reported by the human during slice 5 review):** with a terminal
+   open, the Cmd+T modal couldn't be clicked, because clicks went to the
+   terminal underneath. Cause: xterm.css gives absolutely positioned layers
+   z-indexes 5–11 (helper textarea, scrollbar, decorations). The terminal
+   container made no stacking context, so those layers painted above the
+   modal's `position: fixed` backdrop, which had no z-index. The
+   ConfirmDialog had the same problem. Fix: `isolation: 'isolate'` on the
+   `TerminalView` container, and `zIndex: 1000` on both overlay backdrops.

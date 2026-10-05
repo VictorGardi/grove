@@ -72,5 +72,6 @@ export function TerminalView({ sessionId }: { sessionId: string }) {
     }
   }, [sessionId])
 
-  return <div ref={ref} style={{ flex: 1, minWidth: 0, height: '100%', padding: 4, boxSizing: 'border-box' }} />
+  // isolation keeps xterm.css's z-indexed layers (5–11) from painting over app overlays
+  return <div ref={ref} style={{ flex: 1, minWidth: 0, height: '100%', padding: 4, boxSizing: 'border-box', isolation: 'isolate' }} />
 }
