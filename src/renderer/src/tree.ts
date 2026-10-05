@@ -78,3 +78,8 @@ export function boardColumns(stages: { id: string; label: string }[], features: 
       .map((feature) => ({ feature, epic: feature.parent === null ? null : epicTitle(feature) })),
   }))
 }
+
+// The feature a session is linked to, in the session's own project; null when unlinked or missing.
+export function linkedFeature(session: Session, features: Feature[]): Feature | null {
+  return features.find((f) => f.projectId === session.projectId && f.slug === session.feature) ?? null
+}

@@ -1,16 +1,16 @@
 import { useState } from 'react'
-import type { Project, Session } from '@shared/types'
+import type { Feature, Project, Session } from '@shared/types'
 import { useSlices } from '../stores/slices'
 import { featureSummary } from '../featureLabels'
 import { colorTags } from '../tags'
-import { buildTree, sessionGroups, type TreeNode } from '../tree'
+import { buildTree, linkedFeature, sessionGroups, type TreeNode } from '../tree'
 import { Badge } from './ui/Badge'
 import { Button } from './ui/Button'
 import { Icon } from './ui/Icon'
 import { LinkPicker } from './LinkPicker'
 import { ListRow } from './ui/ListRow'
 import { cx } from './ui/cx'
-import { tagClass } from './ui/Tag'
+import { Tag, tagClass } from './ui/Tag'
 import css from './Sidebar.module.css'
 
 function toggle(set: Set<string>, id: string): Set<string> {
@@ -19,11 +19,14 @@ function toggle(set: Set<string>, id: string): Set<string> {
   return next
 }
 
-function SessionCard({ s, focused, compact, onFocus, onToggleCompact, onLink }: {
+function SessionCard({ s, feature, tag, focused, compact, onFocus, onOpenFeature, onToggleCompact, onLink }: {
   s: Session
+  feature: Feature | null // the linked feature, if it exists
+  tag: number | null // its epic's colour
   focused: boolean // a focused card shows selected; otherwise terminals are muted
   compact: boolean
   onFocus: () => void
+  onOpenFeature: () => void
   onToggleCompact: () => void
   onLink: () => void
 }) {
@@ -34,6 +37,12 @@ function SessionCard({ s, focused, compact, onFocus, onToggleCompact, onLink }: 
     <ListRow
       title={s.label}
       icon={<Icon name={opencode ? 'opencode' : 'terminal'} size={14} className={opencode ? css.iconOpencode : css.iconTerminal} />}
+      meta={feature && (
+        <button type="button" className={css.featureLine} onClick={(e) => { e.stopPropagation(); onOpenFeature() }}>
+          <Tag index={tag}>{feature.title}</Tag>
+          <span className={css.featureSummary}>{featureSummary(feature)}</span>
+        </button>
+      )}
       status={{ label: s.lastStatus, tone: s.lastStatus }}
       tone={focused ? 'selected' : opencode ? 'default' : 'muted'}
       compact={compact}
@@ -140,17 +149,23 @@ export function Sidebar({ onNew }: { onNew: (projectId?: string) => void }) {
     setRefused(res.ok ? null : id)
   }
 
-  const sessionCard = (s: Session) => (
-    <SessionCard
-      key={s.id}
-      s={s}
-      focused={s.id === ui.focusedSessionId}
-      compact={compact.has(s.id)}
-      onFocus={() => setFocused(s.id)}
-      onToggleCompact={() => setCompact((c) => toggle(c, s.id))}
-      onLink={() => setLinking(s)}
-    />
-  )
+  const sessionCard = (s: Session) => {
+    const f = linkedFeature(s, features.items)
+    return (
+      <SessionCard
+        key={s.id}
+        s={s}
+        feature={f}
+        tag={f && tags.group(f.projectId, f.group ? f.slug : f.parent)}
+        focused={s.id === ui.focusedSessionId}
+        compact={compact.has(s.id)}
+        onFocus={() => setFocused(s.id)}
+        onOpenFeature={() => f && focusFeature({ projectId: f.projectId, slug: f.slug })}
+        onToggleCompact={() => setCompact((c) => toggle(c, s.id))}
+        onLink={() => setLinking(s)}
+      />
+    )
+  }
 
   const projectHeader = (p: Project, key: string, collapsed: boolean) => (
     <ProjectHeader project={p} collapsed={collapsed} tag={tags.project(p.id)} refused={refused === p.id}

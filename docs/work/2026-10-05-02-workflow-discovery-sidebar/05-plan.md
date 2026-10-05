@@ -2,7 +2,7 @@
 feature: 2026-10-05-02-workflow-discovery-sidebar
 phase: plan
 status: approved
-version: 7
+version: 8
 created: 2026-10-05
 updated: 2026-10-05
 approved_at:
@@ -701,5 +701,60 @@ Rules (design Desired state 4, two-way rows "Sidebar ordering (v2)" and
   muted, no feature rows; Features shows project → epic → feature without
   sessions; Cmd+2 focuses the second session in Sessions order from either
   tab.
+
+## Slice 8 — Feature line on the session card (v2)
+
+Context for a cold reader: after slice 7 the Sessions tab of
+`src/renderer/src/components/Sidebar.tsx` renders one `SessionCard` per
+session (a `ListRow` with `title`, `icon`, `status`, `tone`, `compact`,
+`actions`, `onClick`; `meta` renders under the title and hides when
+compact). `Session.feature` is a slug in the session's project or `null`.
+`featureSummary(f)` in `featureLabels.ts` gives "<stage> · <card state>",
+"Active · n / m done" or "Done". `colorTags(projects, features)` in
+`tags.ts` gives `tags.group(projectId, slug)` (an epic's palette index or
+`null`); `Tag` in `components/ui/Tag.tsx` renders a coloured dot plus text
+for an index (`null` → the dot takes the surrounding text colour).
+`focusFeature(ref)` in `stores/slices.ts` sets `focusedFeature`, which
+core makes exclusive with `focusedSessionId`, so the content area shows
+the feature page; clicking the card calls `setFocused(id)`, which brings
+the terminal back.
+
+Rules (design Desired state 4, two-way row "Card feature line (v2)"):
+- `linkedFeature(session, features)`: the feature with
+  `projectId === session.projectId` and `slug === session.feature`, else
+  `null` (also when `session.feature` is `null`). No line without a match.
+- Dot colour: the epic's — the feature's own `tags.group` when
+  `feature.group`, else `tags.group(projectId, feature.parent)`; `null`
+  when neither is an epic.
+- The line is a button: its click stops propagation and calls
+  `focusFeature({ projectId, slug })`.
+
+- [x] Write failing test in `src/renderer/src/tree.test.ts`,
+  `describe('linkedFeature')`: same project and slug → that feature; same
+  slug in another project → `null`; missing slug → `null`;
+  `feature: null` → `null`.
+- [x] `src/renderer/src/tree.ts`: add
+  `export function linkedFeature(session: Session, features: Feature[]): Feature | null`
+  per the rules.
+- [x] `src/renderer/src/components/Sidebar.tsx` + `.module.css`:
+  `SessionCard` takes `feature: Feature | null`, `tag: number | null` and
+  `onOpenFeature(): void`; when `feature` is set, pass as `meta` a
+  `<button className={css.featureLine}>` holding
+  `<Tag index={tag}>{feature.title}</Tag>` and, below it,
+  `<span className={css.featureSummary}>{featureSummary(feature)}</span>`;
+  its `onClick` calls `e.stopPropagation()` then `onOpenFeature()`.
+  `.featureLine`: `display: flex; flex-direction: column; align-items:
+  flex-start; gap: 2px; width: 100%; padding: 0; background: none;
+  border: none; font: inherit; color: var(--text-2); text-align: left;
+  cursor: pointer`; hover `color: var(--text)`. `.featureSummary`:
+  `font-size: var(--fs-xs); color: var(--text-3)`. In `sessionCard`,
+  compute `const f = linkedFeature(s, features.items)` and pass
+  `feature={f}`, `tag={f && tags.group(f.projectId, f.group ? f.slug : f.parent)}`,
+  `onOpenFeature={() => f && focusFeature({ projectId: f.projectId, slug: f.slug })}`.
+- [x] Run `npm test` (outside the sandbox for the real-tmux and watcher
+  tests), `npm run typecheck`, `npm run build`.
+- [ ] Manual in `npm run dev` (human): link a session to this feature; its
+  card shows the line (epic-colour dot, title, stage · card state); click
+  the line → feature page; click the card → back to the terminal.
 
 ## Open questions

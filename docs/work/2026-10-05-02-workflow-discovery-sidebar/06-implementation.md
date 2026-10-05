@@ -2,14 +2,14 @@
 feature: 2026-10-05-02-workflow-discovery-sidebar
 phase: implementation
 status: draft
-version: 5
+version: 6
 created: 2026-10-05
 updated: 2026-10-05
 approved_at:
 based_on:
   - 03-design.md@2
   - 04-structure.md@2
-  - 05-plan.md@7
+  - 05-plan.md@8
 forced: []
 ---
 
@@ -24,7 +24,7 @@ forced: []
 - [x] Slice 5 — Manual link
 - [x] Slice 6 — Board (appetite cut 1)
 - [x] Slice 7 — Sessions | Features tabs (v2) (manual check pending)
-- [ ] Slice 8 — Feature line on the session card (v2)
+- [x] Slice 8 — Feature line on the session card (v2) (manual check pending)
 
 ## Slice 1 — Tracer: features from the bundled workflow, read once
 
@@ -231,6 +231,23 @@ Deviations and readings (all small, two-way):
 - `treeSessionOrder` is gone; Cmd+1..9 uses
   `sessionOrder(sessionGroups(...))`.
 
+## Slice 8 — Feature line on the session card (v2)
+
+Verification: `npm test` 141/141 passed outside the sandbox;
+`npm run typecheck` clean; `npm run build` clean. Being the last slice,
+these are all the configured checks (no `commands.lint`). Manual check
+pending.
+
+Deviations and readings (all small, two-way):
+
+- The dot takes the epic's colour: the feature's own when it is an epic,
+  else its parent epic's. A feature with no epic gets a dot in the line's
+  text colour (`Tag` with `null`).
+- The line sits in `ListRow`'s `meta` slot, so a compact card hides it,
+  like the rest of its meta.
+- Clicking the line calls `focusFeature` (same as a Features-tab row), so
+  while `view` is `board` the Board stays, as slice 6 logged.
+
 ## After the last slice: changes the human asked for
 
 Asked for on 2026-10-05, after slice 6's manual check: "fix the gaps right
@@ -291,7 +308,7 @@ chokidar and reads frontmatter with `yaml` (core schema, own splitter, ADR
 0013). Pure functions derive each feature's effective stages (kind ∩ flow),
 current stage, "unapproved" passes, flags, warnings and card state; core
 pushes the whole `features` slice to the renderer, which derives nothing.
-New UI state (`view`, `collapsed`, `focusedFeature`) is additive at
+New UI state (`view`, `sidebarTab`, `collapsed`, `focusedFeature`) is additive at
 `schemaVersion: 1`.
 
 Slices:
@@ -307,6 +324,13 @@ Slices:
    linked live sessions make a feature `running`.
 6. Board: List/Board toggle; one column per stage, epics excluded,
    children show their epic's name.
+7. Sessions | Features tabs (v2): Sessions lists every session under
+   collapsible project headers by start time, terminals muted; Features
+   shows project → epic → feature without sessions; the tab persists;
+   Cmd+1..9 follows Sessions order. Replaces slice 3's mixed tree.
+8. Feature line on the session card (v2): a linked session shows its
+   feature (epic-colour dot, title, stage · card state); clicking the line
+   opens the feature page.
 
 How to verify:
 
@@ -314,8 +338,10 @@ How to verify:
   `fs.watch`), `npm run typecheck`, `npm run build`.
 - `npm run dev`, register this repo: features show under the project with
   stage and card state; `mkdir` a folder with `feature.md` and it appears;
-  open a feature page; link a terminal to a feature and restart; toggle to
-  Board and click a card.
+  open a feature page; link a terminal to a feature and restart; its card
+  shows the feature line, click it for the feature page; switch Sessions |
+  Features, restart, tab kept; Cmd+2 focuses the second session in
+  Sessions order; toggle to Board and click a card.
 
 Also, at the human's request after the last slice: an epic is `done` only
 once all its children are, and reads `Active · n / m done` until then (E-D2
@@ -332,8 +358,7 @@ Known gap: existing finished features read `done` only once their
   hard to tell apart. Slice 4 adds card state to the row and the
   "unapproved" rule (see slice 1's probe note).
 - 2026-10-05: may later want to switch the sidebar between a session view
-  and a feature view. Not in the design; a candidate for a new ticket or a
-  design revision. Not built here.
+  and a feature view. Taken up in design v2 and built as slices 7–8.
 - 2026-10-05, after slice 4: an epic should be done only once all its
   features are done. Today a `group` kind's card state comes from its own
   stages only (E-D2), so the epic reads "Done" once its structure is

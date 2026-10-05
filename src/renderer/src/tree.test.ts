@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import type { Feature, Project, Session } from '@shared/types'
-import { boardColumns, buildTree, sessionGroups, sessionOrder, type TreeNode } from './tree'
+import { boardColumns, buildTree, linkedFeature, sessionGroups, sessionOrder, type TreeNode } from './tree'
 
 const project = (id: string): Project => ({ id, name: id, path: '/' + id })
 
@@ -83,6 +83,16 @@ describe('sessionOrder', () => {
       session('s1'),
     ], { collapsed: ['p:p'] })
     expect(sessionOrder(groups).map((s) => s.id)).toEqual(['s1', 's2'])
+  })
+})
+
+describe('linkedFeature', () => {
+  const features = [feature('a'), feature('b', { projectId: 'q' })]
+  it('finds the linked feature in the session\'s project only', () => {
+    expect(linkedFeature(session('s', { feature: 'a' }), features)?.slug).toBe('a')
+    expect(linkedFeature(session('s', { feature: 'b' }), features)).toBeNull()
+    expect(linkedFeature(session('s', { feature: 'gone' }), features)).toBeNull()
+    expect(linkedFeature(session('s'), features)).toBeNull()
   })
 })
 

@@ -147,3 +147,27 @@
   color: var(--text);
   font: inherit;
 }
+
+.featureLine {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 2px;
+  width: 100%;
+  padding: 0;
+  background: none;
+  border: none;
+  font: inherit;
+  color: var(--text-2);
+  text-align: left;
+  cursor: pointer;
+}
+
+.featureLine:hover {
+  color: var(--text);
+}
+
+.featureSummary {
+  font-size: var(--fs-xs);
+  color: var(--text-3);
+}
