@@ -1,0 +1,13 @@
+.dot {
+  width: 6px;
+  height: 6px;
+  flex-shrink: 0;
+  border-radius: var(--r-pill);
+}
+
+.running { background: var(--status-running); }
+.working { background: var(--status-working); }
+.waiting { background: var(--status-waiting); }
+.idle { background: var(--status-idle); }
+.finished { background: var(--status-finished); }
+.gone { background: var(--status-gone); }

@@ -255,11 +255,111 @@ may appear outside `tokens.css`/`theme.ts` (design D2).
 - [x] Run `npm run typecheck`
 - [x] Run `npm run build`
 - [x] Run `npm test`
-- [ ] Manual (human, `npm run dev`): Cmd+T → Enter creates, Escape closes;
+- [x] Manual (human, `npm run dev`): Cmd+T → Enter creates, Escape closes;
   Cmd+W on a running session → confirm, Enter kills, Escape cancels, keys
   don't reach the terminal; `exit` in a terminal shows "Session ended" and
   Remove works; the wordmark has a clear gap after the green light; an
   OpenCode session's background reaches the panel edges and its bottom
-  corners are rounded.
+  corners are rounded. (Human reviewed and said continue.)
+
+## Slice 3 — Sidebar cards and folders
+
+Context (code at `302f9b2`): `Sidebar.tsx` is the last inline-styled
+component (`linkButton` object, row/panel literals, old `width`/`border-right`
+that `AppShell` now owns). `Button`, `Badge`, `Icon` (incl. `folder-plus`,
+`minimize`, `trash`, `opencode`, `terminal`, chevrons) exist. `App` opens the
+modal through a boolean `modalOpen`; `NewSessionModal` already takes
+`initialProjectId`. `sidebarOrder.ts` (Cmd+1..9 order) is unchanged.
+
+- [x] `src/shared/types.ts`: `DEFAULT_UI.sidebarWidth` 260 → 230.
+- [x] Create `src/renderer/src/components/ui/StatusDot.tsx` + `.module.css`:
+  `export type StatusTone = 'running' | 'working' | 'waiting' | 'idle' |
+  'finished' | 'gone'`; `StatusDot({ tone })` → `<span className={cx(s.dot,
+  s[tone])} />`; `.dot` 6×6px, `border-radius: var(--r-pill)`, flex-shrink 0;
+  one class per tone with `background: var(--status-<tone>)`.
+- [x] Create `src/renderer/src/components/ui/ListRow.tsx` + `.module.css` with
+  the design signature. Markup: `<div className={cx(s.row, s[tone], compact &&
+  s.compact)} onClick={onClick}>` → line 1 `.head` (flex, align center,
+  `gap: var(--sp-2)`): `icon`, then `editor` if given else `<span
+  className={s.title} onDoubleClick={onTitleDoubleClick}>{title}</span>`
+  (flex 1, min-width 0, `--fw-bold`, `--fs-md`, `--text`, nowrap, ellipsis),
+  then when `compact && status` a `<StatusDot tone={status.tone} />`, then
+  `actions` inside `<div className={s.actions} onClick={e =>
+  e.stopPropagation()}>` (flex, `gap: 2px`, opacity 0; shown at opacity 1 on
+  `.row:hover` and `.row:focus-within`). When not compact: `meta` in `.meta`
+  (`--font-mono`, `--fs-sm`, `--text-2`) and `status` in `<div
+  className={cx(s.status, s[`s-${status.tone}`])}>{status.label}</div>`
+  (`--font-mono`, `--fs-xs`, colour `var(--status-<tone>)` per tone class).
+  `.row`: `padding: var(--sp-2) 10px`, `background: var(--card-bg)`,
+  `border: 1px solid var(--card-border)`, `border-radius: var(--r-card)`,
+  `cursor: pointer`, flex column, `gap: var(--sp-1)`; `.row:hover`
+  border-color `--text-3`; `.compact` padding `6px 10px`; `.selected` bg
+  `--card-selected-bg`, border `--card-selected-border`; `.waiting` bg/border
+  `--card-waiting-*`, `box-shadow: 0 0 var(--card-glow) var(--card-waiting-border)`;
+  `.finished` same with `--card-finished-*`.
+- [x] Rewrite `src/renderer/src/components/Sidebar.tsx` + new
+  `Sidebar.module.css`; signature `Sidebar({ onNew }: { onNew: (projectId?:
+  string) => void })`. Local state: `refused: string | null` (as today),
+  `collapsed: Set<string>` (project ids), `compact: Set<string>` (session ids),
+  toggled through a `toggle(set, id)` helper returning a new Set.
+  - Root `.sidebar` flex column, `height: 100%`.
+  - Header `.header` (flex, align center, `gap: var(--sp-2)`, `padding:
+    var(--sp-3) var(--sp-3) 0`): `.tab` "Sessions" (`--fs-xl`, `--fw-bold`,
+    `padding-bottom: 6px`, `border-bottom: 2px solid var(--accent-strong)`,
+    flex with `gap: var(--sp-2)`) containing `<Badge>{sessions.length}</Badge>`;
+    then `<Button variant="ghost" size="sm" round icon="folder-plus"
+    aria-label="Add project" title="Add project" className={s.add}
+    onClick={() => void window.api.invoke('project:add')} />` (`margin-left:auto`).
+  - List `.list` (flex 1, `overflow-y: auto`, `padding: var(--sp-2)`, flex
+    column, `gap: var(--sp-2)`). No projects: `<div className={s.hint}>Add a
+    project with the folder ＋ above</div>` (`--text-3`, `--fs-sm`, `padding:
+    var(--sp-2)`).
+  - Per project: `.folder` row (flex, align center, `gap: var(--sp-1)`,
+    height 28px, `padding: 0 var(--sp-1)`, `color: var(--text-2)`, cursor
+    pointer, `title={p.path}`, `onClick` toggles `collapsed`): `<Icon
+    name={collapsed ? 'chevron-right' : 'chevron-down'} size={12} />`,
+    `<Icon name="folder" size={14} />`, name `.folderName` (flex 1, ellipsis),
+    then `.folderActions` (stops click propagation): remove `<Button
+    variant="ghost" size="sm" round icon="trash" aria-label="Remove project"
+    title="Remove project" className={s.hoverOnly} …removeProject(p.id) />`
+    and `<Button variant="ghost" size="sm" round icon="plus" aria-label="New
+    session in project" title="New session" onClick={() => onNew(p.id)} />`.
+    `.hoverOnly` opacity 0, 1 on `.folder:hover` / `:focus-visible`.
+  - `refused === p.id` → `<div className={s.refused}>Can't remove: project has
+    running sessions</div>` (`--danger`, `--fs-sm`, `padding: 0 var(--sp-1)`).
+  - Unless collapsed: `.cards` (flex column, `gap: var(--sp-2)`) of
+    `SessionCard` for `sessionsOf(p.id, sessions)`.
+- [x] In `Sidebar.tsx`, `SessionCard({ s, focused, compact, onFocus,
+  onToggleCompact })` keeps the rename logic (double-click → `editing`; input
+  Enter renames via `session:rename` when non-empty, Escape/blur cancels) and
+  renders `<ListRow title={s.label} icon={<Icon name={s.kind === 'opencode' ?
+  'opencode' : 'terminal'} size={14} className={s.kind === 'opencode' ?
+  css.iconOpencode : css.iconTerminal} />} status={{ label: s.lastStatus,
+  tone: s.lastStatus }} tone={focused ? 'selected' : 'default'}
+  compact={compact} onClick={onFocus} onTitleDoubleClick={() =>
+  setEditing(true)} editor={editing ? <input className={css.rename} …/> :
+  undefined} actions={<>{gone && <Button variant="ghost" size="sm" round
+  icon="trash" aria-label="Remove session" title="Remove" …session:remove />}
+  <Button variant="ghost" size="sm" round icon="minimize" aria-label={compact
+  ? 'Expand' : 'Compact'} title={…} onClick={onToggleCompact} /></>} />`
+  (import the module as `css`, since `s` is the session). `.iconOpencode`
+  colour `--status-waiting`, `.iconTerminal` colour `--accent`, both
+  flex-shrink 0; `.rename` flex 1, min-width 0, height 20px, bg `--raised-bg`,
+  `border: 1px solid var(--card-border)`, radius `--r-card`, colour `--text`,
+  `font: inherit`, `padding: 0 var(--sp-1)`. The input stops click
+  propagation as today.
+- [x] `src/renderer/src/App.tsx`: replace `modalOpen` with `const [newFor,
+  setNewFor] = useState<{ projectId?: string } | null>(null)`; `openNew =
+  (projectId?: string) => setNewFor({ projectId })`; menu `newSession` →
+  `setNewFor({})`; `<TopBar onNew={() => openNew()} />`; `<Sidebar
+  onNew={openNew} />`; `{newFor && <NewSessionModal
+  initialProjectId={newFor.projectId} onClose={() => setNewFor(null)} />}`.
+- [x] Run `npm run typecheck`
+- [x] Run `npm test`
+- [ ] Manual (human, `npm run dev`): two projects, three sessions; collapse a
+  folder; compact a card; focused card is orange; project ＋ preselects its
+  project; header ＋ opens the folder picker and adds a project; removing a
+  project with running sessions shows the refusal; Cmd+1..3 still focuses in
+  sidebar order.
 
 ## Open questions

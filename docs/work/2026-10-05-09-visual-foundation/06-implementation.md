@@ -18,8 +18,8 @@ forced: []
 ## Progress
 
 - [x] Slice 1 — Tracer: the Xirp shell around the existing UI (manual check pending human)
-- [x] Slice 2 — Modals, buttons, banner and panes (manual check pending human)
-- [ ] Slice 3 — Sidebar cards and folders
+- [x] Slice 2 — Modals, buttons, banner and panes
+- [x] Slice 3 — Sidebar cards and folders (manual check pending human)
 - [ ] Slice 4 — No inline styles, enforced
 
 ## Slice 1 — Tracer: the Xirp shell around the existing UI
@@ -68,5 +68,20 @@ Deviations (small, two-way):
   instead of one "width = height" rule; same result.
 - `Modal` maps the key to its action (Escape → `onClose`, Enter →
   `onConfirm`) in one handler; behaviour as planned.
+
+## Slice 3 — Sidebar cards and folders
+
+Verification: `npm run typecheck` clean; `npm test` 49/49 passed outside the
+sandbox; `npm run build` clean. Manual `npm run dev` steps are for the human.
+
+Deviations (small, two-way):
+
+- `src/core/sessions.test.ts` "persists ui changes" hard-coded
+  `sidebarWidth: 260`; it now expects `DEFAULT_UI.sidebarWidth`, so the
+  default can change without touching the test.
+- Tone classes on `ListRow` also pin their colours on `:hover`, so the
+  generic hover border doesn't override the selected/waiting/finished border.
+- The only `style=` left in `src/renderer` is `AppShell`'s `--sidebar-w`
+  variable (slice 4 enforces this).
 
 ## Open questions

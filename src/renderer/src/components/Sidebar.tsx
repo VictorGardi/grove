@@ -2,25 +2,42 @@ import { useState } from 'react'
 import type { Session } from '@shared/types'
 import { useSlices } from '../stores/slices'
 import { sessionsOf } from '../sidebarOrder'
+import { Badge } from './ui/Badge'
+import { Button } from './ui/Button'
+import { Icon } from './ui/Icon'
+import { ListRow } from './ui/ListRow'
+import css from './Sidebar.module.css'
 
-const linkButton = { background: 'none', border: 'none', color: '#888', cursor: 'pointer', fontSize: 11, padding: 0 }
+function toggle(set: Set<string>, id: string): Set<string> {
+  const next = new Set(set)
+  if (!next.delete(id)) next.add(id)
+  return next
+}
 
-function SessionRow({ s, focused, onFocus }: { s: Session; focused: boolean; onFocus: () => void }) {
+function SessionCard({ s, focused, compact, onFocus, onToggleCompact }: {
+  s: Session
+  focused: boolean
+  compact: boolean
+  onFocus: () => void
+  onToggleCompact: () => void
+}) {
   const [editing, setEditing] = useState(false)
+  const opencode = s.kind === 'opencode'
 
   return (
-    <div
+    <ListRow
+      title={s.label}
+      icon={<Icon name={opencode ? 'opencode' : 'terminal'} size={14} className={opencode ? css.iconOpencode : css.iconTerminal} />}
+      status={{ label: s.lastStatus, tone: s.lastStatus }}
+      tone={focused ? 'selected' : 'default'}
+      compact={compact}
       onClick={onFocus}
-      style={{
-        display: 'flex', alignItems: 'center', gap: 8, padding: '3px 8px', cursor: 'pointer',
-        borderRadius: 4, background: focused ? '#37373d' : 'transparent',
-      }}
-    >
-      {editing ? (
+      onTitleDoubleClick={() => setEditing(true)}
+      editor={editing ? (
         <input
           autoFocus
+          className={css.rename}
           defaultValue={s.label}
-          style={{ flex: 1, minWidth: 0 }}
           onClick={(e) => e.stopPropagation()}
           onBlur={() => setEditing(false)}
           onKeyDown={(e) => {
@@ -31,24 +48,26 @@ function SessionRow({ s, focused, onFocus }: { s: Session; focused: boolean; onF
             } else if (e.key === 'Escape') setEditing(false)
           }}
         />
-      ) : (
-        <span style={{ flex: 1, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }} onDoubleClick={() => setEditing(true)}>
-          {s.label}
-        </span>
-      )}
-      {s.lastStatus === 'gone' && (
-        <button style={linkButton} onClick={(e) => { e.stopPropagation(); void window.api.invoke('session:remove', { id: s.id }) }}>
-          Remove
-        </button>
-      )}
-      <span style={{ color: s.lastStatus === 'running' ? '#89d185' : '#888', fontSize: 11 }}>{s.lastStatus}</span>
-    </div>
+      ) : undefined}
+      actions={
+        <>
+          {s.lastStatus === 'gone' && (
+            <Button variant="ghost" size="sm" round icon="trash" aria-label="Remove session" title="Remove"
+              onClick={() => void window.api.invoke('session:remove', { id: s.id })} />
+          )}
+          <Button variant="ghost" size="sm" round icon="minimize" aria-label={compact ? 'Expand' : 'Compact'}
+            title={compact ? 'Expand' : 'Compact'} onClick={onToggleCompact} />
+        </>
+      }
+    />
   )
 }
 
-export function Sidebar() {
+export function Sidebar({ onNew }: { onNew: (projectId?: string) => void }) {
   const { projects, sessions, ui, setFocused } = useSlices()
   const [refused, setRefused] = useState<string | null>(null)
+  const [collapsed, setCollapsed] = useState<Set<string>>(new Set())
+  const [compact, setCompact] = useState<Set<string>>(new Set())
 
   async function removeProject(id: string) {
     const res = await window.api.invoke('project:remove', { id })
@@ -56,24 +75,50 @@ export function Sidebar() {
   }
 
   return (
-    <div style={{ width: ui.sidebarWidth, flexShrink: 0, display: 'flex', flexDirection: 'column', borderRight: '1px solid #333' }}>
-      <div style={{ flex: 1, overflowY: 'auto', padding: 8 }}>
-        {projects.map((p) => (
-          <div key={p.id} style={{ marginBottom: 12 }}>
-            <div style={{ display: 'flex', alignItems: 'center', padding: '4px 0' }}>
-              <span style={{ flex: 1, fontWeight: 600 }} title={p.path}>{p.name}</span>
-              <button style={linkButton} onClick={() => void removeProject(p.id)}>Remove project</button>
-            </div>
-            {refused === p.id && (
-              <div style={{ color: '#f48771', fontSize: 11, paddingBottom: 4 }}>Can't remove: project has running sessions</div>
-            )}
-            {sessionsOf(p.id, sessions).map((s) => (
-              <SessionRow key={s.id} s={s} focused={s.id === ui.focusedSessionId} onFocus={() => setFocused(s.id)} />
-            ))}
-          </div>
-        ))}
+    <div className={css.sidebar}>
+      <div className={css.header}>
+        <div className={css.tab}>
+          Sessions <Badge>{sessions.length}</Badge>
+        </div>
+        <Button variant="ghost" size="sm" round icon="folder-plus" aria-label="Add project" title="Add project"
+          className={css.add} onClick={() => void window.api.invoke('project:add')} />
       </div>
-      <button style={{ margin: 8 }} onClick={() => void window.api.invoke('project:add')}>Add project</button>
+      <div className={css.list}>
+        {projects.length === 0 && <div className={css.hint}>Add a project with the folder ＋ above</div>}
+        {projects.map((p) => {
+          const isCollapsed = collapsed.has(p.id)
+          return (
+            <div key={p.id} className={css.project}>
+              <div className={css.folder} title={p.path} onClick={() => setCollapsed((c) => toggle(c, p.id))}>
+                <Icon name={isCollapsed ? 'chevron-right' : 'chevron-down'} size={12} />
+                <Icon name="folder" size={14} />
+                <span className={css.folderName}>{p.name}</span>
+                <div className={css.folderActions} onClick={(e) => e.stopPropagation()}>
+                  <Button variant="ghost" size="sm" round icon="trash" aria-label="Remove project" title="Remove project"
+                    className={css.hoverOnly} onClick={() => void removeProject(p.id)} />
+                  <Button variant="ghost" size="sm" round icon="plus" aria-label="New session in project" title="New session"
+                    onClick={() => onNew(p.id)} />
+                </div>
+              </div>
+              {refused === p.id && <div className={css.refused}>Can't remove: project has running sessions</div>}
+              {!isCollapsed && (
+                <div className={css.cards}>
+                  {sessionsOf(p.id, sessions).map((s) => (
+                    <SessionCard
+                      key={s.id}
+                      s={s}
+                      focused={s.id === ui.focusedSessionId}
+                      compact={compact.has(s.id)}
+                      onFocus={() => setFocused(s.id)}
+                      onToggleCompact={() => setCompact((c) => toggle(c, s.id))}
+                    />
+                  ))}
+                </div>
+              )}
+            </div>
+          )
+        })}
+      </div>
     </div>
   )
 }

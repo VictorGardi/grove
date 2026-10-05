@@ -15,7 +15,7 @@ import s from './App.module.css'
 
 export default function App() {
   const { projects, sessions, ui, errors, hydrate, setFocused } = useSlices()
-  const [modalOpen, setModalOpen] = useState(false)
+  const [newFor, setNewFor] = useState<{ projectId?: string } | null>(null)
   const [confirmKill, setConfirmKill] = useState<Session | null>(null)
 
   useEffect(() => {
@@ -26,7 +26,7 @@ export default function App() {
     return window.api.on('menu:action', (a) => {
       // read the latest state, not this effect's closure
       const { projects, sessions, ui } = useSlices.getState()
-      if (a.type === 'newSession') setModalOpen(true)
+      if (a.type === 'newSession') setNewFor({})
       else if (a.type === 'closeSession') {
         const focused = sessions.find((x) => x.id === ui.focusedSessionId)
         if (focused?.lastStatus === 'running') setConfirmKill(focused)
@@ -37,6 +37,7 @@ export default function App() {
     })
   }, [setFocused])
 
+  const openNew = (projectId?: string) => setNewFor({ projectId })
   const focused = sessions.find((x) => x.id === ui.focusedSessionId)
   const project = focused && projects.find((p) => p.id === focused.projectId)
   const crumbs = focused ? [...(project ? [project.name] : []), focused.label] : []
@@ -44,9 +45,9 @@ export default function App() {
   return (
     <>
       <AppShell
-        topBar={<TopBar onNew={() => setModalOpen(true)} />}
+        topBar={<TopBar onNew={() => openNew()} />}
         banners={errors.map((e, i) => <Banner key={i}>{e}</Banner>)}
-        sidebar={<Sidebar />}
+        sidebar={<Sidebar onNew={openNew} />}
         content={
           <>
             <ContentHeader crumbs={crumbs} />
@@ -64,7 +65,7 @@ export default function App() {
         }
         sidebarWidth={ui.sidebarWidth}
       />
-      {modalOpen && <NewSessionModal onClose={() => setModalOpen(false)} />}
+      {newFor && <NewSessionModal initialProjectId={newFor.projectId} onClose={() => setNewFor(null)} />}
       {confirmKill && (
         <ConfirmDialog
           title="Close session"

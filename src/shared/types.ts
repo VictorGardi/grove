@@ -19,4 +19,4 @@ export interface UiState { sidebarWidth: number; focusedSessionId: string | null
 export type Slices = { projects: Project[]; sessions: Session[]; ui: UiState }
 export interface ConfigFile { schemaVersion: 1; projects: Project[] }
 export interface StateFile { schemaVersion: 1; sessions: Session[]; ui: UiState }
-export const DEFAULT_UI: UiState = { sidebarWidth: 260, focusedSessionId: null }
+export const DEFAULT_UI: UiState = { sidebarWidth: 230, focusedSessionId: null }
