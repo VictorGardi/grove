@@ -22,7 +22,7 @@ forced: []
 - [x] Slice 3 — The tree
 - [x] Slice 4 — Feature page
 - [x] Slice 5 — Manual link
-- [x] Slice 6 — Board (appetite cut 1) (manual check pending)
+- [x] Slice 6 — Board (appetite cut 1)
 
 ## Slice 1 — Tracer: features from the bundled workflow, read once
 
@@ -187,7 +187,8 @@ Deviations and readings (all small, two-way):
 
 Verification: `npm test` 129/129 passed outside the sandbox (inside it the
 real-tmux tests fail and the real-watcher tests skip, as before);
-`npm run typecheck` clean; `npm run build` clean. Manual check pending.
+`npm run typecheck` clean; `npm run build` clean. Manual check passed (human,
+2026-10-05).
 
 Deviations and readings (all small, two-way):
 

@@ -615,7 +615,7 @@ Rules (design Desired state 7; questions Q4):
   otherwise the content and crumbs are as today.
 - [x] Run `npm test` (outside the sandbox for the real-tmux and watcher
   tests), `npm run typecheck`, `npm run build`.
-- [ ] Manual in `npm run dev` (human): toggle to Board; columns are the
+- [x] Manual in `npm run dev` (human): toggle to Board; columns are the
   five stages; epics are not cards; children show their epic's name;
   restart, still Board; click a card → feature page in List view.
 
