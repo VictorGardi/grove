@@ -1,5 +1,6 @@
 import { afterEach, describe, expect, it } from 'vitest'
 import type { Session } from '@shared/types'
+import { terminalTheme } from '@shared/theme'
 import { makeLabel, newSession, reconcile } from './sessions'
 import { loadState } from './store/stateStore'
 import { createTerminal as create, LATER, NOW, setupCore } from './testing/setup'
@@ -102,7 +103,7 @@ describe('core sessions', () => {
     const a = make()
     await a.start()
     const s = await create(a)
-    expect(fake.calls).toContainEqual({ method: 'setColors', args: [s.tmuxName, '#d4d4d4', '#1e1e1e'] })
+    expect(fake.calls).toContainEqual({ method: 'setColors', args: [s.tmuxName, terminalTheme.foreground, terminalTheme.background] })
   })
 
   it('starts terminal sessions with no argv', async () => {

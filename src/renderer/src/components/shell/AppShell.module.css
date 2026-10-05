@@ -1,0 +1,35 @@
+.shell {
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+  background: var(--chrome-bg);
+}
+
+.body {
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  gap: var(--gutter);
+  padding: 0 var(--gutter) var(--gutter);
+}
+
+.sidebar,
+.content {
+  background: var(--panel-bg);
+  border-radius: var(--r-panel);
+  overflow: hidden;
+}
+
+.sidebar {
+  width: var(--sidebar-w);
+  flex-shrink: 0;
+  display: flex;
+  flex-direction: column;
+}
+
+.content {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+}

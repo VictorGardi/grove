@@ -1,6 +1,7 @@
 import os from 'node:os'
 import path from 'node:path'
 import { app, BrowserWindow } from 'electron'
+import { chromeBackground } from '@shared/theme'
 import { TmuxBackend } from '../core/backend/tmux'
 import { createCore } from '../core/core'
 import { findTmux, minimalEnv } from '../core/env'
@@ -34,9 +35,13 @@ app.whenReady().then(async () => {
   win = new BrowserWindow({
     width: 1200,
     height: 800,
-    backgroundColor: '#1e1e1e',
+    titleBarStyle: 'hidden',
+    trafficLightPosition: { x: 18, y: 18 },
+    backgroundColor: chromeBackground,
+    show: false,
     webPreferences: { preload: path.join(__dirname, '../preload/index.js'), contextIsolation: true },
   })
+  win.once('ready-to-show', () => win?.show())
   win.on('focus', () => void core.checkLiveness())
   win.on('closed', () => {
     win = null

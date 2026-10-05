@@ -3,6 +3,7 @@ import { Terminal } from '@xterm/xterm'
 import { FitAddon } from '@xterm/addon-fit'
 import { WebglAddon } from '@xterm/addon-webgl'
 import { terminalTheme } from '@shared/theme'
+import s from './TerminalView.module.css'
 
 export function TerminalView({ sessionId }: { sessionId: string }) {
   const ref = useRef<HTMLDivElement>(null)
@@ -15,6 +16,7 @@ export function TerminalView({ sessionId }: { sessionId: string }) {
       theme: terminalTheme,
       fontFamily: 'Menlo, monospace',
       fontSize: 13,
+      lineHeight: 1.35,
     })
     const fit = new FitAddon()
     term.loadAddon(fit)
@@ -72,6 +74,9 @@ export function TerminalView({ sessionId }: { sessionId: string }) {
     }
   }, [sessionId])
 
-  // isolation keeps xterm.css's z-indexed layers (5–11) from painting over app overlays
-  return <div ref={ref} style={{ flex: 1, minWidth: 0, height: '100%', padding: 4, boxSizing: 'border-box', isolation: 'isolate' }} />
+  return (
+    <div className={s.frame}>
+      <div ref={ref} className={s.term} />
+    </div>
+  )
 }

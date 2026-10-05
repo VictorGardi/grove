@@ -1,0 +1,29 @@
+.header {
+  height: var(--header-h);
+  flex-shrink: 0;
+  display: flex;
+  align-items: center;
+  padding: 0 var(--sp-4);
+  border-bottom: 1px solid var(--header-divider);
+}
+
+.crumbs {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: var(--fs-lg);
+}
+
+.parent {
+  color: var(--text-2);
+}
+
+.current {
+  color: var(--text);
+  font-weight: var(--fw-bold);
+}
+
+.right {
+  margin-left: auto;
+}

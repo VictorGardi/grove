@@ -1,0 +1,16 @@
+/* isolation keeps xterm.css's z-indexed layers (5–11) from painting over app overlays */
+.frame {
+  flex: 1;
+  min-width: 0;
+  min-height: 0;
+  display: flex;
+  padding: var(--sp-3);
+  background: var(--terminal-bg);
+  isolation: isolate;
+}
+
+.term {
+  flex: 1;
+  min-width: 0;
+  min-height: 0;
+}

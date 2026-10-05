@@ -1,0 +1,83 @@
+/* UI design tokens. --chrome-bg, --terminal-bg and --terminal-fg are repeated
+   in src/shared/theme.ts; tokens.test.ts keeps them equal. */
+:root {
+  /* surfaces */
+  --chrome-bg: #0a0a0b;
+  --panel-bg: #121212;
+  --card-bg: #1f1f1f;
+  --raised-bg: #232324;
+  --muted-badge-bg: #16161a;
+  --terminal-bg: #1e1e2e;
+  --terminal-fg: #cdd6f4;
+
+  /* borders */
+  --card-border: #292929;
+  --divider: #212123;
+  --header-divider: #303035;
+  --scrollbar-thumb: #38383c;
+
+  /* text */
+  --text: #ffffff;
+  --text-2: #b3b3b3;
+  --text-3: #5e5e66;
+
+  /* accent */
+  --accent: #fb923c;
+  --accent-strong: #f66032;
+  --accent-badge: #ffa42c;
+
+  /* status */
+  --status-running: #fb923c;
+  --status-working: #fb923c;
+  --status-waiting: #fbc024;
+  --status-finished: #24d3ef;
+  --status-idle: #5e5e66;
+  --status-gone: #5e5e66;
+
+  /* card tones */
+  --card-selected-bg: #342519;
+  --card-selected-border: #fb923c;
+  --card-waiting-bg: #1d1b15;
+  --card-waiting-border: #604c1d;
+  --card-finished-bg: #141c1d;
+  --card-finished-border: #1f545c;
+  --card-glow: 5px;
+
+  /* danger */
+  --danger: #f87171;
+  --danger-bg: #2a1517;
+  --danger-border: #5c2427;
+
+  /* type */
+  --font-ui: -apple-system, system-ui, sans-serif;
+  --font-mono: Menlo, monospace;
+  --fs-xs: 10px;
+  --fs-sm: 11px;
+  --fs-md: 13px;
+  --fs-lg: 14px;
+  --fs-xl: 15px;
+  --fw-regular: 400;
+  --fw-semibold: 600;
+  --fw-bold: 700;
+
+  /* space */
+  --sp-1: 4px;
+  --sp-2: 8px;
+  --sp-3: 12px;
+  --sp-4: 16px;
+  --sp-5: 20px;
+  --sp-6: 24px;
+  --gutter: 8px;
+
+  /* radius */
+  --r-card: 5px;
+  --r-md: 8px;
+  --r-panel: 10px;
+  --r-pill: 999px;
+
+  /* sizes */
+  --topbar-h: 51px;
+  --header-h: 47px;
+  --traffic-inset: 80px;
+  --sidebar-w: 230px; /* overridden at runtime from ui.sidebarWidth */
+}

@@ -1,0 +1,12 @@
+.ended {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: var(--sp-3);
+}
+
+.empty {
+  flex: 1;
+}
