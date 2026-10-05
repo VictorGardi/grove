@@ -19,8 +19,8 @@ forced: []
 
 - [x] Slice 1 — Tracer: the Xirp shell around the existing UI (manual check pending human)
 - [x] Slice 2 — Modals, buttons, banner and panes
-- [x] Slice 3 — Sidebar cards and folders (manual check pending human)
-- [ ] Slice 4 — No inline styles, enforced
+- [x] Slice 3 — Sidebar cards and folders
+- [x] Slice 4 — No inline styles, enforced
 
 ## Slice 1 — Tracer: the Xirp shell around the existing UI
 
@@ -83,5 +83,65 @@ Deviations (small, two-way):
   generic hover border doesn't override the selected/waiting/finished border.
 - The only `style=` left in `src/renderer` is `AppShell`'s `--sidebar-w`
   variable (slice 4 enforces this).
+
+## Slice 4 — No inline styles, enforced
+
+Verification: `npm test` 55/55 passed outside the sandbox; with
+`style={{ color: 'red' }}` added to `Badge.tsx` the `src/renderer` case failed
+naming `src/components/ui/Badge.tsx`, and passed again after the revert;
+`npm run build` clean.
+
+Deviations (small, two-way):
+
+- The checker also tracks `(`/`[` depth when finding top-level keys, so a
+  value such as `calc(...)` or an array can't be mistaken for a key.
+- `style={{}}` (no keys) counts as a violation, as there is nothing to allow.
+
+## Final checks
+
+`npm test` 55/55 (outside the sandbox), `npm run typecheck` clean,
+`npm run build` clean. No `lint` command is configured.
+
+## PR description
+
+### Visual foundation (child 9 of the OpenCode feature workspace epic)
+
+Gives grove a deliberate, Xirp-like dark look and a small set of shared parts
+that later children build on, instead of inline styles.
+
+**Design** (`03-design.md` v2, ADR 0012)
+- D1: components are styled with CSS Modules reading custom properties from
+  one `styles/tokens.css`; no visual inline styles (CSS variables only).
+- D2: `tokens.css` owns UI tokens; `src/shared/theme.ts` owns the window
+  background and the Catppuccin Mocha terminal theme for xterm, main and tmux;
+  `tokens.test.ts` keeps the values both define equal.
+- Hidden title bar with the traffic lights inside a 51px draggable top bar
+  (logo, wordmark, inert search pill, round ＋), rounded `#121212` panels on
+  `#0a0a0b`, full-bleed terminal clipped by the panel's corners.
+
+**Slices**
+1. The Xirp shell around the existing UI: tokens, base CSS, window chrome,
+   AppShell / TopBar / ContentHeader, Mocha terminal, no launch flash.
+2. Button, Modal, Badge, Banner, Icon; the ＋ modal and confirm dialog on
+   Modal; error banners; styled ended and empty panes; slice 1 review fixes.
+3. Sidebar: "Sessions" header with count badge and add-project ＋;
+   collapsible project folders with ＋ and hover remove; session cards on
+   ListRow with kind icon, status line, orange selection, compact toggle.
+4. `noInlineStyles.test.ts` fails on any visual `style=` in `src/renderer`.
+
+**How to verify**
+- `npm test`, `npm run typecheck`, `npm run build`.
+- `npm run dev`: drag the window by the top bar; ⌘T / ＋ open the modal
+  (Enter creates, Escape closes); ⌘W confirm (Enter kills, Escape cancels,
+  keys don't reach the terminal); collapse a folder, compact a card, project
+  ＋ preselects its project, header ＋ adds a project; ⌘1..9 focus in sidebar
+  order; a new session shows the Mocha background reaching the panel edges.
+
+**Known limits**
+- tmux sessions created before this change keep their old pane colours.
+- Collapsed folders and compact cards reset on restart (child 2 persists them).
+- The search pill is inert until child 7.
+
+🤖 Generated with [Claude Code](https://claude.com/claude-code)
 
 ## Open questions

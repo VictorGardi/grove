@@ -356,10 +356,42 @@ modal through a boolean `modalOpen`; `NewSessionModal` already takes
   initialProjectId={newFor.projectId} onClose={() => setNewFor(null)} />}`.
 - [x] Run `npm run typecheck`
 - [x] Run `npm test`
-- [ ] Manual (human, `npm run dev`): two projects, three sessions; collapse a
+- [x] Manual (human, `npm run dev`): two projects, three sessions; collapse a
   folder; compact a card; focused card is orange; project ＋ preselects its
   project; header ＋ opens the folder picker and adds a project; removing a
   project with running sessions shows the refusal; Cmd+1..3 still focuses in
-  sidebar order.
+  sidebar order. (Human reviewed and said continue.)
+
+## Slice 4 — No inline styles, enforced
+
+Context (code at `6617d34`): the only `style=` in `src/renderer` is
+`AppShell.tsx`'s `style={{ '--sidebar-w': `${sidebarWidth}px` } as
+CSSProperties}`, whose value holds a `}` inside a template literal. Vitest
+runs in `node` and collects `src/**/*.test.ts`; Node 26 supports
+`readdirSync(dir, { recursive: true })`.
+
+- [x] Create `src/renderer/src/noInlineStyles.test.ts`:
+  - `export function inlineStyleViolations(source: string): string[]` —
+    for each `style=` occurrence: if the next chars are not `{{`, record the
+    line (`style={obj}` is never allowed). Otherwise walk from the inner `{`
+    counting `{`/`}` depth (skip characters inside `'…'`, `"…"` and
+    `` `…` `` strings, treating `${…}` inside template strings as nested
+    code) to the matching `}`; within that object text, collect the keys at
+    depth 0 (an identifier or quoted name directly followed by `:` at the
+    start or after a `,`). Record the line if any key does not start with
+    `--`. Each violation string is `line <n>: <trimmed line text>`.
+  - `describe('inlineStyleViolations')` unit cases: `style={{ '--w':
+    `${n}px` } as CSSProperties}` → `[]`; `style={{ color: 'red' }}` → 1
+    violation; `style={{ '--a': 1, padding: 4 }}` → 1; `style={obj}` → 1;
+    a file without `style=` → `[]`.
+  - `describe('src/renderer')`: walk `src/renderer` (resolved from
+    `new URL('..', import.meta.url)`, i.e. `src/renderer`) with
+    `readdirSync(dir, { recursive: true })`, keep `.tsx` files, and expect
+    the map `{ file: violations }` filtered to non-empty entries to equal `{}`.
+- [x] Run `npm test`
+- [x] Temporarily add `style={{ color: 'red' }}` to the `<span>` in
+  `src/renderer/src/components/ui/Badge.tsx`, run `npm test` and confirm the
+  `src/renderer` case fails naming `Badge.tsx`; revert the line.
+- [x] Run `npm run build`
 
 ## Open questions
