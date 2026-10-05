@@ -1,0 +1,77 @@
+---
+feature: 2026-10-05-01-workspace-walking-skeleton
+phase: implementation
+status: in-progress
+version: 1
+created: 2026-10-05
+updated: 2026-10-05
+based_on:
+  - 03-design.md@1
+  - 04-structure.md@1
+  - 05-plan.md@1
+forced: []
+---
+
+# Implementation: workspace walking skeleton
+
+## Gate note
+
+`05-plan.md` was set to `approved` by `grove-plan` itself, not by a human
+through `grove-approve` (the plan says so in its **Approval** paragraph). On
+2026-10-05, when invoking `grove-implement`, the human was asked and chose
+"Proceed, I accept it". That choice is the human approval of the plan for
+this implementation.
+
+## Slices
+
+- [ ] Slice 1. Tracer: add a project, open a terminal session in tmux. Code done; manual checks pending
+- [ ] Slice 2. Sessions persist, reconcile on start, and go `gone`
+- [ ] Slice 3. OpenCode sessions with a minted id and the user's shell env
+- [ ] Slice 4. Session and project lifecycle in the sidebar
+- [ ] Slice 5. Terminal fidelity and keys
+- [ ] Slice 6. Finder and Dock launch work like `npm run dev`
+
+## Slice 1
+
+### Automated verification (2026-10-05)
+
+- `stat -f %Lp node_modules/node-pty/prebuilds/darwin-*/spawn-helper` → `755` (arm64 and x64)
+- `grep -rn "from 'electron'" src/core` → no output
+- `npm run typecheck` → passes
+- `npm test` (sandbox off) → 2 files, 11 tests pass. `tmux.test.ts` ran all 6 cases, none skipped
+- `npm run build` → passes (not required for this slice; run as a smoke check)
+- `npm run dev` smoke run for 10 s → main, preload and renderer start with no errors
+
+### Manual verification
+
+To be done by the human. Results go here.
+
+- [ ] Add project → `~/.config/grove/config.json` has `schemaVersion: 1` and one project `{ id, name: "grove", path }`. Cmd+T → Terminal → Create → `pwd` prints the repo path. `tmux -L grove ls` lists `grove-<uuid>`.
+- [ ] Cmd+Q → within 2 s the app is gone, and `tmux -L grove ls` still lists the session. The SIGKILL fallback is not applied yet. Add it only if this check hangs.
+
+### Deviations (small, two-way)
+
+1. **`registerIpc(core, getWindow, getErrors)`**: takes a third argument that
+   supplies the `app:errors` list. Main passes `core.getErrors` for now. Slice 6
+   will concatenate main's own errors there without changing `ipc.ts`.
+2. **`hydrate()` subscribes to the `state:*` pushes before it invokes
+   `state:get`**, not after. This way a push between the two can't be lost.
+   Last write wins either way.
+3. **`TerminalView` writes `[detached]`** to the terminal when its attach gets
+   `pty:exit`. The plan didn't say what to do on exit. Without this, a pane
+   whose tmux client died just freezes with no sign.
+4. **`TerminalView` detaches a late attach.** If the component unmounts before
+   `pty:attach` resolves, it sends `pty:detach` for the returned id, so the PTY
+   isn't leaked.
+5. **`Commands` is declared in `core.ts`** and has only the slice-1 methods
+   (`projectAdd`, `sessionCreate`). Later slices add methods as their channels
+   arrive.
+6. **`grove.config.json`** was rewritten through a JSON serializer, which
+   expanded `"tracker": { "type": "none" }` onto three lines. The values are
+   unchanged.
+7. **`.gitignore`** already had `out/`, so it wasn't changed.
+8. **Environment, not code:** inside Claude Code's sandbox, `node
+   node_modules/electron/install.js` fails with `fetch failed` (`ENOTFOUND`)
+   because Node's fetch ignores the proxy env vars. Running it with
+   `NODE_USE_ENV_PROXY=1` downloaded Electron. npm itself needed
+   `npm_config_cache=$TMPDIR/npmcache`, as the plan predicted.

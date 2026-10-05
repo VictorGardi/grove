@@ -1,0 +1,68 @@
+import { execFile } from 'node:child_process'
+import os from 'node:os'
+import path from 'node:path'
+import { promisify } from 'node:util'
+import { afterAll, describe, expect, it } from 'vitest'
+import { findTmux, minimalEnv } from '../env'
+import { TmuxBackend } from './tmux'
+
+const run = promisify(execFile)
+const tmuxPath = findTmux(process.env)
+const socket = `gt${process.pid}`
+const env = minimalEnv(process.env)
+const tmux = (...args: string[]) => run(tmuxPath!, ['-L', socket, ...args], { env })
+
+describe.skipIf(!tmuxPath)('TmuxBackend', () => {
+  const backend = new TmuxBackend({
+    tmuxPath: tmuxPath!,
+    socket,
+    confPath: path.resolve('resources/tmux.conf'),
+    env,
+  })
+  const create = (name: string) => backend.create({ name, cwd: os.tmpdir(), cols: 100, rows: 30 })
+
+  afterAll(async () => {
+    await tmux('kill-server').catch(() => {})
+  })
+
+  it('lists nothing when no server runs', async () => {
+    expect(await backend.list()).toEqual(new Set())
+  })
+
+  it('creates a session with the config file', async () => {
+    await create('grove-a')
+    expect((await backend.list()).has('grove-a')).toBe(true)
+    const { stdout } = await tmux('show-options', '-g', 'history-limit')
+    expect(stdout).toContain('50000')
+  })
+
+  it('re-sources the config when the server is up', async () => {
+    await expect(backend.ensureConfig()).resolves.toBeUndefined()
+  })
+
+  it('kills sessions and ignores missing ones', async () => {
+    await backend.kill('grove-a')
+    expect((await backend.list()).has('grove-a')).toBe(false)
+    await expect(backend.kill('grove-missing')).resolves.toBeUndefined()
+  })
+
+  it('attaches, gets output, and detaching leaves the session', async () => {
+    await create('grove-b')
+    const h = backend.attach('grove-b', 80, 24)
+    const got = await new Promise<boolean>((resolve) => {
+      const t = setTimeout(() => resolve(false), 3000)
+      h.onData(() => { clearTimeout(t); resolve(true) })
+    })
+    expect(got).toBe(true)
+    h.kill()
+    h.kill()
+    expect((await backend.list()).has('grove-b')).toBe(true)
+  })
+
+  it('targets sessions by exact name', async () => {
+    await backend.kill('grove-b')
+    await create('grove-abc')
+    await backend.kill('grove-ab')
+    expect((await backend.list()).has('grove-abc')).toBe(true)
+  })
+})

@@ -3,8 +3,15 @@
   "adrDir": "docs/adr",
   "contextFile": "CONTEXT.md",
   "commitHtml": false,
-  "tracker": { "type": "none" },
-  "commands": {},
+  "tracker": {
+    "type": "none"
+  },
+  "commands": {
+    "test": "npm test",
+    "typecheck": "npm run typecheck",
+    "build": "npm run build",
+    "dev": "npm run dev"
+  },
   "limits": {
     "maxOneWayDecisions": 8,
     "maxSlices": 8,
