@@ -2,7 +2,7 @@
 feature: 2026-10-05-02-workflow-discovery-sidebar
 phase: implementation
 status: draft
-version: 7
+version: 8
 created: 2026-10-05
 updated: 2026-10-05
 approved_at:
@@ -23,8 +23,8 @@ forced: []
 - [x] Slice 4 — Feature page
 - [x] Slice 5 — Manual link
 - [x] Slice 6 — Board (appetite cut 1)
-- [x] Slice 7 — Sessions | Features tabs (v2) (manual check pending)
-- [x] Slice 8 — Feature line on the session card (v2) (manual check pending)
+- [x] Slice 7 — Sessions | Features tabs (v2)
+- [x] Slice 8 — Feature line on the session card (v2)
 
 ## Slice 1 — Tracer: features from the bundled workflow, read once
 
@@ -216,7 +216,7 @@ leave the tree for the Sessions tab.
 
 Verification: `npm test` 140/140 passed outside the sandbox (inside it the
 four real-tmux tests fail as before); `npm run typecheck` clean;
-`npm run build` clean. Manual check pending.
+`npm run build` clean. Manual check passed (human, 2026-10-05).
 
 Deviations and readings (all small, two-way):
 
@@ -236,7 +236,7 @@ Deviations and readings (all small, two-way):
 Verification: `npm test` 141/141 passed outside the sandbox;
 `npm run typecheck` clean; `npm run build` clean. Being the last slice,
 these are all the configured checks (no `commands.lint`). Manual check
-pending.
+passed (human, 2026-10-05).
 
 Deviations and readings (all small, two-way):
 
@@ -257,7 +257,7 @@ here and logged instead of a new slice.
 Verification: `npm test` 137/137 passed outside the sandbox;
 `npm run typecheck` clean; `npm run build` clean. Probe over this repo's
 `docs/work`: the epic reads `Active · 0 / 9 done`; the other rows are
-unchanged. Manual check pending.
+unchanged. Manual check passed (human, 2026-10-05).
 
 - **Epic done only when its children are (one-way, human decision).** This
   amends E-D2. The human chose a new `active` card state over reusing
@@ -300,7 +300,7 @@ the area is too large"; "add the branch the session is working in as card
 info"; "two 'running' statuses … remove the last one".
 
 Verification: `npm test` 147/147 passed outside the sandbox;
-`npm run typecheck` clean; `npm run build` clean. Manual check pending.
+`npm run typecheck` clean; `npm run build` clean. Manual check passed (human, 2026-10-05).
 
 - **Feature line not clickable.** It shows the epic-colour dot, the title
   and the stage only (`featureStage`: current stage label, `n / m done`

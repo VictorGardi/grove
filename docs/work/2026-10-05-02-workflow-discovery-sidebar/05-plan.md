@@ -696,7 +696,7 @@ Rules (design Desired state 4, two-way rows "Sidebar ordering (v2)" and
   the import.
 - [x] Run `npm test` (outside the sandbox for the real-tmux and watcher
   tests), `npm run typecheck`, `npm run build`.
-- [ ] Manual in `npm run dev` (human): switch tabs, restart, tab kept;
+- [x] Manual in `npm run dev` (human): switch tabs, restart, tab kept;
   Sessions shows every session under its project by start time, terminals
   muted, no feature rows; Features shows project → epic → feature without
   sessions; Cmd+2 focuses the second session in Sessions order from either
@@ -753,7 +753,7 @@ Rules (design Desired state 4, two-way row "Card feature line (v2)"):
   `onOpenFeature={() => f && focusFeature({ projectId: f.projectId, slug: f.slug })}`.
 - [x] Run `npm test` (outside the sandbox for the real-tmux and watcher
   tests), `npm run typecheck`, `npm run build`.
-- [ ] Manual in `npm run dev` (human): link a session to this feature; its
+- [x] Manual in `npm run dev` (human): link a session to this feature; its
   card shows the line (epic-colour dot, title, stage · card state); click
   the line → feature page; click the card → back to the terminal.
 
