@@ -1,5 +1,5 @@
 import { useState } from 'react'
-import type { Session } from '@shared/types'
+import type { Feature, Session } from '@shared/types'
 import { useSlices } from '../stores/slices'
 import { sessionsOf } from '../sidebarOrder'
 import { Badge } from './ui/Badge'
@@ -63,8 +63,19 @@ function SessionCard({ s, focused, compact, onFocus, onToggleCompact }: {
   )
 }
 
+function FeatureRow({ f }: { f: Feature }) {
+  const stage = f.stages.find((x) => x.id === f.currentStage)
+  return (
+    <ListRow
+      title={f.title}
+      icon={<Icon name="folder" size={14} className={css.iconFeature} />}
+      meta={stage ? stage.label : 'Done'}
+    />
+  )
+}
+
 export function Sidebar({ onNew }: { onNew: (projectId?: string) => void }) {
-  const { projects, sessions, ui, setFocused } = useSlices()
+  const { projects, sessions, ui, features, setFocused } = useSlices()
   const [refused, setRefused] = useState<string | null>(null)
   const [collapsed, setCollapsed] = useState<Set<string>>(new Set())
   const [compact, setCompact] = useState<Set<string>>(new Set())
@@ -103,6 +114,7 @@ export function Sidebar({ onNew }: { onNew: (projectId?: string) => void }) {
               {refused === p.id && <div className={css.refused}>Can't remove: project has running sessions</div>}
               {!isCollapsed && (
                 <div className={css.cards}>
+                  {features.items.filter((f) => f.projectId === p.id).map((f) => <FeatureRow key={f.slug} f={f} />)}
                   {sessionsOf(p.id, sessions).map((s) => (
                     <SessionCard
                       key={s.id}

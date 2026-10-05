@@ -1,9 +1,12 @@
 import fs from 'node:fs'
 import os from 'node:os'
 import path from 'node:path'
+import { fileURLToPath } from 'node:url'
 import { createCore, type Core } from '../core'
 import { saveConfig } from '../store/configStore'
 import { FakeBackend } from './fakeBackend'
+
+const workflowPath = fileURLToPath(new URL('../../../resources/workflow.yaml', import.meta.url))
 
 export const NOW = new Date('2026-10-05T10:00:00.000Z')
 export const LATER = new Date('2026-10-05T11:00:00.000Z')
@@ -18,7 +21,7 @@ export function setupCore() {
   const fake = new FakeBackend()
   const cores: Core[] = []
   const make = (now = NOW) => {
-    const core = createCore({ configPath, statePath, backend: fake, now: () => now })
+    const core = createCore({ configPath, statePath, workflowPath, backend: fake, now: () => now })
     cores.push(core)
     return core
   }

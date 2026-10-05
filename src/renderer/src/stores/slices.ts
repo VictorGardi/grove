@@ -1,11 +1,12 @@
 import { create } from 'zustand'
-import type { Project, Session, UiState } from '@shared/types'
-import { DEFAULT_UI } from '@shared/types'
+import type { FeaturesSlice, Project, Session, UiState } from '@shared/types'
+import { DEFAULT_UI, EMPTY_FEATURES } from '@shared/types'
 
 interface SlicesState {
   projects: Project[]
   sessions: Session[]
   ui: UiState
+  features: FeaturesSlice
   errors: string[]
   hydrate(): Promise<void>
   setFocused(id: string | null): void
@@ -15,6 +16,7 @@ export const useSlices = create<SlicesState>((set) => ({
   projects: [],
   sessions: [],
   ui: DEFAULT_UI,
+  features: EMPTY_FEATURES,
   errors: [],
   async hydrate() {
     const { api } = window
@@ -22,6 +24,7 @@ export const useSlices = create<SlicesState>((set) => ({
     api.on('state:projects', (projects) => set({ projects }))
     api.on('state:sessions', (sessions) => set({ sessions }))
     api.on('state:ui', (ui) => set({ ui }))
+    api.on('state:features', (features) => set({ features }))
     const [slices, errors] = await Promise.all([api.invoke('state:get'), api.invoke('app:errors')])
     if (slices.ok) set(slices.data)
     if (errors.ok) set({ errors: errors.data })

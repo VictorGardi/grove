@@ -95,6 +95,11 @@
   color: var(--status-waiting);
 }
 
+.iconFeature {
+  flex-shrink: 0;
+  color: var(--text-2);
+}
+
 .iconTerminal {
   flex-shrink: 0;
   color: var(--accent);

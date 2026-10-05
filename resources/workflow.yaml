@@ -1,0 +1,56 @@
+# Example grove workflow: the app's default when config.json sets no `workflow`.
+# Everything the app knows about grove's stages, kinds and flows lives here.
+discovery:
+  manifest: feature.md
+  root: { from_file: grove.config.json, key: artifactRoot, default: docs/work }
+
+kinds:
+  field: kind
+  default: feature
+  parent_field: parent
+  values:
+    epic: { group: true, stages: [questions, research, design, structure] }
+    feature: { stages: all }
+
+flows: # second axis; effective stages = kind ∩ flow
+  field: flow
+  default: full
+  values:
+    full: { stages: all }
+    standard: { stages: all }
+    small: { stages: [questions, implementation] }
+
+stages: # ordered
+  - id: questions
+    label: Questions
+    artifact: 01-questions.md
+    complete_when: { field: status, equals: approved }
+  - id: research
+    label: Research
+    artifact: 02-research.md
+    review: 02-research.html
+    complete_when: { field: status, equals: approved }
+  - id: design
+    label: Design
+    artifact: 03-design.md
+    review: 03-design.html
+    complete_when: { field: status, equals: approved }
+  - id: structure
+    label: Structure
+    artifact: 04-structure.md
+    review: 04-structure.html
+    complete_when: { field: status, equals: approved }
+  - id: implementation
+    label: Implementation
+    artifact: 06-implementation.md
+    complete_when: { field: status, equals: approved }
+
+flags:
+  - { id: stale, label: Stale, when: { field: status, equals: stale } }
+
+actions:
+  start:   { label: "Start {stage}", prompt: "/grove-{stage} {slug}", cwd: "{project_path}" }
+  revise:  { label: "Revise", prompt: "/grove-{stage} {slug} {feedback}", cwd: "{project_path}", needs_input: true }
+  approve: { label: "Approve", prompt: "/grove-approve {slug} {stage}", cwd: "{project_path}" }
+
+stage_actions: { default: [start, revise, approve] }

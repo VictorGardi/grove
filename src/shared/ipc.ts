@@ -1,4 +1,4 @@
-import type { Project, Session, SessionKind, Slices, UiState } from './types'
+import type { FeaturesSlice, Project, Session, SessionKind, Slices, UiState } from './types'
 
 export type Result<T> = { ok: true; data: T } | { ok: false; error: string }
 export type MenuAction =
@@ -27,6 +27,7 @@ export interface PushMap {
   'state:projects': Project[]
   'state:sessions': Session[]
   'state:ui': UiState
+  'state:features': FeaturesSlice
   'pty:data': { attachId: string; data: string }
   'pty:exit': { attachId: string }
   'menu:action': MenuAction

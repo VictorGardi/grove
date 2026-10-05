@@ -1,18 +1,24 @@
 import { randomUUID } from 'node:crypto'
+import fs from 'node:fs'
+import path from 'node:path'
 import type { Project, Session, SessionKind, Slices, UiState } from '@shared/types'
-import { DEFAULT_UI } from '@shared/types'
+import { DEFAULT_UI, EMPTY_FEATURES } from '@shared/types'
 import type { Result } from '@shared/ipc'
 import type { AttachHandle, SessionBackend } from './backend/types'
 import { terminalTheme } from '@shared/theme'
+import { listFolders, readFolder, resolveRoot } from './discovery/folder'
 import { loginShellArgv } from './env'
 import { hasLiveSessions, newProject } from './projects'
 import { markGone, newSession, reconcile, rename } from './sessions'
 import { loadConfig, saveConfig } from './store/configStore'
 import { loadState, saveState } from './store/stateStore'
+import { deriveFeatures } from './workflow/derive'
+import { parseWorkflow, type Workflow } from './workflow/parse'
 
 export interface CoreOptions {
   configPath: string // ~/.config/grove/config.json
   statePath: string // <userData>/state.json
+  workflowPath: string // the bundled example workflow
   backend: SessionBackend
   now?: () => Date // tests inject this
 }
@@ -43,17 +49,48 @@ export interface Core {
 export function createCore(opts: CoreOptions): Core {
   const { backend } = opts
   const now = opts.now ?? (() => new Date())
-  const slices: Slices = { projects: [], sessions: [], ui: DEFAULT_UI }
+  const slices: Slices = { projects: [], sessions: [], ui: DEFAULT_UI, features: EMPTY_FEATURES }
   const errors: string[] = []
   const listeners = new Set<SliceListener>()
   const handles = new Set<AttachHandle>()
   let poll: ReturnType<typeof setInterval> | undefined
+  let workflow: Workflow | null = null
+  let workflowError: string | null = null
 
   function set<K extends keyof Slices>(k: K, v: Slices[K]): void {
     slices[k] = v
     for (const l of listeners) l(k, v)
     if (k === 'projects') saveConfig(opts.configPath, { schemaVersion: 1, projects: slices.projects })
-    else saveState(opts.statePath, { schemaVersion: 1, sessions: slices.sessions, ui: slices.ui })
+    else if (k !== 'features') saveState(opts.statePath, { schemaVersion: 1, sessions: slices.sessions, ui: slices.ui })
+  }
+
+  function loadWorkflow(): void {
+    try {
+      const res = parseWorkflow(fs.readFileSync(opts.workflowPath, 'utf8'))
+      if (res.ok) workflow = res.workflow
+      else workflowError = `${opts.workflowPath}: ${res.error}`
+    } catch (e) {
+      workflowError = `${opts.workflowPath}: ${(e as Error).message}`
+    }
+  }
+
+  // Re-read every project's feature folders and re-derive. Not persisted.
+  function refreshFeatures(): void {
+    const wf = workflow
+    if (!wf) return set('features', { ...EMPTY_FEATURES, workflowError })
+    const folders = slices.projects.flatMap((p) => {
+      const root = resolveRoot(p.path, wf.discovery)
+      if (!root) return []
+      return listFolders(root).flatMap((slug) => {
+        const snap = readFolder(path.join(root, slug), wf)
+        return snap ? [{ ...snap, projectId: p.id }] : []
+      })
+    })
+    set('features', {
+      workflowError,
+      stages: wf.stages.map(({ id, label }) => ({ id, label })),
+      items: deriveFeatures(wf, folders, slices.sessions),
+    })
   }
 
   async function checkLiveness(): Promise<void> {
@@ -83,6 +120,7 @@ export function createCore(opts: CoreOptions): Core {
     async projectAdd({ path }) {
       const project = newProject(path, randomUUID())
       set('projects', [...slices.projects, project])
+      refreshFeatures()
       return { ok: true, data: project }
     },
 
@@ -91,6 +129,7 @@ export function createCore(opts: CoreOptions): Core {
       if (hasLiveSessions(id, slices.sessions)) return { ok: false, error: 'has-live-sessions' }
       set('projects', slices.projects.filter((p) => p.id !== id))
       dropSessions((s) => s.projectId !== id)
+      refreshFeatures()
       return { ok: true, data: { id } }
     },
 
@@ -143,6 +182,8 @@ export function createCore(opts: CoreOptions): Core {
       const state = loadState(opts.statePath, onBad)
       slices.sessions = state.sessions
       slices.ui = state.ui
+      loadWorkflow()
+      refreshFeatures()
       try {
         await backend.ensureConfig()
         const next = reconcile(slices.sessions, await backend.list(), now().toISOString())

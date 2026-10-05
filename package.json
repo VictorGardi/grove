@@ -21,6 +21,7 @@
     "@xterm/addon-webgl": "0.19.0",
     "@xterm/xterm": "6.0.0",
     "node-pty": "1.1.0",
+    "yaml": "2.9.1",
     "zustand": "5.0.15"
   },
   "devDependencies": {
