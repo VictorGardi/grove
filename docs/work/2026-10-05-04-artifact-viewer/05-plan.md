@@ -2,7 +2,7 @@
 feature: 2026-10-05-04-artifact-viewer
 phase: plan
 status: approved
-version: 1
+version: 2
 created: 2026-10-05
 updated: 2026-10-05
 approved_at:
@@ -145,5 +145,64 @@ clickable; markdown and images arrive in slice 3.
 - [x] Manual (human): same check after `npm run build && npm start`.
 - [x] Manual (human): set the iframe `src` in DevTools to
   `grove-artifact://<pid>/<slug>/../../../../etc/hosts` → refusal page.
+
+## Slice 2 — Mermaid offline
+
+Context (code at `2d5dc5d`): `src/main/artifacts.ts` has `CSP`, `REFUSAL`,
+`respond(body, status)` (always `text/html`) and `handleArtifacts(core)`,
+which serves only `.html`/`.htm` via `parseArtifactUrl` (that returns `null`
+for the `assets` host). `src/shared/artifactUrl.ts` exports `ARTIFACT_SCHEME`
+and `ASSETS_HOST`. grove-render pages load
+`<script src="https://cdn.jsdelivr.net/npm/mermaid@11/dist/mermaid.min.js"></script>`
+in `<head>` and call `mermaid.initialize(...)` from an inline script at the
+end of `<body>` (blocked by the CSP). Mermaid's `startOnLoad` renders
+`.mermaid` elements on the window `load` event, so initializing from `<head>`
+works. `tsconfig.node.json` includes `electron-vite/node` types, which declare
+`*?asset` imports (an absolute path string at runtime). Main finds bundled
+files with `path.join(app.getAppPath(), 'resources', …)` (`src/main/index.ts`).
+`mermaid/dist/mermaid.min.js` is a single IIFE setting `globalThis.mermaid`,
+reachable via the package's `"./*"` export. The npm cache is not writable in
+the Claude Code sandbox: run the install outside it.
+
+- [x] Run `npm install --save-dev --save-exact mermaid@12.1.0` (adds
+  `"mermaid": "12.1.0"` to `devDependencies` and updates `package-lock.json`).
+- [x] Write failing test `src/core/artifacts/html.test.ts`:
+  - the grove-render head
+    `<head><script src="https://cdn.jsdelivr.net/npm/mermaid@11/dist/mermaid.min.js"></script></head>`
+    through `rewriteHtml` contains
+    `<script src="grove-artifact://assets/mermaid.min.js"></script><script src="grove-artifact://assets/mermaid-init.js"></script>`
+    and no `cdn.jsdelivr.net`.
+  - same for `https://cdn.jsdelivr.net/npm/mermaid@12.1.0/dist/mermaid.min.js`.
+  - `'<html><body><p>no diagrams</p></body></html>'` comes back unchanged.
+- [x] Create `src/core/artifacts/html.ts`:
+  - `export const MERMAID_SCRIPTS` = the two tags above, built from
+    `` `${ARTIFACT_SCHEME}://${ASSETS_HOST}/…` `` (imported from `@shared/artifactUrl`).
+  - `export function rewriteHtml(html: string): string` →
+    `html.replace(/<script\s+src="https:\/\/cdn\.jsdelivr\.net\/npm\/mermaid@[^"]*"\s*><\/script>/g, MERMAID_SCRIPTS)`.
+- [x] Run `npm test -- src/core/artifacts/html.test.ts` → passes.
+- [x] Create `resources/viewer/mermaid-init.js`: a comment line saying it
+  replaces the page's inline init (blocked by the CSP), then
+  `mermaid.initialize({ startOnLoad: true, theme: matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'default' })`.
+- [x] In `src/main/artifacts.ts`:
+  - `import mermaidJs from 'mermaid/dist/mermaid.min.js?asset'`, `import path from 'node:path'`,
+    `app` from `electron`, `ASSETS_HOST` from `@shared/artifactUrl`,
+    `rewriteHtml` from `../core/artifacts/html`.
+  - `respond(body: string, status: number, type = 'text/html; charset=utf-8')`
+    — `type` becomes the `Content-Type`; the CSP header stays on every response.
+  - In `handleArtifacts`, before the handler:
+    `const assets = new Map([['mermaid.min.js', mermaidJs], ['mermaid-init.js', path.join(app.getAppPath(), 'resources', 'viewer', 'mermaid-init.js')]])`.
+  - At the start of the handler: `const u = new URL(req.url)`; if
+    `u.host === ASSETS_HOST`: `file = assets.get(u.pathname.slice(1))`; no
+    `file` → `respond(REFUSAL, 404)`; else
+    `respond(await fs.promises.readFile(file, 'utf8'), 200, 'text/javascript; charset=utf-8')`
+    (a read error → `respond(REFUSAL, 404)`).
+  - HTML branch: respond with `rewriteHtml(await fs.promises.readFile(file, 'utf8'))`.
+- [x] Run `npm test`
+- [x] Run `npm run typecheck`
+- [x] Run `npm run build`; then `ls out/main/chunks` shows a `mermaid.min-*.js`.
+- [ ] Manual (human): open the epic's `03-design.html`
+  (`2026-10-05-opencode-feature-workspace`) → both diagrams render; the
+  DevTools Network tab shows no `jsdelivr` request; switch macOS appearance
+  and reopen → the diagram theme follows.
 
 ## Open questions

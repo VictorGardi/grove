@@ -15,7 +15,12 @@
     "start": "electron-vite preview",
     "postinstall": "node scripts/fix-spawn-helper.mjs"
   },
-  "build": { "asarUnpack": ["node_modules/node-pty/**", "resources/**"] },
+  "build": {
+    "asarUnpack": [
+      "node_modules/node-pty/**",
+      "resources/**"
+    ]
+  },
   "dependencies": {
     "@xterm/addon-fit": "0.11.0",
     "@xterm/addon-webgl": "0.19.0",
@@ -33,6 +38,7 @@
     "@vitejs/plugin-react": "5.2.0",
     "electron": "44.5.1",
     "electron-vite": "5.0.0",
+    "mermaid": "12.1.0",
     "react": "19.3.0",
     "react-dom": "19.3.0",
     "typescript": "5.9.3",

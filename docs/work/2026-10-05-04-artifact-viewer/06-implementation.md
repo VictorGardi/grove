@@ -2,14 +2,14 @@
 feature: 2026-10-05-04-artifact-viewer
 phase: implementation
 status: draft
-version: 1
+version: 2
 created: 2026-10-05
 updated: 2026-10-05
 approved_at:
 based_on:
   - 03-design.md@1
   - 04-structure.md@1
-  - 05-plan.md@1
+  - 05-plan.md@2
 forced: []
 ---
 
@@ -44,5 +44,22 @@ Deviations (small, two-way):
 - `VIEWABLE` is not created yet: slice 1 serves and links only `.html`/`.htm`
   (`/\.html?$/i` in `src/main/artifacts.ts` and `FeaturePage.tsx`); slice 3
   introduces the full list.
+
+## Slice 2 — Mermaid offline
+
+Verification: `npm test` 157/157 passed (outside the sandbox, as in slice 1);
+`npm run typecheck` clean; `npm run build` clean and emits
+`out/main/chunks/mermaid.min-*.js`. Manual check is for the human.
+
+Deviations (small, two-way):
+
+- `npm install` had to run outside the Claude Code sandbox (npm cache not
+  writable inside it); npm 11 reported pending install scripts for
+  `node-pty`/`esbuild` (`allow-scripts`) but the existing builds were kept and
+  all tests, including real tmux/pty ones, pass.
+- `rewriteHtml` exports `MERMAID_SCRIPTS` (the two bundled tags) for reuse
+  by `renderMarkdown` in slice 3.
+- Asset responses also carry the CSP header (harmless; the design says every
+  response does) with `Content-Type: text/javascript`.
 
 ## Open questions
