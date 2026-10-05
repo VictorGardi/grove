@@ -9,6 +9,7 @@ export interface InvokeMap {
   'app:errors': [void, string[]]
   'project:add': [void, Project | null]
   'session:create': [{ projectId: string; kind: SessionKind; cols: number; rows: number }, Session]
+  'ui:set': [Partial<UiState>, UiState]
   'pty:attach': [{ sessionId: string; cols: number; rows: number }, { attachId: string }]
 }
 // fire-and-forget renderer → main

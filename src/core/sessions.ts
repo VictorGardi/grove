@@ -24,3 +24,13 @@ export function newSession(o: { projectId: string; kind: SessionKind; now: Date;
     lastStatus: 'running',
   }
 }
+
+export function reconcile(sessions: Session[], live: Set<string>, now: string): Session[] {
+  let changed = false
+  const out = sessions.map((s) => {
+    if (s.lastStatus !== 'running' || live.has(s.tmuxName)) return s
+    changed = true
+    return { ...s, lastStatus: 'gone' as const, endedAt: now }
+  })
+  return changed ? out : sessions
+}

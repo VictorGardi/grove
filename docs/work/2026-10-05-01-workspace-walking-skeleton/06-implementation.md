@@ -24,7 +24,7 @@ this implementation.
 
 ## Slices
 
-- [ ] Slice 1. Tracer: add a project, open a terminal session in tmux. Code done; manual checks pending
+- [x] Slice 1. Tracer: add a project, open a terminal session in tmux
 - [ ] Slice 2. Sessions persist, reconcile on start, and go `gone`
 - [ ] Slice 3. OpenCode sessions with a minted id and the user's shell env
 - [ ] Slice 4. Session and project lifecycle in the sidebar
@@ -44,10 +44,10 @@ this implementation.
 
 ### Manual verification
 
-To be done by the human. Results go here.
+Reported passing by the human on 2026-10-05.
 
-- [ ] Add project → `~/.config/grove/config.json` has `schemaVersion: 1` and one project `{ id, name: "grove", path }`. Cmd+T → Terminal → Create → `pwd` prints the repo path. `tmux -L grove ls` lists `grove-<uuid>`.
-- [ ] Cmd+Q → within 2 s the app is gone, and `tmux -L grove ls` still lists the session. The SIGKILL fallback is not applied yet. Add it only if this check hangs.
+- [x] Add project → `~/.config/grove/config.json` has `schemaVersion: 1` and one project `{ id, name: "grove", path }`. Cmd+T → Terminal → Create → `pwd` prints the repo path. `tmux -L grove ls` lists `grove-<uuid>`.
+- [x] Cmd+Q → within 2 s the app is gone, and `tmux -L grove ls` still lists the session. No hang, so the SIGKILL fallback was not added.
 
 ### Deviations (small, two-way)
 
@@ -75,3 +75,34 @@ To be done by the human. Results go here.
    because Node's fetch ignores the proxy env vars. Running it with
    `NODE_USE_ENV_PROXY=1` downloaded Electron. npm itself needed
    `npm_config_cache=$TMPDIR/npmcache`, as the plan predicted.
+
+## Slice 2
+
+### Automated verification (2026-10-05)
+
+- `npm run typecheck` → passes
+- `npm test` (sandbox off) → 4 files, 23 tests pass, tmux tests not skipped
+- `grep -rn "from 'electron'" src/core` → no output
+- `npm run build` → passes. The `npm run dev` smoke run for 10 s logged no errors
+
+### Manual verification
+
+To be done by the human. Results go here.
+
+- [ ] Two sessions, `echo hello` in the focused one, Cmd+Q, `npm run dev` → both listed, focused one attached showing `hello`.
+- [ ] `tmux -L grove kill-session -t =grove-<id>` while running → `gone` within 5 s. Quit, kill another, relaunch → `gone`. `jq '.sessions[].endedAt' ~/Library/Application\ Support/grove/state.json` prints a timestamp for both.
+- [ ] Quit, `echo '{' > ~/Library/Application\ Support/grove/state.json`, relaunch → red banner, one `state.json.bad-*` file.
+
+### Deviations (small, two-way)
+
+1. **Saving is centralized in core's `set()`.** Every slice change saves the
+   file that owns it (`projects` → config, `sessions`/`ui` → state), so
+   `projectAdd` no longer calls `saveConfig` itself. Behaviour is the same, and
+   the plan's "every mutation saves" rule now holds by construction.
+2. **`loadState` also fills in a missing `sessions` field** with `[]`, not just
+   a missing `ui`.
+3. **Extra tests:** `stateStore.test.ts` checks that a missing `ui` is filled
+   in. `sessions.test.ts` checks that an attach's exit triggers a liveness
+   check. The plan requires both behaviours but listed no tests for them.
+4. **`FakeBackend` is a class** (`src/core/testing/fakeBackend.ts`). It also
+   keeps `handles`, so tests can call `emitExit()` on an attach.

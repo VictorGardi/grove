@@ -33,6 +33,7 @@ app.whenReady().then(async () => {
     backgroundColor: '#1e1e1e',
     webPreferences: { preload: path.join(__dirname, '../preload/index.js'), contextIsolation: true },
   })
+  win.on('focus', () => void core.checkLiveness())
   win.on('closed', () => {
     win = null
     app.quit()

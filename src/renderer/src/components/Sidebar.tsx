@@ -1,7 +1,7 @@
 import { useSlices } from '../stores/slices'
 
 export function Sidebar() {
-  const { projects, sessions, ui, focusedId, setFocused } = useSlices()
+  const { projects, sessions, ui, setFocused } = useSlices()
 
   return (
     <div style={{ width: ui.sidebarWidth, flexShrink: 0, display: 'flex', flexDirection: 'column', borderRight: '1px solid #333' }}>
@@ -15,7 +15,7 @@ export function Sidebar() {
                 onClick={() => setFocused(s.id)}
                 style={{
                   display: 'flex', justifyContent: 'space-between', gap: 8, padding: '3px 8px', cursor: 'pointer',
-                  borderRadius: 4, background: s.id === focusedId ? '#37373d' : 'transparent',
+                  borderRadius: 4, background: s.id === ui.focusedSessionId ? '#37373d' : 'transparent',
                 }}
               >
                 <span>{s.label}</span>

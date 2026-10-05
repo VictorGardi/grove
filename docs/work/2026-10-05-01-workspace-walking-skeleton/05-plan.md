@@ -440,16 +440,16 @@ only. Cmd+Q quits within 2 s and the tmux session survives.
 - [x] `grep -rn "from 'electron'" src/core` prints nothing.
 - [x] `npm run typecheck` passes.
 - [x] `npm test` passes (sandbox off). `tmux.test.ts` runs and doesn't skip.
-- [ ] *Manual:* `npm run dev` → **Add project** → pick this repo →
+- [x] *Manual:* `npm run dev` → **Add project** → pick this repo →
   `cat ~/.config/grove/config.json` shows `schemaVersion: 1` and one project
   `{ id, name: "grove", path }`. Cmd+T → Terminal → Create → `pwd` in the xterm
   prints the repo path. `tmux -L grove ls` lists `grove-<uuid>`.
-- [ ] *Manual:* Cmd+Q → within 2 s `pgrep -f electron-vite` prints nothing, and
+- [x] *Manual:* Cmd+Q → within 2 s `pgrep -f electron-vite` prints nothing, and
   `tmux -L grove ls` still lists the session.
   - **If it hangs:** in `before-quit`, after `core.dispose()`, add
     `setTimeout(() => process.kill(process.pid, 'SIGKILL'), 1000).unref()` and
     re-run this check (design Risks: node-pty exit hang).
-- [ ] Stop for review.
+- [x] Stop for review.
 
 ---
 
@@ -460,19 +460,19 @@ listed, and the focused one re-attaches. A session killed outside the app shows
 `gone` within 5 s while the app runs, or on the next start. A corrupt state file
 is moved aside and an error banner shows.
 
-- [ ] Add the `ui:set` channel to `src/shared/ipc.ts`.
-- [ ] **Test first:** `src/core/store/stateStore.test.ts`.
+- [x] Add the `ui:set` channel to `src/shared/ipc.ts`.
+- [x] **Test first:** `src/core/store/stateStore.test.ts`.
   - A missing file gives `{schemaVersion:1, sessions:[], ui: DEFAULT_UI}`.
   - Bad JSON or `schemaVersion: 9` gives `state.json.bad-<ts>`, `onBad` called and an empty state.
   - Save then load round-trips.
-- [ ] `src/core/store/stateStore.ts`: `loadState(path, onBad): StateFile` and
+- [x] `src/core/store/stateStore.ts`: `loadState(path, onBad): StateFile` and
   `saveState(path, s: StateFile)`, both through `jsonFile.ts`. The loader fills
   in a missing `ui` field with `DEFAULT_UI`.
-- [ ] `src/core/testing/fakeBackend.ts`: an in-memory `SessionBackend`.
+- [x] `src/core/testing/fakeBackend.ts`: an in-memory `SessionBackend`.
   - It keeps `live: Set<string>`. `create` adds, `kill` deletes, `list` returns a copy.
   - `attach` returns a handle whose `emitExit()` fires `onExit`.
   - `calls: {method, args}[]` records every call.
-- [ ] **Test first:** `src/core/sessions.test.ts`. Use the fake backend, a temp
+- [x] **Test first:** `src/core/sessions.test.ts`. Use the fake backend, a temp
   dir for config and state, and a fixed `now`.
   - `reconcile`: a session missing from `live` becomes `gone` with
     `endedAt = now`. A present one stays `running`. An already `gone` one keeps
@@ -483,10 +483,10 @@ is moved aside and an error banner shows.
   - `start()` with a session missing from tmux saves it as `gone` with `endedAt` set.
   - `uiSet({focusedSessionId})` persists.
   - `makeLabel('terminal', new Date(2026, 9, 5, 9, 7))` returns `Terminal · 09:07`.
-- [ ] `src/core/sessions.ts`: add
+- [x] `src/core/sessions.ts`: add
   `reconcile(sessions: Session[], live: Set<string>, now: string): Session[]`.
   It returns the same array reference when nothing changed.
-- [ ] `src/core/core.ts`:
+- [x] `src/core/core.ts`:
   - `start()` now: load config and state (both `onBad` → `errors`), then
     `ensureConfig`, then `list()`, then `reconcile`. Save state if it changed.
     Start `setInterval(() => void checkLiveness(), 5000)`.
@@ -495,16 +495,16 @@ is moved aside and an error banner shows.
   - Each tracked attach's `onExit` triggers `checkLiveness()`.
   - `uiSet` merges and saves. Every sessions change saves the state.
   - `dispose()` also clears the interval.
-- [ ] `src/main/index.ts`: `win.on('focus', () => void core.checkLiveness())`.
+- [x] `src/main/index.ts`: `win.on('focus', () => void core.checkLiveness())`.
   Register `ui:set` in `ipc.ts`.
-- [ ] Renderer: drop the local `focusedId`. `setFocused(id)` invokes
+- [x] Renderer: drop the local `focusedId`. `setFocused(id)` invokes
   `ui:set({ focusedSessionId: id })`, and focus is read from `ui.focusedSessionId`.
   After hydrate, App attaches it when that session is `running`.
 
 ### Verify (slice 2)
 
-- [ ] `npm run typecheck` and `npm test` pass (sandbox off).
-- [ ] `grep -rn "from 'electron'" src/core` prints nothing.
+- [x] `npm run typecheck` and `npm test` pass (sandbox off).
+- [x] `grep -rn "from 'electron'" src/core` prints nothing.
 - [ ] *Manual:* create two sessions, type `echo hello` in the focused one, Cmd+Q,
   `npm run dev` → both listed, the focused one attached and showing `hello`.
 - [ ] *Manual:* with the app running, `tmux -L grove kill-session -t =grove-<id>`

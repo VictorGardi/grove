@@ -35,6 +35,7 @@ export function registerIpc(core: Core, getWindow: () => BrowserWindow | null, g
     return core.commands.projectAdd({ path: res.filePaths[0] })
   }, true)
   handle('session:create', (a) => core.commands.sessionCreate(a), true)
+  handle('ui:set', (a) => core.commands.uiSet(a), true)
 
   const attaches = new Map<string, AttachHandle>()
   handle('pty:attach', ({ sessionId, cols, rows }) => {

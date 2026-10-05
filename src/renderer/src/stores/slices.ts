@@ -7,7 +7,6 @@ interface SlicesState {
   sessions: Session[]
   ui: UiState
   errors: string[]
-  focusedId: string | null
   hydrate(): Promise<void>
   setFocused(id: string | null): void
 }
@@ -17,7 +16,6 @@ export const useSlices = create<SlicesState>((set) => ({
   sessions: [],
   ui: DEFAULT_UI,
   errors: [],
-  focusedId: null,
   async hydrate() {
     const { api } = window
     // subscribe first so a push between the two can't be lost
@@ -28,5 +26,5 @@ export const useSlices = create<SlicesState>((set) => ({
     if (slices.ok) set(slices.data)
     if (errors.ok) set({ errors: errors.data })
   },
-  setFocused: (id) => set({ focusedId: id }),
+  setFocused: (id) => { void window.api.invoke('ui:set', { focusedSessionId: id }) },
 }))

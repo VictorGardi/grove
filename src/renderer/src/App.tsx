@@ -5,7 +5,7 @@ import { TerminalView } from './components/TerminalView'
 import { useSlices } from './stores/slices'
 
 export default function App() {
-  const { sessions, errors, focusedId, hydrate } = useSlices()
+  const { sessions, ui, errors, hydrate } = useSlices()
   const [modalOpen, setModalOpen] = useState(false)
 
   useEffect(() => {
@@ -15,7 +15,7 @@ export default function App() {
     })
   }, [hydrate])
 
-  const focused = sessions.find((s) => s.id === focusedId)
+  const focused = sessions.find((s) => s.id === ui.focusedSessionId)
 
   return (
     <div style={{ display: 'flex', flexDirection: 'column', height: '100%' }}>
