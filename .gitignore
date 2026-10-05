@@ -8,3 +8,4 @@ build/
 
 # Grove
 .grove/context/
+docs/work/**/*.html
