@@ -532,10 +532,10 @@ area and the viewer fills it; close button as today. The width is committed
 - [x] Run `npm test`
 - [x] Run `npm run typecheck`
 - [x] Run `npm run build`
-- [ ] Manual (human), `npm run dev`: create a scratch `.md` (40+ lines) in a
+- [x] Manual (human), `npm run dev`: create a scratch `.md` (40+ lines) in a
   feature folder, open it, scroll down, append a line from a terminal → the
   panel reloads within about a second near the same place. Delete it after.
-- [ ] Manual (human): drag the splitter (stops at 320 px on each side),
+- [x] Manual (human): drag the splitter (stops at 320 px on each side),
   expand → the panel fills the content area, collapse, close; reopen an
   artifact, set a width and expanded state, quit with Cmd+Q and relaunch →
   the same artifact, width and expanded state come back.

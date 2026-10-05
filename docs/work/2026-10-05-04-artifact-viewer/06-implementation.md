@@ -21,7 +21,7 @@ forced: []
 - [x] Slice 2 — Mermaid offline
 - [x] Slice 3 — Markdown and images
 - [x] Slice 4 — Navigation, switcher, Open review
-- [ ] Slice 5 — Live reload and layout
+- [x] Slice 5 — Live reload and layout
 
 ## Slice 1 — Tracer: an HTML artifact opens in the panel
 
@@ -119,8 +119,9 @@ Deviations (small, two-way):
 ## Slice 5 — Live reload and layout
 
 Verification: `npm test` 187/187 passed (outside the sandbox, as before);
-`npm run typecheck` clean; `npm run build` clean. Manual checks are for the
-human.
+`npm run typecheck` clean; `npm run build` clean. Manual checks (live reload
+near the same place, splitter limits, expand/collapse/close, state survives
+relaunch) passed, confirmed by the human on 2026-10-05.
 
 Deviations (small, two-way):
 
