@@ -18,6 +18,7 @@ export interface Session {
 export interface UiState {
   sidebarWidth: number
   focusedSessionId: string | null
+  focusedFeature: { projectId: string; slug: string } | null // exclusive with focusedSessionId
   view: 'list' | 'board'
   collapsed: string[] // tree keys: p:<projectId>, f:<projectId>/<slug>
 }
@@ -26,8 +27,9 @@ export interface FeatureStage {
   label: string
   artifact: string
   review: string | null
-  state: 'complete' | 'current' | 'upcoming'
+  state: 'complete' | 'current' | 'unapproved' | 'upcoming'
 }
+export type CardState = 'backlog' | 'running' | 'waiting' | 'needs-review' | 'ready' | 'done'
 export interface Feature {
   projectId: string
   slug: string
@@ -39,6 +41,10 @@ export interface Feature {
   flow: string | null
   stages: FeatureStage[]          // effective stages only
   currentStage: string | null     // null when done
+  cardState: CardState
+  flags: { id: string; label: string }[]
+  warnings: string[]              // e.g. 'flow?', 'frontmatter?: 03-design.md'
+  artifacts: { name: string; stage: string | null; role: 'artifact' | 'review' | null }[]
 }
 export interface FeaturesSlice {
   workflowError: string | null
@@ -48,5 +54,5 @@ export interface FeaturesSlice {
 export type Slices = { projects: Project[]; sessions: Session[]; ui: UiState; features: FeaturesSlice }
 export interface ConfigFile { schemaVersion: 1; projects: Project[]; workflow?: string }
 export interface StateFile { schemaVersion: 1; sessions: Session[]; ui: UiState }
-export const DEFAULT_UI: UiState = { sidebarWidth: 230, focusedSessionId: null, view: 'list', collapsed: [] }
+export const DEFAULT_UI: UiState = { sidebarWidth: 230, focusedSessionId: null, focusedFeature: null, view: 'list', collapsed: [] }
 export const EMPTY_FEATURES: FeaturesSlice = { workflowError: null, stages: [], items: [] }

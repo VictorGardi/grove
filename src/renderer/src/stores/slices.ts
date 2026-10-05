@@ -11,6 +11,7 @@ interface SlicesState {
   hydrate(): Promise<void>
   setFocused(id: string | null): void
   toggleCollapsed(key: string): void
+  focusFeature(ref: { projectId: string; slug: string }): void
 }
 
 export const useSlices = create<SlicesState>((set, get) => ({
@@ -31,6 +32,7 @@ export const useSlices = create<SlicesState>((set, get) => ({
     if (errors.ok) set({ errors: errors.data })
   },
   setFocused: (id) => { void window.api.invoke('ui:set', { focusedSessionId: id }) },
+  focusFeature: (ref) => { void window.api.invoke('ui:set', { focusedFeature: ref }) },
   toggleCollapsed(key) {
     const { collapsed } = get().ui
     const next = collapsed.includes(key) ? collapsed.filter((k) => k !== key) : [...collapsed, key]

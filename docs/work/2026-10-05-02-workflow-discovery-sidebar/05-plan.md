@@ -2,7 +2,7 @@
 feature: 2026-10-05-02-workflow-discovery-sidebar
 phase: plan
 status: approved
-version: 3
+version: 4
 created: 2026-10-05
 updated: 2026-10-05
 approved_at:
@@ -365,5 +365,101 @@ Tree rules (design "Tree ordering", "Cmd+1..9", Desired state 4):
   tests), `npm run typecheck`, `npm run build`.
 - [x] Manual in `npm run dev` (human): collapse the epic, restart, still
   collapsed; Cmd+2 focuses the second session in tree order.
+
+## Slice 4 — Feature page
+
+Context for a cold reader: `deriveFeatures` (`src/core/workflow/derive.ts`)
+today marks the first incomplete effective stage `current`, earlier ones
+`complete`, later ones `upcoming`. `Feature` (`src/shared/types.ts`) has no
+card state, flags, warnings or artifacts yet. The sidebar
+(`src/renderer/src/components/Sidebar.tsx`) renders feature rows from
+`buildTree` with no click action; `App.tsx` shows the focused session.
+`FolderSnapshot` (`src/core/discovery/folder.ts`) has `files` (top-level
+non-dot files, sorted), `manifest` and `artifacts` (parsed stage files,
+each `{ data, body, error }`). Styles go in CSS modules using
+`src/renderer/src/styles/tokens.css` variables; inline `style=` is
+rejected by `noInlineStyles.test.ts`.
+
+Derivation rules (epic design "`workflow.yaml` shape", ADR 0002), over
+effective stages in order:
+- complete: `complete_when` holds → `complete`.
+- otherwise, if any later effective stage's artifact is in
+  `folder.artifacts` → `unapproved` (passed).
+- the first stage that is neither → `current`; later ones `upcoming`.
+- `currentStage` is that stage's id, or `null` when there is none.
+- `cardState` (`running` and `waiting` come in slice 5 / child 3):
+  `currentStage === null` → `done`; else no effective stage's artifact in
+  `folder.artifacts` → `backlog`; else the current stage's artifact in
+  `folder.artifacts` → `needs-review`; else `ready`.
+- `flags`: each workflow flag whose `when` holds (`isComplete(when, folder, stage.artifact)`)
+  for any effective stage, as `{ id, label }`, in workflow order.
+- `warnings`: `flow?` when the manifest's flow field is a string not in
+  `flows.values`; `kind?` likewise for the kind field; `frontmatter?: <file>`
+  for the manifest and each entry of `folder.artifacts` whose `error` is
+  set (manifest first, then artifacts by file name).
+- `artifacts`: one entry per `folder.files` name, in order;
+  `stage`/`role` = the effective stage whose `artifact` (`'artifact'`) or
+  `review` (`'review'`) equals the name, else `null`/`null`.
+
+- [x] `src/shared/types.ts`: `FeatureStage.state` adds `'unapproved'`;
+  `export type CardState = 'backlog' | 'running' | 'waiting' | 'needs-review' | 'ready' | 'done'`;
+  `Feature` gains `cardState: CardState`, `flags: { id: string; label: string }[]`,
+  `warnings: string[]`, `artifacts: { name: string; stage: string | null; role: 'artifact' | 'review' | null }[]`;
+  `UiState` gains `focusedFeature: { projectId: string; slug: string } | null`
+  (`DEFAULT_UI`: `null`).
+- [x] Write failing tests in `src/core/workflow/derive.test.ts`: an
+  unapproved pass (01 `draft`, 02 approved → questions `unapproved`,
+  current `design`); a `small` feature's timeline has no research, design
+  or structure even with `02-research.md` present, and that file is not an
+  unapproved pass; `stale` flag from `status: stale` on any stage
+  artifact; `flow?` warning for `flow: weird` (stages = default `full`);
+  `frontmatter?: 01-questions.md` for an unclosed block; card states
+  `backlog` (manifest only), `ready` (01 approved, no 02),
+  `needs-review` (02 present, draft), `done` (all approved, and also when
+  the only incomplete stages are unapproved passes); `artifacts` tags
+  `02-research.md` (`research`, `artifact`), `02-research.html`
+  (`research`, `review`) and `notes.md` (`null`, `null`).
+- [x] `src/core/workflow/derive.ts`: implement the rules above inside
+  `deriveFeatures`; add `axisWarning(axis, manifest, name)` returning
+  `name + '?'` for a string value not in `values`.
+- [x] Write failing test in `src/core/features.test.ts`: `uiSet({ focusedFeature: { projectId: 'p', slug: 'a' } })`
+  after `uiSet({ focusedSessionId: 'x' })` leaves `focusedSessionId: null`;
+  then `uiSet({ focusedSessionId: 'y' })` leaves `focusedFeature: null`.
+- [x] `src/core/core.ts` `uiSet`: merge, then if `partial.focusedFeature`
+  is non-null set `focusedSessionId: null`; if `partial.focusedSessionId`
+  is non-null set `focusedFeature: null`.
+- [x] `src/renderer/src/stores/slices.ts`: `focusFeature(ref: { projectId: string; slug: string })`
+  → `ui:set { focusedFeature: ref }`.
+- [x] Create `src/renderer/src/featureLabels.ts`:
+  `CARD_STATE_LABELS: Record<CardState, string>` (`Backlog`, `Running`,
+  `Waiting`, `Needs review`, `Ready`, `Done`) and
+  `featureSummary(f: Feature): string` = `Done` when `currentStage` is
+  `null`, else `<current stage label> · <card state label>`.
+- [x] `src/renderer/src/components/Sidebar.tsx`: feature rows get
+  `meta={featureSummary(f)}`, `onClick={() => focusFeature({ projectId, slug })}`
+  and `tone="selected"` when it matches `ui.focusedFeature`.
+- [x] Create `src/renderer/src/components/FeaturePage.tsx` +
+  `FeaturePage.module.css`: props `{ feature: Feature; sessions: Session[]; onFocusSession(id: string): void }`;
+  sections:
+  - header: title, `slug · kind · flow` (flow `default` when `null`),
+    `Badge` with the card state label, a `Badge tone="muted"` per flag,
+    warnings as a `.warning` line (`var(--danger)`).
+  - "Stages": an ordered list, one row per `feature.stages` entry with a
+    dot and the label, class by state: `complete` (`--status-finished`),
+    `current` (`--accent`, bold), `unapproved` (`--status-waiting`, with
+    the text "unapproved"), `upcoming` (`--text-3`).
+  - "Files": one row per `feature.artifacts` entry: name, plus the stage
+    id and `review` in `--text-3` when tagged.
+  - "Sessions": sessions with `projectId === feature.projectId` and
+    `feature === feature.slug`, each a `ListRow` (label, status) calling
+    `onFocusSession`; "No linked sessions" when empty.
+- [x] `src/renderer/src/App.tsx`: `focusedFeature` = the item matching
+  `ui.focusedFeature`; when set, crumbs `[project name, feature title]` and
+  content `<FeaturePage feature sessions onFocusSession={setFocused} />`;
+  otherwise the current session content.
+- [x] Run `npm test` (outside the sandbox for the real-tmux and watcher
+  tests), `npm run typecheck`, `npm run build`.
+- [ ] Manual in `npm run dev` (human): open the epic's page and
+  visual-foundation's page.
 
 ## Open questions

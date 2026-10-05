@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react'
 import type { Session } from '@shared/types'
 import { ConfirmDialog } from './components/ConfirmDialog'
+import { FeaturePage } from './components/FeaturePage'
 import { NewSessionModal } from './components/NewSessionModal'
 import { Sidebar } from './components/Sidebar'
 import { TerminalView } from './components/TerminalView'
@@ -39,8 +40,12 @@ export default function App() {
 
   const openNew = (projectId?: string) => setNewFor({ projectId })
   const focused = sessions.find((x) => x.id === ui.focusedSessionId)
-  const project = focused && projects.find((p) => p.id === focused.projectId)
-  const crumbs = focused ? [...(project ? [project.name] : []), focused.label] : []
+  const ff = ui.focusedFeature
+  const focusedFeature = ff && features.items.find((f) => f.projectId === ff.projectId && f.slug === ff.slug)
+  const projectId = focusedFeature ? focusedFeature.projectId : focused?.projectId
+  const project = projects.find((p) => p.id === projectId)
+  const title = focusedFeature ? focusedFeature.title : focused?.label
+  const crumbs = title ? [...(project ? [project.name] : []), title] : []
 
   return (
     <>
@@ -54,7 +59,9 @@ export default function App() {
         content={
           <>
             <ContentHeader crumbs={crumbs} />
-            {focused?.lastStatus === 'running' ? (
+            {focusedFeature ? (
+              <FeaturePage feature={focusedFeature} sessions={sessions} onFocusSession={setFocused} />
+            ) : focused?.lastStatus === 'running' ? (
               <TerminalView key={focused.id} sessionId={focused.id} />
             ) : focused ? (
               <div className={s.ended}>

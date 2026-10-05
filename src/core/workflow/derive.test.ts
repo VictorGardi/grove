@@ -75,4 +75,51 @@ describe('deriveFeatures', () => {
       ['b-child', 'feature', false, 'a-epic', null, 'b-child'],
     ])
   })
+
+  it('passes an incomplete stage when a later artifact exists ("unapproved")', () => {
+    const [f] = deriveFeatures(wf, [folder('a', { 'feature.md': '', '01-questions.md': fm('status: draft'), '02-research.md': approved })], [])
+    expect(f.stages.map((s) => [s.id, s.state])).toEqual([
+      ['questions', 'unapproved'], ['research', 'complete'], ['design', 'current'], ['structure', 'upcoming'], ['implementation', 'upcoming'],
+    ])
+    expect(f.currentStage).toBe('design')
+    expect(f.cardState).toBe('ready')
+  })
+
+  it('leaves stages the flow skips off the timeline, even if their files exist', () => {
+    const [f] = deriveFeatures(wf, [folder('a', { 'feature.md': fm('flow: small'), '01-questions.md': fm('status: draft'), '02-research.md': approved })], [])
+    expect(f.stages.map((s) => [s.id, s.state])).toEqual([['questions', 'current'], ['implementation', 'upcoming']])
+    expect(f.cardState).toBe('needs-review')
+  })
+
+  it('sets the stale flag from any stage artifact', () => {
+    const [f] = deriveFeatures(wf, [folder('a', { 'feature.md': '', '01-questions.md': approved, '02-research.md': fm('status: stale') })], [])
+    expect(f.flags).toEqual([{ id: 'stale', label: 'Stale' }])
+  })
+
+  it('warns about an unknown flow and broken frontmatter', () => {
+    const [f] = deriveFeatures(wf, [folder('a', { 'feature.md': fm('flow: weird'), '01-questions.md': '---\nstatus: x\n' })], [])
+    expect(f.stages).toHaveLength(5)
+    expect(f.warnings).toEqual(['flow?', 'frontmatter?: 01-questions.md'])
+  })
+
+  it.each<[string, Record<string, string>, string]>([
+    ['backlog', {}, 'backlog'],
+    ['ready', { '01-questions.md': approved }, 'ready'],
+    ['needs-review', { '01-questions.md': approved, '06-implementation.md': fm('status: draft') }, 'needs-review'],
+    ['done', { '01-questions.md': approved, '06-implementation.md': approved }, 'done'],
+    ['done with an unapproved pass', { '01-questions.md': fm('status: draft'), '06-implementation.md': approved }, 'done'],
+  ])('card state %s', (_, files, expected) => {
+    const [f] = deriveFeatures(wf, [folder('a', { 'feature.md': fm('flow: small'), ...files })], [])
+    expect(f.cardState).toBe(expected)
+  })
+
+  it('tags files with their stage and role', () => {
+    const [f] = deriveFeatures(wf, [folder('a', { 'feature.md': '', '02-research.md': approved, '02-research.html': '', 'notes.md': '' })], [])
+    expect(f.artifacts).toEqual([
+      { name: '02-research.html', stage: 'research', role: 'review' },
+      { name: '02-research.md', stage: 'research', role: 'artifact' },
+      { name: 'feature.md', stage: null, role: null },
+      { name: 'notes.md', stage: null, role: null },
+    ])
+  })
 })

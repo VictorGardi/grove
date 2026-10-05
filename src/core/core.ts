@@ -258,7 +258,11 @@ export function createCore(opts: CoreOptions): Core {
     },
 
     async uiSet(partial) {
-      set('ui', { ...slices.ui, ...partial })
+      const next = { ...slices.ui, ...partial }
+      // one focus at a time: a feature page or a session
+      if (partial.focusedFeature) next.focusedSessionId = null
+      if (partial.focusedSessionId) next.focusedFeature = null
+      set('ui', next)
       return { ok: true, data: slices.ui }
     },
   }

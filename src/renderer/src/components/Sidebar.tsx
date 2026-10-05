@@ -1,6 +1,7 @@
 import { useState } from 'react'
 import type { Session } from '@shared/types'
 import { useSlices } from '../stores/slices'
+import { featureSummary } from '../featureLabels'
 import { buildTree, type TreeNode } from '../tree'
 import { Badge } from './ui/Badge'
 import { Button } from './ui/Button'
@@ -65,9 +66,13 @@ function SessionCard({ s, focused, compact, onFocus, onToggleCompact }: {
 
 type FeatureNode = Extract<TreeNode, { type: 'feature' }>
 
-function FeatureRow({ node, onToggle }: { node: FeatureNode; onToggle: () => void }) {
+function FeatureRow({ node, focused, onFocus, onToggle }: {
+  node: FeatureNode
+  focused: boolean
+  onFocus: () => void
+  onToggle: () => void
+}) {
   const f = node.feature
-  const stage = f.stages.find((x) => x.id === f.currentStage)
   return (
     <ListRow
       title={f.title}
@@ -82,13 +87,15 @@ function FeatureRow({ node, onToggle }: { node: FeatureNode; onToggle: () => voi
           <Icon name="folder" size={14} className={css.iconFeature} />
         </>
       }
-      meta={stage ? stage.label : 'Done'}
+      meta={featureSummary(f)}
+      tone={focused ? 'selected' : 'default'}
+      onClick={onFocus}
     />
   )
 }
 
 export function Sidebar({ onNew }: { onNew: (projectId?: string) => void }) {
-  const { projects, sessions, ui, features, setFocused, toggleCollapsed } = useSlices()
+  const { projects, sessions, ui, features, setFocused, toggleCollapsed, focusFeature } = useSlices()
   const [refused, setRefused] = useState<string | null>(null)
   const [compact, setCompact] = useState<Set<string>>(new Set())
   const tree = buildTree(projects, features.items, sessions, ui)
@@ -116,7 +123,12 @@ export function Sidebar({ onNew }: { onNew: (projectId?: string) => void }) {
     if (n.type === 'project') return null
     return (
       <div key={n.key} className={css.cards}>
-        <FeatureRow node={n} onToggle={() => toggleCollapsed(n.key)} />
+        <FeatureRow
+          node={n}
+          focused={ui.focusedFeature?.projectId === n.feature.projectId && ui.focusedFeature.slug === n.feature.slug}
+          onFocus={() => focusFeature({ projectId: n.feature.projectId, slug: n.feature.slug })}
+          onToggle={() => toggleCollapsed(n.key)}
+        />
         {!n.collapsed && n.children.length > 0 && <div className={css.children}>{n.children.map(renderNode)}</div>}
       </div>
     )

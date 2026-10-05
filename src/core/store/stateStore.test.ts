@@ -30,7 +30,7 @@ describe('stateStore', () => {
     const s: StateFile = {
       schemaVersion: 1,
       sessions: [newSession({ projectId: 'p', kind: 'terminal', now: new Date(), id: 'a' })],
-      ui: { sidebarWidth: 300, focusedSessionId: 'a', view: 'list', collapsed: ['p:x'] },
+      ui: { sidebarWidth: 300, focusedSessionId: 'a', focusedFeature: null, view: 'list', collapsed: ['p:x'] },
     }
     saveState(file, s)
     expect(loadState(file)).toEqual(s)

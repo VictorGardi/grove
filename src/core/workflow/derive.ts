@@ -1,4 +1,4 @@
-import type { Feature, FeatureStage, Session } from '@shared/types'
+import type { CardState, Feature, FeatureStage, Session } from '@shared/types'
 import type { FolderSnapshot } from '../discovery/folder'
 import type { Axis, Predicate, Stage, Workflow } from './parse'
 
@@ -35,6 +35,12 @@ function title(folder: FolderSnapshot): string {
   return h ? h.slice(2).trim() : folder.slug
 }
 
+// `<name>?` when the manifest names a value the axis doesn't define.
+function axisWarning(axis: Axis, manifest: Record<string, unknown>, name: string): string[] {
+  const v = str(manifest[axis.field])
+  return v !== null && !Object.hasOwn(axis.values, v) ? [name + '?'] : []
+}
+
 export function deriveFeatures(
   wf: Workflow,
   folders: (FolderSnapshot & { projectId: string })[],
@@ -44,15 +50,27 @@ export function deriveFeatures(
     .map((f): Feature => {
       const m = f.manifest.data
       const kind = axisValue(wf.kinds, m)
-      const done = effectiveStages(wf, m).map((s) => ({ s, complete: isComplete(s.complete_when, f, s.artifact) }))
-      const current = done.findIndex((d) => !d.complete)
-      const stages = done.map(({ s }, i): FeatureStage => ({
+      const eff = effectiveStages(wf, m)
+      const exists = (s: Stage) => Object.hasOwn(f.artifacts, s.artifact)
+      // complete, else passed ("unapproved") if a later effective stage's artifact exists
+      const states = eff.map((s, i) =>
+        isComplete(s.complete_when, f, s.artifact) ? 'complete' : eff.slice(i + 1).some(exists) ? 'unapproved' : null)
+      const current = states.indexOf(null)
+      const stages = eff.map((s, i): FeatureStage => ({
         id: s.id,
         label: s.label,
         artifact: s.artifact,
         review: s.review ?? null,
-        state: current < 0 || i < current ? 'complete' : i === current ? 'current' : 'upcoming',
+        state: states[i] ?? (i === current ? 'current' : 'upcoming'),
       }))
+      const cardState: CardState =
+        current < 0 ? 'done' : !eff.some(exists) ? 'backlog' : exists(eff[current]) ? 'needs-review' : 'ready'
+      const tagged = (name: string) => {
+        const a = eff.find((s) => s.artifact === name)
+        if (a) return { stage: a.id, role: 'artifact' as const }
+        const r = eff.find((s) => s.review === name)
+        return r ? { stage: r.id, role: 'review' as const } : { stage: null, role: null }
+      }
       return {
         projectId: f.projectId,
         slug: f.slug,
@@ -64,6 +82,15 @@ export function deriveFeatures(
         flow: wf.flows ? str(m[wf.flows.field]) : null,
         stages,
         currentStage: current < 0 ? null : stages[current].id,
+        cardState,
+        flags: wf.flags.filter((fl) => eff.some((s) => isComplete(fl.when, f, s.artifact))).map(({ id, label }) => ({ id, label })),
+        warnings: [
+          ...(wf.flows ? axisWarning(wf.flows, m, 'flow') : []),
+          ...axisWarning(wf.kinds, m, 'kind'),
+          ...(f.manifest.error ? [`frontmatter?: ${wf.discovery.manifest}`] : []),
+          ...Object.keys(f.artifacts).sort().filter((n) => f.artifacts[n].error).map((n) => `frontmatter?: ${n}`),
+        ],
+        artifacts: f.files.map((name) => ({ name, ...tagged(name) })),
       }
     })
     .sort((a, b) => a.projectId.localeCompare(b.projectId) || a.slug.localeCompare(b.slug))

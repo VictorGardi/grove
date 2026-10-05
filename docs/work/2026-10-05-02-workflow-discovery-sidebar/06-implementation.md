@@ -9,7 +9,7 @@ approved_at:
 based_on:
   - 03-design.md@1
   - 04-structure.md@1
-  - 05-plan.md@3
+  - 05-plan.md@4
 forced: []
 ---
 
@@ -20,7 +20,7 @@ forced: []
 - [x] Slice 1 — Tracer: features from the bundled workflow, read once
 - [x] Slice 2 — Live discovery and a guarded workflow
 - [x] Slice 3 — The tree
-- [ ] Slice 4 — Feature page
+- [x] Slice 4 — Feature page (manual check pending)
 - [ ] Slice 5 — Manual link
 - [ ] Slice 6 — Board (appetite cut 1)
 
@@ -126,6 +126,38 @@ Deviations (all small, two-way):
   two-field `UiState`; it now expects `{ ...DEFAULT_UI, focusedSessionId: 'x' }`.
 - `stateStore` merges a saved `ui` over `DEFAULT_UI`, so any later
   `UiState` field also defaults for old files.
+
+## Slice 4 — Feature page
+
+Verification: `npm test` 120/120 passed outside the sandbox (inside it the
+real-tmux tests fail and the real-watcher tests skip, as before);
+`npm run typecheck` clean; `npm run build` clean.
+
+Probe over this repo's `docs/work`, as the sidebar rows now read:
+walking-skeleton, this feature and visual-foundation "Implementation ·
+Needs review"; children 03–08 "Questions · Backlog"; the epic "Done" (its
+draft `01-questions.md` is an unapproved pass and 02–04 are approved).
+
+Deviations and readings (all small, two-way):
+
+- `done` means "no current stage": every effective stage is complete or an
+  unapproved pass. ADR 0002 counts a passed stage as not incomplete for
+  stage derivation, and this is the only reading where every feature has a
+  card state (a feature whose stages are all complete or passed has no
+  current stage, so `needs-review`/`ready` can't apply). The timeline still
+  marks those stages "unapproved".
+- An unapproved pass looks only at effective stages, so a `small` feature
+  with a stray `02-research.md` keeps `questions` current.
+- Added a `kind?` warning next to `flow?`, for an unknown kind value (see
+  slice 1).
+- Sidebar feature rows read `<current stage> · <card state>`
+  (`featureSummary` in `src/renderer/src/featureLabels.ts`), or `Done`, in
+  answer to the human's feedback after slice 3.
+- The feature page lists every file in the folder (including
+  `feature.md`), tagging stage artifacts and reviews; files are not
+  openable (child 4).
+- The test fixture in `tree.test.ts` gained the new `Feature` fields.
+  `stateStore.test.ts`'s round-trip fixture gained `focusedFeature`.
 
 ## Human feedback
 
