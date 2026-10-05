@@ -1,18 +1,21 @@
-import { useEffect, useState } from 'react'
+import { useState } from 'react'
 import type { SessionKind } from '@shared/types'
 import { useSlices } from '../stores/slices'
+import { Button } from './ui/Button'
+import { cx } from './ui/cx'
+import { Modal } from './ui/Modal'
+import s from './NewSessionModal.module.css'
 
-export function NewSessionModal({ onClose }: { onClose: () => void }) {
+const kinds: { kind: SessionKind; label: string; icon: 'opencode' | 'terminal' }[] = [
+  { kind: 'opencode', label: 'OpenCode', icon: 'opencode' },
+  { kind: 'terminal', label: 'Terminal', icon: 'terminal' },
+]
+
+export function NewSessionModal({ onClose, initialProjectId }: { onClose: () => void; initialProjectId?: string }) {
   const { projects, setFocused } = useSlices()
-  const [projectId, setProjectId] = useState(projects[0]?.id ?? '')
+  const [projectId, setProjectId] = useState(initialProjectId ?? projects[0]?.id ?? '')
   const [kind, setKind] = useState<SessionKind>('opencode')
   const [error, setError] = useState<string | null>(null)
-
-  useEffect(() => {
-    const onKey = (e: KeyboardEvent) => { if (e.key === 'Escape') onClose() }
-    window.addEventListener('keydown', onKey)
-    return () => window.removeEventListener('keydown', onKey)
-  }, [onClose])
 
   async function create() {
     const res = await window.api.invoke('session:create', { projectId, kind, cols: 120, rows: 40 })
@@ -22,26 +25,38 @@ export function NewSessionModal({ onClose }: { onClose: () => void }) {
   }
 
   return (
-    <div style={{ position: 'fixed', inset: 0, zIndex: 1000, background: 'rgba(0,0,0,0.5)', display: 'flex', alignItems: 'flex-start', justifyContent: 'center', paddingTop: 120 }} onClick={onClose}>
-      <div style={{ background: '#252526', padding: 16, borderRadius: 6, minWidth: 320, display: 'flex', flexDirection: 'column', gap: 12 }} onClick={(e) => e.stopPropagation()}>
-        {projects.length === 0 ? (
-          <div>Add a project first</div>
-        ) : (
-          <>
-            <select value={projectId} onChange={(e) => setProjectId(e.target.value)} autoFocus>
+    <Modal onClose={onClose} onConfirm={projects.length ? () => void create() : undefined}>
+      {projects.length === 0 ? (
+        <div className={s.hint}>Add a project first</div>
+      ) : (
+        <>
+          <div className={s.title}>New session</div>
+          <label className={s.field}>
+            <span className={s.caption}>Project</span>
+            <select className={s.select} value={projectId} onChange={(e) => setProjectId(e.target.value)} autoFocus>
               {projects.map((p) => <option key={p.id} value={p.id}>{p.name}</option>)}
             </select>
-            <label>
-              <input type="radio" checked={kind === 'opencode'} onChange={() => setKind('opencode')} /> OpenCode
-            </label>
-            <label>
-              <input type="radio" checked={kind === 'terminal'} onChange={() => setKind('terminal')} /> Terminal
-            </label>
-            {error && <div style={{ color: '#f48771' }}>{error}</div>}
-            <button onClick={() => void create()}>Create</button>
-          </>
-        )}
-      </div>
-    </div>
+          </label>
+          <div className={s.kinds} role="radiogroup">
+            {kinds.map((k) => (
+              <Button
+                key={k.kind}
+                icon={k.icon}
+                role="radio"
+                aria-checked={kind === k.kind}
+                className={cx(s.kind, kind === k.kind && s.kindOn)}
+                onClick={() => setKind(k.kind)}
+              >
+                {k.label}
+              </Button>
+            ))}
+          </div>
+          {error && <div className={s.error}>{error}</div>}
+          <div className={s.footer}>
+            <Button variant="primary" onClick={() => void create()}>Create ↵</Button>
+          </div>
+        </>
+      )}
+    </Modal>
   )
 }

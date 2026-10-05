@@ -9,6 +9,8 @@
   --muted-badge-bg: #16161a;
   --terminal-bg: #1e1e2e;
   --terminal-fg: #cdd6f4;
+  --backdrop: rgba(0, 0, 0, 0.5);
+  --shadow-modal: 0 16px 48px rgba(0, 0, 0, 0.5);
 
   /* borders */
   --card-border: #292929;
@@ -78,6 +80,6 @@
   /* sizes */
   --topbar-h: 51px;
   --header-h: 47px;
-  --traffic-inset: 80px;
+  --traffic-inset: 100px;
   --sidebar-w: 230px; /* overridden at runtime from ui.sidebarWidth */
 }

@@ -1,4 +1,6 @@
-import { useEffect } from 'react'
+import { Button } from './ui/Button'
+import { Modal } from './ui/Modal'
+import s from './ConfirmDialog.module.css'
 
 interface Props {
   title: string
@@ -9,29 +11,14 @@ interface Props {
 }
 
 export function ConfirmDialog({ title, body, confirmLabel, onConfirm, onCancel }: Props) {
-  useEffect(() => {
-    const onKey = (e: KeyboardEvent) => {
-      if (e.key !== 'Enter' && e.key !== 'Escape') return
-      e.preventDefault()
-      e.stopPropagation()
-      if (e.key === 'Enter') onConfirm()
-      else onCancel()
-    }
-    // capture, so the keys don't also reach a focused terminal
-    window.addEventListener('keydown', onKey, true)
-    return () => window.removeEventListener('keydown', onKey, true)
-  }, [onConfirm, onCancel])
-
   return (
-    <div style={{ position: 'fixed', inset: 0, zIndex: 1000, background: 'rgba(0,0,0,0.5)', display: 'flex', alignItems: 'flex-start', justifyContent: 'center', paddingTop: 120 }} onClick={onCancel}>
-      <div style={{ background: '#252526', padding: 16, borderRadius: 6, minWidth: 320, display: 'flex', flexDirection: 'column', gap: 12 }} onClick={(e) => e.stopPropagation()}>
-        <div style={{ fontWeight: 600 }}>{title}</div>
-        <div>{body}</div>
-        <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 8 }}>
-          <button onClick={onCancel}>Cancel</button>
-          <button onClick={onConfirm} autoFocus>{confirmLabel}</button>
-        </div>
+    <Modal width="sm" onClose={onCancel} onConfirm={onConfirm}>
+      <div className={s.title}>{title}</div>
+      <div className={s.body}>{body}</div>
+      <div className={s.actions}>
+        <Button onClick={onCancel}>Cancel</Button>
+        <Button variant="primary" autoFocus onClick={onConfirm}>{confirmLabel}</Button>
       </div>
-    </div>
+    </Modal>
   )
 }

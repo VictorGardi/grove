@@ -4,7 +4,7 @@
   min-width: 0;
   min-height: 0;
   display: flex;
-  padding: var(--sp-3);
+  padding: var(--sp-1);
   background: var(--terminal-bg);
   isolation: isolate;
 }

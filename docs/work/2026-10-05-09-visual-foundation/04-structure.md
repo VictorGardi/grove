@@ -2,12 +2,12 @@
 feature: 2026-10-05-09-visual-foundation
 phase: structure
 status: approved
-version: 1
+version: 2
 created: 2026-10-05
 updated: 2026-10-05
 approved_at: 2026-10-05
 based_on:
-  - 03-design.md@1
+  - 03-design.md@2
   - parent:04-structure.md@4
 forced: []
 ---
@@ -21,6 +21,9 @@ slice leaves the app runnable and looking more like Xirp.
 ## Slices
 
 ### Slice 1 — Tracer: the Xirp shell around the existing UI
+
+Done (`14c8d1f`). Review feedback on it (wordmark spacing, terminal frame)
+is built in slice 2.
 
 - **Outcome:** hidden title bar with traffic lights inside a dark, draggable
   51px top bar (wordmark, inert search pill, ＋ opening the existing modal);
@@ -49,10 +52,14 @@ slice leaves the app runnable and looking more like Xirp.
 - **Outcome:** Spotlight-style ＋ modal on `Modal` (project select,
   OpenCode/Terminal as a two-button toggle, primary Create, Enter creates,
   Escape closes); confirm dialog on `Modal`; error banner on `Banner`;
-  styled empty and "Session ended" panes.
+  styled empty and "Session ended" panes. Slice 1 feedback: logo mark +
+  wordmark start ~24px after the traffic lights (`--traffic-inset` 100px);
+  the terminal fills the content panel under the header (no 12px inset
+  frame, 4px padding), its bottom corners rounded by the panel.
 - **Files:** NEW `src/renderer/src/components/ui/{Button,Modal,Badge,Banner}.tsx`
   + `.module.css`, `ui/Icon.tsx`. MODIFIED `NewSessionModal.tsx` (+ `.module.css`),
-  `ConfirmDialog.tsx`, `App.tsx`, `TopBar.tsx` (＋ as `Button round`).
+  `ConfirmDialog.tsx`, `App.tsx`, `TopBar.tsx` (+ `.module.css`: logo mark,
+  ＋ as `Button round`), `TerminalView.module.css`, `tokens.css`.
 - **Signatures:** `Button({ variant?, size?, icon?, round?, ...button })`;
   `Modal({ onClose, onConfirm?, width?, children })`; `Badge({ tone?, children })`;
   `Banner({ tone?, children })`; `Icon({ name, size?, className? })`;
@@ -60,7 +67,9 @@ slice leaves the app runnable and looking more like Xirp.
 - **Verify:** `npm run typecheck`, `npm run build`. Manual: Cmd+T → Enter
   creates, Escape closes; Cmd+W on a running session → confirm, Enter kills,
   Escape cancels, keys don't reach the terminal; `exit` in a terminal shows
-  "Session ended" and Remove works.
+  "Session ended" and Remove works; the wordmark has a clear gap after the
+  green light; an OpenCode session's background reaches the panel edges and
+  its bottom corners are rounded.
 - **Depends on:** 1.
 
 ### Slice 3 — Sidebar cards and folders
@@ -68,8 +77,9 @@ slice leaves the app runnable and looking more like Xirp.
 - **Outcome:** "Sessions" header with count Badge; collapsible project
   folders with ＋ (opens the modal preselected) and a hover remove icon
   (refusal text kept); session cards with kind icon, title, mono status line;
-  focused card orange; per-card compact toggle; rename by double-click; "Add
-  project" in the footer; default sidebar width 230.
+  focused card orange; per-card compact toggle; rename by double-click; a
+  `folder-plus` ＋ in the "Sessions" header adds a project (the "Add project"
+  button goes); default sidebar width 230.
 - **Files:** NEW `src/renderer/src/components/ui/{ListRow,StatusDot}.tsx` +
   `.module.css`. MODIFIED `Sidebar.tsx` (+ `Sidebar.module.css`), `App.tsx`
   (`openNew(projectId?)`), `src/shared/types.ts` (`DEFAULT_UI.sidebarWidth: 230`).
@@ -78,7 +88,8 @@ slice leaves the app runnable and looking more like Xirp.
   `Sidebar({ onNew(projectId?) })`.
 - **Verify:** `npm run typecheck`, `npm test`. Manual: two projects, three
   sessions; collapse a folder; compact a card; focused card is orange;
-  project ＋ preselects its project; removing a project with running
+  project ＋ preselects its project; header ＋ opens the folder picker and
+  adds a project; removing a project with running
   sessions shows the refusal; Cmd+1..3 still focuses in sidebar order.
 - **Depends on:** 2.
 

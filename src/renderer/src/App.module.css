@@ -7,6 +7,15 @@
   gap: var(--sp-3);
 }
 
+.endedTitle {
+  font-size: var(--fs-lg);
+  color: var(--text-2);
+}
+
 .empty {
   flex: 1;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: var(--text-3);
 }

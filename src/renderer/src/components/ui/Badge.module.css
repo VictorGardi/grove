@@ -1,0 +1,21 @@
+.badge {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 20px;
+  height: 16px;
+  padding: 0 var(--sp-1);
+  border-radius: var(--r-card);
+  font-size: var(--fs-sm);
+  font-weight: var(--fw-bold);
+}
+
+.accent {
+  background: var(--accent-badge);
+  color: var(--chrome-bg);
+}
+
+.muted {
+  background: var(--muted-badge-bg);
+  color: var(--text-2);
+}

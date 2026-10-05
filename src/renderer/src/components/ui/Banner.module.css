@@ -1,0 +1,22 @@
+.banner {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-2);
+  margin: 0 var(--gutter) var(--gutter);
+  padding: var(--sp-2) var(--sp-3);
+  border: 1px solid;
+  border-radius: var(--r-md);
+  font-size: var(--fs-md);
+}
+
+.error {
+  background: var(--danger-bg);
+  color: var(--danger);
+  border-color: var(--danger-border);
+}
+
+.info {
+  background: var(--raised-bg);
+  color: var(--text-2);
+  border-color: var(--card-border);
+}

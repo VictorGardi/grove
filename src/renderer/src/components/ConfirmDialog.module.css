@@ -1,0 +1,14 @@
+.title {
+  font-size: var(--fs-lg);
+  font-weight: var(--fw-bold);
+}
+
+.body {
+  color: var(--text-2);
+}
+
+.actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: var(--sp-2);
+}

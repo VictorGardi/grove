@@ -7,6 +7,8 @@ import { TerminalView } from './components/TerminalView'
 import { AppShell } from './components/shell/AppShell'
 import { ContentHeader } from './components/shell/ContentHeader'
 import { TopBar } from './components/shell/TopBar'
+import { Banner } from './components/ui/Banner'
+import { Button } from './components/ui/Button'
 import { sidebarOrder } from './sidebarOrder'
 import { useSlices } from './stores/slices'
 import s from './App.module.css'
@@ -43,9 +45,7 @@ export default function App() {
     <>
       <AppShell
         topBar={<TopBar onNew={() => setModalOpen(true)} />}
-        banners={errors.map((e, i) => (
-          <div key={i} style={{ background: '#5a1d1d', color: '#f48771', padding: '4px 8px' }}>{e}</div>
-        ))}
+        banners={errors.map((e, i) => <Banner key={i}>{e}</Banner>)}
         sidebar={<Sidebar />}
         content={
           <>
@@ -54,11 +54,11 @@ export default function App() {
               <TerminalView key={focused.id} sessionId={focused.id} />
             ) : focused ? (
               <div className={s.ended}>
-                <div>Session ended</div>
-                <button onClick={() => void window.api.invoke('session:remove', { id: focused.id })}>Remove</button>
+                <div className={s.endedTitle}>Session ended</div>
+                <Button icon="trash" onClick={() => void window.api.invoke('session:remove', { id: focused.id })}>Remove</Button>
               </div>
             ) : (
-              <div className={s.empty} />
+              <div className={s.empty}>Start a session with ＋ or ⌘T</div>
             )}
           </>
         }

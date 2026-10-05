@@ -2,7 +2,7 @@
 feature: 2026-10-05-09-visual-foundation
 phase: design
 status: approved
-version: 1
+version: 2
 created: 2026-10-05
 updated: 2026-10-05
 approved_at: 2026-10-05
@@ -29,14 +29,16 @@ logic changes.
 1. One dark theme, a near-copy of Xirp: `#0a0a0b` chrome, `#121212` panels
    (10px radius) with 6–8px gutters, amber/orange accent, Catppuccin Mocha
    terminal (`#1e1e2e`/`#cdd6f4`, full ANSI 16).
-2. Custom draggable top bar (~51px): traffic lights inset, "grove" wordmark,
-   centred search pill (inert until child 7), round ＋ opening the modal.
-3. Sidebar panel (230px): "Sessions" header with count Badge; project groups
-   as one-line collapsible folder headers (icon, name, ＋, remove); sessions
-   as bordered cards (kind icon, title, mono status line), each compactable to
-   one line; selected card orange. "Add project" in a sidebar footer.
-4. Content panel: header with "project / session label" breadcrumb, terminal
-   frame below; styled empty and "Session ended" panes.
+2. Custom draggable top bar (~51px): traffic lights inset, then (~24px gap)
+   a logo mark + "grove" wordmark, centred search pill (inert until child 7),
+   round ＋ opening the modal.
+3. Sidebar panel (230px): "Sessions" header with count Badge and a ＋ icon
+   that adds a project; project groups as one-line collapsible folder headers
+   (icon, name, ＋, remove); sessions as bordered cards (kind icon, title, mono
+   status line), each compactable to one line; selected card orange.
+4. Content panel: header with "project / session label" breadcrumb; the
+   terminal fills the panel below it, no inset frame, clipped by the panel's
+   rounded bottom corners; styled empty and "Session ended" panes.
 5. The ＋ modal (Spotlight-style) and confirm dialog share one Modal; the
    error banner uses Banner.
 6. Tokens in one place feed CSS, xterm theme, tmux pane colours and the
@@ -97,7 +99,7 @@ flowchart LR
 | Type | `--font-ui: -apple-system, system-ui, sans-serif`; `--font-mono: Menlo, monospace`; sizes `--fs-xs 10px`, `--fs-sm 11px`, `--fs-md 13px`, `--fs-lg 14px`, `--fs-xl 15px`; weights 400/600/700 |
 | Space | `--sp-1 4px` … `--sp-6 24px` (4px scale), `--gutter 8px` |
 | Radius | `--r-card 5px`, `--r-md 8px`, `--r-panel 10px`, `--r-pill 999px` |
-| Sizes | `--topbar-h 51px`, `--header-h 47px`, `--traffic-inset 80px`; `--sidebar-w` set at runtime from `ui.sidebarWidth` |
+| Sizes | `--topbar-h 51px`, `--header-h 47px`, `--traffic-inset 100px`; `--sidebar-w` set at runtime from `ui.sidebarWidth` |
 
 ## Program design
 
@@ -111,7 +113,8 @@ flowchart LR
 - Modal keys: `Modal` registers capture-phase `keydown`; Escape → `onClose`,
   Enter → `onConfirm` when given (ConfirmDialog, NewSessionModal Create).
 - Terminal: `new Terminal({ theme: terminalTheme, fontFamily:'Menlo, monospace',
-  fontSize:13, lineHeight:1.35 })` inside a ContentPanel frame (12px inset).
+  fontSize:13, lineHeight:1.35 })` filling the ContentPanel below the header
+  (4px inner padding, `--terminal-bg`; the panel's `overflow:hidden` + radius rounds it).
 
 ### File tree
 
@@ -141,8 +144,8 @@ src/renderer/src/components/TerminalView.tsx (+ .module.css)    MODIFIED  frame,
 
 ```ts
 type StatusTone = 'running' | 'working' | 'waiting' | 'idle' | 'finished' | 'gone'
-type IconName = 'plus' | 'folder' | 'chevron-down' | 'chevron-right' | 'terminal'
-  | 'opencode' | 'branch' | 'search' | 'info' | 'trash' | 'minimize' | 'x'
+type IconName = 'plus' | 'folder' | 'folder-plus' | 'chevron-down' | 'chevron-right'
+  | 'terminal' | 'opencode' | 'branch' | 'search' | 'info' | 'trash' | 'minimize' | 'x' | 'logo'
 function cx(...c: (string | false | null | undefined)[]): string
 function Button(p: ButtonHTMLAttributes<HTMLButtonElement> & {
   variant?: 'primary' | 'secondary' | 'ghost' | 'danger'; size?: 'sm' | 'md'
@@ -199,10 +202,10 @@ function NewSessionModal(p: { onClose(): void; initialProjectId?: string }): JSX
 | t5 | Compact/collapsed state in React state; child 2 persists in `ui` | epic two-way row Per-viewer UI state |
 | t6 | Search pill rendered, inert, `aria-disabled` | questions answer 5 |
 | t7 | running/working orange `#fb923c`, waiting amber `#fbc024`, finished cyan `#24d3ef`, idle/gone grey `#5e5e66` | research Q7 |
-| t8 | Project ＋ opens the modal preselected; remove project = hover icon; rename stays double-click | research Q7 |
+| t8 | Project ＋ opens the modal preselected; remove project = hover icon; rename stays double-click; add project = `folder-plus` icon in the sidebar header (no footer button) | research Q7; human review of slice 1 |
 | t9 | `DEFAULT_UI.sidebarWidth` 260 → 230; saved widths still honoured | research Q7 |
 | t10 | Vitest text scan of `src/renderer/**/*.tsx` fails on any `style=` other than an object literal with only `--` keys | ticket outcome |
-| t11 | xterm `fontSize 13`, `lineHeight 1.35`; terminal frame inset 12px | research Q7 (18px lines) |
+| t11 | xterm `fontSize 13`, `lineHeight 1.35`; terminal full-bleed under the header, 4px padding, panel radius clips it | research Q7; human review of slice 1 |
 
 ## Risks
 
@@ -211,8 +214,7 @@ function NewSessionModal(p: { onClose(): void; initialProjectId?: string }): JSX
   Accepted: new sessions match; old ones look off until recreated.
 - **Drag region swallowing clicks:** search pill, ＋ and any top-bar control
   need `app-region: no-drag`; check with `ELECTRON_DEBUG_DRAGGABLE_REGIONS`.
-- **Traffic-light alignment** in a 51px bar is tuned by eye (`{x:18,y:18}`).
-- **Native `<select>`** in the ＋ modal: `color-scheme: dark` gives a dark
-  popup; it won't match Xirp exactly.
+- **Traffic-light alignment** in a 51px bar is tuned by eye (`{x:18,y:18}`);
+  the wordmark starts at `--traffic-inset` 100px, ~24px after the lights.
 
 ## Open questions

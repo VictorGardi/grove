@@ -7,8 +7,8 @@ created: 2026-10-05
 updated: 2026-10-05
 approved_at:
 based_on:
-  - 03-design.md@1
-  - 04-structure.md@1
+  - 03-design.md@2
+  - 04-structure.md@2
   - 05-plan.md@1
 forced: []
 ---
@@ -18,7 +18,7 @@ forced: []
 ## Progress
 
 - [x] Slice 1 — Tracer: the Xirp shell around the existing UI (manual check pending human)
-- [ ] Slice 2 — Modals, buttons, banner and panes
+- [x] Slice 2 — Modals, buttons, banner and panes (manual check pending human)
 - [ ] Slice 3 — Sidebar cards and folders
 - [ ] Slice 4 — No inline styles, enforced
 
@@ -48,5 +48,25 @@ Deviations (all small, two-way):
 - The terminal frame is an outer `.frame` div (12px padding, terminal
   background) around the xterm host div, so `FitAddon` measures the inner
   box and the padding doesn't cause overflow.
+
+Re-planning note: after the human's review of slice 1 (a screenshot of the
+running app), the design went to v2 (wordmark spacing, add-project ＋ in the
+sidebar header, full-bleed terminal) and was re-approved with the structure.
+`05-plan.md` was stale; no section was written ahead, so slice 2 was planned
+fresh against v2. Slice 1's manual check is ticked from that review.
+
+## Slice 2 — Modals, buttons, banner and panes
+
+Verification: `npm run typecheck` clean; `npm run build` clean; `npm test`
+49/49 passed outside the sandbox (inside it the four real-tmux tests fail with
+"error connecting to /private/tmp/tmux-501/…", as in slice 1). Manual
+`npm run dev` steps are for the human.
+
+Deviations (small, two-way):
+
+- `Button` sets round widths per size (`.sm.round` 24px, `.md.round` 32px)
+  instead of one "width = height" rule; same result.
+- `Modal` maps the key to its action (Escape → `onClose`, Enter →
+  `onConfirm`) in one handler; behaviour as planned.
 
 ## Open questions
