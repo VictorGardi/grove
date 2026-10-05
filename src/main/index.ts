@@ -18,7 +18,7 @@ app.whenReady().then(async () => {
   const core = createCore({
     configPath: path.join(os.homedir(), '.config', 'grove', 'config.json'),
     statePath: path.join(app.getPath('userData'), 'state.json'),
-    workflowPath: path.join(app.getAppPath(), 'resources', 'workflow.yaml'),
+    bundledWorkflowPath: path.join(app.getAppPath(), 'resources', 'workflow.yaml'),
     backend: new TmuxBackend({
       tmuxPath: tmuxPath ?? 'tmux',
       socket: 'grove',

@@ -14,7 +14,7 @@ import { useSlices } from './stores/slices'
 import s from './App.module.css'
 
 export default function App() {
-  const { projects, sessions, ui, errors, hydrate, setFocused } = useSlices()
+  const { projects, sessions, ui, features, errors, hydrate, setFocused } = useSlices()
   const [newFor, setNewFor] = useState<{ projectId?: string } | null>(null)
   const [confirmKill, setConfirmKill] = useState<Session | null>(null)
 
@@ -46,7 +46,10 @@ export default function App() {
     <>
       <AppShell
         topBar={<TopBar onNew={() => openNew()} />}
-        banners={errors.map((e, i) => <Banner key={i}>{e}</Banner>)}
+        banners={[
+          ...errors.map((e, i) => <Banner key={i}>{e}</Banner>),
+          ...(features.workflowError ? [<Banner key="workflow">Workflow: {features.workflowError}</Banner>] : []),
+        ]}
         sidebar={<Sidebar onNew={openNew} />}
         content={
           <>

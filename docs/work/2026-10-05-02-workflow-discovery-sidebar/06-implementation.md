@@ -9,7 +9,7 @@ approved_at:
 based_on:
   - 03-design.md@1
   - 04-structure.md@1
-  - 05-plan.md@1
+  - 05-plan.md@2
 forced: []
 ---
 
@@ -18,7 +18,7 @@ forced: []
 ## Progress
 
 - [x] Slice 1 — Tracer: features from the bundled workflow, read once
-- [ ] Slice 2 — Live discovery and a guarded workflow
+- [x] Slice 2 — Live discovery and a guarded workflow (manual check pending)
 - [ ] Slice 3 — The tree
 - [ ] Slice 4 — Feature page
 - [ ] Slice 5 — Manual link
@@ -66,5 +66,44 @@ Deviations (all small, two-way):
 - Feature rows in the sidebar are plain `ListRow`s (folder icon, stage
   label as meta, `Done` when complete) above the project's sessions. They
   are not clickable yet; slice 3 builds the tree.
+
+## Slice 2 — Live discovery and a guarded workflow
+
+Verification: `npm test` 105/105 passed outside the sandbox (inside it the
+four real-tmux tests fail as in slice 1, and the three real-watcher tests in
+`watcher.test.ts` skip themselves: `fs.watch` starts there but then emits
+`EMFILE`); `npm run typecheck` clean; `npm run build` clean. Risk from the
+design checked before planning: `require('chokidar')` (ESM-only 5.0.0)
+works in Electron 44's CJS main (Node 24.21), so chokidar stays an
+externalized `dependency`, with no bundling fallback. The built
+`out/main/index.js` also loads past its `require("chokidar")` under
+Electron.
+
+Deviations (all small, two-way):
+
+- Watchers are injected into core (`CoreOptions.watchers`, default
+  `chokidarWatchers`), like the session backend. Core tests use
+  `FakeWatchers` and fire callbacks by hand, so they don't depend on
+  `fs.watch`. `CoreOptions.workflowPath` was renamed `bundledWorkflowPath`.
+- A root that doesn't exist yet (and a root that disappears) is re-checked
+  on the existing 5 s liveness poll (`syncProjects(false)`). `from_file`
+  and the workflow file are watched directly, so their changes apply within
+  about 1 s.
+- A non-absolute, non-`~/` `workflow` in `config.json` is an error
+  (`config.json workflow: expected an absolute path or ~/…`) and loads no
+  workflow, the same as a broken custom file at start.
+- Validation also rejects unknown keys at the top level and on stages,
+  undefined template variables (beyond the reserved `{repo}`/`{repo_path}`),
+  duplicate stage ids, a `kinds`/`flows` `default` that isn't a value,
+  `stage_actions` keys that are neither `default` nor a stage, and unknown
+  action ids. Errors are joined with `; ` into the one `workflowError`
+  string. A YAML error keeps only the first line of the parser's message,
+  which carries `at line L, column C`.
+- Watcher `error` events are logged with `console.warn` in main and
+  otherwise ignored: `app:errors` is fetched once at startup, so it can't
+  carry them.
+- `workflow` in `config.json` is preserved on every config write (core
+  keeps the value read at start). Hand edits while the app runs are still
+  overwritten on the next project change (design Risks).
 
 ## Open questions

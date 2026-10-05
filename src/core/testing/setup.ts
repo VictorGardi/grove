@@ -5,8 +5,9 @@ import { fileURLToPath } from 'node:url'
 import { createCore, type Core } from '../core'
 import { saveConfig } from '../store/configStore'
 import { FakeBackend } from './fakeBackend'
+import { FakeWatchers } from './fakeWatchers'
 
-const workflowPath = fileURLToPath(new URL('../../../resources/workflow.yaml', import.meta.url))
+const bundledWorkflowPath = fileURLToPath(new URL('../../../resources/workflow.yaml', import.meta.url))
 
 export const NOW = new Date('2026-10-05T10:00:00.000Z')
 export const LATER = new Date('2026-10-05T11:00:00.000Z')
@@ -19,14 +20,15 @@ export function setupCore() {
   const statePath = path.join(dir, 'state.json')
   saveConfig(configPath, { schemaVersion: 1, projects: [{ id: 'p', name: 'proj', path: dir }] })
   const fake = new FakeBackend()
+  const watchers = new FakeWatchers()
   const cores: Core[] = []
   const make = (now = NOW) => {
-    const core = createCore({ configPath, statePath, workflowPath, backend: fake, now: () => now })
+    const core = createCore({ configPath, statePath, bundledWorkflowPath, watchers, backend: fake, now: () => now })
     cores.push(core)
     return core
   }
   const disposeAll = () => { for (const c of cores.splice(0)) c.dispose() }
-  return { dir, fake, make, configPath, statePath, disposeAll }
+  return { dir, fake, watchers, make, configPath, statePath, disposeAll }
 }
 
 export async function createTerminal(core: Core, projectId = 'p') {

@@ -41,7 +41,7 @@ export interface FeaturesSlice {
   items: Feature[]
 }
 export type Slices = { projects: Project[]; sessions: Session[]; ui: UiState; features: FeaturesSlice }
-export interface ConfigFile { schemaVersion: 1; projects: Project[] }
+export interface ConfigFile { schemaVersion: 1; projects: Project[]; workflow?: string }
 export interface StateFile { schemaVersion: 1; sessions: Session[]; ui: UiState }
 export const DEFAULT_UI: UiState = { sidebarWidth: 230, focusedSessionId: null }
 export const EMPTY_FEATURES: FeaturesSlice = { workflowError: null, stages: [], items: [] }

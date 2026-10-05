@@ -2,7 +2,7 @@
 feature: 2026-10-05-02-workflow-discovery-sidebar
 phase: plan
 status: approved
-version: 1
+version: 2
 created: 2026-10-05
 updated: 2026-10-05
 approved_at:
@@ -148,5 +148,145 @@ adds `unapproved`, `cardState`, `flags`, `warnings`, `artifacts`.
   `posix_spawnp failed`), `npm run typecheck`, `npm run build`.
 - [x] Manual in `npm run dev` (human): register this repo; the epic and its
   children show stages; visual-foundation shows `implementation`.
+
+## Slice 2 — Live discovery and a guarded workflow
+
+Context for a cold reader: slice 1 reads every project's feature folders
+once (`refreshFeatures()` in `src/core/core.ts`, at start and after project
+add/remove) from the bundled `resources/workflow.yaml`
+(`CoreOptions.workflowPath`). This slice keeps one cached `FolderSnapshot`
+map per project, updated by watchers, and adds full workflow validation.
+Verified before planning: `require('chokidar')` (5.0.0, ESM-only) works in
+Electron 44's main (`ELECTRON_RUN_AS_NODE=1 electron -e "require('chokidar')"`
+→ Node 24.21), so chokidar stays an externalized `dependency` (no bundling
+fallback). In the Claude Code sandbox `fs.watch` succeeds but then emits
+`EMFILE` asynchronously; real-watcher tests must detect that and skip.
+chokidar watches a not-yet-existing file path (emits `add` when it appears).
+
+Watchers are injected into core like the session backend, so core tests
+drive events by hand: a `Watchers` interface with a chokidar implementation
+and a fake in `src/core/testing/`.
+
+- [x] `npm install --save-exact chokidar@5.0.0` (with
+  `npm_config_cache=$TMPDIR/npm-cache`); restore `package.json`'s one-line
+  `build` key if npm reformats it.
+- [x] Write failing test `src/core/workflow/parse.test.ts`: the bundled
+  `resources/workflow.yaml` is valid; each of these yields
+  `{ ok: false }` with an error containing the given path and text —
+  unknown stage id in a kind (`kinds.values.epic.stages: unknown stage "nope"`),
+  in a flow (`flows.values.small.stages: unknown stage "nope"`), unknown
+  predicate (`stages[0].complete_when: unknown predicate`), `{repo}` in an
+  action prompt (`actions.start.prompt: {repo} is reserved`), `per_repo` on a
+  stage (`stages[0].per_repo: reserved`), unknown template variable
+  (`actions.start.prompt: unknown variable {nope}`), duplicate stage id,
+  `kinds.default` not in `values`, `stage_actions` naming an unknown
+  action, unknown top-level key; a YAML syntax error yields an error
+  containing `line 2, column 1`. Each case is built by editing the parsed
+  bundled YAML (`YAML.parse` → mutate → `YAML.stringify` → `parseWorkflow`).
+- [x] `src/core/workflow/parse.ts`: replace `shapeError` with
+  `validate(w): string[]` collecting `path: message` errors; `parseWorkflow`
+  returns `{ ok: false, error: errors.join('; ') }` when any, and for a
+  YAML error the message's first line (it carries `at line L, column C`).
+  Rules:
+  - top level: a mapping; keys only `discovery kinds flows stages flags actions stage_actions` (else `<key>: unknown key`).
+  - `discovery.manifest` string; `discovery.root.default` string;
+    `discovery.root.from_file` and `.key` both strings or both absent.
+  - `stages`: non-empty list; each a mapping with keys only
+    `id label artifact review complete_when` (`per_repo` →
+    `stages[i].per_repo: reserved for a later hub`, others unknown key);
+    string `id` (unique: `stages[i].id: duplicate "x"`), `label`,
+    `artifact`; optional string `review`; valid predicate.
+  - predicate (mapping with exactly one of these shapes, else
+    `<path>: unknown predicate`): `{ exists: true }`; `{ field: string, equals: string|number|boolean }`;
+    `{ field: string, in: list }`; `{ all_checked: string }`.
+  - `kinds`: string `field`; `default` a key of `values`; optional string
+    `parent_field`; `values` a non-empty mapping of `{ stages: 'all' | list of known stage ids, group?: boolean }`.
+    `flows` optional; same rules without `parent_field`/`group`.
+  - `flags` optional list of `{ id: string, label: string, when: predicate }`.
+  - `actions` optional mapping of `{ label: string, prompt: string, cwd?: string, needs_input?: boolean }`;
+    in `label`, `prompt`, `cwd` every `{name}` must be one of
+    `slug stage project_path feature_path feedback`; `repo`/`repo_path` →
+    `<path>: {repo} is reserved for a later hub`; others →
+    `<path>: unknown variable {name}`.
+  - `stage_actions` optional mapping whose keys are `default` or a stage id,
+    each a list of known action ids.
+- [x] Write failing test `src/core/discovery/watcher.test.ts`, wrapped in
+  `describe.skipIf(!(await canWatch()))` where `canWatch()` opens
+  `fs.watch` on a temp dir and resolves `false` if it emits `error` within
+  100 ms: `chokidarWatchers.watchRoot(root, onFolder)` reports `a` after
+  `mkdir a` + `feature.md`; after renaming `a` → `b` reports both; after
+  `rm -r b` reports `b`; writing `a/x.tmp` or `.dot/feature.md` reports
+  nothing (poll up to 3 s for expected calls, wait 800 ms for
+  "nothing"); `watchFile(file, cb)` fires when a missing file is created.
+- [x] Create `src/core/discovery/watcher.ts`:
+  `export interface Closer { close(): Promise<void> }`;
+  `export interface Watchers { watchRoot(root: string, onFolder: (slug: string) => void): Closer; watchFile(file: string, onChange: () => void): Closer }`;
+  `export const chokidarWatchers: Watchers` — `watchRoot` uses
+  `watch(root, { ignoreInitial: true, depth: 1, awaitWriteFinish: { stabilityThreshold: 200, pollInterval: 50 }, ignored })`
+  where `ignored(p)` is true when any segment of `path.relative(root, p)`
+  starts with `.` or `p` ends with `.tmp`; on `all`, the slug is the first
+  segment of the relative path (skip `''`), coalesced per slug with a 50 ms
+  timer, then `onFolder(slug)`; `close()` clears timers and closes.
+  `watchFile` uses `watch(file, { ignoreInitial: true, awaitWriteFinish: {…same} })`
+  and calls `onChange` on `all`. Both log `error` events with
+  `console.warn('watch <path>:', err.message)`.
+- [x] Create `src/core/testing/fakeWatchers.ts`: `class FakeWatchers implements Watchers`
+  with `roots = new Map<string, (slug: string) => void>()` and
+  `files = new Map<string, () => void>()`, filled by `watchRoot`/`watchFile`
+  and deleted by the returned `close()`.
+- [x] `src/shared/types.ts`: `ConfigFile` gains `workflow?: string`.
+- [x] Write test `src/core/store/configStore.test.ts` — `saveConfig` then `loadConfig`
+  round-trips `{ schemaVersion: 1, projects: [], workflow: '~/w.yaml' }`.
+- [x] `src/core/core.ts`:
+  - `CoreOptions`: rename `workflowPath` → `bundledWorkflowPath`; add
+    `watchers?: Watchers` (default `chokidarWatchers`). Update
+    `src/main/index.ts` and `src/core/testing/setup.ts` (setup passes a
+    `FakeWatchers`, returned from `setupCore()` as `watchers`).
+  - On start, keep `configWorkflow = loadConfig(...).workflow`; `set('projects')`
+    saves `{ schemaVersion: 1, projects, ...(configWorkflow !== undefined && { workflow: configWorkflow }) }`.
+  - `workflowFile()`: `configWorkflow` unset → `bundledWorkflowPath`;
+    `~/x` → `path.join(os.homedir(), 'x')`; else must be absolute, otherwise
+    `workflowError = 'config.json workflow: expected an absolute path or ~/…'`
+    and no workflow is loaded.
+  - `loadWorkflow()`: read + `parseWorkflow`; valid → `workflow = res.workflow`,
+    `workflowError = null`; invalid or unreadable → `workflowError = '<file>: <message>'`,
+    `workflow` unchanged (last valid; `null` at startup, so no features and
+    no fallback to the bundled file).
+  - Per-project cache `discovery = new Map<string, { root: string | null; fromFile: string | null; folders: Map<string, FolderSnapshot>; rootWatch?: Closer; fileWatch?: Closer }>()`.
+  - `syncProject(p, force)`: with `workflow` set, `root = resolveRoot(p.path, wf.discovery)`;
+    `fromFile = from_file ? path.join(p.path, from_file) : null`; if
+    `fromFile` changed, close/replace `fileWatch` (`watchFile(fromFile, () => { syncProject(p, false); publish() })`);
+    if `force` or `root` changed: close `rootWatch`, re-read all folders
+    (`listFolders`/`readFolder`) into `folders` (empty when `root` null) and,
+    when `root` is set, `rootWatch = watchRoot(root, (slug) => rereadFolder(p.id, slug))`.
+  - `syncProjects(force)`: `syncProject` for every project; close and delete
+    entries of removed projects; then `publish()`.
+  - `rereadFolder(projectId, slug)`: `readFolder(path.join(root, slug), wf)`;
+    set or delete in `folders`; `publish()`.
+  - `publish()`: replaces `refreshFeatures()`; `workflow` null →
+    `set('features', { ...EMPTY_FEATURES, workflowError })`; else derive from
+    every cached folder (tagged with `projectId`).
+  - `start()`: `loadWorkflow()`, `syncProjects(true)`, and
+    `workflowWatch = watchFile(workflowFile, () => { loadWorkflow(); syncProjects(true) })`
+    (skipped when the path was rejected). The 5 s poll also calls
+    `syncProjects(false)`, so a root that appears later is picked up.
+    `projectAdd`/`projectRemove` call `syncProjects(false)`.
+  - `dispose()`: close every watcher (`void closer.close()`).
+- [x] Write test `src/core/features.test.ts` additions (fake watchers):
+  `config.json` `workflow` (a temp copy of the bundled file) is used and
+  survives `projectAdd`; breaking it and firing its `files` callback sets
+  `workflowError` and keeps the items; fixing it clears the error; a broken
+  custom workflow at start → no items, error set; a new folder plus
+  firing `roots.get(root)!('b')` adds `b`; rewriting `grove.config.json`'s
+  `artifactRoot` and firing its `files` callback re-roots (items from the
+  new root only).
+- [x] `src/renderer/src/App.tsx`: banners = existing errors plus, when
+  `features.workflowError` is set, `<Banner key="workflow">Workflow: {features.workflowError}</Banner>`.
+- [x] Run `npm test` (outside the sandbox if the real-tmux tests fail to
+  reach their socket), `npm run typecheck`, `npm run build`.
+- [ ] Manual in `npm run dev` (human): `mkdir` a folder with `feature.md`
+  under `docs/work` → it appears; set `workflow` in
+  `~/.config/grove/config.json` to a copy of `resources/workflow.yaml`,
+  restart, break it → banner, features stay; fix it → banner clears.
 
 ## Open questions

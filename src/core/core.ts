@@ -1,12 +1,14 @@
 import { randomUUID } from 'node:crypto'
 import fs from 'node:fs'
+import os from 'node:os'
 import path from 'node:path'
 import type { Project, Session, SessionKind, Slices, UiState } from '@shared/types'
 import { DEFAULT_UI, EMPTY_FEATURES } from '@shared/types'
 import type { Result } from '@shared/ipc'
 import type { AttachHandle, SessionBackend } from './backend/types'
 import { terminalTheme } from '@shared/theme'
-import { listFolders, readFolder, resolveRoot } from './discovery/folder'
+import { listFolders, readFolder, resolveRoot, type FolderSnapshot } from './discovery/folder'
+import { chokidarWatchers, type Closer, type Watchers } from './discovery/watcher'
 import { loginShellArgv } from './env'
 import { hasLiveSessions, newProject } from './projects'
 import { markGone, newSession, reconcile, rename } from './sessions'
@@ -18,7 +20,8 @@ import { parseWorkflow, type Workflow } from './workflow/parse'
 export interface CoreOptions {
   configPath: string // ~/.config/grove/config.json
   statePath: string // <userData>/state.json
-  workflowPath: string // the bundled example workflow
+  bundledWorkflowPath: string // used when config.json sets no `workflow`
+  watchers?: Watchers // tests inject fakes
   backend: SessionBackend
   now?: () => Date // tests inject this
 }
@@ -54,38 +57,123 @@ export function createCore(opts: CoreOptions): Core {
   const listeners = new Set<SliceListener>()
   const handles = new Set<AttachHandle>()
   let poll: ReturnType<typeof setInterval> | undefined
-  let workflow: Workflow | null = null
+  const watchers = opts.watchers ?? chokidarWatchers
+  let configWorkflow: string | undefined
+  let workflow: Workflow | null = null // last valid
   let workflowError: string | null = null
+  let workflowWatch: Closer | undefined
+  const discovery = new Map<string, {
+    root: string | null
+    fromFile: string | null
+    folders: Map<string, FolderSnapshot>
+    rootWatch?: Closer
+    fileWatch?: Closer
+  }>()
 
   function set<K extends keyof Slices>(k: K, v: Slices[K]): void {
     slices[k] = v
     for (const l of listeners) l(k, v)
-    if (k === 'projects') saveConfig(opts.configPath, { schemaVersion: 1, projects: slices.projects })
+    if (k === 'projects') {
+      saveConfig(opts.configPath, {
+        schemaVersion: 1,
+        projects: slices.projects,
+        ...(configWorkflow !== undefined && { workflow: configWorkflow }),
+      })
+    }
     else if (k !== 'features') saveState(opts.statePath, { schemaVersion: 1, sessions: slices.sessions, ui: slices.ui })
   }
 
-  function loadWorkflow(): void {
+  // config.json `workflow` (absolute or ~/…), else the bundled example. null: rejected path.
+  function workflowFile(): string | null {
+    if (configWorkflow === undefined) return opts.bundledWorkflowPath
+    if (configWorkflow.startsWith('~/')) return path.join(os.homedir(), configWorkflow.slice(2))
+    if (path.isAbsolute(configWorkflow)) return configWorkflow
+    workflowError = 'config.json workflow: expected an absolute path or ~/…'
+    return null
+  }
+
+  // An invalid or unreadable file keeps the last valid workflow and sets the error.
+  function loadWorkflow(file: string): void {
     try {
-      const res = parseWorkflow(fs.readFileSync(opts.workflowPath, 'utf8'))
-      if (res.ok) workflow = res.workflow
-      else workflowError = `${opts.workflowPath}: ${res.error}`
+      const res = parseWorkflow(fs.readFileSync(file, 'utf8'))
+      if (res.ok) {
+        workflow = res.workflow
+        workflowError = null
+      } else workflowError = `${file}: ${res.error}`
     } catch (e) {
-      workflowError = `${opts.workflowPath}: ${(e as Error).message}`
+      workflowError = `${file}: ${(e as Error).message}`
     }
   }
 
-  // Re-read every project's feature folders and re-derive. Not persisted.
-  function refreshFeatures(): void {
+  function readAll(root: string, wf: Workflow): Map<string, FolderSnapshot> {
+    const out = new Map<string, FolderSnapshot>()
+    try {
+      for (const slug of listFolders(root)) {
+        const snap = readOne(root, slug, wf)
+        if (snap) out.set(slug, snap)
+      }
+    } catch {
+      // root vanished mid-read; the next sync clears it
+    }
+    return out
+  }
+
+  function readOne(root: string, slug: string, wf: Workflow): FolderSnapshot | null {
+    try {
+      return readFolder(path.join(root, slug), wf)
+    } catch {
+      return null // deleted while reading
+    }
+  }
+
+  // Re-resolve a project's root; re-read and re-watch it when it moved (or `force`).
+  function syncProject(p: Project, force: boolean): void {
+    const wf = workflow
+    if (!wf) return
+    let entry = discovery.get(p.id)
+    if (!entry) discovery.set(p.id, (entry = { root: null, fromFile: null, folders: new Map() }))
+    const { from_file } = wf.discovery.root
+    const fromFile = from_file ? path.join(p.path, from_file) : null
+    if (fromFile !== entry.fromFile) {
+      void entry.fileWatch?.close()
+      entry.fromFile = fromFile
+      entry.fileWatch = fromFile ? watchers.watchFile(fromFile, () => { syncProject(p, false); publish() }) : undefined
+    }
+    const root = resolveRoot(p.path, wf.discovery)
+    if (!force && root === entry.root) return
+    void entry.rootWatch?.close()
+    entry.root = root
+    entry.folders = root ? readAll(root, wf) : new Map()
+    entry.rootWatch = root ? watchers.watchRoot(root, (slug) => rereadFolder(p.id, slug)) : undefined
+  }
+
+  function closeEntry(id: string): void {
+    const entry = discovery.get(id)
+    void entry?.rootWatch?.close()
+    void entry?.fileWatch?.close()
+    discovery.delete(id)
+  }
+
+  function syncProjects(force: boolean): void {
+    for (const id of [...discovery.keys()]) if (!slices.projects.some((p) => p.id === id)) closeEntry(id)
+    for (const p of slices.projects) syncProject(p, force)
+    publish()
+  }
+
+  function rereadFolder(projectId: string, slug: string): void {
+    const entry = discovery.get(projectId)
+    if (!workflow || !entry?.root) return
+    const snap = readOne(entry.root, slug, workflow)
+    if (snap) entry.folders.set(slug, snap)
+    else entry.folders.delete(slug)
+    publish()
+  }
+
+  // Derive from the cached folders. Not persisted.
+  function publish(): void {
     const wf = workflow
     if (!wf) return set('features', { ...EMPTY_FEATURES, workflowError })
-    const folders = slices.projects.flatMap((p) => {
-      const root = resolveRoot(p.path, wf.discovery)
-      if (!root) return []
-      return listFolders(root).flatMap((slug) => {
-        const snap = readFolder(path.join(root, slug), wf)
-        return snap ? [{ ...snap, projectId: p.id }] : []
-      })
-    })
+    const folders = [...discovery].flatMap(([projectId, e]) => [...e.folders.values()].map((f) => ({ ...f, projectId })))
     set('features', {
       workflowError,
       stages: wf.stages.map(({ id, label }) => ({ id, label })),
@@ -120,7 +208,7 @@ export function createCore(opts: CoreOptions): Core {
     async projectAdd({ path }) {
       const project = newProject(path, randomUUID())
       set('projects', [...slices.projects, project])
-      refreshFeatures()
+      syncProjects(false)
       return { ok: true, data: project }
     },
 
@@ -129,7 +217,7 @@ export function createCore(opts: CoreOptions): Core {
       if (hasLiveSessions(id, slices.sessions)) return { ok: false, error: 'has-live-sessions' }
       set('projects', slices.projects.filter((p) => p.id !== id))
       dropSessions((s) => s.projectId !== id)
-      refreshFeatures()
+      syncProjects(false)
       return { ok: true, data: { id } }
     },
 
@@ -178,12 +266,21 @@ export function createCore(opts: CoreOptions): Core {
   return {
     async start() {
       const onBad = (m: string) => errors.push(m)
-      slices.projects = loadConfig(opts.configPath, onBad).projects
+      const config = loadConfig(opts.configPath, onBad)
+      slices.projects = config.projects
+      configWorkflow = config.workflow
       const state = loadState(opts.statePath, onBad)
       slices.sessions = state.sessions
       slices.ui = state.ui
-      loadWorkflow()
-      refreshFeatures()
+      const file = workflowFile()
+      if (file) {
+        loadWorkflow(file)
+        workflowWatch = watchers.watchFile(file, () => {
+          loadWorkflow(file)
+          syncProjects(true)
+        })
+      }
+      syncProjects(true)
       try {
         await backend.ensureConfig()
         const next = reconcile(slices.sessions, await backend.list(), now().toISOString())
@@ -191,7 +288,10 @@ export function createCore(opts: CoreOptions): Core {
       } catch (e) {
         errors.push(`tmux: ${(e as Error).message}`)
       }
-      poll = setInterval(() => void checkLiveness(), 5000)
+      poll = setInterval(() => {
+        void checkLiveness()
+        syncProjects(false) // picks up a root that appears later
+      }, 5000)
     },
     getSlices: () => slices,
     getErrors: () => [...errors],
@@ -221,6 +321,8 @@ export function createCore(opts: CoreOptions): Core {
     },
     dispose() {
       clearInterval(poll)
+      void workflowWatch?.close()
+      for (const id of [...discovery.keys()]) closeEntry(id)
       for (const h of [...handles]) h.kill()
     },
   }
