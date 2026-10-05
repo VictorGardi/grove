@@ -12,6 +12,8 @@ interface SlicesState {
   setFocused(id: string | null): void
   toggleCollapsed(key: string): void
   focusFeature(ref: { projectId: string; slug: string }): void
+  openFeature(ref: { projectId: string; slug: string }): void
+  setView(view: UiState['view']): void
 }
 
 export const useSlices = create<SlicesState>((set, get) => ({
@@ -33,6 +35,8 @@ export const useSlices = create<SlicesState>((set, get) => ({
   },
   setFocused: (id) => { void window.api.invoke('ui:set', { focusedSessionId: id }) },
   focusFeature: (ref) => { void window.api.invoke('ui:set', { focusedFeature: ref }) },
+  openFeature: (ref) => { void window.api.invoke('ui:set', { view: 'list', focusedFeature: ref }) },
+  setView: (view) => { void window.api.invoke('ui:set', { view }) },
   toggleCollapsed(key) {
     const { collapsed } = get().ui
     const next = collapsed.includes(key) ? collapsed.filter((k) => k !== key) : [...collapsed, key]

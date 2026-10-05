@@ -2,7 +2,7 @@
 feature: 2026-10-05-02-workflow-discovery-sidebar
 phase: plan
 status: approved
-version: 5
+version: 6
 created: 2026-10-05
 updated: 2026-10-05
 approved_at:
@@ -548,5 +548,75 @@ Rules (design "Manual link", "`running` card state"; E-D6):
 - [x] Manual in `npm run dev` (human): link a terminal to this feature; it
   moves under the feature and the feature reads `running`; restart; still
   linked; link it to None; it moves back to unlinked.
+
+## Slice 6 — Board (appetite cut 1)
+
+Context for a cold reader: `UiState.view: 'list' | 'board'` already exists
+(default `'list'`, persisted by core's `uiSet`) but nothing reads it.
+`FeaturesSlice.stages` lists every workflow stage in order;
+`Feature.currentStage` is `null` when done; `Feature.group` is true for
+group kinds (epics); `Feature.parent` is the parent's slug in the same
+project. `src/renderer/src/tree.ts` holds the pure tree helpers, tested in
+`tree.test.ts` (its `feature(slug, over)` fixture builds a `Feature`).
+`ContentHeader` (`components/shell/ContentHeader.tsx`) takes `crumbs` and an
+optional `right` node. `App.tsx` picks the content: feature page, terminal,
+ended session or empty hint. `focusFeature` in `stores/slices.ts` sends
+`ui:set { focusedFeature }`. Labels: `CARD_STATE_LABELS` in
+`featureLabels.ts`. Styles in CSS modules with `styles/tokens.css`
+variables; no inline `style=`. No app code names a grove kind, stage or
+flow (design Desired state 8): cards are the non-`group` features.
+
+Rules (design Desired state 7; questions Q4):
+- `boardColumns(stages, features)`: one column per entry of `stages`, in
+  order; cards are features with `group === false`; a card goes in the
+  column whose `id` equals its `currentStage`; a done card
+  (`currentStage === null`) goes in the last column. Within a column,
+  cards keep `features` order. Each card carries `epic`: the `title` of
+  the feature in the same project whose `slug` equals its `parent`, else
+  `null`. A card whose `currentStage` names no column is left out.
+- The view applies to the content area: `ui.view === 'board'` shows the
+  Board whatever is focused. Clicking a card sets `view: 'list'` and
+  `focusedFeature` in one `ui:set`, so the feature page opens.
+
+- [x] Write failing tests in `src/renderer/src/tree.test.ts`,
+  `describe('boardColumns')`: columns follow `stages` order and include
+  empty ones; a `group: true` feature is not a card; a feature with
+  `currentStage: 'design'` lands in `design`; a done feature lands in the
+  last column; a child with `parent: 'e'` (and an epic `e` titled `Epic E`
+  in the same project) has `epic: 'Epic E'`, one whose parent is missing
+  or in another project has `epic: null`.
+- [x] `src/renderer/src/tree.ts`: add
+  `export interface BoardCard { feature: Feature; epic: string | null }` and
+  `export function boardColumns(stages: { id: string; label: string }[], features: Feature[]): { stage: { id: string; label: string }; cards: BoardCard[] }[]`
+  per the rules above.
+- [x] Create `src/renderer/src/components/Board.tsx` +
+  `Board.module.css`: props
+  `{ stages: { id: string; label: string }[]; features: Feature[]; projects: Project[]; onOpen(f: Feature): void }`;
+  a horizontally scrolling row (`.board`: `flex: 1; display: flex;
+  gap: var(--sp-3); padding: var(--sp-4); overflow-x: auto`) of columns
+  (`.column`: `flex: 0 0 220px; display: flex; flex-direction: column;
+  gap: var(--sp-2)`), each with a heading (`.heading`: stage label,
+  `var(--fs-sm)`, `var(--fw-semibold)`, `var(--text-3)`, uppercase, plus
+  the card count) and one `ListRow` per card: `title` = feature title,
+  `meta` = the non-empty of [project name when `projects.length > 1`,
+  `epic`] joined with ` · `, `status` = `{ label: CARD_STATE_LABELS[cardState], tone: 'idle' }`,
+  `onClick={() => onOpen(feature)}`.
+- [x] `src/renderer/src/stores/slices.ts`: add `setView(view: 'list' | 'board')`
+  → `ui:set { view }`, and `openFeature(ref: { projectId: string; slug: string })`
+  → `ui:set { view: 'list', focusedFeature: ref }`.
+- [x] `src/renderer/src/App.tsx`: pass
+  `right={<ViewToggle view={ui.view} onChange={setView} />}` to
+  `ContentHeader`, where `ViewToggle` is a small component in
+  `components/shell/ViewToggle.tsx` (+ `.module.css`): two
+  `Button size="sm"` ("List", "Board"), `variant="secondary"` for the
+  active one and `"ghost"` for the other, `aria-pressed` set. When
+  `ui.view === 'board'`, crumbs are `['Board']` and the content is
+  `<Board stages={features.stages} features={features.items} projects={projects} onOpen={(f) => openFeature({ projectId: f.projectId, slug: f.slug })} />`;
+  otherwise the content and crumbs are as today.
+- [x] Run `npm test` (outside the sandbox for the real-tmux and watcher
+  tests), `npm run typecheck`, `npm run build`.
+- [ ] Manual in `npm run dev` (human): toggle to Board; columns are the
+  five stages; epics are not cards; children show their epic's name;
+  restart, still Board; click a card → feature page in List view.
 
 ## Open questions

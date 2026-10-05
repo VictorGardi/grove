@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import type { Feature, Project, Session } from '@shared/types'
-import { buildTree, treeSessionOrder, type TreeNode } from './tree'
+import { boardColumns, buildTree, treeSessionOrder, type TreeNode } from './tree'
 
 const project = (id: string): Project => ({ id, name: id, path: '/' + id })
 
@@ -72,5 +72,30 @@ describe('buildTree', () => {
     expect(tree[0]).toMatchObject({ collapsed: true })
     expect(tree[0].type === 'project' && tree[0].children[0]).toMatchObject({ key: 'f:p/a', collapsed: true })
     expect(treeSessionOrder(tree).map((s) => s.id)).toEqual(['s1', 's2'])
+  })
+})
+
+describe('boardColumns', () => {
+  const stages = [{ id: 'questions', label: 'Questions' }, { id: 'design', label: 'Design' }, { id: 'implementation', label: 'Implementation' }]
+  const cards = (cols: ReturnType<typeof boardColumns>) => cols.map((c) => [c.stage.id, c.cards.map((k) => k.feature.slug)])
+
+  it('puts non-group features in their current stage, done ones last', () => {
+    const cols = boardColumns(stages, [
+      feature('e', { kind: 'epic', group: true }),
+      feature('a', { currentStage: 'design' }),
+      feature('b', { currentStage: null }),
+      feature('c'),
+    ])
+    expect(cards(cols)).toEqual([['questions', ['c']], ['design', ['a']], ['implementation', ['b']]])
+  })
+
+  it("attaches the epic's title from the same project", () => {
+    const cols = boardColumns(stages, [
+      feature('e', { title: 'Epic E', group: true }),
+      feature('a', { parent: 'e' }),
+      feature('b', { parent: 'missing' }),
+      feature('c', { parent: 'e', projectId: 'q' }),
+    ])
+    expect(cols[0].cards.map((k) => [k.feature.slug, k.epic])).toEqual([['a', 'Epic E'], ['b', null], ['c', null]])
   })
 })

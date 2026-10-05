@@ -2,14 +2,14 @@
 feature: 2026-10-05-02-workflow-discovery-sidebar
 phase: implementation
 status: draft
-version: 2
+version: 3
 created: 2026-10-05
 updated: 2026-10-05
 approved_at:
 based_on:
   - 03-design.md@1
   - 04-structure.md@1
-  - 05-plan.md@5
+  - 05-plan.md@6
 forced: []
 ---
 
@@ -22,7 +22,7 @@ forced: []
 - [x] Slice 3 — The tree
 - [x] Slice 4 — Feature page
 - [x] Slice 5 — Manual link
-- [ ] Slice 6 — Board (appetite cut 1)
+- [x] Slice 6 — Board (appetite cut 1) (manual check pending)
 
 ## Slice 1 — Tracer: features from the bundled workflow, read once
 
@@ -182,6 +182,74 @@ Deviations and readings (all small, two-way):
   sessions too.
 - Features re-derive on every sessions-slice write (`set('sessions')` calls
   `publish()`), including liveness flips and renames.
+
+## Slice 6 — Board (appetite cut 1)
+
+Verification: `npm test` 129/129 passed outside the sandbox (inside it the
+real-tmux tests fail and the real-watcher tests skip, as before);
+`npm run typecheck` clean; `npm run build` clean. Manual check pending.
+
+Deviations and readings (all small, two-way):
+
+- Cards are the non-`group` features rather than literally `kind: feature`,
+  so no app code names a grove kind (Desired state 8). With the bundled
+  workflow, that is the same set.
+- The toggle sits in the content header (`shell/ViewToggle.tsx`), on every
+  page. While `view` is `board`, the content area shows the Board whatever
+  is focused; clicking a sidebar session or feature row focuses it but the
+  Board stays until the human switches to List. Clicking a Board card sets
+  `view: 'list'` and the focused feature in one `ui:set`.
+- The Board shows every project's features; a card's meta line adds the
+  project name only when more than one project is registered.
+- The plan's "check `StatusTone` has `idle`" step was dropped while
+  planning: it does, so cards use the `idle` tone for their card-state label.
+
+## PR description
+
+**Workflow, discovery and sidebar** (epic child 2,
+`2026-10-05-opencode-feature-workspace`)
+
+Features now appear and move through stages driven only by `workflow.yaml`.
+
+Design in brief: core (Electron main) loads `workflow.yaml` from
+`config.json`'s `workflow` path, or the bundled grove example
+(`resources/workflow.yaml`, flows `full`/`standard`/`small`). It validates
+the file, watches it, and keeps the last valid one behind a banner when it
+breaks. Per project it resolves the discovery root, watches it with
+chokidar and reads frontmatter with `yaml` (core schema, own splitter, ADR
+0013). Pure functions derive each feature's effective stages (kind ∩ flow),
+current stage, "unapproved" passes, flags, warnings and card state; core
+pushes the whole `features` slice to the renderer, which derives nothing.
+New UI state (`view`, `collapsed`, `focusedFeature`) is additive at
+`schemaVersion: 1`.
+
+Slices:
+
+1. Tracer: features from the bundled workflow, read once at startup.
+2. Live discovery (chokidar) and a guarded, validated workflow with a
+   banner; custom `workflow` path.
+3. The tree: project → epic → feature → linked sessions, plus unlinked
+   sessions; collapse persists; Cmd+1..9 follows the tree.
+4. Feature page: stage timeline (complete / current / unapproved /
+   upcoming), card state, flags, warnings, files, linked sessions.
+5. Manual link: "Link…" on a session card; `session:link` pins the link;
+   linked live sessions make a feature `running`.
+6. Board: List/Board toggle; one column per stage, epics excluded,
+   children show their epic's name.
+
+How to verify:
+
+- `npm test` (outside a sandbox that blocks the tmux socket and
+  `fs.watch`), `npm run typecheck`, `npm run build`.
+- `npm run dev`, register this repo: features show under the project with
+  stage and card state; `mkdir` a folder with `feature.md` and it appears;
+  open a feature page; link a terminal to a feature and restart; toggle to
+  Board and click a card.
+
+Known gaps: no grove feature reaches `done` until the grove-skills
+`implementation` approval unit lands (ADR 0014); an epic reads `Done` from
+its own stages only (human feedback after slice 4, pending an epic design
+revision).
 
 ## Human feedback
 

@@ -1,0 +1,26 @@
+.board {
+  flex: 1;
+  display: flex;
+  gap: var(--sp-3);
+  padding: var(--sp-4);
+  overflow-x: auto;
+}
+
+.column {
+  flex: 0 0 220px;
+  display: flex;
+  flex-direction: column;
+  gap: var(--sp-2);
+}
+
+.heading {
+  margin: 0;
+  font-size: var(--fs-sm);
+  font-weight: var(--fw-semibold);
+  color: var(--text-3);
+  text-transform: uppercase;
+}
+
+.count {
+  font-weight: var(--fw-regular);
+}

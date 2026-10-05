@@ -56,3 +56,18 @@ export function buildTree(projects: Project[], features: Feature[], sessions: Se
 export function treeSessionOrder(tree: TreeNode[]): Session[] {
   return tree.flatMap((n) => (n.type === 'session' ? [n.session] : treeSessionOrder(n.children)))
 }
+
+export interface BoardCard { feature: Feature; epic: string | null }
+
+// One column per workflow stage; non-group features by current stage, done ones in the last column.
+export function boardColumns(stages: { id: string; label: string }[], features: Feature[]): { stage: { id: string; label: string }; cards: BoardCard[] }[] {
+  const last = stages[stages.length - 1]?.id
+  const epicTitle = (f: Feature) =>
+    features.find((e) => e.projectId === f.projectId && e.slug === f.parent)?.title ?? null
+  return stages.map((stage) => ({
+    stage,
+    cards: features
+      .filter((f) => !f.group && (f.currentStage ?? last) === stage.id)
+      .map((feature) => ({ feature, epic: feature.parent === null ? null : epicTitle(feature) })),
+  }))
+}

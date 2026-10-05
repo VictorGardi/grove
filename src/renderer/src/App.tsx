@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react'
 import type { Session } from '@shared/types'
+import { Board } from './components/Board'
 import { ConfirmDialog } from './components/ConfirmDialog'
 import { FeaturePage } from './components/FeaturePage'
 import { NewSessionModal } from './components/NewSessionModal'
@@ -8,6 +9,7 @@ import { TerminalView } from './components/TerminalView'
 import { AppShell } from './components/shell/AppShell'
 import { ContentHeader } from './components/shell/ContentHeader'
 import { TopBar } from './components/shell/TopBar'
+import { ViewToggle } from './components/shell/ViewToggle'
 import { Banner } from './components/ui/Banner'
 import { Button } from './components/ui/Button'
 import { useSlices } from './stores/slices'
@@ -15,7 +17,7 @@ import { buildTree, treeSessionOrder } from './tree'
 import s from './App.module.css'
 
 export default function App() {
-  const { projects, sessions, ui, features, errors, hydrate, setFocused } = useSlices()
+  const { projects, sessions, ui, features, errors, hydrate, setFocused, setView, openFeature } = useSlices()
   const [newFor, setNewFor] = useState<{ projectId?: string } | null>(null)
   const [confirmKill, setConfirmKill] = useState<Session | null>(null)
 
@@ -45,7 +47,8 @@ export default function App() {
   const projectId = focusedFeature ? focusedFeature.projectId : focused?.projectId
   const project = projects.find((p) => p.id === projectId)
   const title = focusedFeature ? focusedFeature.title : focused?.label
-  const crumbs = title ? [...(project ? [project.name] : []), title] : []
+  const board = ui.view === 'board'
+  const crumbs = board ? ['Board'] : title ? [...(project ? [project.name] : []), title] : []
 
   return (
     <>
@@ -58,8 +61,11 @@ export default function App() {
         sidebar={<Sidebar onNew={openNew} />}
         content={
           <>
-            <ContentHeader crumbs={crumbs} />
-            {focusedFeature ? (
+            <ContentHeader crumbs={crumbs} right={<ViewToggle view={ui.view} onChange={setView} />} />
+            {board ? (
+              <Board stages={features.stages} features={features.items} projects={projects}
+                onOpen={(f) => openFeature({ projectId: f.projectId, slug: f.slug })} />
+            ) : focusedFeature ? (
               <FeaturePage feature={focusedFeature} sessions={sessions} onFocusSession={setFocused} />
             ) : focused?.lastStatus === 'running' ? (
               <TerminalView key={focused.id} sessionId={focused.id} />
