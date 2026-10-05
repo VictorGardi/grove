@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import type { ViewerTarget } from './types'
-import { artifactUrl, parseArtifactUrl } from './artifactUrl'
+import { artifactUrl, isViewable, parseArtifactUrl } from './artifactUrl'
 
 describe('artifactUrl', () => {
   it('encodes path segments and appends the hash', () => {
@@ -26,5 +26,15 @@ describe('artifactUrl', () => {
       'grove-artifact://p1/s/',
       'not a url',
     ]) expect(parseArtifactUrl(url)).toBeNull()
+  })
+})
+
+describe('isViewable', () => {
+  it.each(['03-design.html', 'x.HTM', 'feature.md', 'refs/a.png', 'a.jpg', 'a.jpeg', 'a.gif', 'a.webp', 'a.svg'])('accepts %s', (name) => {
+    expect(isViewable(name)).toBe(true)
+  })
+
+  it.each(['notes.txt', 'Makefile', 'a.md.bak', 'dir.d/x'])('rejects %s', (name) => {
+    expect(isViewable(name)).toBe(false)
   })
 })

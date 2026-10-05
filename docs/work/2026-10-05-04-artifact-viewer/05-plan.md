@@ -205,4 +205,120 @@ the Claude Code sandbox: run the install outside it.
   DevTools Network tab shows no `jsdelivr` request; switch macOS appearance
   and reopen → the diagram theme follows.
 
+## Slice 3 — Markdown and images
+
+Context (code at `106a688`): `src/main/artifacts.ts` serves the `assets` host
+from a `Map` of name → absolute file (`mermaid.min.js`, `mermaid-init.js`)
+as `text/javascript`, and artifacts only when `/\.html?$/i` matches, through
+`rewriteHtml`. `respond(body, status, type = 'text/html; charset=utf-8')`
+always adds the CSP header. `src/core/artifacts/html.ts` exports
+`MERMAID_SCRIPTS` (the two bundled `<script>` tags). The frontmatter splitter
+is `readFrontmatter(text): { data, body, error }` in
+`src/core/workflow/frontmatter.ts` (ADR 0013; `error` non-null on an unclosed
+block, YAML error or non-mapping). `src/renderer/src/components/FeaturePage.tsx`
+makes a Files row a `fileLink` button only for `/\.html?$/i`. markdown-it 15
+ships no types: `@types/markdown-it` 14.2.0 provides them (devDependency). The
+npm cache is not writable in the Claude Code sandbox: run installs outside it.
+No grove-render page embeds an `<img>`; the epic's `04-structure.html` links
+`refs/xirp-reference.png` with `<a href>`, so following that link loads the
+image through the handler (navigation is not intercepted until slice 4).
+
+- [x] Run `npm install --save-exact markdown-it@15.0.2` and
+  `npm install --save-dev --save-exact @types/markdown-it@14.2.0`.
+- [x] Write failing tests in `src/shared/artifactUrl.test.ts` (new `describe('isViewable')`):
+  `true` for `'03-design.html'`, `'x.HTM'`, `'feature.md'`, `'refs/a.png'`,
+  `'a.jpg'`, `'a.jpeg'`, `'a.gif'`, `'a.webp'`, `'a.svg'`; `false` for
+  `'notes.txt'`, `'Makefile'`, `'a.md.bak'`, `'dir.d/x'`.
+- [x] In `src/shared/artifactUrl.ts` add
+  `export const VIEWABLE = ['.html', '.htm', '.md', '.png', '.jpg', '.jpeg', '.gif', '.webp', '.svg']`
+  and `export function isViewable(name: string): boolean` →
+  `const ext = /\.[^./]+$/.exec(name)?.[0].toLowerCase(); return ext !== undefined && VIEWABLE.includes(ext)`
+  (no `node:path`: shared is compiled for the renderer too).
+- [x] Run `npm test -- src/shared/artifactUrl.test.ts` → passes.
+- [x] Write failing test `src/core/artifacts/markdown.test.ts` (`renderMarkdown`, plus `MERMAID_SCRIPTS` from `./html`):
+  - frontmatter: `'---\nstatus: approved\nbased_on:\n  - a@1\n  - b@2\n---\n# Title\n'`
+    (name `'03-design.md'`) contains `<table class="frontmatter">`,
+    `<th>status</th><td>approved</td>`, `<th>based_on</th><td>a@1, b@2</td>`,
+    `<h1>Title</h1>`, and not `status: approved`.
+  - task list: `'- [x] done\n- [x] open\n'` contains
+    `<input type="checkbox" disabled checked> done` and
+    `<input type="checkbox" disabled> open`, contains `class="task-list-item"`,
+    and not `[x]` or `[ ]`.
+  - mermaid: `` '```mermaid\nflowchart LR\n  A-->B\n```\n' `` contains
+    `<pre class="mermaid">flowchart LR\n  A--&gt;B\n</pre>` and `MERMAID_SCRIPTS`;
+    `'# no diagram\n'` does not contain `mermaid.min.js`.
+  - escaping: `'<script>alert(1)</script>\n'` does not contain `<script>alert`
+    and contains `&lt;script&gt;alert(1)&lt;/script&gt;`.
+  - frontmatter value escaping: `'---\ntitle: "<b>x</b>"\n---\n'` contains `&lt;b&gt;x&lt;/b&gt;`.
+  - no frontmatter: the real `docs/work/2026-10-05-04-artifact-viewer/00-ticket.md`
+    (read with `fs.readFileSync(path.resolve('docs/work/2026-10-05-04-artifact-viewer/00-ticket.md'), 'utf8')`,
+    name `'00-ticket.md'`) starts with `<!doctype html>`, contains
+    `<title>00-ticket.md</title>`, `<link rel="stylesheet" href="grove-artifact://assets/markdown.css">`,
+    `<h3>`, and not `class="frontmatter"`.
+  - broken frontmatter: `'---\na: [\n---\nbody\n'` contains `body` and not `class="frontmatter"`.
+- [x] Create `src/core/artifacts/markdown.ts`:
+  - `import MarkdownIt from 'markdown-it'`, `readFrontmatter` from `../workflow/frontmatter`,
+    `MERMAID_SCRIPTS` from `./html`, `ARTIFACT_SCHEME, ASSETS_HOST` from `@shared/artifactUrl`.
+  - `const md = new MarkdownIt('default', { html: false })`; `const esc = md.utils.escapeHtml`.
+  - Task lists: `md.core.ruler.push('task_lists', (state) => { … })` — for each
+    index `i >= 2` where `tokens[i].type === 'inline'`, `tokens[i - 1].type === 'paragraph_open'`,
+    `tokens[i - 2].type === 'list_item_open'`, `/^\[([ xX])\] /` matches
+    `tokens[i].content`, and `tokens[i].children?.[0]?.type === 'text'`: drop
+    the first 4 characters of that text child's `content`, `unshift` a
+    `new state.Token('html_inline', '', 0)` with `content`
+    `` `<input type="checkbox" disabled${m[1] === ' ' ? '' : ' checked'}> ` ``
+    into `children`, and `tokens[i - 2].attrJoin('class', 'task-list-item')`.
+  - Mermaid fences: keep `const fence = md.renderer.rules.fence!`; set
+    `md.renderer.rules.fence = (tokens, idx, opts, env, self) => tokens[idx].info.trim() === 'mermaid' ? `<pre class="mermaid">${esc(tokens[idx].content)}</pre>\n` : fence(tokens, idx, opts, env, self)`.
+  - `fmValue(v: unknown): string` → arrays: items through `fmValue` joined with
+    `', '`; `null`/`undefined` → `''`; other objects → `JSON.stringify(v)`;
+    else `String(v)`.
+  - `export function renderMarkdown(source: string, name: string): string`:
+    `fm = readFrontmatter(source)`; `body = fm.error ? source : fm.body`;
+    `entries = fm.error ? [] : Object.entries(fm.data)`; `table` =
+    `''` when `entries` is empty, else
+    `<table class="frontmatter"><tbody>` + per entry `<tr><th>${esc(k)}</th><td>${esc(fmValue(v))}</td></tr>` + `</tbody></table>`;
+    `tokens = md.parse(body, {})`; `mermaid = tokens.some((t) => t.type === 'fence' && t.info.trim() === 'mermaid')`;
+    return `<!doctype html><html><head><meta charset="utf-8"><title>${esc(name)}</title><link rel="stylesheet" href="${ARTIFACT_SCHEME}://${ASSETS_HOST}/markdown.css">${mermaid ? MERMAID_SCRIPTS : ''}</head><body><main class="markdown-body">${table}${md.renderer.render(tokens, md.options, {})}</main></body></html>`.
+- [x] Run `npm test -- src/core/artifacts/markdown.test.ts` → passes.
+- [x] Create `resources/viewer/markdown.css` (`:root { color-scheme: light dark }`):
+  custom properties `--fg #1f2328`, `--muted #59636e`, `--bg #ffffff`,
+  `--subtle #f6f8fa`, `--border #d1d9e0`, `--link #0969da`, overridden in
+  `@media (prefers-color-scheme: dark)` with `#e6edf3`, `#9198a1`, `#0d1117`,
+  `#151b23`, `#3d444d`, `#4493f8`. `body { margin: 0; background: var(--bg); color: var(--fg); font: 14px/1.6 system-ui, -apple-system, sans-serif }`;
+  `.markdown-body { max-width: 860px; margin: 0 auto; padding: 24px 32px 48px }`;
+  `a { color: var(--link) }`; `h1, h2 { padding-bottom: .3em; border-bottom: 1px solid var(--border) }`;
+  `code, pre { font: 12.5px/1.45 ui-monospace, SFMono-Regular, Menlo, monospace; background: var(--subtle); border-radius: 6px }`;
+  `code { padding: .15em .35em }`; `pre { padding: 12px 16px; overflow: auto }`; `pre code { padding: 0; background: none }`;
+  `table { border-collapse: collapse; margin: 12px 0; display: block; overflow: auto }`;
+  `th, td { border: 1px solid var(--border); padding: 4px 10px; text-align: left; vertical-align: top }`;
+  `th { background: var(--subtle) }`; `table.frontmatter { font-size: 12.5px; color: var(--muted) }`;
+  `blockquote { margin: 0; padding: 0 1em; color: var(--muted); border-left: 3px solid var(--border) }`;
+  `li.task-list-item { list-style: none }`; `li.task-list-item input { margin: 0 .4em 0 -1.3em }`;
+  `pre.mermaid { background: none; text-align: center }`; `img { max-width: 100% }`;
+  `hr { border: 0; border-top: 1px solid var(--border) }`.
+- [x] In `src/main/artifacts.ts`:
+  - Import `isViewable` from `@shared/artifactUrl` and `renderMarkdown` from `../core/artifacts/markdown`.
+  - Add `const HTML = 'text/html; charset=utf-8'` (default `type` of `respond`) and
+    `const MIME: Record<string, string> = { '.js': 'text/javascript; charset=utf-8', '.css': 'text/css; charset=utf-8', '.png': 'image/png', '.jpg': 'image/jpeg', '.jpeg': 'image/jpeg', '.gif': 'image/gif', '.webp': 'image/webp', '.svg': 'image/svg+xml' }`.
+  - `respond` takes `body: string | Buffer`.
+  - Assets map gains `['markdown.css', path.join(app.getAppPath(), 'resources', 'viewer', 'markdown.css')]`;
+    asset responses use `MIME[path.extname(file)]` (Mermaid's `?asset` path ends in `.js`).
+  - Artifact branch: `file = t && isViewable(t.path) ? core.artifactPath(t.projectId, t.slug, t.path) : null`;
+    no `file` → `respond(REFUSAL, 404)`; `ext = path.extname(file).toLowerCase()`;
+    inside the existing `try`: `.md` → `respond(renderMarkdown(await fs.promises.readFile(file, 'utf8'), path.posix.basename(t.path)), 200)`;
+    `.html`/`.htm` → as today; else `respond(await fs.promises.readFile(file), 200, MIME[ext])`.
+- [x] In `src/renderer/src/components/FeaturePage.tsx`: import `isViewable`
+  from `@shared/artifactUrl` and use `isViewable(a.name)` in place of `/\.html?$/i.test(a.name)`.
+- [x] Run `npm test`
+- [x] Run `npm run typecheck`
+- [x] Run `npm run build`
+- [ ] Manual (human), `npm run dev`: open
+  `2026-10-05-02-workflow-discovery-sidebar/05-plan.md` (frontmatter table,
+  disabled checkboxes), this feature's `02-research.md` (its Mermaid diagram
+  renders), and `00-ticket.md` (renders without a table); flip macOS
+  appearance and reopen one → colours follow.
+- [ ] Manual (human): open the epic's `04-structure.html`, click the
+  `refs/xirp-reference.png` link → the image shows in the panel.
+
 ## Open questions

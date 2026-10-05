@@ -64,4 +64,30 @@ Deviations (small, two-way):
 - Asset responses also carry the CSP header (harmless; the design says every
   response does) with `Content-Type: text/javascript`.
 
+## Slice 3 — Markdown and images
+
+Verification: `npm test` 177/177 passed (outside the sandbox, as before);
+`npm run typecheck` clean; `npm run build` clean. Manual checks are for the
+human.
+
+Deviations (small, two-way):
+
+- Added `@types/markdown-it` 14.2.0 as a devDependency (markdown-it 15 ships
+  no types); both installs ran outside the sandbox.
+- `isViewable(name)` added next to `VIEWABLE` in `src/shared/artifactUrl.ts`,
+  shared by the handler and `FeaturePage`.
+- Broken frontmatter (`readFrontmatter` error) renders the whole source as
+  markdown with no table, so nothing is hidden.
+- The Mermaid scripts are added to a markdown page only when it has a
+  `mermaid` fence.
+- `respond` takes `string | Uint8Array<ArrayBuffer>` (a plain `Buffer` fails
+  the `BodyInit` typecheck).
+- The handler takes the extension from the requested path (already checked
+  by `isViewable`), not the resolved file, so a symlink inside the folder to
+  a non-viewable file can't be served with a missing MIME type. The guard is
+  `!t || !file` so `t` narrows.
+- The structure's "embedded `refs/xirp-reference.png` shows" is checked by
+  following the link: no page embeds it with `<img>`; `04-structure.html`
+  links it.
+
 ## Open questions

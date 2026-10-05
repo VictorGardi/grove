@@ -1,3 +1,4 @@
+import { isViewable } from '@shared/artifactUrl'
 import type { Feature, Session } from '@shared/types'
 import { CARD_STATE_LABELS, progressLabel } from '../featureLabels'
 import { Badge } from './ui/Badge'
@@ -44,7 +45,7 @@ export function FeaturePage({ feature: f, sessions, onFocusSession, onOpenArtifa
         <ul className={s.files}>
           {f.artifacts.map((a) => (
             <li key={a.name} className={s.file}>
-              {/\.html?$/i.test(a.name)
+              {isViewable(a.name)
                 ? <button type="button" className={s.fileLink} onClick={() => onOpenArtifact(a.name)}>{a.name}</button>
                 : <span>{a.name}</span>}
               {a.stage && <span className={s.note}>{a.stage}{a.role === 'review' ? ' · review' : ''}</span>}

@@ -2,6 +2,13 @@ import type { ViewerTarget } from './types'
 
 export const ARTIFACT_SCHEME = 'grove-artifact'
 export const ASSETS_HOST = 'assets' // bundled viewer assets; project ids are UUIDs, so no clash
+export const VIEWABLE = ['.html', '.htm', '.md', '.png', '.jpg', '.jpeg', '.gif', '.webp', '.svg']
+
+// By extension only; no node:path here, shared is compiled for the renderer too.
+export function isViewable(name: string): boolean {
+  const ext = /\.[^./]+$/.exec(name)?.[0].toLowerCase()
+  return ext !== undefined && VIEWABLE.includes(ext)
+}
 
 // grove-artifact://<projectId>/<slug>/<path>#<hash>
 export function artifactUrl(t: ViewerTarget): string {
