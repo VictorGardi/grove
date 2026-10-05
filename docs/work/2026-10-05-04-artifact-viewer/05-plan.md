@@ -313,12 +313,12 @@ image through the handler (navigation is not intercepted until slice 4).
 - [x] Run `npm test`
 - [x] Run `npm run typecheck`
 - [x] Run `npm run build`
-- [ ] Manual (human), `npm run dev`: open
+- [x] Manual (human), `npm run dev`: open
   `2026-10-05-02-workflow-discovery-sidebar/05-plan.md` (frontmatter table,
   disabled checkboxes), this feature's `02-research.md` (its Mermaid diagram
   renders), and `00-ticket.md` (renders without a table); flip macOS
   appearance and reopen one → colours follow.
-- [ ] Manual (human): open the epic's `04-structure.html`, click the
+- [x] Manual (human): open the epic's `04-structure.html`, click the
   `refs/xirp-reference.png` link → the image shows in the panel.
 
 ## Open questions
