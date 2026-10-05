@@ -28,7 +28,7 @@ this implementation.
 - [x] Slice 2. Sessions persist, reconcile on start, and go `gone`
 - [x] Slice 3. OpenCode sessions with a minted id and the user's shell env
 - [x] Slice 4. Session and project lifecycle in the sidebar
-- [ ] Slice 5. Terminal fidelity and keys
+- [x] Slice 5. Terminal fidelity and keys
 - [ ] Slice 6. Finder and Dock launch work like `npm run dev`
 
 ## Slice 1
@@ -185,12 +185,12 @@ Reported passing by the human on 2026-10-05.
 
 ### Manual verification
 
-To be done by the human. Results go here. Only sessions created after this
+Reported passing by the human on 2026-10-05, including the modal fix (deviation 4). Only sessions created after this
 slice get the pane colours, so use a **new** Terminal session.
 
-- [ ] Truecolor: the `awk` gradient one-liner from the plan shows a smooth red-to-green band.
-- [ ] OSC 11: `printf '\e]11;?\a'; sleep 0.2` echoes `rgb:1e1e/1e1e/1e1e`.
-- [ ] Keys: `python3 spikes/electron/keylog.py "$TMPDIR/keylog.txt"` matches the plan's table.
+- [x] Truecolor: the `awk` gradient one-liner from the plan shows a smooth red-to-green band.
+- [x] OSC 11: `printf '\e]11;?\a'; sleep 0.2` echoes `rgb:1e1e/1e1e/1e1e`.
+- [x] Keys: `python3 spikes/electron/keylog.py "$TMPDIR/keylog.txt"` matches the plan's table.
 
 ### Deviations (small, two-way)
 
@@ -220,3 +220,29 @@ slice get the pane colours, so use a **new** Terminal session.
    modal's `position: fixed` backdrop, which had no z-index. The
    ConfirmDialog had the same problem. Fix: `isolation: 'isolate'` on the
    `TerminalView` container, and `zIndex: 1000` on both overlay backdrops.
+
+## Slice 6
+
+### Automated verification (2026-10-05)
+
+- `npm run typecheck` → passes
+- `npm test` (sandbox off) → 7 files, 47 tests pass. The `/opt/homebrew/bin/tmux` fallback test ran (not skipped)
+- `grep -rn "from 'electron'" src/core` → no output
+- `npm run build` → passes. The `npm run dev` smoke run for 10 s logged no errors
+
+### Manual verification
+
+To be done by the human. Results go here.
+
+- [ ] Launch Services env (`env -i /usr/bin/open -n -a …`): an OpenCode session replies to `say hi`. In a Terminal session, `locale` shows `LANG="en_US.UTF-8"` and `$PATH` contains `/opt/homebrew/bin`. Relaunch the same way → the sessions re-attach.
+- [ ] Dock launch: same checks, or "Dock launch not verifiable with the dev binary; carried to child 8".
+
+Dock-launch env result: *pending*.
+
+### Deviations (small, two-way)
+
+1. **`minimalEnv` rebuilds `PATH`** from the non-empty entries plus the missing
+   `FIXED_DIRS`, so empty segments (`::`) are dropped.
+2. **Main's startup errors** live in a local `errors` array in `index.ts`.
+   `app:errors` returns `[...errors, ...core.getErrors()]` through the
+   `getErrors` argument added to `registerIpc` in slice 1.

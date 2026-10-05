@@ -10,11 +10,15 @@ import { buildMenu } from './menu'
 let win: BrowserWindow | null = null
 
 app.whenReady().then(async () => {
+  const errors: string[] = []
+  const tmuxPath = findTmux(process.env)
+  if (!tmuxPath) errors.push('tmux not found (looked in PATH, /opt/homebrew/bin, /usr/local/bin)')
+
   const core = createCore({
     configPath: path.join(os.homedir(), '.config', 'grove', 'config.json'),
     statePath: path.join(app.getPath('userData'), 'state.json'),
     backend: new TmuxBackend({
-      tmuxPath: findTmux(process.env) ?? 'tmux',
+      tmuxPath: tmuxPath ?? 'tmux',
       socket: 'grove',
       confPath: path.join(app.getAppPath(), 'resources', 'tmux.conf'),
       env: minimalEnv(process.env),
@@ -22,7 +26,7 @@ app.whenReady().then(async () => {
   })
   await core.start()
 
-  registerIpc(core, () => win, () => core.getErrors())
+  registerIpc(core, () => win, () => [...errors, ...core.getErrors()])
   buildMenu((a) => {
     if (win && !win.isDestroyed()) win.webContents.send('menu:action', a)
   })

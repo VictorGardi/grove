@@ -1,16 +1,24 @@
 import fs from 'node:fs'
 import path from 'node:path'
 
-// Strip TMUX vars so a server started from inside tmux isn't treated as nested.
+// Finder/Dock launches get launchd's PATH (/usr/bin:/bin:/usr/sbin:/sbin), which misses Homebrew.
+export const FIXED_DIRS = ['/opt/homebrew/bin', '/usr/local/bin']
+
+// The env for the tmux server and attach clients. Sessions re-read the user's
+// full env through loginShellArgv / tmux's login shell (ADR 0010).
 export function minimalEnv(base: NodeJS.ProcessEnv): NodeJS.ProcessEnv {
   const env = { ...base }
+  // strip TMUX vars so a server started from inside tmux isn't treated as nested
   delete env.TMUX
   delete env.TMUX_PANE
+  const dirs = (env.PATH ?? '').split(':').filter(Boolean)
+  env.PATH = [...dirs, ...FIXED_DIRS.filter((d) => !dirs.includes(d))].join(':')
+  if (!env.LANG) env.LANG = 'en_US.UTF-8'
   return env
 }
 
-export function findTmux(env: NodeJS.ProcessEnv): string | null {
-  for (const dir of (env.PATH ?? '').split(':')) {
+export function findTmux(env: NodeJS.ProcessEnv, dirs: string[] = FIXED_DIRS): string | null {
+  for (const dir of [...(env.PATH ?? '').split(':'), ...dirs]) {
     if (!dir) continue
     const p = path.join(dir, 'tmux')
     try {

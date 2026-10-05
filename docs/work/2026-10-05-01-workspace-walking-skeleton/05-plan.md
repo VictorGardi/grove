@@ -648,12 +648,12 @@ off, and every other key reaches the pane unchanged.
 ### Verify (slice 5)
 
 - [x] `npm run typecheck` and `npm test` pass (sandbox off).
-- [ ] *Manual (truecolor):* in a Terminal session run
+- [x] *Manual (truecolor):* in a Terminal session run
   `awk 'BEGIN{for(i=0;i<80;i++){r=255-i*3;g=i*3;printf "\033[48;2;%d;%d;100m ",r,g}; printf "\033[0m\n"}'`
   → a smooth red-to-green band, not 256-colour steps.
-- [ ] *Manual (OSC 11):* in a Terminal session run
+- [x] *Manual (OSC 11):* in a Terminal session run
   `printf '\e]11;?\a'; sleep 0.2` → the reply echoes `rgb:1e1e/1e1e/1e1e`.
-- [ ] *Manual (keys):* in a Terminal session run
+- [x] *Manual (keys):* in a Terminal session run
   `python3 spikes/electron/keylog.py "$TMPDIR/keylog.txt"`, then press each key
   below. The hex line shown must match. Exit with Ctrl+C three times, or close
   the session.
@@ -672,7 +672,7 @@ off, and every other key reaches the pane unchanged.
   | Cmd+K | nothing printed |
   | Paste (Cmd+V of `hi`) | `6869` (keylog doesn't enable bracketed paste) |
 
-- [ ] Stop for review.
+- [x] Stop for review.
 
 ---
 
@@ -681,7 +681,7 @@ off, and every other key reaches the pane unchanged.
 Outcome: the built app, launched outside a shell, finds tmux, starts OpenCode
 with the login-shell env, and has a UTF-8 locale.
 
-- [ ] **Test first** in `env.test.ts`:
+- [x] **Test first** in `env.test.ts`:
   - `findTmux({ PATH: '/usr/bin:/bin' })` returns `/opt/homebrew/bin/tmux`. Use
     `it.skipIf(!fs.existsSync('/opt/homebrew/bin/tmux'))`.
   - `findTmux({ PATH: '' })` with a fake `dirs` argument pointing at an empty
@@ -690,19 +690,19 @@ with the login-shell env, and has a UTF-8 locale.
     `:/opt/homebrew/bin:/usr/local/bin` and `LANG === 'en_US.UTF-8'`.
   - `minimalEnv({ PATH: '/opt/homebrew/bin:/usr/bin', LANG: 'sv_SE.UTF-8' })`
     keeps `LANG` and doesn't duplicate `/opt/homebrew/bin`.
-- [ ] `src/core/env.ts`:
+- [x] `src/core/env.ts`:
   - `export const FIXED_DIRS = ['/opt/homebrew/bin', '/usr/local/bin']`.
   - `findTmux(env, dirs = FIXED_DIRS)` searches `env.PATH` entries, then `dirs`.
   - `minimalEnv(base)` appends each missing `FIXED_DIRS` entry to `PATH` and sets
     `LANG = 'en_US.UTF-8'` when `LANG` is unset or empty. It still strips `TMUX`/`TMUX_PANE`.
-- [ ] `src/main/index.ts`: if `findTmux(process.env)` returns `null`, push
+- [x] `src/main/index.ts`: if `findTmux(process.env)` returns `null`, push
   `tmux not found (looked in PATH, /opt/homebrew/bin, /usr/local/bin)` to the
   startup errors, which `app:errors` returns. Still open the window.
   - `core.getErrors()` and main's own errors are concatenated for `app:errors`.
 
 ### Verify (slice 6)
 
-- [ ] `npm run typecheck`, `npm test` (sandbox off) and `npm run build` pass.
+- [x] `npm run typecheck`, `npm test` (sandbox off) and `npm run build` pass.
 - [ ] *Manual (Launch Services env):* quit grove. Then run
   `tmux -L grove kill-server`, so the next server starts with the app's env,
   not a shell's. This ends existing sessions: create one Terminal session
