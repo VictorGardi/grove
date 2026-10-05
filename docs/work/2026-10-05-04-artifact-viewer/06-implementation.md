@@ -18,7 +18,7 @@ forced: []
 ## Progress
 
 - [x] Slice 1 — Tracer: an HTML artifact opens in the panel
-- [ ] Slice 2 — Mermaid offline
+- [x] Slice 2 — Mermaid offline
 - [ ] Slice 3 — Markdown and images
 - [ ] Slice 4 — Navigation, switcher, Open review
 - [ ] Slice 5 — Live reload and layout
@@ -49,7 +49,9 @@ Deviations (small, two-way):
 
 Verification: `npm test` 157/157 passed (outside the sandbox, as in slice 1);
 `npm run typecheck` clean; `npm run build` clean and emits
-`out/main/chunks/mermaid.min-*.js`. Manual check is for the human.
+`out/main/chunks/mermaid.min-*.js`. Manual check (diagrams render, no
+`jsdelivr` request, theme follows appearance) passed, confirmed by the human
+on 2026-10-05.
 
 Deviations (small, two-way):
 

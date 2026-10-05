@@ -200,7 +200,7 @@ the Claude Code sandbox: run the install outside it.
 - [x] Run `npm test`
 - [x] Run `npm run typecheck`
 - [x] Run `npm run build`; then `ls out/main/chunks` shows a `mermaid.min-*.js`.
-- [ ] Manual (human): open the epic's `03-design.html`
+- [x] Manual (human): open the epic's `03-design.html`
   (`2026-10-05-opencode-feature-workspace`) → both diagrams render; the
   DevTools Network tab shows no `jsdelivr` request; switch macOS appearance
   and reopen → the diagram theme follows.
