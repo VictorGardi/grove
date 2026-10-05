@@ -363,7 +363,7 @@ Tree rules (design "Tree ordering", "Cmd+1..9", Desired state 4):
   (read `features` from `useSlices.getState()` too).
 - [x] Run `npm test` (outside the sandbox for the real-tmux and watcher
   tests), `npm run typecheck`, `npm run build`.
-- [ ] Manual in `npm run dev` (human): collapse the epic, restart, still
+- [x] Manual in `npm run dev` (human): collapse the epic, restart, still
   collapsed; Cmd+2 focuses the second session in tree order.
 
 ## Open questions

@@ -19,7 +19,7 @@ forced: []
 
 - [x] Slice 1 — Tracer: features from the bundled workflow, read once
 - [x] Slice 2 — Live discovery and a guarded workflow
-- [x] Slice 3 — The tree (manual check pending)
+- [x] Slice 3 — The tree
 - [ ] Slice 4 — Feature page
 - [ ] Slice 5 — Manual link
 - [ ] Slice 6 — Board (appetite cut 1)
@@ -111,7 +111,8 @@ Deviations (all small, two-way):
 
 Verification: `npm test` 109/109 passed outside the sandbox (inside it the
 real-tmux tests fail and the real-watcher tests skip, as before);
-`npm run typecheck` clean; `npm run build` clean.
+`npm run typecheck` clean; `npm run build` clean. Manual check passed (human,
+2026-10-05).
 
 Deviations (all small, two-way):
 
@@ -125,5 +126,14 @@ Deviations (all small, two-way):
   two-field `UiState`; it now expects `{ ...DEFAULT_UI, focusedSessionId: 'x' }`.
 - `stateStore` merges a saved `ui` over `DEFAULT_UI`, so any later
   `UiState` field also defaults for old files.
+
+## Human feedback
+
+- 2026-10-05, after slice 3: most rows read "Questions", so features are
+  hard to tell apart. Slice 4 adds card state to the row and the
+  "unapproved" rule (see slice 1's probe note).
+- 2026-10-05: may later want to switch the sidebar between a session view
+  and a feature view. Not in the design; a candidate for a new ticket or a
+  design revision. Not built here.
 
 ## Open questions
