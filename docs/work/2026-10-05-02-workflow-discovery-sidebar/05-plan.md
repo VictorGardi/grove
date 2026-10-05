@@ -545,7 +545,7 @@ Rules (design "Manual link", "`running` card state"; E-D6):
   at the end of its root `div`.
 - [x] Run `npm test` (outside the sandbox for the real-tmux and watcher
   tests), `npm run typecheck`, `npm run build`.
-- [ ] Manual in `npm run dev` (human): link a terminal to this feature; it
+- [x] Manual in `npm run dev` (human): link a terminal to this feature; it
   moves under the feature and the feature reads `running`; restart; still
   linked; link it to None; it moves back to unlinked.
 
