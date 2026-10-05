@@ -25,7 +25,7 @@ this implementation.
 ## Slices
 
 - [x] Slice 1. Tracer: add a project, open a terminal session in tmux
-- [ ] Slice 2. Sessions persist, reconcile on start, and go `gone`
+- [x] Slice 2. Sessions persist, reconcile on start, and go `gone`
 - [ ] Slice 3. OpenCode sessions with a minted id and the user's shell env
 - [ ] Slice 4. Session and project lifecycle in the sidebar
 - [ ] Slice 5. Terminal fidelity and keys
@@ -87,11 +87,11 @@ Reported passing by the human on 2026-10-05.
 
 ### Manual verification
 
-To be done by the human. Results go here.
+Reported passing by the human on 2026-10-05.
 
-- [ ] Two sessions, `echo hello` in the focused one, Cmd+Q, `npm run dev` → both listed, focused one attached showing `hello`.
-- [ ] `tmux -L grove kill-session -t =grove-<id>` while running → `gone` within 5 s. Quit, kill another, relaunch → `gone`. `jq '.sessions[].endedAt' ~/Library/Application\ Support/grove/state.json` prints a timestamp for both.
-- [ ] Quit, `echo '{' > ~/Library/Application\ Support/grove/state.json`, relaunch → red banner, one `state.json.bad-*` file.
+- [x] Two sessions, `echo hello` in the focused one, Cmd+Q, `npm run dev` → both listed, focused one attached showing `hello`.
+- [x] `tmux -L grove kill-session -t =grove-<id>` while running → `gone` within 5 s. Quit, kill another, relaunch → `gone`. `jq '.sessions[].endedAt' ~/Library/Application\ Support/grove/state.json` prints a timestamp for both.
+- [x] Quit, `echo '{' > ~/Library/Application\ Support/grove/state.json`, relaunch → red banner, one `state.json.bad-*` file.
 
 ### Deviations (small, two-way)
 
@@ -106,3 +106,28 @@ To be done by the human. Results go here.
    check. The plan requires both behaviours but listed no tests for them.
 4. **`FakeBackend` is a class** (`src/core/testing/fakeBackend.ts`). It also
    keeps `handles`, so tests can call `emitExit()` on an attach.
+
+## Slice 3
+
+### Automated verification (2026-10-05)
+
+- `npm run typecheck` → passes
+- `npm test` (sandbox off) → 6 files, 32 tests pass, tmux tests not skipped
+- `grep -rn "from 'electron'" src/core` → no output
+- `npm run build` → passes
+- `mintSessionId(1776959130999)` gives the prefix `ses_244fb7288ffe`, which matches the real id on this machine
+
+### Manual verification
+
+To be done by the human. Results go here.
+
+- [ ] Cmd+T → OpenCode → the TUI opens in the repo. `say hi` + Enter gets a model reply, with no `provider.auth` / 403 error.
+- [ ] `tmux -L grove list-panes -t =grove-<id> -F '#{pane_start_command}'` contains the `opencodeSessionId` from `jq '.sessions[] | {tmuxName, opencodeSessionId}' ~/Library/Application\ Support/grove/state.json`.
+
+### Deviations (small, two-way)
+
+1. **The id is minted in `newSession`, not in `core.ts`.** `newSession` already
+   gets `now`, so it sets `opencodeSessionId` for `kind: 'opencode'`. Core
+   builds the `loginShellArgv` from that id.
+2. **Extra test:** a terminal create passes no `argv`. The plan states this
+   rule but listed no test for it.

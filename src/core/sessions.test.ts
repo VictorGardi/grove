@@ -106,6 +106,28 @@ describe('core sessions', () => {
     expect(a.getSlices().sessions[0].lastStatus).toBe('gone')
   })
 
+  it('starts opencode sessions through a login shell with a minted id', async () => {
+    const { fake, make } = setup()
+    const a = make()
+    await a.start()
+    const res = await a.commands.sessionCreate({ projectId: 'p', kind: 'opencode', cols: 80, rows: 24 })
+    if (!res.ok) throw new Error(res.error)
+    expect(res.data.opencodeSessionId).toMatch(/^ses_/)
+    expect(res.data.label).toMatch(/^OpenCode · /)
+    const call = fake.calls.find((c) => c.method === 'create')!
+    const { argv } = call.args[0] as { argv: string[] }
+    expect(argv[4]).toBe(`exec opencode -s ${res.data.opencodeSessionId}`)
+  })
+
+  it('starts terminal sessions with no argv', async () => {
+    const { fake, make } = setup()
+    const a = make()
+    await a.start()
+    await create(a)
+    const call = fake.calls.find((c) => c.method === 'create')!
+    expect((call.args[0] as { argv?: string[] }).argv).toBeUndefined()
+  })
+
   it('persists ui changes', async () => {
     const { make, statePath } = setup()
     const a = make()

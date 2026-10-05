@@ -3,6 +3,7 @@ import type { Project, Session, SessionKind, Slices, UiState } from '@shared/typ
 import { DEFAULT_UI } from '@shared/types'
 import type { Result } from '@shared/ipc'
 import type { AttachHandle, SessionBackend } from './backend/types'
+import { loginShellArgv } from './env'
 import { newProject } from './projects'
 import { newSession, reconcile } from './sessions'
 import { loadConfig, saveConfig } from './store/configStore'
@@ -69,11 +70,11 @@ export function createCore(opts: CoreOptions): Core {
     },
 
     async sessionCreate({ projectId, kind, cols, rows }) {
-      if (kind !== 'terminal') return { ok: false, error: 'unsupported-kind' }
       const project = slices.projects.find((p) => p.id === projectId)
       if (!project) return { ok: false, error: 'not-found' }
       const session = newSession({ projectId, kind, now: now(), id: randomUUID() })
-      await backend.create({ name: session.tmuxName, cwd: project.path, cols, rows })
+      const argv = session.opencodeSessionId ? loginShellArgv(['opencode', '-s', session.opencodeSessionId]) : undefined
+      await backend.create({ name: session.tmuxName, cwd: project.path, cols, rows, argv })
       set('sessions', [...slices.sessions, session])
       return { ok: true, data: session }
     },

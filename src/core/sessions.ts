@@ -1,4 +1,5 @@
 import type { Session, SessionKind } from '@shared/types'
+import { mintSessionId } from './opencodeId'
 
 const KIND_NAMES: Record<SessionKind, string> = { opencode: 'OpenCode', terminal: 'Terminal' }
 const pad = (n: number) => String(n).padStart(2, '0')
@@ -15,7 +16,7 @@ export function newSession(o: { projectId: string; kind: SessionKind; now: Date;
     label: makeLabel(o.kind, o.now),
     labelPinned: false,
     tmuxName: 'grove-' + o.id,
-    opencodeSessionId: null,
+    opencodeSessionId: o.kind === 'opencode' ? mintSessionId(o.now.getTime()) : null,
     feature: null,
     linkPinned: false,
     action: null,

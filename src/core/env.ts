@@ -22,3 +22,12 @@ export function findTmux(env: NodeJS.ProcessEnv): string | null {
   }
   return null
 }
+
+function shellQuote(arg: string): string {
+  return /^[A-Za-z0-9_\-./=:@%+,]+$/.test(arg) ? arg : `'${arg.replace(/'/g, `'\\''`)}'`
+}
+
+// Each session gets the user's own login-shell env, re-read at every start (ADR 0010).
+export function loginShellArgv(argv: string[], shell = process.env.SHELL ?? '/bin/zsh'): string[] {
+  return [shell, '-l', '-i', '-c', 'exec ' + argv.map(shellQuote).join(' ')]
+}

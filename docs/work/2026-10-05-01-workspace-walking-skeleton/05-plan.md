@@ -505,16 +505,16 @@ is moved aside and an error banner shows.
 
 - [x] `npm run typecheck` and `npm test` pass (sandbox off).
 - [x] `grep -rn "from 'electron'" src/core` prints nothing.
-- [ ] *Manual:* create two sessions, type `echo hello` in the focused one, Cmd+Q,
+- [x] *Manual:* create two sessions, type `echo hello` in the focused one, Cmd+Q,
   `npm run dev` → both listed, the focused one attached and showing `hello`.
-- [ ] *Manual:* with the app running, `tmux -L grove kill-session -t =grove-<id>`
+- [x] *Manual:* with the app running, `tmux -L grove kill-session -t =grove-<id>`
   (id from the sidebar or `tmux -L grove ls`) → the row shows `gone` within 5 s.
   Quit, kill another with the same command, relaunch → it shows `gone`, and
   `jq '.sessions[].endedAt' ~/Library/Application\ Support/grove/state.json`
   prints a timestamp for both.
-- [ ] *Manual:* quit, `echo '{' > ~/Library/Application\ Support/grove/state.json`,
+- [x] *Manual:* quit, `echo '{' > ~/Library/Application\ Support/grove/state.json`,
   relaunch → red banner, and `ls ~/Library/Application\ Support/grove/state.json.bad-*` lists one file.
-- [ ] Stop for review.
+- [x] Stop for review.
 
 ---
 
@@ -524,39 +524,39 @@ Outcome: the ＋ modal offers OpenCode. It runs
 `$SHELL -l -i -c 'exec opencode -s <ses_…>'` in the project root, labelled
 `OpenCode · HH:MM`. The TUI has the user's PATH, and a first prompt gets a reply.
 
-- [ ] **Test first:** `src/core/opencodeId.test.ts`.
+- [x] **Test first:** `src/core/opencodeId.test.ts`.
   - `mintSessionId(1776959130999).slice(0, 16) === 'ses_244fb7288ffe'`. The
     real id `ses_244fb7288ffe7YEch15CUa2BbN` was created at that ms on this
     machine (`session_v2.time_created`).
   - Ids match `/^ses_[0-9a-f]{12}[0-9A-Za-z]{14}$/`, length 30.
   - Descending order: `mintSessionId(t + 1000) < mintSessionId(t)` as strings.
   - Two calls at the same `t` differ in the random part.
-- [ ] `src/core/opencodeId.ts`: port `spikes/opencode/gen-session-id.js` exactly.
+- [x] `src/core/opencodeId.ts`: port `spikes/opencode/gen-session-id.js` exactly.
   - `value = ~(BigInt(now) * 0x1000n + 1n)`. The time part is six bytes,
     `(value >> BigInt(40 - 8*i)) & 0xffn` for `i = 0..5`, as two-digit hex.
   - Then 14 chars `chars[b % 62]` from `randomBytes(14)`, where `chars` is
     `0-9A-Za-z` in that order.
   - Signature `mintSessionId(now = Date.now()): string`.
-- [ ] **Test first:** `src/core/env.test.ts`.
+- [x] **Test first:** `src/core/env.test.ts`.
   - `loginShellArgv(['opencode', '-s', 'ses_abc'], '/bin/zsh')` deep-equals
     `['/bin/zsh', '-l', '-i', '-c', 'exec opencode -s ses_abc']`.
   - An argument with a space or `'` is single-quoted with `'\''` escaping:
     `['echo', "a b'c"]` → `exec echo 'a b'\''c'`.
   - `minimalEnv({ TMUX: 'x', TMUX_PANE: '%1', HOME: '/h', PATH: '/usr/bin' })`
     has no `TMUX`/`TMUX_PANE` and keeps `HOME`.
-- [ ] `src/core/env.ts`: `loginShellArgv(argv, shell = process.env.SHELL ?? '/bin/zsh')`.
+- [x] `src/core/env.ts`: `loginShellArgv(argv, shell = process.env.SHELL ?? '/bin/zsh')`.
   Each arg is quoted only when it has a char outside `[A-Za-z0-9_\-./=:@%+,]`.
-- [ ] `src/core/sessions.ts` and `core.ts`: for `kind: 'opencode'`, set
+- [x] `src/core/sessions.ts` and `core.ts`: for `kind: 'opencode'`, set
   `opencodeSessionId = mintSessionId(now.getTime())` and pass
   `argv: loginShellArgv(['opencode', '-s', opencodeSessionId])` to `backend.create`.
   Remove the `unsupported-kind` guard. Terminal sessions still pass no `argv`.
-- [ ] Add a `sessions.test.ts` case: an opencode create records a `create` call
+- [x] Add a `sessions.test.ts` case: an opencode create records a `create` call
   whose `argv[4]` is `exec opencode -s <session.opencodeSessionId>`.
-- [ ] `NewSessionModal.tsx`: kind radio **OpenCode** (default) / **Terminal**.
+- [x] `NewSessionModal.tsx`: kind radio **OpenCode** (default) / **Terminal**.
 
 ### Verify (slice 3)
 
-- [ ] `npm run typecheck` and `npm test` pass (sandbox off).
+- [x] `npm run typecheck` and `npm test` pass (sandbox off).
 - [ ] *Manual:* Cmd+T → OpenCode → the TUI opens in the repo. Type `say hi`, press
   Enter → a model reply arrives, with no `provider.auth` / 403 error.
 - [ ] *Manual:* `tmux -L grove list-panes -t =grove-<id> -F '#{pane_start_command}'`

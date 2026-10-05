@@ -5,7 +5,7 @@ import { useSlices } from '../stores/slices'
 export function NewSessionModal({ onClose }: { onClose: () => void }) {
   const { projects, setFocused } = useSlices()
   const [projectId, setProjectId] = useState(projects[0]?.id ?? '')
-  const [kind, setKind] = useState<SessionKind>('terminal')
+  const [kind, setKind] = useState<SessionKind>('opencode')
   const [error, setError] = useState<string | null>(null)
 
   useEffect(() => {
@@ -31,6 +31,9 @@ export function NewSessionModal({ onClose }: { onClose: () => void }) {
             <select value={projectId} onChange={(e) => setProjectId(e.target.value)} autoFocus>
               {projects.map((p) => <option key={p.id} value={p.id}>{p.name}</option>)}
             </select>
+            <label>
+              <input type="radio" checked={kind === 'opencode'} onChange={() => setKind('opencode')} /> OpenCode
+            </label>
             <label>
               <input type="radio" checked={kind === 'terminal'} onChange={() => setKind('terminal')} /> Terminal
             </label>
