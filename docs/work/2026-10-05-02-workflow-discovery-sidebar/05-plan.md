@@ -2,7 +2,7 @@
 feature: 2026-10-05-02-workflow-discovery-sidebar
 phase: plan
 status: approved
-version: 2
+version: 3
 created: 2026-10-05
 updated: 2026-10-05
 approved_at:
@@ -288,5 +288,82 @@ and a fake in `src/core/testing/`.
   under `docs/work` → it appears; set `workflow` in
   `~/.config/grove/config.json` to a copy of `resources/workflow.yaml`,
   restart, break it → banner, features stay; fix it → banner clears.
+
+## Slice 3 — The tree
+
+Context for a cold reader: the core pushes `features` (`FeaturesSlice`, see
+`src/shared/types.ts`) and `sessions` to the renderer store
+(`src/renderer/src/stores/slices.ts`). Today `Sidebar.tsx` lists, per
+project, flat feature rows and then the project's sessions
+(`sessionsOf` in `src/renderer/src/sidebarOrder.ts`), with project collapse
+kept in React state; `App.tsx` maps Cmd+N (`menu:action` `focusIndex`) through
+`sidebarOrder()`. `Session.feature` is a slug in the session's project (or
+`null`); nothing sets it until slice 5, so tests set it directly.
+A done feature has `currentStage: null`.
+
+Tree rules (design "Tree ordering", "Cmd+1..9", Desired state 4):
+- Projects in config order. Under a project: its top-level features, then
+  its unlinked sessions.
+- A feature nests under the feature named by its `parent` when that slug
+  exists in the same project; otherwise it is top-level.
+- Under a feature: its linked sessions, then its child features.
+- Features within one parent sort by slug with done ones after active ones;
+  sessions sort by `startedAt`.
+- A session whose `feature` names no feature in its project is unlinked.
+- `collapsed` hides children in rendering only; `treeSessionOrder` walks
+  every node, collapsed included. Features are not Cmd+N targets.
+
+- [x] Write failing test `src/renderer/src/tree.test.ts` (plain objects for
+  `Project`, `Feature` and `Session`; `Session` via a local helper with
+  every field): child grouped under its epic by `parent`; a `parent` that
+  doesn't exist → top-level; done features after active ones, both by
+  slug; a linked session under its feature, before child features; a link
+  to a missing slug → unlinked under the project, after features; another
+  project's same-slug feature doesn't capture the session; `collapsed`
+  keys `p:<projectId>` and `f:<projectId>/<slug>` set `collapsed: true`;
+  `treeSessionOrder` returns sessions depth-first in display order,
+  including those under collapsed nodes.
+- [x] Create `src/renderer/src/tree.ts`:
+  `export type TreeNode = { type: 'project'; key: string; project: Project; collapsed: boolean; children: TreeNode[] } | { type: 'feature'; key: string; feature: Feature; collapsed: boolean; children: TreeNode[] } | { type: 'session'; key: string; session: Session }`;
+  `export const projectKey = (id: string) => 'p:' + id`;
+  `export const featureKey = (f: Feature) => 'f:' + f.projectId + '/' + f.slug`;
+  `buildTree(projects: Project[], features: Feature[], sessions: Session[], ui: Pick<UiState, 'collapsed'>): TreeNode[]`
+  and `treeSessionOrder(tree: TreeNode[]): Session[]` per the rules above
+  (session node key `s:<id>`).
+- [x] Delete `src/renderer/src/sidebarOrder.ts`.
+- [x] `src/shared/types.ts`: `UiState` gains `view: 'list' | 'board'` and
+  `collapsed: string[]`; `DEFAULT_UI` gains `view: 'list', collapsed: []`.
+- [x] `src/core/store/stateStore.ts`: `ui: { ...DEFAULT_UI, ...s.ui }`
+  (missing fields default). In `src/core/store/stateStore.test.ts`: the
+  round-trip fixture's `ui` gains `view: 'list', collapsed: ['p:x']`; add
+  "an old ui without view/collapsed loads with defaults"
+  (`{"schemaVersion":1,"sessions":[],"ui":{"sidebarWidth":300,"focusedSessionId":null}}`
+  → `{ ...DEFAULT_UI, sidebarWidth: 300 }`).
+- [x] `src/renderer/src/stores/slices.ts`: add
+  `toggleCollapsed(key: string)` → `ui:set { collapsed }` with the key
+  added or removed from the current `ui.collapsed`.
+- [x] `src/renderer/src/components/Sidebar.tsx`: build
+  `buildTree(projects, features.items, sessions, ui)` and render it
+  recursively:
+  - project node: the existing folder row (chevron by `collapsed`, name,
+    remove and new-session actions, refused message); clicking it calls
+    `toggleCollapsed(node.key)` (replaces the local `collapsed` state).
+  - feature node: `ListRow` with `title`, `meta` = current stage label or
+    `Done`, `icon` = a chevron button (only when it has children;
+    `chevron-right`/`chevron-down` by `collapsed`, `onClick` stops
+    propagation and calls `toggleCollapsed(node.key)`) followed by the
+    `folder` icon; no row `onClick` yet (slice 4).
+  - session node: the existing `SessionCard`.
+  - children of a feature render inside `<div className={css.children}>`
+    unless collapsed; add `.children` to `Sidebar.module.css`
+    (`display: flex; flex-direction: column; gap: var(--sp-2); padding-left: var(--sp-3);`)
+    and a `.chevron` class for the button (`display: flex; padding: 0; background: none; border: none; color: inherit; cursor: pointer;`).
+- [x] `src/renderer/src/App.tsx`: `focusIndex` target =
+  `treeSessionOrder(buildTree(projects, features.items, sessions, ui))[a.n - 1]`
+  (read `features` from `useSlices.getState()` too).
+- [x] Run `npm test` (outside the sandbox for the real-tmux and watcher
+  tests), `npm run typecheck`, `npm run build`.
+- [ ] Manual in `npm run dev` (human): collapse the epic, restart, still
+  collapsed; Cmd+2 focuses the second session in tree order.
 
 ## Open questions

@@ -15,7 +15,12 @@ export interface Session {
   endedAt: string | null           // ISO, set when first seen gone
   lastStatus: 'running' | 'gone'
 }
-export interface UiState { sidebarWidth: number; focusedSessionId: string | null }
+export interface UiState {
+  sidebarWidth: number
+  focusedSessionId: string | null
+  view: 'list' | 'board'
+  collapsed: string[] // tree keys: p:<projectId>, f:<projectId>/<slug>
+}
 export interface FeatureStage {
   id: string
   label: string
@@ -43,5 +48,5 @@ export interface FeaturesSlice {
 export type Slices = { projects: Project[]; sessions: Session[]; ui: UiState; features: FeaturesSlice }
 export interface ConfigFile { schemaVersion: 1; projects: Project[]; workflow?: string }
 export interface StateFile { schemaVersion: 1; sessions: Session[]; ui: UiState }
-export const DEFAULT_UI: UiState = { sidebarWidth: 230, focusedSessionId: null }
+export const DEFAULT_UI: UiState = { sidebarWidth: 230, focusedSessionId: null, view: 'list', collapsed: [] }
 export const EMPTY_FEATURES: FeaturesSlice = { workflowError: null, stages: [], items: [] }

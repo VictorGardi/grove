@@ -1,7 +1,7 @@
 import { useState } from 'react'
-import type { Feature, Session } from '@shared/types'
+import type { Session } from '@shared/types'
 import { useSlices } from '../stores/slices'
-import { sessionsOf } from '../sidebarOrder'
+import { buildTree, type TreeNode } from '../tree'
 import { Badge } from './ui/Badge'
 import { Button } from './ui/Button'
 import { Icon } from './ui/Icon'
@@ -63,26 +63,63 @@ function SessionCard({ s, focused, compact, onFocus, onToggleCompact }: {
   )
 }
 
-function FeatureRow({ f }: { f: Feature }) {
+type FeatureNode = Extract<TreeNode, { type: 'feature' }>
+
+function FeatureRow({ node, onToggle }: { node: FeatureNode; onToggle: () => void }) {
+  const f = node.feature
   const stage = f.stages.find((x) => x.id === f.currentStage)
   return (
     <ListRow
       title={f.title}
-      icon={<Icon name="folder" size={14} className={css.iconFeature} />}
+      icon={
+        <>
+          {node.children.length > 0 && (
+            <button className={css.chevron} aria-label={node.collapsed ? 'Expand' : 'Collapse'}
+              onClick={(e) => { e.stopPropagation(); onToggle() }}>
+              <Icon name={node.collapsed ? 'chevron-right' : 'chevron-down'} size={12} />
+            </button>
+          )}
+          <Icon name="folder" size={14} className={css.iconFeature} />
+        </>
+      }
       meta={stage ? stage.label : 'Done'}
     />
   )
 }
 
 export function Sidebar({ onNew }: { onNew: (projectId?: string) => void }) {
-  const { projects, sessions, ui, features, setFocused } = useSlices()
+  const { projects, sessions, ui, features, setFocused, toggleCollapsed } = useSlices()
   const [refused, setRefused] = useState<string | null>(null)
-  const [collapsed, setCollapsed] = useState<Set<string>>(new Set())
   const [compact, setCompact] = useState<Set<string>>(new Set())
+  const tree = buildTree(projects, features.items, sessions, ui)
 
   async function removeProject(id: string) {
     const res = await window.api.invoke('project:remove', { id })
     setRefused(res.ok ? null : id)
+  }
+
+  // Feature and session nodes; a feature's children follow it, indented.
+  function renderNode(n: TreeNode) {
+    if (n.type === 'session') {
+      const s = n.session
+      return (
+        <SessionCard
+          key={n.key}
+          s={s}
+          focused={s.id === ui.focusedSessionId}
+          compact={compact.has(s.id)}
+          onFocus={() => setFocused(s.id)}
+          onToggleCompact={() => setCompact((c) => toggle(c, s.id))}
+        />
+      )
+    }
+    if (n.type === 'project') return null
+    return (
+      <div key={n.key} className={css.cards}>
+        <FeatureRow node={n} onToggle={() => toggleCollapsed(n.key)} />
+        {!n.collapsed && n.children.length > 0 && <div className={css.children}>{n.children.map(renderNode)}</div>}
+      </div>
+    )
   }
 
   return (
@@ -96,12 +133,13 @@ export function Sidebar({ onNew }: { onNew: (projectId?: string) => void }) {
       </div>
       <div className={css.list}>
         {projects.length === 0 && <div className={css.hint}>Add a project with the folder ＋ above</div>}
-        {projects.map((p) => {
-          const isCollapsed = collapsed.has(p.id)
+        {tree.map((n) => {
+          if (n.type !== 'project') return null
+          const p = n.project
           return (
-            <div key={p.id} className={css.project}>
-              <div className={css.folder} title={p.path} onClick={() => setCollapsed((c) => toggle(c, p.id))}>
-                <Icon name={isCollapsed ? 'chevron-right' : 'chevron-down'} size={12} />
+            <div key={n.key} className={css.project}>
+              <div className={css.folder} title={p.path} onClick={() => toggleCollapsed(n.key)}>
+                <Icon name={n.collapsed ? 'chevron-right' : 'chevron-down'} size={12} />
                 <Icon name="folder" size={14} />
                 <span className={css.folderName}>{p.name}</span>
                 <div className={css.folderActions} onClick={(e) => e.stopPropagation()}>
@@ -112,21 +150,7 @@ export function Sidebar({ onNew }: { onNew: (projectId?: string) => void }) {
                 </div>
               </div>
               {refused === p.id && <div className={css.refused}>Can't remove: project has running sessions</div>}
-              {!isCollapsed && (
-                <div className={css.cards}>
-                  {features.items.filter((f) => f.projectId === p.id).map((f) => <FeatureRow key={f.slug} f={f} />)}
-                  {sessionsOf(p.id, sessions).map((s) => (
-                    <SessionCard
-                      key={s.id}
-                      s={s}
-                      focused={s.id === ui.focusedSessionId}
-                      compact={compact.has(s.id)}
-                      onFocus={() => setFocused(s.id)}
-                      onToggleCompact={() => setCompact((c) => toggle(c, s.id))}
-                    />
-                  ))}
-                </div>
-              )}
+              {!n.collapsed && <div className={css.cards}>{n.children.map(renderNode)}</div>}
             </div>
           )
         })}

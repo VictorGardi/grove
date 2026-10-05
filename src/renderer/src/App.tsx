@@ -9,8 +9,8 @@ import { ContentHeader } from './components/shell/ContentHeader'
 import { TopBar } from './components/shell/TopBar'
 import { Banner } from './components/ui/Banner'
 import { Button } from './components/ui/Button'
-import { sidebarOrder } from './sidebarOrder'
 import { useSlices } from './stores/slices'
+import { buildTree, treeSessionOrder } from './tree'
 import s from './App.module.css'
 
 export default function App() {
@@ -25,13 +25,13 @@ export default function App() {
   useEffect(() => {
     return window.api.on('menu:action', (a) => {
       // read the latest state, not this effect's closure
-      const { projects, sessions, ui } = useSlices.getState()
+      const { projects, sessions, ui, features } = useSlices.getState()
       if (a.type === 'newSession') setNewFor({})
       else if (a.type === 'closeSession') {
         const focused = sessions.find((x) => x.id === ui.focusedSessionId)
         if (focused?.lastStatus === 'running') setConfirmKill(focused)
       } else if (a.type === 'focusIndex') {
-        const target = sidebarOrder(projects, sessions)[a.n - 1]
+        const target = treeSessionOrder(buildTree(projects, features.items, sessions, ui))[a.n - 1]
         if (target) setFocused(target.id)
       }
     })

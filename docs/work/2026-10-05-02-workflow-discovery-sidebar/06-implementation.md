@@ -9,7 +9,7 @@ approved_at:
 based_on:
   - 03-design.md@1
   - 04-structure.md@1
-  - 05-plan.md@2
+  - 05-plan.md@3
 forced: []
 ---
 
@@ -19,7 +19,7 @@ forced: []
 
 - [x] Slice 1 — Tracer: features from the bundled workflow, read once
 - [x] Slice 2 — Live discovery and a guarded workflow
-- [ ] Slice 3 — The tree
+- [x] Slice 3 — The tree (manual check pending)
 - [ ] Slice 4 — Feature page
 - [ ] Slice 5 — Manual link
 - [ ] Slice 6 — Board (appetite cut 1)
@@ -106,5 +106,24 @@ Deviations (all small, two-way):
 - `workflow` in `config.json` is preserved on every config write (core
   keeps the value read at start). Hand edits while the app runs are still
   overwritten on the next project change (design Risks).
+
+## Slice 3 — The tree
+
+Verification: `npm test` 109/109 passed outside the sandbox (inside it the
+real-tmux tests fail and the real-watcher tests skip, as before);
+`npm run typecheck` clean; `npm run build` clean.
+
+Deviations (all small, two-way):
+
+- A feature nests under any feature in the same project named by its
+  `parent`, not only under `group` kinds; a `parent` naming no feature in
+  the project leaves it top-level.
+- Under a feature, its linked sessions come first, then its child features.
+- Feature rows collapse from a chevron button shown only when the feature
+  has children. The row itself has no click action until slice 4.
+- `src/core/sessions.test.ts` "persists ui changes" spelled out the old
+  two-field `UiState`; it now expects `{ ...DEFAULT_UI, focusedSessionId: 'x' }`.
+- `stateStore` merges a saved `ui` over `DEFAULT_UI`, so any later
+  `UiState` field also defaults for old files.
 
 ## Open questions

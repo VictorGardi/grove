@@ -120,7 +120,7 @@ describe('core sessions', () => {
     const a = make()
     await a.start()
     const res = await a.commands.uiSet({ focusedSessionId: 'x' })
-    expect(res).toEqual({ ok: true, data: { sidebarWidth: DEFAULT_UI.sidebarWidth, focusedSessionId: 'x' } })
+    expect(res).toEqual({ ok: true, data: { ...DEFAULT_UI, focusedSessionId: 'x' } })
     expect(loadState(statePath).ui.focusedSessionId).toBe('x')
   })
 
