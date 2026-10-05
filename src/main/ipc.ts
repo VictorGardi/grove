@@ -34,7 +34,11 @@ export function registerIpc(core: Core, getWindow: () => BrowserWindow | null, g
     if (res.canceled || res.filePaths.length === 0) return { ok: true, data: null }
     return core.commands.projectAdd({ path: res.filePaths[0] })
   }, true)
+  handle('project:remove', (a) => core.commands.projectRemove(a), true)
   handle('session:create', (a) => core.commands.sessionCreate(a), true)
+  handle('session:kill', (a) => core.commands.sessionKill(a), true)
+  handle('session:remove', (a) => core.commands.sessionRemove(a), true)
+  handle('session:rename', (a) => core.commands.sessionRename(a), true)
   handle('ui:set', (a) => core.commands.uiSet(a), true)
 
   const attaches = new Map<string, AttachHandle>()

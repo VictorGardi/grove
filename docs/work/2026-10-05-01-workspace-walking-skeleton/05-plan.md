@@ -557,12 +557,12 @@ Outcome: the ＋ modal offers OpenCode. It runs
 ### Verify (slice 3)
 
 - [x] `npm run typecheck` and `npm test` pass (sandbox off).
-- [ ] *Manual:* Cmd+T → OpenCode → the TUI opens in the repo. Type `say hi`, press
+- [x] *Manual:* Cmd+T → OpenCode → the TUI opens in the repo. Type `say hi`, press
   Enter → a model reply arrives, with no `provider.auth` / 403 error.
-- [ ] *Manual:* `tmux -L grove list-panes -t =grove-<id> -F '#{pane_start_command}'`
+- [x] *Manual:* `tmux -L grove list-panes -t =grove-<id> -F '#{pane_start_command}'`
   contains the `opencodeSessionId` from
   `jq '.sessions[] | {tmuxName, opencodeSessionId}' ~/Library/Application\ Support/grove/state.json`.
-- [ ] Stop for review.
+- [x] Stop for review.
 
 ---
 
@@ -573,8 +573,8 @@ Outcome: Cmd+W confirms, then kills the focused session. `gone` rows have
 live attach. **Remove project** is refused while it has `running` sessions;
 otherwise it removes the project and its `gone` sessions.
 
-- [ ] Add `session:kill|remove|rename` and `project:remove` to `src/shared/ipc.ts`.
-- [ ] **Test first** (`sessions.test.ts` and new `src/core/projects.test.ts`, via
+- [x] Add `session:kill|remove|rename` and `project:remove` to `src/shared/ipc.ts`.
+- [x] **Test first** (`sessions.test.ts` and new `src/core/projects.test.ts`, via
   `createCore` and the fake backend):
   - `sessionKill` calls `backend.kill(tmuxName)`, sets `gone` with `endedAt` and
     saves. Killing a session whose name is already missing from `fake.live` still succeeds.
@@ -585,19 +585,19 @@ otherwise it removes the project and its `gone` sessions.
     only `gone` sessions it removes the project from the config and its sessions from the state.
   - Unknown ids return `not-found`.
   - When the focused session is removed, `ui.focusedSessionId` becomes `null`.
-- [ ] Implement the four commands in `core.ts`, with pure helpers in `projects.ts`
+- [x] Implement the four commands in `core.ts`, with pure helpers in `projects.ts`
   and `sessions.ts`. Register them in `ipc.ts`.
-- [ ] `src/main/menu.ts`: File menu **Close Session** `CmdOrCtrl+W` sends
+- [x] `src/main/menu.ts`: File menu **Close Session** `CmdOrCtrl+W` sends
   `{type:'closeSession'}`. Add a **Session** menu with items `Session 1`..`Session 9`,
   each `CmdOrCtrl+<n>`, sending `{type:'focusIndex', n}`.
-- [ ] `src/renderer/src/components/ConfirmDialog.tsx`: modal props
+- [x] `src/renderer/src/components/ConfirmDialog.tsx`: modal props
   `{ title, body, confirmLabel, onConfirm, onCancel }`. Enter confirms, Esc cancels.
-- [ ] `App.tsx` handles `menu:action`.
+- [x] `App.tsx` handles `menu:action`.
   - `closeSession` with a running focused session opens ConfirmDialog
     ("Kill session <label>?"). Confirm invokes `session:kill`.
   - `focusIndex(n)` focuses the n-th session in sidebar order: projects in config
     order, then that project's sessions in `startedAt` order. Out of range does nothing.
-- [ ] `Sidebar.tsx`:
+- [x] `Sidebar.tsx`:
   - `gone` rows get a **Remove** button (`session:remove`).
   - Double-clicking a label shows an inline input: Enter invokes `session:rename`,
     Esc cancels.
@@ -608,7 +608,7 @@ otherwise it removes the project and its `gone` sessions.
 
 ### Verify (slice 4)
 
-- [ ] `npm run typecheck` and `npm test` pass (sandbox off).
+- [x] `npm run typecheck` and `npm test` pass (sandbox off).
 - [ ] *Manual:* Cmd+W → Cancel → still running. Cmd+W → Confirm → row `gone`, and
   `tmux -L grove ls` no longer lists it. **Remove** → row gone. Rename a session,
   then relaunch → the new name is kept.

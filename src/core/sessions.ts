@@ -31,7 +31,15 @@ export function reconcile(sessions: Session[], live: Set<string>, now: string): 
   const out = sessions.map((s) => {
     if (s.lastStatus !== 'running' || live.has(s.tmuxName)) return s
     changed = true
-    return { ...s, lastStatus: 'gone' as const, endedAt: now }
+    return markGone(s, now)
   })
   return changed ? out : sessions
+}
+
+export function markGone(s: Session, now: string): Session {
+  return s.lastStatus === 'gone' ? s : { ...s, lastStatus: 'gone', endedAt: now }
+}
+
+export function rename(s: Session, label: string): Session {
+  return { ...s, label, labelPinned: true }
 }

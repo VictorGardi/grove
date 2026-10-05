@@ -1,16 +1,8 @@
-import fs from 'node:fs'
-import os from 'node:os'
-import path from 'node:path'
 import { afterEach, describe, expect, it } from 'vitest'
 import type { Session } from '@shared/types'
-import { createCore, type Core } from './core'
 import { makeLabel, newSession, reconcile } from './sessions'
 import { loadState } from './store/stateStore'
-import { saveConfig } from './store/configStore'
-import { FakeBackend } from './testing/fakeBackend'
-
-const NOW = new Date('2026-10-05T10:00:00.000Z')
-const LATER = new Date('2026-10-05T11:00:00.000Z')
+import { createTerminal as create, LATER, NOW, setupCore } from './testing/setup'
 
 function session(id: string, over: Partial<Session> = {}): Session {
   return { ...newSession({ projectId: 'p', kind: 'terminal', now: NOW, id }), ...over }
@@ -40,27 +32,13 @@ describe('makeLabel', () => {
 })
 
 describe('core sessions', () => {
-  const cores: Core[] = []
-  afterEach(() => { for (const c of cores.splice(0)) c.dispose() })
+  let disposeAll = () => {}
+  afterEach(() => disposeAll())
 
   function setup() {
-    const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'grove-'))
-    const configPath = path.join(dir, 'config.json')
-    const statePath = path.join(dir, 'state.json')
-    saveConfig(configPath, { schemaVersion: 1, projects: [{ id: 'p', name: 'proj', path: dir }] })
-    const fake = new FakeBackend()
-    const make = (now = NOW) => {
-      const core = createCore({ configPath, statePath, backend: fake, now: () => now })
-      cores.push(core)
-      return core
-    }
-    return { fake, make, statePath }
-  }
-
-  async function create(core: Core) {
-    const res = await core.commands.sessionCreate({ projectId: 'p', kind: 'terminal', cols: 80, rows: 24 })
-    if (!res.ok) throw new Error(res.error)
-    return res.data
+    const s = setupCore()
+    disposeAll = s.disposeAll
+    return s
   }
 
   it('persists sessions and marks them gone on a liveness check', async () => {
@@ -135,5 +113,69 @@ describe('core sessions', () => {
     const res = await a.commands.uiSet({ focusedSessionId: 'x' })
     expect(res).toEqual({ ok: true, data: { sidebarWidth: 260, focusedSessionId: 'x' } })
     expect(loadState(statePath).ui.focusedSessionId).toBe('x')
+  })
+
+  it('kills a session, marks it gone and saves', async () => {
+    const { fake, make, statePath } = setup()
+    const a = make(LATER)
+    await a.start()
+    const s = await create(a)
+    expect(await a.commands.sessionKill({ id: s.id })).toEqual({ ok: true, data: { id: s.id } })
+    expect(fake.calls.some((c) => c.method === 'kill' && c.args[0] === s.tmuxName)).toBe(true)
+    expect(loadState(statePath).sessions[0]).toMatchObject({ lastStatus: 'gone', endedAt: LATER.toISOString() })
+  })
+
+  it('kills a session that tmux already lost', async () => {
+    const { fake, make } = setup()
+    const a = make()
+    await a.start()
+    const s = await create(a)
+    fake.live.delete(s.tmuxName)
+    expect((await a.commands.sessionKill({ id: s.id })).ok).toBe(true)
+    expect(a.getSlices().sessions[0].lastStatus).toBe('gone')
+  })
+
+  it('removes only gone sessions', async () => {
+    const { make } = setup()
+    const a = make()
+    await a.start()
+    const s = await create(a)
+    expect(await a.commands.sessionRemove({ id: s.id })).toEqual({ ok: false, error: 'not-gone' })
+    await a.commands.sessionKill({ id: s.id })
+    expect(await a.commands.sessionRemove({ id: s.id })).toEqual({ ok: true, data: { id: s.id } })
+    expect(a.getSlices().sessions).toEqual([])
+  })
+
+  it('clears focus when the focused session is removed', async () => {
+    const { make } = setup()
+    const a = make()
+    await a.start()
+    const s = await create(a)
+    await a.commands.uiSet({ focusedSessionId: s.id })
+    await a.commands.sessionKill({ id: s.id })
+    await a.commands.sessionRemove({ id: s.id })
+    expect(a.getSlices().ui.focusedSessionId).toBeNull()
+  })
+
+  it('renames and pins the label across restarts', async () => {
+    const { make } = setup()
+    const a = make()
+    await a.start()
+    const s = await create(a)
+    const res = await a.commands.sessionRename({ id: s.id, label: 'build' })
+    expect(res.ok && res.data).toMatchObject({ label: 'build', labelPinned: true })
+    const b = make()
+    await b.start()
+    expect(b.getSlices().sessions[0]).toMatchObject({ label: 'build', labelPinned: true })
+  })
+
+  it('returns not-found for unknown ids', async () => {
+    const { make } = setup()
+    const a = make()
+    await a.start()
+    const nf = { ok: false, error: 'not-found' }
+    expect(await a.commands.sessionKill({ id: 'x' })).toEqual(nf)
+    expect(await a.commands.sessionRemove({ id: 'x' })).toEqual(nf)
+    expect(await a.commands.sessionRename({ id: 'x', label: 'y' })).toEqual(nf)
   })
 })

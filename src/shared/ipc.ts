@@ -8,7 +8,11 @@ export interface InvokeMap {
   'state:get': [void, Slices]
   'app:errors': [void, string[]]
   'project:add': [void, Project | null]
+  'project:remove': [{ id: string }, { id: string }]
   'session:create': [{ projectId: string; kind: SessionKind; cols: number; rows: number }, Session]
+  'session:kill': [{ id: string }, { id: string }]
+  'session:remove': [{ id: string }, { id: string }]
+  'session:rename': [{ id: string; label: string }, Session]
   'ui:set': [Partial<UiState>, UiState]
   'pty:attach': [{ sessionId: string; cols: number; rows: number }, { attachId: string }]
 }

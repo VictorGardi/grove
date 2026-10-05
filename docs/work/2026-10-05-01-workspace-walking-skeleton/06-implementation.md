@@ -26,7 +26,7 @@ this implementation.
 
 - [x] Slice 1. Tracer: add a project, open a terminal session in tmux
 - [x] Slice 2. Sessions persist, reconcile on start, and go `gone`
-- [ ] Slice 3. OpenCode sessions with a minted id and the user's shell env
+- [x] Slice 3. OpenCode sessions with a minted id and the user's shell env
 - [ ] Slice 4. Session and project lifecycle in the sidebar
 - [ ] Slice 5. Terminal fidelity and keys
 - [ ] Slice 6. Finder and Dock launch work like `npm run dev`
@@ -119,10 +119,10 @@ Reported passing by the human on 2026-10-05.
 
 ### Manual verification
 
-To be done by the human. Results go here.
+Reported passing by the human on 2026-10-05.
 
-- [ ] Cmd+T → OpenCode → the TUI opens in the repo. `say hi` + Enter gets a model reply, with no `provider.auth` / 403 error.
-- [ ] `tmux -L grove list-panes -t =grove-<id> -F '#{pane_start_command}'` contains the `opencodeSessionId` from `jq '.sessions[] | {tmuxName, opencodeSessionId}' ~/Library/Application\ Support/grove/state.json`.
+- [x] Cmd+T → OpenCode → the TUI opens in the repo. `say hi` + Enter gets a model reply, with no `provider.auth` / 403 error.
+- [x] `tmux -L grove list-panes -t =grove-<id> -F '#{pane_start_command}'` contains the `opencodeSessionId` from `jq '.sessions[] | {tmuxName, opencodeSessionId}' ~/Library/Application\ Support/grove/state.json`.
 
 ### Deviations (small, two-way)
 
@@ -131,3 +131,45 @@ To be done by the human. Results go here.
    builds the `loginShellArgv` from that id.
 2. **Extra test:** a terminal create passes no `argv`. The plan states this
    rule but listed no test for it.
+
+## Slice 4
+
+### Automated verification (2026-10-05)
+
+- `npm run typecheck` → passes
+- `npm test` (sandbox off) → 7 files, 41 tests pass, tmux tests not skipped
+- `grep -rn "from 'electron'" src/core` → no output
+- `npm run build` → passes
+- `npm run dev` smoke run for 10 s, stopped with `pkill`. The log has two
+  `Error sending from webContents: Render frame was disposed before WebFrameMain could be accessed`
+  lines. A saved focused session re-attached, and its `pty:data` arrived while
+  the forced kill tore the renderer down. Electron logs this and nothing
+  throws. Not fixed: watch whether it appears on a normal Cmd+Q.
+
+### Manual verification
+
+To be done by the human. Results go here.
+
+- [ ] Cmd+W → Cancel → still running. Cmd+W → Confirm → row `gone`, and `tmux -L grove ls` no longer lists it. **Remove** → row gone. Rename a session, relaunch → the name is kept.
+- [ ] With two running sessions, Cmd+1 / Cmd+2 switch terminals, and `tmux -L grove list-clients` shows exactly one client. **Remove project** on a project with a running session → the refusal message shows.
+
+### Deviations (small, two-way)
+
+1. **Shared test helper** `src/core/testing/setup.ts` (`setupCore`,
+   `createTerminal`, `NOW`, `LATER`). `sessions.test.ts` now uses it, and so
+   does the new `projects.test.ts`.
+2. **`sessionKill` re-reads the session after `backend.kill`**, so a poll that
+   marked it gone while the kill was running keeps that poll's `endedAt`.
+3. **`projectRemove` also clears `ui.focusedSessionId`** when the focused
+   session was one of the removed ones, the same as `sessionRemove`.
+4. **Pure helpers:** `hasLiveSessions` in `projects.ts`, and `markGone` and
+   `rename` in `sessions.ts`. `reconcile` now uses `markGone`.
+5. **`src/renderer/src/sidebarOrder.ts`** holds the sidebar order (projects
+   in config order, then sessions by `startedAt`). The sidebar and
+   Cmd+1..9 both use it.
+6. **`ConfirmDialog` listens in the capture phase** and stops propagation of
+   Enter/Esc, so those keys never also reach a focused terminal.
+7. **Renaming:** an empty or whitespace-only label is ignored. Blurring the
+   input cancels.
+8. **The "Can't remove" message** stays under the project header until the
+   next **Remove project** click on a project.

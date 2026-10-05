@@ -4,8 +4,8 @@ import { DEFAULT_UI } from '@shared/types'
 import type { Result } from '@shared/ipc'
 import type { AttachHandle, SessionBackend } from './backend/types'
 import { loginShellArgv } from './env'
-import { newProject } from './projects'
-import { newSession, reconcile } from './sessions'
+import { hasLiveSessions, newProject } from './projects'
+import { markGone, newSession, reconcile, rename } from './sessions'
 import { loadConfig, saveConfig } from './store/configStore'
 import { loadState, saveState } from './store/stateStore'
 
@@ -20,7 +20,11 @@ type SliceListener = <K extends keyof Slices>(k: K, v: Slices[K]) => void
 
 export interface Commands {
   projectAdd(a: { path: string }): Promise<Result<Project>>
+  projectRemove(a: { id: string }): Promise<Result<{ id: string }>>
   sessionCreate(a: { projectId: string; kind: SessionKind; cols: number; rows: number }): Promise<Result<Session>>
+  sessionKill(a: { id: string }): Promise<Result<{ id: string }>>
+  sessionRemove(a: { id: string }): Promise<Result<{ id: string }>>
+  sessionRename(a: { id: string; label: string }): Promise<Result<Session>>
   uiSet(partial: Partial<UiState>): Promise<Result<UiState>>
 }
 
@@ -62,11 +66,31 @@ export function createCore(opts: CoreOptions): Core {
     if (next !== slices.sessions) set('sessions', next)
   }
 
+  const findSession = (id: string) => slices.sessions.find((s) => s.id === id)
+
+  function replaceSession(next: Session): void {
+    set('sessions', slices.sessions.map((s) => (s.id === next.id ? next : s)))
+  }
+
+  function dropSessions(keep: (s: Session) => boolean): void {
+    const focused = slices.ui.focusedSessionId
+    set('sessions', slices.sessions.filter(keep))
+    if (focused && !findSession(focused)) set('ui', { ...slices.ui, focusedSessionId: null })
+  }
+
   const commands: Commands = {
     async projectAdd({ path }) {
       const project = newProject(path, randomUUID())
       set('projects', [...slices.projects, project])
       return { ok: true, data: project }
+    },
+
+    async projectRemove({ id }) {
+      if (!slices.projects.some((p) => p.id === id)) return { ok: false, error: 'not-found' }
+      if (hasLiveSessions(id, slices.sessions)) return { ok: false, error: 'has-live-sessions' }
+      set('projects', slices.projects.filter((p) => p.id !== id))
+      dropSessions((s) => s.projectId !== id)
+      return { ok: true, data: { id } }
     },
 
     async sessionCreate({ projectId, kind, cols, rows }) {
@@ -77,6 +101,31 @@ export function createCore(opts: CoreOptions): Core {
       await backend.create({ name: session.tmuxName, cwd: project.path, cols, rows, argv })
       set('sessions', [...slices.sessions, session])
       return { ok: true, data: session }
+    },
+
+    async sessionKill({ id }) {
+      const session = findSession(id)
+      if (!session) return { ok: false, error: 'not-found' }
+      await backend.kill(session.tmuxName) // already-missing counts as success
+      // re-read: a poll may have flipped it while kill was in flight
+      replaceSession(markGone(findSession(id) ?? session, now().toISOString()))
+      return { ok: true, data: { id } }
+    },
+
+    async sessionRemove({ id }) {
+      const session = findSession(id)
+      if (!session) return { ok: false, error: 'not-found' }
+      if (session.lastStatus !== 'gone') return { ok: false, error: 'not-gone' }
+      dropSessions((s) => s.id !== id)
+      return { ok: true, data: { id } }
+    },
+
+    async sessionRename({ id, label }) {
+      const session = findSession(id)
+      if (!session) return { ok: false, error: 'not-found' }
+      const next = rename(session, label)
+      replaceSession(next)
+      return { ok: true, data: next }
     },
 
     async uiSet(partial) {
