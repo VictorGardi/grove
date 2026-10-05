@@ -11,7 +11,7 @@ import { listFolders, readFolder, resolveRoot, type FolderSnapshot } from './dis
 import { chokidarWatchers, type Closer, type Watchers } from './discovery/watcher'
 import { loginShellArgv } from './env'
 import { hasLiveSessions, newProject } from './projects'
-import { markGone, newSession, reconcile, rename } from './sessions'
+import { link, markGone, newSession, reconcile, rename } from './sessions'
 import { loadConfig, saveConfig } from './store/configStore'
 import { loadState, saveState } from './store/stateStore'
 import { deriveFeatures } from './workflow/derive'
@@ -35,6 +35,7 @@ export interface Commands {
   sessionKill(a: { id: string }): Promise<Result<{ id: string }>>
   sessionRemove(a: { id: string }): Promise<Result<{ id: string }>>
   sessionRename(a: { id: string; label: string }): Promise<Result<Session>>
+  sessionLink(a: { id: string; feature: string | null }): Promise<Result<Session>>
   uiSet(partial: Partial<UiState>): Promise<Result<UiState>>
 }
 
@@ -81,6 +82,7 @@ export function createCore(opts: CoreOptions): Core {
       })
     }
     else if (k !== 'features') saveState(opts.statePath, { schemaVersion: 1, sessions: slices.sessions, ui: slices.ui })
+    if (k === 'sessions') publish() // card state reads linked sessions
   }
 
   // config.json `workflow` (absolute or ~/…), else the bundled example. null: rejected path.
@@ -253,6 +255,17 @@ export function createCore(opts: CoreOptions): Core {
       const session = findSession(id)
       if (!session) return { ok: false, error: 'not-found' }
       const next = rename(session, label)
+      replaceSession(next)
+      return { ok: true, data: next }
+    },
+
+    async sessionLink({ id, feature }) {
+      const session = findSession(id)
+      if (!session) return { ok: false, error: 'not-found' }
+      if (feature !== null && !slices.features.items.some((f) => f.projectId === session.projectId && f.slug === feature)) {
+        return { ok: false, error: 'not-found' }
+      }
+      const next = link(session, feature)
       replaceSession(next)
       return { ok: true, data: next }
     },

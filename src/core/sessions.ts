@@ -40,6 +40,10 @@ export function markGone(s: Session, now: string): Session {
   return s.lastStatus === 'gone' ? s : { ...s, lastStatus: 'gone', endedAt: now }
 }
 
+export function link(s: Session, feature: string | null): Session {
+  return { ...s, feature, linkPinned: true }
+}
+
 export function rename(s: Session, label: string): Session {
   return { ...s, label, labelPinned: true }
 }

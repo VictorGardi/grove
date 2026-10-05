@@ -6,6 +6,7 @@ import { buildTree, type TreeNode } from '../tree'
 import { Badge } from './ui/Badge'
 import { Button } from './ui/Button'
 import { Icon } from './ui/Icon'
+import { LinkPicker } from './LinkPicker'
 import { ListRow } from './ui/ListRow'
 import css from './Sidebar.module.css'
 
@@ -15,12 +16,13 @@ function toggle(set: Set<string>, id: string): Set<string> {
   return next
 }
 
-function SessionCard({ s, focused, compact, onFocus, onToggleCompact }: {
+function SessionCard({ s, focused, compact, onFocus, onToggleCompact, onLink }: {
   s: Session
   focused: boolean
   compact: boolean
   onFocus: () => void
   onToggleCompact: () => void
+  onLink: () => void
 }) {
   const [editing, setEditing] = useState(false)
   const opencode = s.kind === 'opencode'
@@ -52,6 +54,7 @@ function SessionCard({ s, focused, compact, onFocus, onToggleCompact }: {
       ) : undefined}
       actions={
         <>
+          <Button variant="ghost" size="sm" round icon="link" aria-label="Link…" title="Link…" onClick={onLink} />
           {s.lastStatus === 'gone' && (
             <Button variant="ghost" size="sm" round icon="trash" aria-label="Remove session" title="Remove"
               onClick={() => void window.api.invoke('session:remove', { id: s.id })} />
@@ -98,6 +101,7 @@ export function Sidebar({ onNew }: { onNew: (projectId?: string) => void }) {
   const { projects, sessions, ui, features, setFocused, toggleCollapsed, focusFeature } = useSlices()
   const [refused, setRefused] = useState<string | null>(null)
   const [compact, setCompact] = useState<Set<string>>(new Set())
+  const [linking, setLinking] = useState<Session | null>(null)
   const tree = buildTree(projects, features.items, sessions, ui)
 
   async function removeProject(id: string) {
@@ -117,6 +121,7 @@ export function Sidebar({ onNew }: { onNew: (projectId?: string) => void }) {
           compact={compact.has(s.id)}
           onFocus={() => setFocused(s.id)}
           onToggleCompact={() => setCompact((c) => toggle(c, s.id))}
+          onLink={() => setLinking(s)}
         />
       )
     }
@@ -167,6 +172,7 @@ export function Sidebar({ onNew }: { onNew: (projectId?: string) => void }) {
           )
         })}
       </div>
+      {linking && <LinkPicker session={linking} onClose={() => setLinking(null)} />}
     </div>
   )
 }

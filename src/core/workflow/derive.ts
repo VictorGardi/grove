@@ -44,7 +44,7 @@ function axisWarning(axis: Axis, manifest: Record<string, unknown>, name: string
 export function deriveFeatures(
   wf: Workflow,
   folders: (FolderSnapshot & { projectId: string })[],
-  _sessions: Session[]
+  sessions: Session[]
 ): Feature[] {
   return folders
     .map((f): Feature => {
@@ -63,8 +63,10 @@ export function deriveFeatures(
         review: s.review ?? null,
         state: states[i] ?? (i === current ? 'current' : 'upcoming'),
       }))
+      const running = sessions.some((s) => s.projectId === f.projectId && s.feature === f.slug && s.lastStatus === 'running')
       const cardState: CardState =
-        current < 0 ? 'done' : !eff.some(exists) ? 'backlog' : exists(eff[current]) ? 'needs-review' : 'ready'
+        current < 0 ? 'done' : running ? 'running'
+          : !eff.some(exists) ? 'backlog' : exists(eff[current]) ? 'needs-review' : 'ready'
       const tagged = (name: string) => {
         const a = eff.find((s) => s.artifact === name)
         if (a) return { stage: a.id, role: 'artifact' as const }

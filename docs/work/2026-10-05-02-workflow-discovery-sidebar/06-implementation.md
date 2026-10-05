@@ -2,14 +2,14 @@
 feature: 2026-10-05-02-workflow-discovery-sidebar
 phase: implementation
 status: draft
-version: 1
+version: 2
 created: 2026-10-05
 updated: 2026-10-05
 approved_at:
 based_on:
   - 03-design.md@1
   - 04-structure.md@1
-  - 05-plan.md@4
+  - 05-plan.md@5
 forced: []
 ---
 
@@ -21,7 +21,7 @@ forced: []
 - [x] Slice 2 — Live discovery and a guarded workflow
 - [x] Slice 3 — The tree
 - [x] Slice 4 — Feature page
-- [ ] Slice 5 — Manual link
+- [x] Slice 5 — Manual link (manual check pending)
 - [ ] Slice 6 — Board (appetite cut 1)
 
 ## Slice 1 — Tracer: features from the bundled workflow, read once
@@ -159,6 +159,28 @@ Deviations and readings (all small, two-way):
   openable (child 4).
 - The test fixture in `tree.test.ts` gained the new `Feature` fields.
   `stateStore.test.ts`'s round-trip fixture gained `focusedFeature`.
+
+## Slice 5 — Manual link
+
+Verification: `npm test` 127/127 passed outside the sandbox (inside it the
+real-tmux tests fail and the real-watcher tests skip, as before);
+`npm run typecheck` clean; `npm run build` clean. Manual check pending.
+
+Deviations and readings (all small, two-way):
+
+- Card state order is `done` > `running` > `backlog` > `needs-review` >
+  `ready`. The epic design says `needs-review` needs "no running session"
+  but doesn't order `running` against `backlog` or `done`. A done feature
+  with a lingering live session stays `done`. A backlog feature with one
+  reads `running`.
+- The picker lists every feature in the session's project, epics (group
+  kinds) included, in `features.items` order (by slug). Core accepts any
+  of them.
+- Added a `link` icon (Lucide) to `ui/Icon.tsx` for the card's "Link…"
+  button. The button shows on hover with the other card actions, for gone
+  sessions too.
+- Features re-derive on every sessions-slice write (`set('sessions')` calls
+  `publish()`), including liveness flips and renames.
 
 ## Human feedback
 

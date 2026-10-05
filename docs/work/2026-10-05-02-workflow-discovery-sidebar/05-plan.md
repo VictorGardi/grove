@@ -2,7 +2,7 @@
 feature: 2026-10-05-02-workflow-discovery-sidebar
 phase: plan
 status: approved
-version: 4
+version: 5
 created: 2026-10-05
 updated: 2026-10-05
 approved_at:
@@ -461,5 +461,92 @@ effective stages in order:
   tests), `npm run typecheck`, `npm run build`.
 - [x] Manual in `npm run dev` (human): open the epic's page and
   visual-foundation's page.
+
+## Slice 5 — Manual link
+
+Context for a cold reader: `Session` (`src/shared/types.ts`) already has
+`feature: string | null` and `linkPinned: boolean`, both always `null` /
+`false` so far. `buildTree` (`src/renderer/src/tree.ts`) already nests a
+session under the feature whose slug equals `session.feature` in the same
+project, and shows a link to a missing slug as unlinked. Core
+(`src/core/core.ts`) re-derives features (`publish()`) on workflow and
+folder changes only; `deriveFeatures` (`src/core/workflow/derive.ts`)
+ignores its `_sessions` argument. IPC commands follow the
+`session:rename` pattern: `InvokeMap` in `src/shared/ipc.ts`, a
+`handle(..., true)` line in `src/main/ipc.ts`, a `Commands` method in core
+returning `Result`. Session cards are `SessionCard` in
+`src/renderer/src/components/Sidebar.tsx`; modals use `ui/Modal`; styles go
+in CSS modules (no inline `style=`).
+
+Rules (design "Manual link", "`running` card state"; E-D6):
+- `sessionLink({ id, feature })`: unknown session id → `not-found`;
+  `feature` a string that is not the slug of a feature in
+  `slices.features.items` with the session's `projectId` → `not-found`;
+  otherwise the session gets `feature` (string or `null`) and
+  `linkPinned: true`, is saved, and features re-derive.
+- Features re-derive whenever the sessions slice is set.
+- `cardState` order: `done` when there is no current stage; else
+  `running` when any session with this feature's `projectId` and
+  `feature === slug` has `lastStatus: 'running'`; else `backlog`,
+  `needs-review`, `ready` as before.
+
+- [x] Write failing tests in `src/core/workflow/derive.test.ts`: a feature
+  with 01 approved and a linked `running` session (same `projectId`
+  `'p'`, `feature: 'a'`) is `running`; the same with the session `gone`
+  is `ready`; a linked running session in another project leaves it
+  `ready`; a done feature with a linked running session stays `done`.
+  Build sessions with `newSession` from `../sessions` plus overrides.
+- [x] `src/core/workflow/derive.ts`: rename `_sessions` to `sessions`;
+  compute `running = sessions.some((s) => s.projectId === f.projectId && s.feature === f.slug && s.lastStatus === 'running')`;
+  `cardState` = `current < 0 ? 'done' : running ? 'running' : <existing backlog / needs-review / ready chain>`.
+- [x] Write failing tests in `src/core/features.test.ts` (`describe('core features')`),
+  using `createTerminal` from `./testing/setup`: with feature `a` on disk,
+  `sessionLink({ id, feature: 'a' })` returns the session with
+  `feature: 'a'`, `linkPinned: true`, and feature `a`'s `cardState` is
+  `running`; a second core `make()` + `start()` on the same files still
+  has the session linked; `sessionLink({ id, feature: null })` sets
+  `feature: null`, `linkPinned: true`; `feature: 'nope'` → `{ ok: false, error: 'not-found' }`;
+  unknown session id → `not-found`; a feature that exists only in another
+  project → `not-found` (add a second project `q` with its own
+  `docs/work/b/feature.md` via `saveConfig` before `make()`).
+- [x] `src/core/sessions.ts`: add `export function link(s: Session, feature: string | null): Session { return { ...s, feature, linkPinned: true } }`.
+- [x] `src/core/core.ts`: `Commands` gains
+  `sessionLink(a: { id: string; feature: string | null }): Promise<Result<Session>>`;
+  implement per the rules above with `findSession`, `link`,
+  `replaceSession`. In `set`, after notifying listeners and saving, call
+  `publish()` when `k === 'sessions'`.
+- [x] `src/shared/types.ts`: update the `Session.feature` and
+  `linkPinned` comments to `// linked feature slug in this project` and
+  `// true once set by hand; auto-linking (child 3) leaves it alone`.
+- [x] `src/shared/ipc.ts`: `InvokeMap` gains
+  `'session:link': [{ id: string; feature: string | null }, Session]`.
+  `src/main/ipc.ts`: `handle('session:link', (a) => core.commands.sessionLink(a), true)`.
+- [x] `src/renderer/src/components/ui/Icon.tsx`: add `'link'` to
+  `IconName` with Lucide's shape
+  `<><path d="M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71" /><path d="M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71" /></>`.
+- [x] Create `src/renderer/src/components/LinkPicker.tsx` +
+  `LinkPicker.module.css`: props `{ session: Session; onClose(): void }`;
+  reads `features` from `useSlices`; renders a `Modal` (`width="sm"`, no
+  `onConfirm`) with a title "Link session", then one `ListRow` per
+  feature with `projectId === session.projectId` (in `features.items`
+  order, `title` = feature title, `meta` = slug, `tone="selected"` when
+  `session.feature === slug`) and a final `ListRow` titled "None"
+  (`tone="selected"` when `session.feature` is `null`). Clicking a row
+  invokes `session:link { id: session.id, feature: slug | null }`; on
+  `ok` call `onClose()`, otherwise show the error in a `.error` line
+  (`var(--danger)`, `var(--fs-sm)`). The list scrolls (`.list`:
+  `max-height: 50vh; overflow-y: auto`, flex column, `gap: var(--sp-1)`).
+- [x] `src/renderer/src/components/Sidebar.tsx`: `SessionCard` gains an
+  `onLink: () => void` prop and a first action
+  `<Button variant="ghost" size="sm" round icon="link" aria-label="Link…" title="Link…" onClick={onLink} />`;
+  `Sidebar` keeps `const [linking, setLinking] = useState<Session | null>(null)`,
+  passes `onLink={() => setLinking(s)}`, and renders
+  `{linking && <LinkPicker session={linking} onClose={() => setLinking(null)} />}`
+  at the end of its root `div`.
+- [x] Run `npm test` (outside the sandbox for the real-tmux and watcher
+  tests), `npm run typecheck`, `npm run build`.
+- [ ] Manual in `npm run dev` (human): link a terminal to this feature; it
+  moves under the feature and the feature reads `running`; restart; still
+  linked; link it to None; it moves back to unlinked.
 
 ## Open questions

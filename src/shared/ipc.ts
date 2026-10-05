@@ -13,6 +13,7 @@ export interface InvokeMap {
   'session:kill': [{ id: string }, { id: string }]
   'session:remove': [{ id: string }, { id: string }]
   'session:rename': [{ id: string; label: string }, Session]
+  'session:link': [{ id: string; feature: string | null }, Session]
   'ui:set': [Partial<UiState>, UiState]
   'pty:attach': [{ sessionId: string; cols: number; rows: number }, { attachId: string }]
 }

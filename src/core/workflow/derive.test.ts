@@ -1,6 +1,8 @@
 import fs from 'node:fs'
 import { describe, expect, it } from 'vitest'
 import type { FolderSnapshot } from '../discovery/folder'
+import type { Session } from '@shared/types'
+import { newSession } from '../sessions'
 import { readFrontmatter } from './frontmatter'
 import { deriveFeatures, effectiveStages, isComplete } from './derive'
 import { parseWorkflow, type Workflow } from './parse'
@@ -17,6 +19,8 @@ function folder(slug: string, files: Record<string, string>): FolderSnapshot & {
 }
 const fm = (fields: string) => `---\n${fields}\n---\n`
 const approved = fm('status: approved')
+const session = (over: Partial<Session>): Session =>
+  ({ ...newSession({ projectId: 'p', kind: 'terminal', now: new Date(0), id: 's' }), feature: 'a', ...over })
 const ids = (m: Record<string, unknown>) => effectiveStages(wf, m).map((s) => s.id)
 
 describe('effectiveStages', () => {
@@ -110,6 +114,16 @@ describe('deriveFeatures', () => {
     ['done with an unapproved pass', { '01-questions.md': fm('status: draft'), '06-implementation.md': approved }, 'done'],
   ])('card state %s', (_, files, expected) => {
     const [f] = deriveFeatures(wf, [folder('a', { 'feature.md': fm('flow: small'), ...files })], [])
+    expect(f.cardState).toBe(expected)
+  })
+
+  it.each<[string, Record<string, string>, Partial<Session>, string]>([
+    ['running with a linked running session', { '01-questions.md': approved }, {}, 'running'],
+    ['not running with a gone session', { '01-questions.md': approved }, { lastStatus: 'gone' }, 'ready'],
+    ['not running with a session in another project', { '01-questions.md': approved }, { projectId: 'q' }, 'ready'],
+    ['done even with a running session', { '01-questions.md': approved, '06-implementation.md': approved }, {}, 'done'],
+  ])('card state: %s', (_, files, over, expected) => {
+    const [f] = deriveFeatures(wf, [folder('a', { 'feature.md': fm('flow: small'), ...files })], [session(over)])
     expect(f.cardState).toBe(expected)
   })
 

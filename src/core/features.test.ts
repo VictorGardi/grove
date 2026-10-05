@@ -2,7 +2,7 @@ import fs from 'node:fs'
 import path from 'node:path'
 import { afterEach, describe, expect, it } from 'vitest'
 import { loadConfig, saveConfig } from './store/configStore'
-import { setupCore } from './testing/setup'
+import { createTerminal, setupCore } from './testing/setup'
 
 const bundled = fs.readFileSync(new URL('../../resources/workflow.yaml', import.meta.url), 'utf8')
 
@@ -132,5 +132,50 @@ describe('core features', () => {
     expect(core.getSlices().ui).toMatchObject({ focusedSessionId: null, focusedFeature: { projectId: 'p', slug: 'a' } })
     await core.commands.uiSet({ focusedSessionId: 'y' })
     expect(core.getSlices().ui).toMatchObject({ focusedSessionId: 'y', focusedFeature: null })
+  })
+
+  it('links a session to a feature by hand and keeps it across restarts', async () => {
+    const s = setup()
+    s.feature('a')
+    const core = s.make()
+    await core.start()
+    const t = await createTerminal(core)
+    const res = await core.commands.sessionLink({ id: t.id, feature: 'a' })
+    expect(res).toMatchObject({ ok: true, data: { id: t.id, feature: 'a', linkPinned: true } })
+    expect(core.getSlices().features.items[0].cardState).toBe('running')
+
+    const again = s.make()
+    await again.start()
+    expect(again.getSlices().sessions[0]).toMatchObject({ feature: 'a', linkPinned: true })
+  })
+
+  it('unlinks with null and still pins', async () => {
+    const s = setup()
+    s.feature('a')
+    const core = s.make()
+    await core.start()
+    const t = await createTerminal(core)
+    await core.commands.sessionLink({ id: t.id, feature: 'a' })
+    const res = await core.commands.sessionLink({ id: t.id, feature: null })
+    expect(res).toMatchObject({ ok: true, data: { feature: null, linkPinned: true } })
+    expect(core.getSlices().features.items[0].cardState).toBe('backlog')
+  })
+
+  it('refuses an unknown session, an unknown slug and another project\'s feature', async () => {
+    const s = setup()
+    s.feature('a')
+    const other = path.join(s.dir, 'other')
+    s.feature('b', path.join(other, 'docs', 'work'))
+    const config = loadConfig(s.configPath)
+    saveConfig(s.configPath, { ...config, projects: [...config.projects, { id: 'q', name: 'other', path: other }] })
+    const core = s.make()
+    await core.start()
+    expect(core.getSlices().features.items.map((f) => [f.projectId, f.slug])).toEqual([['p', 'a'], ['q', 'b']])
+    const t = await createTerminal(core)
+    const nf = { ok: false, error: 'not-found' }
+    expect(await core.commands.sessionLink({ id: 'x', feature: 'a' })).toEqual(nf)
+    expect(await core.commands.sessionLink({ id: t.id, feature: 'nope' })).toEqual(nf)
+    expect(await core.commands.sessionLink({ id: t.id, feature: 'b' })).toEqual(nf)
+    expect(core.getSlices().sessions[0]).toMatchObject({ feature: null, linkPinned: false })
   })
 })

@@ -39,6 +39,7 @@ export function registerIpc(core: Core, getWindow: () => BrowserWindow | null, g
   handle('session:kill', (a) => core.commands.sessionKill(a), true)
   handle('session:remove', (a) => core.commands.sessionRemove(a), true)
   handle('session:rename', (a) => core.commands.sessionRename(a), true)
+  handle('session:link', (a) => core.commands.sessionLink(a), true)
   handle('ui:set', (a) => core.commands.uiSet(a), true)
 
   const attaches = new Map<string, AttachHandle>()

@@ -8,8 +8,8 @@ export interface Session {
   labelPinned: boolean
   tmuxName: string                 // `grove-${id}`
   opencodeSessionId: string | null // set for kind 'opencode' (slice 3)
-  feature: string | null           // always null in this child
-  linkPinned: boolean              // always false in this child
+  feature: string | null           // linked feature slug in this project
+  linkPinned: boolean              // true once set by hand; auto-linking (child 3) leaves it alone
   action: { stage: string; actionId: string } | null // always null
   startedAt: string                // ISO
   endedAt: string | null           // ISO, set when first seen gone
