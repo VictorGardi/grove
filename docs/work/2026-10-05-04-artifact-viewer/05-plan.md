@@ -139,11 +139,11 @@ clickable; markdown and images arrive in slice 3.
 - [x] Run `npm test`
 - [x] Run `npm run typecheck`
 - [x] Run `npm run build`
-- [ ] Manual (human), `npm run dev`: open `2026-10-05-02-workflow-discovery-sidebar`
+- [x] Manual (human), `npm run dev`: open `2026-10-05-02-workflow-discovery-sidebar`
   → click `03-design.html` → the page renders in the panel (diagrams may be
   blank). In the panel's DevTools console, `location.origin` is `"null"`.
-- [ ] Manual (human): same check after `npm run build && npm start`.
-- [ ] Manual (human): set the iframe `src` in DevTools to
+- [x] Manual (human): same check after `npm run build && npm start`.
+- [x] Manual (human): set the iframe `src` in DevTools to
   `grove-artifact://<pid>/<slug>/../../../../etc/hosts` → refusal page.
 
 ## Open questions

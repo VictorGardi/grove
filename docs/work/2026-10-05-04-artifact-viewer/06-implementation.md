@@ -17,7 +17,7 @@ forced: []
 
 ## Progress
 
-- [ ] Slice 1 — Tracer: an HTML artifact opens in the panel (automated checks pass; manual checks pending)
+- [x] Slice 1 — Tracer: an HTML artifact opens in the panel
 - [ ] Slice 2 — Mermaid offline
 - [ ] Slice 3 — Markdown and images
 - [ ] Slice 4 — Navigation, switcher, Open review
@@ -28,7 +28,8 @@ forced: []
 Verification: `npm test` 154/154 passed (run outside the Claude Code sandbox:
 inside it the real-tmux tests in `src/core/backend/tmux.test.ts` fail with
 `posix_spawnp failed`, unrelated); `npm run typecheck` clean; `npm run build`
-clean. The three manual checks are for the human.
+clean. Manual checks (dev, `npm start`, traversal refusal) passed, confirmed
+by the human on 2026-10-05.
 
 Deviations (small, two-way):
 
