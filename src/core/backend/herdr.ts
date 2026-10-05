@@ -9,6 +9,7 @@ export class HerdrBackend implements SessionBackend {
   create(): Promise<void> { return notImplemented() }
   setColors(): Promise<void> { return notImplemented() }
   list(): Promise<Set<string>> { return notImplemented() }
+  cwds(): Promise<Map<string, string>> { return notImplemented() }
   kill(): Promise<void> { return notImplemented() }
   attach(): AttachHandle { return notImplemented() }
 }

@@ -2,7 +2,7 @@
 feature: 2026-10-05-02-workflow-discovery-sidebar
 phase: implementation
 status: draft
-version: 6
+version: 7
 created: 2026-10-05
 updated: 2026-10-05
 approved_at:
@@ -292,6 +292,38 @@ unchanged. Manual check pending.
 - Staleness: this feature's `03-design.md` is based on
   `parent:03-design.md@3`; the epic design is now v4.
 
+### Session card, after slice 8 (2026-10-05)
+
+Asked for after slice 8: "instead of being able to click the feature name
+in a card → add a button left of link button that takes me to feature …
+the area is too large"; "add the branch the session is working in as card
+info"; "two 'running' statuses … remove the last one".
+
+Verification: `npm test` 147/147 passed outside the sandbox;
+`npm run typecheck` clean; `npm run build` clean. Manual check pending.
+
+- **Feature line not clickable.** It shows the epic-colour dot, the title
+  and the stage only (`featureStage`: current stage label, `n / m done`
+  for an active epic, else `Done`), without the feature's card state, so
+  the card no longer shows "Running" twice. A folder-icon "Open feature"
+  hover button, left of Link…, opens the feature page (only on linked
+  cards).
+- **Branch on the card (decision by the human: the session's live
+  directory, over the project folder's checkout).** `TmuxBackend.cwds()`
+  reads each session's active pane directory (`list-sessions -F
+  '#{session_name}\t#{pane_current_path}'`); `readBranch` (`src/core/git.ts`)
+  walks up to the nearest `.git` (folder, or a worktree's `gitdir:` file)
+  and reads `HEAD` without spawning git (detached: 7-char hash; no repo:
+  `null`). Core refreshes branches on start and on every liveness check
+  (5 s poll, window focus, attach exit) via `withBranches`, only for
+  running sessions. `Session.branch?` is optional and live-only: core
+  strips it before writing `state.json`, so a gone session keeps its last
+  branch until restart and then shows none. The card shows it under the
+  feature line with the branch icon.
+- Not in `03-design.md`; built here and logged, like the earlier
+  after-the-last-slice changes. `SessionBackend` gains `cwds()`; the herdr
+  stub throws like its other methods.
+
 ## PR description
 
 **Workflow, discovery and sidebar** (epic child 2,
@@ -329,8 +361,9 @@ Slices:
    shows project → epic → feature without sessions; the tab persists;
    Cmd+1..9 follows Sessions order. Replaces slice 3's mixed tree.
 8. Feature line on the session card (v2): a linked session shows its
-   feature (epic-colour dot, title, stage · card state); clicking the line
-   opens the feature page.
+   feature (epic-colour dot, title, current stage); a hover button opens
+   the feature page. Every live session's card also shows its git branch,
+   read from its tmux pane's current directory (not saved).
 
 How to verify:
 
@@ -339,7 +372,8 @@ How to verify:
 - `npm run dev`, register this repo: features show under the project with
   stage and card state; `mkdir` a folder with `feature.md` and it appears;
   open a feature page; link a terminal to a feature and restart; its card
-  shows the feature line, click it for the feature page; switch Sessions |
+  shows the feature line and its branch, the folder button opens the
+  feature page; switch Sessions |
   Features, restart, tab kept; Cmd+2 focuses the second session in
   Sessions order; toggle to Board and click a card.
 

@@ -36,6 +36,20 @@ export function reconcile(sessions: Session[], live: Set<string>, now: string): 
   return changed ? out : sessions
 }
 
+// Each live session's branch, from its tmux pane's current directory. Same array when unchanged.
+export function withBranches(sessions: Session[], cwds: Map<string, string>, branchAt: (dir: string) => string | null): Session[] {
+  let changed = false
+  const out = sessions.map((s) => {
+    const cwd = cwds.get(s.tmuxName)
+    if (s.lastStatus !== 'running' || cwd === undefined) return s
+    const branch = branchAt(cwd)
+    if (branch === s.branch) return s
+    changed = true
+    return { ...s, branch }
+  })
+  return changed ? out : sessions
+}
+
 export function markGone(s: Session, now: string): Session {
   return s.lastStatus === 'gone' ? s : { ...s, lastStatus: 'gone', endedAt: now }
 }

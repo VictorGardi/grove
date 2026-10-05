@@ -11,7 +11,8 @@ import { listFolders, readFolder, resolveRoot, type FolderSnapshot } from './dis
 import { chokidarWatchers, type Closer, type Watchers } from './discovery/watcher'
 import { loginShellArgv } from './env'
 import { hasLiveSessions, newProject } from './projects'
-import { link, markGone, newSession, reconcile, rename } from './sessions'
+import { readBranch } from './git'
+import { link, markGone, newSession, reconcile, rename, withBranches } from './sessions'
 import { loadConfig, saveConfig } from './store/configStore'
 import { loadState, saveState } from './store/stateStore'
 import { deriveFeatures } from './workflow/derive'
@@ -81,7 +82,10 @@ export function createCore(opts: CoreOptions): Core {
         ...(configWorkflow !== undefined && { workflow: configWorkflow }),
       })
     }
-    else if (k !== 'features') saveState(opts.statePath, { schemaVersion: 1, sessions: slices.sessions, ui: slices.ui })
+    else if (k !== 'features') {
+      const sessions = slices.sessions.map(({ branch: _live, ...s }) => s) // branch is live-only
+      saveState(opts.statePath, { schemaVersion: 1, sessions, ui: slices.ui })
+    }
     if (k === 'sessions') publish() // card state reads linked sessions
   }
 
@@ -191,6 +195,18 @@ export function createCore(opts: CoreOptions): Core {
       return // transient tmux errors are retried by the next poll
     }
     const next = reconcile(slices.sessions, live, now().toISOString())
+    if (next !== slices.sessions) set('sessions', next)
+    await refreshBranches()
+  }
+
+  async function refreshBranches(): Promise<void> {
+    let cwds: Map<string, string>
+    try {
+      cwds = await backend.cwds()
+    } catch {
+      return // retried by the next poll
+    }
+    const next = withBranches(slices.sessions, cwds, readBranch)
     if (next !== slices.sessions) set('sessions', next)
   }
 
@@ -302,6 +318,7 @@ export function createCore(opts: CoreOptions): Core {
         await backend.ensureConfig()
         const next = reconcile(slices.sessions, await backend.list(), now().toISOString())
         if (next !== slices.sessions) set('sessions', next)
+        await refreshBranches()
       } catch (e) {
         errors.push(`tmux: ${(e as Error).message}`)
       }

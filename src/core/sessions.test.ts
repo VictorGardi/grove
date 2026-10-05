@@ -1,3 +1,5 @@
+import fs from 'node:fs'
+import path from 'node:path'
 import { afterEach, describe, expect, it } from 'vitest'
 import { DEFAULT_UI, type Session } from '@shared/types'
 import { terminalTheme } from '@shared/theme'
@@ -60,6 +62,26 @@ describe('core sessions', () => {
     expect(b.getSlices().sessions[0]).toMatchObject({ lastStatus: 'gone', endedAt: LATER.toISOString() })
     expect(emitted).toContain('sessions')
     expect(loadState(statePath).sessions[0].lastStatus).toBe('gone')
+  })
+
+  it('reads each live session branch from its current directory, without saving it', async () => {
+    const { dir, fake, make, statePath } = setup()
+    fs.mkdirSync(path.join(dir, '.git'))
+    fs.writeFileSync(path.join(dir, '.git', 'HEAD'), 'ref: refs/heads/main\n')
+    const a = make()
+    await a.start()
+    const s = await create(a)
+    await a.checkLiveness()
+    expect(a.getSlices().sessions[0].branch).toBe('main')
+
+    fs.writeFileSync(path.join(dir, '.git', 'HEAD'), 'ref: refs/heads/other\n')
+    await a.checkLiveness()
+    expect(a.getSlices().sessions[0].branch).toBe('other')
+
+    fake.paths.set(s.tmuxName, path.join(dir, '..'))
+    await a.checkLiveness()
+    expect(a.getSlices().sessions[0].branch).toBeNull()
+    expect(fs.readFileSync(statePath, 'utf8')).not.toContain('branch')
   })
 
   it('saves sessions missing from tmux as gone on start', async () => {

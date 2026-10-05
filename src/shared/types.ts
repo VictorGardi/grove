@@ -14,6 +14,7 @@ export interface Session {
   startedAt: string                // ISO
   endedAt: string | null           // ISO, set when first seen gone
   lastStatus: 'running' | 'gone'
+  branch?: string | null           // live sessions: branch at the pane's current directory; never saved
 }
 export interface UiState {
   sidebarWidth: number

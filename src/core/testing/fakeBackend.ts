@@ -6,6 +6,7 @@ export interface FakeHandle extends AttachHandle {
 
 export class FakeBackend implements SessionBackend {
   live = new Set<string>()
+  paths = new Map<string, string>() // what cwds() returns; create sets the start directory
   calls: { method: string; args: unknown[] }[] = []
   handles: FakeHandle[] = []
 
@@ -20,6 +21,7 @@ export class FakeBackend implements SessionBackend {
   async create(o: { name: string; cwd: string; cols: number; rows: number; argv?: string[] }): Promise<void> {
     this.record('create', [o])
     this.live.add(o.name)
+    this.paths.set(o.name, o.cwd)
   }
 
   async setColors(name: string, fg: string, bg: string): Promise<void> {
@@ -29,6 +31,10 @@ export class FakeBackend implements SessionBackend {
   async list(): Promise<Set<string>> {
     this.record('list', [])
     return new Set(this.live)
+  }
+
+  async cwds(): Promise<Map<string, string>> {
+    return new Map(this.paths)
   }
 
   async kill(name: string): Promise<void> {

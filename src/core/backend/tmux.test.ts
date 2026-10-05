@@ -1,4 +1,5 @@
 import { execFile } from 'node:child_process'
+import fs from 'node:fs'
 import os from 'node:os'
 import path from 'node:path'
 import { promisify } from 'node:util'
@@ -27,6 +28,7 @@ describe.skipIf(!tmuxPath)('TmuxBackend', () => {
 
   it('lists nothing when no server runs', async () => {
     expect(await backend.list()).toEqual(new Set())
+    expect(await backend.cwds()).toEqual(new Map())
   })
 
   it('creates a session with the config file', async () => {
@@ -64,6 +66,11 @@ describe.skipIf(!tmuxPath)('TmuxBackend', () => {
     await create('grove-abc')
     await backend.kill('grove-ab')
     expect((await backend.list()).has('grove-abc')).toBe(true)
+  })
+
+  it('reports each session\'s current directory', async () => {
+    const cwds = await backend.cwds()
+    expect(fs.realpathSync(cwds.get('grove-abc')!)).toBe(fs.realpathSync(os.tmpdir()))
   })
 
   it('sets pane colours for OSC 10/11', async () => {

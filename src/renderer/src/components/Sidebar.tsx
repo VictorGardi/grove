@@ -1,7 +1,7 @@
 import { useState } from 'react'
 import type { Feature, Project, Session } from '@shared/types'
 import { useSlices } from '../stores/slices'
-import { featureSummary } from '../featureLabels'
+import { featureStage, featureSummary } from '../featureLabels'
 import { colorTags } from '../tags'
 import { buildTree, linkedFeature, sessionGroups, type TreeNode } from '../tree'
 import { Badge } from './ui/Badge'
@@ -37,11 +37,21 @@ function SessionCard({ s, feature, tag, focused, compact, onFocus, onOpenFeature
     <ListRow
       title={s.label}
       icon={<Icon name={opencode ? 'opencode' : 'terminal'} size={14} className={opencode ? css.iconOpencode : css.iconTerminal} />}
-      meta={feature && (
-        <button type="button" className={css.featureLine} onClick={(e) => { e.stopPropagation(); onOpenFeature() }}>
-          <Tag index={tag}>{feature.title}</Tag>
-          <span className={css.featureSummary}>{featureSummary(feature)}</span>
-        </button>
+      meta={(feature || s.branch) && (
+        <div className={css.cardInfo}>
+          {feature && (
+            <div className={css.featureLine}>
+              <Tag index={tag}>{feature.title}</Tag>
+              <span className={css.featureStage}>{featureStage(feature)}</span>
+            </div>
+          )}
+          {s.branch && (
+            <div className={css.branchLine}>
+              <Icon name="branch" size={12} />
+              <span className={css.branchName}>{s.branch}</span>
+            </div>
+          )}
+        </div>
       )}
       status={{ label: s.lastStatus, tone: s.lastStatus }}
       tone={focused ? 'selected' : opencode ? 'default' : 'muted'}
@@ -66,6 +76,10 @@ function SessionCard({ s, feature, tag, focused, compact, onFocus, onOpenFeature
       ) : undefined}
       actions={
         <>
+          {feature && (
+            <Button variant="ghost" size="sm" round icon="folder" aria-label="Open feature" title="Open feature"
+              onClick={onOpenFeature} />
+          )}
           <Button variant="ghost" size="sm" round icon="link" aria-label="Link…" title="Link…" onClick={onLink} />
           {s.lastStatus === 'gone' && (
             <Button variant="ghost" size="sm" round icon="trash" aria-label="Remove session" title="Remove"
