@@ -284,7 +284,7 @@ and a fake in `src/core/testing/`.
   `features.workflowError` is set, `<Banner key="workflow">Workflow: {features.workflowError}</Banner>`.
 - [x] Run `npm test` (outside the sandbox if the real-tmux tests fail to
   reach their socket), `npm run typecheck`, `npm run build`.
-- [ ] Manual in `npm run dev` (human): `mkdir` a folder with `feature.md`
+- [x] Manual in `npm run dev` (human): `mkdir` a folder with `feature.md`
   under `docs/work` → it appears; set `workflow` in
   `~/.config/grove/config.json` to a copy of `resources/workflow.yaml`,
   restart, break it → banner, features stay; fix it → banner clears.

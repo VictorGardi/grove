@@ -18,7 +18,7 @@ forced: []
 ## Progress
 
 - [x] Slice 1 — Tracer: features from the bundled workflow, read once
-- [x] Slice 2 — Live discovery and a guarded workflow (manual check pending)
+- [x] Slice 2 — Live discovery and a guarded workflow
 - [ ] Slice 3 — The tree
 - [ ] Slice 4 — Feature page
 - [ ] Slice 5 — Manual link
@@ -72,7 +72,8 @@ Deviations (all small, two-way):
 Verification: `npm test` 105/105 passed outside the sandbox (inside it the
 four real-tmux tests fail as in slice 1, and the three real-watcher tests in
 `watcher.test.ts` skip themselves: `fs.watch` starts there but then emits
-`EMFILE`); `npm run typecheck` clean; `npm run build` clean. Risk from the
+`EMFILE`); `npm run typecheck` clean; `npm run build` clean. Manual check
+passed (human, 2026-10-05). Risk from the
 design checked before planning: `require('chokidar')` (ESM-only 5.0.0)
 works in Electron 44's CJS main (Node 24.21), so chokidar stays an
 externalized `dependency`, with no bundling fallback. The built
