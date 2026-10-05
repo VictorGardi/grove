@@ -20,7 +20,7 @@ forced: []
 - [x] Slice 1 — Tracer: an HTML artifact opens in the panel
 - [x] Slice 2 — Mermaid offline
 - [x] Slice 3 — Markdown and images
-- [ ] Slice 4 — Navigation, switcher, Open review
+- [x] Slice 4 — Navigation, switcher, Open review
 - [ ] Slice 5 — Live reload and layout
 
 ## Slice 1 — Tracer: an HTML artifact opens in the panel
@@ -94,8 +94,10 @@ Deviations (small, two-way):
 ## Slice 4 — Navigation, switcher, Open review
 
 Verification: `npm test` 185/185 passed (outside the sandbox, as before);
-`npm run typecheck` clean; `npm run build` clean. Manual checks are for the
-human.
+`npm run typecheck` clean; `npm run build` clean. Manual checks (subframe
+`will-frame-navigate` fires, epic link, ADR refusal, switcher, Open review,
+external link) passed, confirmed by the human on 2026-10-05; the
+`did-frame-navigate` fallback was not needed.
 
 Deviations (small, two-way):
 

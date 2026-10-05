@@ -413,20 +413,20 @@ through `uiSet`, after which the renderer's load matches and proceeds.
 - [x] Run `npm test`
 - [x] Run `npm run typecheck`
 - [x] Run `npm run build`
-- [ ] Manual (human), `npm run dev`, in
+- [x] Manual (human), `npm run dev`, in
   `2026-10-05-02-workflow-discovery-sidebar/03-design.html`: the terminal
   running `npm run dev` shows `[viewer] will-frame-navigate sub grove-artifact:`
   lines; click the "Part of epic" link → the epic's `03-design.html` opens and
   the switcher lists the epic's files; click an ADR link → refusal page; pick
   another file in the switcher → it opens.
-- [ ] Manual (human): **Open review** on this feature
+- [x] Manual (human): **Open review** on this feature
   (`2026-10-05-04-artifact-viewer`, current stage implementation, no review
   file) opens `06-implementation.md`; on `2026-10-05-02-workflow-discovery-sidebar`
   (done) there is no button.
-- [ ] Manual (human): add `[x](https://example.com)` to a scratch `.md` in a
+- [x] Manual (human): add `[x](https://example.com)` to a scratch `.md` in a
   feature folder, open it, click → opens in the system browser, the panel
   stays put. Delete the scratch file afterwards.
-- [ ] Manual (human): if no `will-frame-navigate … sub` line appears, stop:
+- [x] Manual (human): if no `will-frame-navigate … sub` line appears, stop:
   the design's `did-frame-navigate` fallback replaces the subframe branch
   before this slice is ticked.
 
