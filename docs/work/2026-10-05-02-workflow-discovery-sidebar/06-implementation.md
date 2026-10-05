@@ -17,7 +17,7 @@ forced: []
 
 ## Progress
 
-- [x] Slice 1 — Tracer: features from the bundled workflow, read once (manual check pending)
+- [x] Slice 1 — Tracer: features from the bundled workflow, read once
 - [ ] Slice 2 — Live discovery and a guarded workflow
 - [ ] Slice 3 — The tree
 - [ ] Slice 4 — Feature page
@@ -29,7 +29,9 @@ forced: []
 Verification: `npm test` 83/83 passed (run outside the Claude Code sandbox:
 inside it the four real-tmux tests in `src/core/backend/tmux.test.ts` fail
 to reach the tmux socket, unrelated to this change); `npm run typecheck`
-clean; `npm run build` clean. The manual `npm run dev` check is for the human.
+clean; `npm run build` clean. Manual check passed (human, 2026-10-05): with
+this repo registered, its features show under the project. They appeared
+only after an app restart; the first run was from before this slice's build.
 
 Probe over this repo's `docs/work` with the bundled workflow: both
 `standard` children with approved 01–04 (this feature, visual-foundation)

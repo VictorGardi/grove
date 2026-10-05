@@ -146,7 +146,7 @@ adds `unapproved`, `cardState`, `flags`, `warnings`, `artifacts`.
   `Sidebar.module.css` only (no inline styles).
 - [x] Run `npm test` (outside the sandbox if the real-tmux tests fail with
   `posix_spawnp failed`), `npm run typecheck`, `npm run build`.
-- [ ] Manual in `npm run dev` (human): register this repo; the epic and its
+- [x] Manual in `npm run dev` (human): register this repo; the epic and its
   children show stages; visual-foundation shows `implementation`.
 
 ## Open questions
