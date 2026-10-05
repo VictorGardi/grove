@@ -17,7 +17,7 @@ forced: []
 
 ## Progress
 
-- [x] Slice 1 — Tracer: the Xirp shell around the existing UI (manual check pending human)
+- [x] Slice 1 — Tracer: the Xirp shell around the existing UI 
 - [x] Slice 2 — Modals, buttons, banner and panes
 - [x] Slice 3 — Sidebar cards and folders
 - [x] Slice 4 — No inline styles, enforced
@@ -101,6 +101,8 @@ Deviations (small, two-way):
 
 `npm test` 55/55 (outside the sandbox), `npm run typecheck` clean,
 `npm run build` clean. No `lint` command is configured.
+Manual `npm run dev` checks for slices 2–4: confirmed by the human
+(2026-10-05, "everything looks good").
 
 ## PR description
 
