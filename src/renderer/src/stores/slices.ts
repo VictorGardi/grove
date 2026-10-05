@@ -1,5 +1,5 @@
 import { create } from 'zustand'
-import type { FeaturesSlice, Project, Session, UiState } from '@shared/types'
+import type { FeaturesSlice, Project, Session, UiState, ViewerTarget } from '@shared/types'
 import { DEFAULT_UI, EMPTY_FEATURES } from '@shared/types'
 
 interface SlicesState {
@@ -15,6 +15,8 @@ interface SlicesState {
   openFeature(ref: { projectId: string; slug: string }): void
   setView(view: UiState['view']): void
   setSidebarTab(tab: UiState['sidebarTab']): void
+  openArtifact(t: ViewerTarget): void
+  closeViewer(): void
 }
 
 export const useSlices = create<SlicesState>((set, get) => ({
@@ -39,6 +41,8 @@ export const useSlices = create<SlicesState>((set, get) => ({
   openFeature: (ref) => { void window.api.invoke('ui:set', { view: 'list', focusedFeature: ref }) },
   setView: (view) => { void window.api.invoke('ui:set', { view }) },
   setSidebarTab: (tab) => { void window.api.invoke('ui:set', { sidebarTab: tab }) },
+  openArtifact: (t) => { void window.api.invoke('ui:set', { viewer: t }) },
+  closeViewer: () => { void window.api.invoke('ui:set', { viewer: null }) },
   toggleCollapsed(key) {
     const { collapsed } = get().ui
     const next = collapsed.includes(key) ? collapsed.filter((k) => k !== key) : [...collapsed, key]

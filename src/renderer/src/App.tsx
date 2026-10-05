@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react'
 import type { Session } from '@shared/types'
+import { ArtifactViewer } from './components/ArtifactViewer'
 import { Board } from './components/Board'
 import { ConfirmDialog } from './components/ConfirmDialog'
 import { FeaturePage } from './components/FeaturePage'
@@ -17,7 +18,7 @@ import { sessionGroups, sessionOrder } from './tree'
 import s from './App.module.css'
 
 export default function App() {
-  const { projects, sessions, ui, features, errors, hydrate, setFocused, setView, openFeature } = useSlices()
+  const { projects, sessions, ui, features, errors, hydrate, setFocused, setView, openFeature, openArtifact, closeViewer } = useSlices()
   const [newFor, setNewFor] = useState<{ projectId?: string } | null>(null)
   const [confirmKill, setConfirmKill] = useState<Session | null>(null)
 
@@ -66,7 +67,8 @@ export default function App() {
               <Board stages={features.stages} features={features.items} projects={projects}
                 onOpen={(f) => openFeature({ projectId: f.projectId, slug: f.slug })} />
             ) : focusedFeature ? (
-              <FeaturePage feature={focusedFeature} sessions={sessions} onFocusSession={setFocused} />
+              <FeaturePage feature={focusedFeature} sessions={sessions} onFocusSession={setFocused}
+                onOpenArtifact={(name) => openArtifact({ projectId: focusedFeature.projectId, slug: focusedFeature.slug, path: name, hash: null })} />
             ) : focused?.lastStatus === 'running' ? (
               <TerminalView key={focused.id} sessionId={focused.id} />
             ) : focused ? (
@@ -79,6 +81,7 @@ export default function App() {
             )}
           </>
         }
+        viewer={ui.viewer ? <ArtifactViewer target={ui.viewer} onClose={closeViewer} /> : undefined}
         sidebarWidth={ui.sidebarWidth}
       />
       {newFor && <NewSessionModal initialProjectId={newFor.projectId} onClose={() => setNewFor(null)} />}

@@ -5,10 +5,13 @@ import { chromeBackground } from '@shared/theme'
 import { TmuxBackend } from '../core/backend/tmux'
 import { createCore } from '../core/core'
 import { findTmux, minimalEnv } from '../core/env'
+import { handleArtifacts, registerArtifactScheme } from './artifacts'
 import { registerIpc } from './ipc'
 import { buildMenu } from './menu'
 
 let win: BrowserWindow | null = null
+
+registerArtifactScheme()
 
 app.whenReady().then(async () => {
   const errors: string[] = []
@@ -27,6 +30,7 @@ app.whenReady().then(async () => {
     }),
   })
   await core.start()
+  handleArtifacts(core)
 
   registerIpc(core, () => win, () => [...errors, ...core.getErrors()])
   buildMenu((a) => {

@@ -16,6 +16,12 @@ export interface Session {
   lastStatus: 'running' | 'gone'
   branch?: string | null           // live sessions: branch at the pane's current directory; never saved
 }
+export interface ViewerTarget {
+  projectId: string
+  slug: string
+  path: string        // relative POSIX path inside the feature folder
+  hash: string | null // fragment without the leading '#'
+}
 export interface UiState {
   sidebarWidth: number
   focusedSessionId: string | null
@@ -23,6 +29,7 @@ export interface UiState {
   view: 'list' | 'board'
   sidebarTab: 'sessions' | 'features'
   collapsed: string[] // tree keys: p:<projectId>, f:<projectId>/<slug>
+  viewer: ViewerTarget | null // artifact open in the right-hand panel
 }
 export interface FeatureStage {
   id: string
@@ -57,5 +64,5 @@ export interface FeaturesSlice {
 export type Slices = { projects: Project[]; sessions: Session[]; ui: UiState; features: FeaturesSlice }
 export interface ConfigFile { schemaVersion: 1; projects: Project[]; workflow?: string }
 export interface StateFile { schemaVersion: 1; sessions: Session[]; ui: UiState }
-export const DEFAULT_UI: UiState = { sidebarWidth: 230, focusedSessionId: null, focusedFeature: null, view: 'list', sidebarTab: 'sessions', collapsed: [] }
+export const DEFAULT_UI: UiState = { sidebarWidth: 230, focusedSessionId: null, focusedFeature: null, view: 'list', sidebarTab: 'sessions', collapsed: [], viewer: null }
 export const EMPTY_FEATURES: FeaturesSlice = { workflowError: null, stages: [], items: [] }

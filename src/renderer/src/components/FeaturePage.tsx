@@ -5,10 +5,11 @@ import { cx } from './ui/cx'
 import { ListRow } from './ui/ListRow'
 import s from './FeaturePage.module.css'
 
-export function FeaturePage({ feature: f, sessions, onFocusSession }: {
+export function FeaturePage({ feature: f, sessions, onFocusSession, onOpenArtifact }: {
   feature: Feature
   sessions: Session[]
   onFocusSession: (id: string) => void
+  onOpenArtifact: (name: string) => void
 }) {
   const linked = sessions.filter((x) => x.projectId === f.projectId && x.feature === f.slug)
 
@@ -43,7 +44,9 @@ export function FeaturePage({ feature: f, sessions, onFocusSession }: {
         <ul className={s.files}>
           {f.artifacts.map((a) => (
             <li key={a.name} className={s.file}>
-              <span>{a.name}</span>
+              {/\.html?$/i.test(a.name)
+                ? <button type="button" className={s.fileLink} onClick={() => onOpenArtifact(a.name)}>{a.name}</button>
+                : <span>{a.name}</span>}
               {a.stage && <span className={s.note}>{a.stage}{a.role === 'review' ? ' · review' : ''}</span>}
             </li>
           ))}

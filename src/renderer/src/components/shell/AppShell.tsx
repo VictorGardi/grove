@@ -1,11 +1,12 @@
 import type { CSSProperties, ReactNode } from 'react'
 import s from './AppShell.module.css'
 
-export function AppShell({ topBar, banners, sidebar, content, sidebarWidth }: {
+export function AppShell({ topBar, banners, sidebar, content, viewer, sidebarWidth }: {
   topBar: ReactNode
   banners?: ReactNode
   sidebar: ReactNode
   content: ReactNode
+  viewer?: ReactNode
   sidebarWidth: number
 }) {
   return (
@@ -15,6 +16,7 @@ export function AppShell({ topBar, banners, sidebar, content, sidebarWidth }: {
       <div className={s.body}>
         <aside className={s.sidebar}>{sidebar}</aside>
         <main className={s.content}>{content}</main>
+        {viewer && <aside className={s.viewer}>{viewer}</aside>}
       </div>
     </div>
   )

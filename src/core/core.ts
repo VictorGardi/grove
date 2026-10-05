@@ -5,6 +5,7 @@ import path from 'node:path'
 import type { Project, Session, SessionKind, Slices, UiState } from '@shared/types'
 import { DEFAULT_UI, EMPTY_FEATURES } from '@shared/types'
 import type { Result } from '@shared/ipc'
+import { safeArtifactPath } from './artifacts/path'
 import type { AttachHandle, SessionBackend } from './backend/types'
 import { terminalTheme } from '@shared/theme'
 import { listFolders, readFolder, resolveRoot, type FolderSnapshot } from './discovery/folder'
@@ -48,6 +49,7 @@ export interface Core {
   checkLiveness(): Promise<void>
   commands: Commands
   attach(sessionId: string, cols: number, rows: number): AttachHandle
+  artifactPath(projectId: string, slug: string, rel: string): string | null // null: not a file of a discovered feature
   dispose(): void
 }
 
@@ -352,6 +354,10 @@ export function createCore(opts: CoreOptions): Core {
         void checkLiveness()
       })
       return tracked
+    },
+    artifactPath(projectId, slug, rel) {
+      const f = slices.features.items.find((x) => x.projectId === projectId && x.slug === slug)
+      return f ? safeArtifactPath(f.path, rel) : null
     },
     dispose() {
       clearInterval(poll)
