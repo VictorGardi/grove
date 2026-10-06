@@ -809,7 +809,7 @@ is current.
   `src/renderer/src/App.module.css`.
 - [x] Run `npm test -- src/core/sessions.test.ts`, then `npm test` (outside
   the sandbox), `npm run typecheck` and `npm run build`.
-- [ ] Manual (human): `tmux -L grove kill-server` → OpenCode cards gone with
+- [x] Manual (human): `tmux -L grove kill-server` → OpenCode cards gone with
   Resume → Resume opens the TUI with its history; repeat once on a session
   interrupted mid-turn.
 

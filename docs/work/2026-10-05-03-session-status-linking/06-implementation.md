@@ -169,8 +169,9 @@ Deviations (small, two-way):
 
 Verification: `npm test -- src/core/sessions.test.ts` passes (33 tests);
 `npm test` 278 passed (outside the sandbox); `npm run typecheck` and
-`npm run build` clean (no lint command configured). Manual check pending, for
-the human.
+`npm run build` clean (no lint command configured). Manual check (kill the
+tmux server → Resume reopens the TUI with history, also for a session
+interrupted mid-turn): passed, confirmed by the human on 2026-10-06.
 
 Deviations (small, two-way):
 
