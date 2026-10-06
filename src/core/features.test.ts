@@ -163,7 +163,7 @@ describe('core features', () => {
     const t = await createTerminal(core)
     const res = await core.commands.sessionLink({ id: t.id, feature: 'a' })
     expect(res).toMatchObject({ ok: true, data: { id: t.id, feature: 'a', linkPinned: true } })
-    expect(core.getSlices().features.items[0].cardState).toBe('running')
+    expect(core.getSlices().features.items[0].cardState).toBe('backlog') // a terminal never makes a card running
 
     const again = s.make()
     await again.start()

@@ -2,14 +2,14 @@
 feature: 2026-10-05-03-session-status-linking
 phase: implementation
 status: draft
-version: 1
+version: 2
 created: 2026-10-06
 updated: 2026-10-06
 approved_at:
 based_on:
   - 03-design.md@1
   - 04-structure.md@1
-  - 05-plan.md@1
+  - 05-plan.md@2
 forced: []
 ---
 
@@ -18,7 +18,7 @@ forced: []
 ## Progress
 
 - [x] Slice 1 — Tracer: live working / idle
-- [ ] Slice 2 — Waiting on a permission or question
+- [x] Slice 2 — Waiting on a permission or question (manual check pending)
 - [ ] Slice 3 — Re-sync, reconnect, fallback banner
 - [ ] Slice 4 — Finished turn waits until seen; notifications
 - [ ] Slice 5 — Auto-link
@@ -48,5 +48,26 @@ Deviations (small, two-way):
   every connect/disconnect.
 - Reconnect is a fixed 1 s retry until slice 3 adds backoff; `HttpOpenCode`
   logs nothing.
+
+## Slice 2 — Waiting on a permission or question
+
+Verification: the slice's test commands pass (57 + 26 tests); `npm test` 218
+passed, 3 skipped, 5 failed (only the real-tmux tests, sandbox `posix_spawnp`
+as in slice 1); `npm run typecheck` and `npm run build` clean. Manual check
+(permission → "waiting · permission", header, feature card): pending, by the
+human.
+
+Deviations (small, two-way):
+
+- A subagent's own `exec-started`/`exec-ended` do not change its root's
+  working/idle (only its pending items count, per the Subagents row); the
+  slice 1 test that folded a child's turn into the root was replaced.
+- Every OpenCode form counts as a question, whatever its `metadata.kind`.
+- "Longest-waiting" uses the time the renderer first saw each session waiting
+  (`waitingSince` in the renderer store, reset on reload; unknown times sort
+  last). No new `Session` field.
+- `src/core/features.test.ts` "links a session to a feature by hand": a linked
+  terminal now leaves the card `backlog`, not `running` (Card roll-up row).
+- New store action `showSession(id)` (list view + focus) for the header chip.
 
 ## Open questions

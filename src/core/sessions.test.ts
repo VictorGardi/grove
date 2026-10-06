@@ -245,6 +245,18 @@ describe('core opencode status', () => {
     expect(find(core, o.id)?.status).toBe('idle')
   })
 
+  it('waits on a subagent permission, never saving it', async () => {
+    const { core, oc, statePath } = await connected()
+    const o = await createOpenCode(core)
+    oc.emit({ type: 'child', sessionId: 'ses_child', parentId: o.opencodeSessionId! })
+    oc.emit({ type: 'pending', sessionId: 'ses_child', id: 'per_1', kind: 'permission', open: true })
+    expect(find(core, o.id)).toMatchObject({ status: 'waiting', waitingFor: 'permission' })
+    const saved = JSON.parse(fs.readFileSync(statePath, 'utf8')) as { sessions: Session[] }
+    expect(saved.sessions[0]).not.toHaveProperty('waitingFor')
+    oc.emit({ type: 'pending', sessionId: 'ses_child', id: 'per_1', kind: 'permission', open: false })
+    expect(find(core, o.id)?.status).toBe('idle')
+  })
+
   it('drops status on disconnect and stops the source on dispose', async () => {
     const { core, oc } = await connected()
     const o = await createOpenCode(core)

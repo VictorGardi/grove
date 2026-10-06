@@ -24,9 +24,25 @@ describe('apply', () => {
     expect(started.get('ses_a')?.running).toBe(true) // input not mutated
   })
 
-  it('folds a child session into its root', () => {
-    const out = apply(new Map(), new Map([['ses_child', 'ses_root']]), { type: 'exec-started', sessionId: 'ses_child' })
-    expect([...out.keys()]).toEqual(['ses_root'])
+  it('ignores a child session starting or ending a turn', () => {
+    const t = new Map([['ses_root', tracker({ running: true })]])
+    const roots = new Map([['ses_child', 'ses_root']])
+    expect(apply(t, roots, { type: 'exec-started', sessionId: 'ses_child' })).toBe(t)
+    expect(apply(t, roots, { type: 'exec-ended', sessionId: 'ses_child', at: AT })).toBe(t)
+  })
+
+  it('opens and closes pending items, a child counting for its root', () => {
+    const roots = new Map([['ses_child', 'ses_root']])
+    const open = apply(new Map(), roots, { type: 'pending', sessionId: 'ses_child', id: 'per_1', kind: 'permission', open: true })
+    expect([...open.get('ses_root')!.pending]).toEqual([['per_1', 'permission']])
+    const closed = apply(open, roots, { type: 'pending', sessionId: 'ses_child', id: 'per_1', kind: 'permission', open: false })
+    expect(closed.get('ses_root')!.pending.size).toBe(0)
+    expect(open.get('ses_root')!.pending.size).toBe(1) // input not mutated
+  })
+
+  it('records a child on its root', () => {
+    const out = apply(new Map(), new Map([['ses_mid', 'ses_root']]), { type: 'child', sessionId: 'ses_leaf', parentId: 'ses_mid' })
+    expect([...out.get('ses_root')!.children]).toEqual(['ses_leaf'])
   })
 
   it('leaves the map alone on connection events', () => {
@@ -42,6 +58,13 @@ describe('statusOf', () => {
     expect(statusOf(tracker(), null)).toEqual({ status: 'idle' })
     expect(statusOf(tracker({ running: true }), null)).toEqual({ status: 'working' })
   })
+
+  it('waits on a permission before a question before working', () => {
+    const both = new Map<string, 'permission' | 'question'>([['frm_1', 'question'], ['per_1', 'permission']])
+    expect(statusOf(tracker({ running: true, pending: both }), null)).toEqual({ status: 'waiting', waitingFor: 'permission' })
+    expect(statusOf(tracker({ running: true, pending: new Map([['frm_1', 'question']]) }), null))
+      .toEqual({ status: 'waiting', waitingFor: 'question' })
+  })
 })
 
 describe('withStatus', () => {
@@ -51,6 +74,17 @@ describe('withStatus', () => {
     const out = withStatus([oc('a', 'ses_a'), oc('b', 'ses_b'), term], new Map([['ses_a', tracker({ running: true })]]), true)
     expect(out.map((s) => s.status)).toEqual(['working', 'idle', undefined])
     expect('status' in out[2]).toBe(false)
+  })
+
+  it('sets and clears waitingFor with the status', () => {
+    const waiting = new Map([['ses_a', tracker({ pending: new Map([['per_1', 'permission' as const]]) })]])
+    const [w] = withStatus([oc('a', 'ses_a')], waiting, true)
+    expect(w).toMatchObject({ status: 'waiting', waitingFor: 'permission' })
+    const [i] = withStatus([w], new Map(), true)
+    expect(i.status).toBe('idle')
+    expect('waitingFor' in i).toBe(false)
+    const [off] = withStatus([w], new Map(), false)
+    expect('status' in off || 'waitingFor' in off).toBe(false)
   })
 
   it('removes status when disconnected', () => {

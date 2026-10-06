@@ -3,7 +3,11 @@ import { cx } from '../ui/cx'
 import { Icon } from '../ui/Icon'
 import s from './TopBar.module.css'
 
-export function TopBar({ onNew }: { onNew: () => void }) {
+export function TopBar({ onNew, waiting, onWaiting }: {
+  onNew: () => void
+  waiting: number // sessions waiting on the human
+  onWaiting: () => void // focuses the longest-waiting one
+}) {
   return (
     <header className={cx(s.bar, 'app-drag')}>
       <div className={s.brand}>
@@ -18,7 +22,11 @@ export function TopBar({ onNew }: { onNew: () => void }) {
         </div>
         <Button round icon="plus" aria-label="New session" className="app-no-drag" onClick={onNew} />
       </div>
-      <div />
+      {waiting > 0 ? (
+        <div className={s.right}>
+          <Button size="sm" className={cx(s.waiting, 'app-no-drag')} onClick={onWaiting}>{waiting} waiting</Button>
+        </div>
+      ) : <div />}
     </header>
   )
 }

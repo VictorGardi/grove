@@ -49,3 +49,12 @@
   font-size: var(--fs-lg);
   cursor: default;
 }
+
+.right {
+  display: flex;
+  justify-content: flex-end;
+}
+
+.waiting {
+  color: var(--text);
+}

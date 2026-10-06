@@ -118,13 +118,24 @@ describe('deriveFeatures', () => {
   })
 
   it.each<[string, Record<string, string>, Partial<Session>, string]>([
-    ['running with a linked running session', { '01-questions.md': approved }, {}, 'running'],
-    ['not running with a gone session', { '01-questions.md': approved }, { lastStatus: 'gone' }, 'ready'],
-    ['not running with a session in another project', { '01-questions.md': approved }, { projectId: 'q' }, 'ready'],
-    ['done even with a running session', { '01-questions.md': approved, '06-implementation.md': approved }, {}, 'done'],
+    ['not running with a live terminal', { '01-questions.md': approved }, {}, 'ready'],
+    ['running with a working OpenCode session', { '01-questions.md': approved }, { kind: 'opencode', status: 'working' }, 'running'],
+    ['not running with an idle OpenCode session', { '01-questions.md': approved }, { kind: 'opencode', status: 'idle' }, 'ready'],
+    ['waiting with a waiting OpenCode session', { '01-questions.md': approved }, { kind: 'opencode', status: 'waiting', waitingFor: 'question' }, 'waiting'],
+    ['not waiting when the session is gone', { '01-questions.md': approved }, { kind: 'opencode', status: 'waiting', lastStatus: 'gone' }, 'ready'],
+    ['not running with a session in another project', { '01-questions.md': approved }, { kind: 'opencode', status: 'working', projectId: 'q' }, 'ready'],
+    ['done even with a working session', { '01-questions.md': approved, '06-implementation.md': approved }, { kind: 'opencode', status: 'working' }, 'done'],
   ])('card state: %s', (_, files, over, expected) => {
     const [f] = deriveFeatures(wf, [folder('a', { 'feature.md': fm('flow: small'), ...files })], [session(over)])
     expect(f.cardState).toBe(expected)
+  })
+
+  it('card state: waiting beats running', () => {
+    const [f] = deriveFeatures(wf, [folder('a', { 'feature.md': fm('flow: small'), '01-questions.md': approved })], [
+      session({ id: 'w', kind: 'opencode', status: 'working' }),
+      session({ id: 'q', kind: 'opencode', status: 'waiting', waitingFor: 'permission' }),
+    ])
+    expect(f.cardState).toBe('waiting')
   })
 
   describe('groups', () => {

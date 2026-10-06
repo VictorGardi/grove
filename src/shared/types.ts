@@ -16,6 +16,7 @@ export interface Session {
   lastStatus: 'running' | 'gone'
   branch?: string | null           // live sessions: branch at the pane's current directory; never saved
   status?: 'working' | 'waiting' | 'idle' // OpenCode sessions while the service is connected; never saved
+  waitingFor?: 'permission' | 'question' // with status 'waiting'; never saved
 }
 export interface ViewerTarget {
   projectId: string

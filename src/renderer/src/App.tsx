@@ -13,14 +13,15 @@ import { TopBar } from './components/shell/TopBar'
 import { ViewToggle } from './components/shell/ViewToggle'
 import { Banner } from './components/ui/Banner'
 import { Button } from './components/ui/Button'
+import { longestWaiting, shownStatus } from './sessionStatus'
 import { useSlices } from './stores/slices'
 import { sessionGroups, sessionOrder } from './tree'
 import { viewableFiles } from './viewerFiles'
 import s from './App.module.css'
 
 export default function App() {
-  const { projects, sessions, ui, features, errors, hydrate, setFocused, setView, openFeature, openArtifact, closeViewer,
-    setViewerWidth, toggleViewerExpanded, reloadViewer } = useSlices()
+  const { projects, sessions, ui, features, errors, waitingSince, hydrate, setFocused, showSession, setView, openFeature,
+    openArtifact, closeViewer, setViewerWidth, toggleViewerExpanded, reloadViewer } = useSlices()
   const [newFor, setNewFor] = useState<{ projectId?: string } | null>(null)
   const [confirmKill, setConfirmKill] = useState<Session | null>(null)
 
@@ -54,11 +55,16 @@ export default function App() {
   const crumbs = board ? ['Board'] : title ? [...(project ? [project.name] : []), title] : []
   const v = ui.viewer
   const viewerFeature = v && features.items.find((f) => f.projectId === v.projectId && f.slug === v.slug)
+  const waitingCount = sessions.filter((x) => shownStatus(x) === 'waiting').length
+  const focusWaiting = () => {
+    const w = longestWaiting(sessions, waitingSince)
+    if (w) showSession(w.id)
+  }
 
   return (
     <>
       <AppShell
-        topBar={<TopBar onNew={() => openNew()} />}
+        topBar={<TopBar onNew={() => openNew()} waiting={waitingCount} onWaiting={focusWaiting} />}
         banners={[
           ...errors.map((e, i) => <Banner key={i}>{e}</Banner>),
           ...(features.workflowError ? [<Banner key="workflow">Workflow: {features.workflowError}</Banner>] : []),

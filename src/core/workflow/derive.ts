@@ -63,9 +63,12 @@ export function deriveFeatures(
         review: s.review ?? null,
         state: states[i] ?? (i === current ? 'current' : 'upcoming'),
       }))
-      const running = sessions.some((s) => s.projectId === f.projectId && s.feature === f.slug && s.lastStatus === 'running')
+      // only live OpenCode status counts: idle sessions and terminals don't keep a card running
+      const linked = sessions.filter((s) => s.projectId === f.projectId && s.feature === f.slug && s.lastStatus === 'running')
+      const waiting = linked.some((s) => s.status === 'waiting')
+      const running = linked.some((s) => s.status === 'working')
       const cardState: CardState =
-        current < 0 ? 'done' : running ? 'running'
+        current < 0 ? 'done' : waiting ? 'waiting' : running ? 'running'
           : !eff.some(exists) ? 'backlog' : exists(eff[current]) ? 'needs-review' : 'ready'
       const tagged = (name: string) => {
         const a = eff.find((s) => s.artifact === name)

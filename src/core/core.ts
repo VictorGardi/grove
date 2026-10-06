@@ -91,7 +91,7 @@ export function createCore(opts: CoreOptions): Core {
       })
     }
     else if (k !== 'features') {
-      const sessions = slices.sessions.map(({ branch: _branch, status: _status, ...s }) => s) // live-only
+      const sessions = slices.sessions.map(({ branch: _branch, status: _status, waitingFor: _waitingFor, ...s }) => s) // live-only
       saveState(opts.statePath, { schemaVersion: 1, sessions, ui: slices.ui })
     }
     if (k === 'sessions') publish() // card state reads linked sessions
@@ -227,7 +227,11 @@ export function createCore(opts: CoreOptions): Core {
     if (e.type === 'connected' || e.type === 'disconnected') {
       ocConnected = e.type === 'connected'
       trackers = new Map()
-    } else trackers = apply(trackers, roots, e)
+      roots.clear()
+    } else {
+      if (e.type === 'child') roots.set(e.sessionId, roots.get(e.parentId) ?? e.parentId)
+      trackers = apply(trackers, roots, e)
+    }
     refreshStatus()
   }
 

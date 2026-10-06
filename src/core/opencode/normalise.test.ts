@@ -33,4 +33,36 @@ describe('normalise', () => {
     expect(normalise('text', 'v')).toBeNull()
     expect(normalise(null, 'v')).toBeNull()
   })
+
+  it('maps permission asked and replied', () => {
+    expect(normalise(env('permission.asked', { id: 'per_1', sessionID: 'ses_a', action: 'edit', resources: [] }), 'v'))
+      .toEqual({ type: 'pending', sessionId: 'ses_a', id: 'per_1', kind: 'permission', open: true })
+    expect(normalise(env('permission.replied', { sessionID: 'ses_a', requestID: 'per_1', reply: 'once' }), 'v'))
+      .toEqual({ type: 'pending', sessionId: 'ses_a', id: 'per_1', kind: 'permission', open: false })
+  })
+
+  it('maps forms to questions, with the session id inside the form on create', () => {
+    expect(normalise(env('form.created', { form: { id: 'frm_1', sessionID: 'ses_a', metadata: { kind: 'question' } } }), 'v'))
+      .toEqual({ type: 'pending', sessionId: 'ses_a', id: 'frm_1', kind: 'question', open: true })
+    for (const t of ['form.replied', 'form.cancelled']) {
+      expect(normalise(env(t, { id: 'frm_1', sessionID: 'ses_a' }), 'v'))
+        .toEqual({ type: 'pending', sessionId: 'ses_a', id: 'frm_1', kind: 'question', open: false })
+    }
+    expect(normalise(env('form.cancelled', { form: { id: 'frm_1', sessionID: 'ses_a' } }), 'v'))
+      .toMatchObject({ id: 'frm_1', sessionId: 'ses_a', open: false })
+  })
+
+  it('maps a subagent session.created to child, and ignores top-level ones', () => {
+    expect(normalise(env('session.created', { sessionID: 'ses_c', parentID: 'ses_a' }), 'v'))
+      .toEqual({ type: 'child', sessionId: 'ses_c', parentId: 'ses_a' })
+    expect(normalise(env('session.created', { info: { id: 'ses_c', parentID: 'ses_a' } }), 'v'))
+      .toEqual({ type: 'child', sessionId: 'ses_c', parentId: 'ses_a' })
+    expect(normalise(env('session.created', { sessionID: 'ses_c' }), 'v')).toBeNull()
+  })
+
+  it('ignores pending events without ids', () => {
+    expect(normalise(env('permission.asked', { sessionID: 'ses_a' }), 'v')).toBeNull()
+    expect(normalise(env('form.created', { form: { sessionID: 'ses_a' } }), 'v')).toBeNull()
+    expect(normalise(env('permission.replied', { sessionID: 'ses_a' }), 'v')).toBeNull()
+  })
 })
