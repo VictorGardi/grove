@@ -63,6 +63,10 @@ export function autoLink(s: Session, feature: string): Session {
   return { ...s, feature } // leaves linkPinned alone
 }
 
+export function resume(s: Session): Session {
+  return { ...s, lastStatus: 'running', endedAt: null }
+}
+
 export function link(s: Session, feature: string | null): Session {
   return { ...s, feature, linkPinned: true }
 }

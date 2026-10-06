@@ -12,6 +12,7 @@ export interface InvokeMap {
   'session:create': [{ projectId: string; kind: SessionKind; cols: number; rows: number }, Session]
   'session:kill': [{ id: string }, { id: string }]
   'session:remove': [{ id: string }, { id: string }]
+  'session:resume': [{ id: string }, Session]
   'session:rename': [{ id: string; label: string }, Session]
   'session:link': [{ id: string; feature: string | null }, Session]
   'ui:set': [Partial<UiState>, UiState]

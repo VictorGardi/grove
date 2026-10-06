@@ -15,7 +15,7 @@ import { slugFor } from './autolink'
 import { hasLiveSessions, newProject } from './projects'
 import { readBranch } from './git'
 import type { OcEvent, OpenCodeSource } from './opencode/types'
-import { autoLink, link, markGone, markSeen, newSession, reconcile, rename, withBranches } from './sessions'
+import { autoLink, link, markGone, markSeen, newSession, reconcile, rename, resume, withBranches } from './sessions'
 import { loadConfig, saveConfig } from './store/configStore'
 import { apply, fromSnapshot, withStatus, type Tracker } from './status'
 import { loadState, saveState } from './store/stateStore'
@@ -42,6 +42,7 @@ export interface Commands {
   sessionCreate(a: { projectId: string; kind: SessionKind; cols: number; rows: number }): Promise<Result<Session>>
   sessionKill(a: { id: string }): Promise<Result<{ id: string }>>
   sessionRemove(a: { id: string }): Promise<Result<{ id: string }>>
+  sessionResume(a: { id: string }): Promise<Result<Session>> // gone OpenCode sessions only
   sessionRename(a: { id: string; label: string }): Promise<Result<Session>>
   sessionLink(a: { id: string; feature: string | null }): Promise<Result<Session>>
   uiSet(partial: Partial<UiState>): Promise<Result<UiState>>
@@ -446,6 +447,23 @@ export function createCore(opts: CoreOptions): Core {
       if (session.lastStatus !== 'gone') return { ok: false, error: 'not-gone' }
       dropSessions((s) => s.id !== id)
       return { ok: true, data: { id } }
+    },
+
+    // E-D3: a new tmux session of the same name runs `opencode -s <id>`, picking up its history.
+    async sessionResume({ id }) {
+      const session = findSession(id)
+      const project = session && slices.projects.find((p) => p.id === session.projectId)
+      if (!session || !project) return { ok: false, error: 'not-found' }
+      if (session.kind !== 'opencode' || !session.opencodeSessionId) return { ok: false, error: 'not-opencode' }
+      if (session.lastStatus !== 'gone') return { ok: false, error: 'not-gone' }
+      await backend.kill(session.tmuxName) // a leftover dead pane
+      const argv = loginShellArgv(['opencode', '-s', session.opencodeSessionId])
+      await backend.create({ name: session.tmuxName, cwd: project.path, cols: 80, rows: 24, argv }) // attaching resizes it
+      await backend.setColors(session.tmuxName, terminalTheme.foreground, terminalTheme.background)
+      replaceSession(resume(findSession(id) ?? session))
+      if (ocConnected) void resync()
+      refreshStatus()
+      return { ok: true, data: findSession(id)! }
     },
 
     async sessionRename({ id, label }) {

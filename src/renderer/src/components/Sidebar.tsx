@@ -83,8 +83,14 @@ function SessionCard({ s, feature, tag, focused, compact, onFocus, onOpenFeature
           )}
           <Button variant="ghost" size="sm" round icon="link" aria-label="Link…" title="Link…" onClick={onLink} />
           {s.lastStatus === 'gone' && (
-            <Button variant="ghost" size="sm" round icon="trash" aria-label="Remove session" title="Remove"
-              onClick={() => void window.api.invoke('session:remove', { id: s.id })} />
+            <>
+              {s.kind === 'opencode' && (
+                <Button variant="ghost" size="sm" round icon="resume" aria-label="Resume session" title="Resume"
+                  onClick={() => void window.api.invoke('session:resume', { id: s.id })} />
+              )}
+              <Button variant="ghost" size="sm" round icon="trash" aria-label="Remove session" title="Remove"
+                onClick={() => void window.api.invoke('session:remove', { id: s.id })} />
+            </>
           )}
           <Button variant="ghost" size="sm" round icon="minimize" aria-label={compact ? 'Expand' : 'Compact'}
             title={compact ? 'Expand' : 'Compact'} onClick={onToggleCompact} />

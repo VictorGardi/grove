@@ -432,3 +432,56 @@ describe('core seen and notify', () => {
     expect(notified.map((x) => [x.id, x.waitingFor])).toEqual([[b.id, 'question']])
   })
 })
+
+describe('resume', () => {
+  let disposeAll = () => {}
+  afterEach(() => disposeAll())
+
+  async function setup() {
+    const s = setupCore()
+    disposeAll = s.disposeAll
+    const work = path.join(s.dir, 'docs', 'work', 'a')
+    fs.mkdirSync(work, { recursive: true })
+    fs.writeFileSync(path.join(work, 'feature.md'), '---\nkind: feature\n---\n# a\n')
+    const core = s.make()
+    await core.start()
+    return { ...s, core }
+  }
+
+  it('reopens a gone OpenCode session in a new tmux session, keeping id, label and link', async () => {
+    const { core, fake, dir, statePath } = await setup()
+    const o = await createOpenCode(core)
+    await core.commands.sessionLink({ id: o.id, feature: 'a' })
+    await core.commands.sessionRename({ id: o.id, label: 'mine' })
+    await core.commands.sessionKill({ id: o.id })
+    fake.calls = []
+    const res = await core.commands.sessionResume({ id: o.id })
+    expect(res).toMatchObject({ ok: true, data: { id: o.id, label: 'mine', feature: 'a', linkPinned: true, lastStatus: 'running', endedAt: null } })
+    expect(fake.calls.map((c) => c.method).slice(0, 2)).toEqual(['kill', 'create'])
+    expect(fake.calls[0].args[0]).toBe(o.tmuxName)
+    const created = fake.calls[1].args[0] as { name: string; cwd: string; argv: string[] }
+    expect(created).toMatchObject({ name: o.tmuxName, cwd: dir })
+    expect(created.argv[4]).toBe(`exec opencode -s ${o.opencodeSessionId}`)
+    expect(loadState(statePath).sessions[0]).toMatchObject({ lastStatus: 'running', endedAt: null })
+  })
+
+  it('refuses unknown, running and terminal sessions', async () => {
+    const { core } = await setup()
+    const o = await createOpenCode(core)
+    const t = await create(core)
+    await core.commands.sessionKill({ id: t.id })
+    expect(await core.commands.sessionResume({ id: 'x' })).toEqual({ ok: false, error: 'not-found' })
+    expect(await core.commands.sessionResume({ id: o.id })).toEqual({ ok: false, error: 'not-gone' })
+    expect(await core.commands.sessionResume({ id: t.id })).toEqual({ ok: false, error: 'not-opencode' })
+  })
+
+  it('re-syncs status when the service is connected', async () => {
+    const { core, oc } = await setup()
+    const o = await createOpenCode(core)
+    oc.emit({ type: 'connected', version: '2.0.20' })
+    await core.commands.sessionKill({ id: o.id })
+    oc.snapshotCalls = []
+    await core.commands.sessionResume({ id: o.id })
+    expect(oc.snapshotCalls).toEqual([[o.opencodeSessionId]])
+  })
+})

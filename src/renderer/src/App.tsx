@@ -85,7 +85,12 @@ export default function App() {
             ) : focused ? (
               <div className={s.ended}>
                 <div className={s.endedTitle}>Session ended</div>
-                <Button icon="trash" onClick={() => void window.api.invoke('session:remove', { id: focused.id })}>Remove</Button>
+                <div className={s.endedActions}>
+                  {focused.kind === 'opencode' && (
+                    <Button icon="resume" variant="primary" onClick={() => void window.api.invoke('session:resume', { id: focused.id })}>Resume</Button>
+                  )}
+                  <Button icon="trash" onClick={() => void window.api.invoke('session:remove', { id: focused.id })}>Remove</Button>
+                </div>
               </div>
             ) : (
               <div className={s.empty}>Start a session with ＋ or ⌘T</div>

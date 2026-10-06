@@ -7,6 +7,11 @@
   gap: var(--sp-3);
 }
 
+.endedActions {
+  display: flex;
+  gap: var(--sp-2);
+}
+
 .endedTitle {
   font-size: var(--fs-lg);
   color: var(--text-2);

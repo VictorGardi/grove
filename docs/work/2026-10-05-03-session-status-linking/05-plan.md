@@ -739,4 +739,78 @@ Subagents; E-D6):
 - [x] Manual (human): in an unlinked OpenCode session run `/grove-questions`
   on a new idea → the card shows the new feature; restart grove → link kept.
 
+## Slice 6 — Resume
+
+Context (code at `030e5b4`, after slice 5): `src/core/core.ts`
+`commands.sessionCreate` builds `argv = loginShellArgv(['opencode', '-s', session.opencodeSessionId])`
+(`src/core/env.ts`), then `backend.create({ name: session.tmuxName, cwd: project.path, cols, rows, argv })`
+and `backend.setColors(session.tmuxName, terminalTheme.foreground, terminalTheme.background)`.
+`sessionKill` uses `markGone` (`lastStatus: 'gone'`, `endedAt` set);
+`sessionRemove` refuses `not-gone`. `resync()` (re-snapshots the live OpenCode
+sessions) runs on every `connected`; `ocConnected` says whether the service
+is connected. `replaceSession(next)` swaps a session by id and saves.
+`backend.kill` treats a missing session as success. IPC: `InvokeMap` in
+`src/shared/ipc.ts`, handlers in `src/main/ipc.ts`
+(`handle('session:remove', (a) => core.commands.sessionRemove(a), true)`).
+Renderer: `src/renderer/src/components/Sidebar.tsx` session row `actions`
+shows a trash button when `s.lastStatus === 'gone'`; `src/renderer/src/App.tsx`
+shows "Session ended" with a Remove button for a focused gone session.
+`IconName` and Lucide-style `shapes` live in `src/renderer/src/components/ui/Icon.tsx`.
+Tests: `src/core/sessions.test.ts` (`setupCore`, `createOpenCode`,
+`createTerminal`; `fake.calls` records backend calls; `argv[4]` is the
+`exec …` string).
+
+Rules (design desired state 8, flow *Resume*, row Resume, E-D3): only a gone
+OpenCode session can resume. Errors in order: unknown session or its project
+→ `not-found`; not `kind 'opencode'` or no `opencodeSessionId` →
+`not-opencode`; `lastStatus !== 'gone'` → `not-gone`. Resume kills any
+leftover tmux session of that name (a dead pane), creates the same
+`tmuxName` in the project path running `opencode -s <opencodeSessionId>`,
+sets the pane colours, and sets `lastStatus: 'running'`, `endedAt: null`;
+`id`, `label`, `feature`, `linkPinned`, `seenAt` stay. The tmux session
+starts at 80×24 (the command takes only `{ id }`; attaching resizes it). If
+the service is connected, a re-sync follows so the resumed session's status
+is current.
+
+- [x] Write failing tests in `src/core/sessions.test.ts`, `describe('resume')`:
+  a gone OpenCode session (created with `createOpenCode`, linked with
+  `sessionLink` to a feature folder created under `<dir>/docs/work/a`, renamed with
+  `sessionRename`, then `sessionKill`) → `sessionResume({ id })` returns
+  `ok` with the same `id`, `label`, `feature`, `lastStatus 'running'`,
+  `endedAt null`; `fake.calls` has a `kill` then a `create` for the same
+  `tmuxName` with `cwd` = the project path and `argv[4]` =
+  `exec opencode -s <opencodeSessionId>`; `state.json` has it running.
+  Errors: unknown id → `not-found`; a running OpenCode session → `not-gone`;
+  a gone terminal → `not-opencode`. With the service connected, resuming
+  adds a `snapshotCalls` entry containing its `opencodeSessionId`.
+- [x] In `src/core/sessions.ts` add
+  `export function resume(s: Session): Session { return { ...s, lastStatus: 'running', endedAt: null } }`.
+- [x] In `src/core/core.ts` add to `Commands`
+  `sessionResume(a: { id: string }): Promise<Result<Session>>` and implement
+  it per the rules (reuse the `argv`/`create`/`setColors` calls of
+  `sessionCreate`, `cols: 80, rows: 24`); after `replaceSession(resume(…))`
+  call `if (ocConnected) void resync()`, then `refreshStatus()`; return the
+  stored session.
+- [x] In `src/shared/ipc.ts` add `'session:resume': [{ id: string }, Session]`;
+  in `src/main/ipc.ts` add `handle('session:resume', (a) => core.commands.sessionResume(a), true)`.
+- [x] In `src/renderer/src/components/ui/Icon.tsx` add `'resume'` to
+  `IconName` with shape (Lucide rotate-ccw)
+  `<><path d="M3 12a9 9 0 1 0 9-9 9.75 9.75 0 0 0-6.74 2.74L3 8" /><path d="M3 3v5h5" /></>`.
+- [x] In `src/renderer/src/components/Sidebar.tsx`, inside the
+  `s.lastStatus === 'gone'` actions, before the trash button, when
+  `s.kind === 'opencode'`:
+  `<Button variant="ghost" size="sm" round icon="resume" aria-label="Resume session" title="Resume" onClick={() => void window.api.invoke('session:resume', { id: s.id })} />`
+  (wrap both in a fragment).
+- [x] In `src/renderer/src/App.tsx` "Session ended" view, before Remove, when
+  `focused.kind === 'opencode'`:
+  `<Button icon="resume" variant="primary" onClick={() => void window.api.invoke('session:resume', { id: focused.id })}>Resume</Button>`;
+  put both buttons in a `<div className={s.endedActions}>` and add
+  `.endedActions { display: flex; gap: var(--sp-2); }` to
+  `src/renderer/src/App.module.css`.
+- [x] Run `npm test -- src/core/sessions.test.ts`, then `npm test` (outside
+  the sandbox), `npm run typecheck` and `npm run build`.
+- [ ] Manual (human): `tmux -L grove kill-server` → OpenCode cards gone with
+  Resume → Resume opens the TUI with its history; repeat once on a session
+  interrupted mid-turn.
+
 ## Open questions

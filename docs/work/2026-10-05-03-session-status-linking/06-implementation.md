@@ -22,7 +22,7 @@ forced: []
 - [x] Slice 3 — Re-sync, reconnect, fallback banner
 - [x] Slice 4 — Finished turn waits until seen; notifications
 - [x] Slice 5 — Auto-link
-- [ ] Slice 6 — Resume
+- [x] Slice 6 — Resume
 
 ## Approval note
 
@@ -164,5 +164,63 @@ Deviations (small, two-way):
   it; held entries for removed or pinned sessions are dropped.
 - `status.apply` ignores `wrote`; core handles it before the snapshot queue.
 - `snapshot` and `lastWrites` share a private `get` in `HttpOpenCode`.
+
+## Slice 6 — Resume
+
+Verification: `npm test -- src/core/sessions.test.ts` passes (33 tests);
+`npm test` 278 passed (outside the sandbox); `npm run typecheck` and
+`npm run build` clean (no lint command configured). Manual check pending, for
+the human.
+
+Deviations (small, two-way):
+
+- The resumed tmux session starts at 80×24: `sessionResume` takes only
+  `{ id }` (structure signature), and attaching resizes it.
+- Error order: `not-found` (session or its project), `not-opencode`,
+  `not-gone`.
+- Resume re-syncs all live OpenCode sessions (`resync()`), not just the
+  resumed one, when the service is connected.
+- New `resume` icon (Lucide rotate-ccw); the "Session ended" view puts Resume
+  (primary) next to Remove.
+
+## PR description
+
+**Session status, linking and resume** (child 3 of the OpenCode feature
+workspace epic)
+
+Grove now follows OpenCode sessions live through the shared OpenCode service
+(one SSE client, HTTP re-sync on every connect; design D2 keeps all OpenCode
+shapes behind `src/core/opencode/`):
+
+- Each OpenCode card shows **working**, **waiting · permission / question /
+  done**, **idle** or **gone**; terminals show running / gone. The header
+  shows "N waiting" (click focuses the longest-waiting). Feature cards roll
+  up: `waiting` beats `running`; idle sessions and terminals no longer make a
+  card `running`.
+- A finished turn stays "waiting · done" until the session is on screen; the
+  persisted `seenAt` (the only new saved field, D1, ADR 0015) keeps that across
+  restarts. Entering waiting off screen fires a native notification whose
+  click focuses the session (invisible until the app is signed, D3).
+- Unpinned OpenCode sessions link themselves to the feature folder they last
+  wrote to (write/edit/patch, subagents included), also for folders discovery
+  hasn't listed yet, and catch up from message history on every connect.
+- Service down: cards fall back to tmux liveness and a banner appears after
+  5 s; grove reconnects with backoff and follows `service.json`. A non-2.0.20
+  service shows a version banner. A dead tmux pane counts as gone.
+- A gone OpenCode session offers **Resume**: a new tmux session running
+  `opencode -s <id>` with the same id, label and link.
+
+Slices: 1 working/idle tracer · 2 waiting on permission/question · 3 re-sync,
+reconnect, banners · 4 done-until-seen, notifications · 5 auto-link · 6 resume.
+
+How to verify: `npm test` (the stub-server and real-tmux tests need to run
+outside a sandbox that blocks local ports and `posix_spawnp`), `npm run
+typecheck`, `npm run build`. By hand with `npm run dev` and the OpenCode
+service running: send a prompt (working → waiting · done → idle when
+focused); trigger a question (waiting · question, header count); `opencode
+service stop` (banner, cards running) and restart (statuses back); run
+`/grove-questions` in an unlinked session (card links to the new feature,
+kept across a restart); `tmux -L grove kill-server` then Resume (TUI with
+history). Notifications can't be seen until child 8's signed build.
 
 ## Open questions
