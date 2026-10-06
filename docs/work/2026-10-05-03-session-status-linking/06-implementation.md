@@ -116,7 +116,8 @@ Deviations (small, two-way):
 
 Verification: the slice's test command passes (54 tests); `npm test` 255
 passed (outside the sandbox, as in slice 3); `npm run typecheck` and
-`npm run build` clean. Manual check pending, for the human.
+`npm run build` clean. Manual check (done → seen → idle across a restart,
+one `notification failed` line): passed, confirmed by the human on 2026-10-06.
 
 Deviations (small, two-way):
 

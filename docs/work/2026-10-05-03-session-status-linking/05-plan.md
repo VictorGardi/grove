@@ -587,7 +587,7 @@ Rules (design D1, "Status rules", flow *Notification (main)*, row Window focus):
   `core.setWindowFocused(win.isFocused())`.
 - [x] Run `npm test -- src/core/status.test.ts src/core/sessions.test.ts src/core/store/stateStore.test.ts`,
   then `npm test` (outside the sandbox), `npm run typecheck` and `npm run build`.
-- [ ] Manual (human): `npm run dev`; finish a turn in an OpenCode session
+- [x] Manual (human): `npm run dev`; finish a turn in an OpenCode session
   while another is focused → its card "waiting · done", header count 1;
   click it → "idle"; restart grove → still "idle"; the `npm run dev` terminal
   shows one `notification failed` line (unsigned app, D3).
