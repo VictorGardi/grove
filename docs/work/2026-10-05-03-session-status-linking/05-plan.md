@@ -141,7 +141,7 @@ Slice 1 scope only: no snapshot, no pending/child events, no backoff (fixed
 - [x] Run `npm test -- src/core/opencode/normalise.test.ts src/core/status.test.ts src/core/sessions.test.ts`
   plus `npm test -- src/core/opencode/client.test.ts src/renderer/src/sessionStatus.test.ts`,
   then `npm test` and `npm run typecheck`.
-- [ ] Manual (human): `npm run dev` with the OpenCode service running, new
+- [x] Manual (human): `npm run dev` with the OpenCode service running, new
   OpenCode session, send a prompt → card "working", then "idle".
 
 ## Open questions

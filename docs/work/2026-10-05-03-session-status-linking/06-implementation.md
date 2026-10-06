@@ -17,7 +17,7 @@ forced: []
 
 ## Progress
 
-- [x] Slice 1 — Tracer: live working / idle (manual check pending)
+- [x] Slice 1 — Tracer: live working / idle
 - [ ] Slice 2 — Waiting on a permission or question
 - [ ] Slice 3 — Re-sync, reconnect, fallback banner
 - [ ] Slice 4 — Finished turn waits until seen; notifications
@@ -33,7 +33,7 @@ Verification: the slice's test commands pass (34 + 6 tests); `npm test` 205
 passed, 3 skipped (the 5 real-tmux tests in `src/core/backend/tmux.test.ts`
 fail only inside the Claude Code sandbox with `posix_spawnp`; 8/8 pass outside
 it); `npm run typecheck` and `npm run build` clean. Manual check (live service,
-working → idle): pending, by the human.
+working → idle): passed, confirmed by the human on 2026-10-06.
 
 Deviations (small, two-way):
 
