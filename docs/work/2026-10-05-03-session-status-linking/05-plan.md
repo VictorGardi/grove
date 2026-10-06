@@ -469,4 +469,127 @@ Service banner, Dead pane; risk Experimental API):
   → banner within ~5 s, cards "running"; start a TUI (`opencode`) → banner
   gone, statuses back.
 
+## Slice 4 — Finished turn waits until seen; notifications
+
+Context (code at `7743571`, after slice 3): `src/core/status.ts`
+`statusOf(t, _seenAt)` ignores `seenAt` (precedence permission > question >
+working > idle); `withStatus(sessions, t, connected)` calls
+`statusOf(t.get(opencodeSessionId), null)`. `Tracker.idleAt` is the ISO time
+the last turn ended (from `exec-ended` or the snapshot's `time.idle`).
+`src/core/core.ts`: `refreshStatus()` sets `sessions` from `withStatus`; it
+runs after every OpenCode event, after a re-sync (`resync()`, which keeps
+`queue` non-null while the snapshot is in flight), and after `sessionCreate`.
+`uiSet(partial)` merges into `ui` (focusing a session clears `focusedFeature`
+and vice versa). `Core.on(e: 'slice', cb)` is the only event. `set` saves
+`sessions`/`ui` to `state.json`, stripping `branch`, `status`, `waitingFor`.
+`src/core/sessions.ts` `newSession` builds the record; `src/core/store/stateStore.ts`
+`loadState` fills `sessions ?? []` and merges `ui` with `DEFAULT_UI`.
+`src/main/index.ts` builds the `BrowserWindow` `win` and calls
+`core.checkLiveness()` on `focus`. Renderer `statusView` already labels
+`waiting · <waitingFor>`, so `waiting · done` needs no renderer change. Real
+notifications cannot show on the unsigned app (design D3), so the main-process
+path is checked by hand only for "failed logged once"; the hands-on display
+check is deferred to child 8.
+
+Rules (design D1, "Status rules", flow *Notification (main)*, row Window focus):
+- Precedence: pending permission → `waiting/permission`; pending question →
+  `waiting/question`; running → `working`; `idleAt` set and (`seenAt` null or
+  `idleAt > seenAt`, ISO string comparison) → `waiting/done`; else `idle`.
+- **On screen** = window focused, `ui.view === 'list'`, `ui.focusedFeature`
+  null, `ui.focusedSessionId === s.id`. For an on-screen OpenCode session,
+  `seenAt` is set to now when its `status`/`waitingFor` changes and when it
+  becomes on screen (another id, or the window/view/feature condition turning
+  true), so `done` clears at once.
+- **Notify**: core keeps, per session id, the `waitingFor` it was last seen
+  waiting with. Transitions are evaluated only while connected and no snapshot
+  is in flight (`queue === null`), and only for OpenCode sessions with
+  `lastStatus 'running'`. A session whose `status` is `waiting` with a
+  `waitingFor` different from the kept one → keep it, and emit `notify` with
+  the session unless it is on screen or this is the first evaluation after
+  app start (the first re-sync, successful or not, primes the map without
+  notifying). A session with a defined non-waiting `status` → forget it. A
+  session without `status` (disconnected) keeps its entry, so a reconnect
+  notifies only real changes.
+- Main: `notify` → `new Notification({ title: s.label, body })`, body
+  "Needs permission" / "Has a question" / "Finished" for
+  `permission` / `question` / `done`; kept in a `Set` until `close`/`click`
+  so it isn't garbage-collected; `click` → restore/show/focus `win` and
+  `core.commands.uiSet({ view: 'list', focusedSessionId: s.id })`; the first
+  `failed` is `console.error`-ed once per app run (main-process log, the
+  terminal running `npm run dev`).
+
+- [x] In `src/shared/types.ts` `Session`: add after `lastStatus`
+  `seenAt: string | null           // ISO, when the human last saw it (on screen); persisted`
+  and widen `waitingFor` to `'permission' | 'question' | 'done'`.
+- [x] Add `seenAt: null` to the hand-built `Session` literals in
+  `src/renderer/src/tree.test.ts` and `src/renderer/src/sessionStatus.test.ts`.
+- [x] Extend `src/core/store/stateStore.test.ts` (failing first): a saved file
+  whose session has no `seenAt` loads with `seenAt: null`; round-trip keeps a
+  set `seenAt`.
+- [x] In `src/core/store/stateStore.ts` `loadState`: map sessions
+  `(x) => ({ ...x, seenAt: x.seenAt ?? null })`.
+- [x] In `src/core/sessions.ts`: `newSession` sets `seenAt: null`; add
+  `export function markSeen(s: Session, at: string): Session { return { ...s, seenAt: at } }`.
+- [x] Extend `src/core/status.test.ts` (failing first): `statusOf` with an
+  `idleAt` and `seenAt` null → `{status:'waiting', waitingFor:'done'}`;
+  `idleAt` after `seenAt` → `done`; `idleAt` at or before `seenAt` → `idle`;
+  running with an `idleAt` → `working`; a pending question beats `done`.
+  `withStatus` reads each session's `seenAt`.
+- [x] In `src/core/status.ts`: `statusOf(t, seenAt)` implements the
+  precedence above; `withStatus` passes `s.seenAt`.
+- [x] Write failing core tests in `src/core/sessions.test.ts`,
+  `describe('core seen and notify')` (helper: start a core, create OpenCode
+  sessions, `oc.emit(connected)`, `await flush()`, collect
+  `core.on('notify', …)` calls):
+  (1) off screen (window not focused), `exec-started` then `exec-ended` with
+  `at` `'2026-10-05T09:59:00.000Z'` → `waiting`/`done` and exactly one notify
+  with that session;
+  (2) then `core.setWindowFocused(true)` + `uiSet({ focusedSessionId: id })`
+  → `idle`, saved `seenAt` = `NOW` ISO; a second core on the same files whose
+  snapshot has `idleAt` `'2026-10-05T09:59:00.000Z'` → `idle` after its first
+  re-sync;
+  (3) on screen (focused window, session focused), a finished turn → `idle`,
+  no notify;
+  (4) the first snapshot with a pending permission → `waiting` but no notify;
+  a later `pending` question open on another off-screen session → one notify;
+  (5) after `disconnected` and a new `connected` whose snapshot holds the same
+  pending permission → no new notify; one whose snapshot adds a question to
+  a previously idle session → one notify.
+- [x] In `src/core/core.ts`:
+  add `setWindowFocused(f: boolean): void` and the `on` overload
+  `on(e: 'notify', cb: (s: Session) => void): () => void` to `Core` (keep
+  `on(e: 'slice', cb: SliceListener)`); implement `on(e, cb)` with two
+  listener sets. Keep `let windowFocused = false`, `let lastOnScreen: string | null = null`,
+  `const waitKey = new Map<string, string>()`, `let primed = false`.
+  `onScreenId()` returns `ui.focusedSessionId` when `windowFocused`,
+  `ui.view === 'list'` and `!ui.focusedFeature`, else `null`.
+  Rewrite `refreshStatus()`: `let next = withStatus(slices.sessions, trackers, ocConnected)`;
+  `const id = onScreenId()`; if `id`, find the session in `next` (`after`) and
+  in `slices.sessions` (`before`); when `after.kind === 'opencode'` and
+  (`id !== lastOnScreen` or `after.status !== before?.status` or
+  `after.waitingFor !== before?.waitingFor`), replace it with
+  `markSeen(after, now().toISOString())` and recompute
+  `next = withStatus(next, trackers, ocConnected)`; `lastOnScreen = id`;
+  `if (next !== slices.sessions) set('sessions', next)`; then
+  `if (ocConnected && queue === null) notifyTransitions(id)`.
+  `notifyTransitions(onScreen)`: per the Notify rule over `slices.sessions`;
+  sets `primed = true` at its end only when called from `resync`.
+  `resync()`: after `refreshStatus()` (success) and in the `catch` branch
+  (after clearing `queue` and calling `refreshStatus()`), set `primed = true`.
+  `uiSet` calls `refreshStatus()` after `set('ui', next)`;
+  `setWindowFocused(f)` sets `windowFocused = f` and calls `refreshStatus()`.
+- [x] In `src/main/index.ts`: import `Notification`; after `createCore`, keep
+  `const shown = new Set<Notification>()` and `let notifyFailed = false`;
+  `core.on('notify', (s) => { … })` per the Main rule (skip when
+  `!Notification.isSupported()`). On the window: `focus` →
+  `core.setWindowFocused(true)` plus the existing `checkLiveness`; `blur` →
+  `core.setWindowFocused(false)`; in `ready-to-show` after `show()`,
+  `core.setWindowFocused(win.isFocused())`.
+- [x] Run `npm test -- src/core/status.test.ts src/core/sessions.test.ts src/core/store/stateStore.test.ts`,
+  then `npm test` (outside the sandbox), `npm run typecheck` and `npm run build`.
+- [ ] Manual (human): `npm run dev`; finish a turn in an OpenCode session
+  while another is focused → its card "waiting · done", header count 1;
+  click it → "idle"; restart grove → still "idle"; the `npm run dev` terminal
+  shows one `notification failed` line (unsigned app, D3).
+
 ## Open questions

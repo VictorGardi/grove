@@ -20,7 +20,7 @@ forced: []
 - [x] Slice 1 — Tracer: live working / idle
 - [x] Slice 2 — Waiting on a permission or question
 - [x] Slice 3 — Re-sync, reconnect, fallback banner
-- [ ] Slice 4 — Finished turn waits until seen; notifications
+- [x] Slice 4 — Finished turn waits until seen; notifications
 - [ ] Slice 5 — Auto-link
 - [ ] Slice 6 — Resume
 
@@ -111,5 +111,29 @@ Deviations (small, two-way):
 - `SessionBackend.list()` doc comment updated: live = exists and pane not dead.
 - The OpenCode `opencode` slice is never written to `state.json`: `set` now
   saves only for `sessions` and `ui`.
+
+## Slice 4 — Finished turn waits until seen; notifications
+
+Verification: the slice's test command passes (54 tests); `npm test` 255
+passed (outside the sandbox, as in slice 3); `npm run typecheck` and
+`npm run build` clean. Manual check pending, for the human.
+
+Deviations (small, two-way):
+
+- `notification failed` is logged once from the main process, so it shows in
+  the `npm run dev` terminal, not the DevTools console (structure's wording).
+- Notifications only for OpenCode sessions with `lastStatus 'running'`; a gone
+  session's status is not shown, so it doesn't alert.
+- Transitions are evaluated only while connected and with no snapshot in
+  flight; the first re-sync after start (successful or failed) records waiting
+  sessions without notifying. A disconnect keeps each session's last waiting
+  reason, so a reconnect alerts only on a new reason.
+- `seenAt` is set only for OpenCode sessions (terminals never get one beyond
+  `null`).
+- The slice 1 core test "follows a turn" now expects `waiting · done` after
+  an off-screen turn ends (it was `idle` before the seen rule existed).
+- Notifications are held in a `Set` until closed, clicked or failed, so a
+  click isn't lost to garbage collection; `ready-to-show` also reports the
+  initial window focus to core.
 
 ## Open questions

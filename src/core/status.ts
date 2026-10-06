@@ -48,12 +48,14 @@ export function fromSnapshot(snaps: Map<string, SessionSnapshot>, ids: string[])
   return { trackers, roots }
 }
 
-// Precedence: permission > question > working > idle.
-export function statusOf(t: Tracker | undefined, _seenAt: string | null): Pick<Session, 'status' | 'waitingFor'> {
+// Precedence: permission > question > working > finished and not yet seen > idle.
+export function statusOf(t: Tracker | undefined, seenAt: string | null): Pick<Session, 'status' | 'waitingFor'> {
   const kinds = new Set(t?.pending.values())
   if (kinds.has('permission')) return { status: 'waiting', waitingFor: 'permission' }
   if (kinds.has('question')) return { status: 'waiting', waitingFor: 'question' }
-  return { status: t?.running ? 'working' : 'idle' }
+  if (t?.running) return { status: 'working' }
+  if (t?.idleAt && (seenAt === null || t.idleAt > seenAt)) return { status: 'waiting', waitingFor: 'done' }
+  return { status: 'idle' }
 }
 
 // OpenCode sessions get a status while the service is connected; otherwise none (tmux liveness shows).
@@ -61,7 +63,7 @@ export function statusOf(t: Tracker | undefined, _seenAt: string | null): Pick<S
 export function withStatus(sessions: Session[], t: Map<string, Tracker>, connected: boolean): Session[] {
   let changed = false
   const out = sessions.map((s) => {
-    const live = connected && s.opencodeSessionId ? statusOf(t.get(s.opencodeSessionId), null) : {}
+    const live = connected && s.opencodeSessionId ? statusOf(t.get(s.opencodeSessionId), s.seenAt) : {}
     const same = (k: 'status' | 'waitingFor') => live[k] === s[k] && (live[k] !== undefined || !(k in s))
     if (same('status') && same('waitingFor')) return s
     changed = true

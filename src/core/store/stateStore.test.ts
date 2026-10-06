@@ -37,6 +37,14 @@ describe('stateStore', () => {
     expect(loadState(file)).toEqual(s)
   })
 
+  it('loads a session saved before seenAt with seenAt null, and keeps a set one', () => {
+    const file = tmpFile()
+    const { seenAt: _seenAt, ...old } = newSession({ projectId: 'p', kind: 'opencode', now: new Date(), id: 'a' })
+    const seen = { ...newSession({ projectId: 'p', kind: 'opencode', now: new Date(), id: 'b' }), seenAt: '2026-10-05T10:00:00.000Z' }
+    fs.writeFileSync(file, JSON.stringify({ schemaVersion: 1, sessions: [old, seen], ui: DEFAULT_UI }))
+    expect(loadState(file).sessions.map((s) => s.seenAt)).toEqual([null, '2026-10-05T10:00:00.000Z'])
+  })
+
   it('fills in a missing ui field', () => {
     const file = tmpFile()
     fs.writeFileSync(file, '{"schemaVersion":1,"sessions":[]}')

@@ -15,7 +15,7 @@ function session(id: string, over: Partial<Session> = {}): Session {
   return {
     id, projectId: 'p', kind: 'terminal', label: id, labelPinned: false, tmuxName: 'grove-' + id,
     opencodeSessionId: null, feature: null, linkPinned: false, action: null,
-    startedAt: '2026-10-05T10:00:00.000Z', endedAt: null, lastStatus: 'running', ...over,
+    startedAt: '2026-10-05T10:00:00.000Z', endedAt: null, lastStatus: 'running', seenAt: null, ...over,
   }
 }
 

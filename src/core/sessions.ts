@@ -23,6 +23,7 @@ export function newSession(o: { projectId: string; kind: SessionKind; now: Date;
     startedAt: o.now.toISOString(),
     endedAt: null,
     lastStatus: 'running',
+    seenAt: null,
   }
 }
 
@@ -52,6 +53,10 @@ export function withBranches(sessions: Session[], cwds: Map<string, string>, bra
 
 export function markGone(s: Session, now: string): Session {
   return s.lastStatus === 'gone' ? s : { ...s, lastStatus: 'gone', endedAt: now }
+}
+
+export function markSeen(s: Session, at: string): Session {
+  return { ...s, seenAt: at }
 }
 
 export function link(s: Session, feature: string | null): Session {

@@ -14,7 +14,7 @@ import { loginShellArgv } from './env'
 import { hasLiveSessions, newProject } from './projects'
 import { readBranch } from './git'
 import type { OcEvent, OpenCodeSource } from './opencode/types'
-import { link, markGone, newSession, reconcile, rename, withBranches } from './sessions'
+import { link, markGone, markSeen, newSession, reconcile, rename, withBranches } from './sessions'
 import { loadConfig, saveConfig } from './store/configStore'
 import { apply, fromSnapshot, withStatus, type Tracker } from './status'
 import { loadState, saveState } from './store/stateStore'
@@ -51,6 +51,8 @@ export interface Core {
   getSlices(): Slices
   getErrors(): string[]
   on(e: 'slice', cb: SliceListener): () => void
+  on(e: 'notify', cb: (s: Session) => void): () => void // a session started waiting while not on screen
+  setWindowFocused(f: boolean): void
   checkLiveness(): Promise<void>
   commands: Commands
   attach(sessionId: string, cols: number, rows: number): AttachHandle
@@ -64,6 +66,7 @@ export function createCore(opts: CoreOptions): Core {
   const slices: Slices = { projects: [], sessions: [], ui: DEFAULT_UI, features: EMPTY_FEATURES, opencode: OPENCODE_CONNECTING }
   const errors: string[] = []
   const listeners = new Set<SliceListener>()
+  const notifyListeners = new Set<(s: Session) => void>()
   const handles = new Set<AttachHandle>()
   let poll: ReturnType<typeof setInterval> | undefined
   const watchers = opts.watchers ?? chokidarWatchers
@@ -84,6 +87,10 @@ export function createCore(opts: CoreOptions): Core {
   let unreachableTimer: ReturnType<typeof setTimeout> | undefined
   let syncGen = 0 // bumped per re-sync and on disconnect; a stale snapshot is dropped
   let queue: OcChange[] | null = null // events seen while a snapshot is in flight
+  let windowFocused = false
+  let lastOnScreen: string | null = null
+  const waitKey = new Map<string, string>() // session id → waitingFor it was last seen waiting with
+  let primed = false // the first re-sync after start records waiting sessions without notifying
 
   function set<K extends keyof Slices>(k: K, v: Slices[K]): void {
     slices[k] = v
@@ -223,9 +230,40 @@ export function createCore(opts: CoreOptions): Core {
     if (next !== slices.sessions) set('sessions', next)
   }
 
+  // The session the human is looking at: focused window, list view, no feature page.
+  function onScreenId(): string | null {
+    const { ui } = slices
+    return windowFocused && ui.view === 'list' && !ui.focusedFeature ? ui.focusedSessionId : null
+  }
+
   function refreshStatus(): void {
-    const next = withStatus(slices.sessions, trackers, ocConnected)
+    let next = withStatus(slices.sessions, trackers, ocConnected)
+    const id = onScreenId()
+    const after = id ? next.find((s) => s.id === id) : undefined
+    if (after?.kind === 'opencode') {
+      const before = findSession(after.id)
+      if (id !== lastOnScreen || after.status !== before?.status || after.waitingFor !== before?.waitingFor) {
+        const seen = markSeen(after, now().toISOString())
+        next = withStatus(next.map((s) => (s.id === seen.id ? seen : s)), trackers, ocConnected)
+      }
+    }
+    lastOnScreen = id
     if (next !== slices.sessions) set('sessions', next)
+    if (ocConnected && queue === null) notifyTransitions(id)
+  }
+
+  // Notify on entering waiting (or a new reason) off screen. Disconnected sessions keep their entry.
+  function notifyTransitions(onScreen: string | null): void {
+    for (const s of slices.sessions) {
+      if (s.kind !== 'opencode' || s.lastStatus !== 'running' || !s.status) continue
+      if (s.status !== 'waiting' || !s.waitingFor) {
+        waitKey.delete(s.id)
+        continue
+      }
+      if (waitKey.get(s.id) === s.waitingFor) continue
+      waitKey.set(s.id, s.waitingFor)
+      if (primed && s.id !== onScreen) for (const cb of notifyListeners) cb(s)
+    }
   }
 
   // The banner shows once the service has been away for 5 s.
@@ -274,7 +312,10 @@ export function createCore(opts: CoreOptions): Core {
     try {
       snaps = await source.snapshot(ids)
     } catch {
-      if (gen === syncGen) queue = null // keep what the events built
+      if (gen !== syncGen) return
+      queue = null // keep what the events built
+      refreshStatus()
+      primed = true
       return
     }
     if (gen !== syncGen) return
@@ -286,6 +327,7 @@ export function createCore(opts: CoreOptions): Core {
     queue = null
     for (const e of replay) applyOc(e)
     refreshStatus()
+    primed = true
   }
 
   const findSession = (id: string) => slices.sessions.find((s) => s.id === id)
@@ -371,6 +413,7 @@ export function createCore(opts: CoreOptions): Core {
       if (partial.focusedFeature) next.focusedSessionId = null
       if (partial.focusedSessionId) next.focusedFeature = null
       set('ui', next)
+      refreshStatus() // the on-screen session may have changed
       return { ok: true, data: slices.ui }
     },
   }
@@ -412,9 +455,14 @@ export function createCore(opts: CoreOptions): Core {
     },
     getSlices: () => slices,
     getErrors: () => [...errors],
-    on(_e, cb) {
-      listeners.add(cb)
-      return () => listeners.delete(cb)
+    on(e: 'slice' | 'notify', cb: SliceListener | ((s: Session) => void)) {
+      const bag = (e === 'slice' ? listeners : notifyListeners) as Set<typeof cb>
+      bag.add(cb)
+      return () => void bag.delete(cb)
+    },
+    setWindowFocused(f) {
+      windowFocused = f
+      refreshStatus()
     },
     checkLiveness,
     commands,

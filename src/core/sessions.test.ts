@@ -5,6 +5,7 @@ import { DEFAULT_UI, type Session } from '@shared/types'
 import { terminalTheme } from '@shared/theme'
 import { makeLabel, newSession, reconcile } from './sessions'
 import { loadState } from './store/stateStore'
+import type { OcEvent } from './opencode/types'
 import { createOpenCode, createTerminal as create, LATER, NOW, setupCore } from './testing/setup'
 
 function session(id: string, over: Partial<Session> = {}): Session {
@@ -233,7 +234,7 @@ describe('core opencode status', () => {
     expect(find(core, t.id)).not.toHaveProperty('status')
   })
 
-  it('follows a turn: working, then idle, never saving status', async () => {
+  it('follows a turn: working, then waiting until seen (off screen), never saving status', async () => {
     const { core, oc, statePath } = await connected()
     const o = await createOpenCode(core)
     const sessionId = o.opencodeSessionId!
@@ -242,7 +243,7 @@ describe('core opencode status', () => {
     const saved = JSON.parse(fs.readFileSync(statePath, 'utf8')) as { sessions: Session[] }
     expect(saved.sessions[0]).not.toHaveProperty('status')
     oc.emit({ type: 'exec-ended', sessionId, at: LATER.toISOString() })
-    expect(find(core, o.id)?.status).toBe('idle')
+    expect(find(core, o.id)).toMatchObject({ status: 'waiting', waitingFor: 'done' })
   })
 
   it('waits on a subagent permission, never saving it', async () => {
@@ -341,5 +342,93 @@ describe('core opencode status', () => {
     expect(find(core, o.id)).not.toHaveProperty('status')
     core.dispose()
     expect(oc.stopped).toBe(true)
+  })
+})
+
+describe('core seen and notify', () => {
+  let disposeAll = () => {}
+  afterEach(() => disposeAll())
+
+  const flush = () => new Promise((r) => setImmediate(r))
+  const snap = (over = {}) => ({ running: false, idleAt: null, pending: [], children: [], ...over })
+  const ENDED = '2026-10-05T09:59:00.000Z' // before NOW, the cores' clock
+  const find = (core: { getSlices(): { sessions: Session[] } }, id: string) => core.getSlices().sessions.find((x) => x.id === id)
+
+  async function setup() {
+    const s = setupCore()
+    disposeAll = s.disposeAll
+    const core = s.make()
+    await core.start()
+    const notified: Session[] = []
+    core.on('notify', (x) => notified.push(x))
+    return { ...s, core, notified }
+  }
+
+  async function connect(oc: { emit(e: OcEvent): void }) {
+    oc.emit({ type: 'connected', version: '2.0.20' })
+    await flush()
+  }
+
+  it('keeps a turn finished off screen waiting, notifies once, and clears it once seen, across restarts', async () => {
+    const { core, oc, notified, make } = await setup()
+    const o = await createOpenCode(core)
+    await connect(oc)
+    const sessionId = o.opencodeSessionId!
+    oc.emit({ type: 'exec-started', sessionId })
+    oc.emit({ type: 'exec-ended', sessionId, at: ENDED })
+    expect(find(core, o.id)).toMatchObject({ status: 'waiting', waitingFor: 'done' })
+    expect(notified.map((x) => [x.id, x.waitingFor])).toEqual([[o.id, 'done']])
+
+    core.setWindowFocused(true)
+    await core.commands.uiSet({ focusedSessionId: o.id })
+    expect(find(core, o.id)?.status).toBe('idle')
+    expect(find(core, o.id)?.seenAt).toBe(NOW.toISOString())
+    expect(notified).toHaveLength(1)
+
+    core.dispose()
+    oc.snapshots.set(sessionId, snap({ idleAt: ENDED }))
+    const next = make()
+    await next.start()
+    await connect(oc)
+    expect(find(next, o.id)?.status).toBe('idle')
+  })
+
+  it('marks a turn finished on screen as seen, without notifying', async () => {
+    const { core, oc, notified } = await setup()
+    const o = await createOpenCode(core)
+    await connect(oc)
+    core.setWindowFocused(true)
+    await core.commands.uiSet({ focusedSessionId: o.id })
+    oc.emit({ type: 'exec-started', sessionId: o.opencodeSessionId! })
+    oc.emit({ type: 'exec-ended', sessionId: o.opencodeSessionId!, at: ENDED })
+    expect(find(core, o.id)?.status).toBe('idle')
+    expect(notified).toEqual([])
+  })
+
+  it('does not notify for the first snapshot, but does for later changes', async () => {
+    const { core, oc, notified } = await setup()
+    const a = await createOpenCode(core)
+    const b = await createOpenCode(core)
+    oc.snapshots.set(a.opencodeSessionId!, snap({ pending: [{ id: 'per_1', kind: 'permission' }] }))
+    await connect(oc)
+    expect(find(core, a.id)).toMatchObject({ status: 'waiting', waitingFor: 'permission' })
+    expect(notified).toEqual([])
+    oc.emit({ type: 'pending', sessionId: b.opencodeSessionId!, id: 'frm_1', kind: 'question', open: true })
+    expect(notified.map((x) => [x.id, x.waitingFor])).toEqual([[b.id, 'question']])
+  })
+
+  it('notifies on reconnect only for real changes', async () => {
+    const { core, oc, notified } = await setup()
+    const a = await createOpenCode(core)
+    const b = await createOpenCode(core)
+    oc.snapshots.set(a.opencodeSessionId!, snap({ pending: [{ id: 'per_1', kind: 'permission' }] }))
+    await connect(oc)
+    oc.emit({ type: 'disconnected' })
+    await connect(oc)
+    expect(notified).toEqual([])
+    oc.emit({ type: 'disconnected' })
+    oc.snapshots.set(b.opencodeSessionId!, snap({ pending: [{ id: 'frm_1', kind: 'question' }] }))
+    await connect(oc)
+    expect(notified.map((x) => [x.id, x.waitingFor])).toEqual([[b.id, 'question']])
   })
 })

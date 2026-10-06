@@ -120,3 +120,27 @@ describe('fromSnapshot', () => {
     expect(roots).toEqual(new Map([['ses_c', 'ses_a'], ['ses_x', 'ses_a']]))
   })
 })
+
+describe('statusOf: finished turns', () => {
+  const BEFORE = '2026-10-05T10:00:00.000Z'
+  const AFTER = '2026-10-05T10:10:00.000Z'
+
+  it('shows a finished turn as waiting until seen', () => {
+    expect(statusOf(tracker({ idleAt: AT }), null)).toEqual({ status: 'waiting', waitingFor: 'done' })
+    expect(statusOf(tracker({ idleAt: AT }), BEFORE)).toEqual({ status: 'waiting', waitingFor: 'done' })
+    expect(statusOf(tracker({ idleAt: AT }), AFTER)).toEqual({ status: 'idle' })
+    expect(statusOf(tracker({ idleAt: AT }), AT)).toEqual({ status: 'idle' })
+  })
+
+  it('ranks working and pending items above done', () => {
+    expect(statusOf(tracker({ idleAt: AT, running: true }), null)).toEqual({ status: 'working' })
+    expect(statusOf(tracker({ idleAt: AT, pending: new Map([['frm_1', 'question']]) }), null))
+      .toEqual({ status: 'waiting', waitingFor: 'question' })
+  })
+
+  it('reads each session\'s seenAt in withStatus', () => {
+    const t = new Map([['ses_a', tracker({ idleAt: AT })], ['ses_b', tracker({ idleAt: AT })]])
+    const out = withStatus([oc('a', 'ses_a'), oc('b', 'ses_b', { seenAt: AFTER })], t, true)
+    expect(out.map((s) => s.waitingFor ?? s.status)).toEqual(['done', 'idle'])
+  })
+})

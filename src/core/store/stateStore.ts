@@ -3,7 +3,8 @@ import { atomicWrite, readVersioned } from './jsonFile'
 
 export function loadState(file: string, onBad?: (msg: string) => void): StateFile {
   const s = readVersioned<StateFile>(file, 1, { schemaVersion: 1, sessions: [], ui: DEFAULT_UI }, onBad)
-  return { ...s, sessions: s.sessions ?? [], ui: { ...DEFAULT_UI, ...s.ui } }
+  const sessions = (s.sessions ?? []).map((x) => ({ ...x, seenAt: x.seenAt ?? null })) // seenAt: added after v1 shipped
+  return { ...s, sessions, ui: { ...DEFAULT_UI, ...s.ui } }
 }
 
 export function saveState(file: string, s: StateFile): void {
