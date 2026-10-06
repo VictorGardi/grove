@@ -18,7 +18,7 @@ forced: []
 ## Progress
 
 - [x] Slice 1 — Tracer: live working / idle
-- [x] Slice 2 — Waiting on a permission or question (manual check pending)
+- [x] Slice 2 — Waiting on a permission or question
 - [ ] Slice 3 — Re-sync, reconnect, fallback banner
 - [ ] Slice 4 — Finished turn waits until seen; notifications
 - [ ] Slice 5 — Auto-link
@@ -54,8 +54,12 @@ Deviations (small, two-way):
 Verification: the slice's test commands pass (57 + 26 tests); `npm test` 218
 passed, 3 skipped, 5 failed (only the real-tmux tests, sandbox `posix_spawnp`
 as in slice 1); `npm run typecheck` and `npm run build` clean. Manual check
-(permission → "waiting · permission", header, feature card): pending, by the
-human.
+changed: the planned permission trigger (write outside the project) asked no
+permission, since the human's OpenCode allows such writes by default. Run instead
+with the `question` tool: the session card and header showed waiting, confirmed by
+the human on 2026-10-06. Not checked by hand: the "waiting · permission" label
+(covered by `normalise` and `status` tests) and clicking the header button to focus
+the session.
 
 Deviations (small, two-way):
 

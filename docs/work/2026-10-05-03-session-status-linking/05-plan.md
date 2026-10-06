@@ -278,7 +278,7 @@ ties and unknowns fall back to session order.
 - [x] Run `npm test -- src/core/status.test.ts src/core/workflow/derive.test.ts src/core/opencode/normalise.test.ts`,
   then `npm test -- src/core/sessions.test.ts src/renderer/src/sessionStatus.test.ts`,
   `npm test` and `npm run typecheck`.
-- [ ] Manual (human): in an OpenCode session, ask the agent to write a file
+- [x] Manual (human, run with a question instead; see 06-implementation.md): in an OpenCode session, ask the agent to write a file
   outside the project → card "waiting · permission", header "1 waiting",
   linked feature card `waiting`; approve → "working". Click "1 waiting" from
   another session → that session is focused.
