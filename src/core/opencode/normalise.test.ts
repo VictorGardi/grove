@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { childIds, normalise, snapshotOf, unwrap } from './normalise'
+import { childIds, lastWritesOf, normalise, patchPaths, snapshotOf, toolWrites, unwrap } from './normalise'
 
 // Envelopes as OpenCode 2.0.20 sends them on /api/event.
 const env = (type: string, data: unknown, created: unknown = 1791194400000) => ({ id: 'evt_1', type, created, data })
@@ -104,5 +104,77 @@ describe('snapshotOf', () => {
       { id: 'frm_1', kind: 'question' },
     ])
     expect(snapshotOf(info({}), {}, 'bad', null).pending).toEqual([])
+  })
+})
+
+const PATCH = [
+  '*** Begin Patch',
+  '*** Add File: docs/work/a/new.md',
+  '+hello',
+  '*** Update File: src/x.ts',
+  '*** Move to: docs/work/b/x.ts',
+  '@@',
+  '*** Delete File: old.md ',
+  '*** End Patch',
+].join('\n')
+
+describe('patchPaths', () => {
+  it('reads every file header, in order', () => {
+    expect(patchPaths(PATCH)).toEqual(['docs/work/a/new.md', 'src/x.ts', 'docs/work/b/x.ts', 'old.md'])
+    expect(patchPaths(42)).toEqual([])
+  })
+})
+
+describe('toolWrites', () => {
+  const tool = (type: string, id: string, extra: object = {}) => env(`session.tool.${type}`, { sessionID: 'ses_a', assistantMessageID: 'msg_1', id, ...extra })
+  const run = (name: string, input: unknown, end = 'success') => {
+    const t = toolWrites()
+    return [t(tool('input.started', 'call_1', { name })), t(tool('called', 'call_1', { input })), t(tool(end, 'call_1'))]
+  }
+
+  it.each([['write'], ['edit']])('emits wrote when %s succeeds', (name) => {
+    expect(run(name, { path: 'docs/x.md' })).toEqual([null, null, { type: 'wrote', sessionId: 'ses_a', paths: ['docs/x.md'] }])
+  })
+
+  it('reads a patch\'s paths from its headers', () => {
+    expect(run('patch', { patchText: PATCH })[2]).toEqual({ type: 'wrote', sessionId: 'ses_a', paths: patchPaths(PATCH) })
+  })
+
+  it('ignores reads, failures and unknown calls', () => {
+    expect(run('read', { path: 'docs/x.md' })[2]).toBe(null)
+    expect(run('write', { path: 'docs/x.md' }, 'failed')[2]).toBe(null)
+    const t = toolWrites()
+    expect(t(tool('success', 'call_9'))).toBe(null)
+    expect(t(env('session.step.started', {}))).toBe(null)
+  })
+
+  it('forgets a call once it failed', () => {
+    const t = toolWrites()
+    t(tool('input.started', 'call_1', { name: 'write' }))
+    t(tool('called', 'call_1', { input: { path: 'x' } }))
+    t(tool('failed', 'call_1'))
+    expect(t(tool('success', 'call_1'))).toBe(null)
+  })
+})
+
+describe('lastWritesOf', () => {
+  const item = (name: string, input: unknown, state: object = { content: [{ type: 'text', text: 'ok' }] }) =>
+    ({ type: 'tool', id: `call_${name}`, name, state: { input, ...state } })
+  const msg = (...content: unknown[]) => ({ id: 'msg', type: 'assistant', content })
+
+  it('finds the latest completed write, newest message first and last item first', () => {
+    const messages = [
+      msg(item('read', { path: 'docs/r.md' })),
+      msg(item('write', { path: 'docs/old.md' }), item('edit', { path: 'docs/new.md' })),
+      msg(item('write', { path: 'docs/older.md' })),
+    ]
+    expect(lastWritesOf(messages)).toEqual(['docs/new.md'])
+  })
+
+  it('skips errored and running calls, reads patches, and returns null when none', () => {
+    expect(lastWritesOf([msg(item('write', { path: 'a' }, { error: 'boom', content: [] }), item('write', { path: 'b' }, {}))])).toBe(null)
+    expect(lastWritesOf([msg(item('write', { path: 'a' }, { status: 'completed' }))])).toEqual(['a'])
+    expect(lastWritesOf([msg(item('patch', { patchText: PATCH }))])).toEqual(patchPaths(PATCH))
+    expect(lastWritesOf([{ type: 'user', content: 'hi' }, null])).toBe(null)
   })
 })

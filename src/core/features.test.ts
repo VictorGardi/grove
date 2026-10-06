@@ -1,9 +1,9 @@
 import fs from 'node:fs'
 import path from 'node:path'
 import { afterEach, describe, expect, it } from 'vitest'
-import type { FeaturesSlice } from '@shared/types'
+import type { FeaturesSlice, Session } from '@shared/types'
 import { loadConfig, saveConfig } from './store/configStore'
-import { createTerminal, setupCore } from './testing/setup'
+import { createOpenCode, createTerminal, setupCore } from './testing/setup'
 
 const bundled = fs.readFileSync(new URL('../../resources/workflow.yaml', import.meta.url), 'utf8')
 
@@ -198,5 +198,84 @@ describe('core features', () => {
     expect(await core.commands.sessionLink({ id: t.id, feature: 'nope' })).toEqual(nf)
     expect(await core.commands.sessionLink({ id: t.id, feature: 'b' })).toEqual(nf)
     expect(core.getSlices().sessions[0]).toMatchObject({ feature: null, linkPinned: false })
+  })
+})
+
+describe('core auto-link', () => {
+  let disposeAll = () => {}
+  afterEach(() => disposeAll())
+
+  const flush = () => new Promise((r) => setImmediate(r))
+  const find = (core: { getSlices(): { sessions: Session[] } }, id: string) => core.getSlices().sessions.find((x) => x.id === id)
+
+  async function setup() {
+    const s = setupCore()
+    disposeAll = s.disposeAll
+    const work = path.join(s.dir, 'docs', 'work')
+    const feature = (slug: string) => {
+      fs.mkdirSync(path.join(work, slug), { recursive: true })
+      fs.writeFileSync(path.join(work, slug, 'feature.md'), `---\nkind: feature\n---\n# ${slug}\n`)
+    }
+    feature('a')
+    feature('b')
+    const core = s.make()
+    await core.start()
+    const o = await createOpenCode(core)
+    s.oc.emit({ type: 'connected', version: '2.0.20' })
+    await flush()
+    const wrote = (paths: string[], sessionId = o.opencodeSessionId!) => s.oc.emit({ type: 'wrote', sessionId, paths })
+    return { ...s, work, feature, core, o, wrote }
+  }
+
+  it('links a session to the feature folder it wrote to, unpinned, and saves it', async () => {
+    const { core, o, wrote, statePath } = await setup()
+    wrote(['docs/work/a/x.md'])
+    expect(find(core, o.id)).toMatchObject({ feature: 'a', linkPinned: false })
+    const saved = JSON.parse(fs.readFileSync(statePath, 'utf8')) as { sessions: Session[] }
+    expect(saved.sessions[0].feature).toBe('a')
+  })
+
+  it('counts a subagent\'s writes for its root session', async () => {
+    const { core, o, oc, wrote } = await setup()
+    oc.emit({ type: 'child', sessionId: 'ses_child', parentId: o.opencodeSessionId! })
+    wrote(['docs/work/b/y.md'], 'ses_child')
+    expect(find(core, o.id)?.feature).toBe('b')
+  })
+
+  it('leaves a pinned link alone', async () => {
+    const { core, o, wrote } = await setup()
+    await core.commands.sessionLink({ id: o.id, feature: 'a' })
+    wrote(['docs/work/b/y.md'])
+    expect(find(core, o.id)).toMatchObject({ feature: 'a', linkPinned: true })
+  })
+
+  it('holds a write into a folder discovery has not listed yet', async () => {
+    const { core, o, wrote, feature, watchers, work } = await setup()
+    wrote(['docs/work/new/01-questions.md'])
+    expect(find(core, o.id)?.feature).toBe(null)
+    feature('new')
+    watchers.roots.get(work)!('new')
+    expect(find(core, o.id)?.feature).toBe('new')
+  })
+
+  it('ignores writes outside the feature root', async () => {
+    const { core, o, wrote } = await setup()
+    wrote(['docs/work/a/x.md'])
+    wrote(['src/x.ts'])
+    expect(find(core, o.id)?.feature).toBe('a')
+  })
+
+  it('catches links up from each unpinned session\'s last write on connect', async () => {
+    const { core, o, oc } = await setup()
+    const pinned = await createOpenCode(core)
+    await core.commands.sessionLink({ id: pinned.id, feature: 'a' })
+    oc.writes.set(o.opencodeSessionId!, ['docs/work/b/z.md'])
+    oc.writes.set(pinned.opencodeSessionId!, ['docs/work/b/z.md'])
+    oc.emit({ type: 'disconnected' })
+    oc.emit({ type: 'connected', version: '2.0.20' })
+    await flush()
+    await flush()
+    expect(find(core, o.id)?.feature).toBe('b')
+    expect(find(core, pinned.id)?.feature).toBe('a')
   })
 })

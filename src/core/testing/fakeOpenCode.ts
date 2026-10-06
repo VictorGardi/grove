@@ -5,6 +5,7 @@ export class FakeOpenCode implements OpenCodeSource {
   stopped = false
   snapshots = new Map<string, SessionSnapshot>() // what snapshot() returns, by session id
   snapshotCalls: string[][] = []
+  writes = new Map<string, string[]>() // what lastWrites() returns, by session id
   private cb: ((e: OcEvent) => void) | null = null
 
   start(onEvent: (e: OcEvent) => void): void {
@@ -30,6 +31,10 @@ export class FakeOpenCode implements OpenCodeSource {
       }
     }
     return out
+  }
+
+  async lastWrites(id: string): Promise<string[]> {
+    return this.writes.get(id) ?? []
   }
 
   stop(): void {

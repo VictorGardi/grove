@@ -1,6 +1,6 @@
 import fs from 'node:fs'
 import path from 'node:path'
-import { childIds, normalise, snapshotOf, unwrap } from './normalise'
+import { childIds, lastWritesOf, normalise, snapshotOf, toolWrites, unwrap } from './normalise'
 import type { OcEvent, OpenCodeSource, SessionSnapshot } from './types'
 
 // The shared OpenCode service's registration file. Holds a password: never log or push it.
@@ -53,15 +53,18 @@ export class HttpOpenCode implements OpenCodeSource {
     this.kick()
   }
 
-  async snapshot(ids: string[]): Promise<Map<string, SessionSnapshot>> {
+  // A JSON body from the connected service; null on 404.
+  private async get(p: string): Promise<unknown> {
     const svc = this.svc
     if (!svc) throw new Error('not connected')
-    const get = async (p: string): Promise<unknown> => {
-      const res = await fetch(new URL(p, svc.url), { headers: svc.headers, signal: AbortSignal.timeout(5000) })
-      if (res.status === 404) return null
-      if (!res.ok) throw new Error(`${p.split('?')[0]} ${res.status}`)
-      return unwrap(await res.json())
-    }
+    const res = await fetch(new URL(p, svc.url), { headers: svc.headers, signal: AbortSignal.timeout(5000) })
+    if (res.status === 404) return null
+    if (!res.ok) throw new Error(`${p.split('?')[0]} ${res.status}`)
+    return res.json()
+  }
+
+  async snapshot(ids: string[]): Promise<Map<string, SessionSnapshot>> {
+    const get = async (p: string) => unwrap(await this.get(p))
     const active = await get('/api/session/active')
     // null: OpenCode doesn't know the session yet (404 until its first prompt)
     const one = async (id: string): Promise<SessionSnapshot | null> => {
@@ -79,6 +82,21 @@ export class HttpOpenCode implements OpenCodeSource {
       for (const child of snap.children) out.set(child, (await one(child)) ?? blank())
     }
     return out
+  }
+
+  async lastWrites(id: string): Promise<string[]> {
+    const base = `/api/session/${encodeURIComponent(id)}/message`
+    let query = '?limit=200' // newest first
+    for (let page = 0; page < 5; page++) {
+      const body = (await this.get(base + query)) as { data?: unknown; cursor?: { next?: unknown } } | null
+      if (!body || !Array.isArray(body.data) || body.data.length === 0) return []
+      const paths = lastWritesOf(body.data)
+      if (paths) return paths
+      const next = body.cursor?.next
+      if (typeof next !== 'string') return []
+      query = `?cursor=${encodeURIComponent(next)}&limit=200` // the cursor carries the order
+    }
+    return []
   }
 
   // Waits ms, or less if kick() fires.
@@ -131,6 +149,7 @@ export class HttpOpenCode implements OpenCodeSource {
     })
     if (!res.ok || !res.body) throw new Error(`event ${res.status}`)
     this.svc = { url, headers }
+    const tools = toolWrites()
     let silence = setTimeout(() => abort.abort(), this.o.silenceMs ?? 45000)
     const decoder = new TextDecoder()
     let buffer = ''
@@ -147,7 +166,7 @@ export class HttpOpenCode implements OpenCodeSource {
           } catch {
             continue
           }
-          const e = normalise(raw, version)
+          const e = normalise(raw, version) ?? tools(raw)
           if (e) onEvent(e)
         }
       }

@@ -592,4 +592,151 @@ Rules (design D1, "Status rules", flow *Notification (main)*, row Window focus):
   click it → "idle"; restart grove → still "idle"; the `npm run dev` terminal
   shows one `notification failed` line (unsigned app, D3).
 
+## Slice 5 — Auto-link
+
+Context (code at `6b67b0b`, after slice 4): `src/core/opencode/normalise.ts`
+holds every OpenCode shape (`normalise`, `unwrap`, `childIds`, `snapshotOf`;
+local helpers `obj`, `toIso`, `ids`). `src/core/opencode/client.ts`
+`HttpOpenCode.stream()` feeds each SSE frame's JSON to `normalise(raw, version)`;
+`snapshot(ids)` uses a local `get(path)` (Basic headers from `this.svc`, 404 →
+`null`, `unwrap`). `src/core/core.ts`: `onOcEvent` → `applyOc(e)` for
+non-connection events (`child` also fills `roots`: subagent id → root id);
+`resync()` runs on every `connected`, snapshots the `opencodeSessionId`s of
+OpenCode sessions with `lastStatus 'running'`, and drops its result when
+`syncGen` moved on. `discovery: Map<projectId, { root: string | null, folders: Map<slug, FolderSnapshot>, … }>`
+holds each project's feature root (absolute, `path.resolve`d, not realpath'd);
+`publish()` re-derives `features` and is called after every `sessions`
+change and every discovery change. `commands.sessionLink` uses
+`link(s, feature)` (sets `linkPinned: true`) from `src/core/sessions.ts`.
+`FakeWatchers.roots.get(root)!(slug)` fires a folder change in tests; the
+test project `p` lives in a temp dir (on macOS under `/var/folders`, a
+symlink to `/private/var/folders`); `features.test.ts` `setup()` gives
+`work` (`<dir>/docs/work`) and `feature(slug)`.
+
+OpenCode 2.0.20 facts (research Q6, Q7): every tool event's `data` has
+`{sessionID, assistantMessageID, id}` (`id` = the tool call id).
+`session.tool.input.started` alone carries `data.name`;
+`session.tool.called` carries the parsed `data.input`; then
+`session.tool.success` or `session.tool.failed`. File-writing tools: `write`
+and `edit` (`input.path`, relative to the session directory = the project
+path, or absolute) and `patch` (`input.patchText`; paths only on lines
+`*** Add File: <p>`, `*** Update File: <p>`, `*** Delete File: <p>`,
+`*** Move to: <p>`). `read` also has `input.path`, so the name is needed.
+`GET /api/session/:id/message?limit=200` → `{data: Message[], cursor: {next?}}`,
+newest first by default; the next page is `?cursor=<next>&limit=200` (no
+`order` with a cursor); an empty page is the end. An assistant message has
+`content[]` with tool items `{type: 'tool', id, name, state}`; a completed
+`state` is `{input, content[], metadata?}`, an errored one has `error`,
+running/streaming ones have no `content` (so: completed = `state` has a
+`content` array and no `error` key, or `state.status === 'completed'`).
+
+Rules (design D2, flow *Auto-link*, rows Link source, Link matching,
+Subagents; E-D6):
+- `slugFor(paths, projectPath, featureRoot)`: `featureRoot` null → null.
+  Each path: absolute as is, else resolved against `projectPath`; both it and
+  `featureRoot` go through a best-effort realpath (realpath the nearest
+  existing ancestor, re-append the rest). The path must be inside the root
+  with at least two segments below it (`<slug>/<file…>`); the slug must not
+  start with `.`. The last matching path wins (a patch's `Move to` comes
+  after its source).
+- A `wrote` event's session id maps to its root (`roots`), then to the grove
+  session with that `opencodeSessionId`. Pinned (`linkPinned`) sessions are
+  never changed. A slug discovery lists for that project → `feature = slug`
+  (unpinned, via `autoLink`), dropping any held slug. A slug not listed yet
+  → held for that session (a newer write replaces it); `publish()` applies
+  held slugs once listed. A write matching no feature folder changes nothing.
+- Catch-up: after each successful re-sync (same `syncGen`), for each
+  snapshotted session that is unpinned, `lastWrites(opencodeSessionId)` →
+  the same handling as a `wrote`. A session that got a live `wrote` since the
+  re-sync began is skipped. Errors are ignored. Catch-up reads the root
+  session's own messages only.
+
+- [x] In `src/core/opencode/types.ts` add to `OcEvent`
+  `| { type: 'wrote'; sessionId: string; paths: string[] } // a write/edit/patch succeeded; raw paths`
+  and to `OpenCodeSource`
+  `lastWrites(id: string): Promise<string[]> // paths of the session's latest successful write/edit/patch; [] if none`.
+- [x] Extend `src/core/opencode/normalise.test.ts` (failing first):
+  `patchPaths(text)` → the paths of all four header kinds, in order, trimmed;
+  `toolWrites()` (a stateful mapper `(raw: unknown) => OcEvent | null`):
+  `input.started` name `write` + `called` input `{path:'docs/x.md'}` +
+  `success` → `{type:'wrote', sessionId, paths:['docs/x.md']}`; `edit` the
+  same; `patch` with a `patchText` → its header paths; `read` → `null`;
+  `failed` instead of `success` → `null` and the call is forgotten; a
+  `success` for an unknown id → `null`; other types → `null`.
+  `lastWritesOf(messages: unknown[])` (messages newest first) → the paths of
+  the first completed write/edit/patch tool item scanning each message's
+  `content` from the end; skips `read`, errored and running items; `null`
+  when none.
+- [x] Implement `patchPaths`, `toolWrites`, `lastWritesOf` in
+  `src/core/opencode/normalise.ts` (a shared local
+  `writePaths(name, input): string[] | null` for `write`/`edit` →
+  `[input.path]`, `patch` → `patchPaths(input.patchText)`, else `null`).
+- [x] Write failing test `src/core/autolink.test.ts` for
+  `slugFor(paths, projectPath, featureRoot)` on a temp project with
+  `docs/work/a/` and `docs/work/epic/`: relative `docs/work/a/x.md` → `a`;
+  absolute → `a`; a not-yet-existing `docs/work/new/01-questions.md` → `new`;
+  the project addressed through its realpath vs the `os.tmpdir()` form (one of
+  them a symlink on macOS) → `a`; `src/x.ts` and `/elsewhere/x` → `null`;
+  `docs/work/README.md` (directly in the root) → `null`; `docs/work/.git/x`
+  → `null`; `docs/work/epic/03-design.md` → `epic`; `featureRoot` null →
+  `null`; `['docs/work/a/x', 'docs/work/b/y']` → `b`.
+- [x] Implement `src/core/autolink.ts`: `slugFor` and a local `real(p)`
+  (`fs.realpathSync` of the nearest existing ancestor, joined with the rest).
+- [x] In `src/core/sessions.ts` add
+  `export function autoLink(s: Session, feature: string): Session { return { ...s, feature } } // leaves linkPinned alone`.
+- [x] Write failing tests in `src/core/opencode/client.test.ts`:
+  a stream sending `input.started` (write), `called` and `success` frames for
+  `ses_a` emits one `wrote`; `lastWrites('ses_a')` against stub routes
+  `/api/session/ses_a/message?limit=200` (a page whose only tool is a
+  `read`, `cursor.next: 'c1'`) and `/api/session/ses_a/message?cursor=c1&limit=200`
+  (a page with a completed `edit` of `docs/work/a/x.md`) → `['docs/work/a/x.md']`;
+  an unknown session (404) → `[]`.
+- [x] In `src/core/opencode/client.ts`: per `stream()` call create
+  `const tools = toolWrites()` and, per frame, emit `normalise(raw, version) ?? tools(raw)`.
+  Add `lastWrites(id)`: same `get` helper (factor `snapshot`'s `get` into a
+  private `get(path)` method that throws `'not connected'` without `svc`);
+  read up to 5 pages: `/api/session/<id>/message?limit=200`, then
+  `?cursor=<encodeURIComponent(next)>&limit=200`; per page body (not
+  unwrapped) `data` array and `cursor.next`; return the first
+  `lastWritesOf(page)` that is not `null`; stop on 404, an empty page or no
+  `next`; return `[]`.
+- [x] In `src/core/testing/fakeOpenCode.ts` add
+  `writes = new Map<string, string[]>()` and
+  `async lastWrites(id) { return this.writes.get(id) ?? [] }`.
+- [x] Write failing core tests in `src/core/features.test.ts`,
+  `describe('core auto-link')` (OpenCode session created with
+  `createOpenCode`, `oc.emit({type:'connected', version:'2.0.20'})`, then
+  `await flush()`): (1) `wrote` `['docs/work/a/x.md']` → `feature: 'a'`,
+  `linkPinned: false`, kept in `state.json`; (2) a child (`child` event) of
+  the session writing into `b` → `feature: 'b'`; (3) a session pinned with
+  `sessionLink` to `a` stays `a` after a `wrote` into `b`; (4) a write into
+  `docs/work/new/…` before the folder exists → no link; `feature('new')`
+  then `s.watchers.roots.get(s.work)!('new')` → `feature: 'new'`; (5) a
+  write outside the root → no change; (6) `oc.writes` set for the session,
+  then `disconnected` + `connected` + `flush()` → linked (catch-up), and a
+  pinned session is not passed to catch-up (no link change).
+- [x] In `src/core/core.ts`: keep `const held = new Map<string, string>()`
+  (grove session id → slug) and `const wroteSince = new Set<string>()`.
+  `function linkWrite(sessionId: string, paths: string[])`: session = the one
+  with `opencodeSessionId === (roots.get(sessionId) ?? sessionId)`; skip if
+  none or `linkPinned`; `project` by `projectId`; `slug = slugFor(paths, project.path, discovery.get(projectId)?.root ?? null)`;
+  `null` → return; listed (`discovery…folders.has(slug)`) → `held.delete`, and
+  if `feature !== slug` `replaceSession(autoLink(session, slug))`; else
+  `held.set(session.id, slug)`. In `onOcEvent`, a `wrote` event:
+  `wroteSince.add(grove session id)` then `linkWrite` (not passed to
+  `applyOc`; trackers don't use it, and the queue skips it).
+  `function applyHeld()`: for each held entry whose session still exists, is
+  unpinned, and whose slug is now listed → delete the entry and
+  `replaceSession(autoLink(…))`; entries for missing or pinned sessions are
+  dropped. Call `applyHeld()` at the end of `publish()` (after
+  `set('features', …)`). In `resync()`: `wroteSince.clear()` at the start;
+  after the success path, `void catchUp(gen, ids)`. `async function catchUp(gen, ids)`:
+  for each id, the grove session with that `opencodeSessionId`, unpinned:
+  `await source.lastWrites(id)` in `try/catch`; stop if `gen !== syncGen`;
+  skip if `wroteSince.has(session.id)` or no paths; else `linkWrite(id, paths)`.
+- [x] Run `npm test -- src/core/autolink.test.ts src/core/opencode/normalise.test.ts src/core/features.test.ts`,
+  then `npm test` (outside the sandbox), `npm run typecheck` and `npm run build`.
+- [ ] Manual (human): in an unlinked OpenCode session run `/grove-questions`
+  on a new idea → the card shows the new feature; restart grove → link kept.
+
 ## Open questions

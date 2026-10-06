@@ -185,6 +185,38 @@ describe('HttpOpenCode', () => {
     ]))
   })
 
+  it('emits wrote when a write tool succeeds', async () => {
+    const tool = (type: string, extra: object) => frame(`session.tool.${type}`, { sessionID: 'ses_a', assistantMessageID: 'msg_1', id: 'call_1', ...extra })
+    const { client, c } = await setup('pw', {
+      onEvent: (res) => {
+        res.write(frame('server.connected'))
+        res.write(tool('input.started', { name: 'write' }) + tool('called', { input: { path: 'docs/work/a/x.md' } }) + tool('success', {}))
+      },
+    })
+    client.start(c.onEvent)
+    await c.until((es) => c.count('wrote')(es) >= 1)
+    expect(c.events.filter((e) => e.type === 'wrote')).toEqual([{ type: 'wrote', sessionId: 'ses_a', paths: ['docs/work/a/x.md'] }])
+  })
+
+  it('reads the latest write from the session\'s messages, page by page', async () => {
+    const tool = (name: string, path: string) => ({ type: 'tool', id: `call_${name}`, name, state: { input: { path }, content: [] } })
+    const pages: Record<string, unknown> = {
+      '/api/session/ses_a/message?limit=200': { data: [{ type: 'assistant', content: [tool('read', 'docs/r.md')] }], cursor: { next: 'c1' } },
+      '/api/session/ses_a/message?cursor=c1&limit=200': { data: [{ type: 'assistant', content: [tool('edit', 'docs/work/a/x.md')] }], cursor: { next: 'c2' } },
+    }
+    const { client, c } = await setup('pw', {
+      extra: (req, res) => {
+        if (!(req.url! in pages)) return false
+        res.writeHead(200, { 'content-type': 'application/json' }).end(JSON.stringify(pages[req.url!]))
+        return true
+      },
+    })
+    client.start(c.onEvent)
+    await c.until((es) => c.count('connected')(es) >= 1)
+    expect(await client.lastWrites('ses_a')).toEqual(['docs/work/a/x.md'])
+    expect(await client.lastWrites('ses_unknown')).toEqual([])
+  })
+
   it('makes no requests after stop', async () => {
     const { s, client, c } = await setup('pw')
     client.start(c.onEvent)

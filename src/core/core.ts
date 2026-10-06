@@ -11,10 +11,11 @@ import { terminalTheme } from '@shared/theme'
 import { listFolders, readFolder, resolveRoot, type FolderSnapshot } from './discovery/folder'
 import { chokidarWatchers, type Closer, type Watchers } from './discovery/watcher'
 import { loginShellArgv } from './env'
+import { slugFor } from './autolink'
 import { hasLiveSessions, newProject } from './projects'
 import { readBranch } from './git'
 import type { OcEvent, OpenCodeSource } from './opencode/types'
-import { link, markGone, markSeen, newSession, reconcile, rename, withBranches } from './sessions'
+import { autoLink, link, markGone, markSeen, newSession, reconcile, rename, withBranches } from './sessions'
 import { loadConfig, saveConfig } from './store/configStore'
 import { apply, fromSnapshot, withStatus, type Tracker } from './status'
 import { loadState, saveState } from './store/stateStore'
@@ -31,7 +32,7 @@ export interface CoreOptions {
   now?: () => Date // tests inject this
 }
 
-type OcChange = Exclude<OcEvent, { type: 'connected' | 'disconnected' }>
+type OcChange = Exclude<OcEvent, { type: 'connected' | 'disconnected' | 'wrote' }>
 
 type SliceListener = <K extends keyof Slices>(k: K, v: Slices[K]) => void
 
@@ -91,6 +92,8 @@ export function createCore(opts: CoreOptions): Core {
   let lastOnScreen: string | null = null
   const waitKey = new Map<string, string>() // session id → waitingFor it was last seen waiting with
   let primed = false // the first re-sync after start records waiting sessions without notifying
+  const held = new Map<string, string>() // session id → slug it wrote to that discovery hasn't listed yet
+  const wroteSince = new Set<string>() // sessions with a live write since the last re-sync began
 
   function set<K extends keyof Slices>(k: K, v: Slices[K]): void {
     slices[k] = v
@@ -205,6 +208,55 @@ export function createCore(opts: CoreOptions): Core {
       stages: wf.stages.map(({ id, label }) => ({ id, label })),
       items: deriveFeatures(wf, folders, slices.sessions),
     })
+    applyHeld()
+  }
+
+  const listed = (projectId: string, slug: string) => discovery.get(projectId)?.folders.has(slug) ?? false
+
+  // Auto-link (E-D6): an unpinned OpenCode session follows the feature folder it last wrote to.
+  function linkWrite(ocSessionId: string, paths: string[]): void {
+    const root = roots.get(ocSessionId) ?? ocSessionId
+    const session = slices.sessions.find((s) => s.opencodeSessionId === root)
+    if (!session || session.linkPinned) return
+    const project = slices.projects.find((p) => p.id === session.projectId)
+    const slug = project && slugFor(paths, project.path, discovery.get(project.id)?.root ?? null)
+    if (!slug) return
+    if (!listed(session.projectId, slug)) {
+      held.set(session.id, slug) // linked once discovery lists it; a newer write replaces it
+      return
+    }
+    held.delete(session.id)
+    if (session.feature !== slug) replaceSession(autoLink(session, slug))
+  }
+
+  function applyHeld(): void {
+    for (const [id, slug] of [...held]) {
+      const session = findSession(id)
+      if (!session || session.linkPinned) held.delete(id)
+      else if (listed(session.projectId, slug)) {
+        held.delete(id)
+        if (session.feature !== slug) replaceSession(autoLink(session, slug))
+      }
+    }
+  }
+
+  // Links from each session's latest write, for writes made while grove wasn't listening.
+  async function catchUp(gen: number, ids: string[]): Promise<void> {
+    const source = opts.opencode
+    if (!source) return
+    for (const id of ids) {
+      const session = slices.sessions.find((s) => s.opencodeSessionId === id)
+      if (!session || session.linkPinned) continue
+      let paths: string[]
+      try {
+        paths = await source.lastWrites(id)
+      } catch {
+        continue
+      }
+      if (gen !== syncGen) return
+      if (wroteSince.has(session.id) || paths.length === 0) continue
+      linkWrite(id, paths)
+    }
   }
 
   async function checkLiveness(): Promise<void> {
@@ -292,6 +344,12 @@ export function createCore(opts: CoreOptions): Core {
         set('opencode', OPENCODE_CONNECTING)
         armUnreachable()
       }
+    } else if (e.type === 'wrote') {
+      const root = roots.get(e.sessionId) ?? e.sessionId
+      const session = slices.sessions.find((s) => s.opencodeSessionId === root)
+      if (session) wroteSince.add(session.id)
+      linkWrite(e.sessionId, e.paths)
+      return
     } else {
       queue?.push(e)
       applyOc(e)
@@ -305,6 +363,7 @@ export function createCore(opts: CoreOptions): Core {
     if (!source) return
     const gen = ++syncGen
     queue = []
+    wroteSince.clear()
     const ids = slices.sessions
       .filter((s) => s.kind === 'opencode' && s.lastStatus === 'running' && s.opencodeSessionId)
       .map((s) => s.opencodeSessionId!)
@@ -328,6 +387,7 @@ export function createCore(opts: CoreOptions): Core {
     for (const e of replay) applyOc(e)
     refreshStatus()
     primed = true
+    void catchUp(gen, ids)
   }
 
   const findSession = (id: string) => slices.sessions.find((s) => s.id === id)

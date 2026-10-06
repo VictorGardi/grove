@@ -14,7 +14,7 @@ const blank = (): Tracker => ({ running: false, pending: new Map(), idleAt: null
 // Returns the same map for events that change no tracker; never mutates its input.
 // A child's pending items count for its root; its own turns don't (the parent's turn spans them).
 export function apply(t: Map<string, Tracker>, roots: Map<string, string>, e: OcEvent): Map<string, Tracker> {
-  if (e.type === 'connected' || e.type === 'disconnected') return t
+  if (e.type === 'connected' || e.type === 'disconnected' || e.type === 'wrote') return t
   if ((e.type === 'exec-started' || e.type === 'exec-ended') && roots.has(e.sessionId)) return t
   const root = e.type === 'child' ? roots.get(e.parentId) ?? e.parentId : roots.get(e.sessionId) ?? e.sessionId
   const cur = t.get(root) ?? blank()

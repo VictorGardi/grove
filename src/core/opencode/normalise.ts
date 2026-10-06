@@ -75,3 +75,58 @@ export function snapshotOf(info: unknown, active: unknown, permissions: unknown,
     children: [],
   }
 }
+
+// File writes (research Q6, Q7). write/edit carry `path`; patch names its files in `patchText` headers.
+const PATCH_HEADER = /^\*\*\* (?:Add File|Update File|Delete File|Move to): (.+)$/gm
+
+export function patchPaths(text: unknown): string[] {
+  return typeof text === 'string' ? [...text.matchAll(PATCH_HEADER)].map((m) => m[1].trim()) : []
+}
+
+function writePaths(name: unknown, input: unknown): string[] | null {
+  const i = obj(input)
+  if ((name === 'write' || name === 'edit') && typeof i?.path === 'string') return [i.path]
+  if (name === 'patch') return patchPaths(i?.patchText)
+  return null // read also has `path`: only these three write
+}
+
+// Tool events → `wrote` on success. Only input.started names the tool, only called has the
+// parsed input, so both are held by call id until success or failure. One per stream.
+export function toolWrites(): (raw: unknown) => OcEvent | null {
+  const calls = new Map<string, { name?: unknown; input?: unknown }>()
+  return (raw) => {
+    const e = obj(raw)
+    const data = obj(e?.data)
+    const id = data?.id
+    if (typeof e?.type !== 'string' || !e.type.startsWith('session.tool.') || typeof id !== 'string') return null
+    const call = calls.get(id) ?? {}
+    if (e.type === 'session.tool.input.started') calls.set(id, { ...call, name: data?.name })
+    else if (e.type === 'session.tool.called') calls.set(id, { ...call, input: data?.input })
+    else if (e.type === 'session.tool.failed') calls.delete(id)
+    else if (e.type === 'session.tool.success') {
+      calls.delete(id)
+      const paths = writePaths(call.name, call.input)
+      const sessionId = data?.sessionID
+      return paths?.length && typeof sessionId === 'string' ? { type: 'wrote', sessionId, paths } : null
+    }
+    return null
+  }
+}
+
+// GET /api/session/:id/message items, newest first → the latest completed write/edit/patch's paths.
+// A completed state has `content` and no `error`; running and streaming ones have no `content`.
+export function lastWritesOf(messages: unknown[]): string[] | null {
+  for (const m of messages) {
+    const content = obj(m)?.content
+    if (!Array.isArray(content)) continue
+    for (let i = content.length - 1; i >= 0; i--) {
+      const item = obj(content[i])
+      const state = obj(item?.state)
+      if (item?.type !== 'tool' || !state || 'error' in state) continue
+      if (state.status !== 'completed' && !Array.isArray(state.content)) continue
+      const paths = writePaths(item.name, state.input)
+      if (paths?.length) return paths
+    }
+  }
+  return null
+}

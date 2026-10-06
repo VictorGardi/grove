@@ -21,7 +21,7 @@ forced: []
 - [x] Slice 2 — Waiting on a permission or question
 - [x] Slice 3 — Re-sync, reconnect, fallback banner
 - [x] Slice 4 — Finished turn waits until seen; notifications
-- [ ] Slice 5 — Auto-link
+- [x] Slice 5 — Auto-link
 - [ ] Slice 6 — Resume
 
 ## Approval note
@@ -136,5 +136,32 @@ Deviations (small, two-way):
 - Notifications are held in a `Set` until closed, clicked or failed, so a
   click isn't lost to garbage collection; `ready-to-show` also reports the
   initial window focus to core.
+
+## Slice 5 — Auto-link
+
+Verification: the slice's test command passes (46 tests); `npm test` 275
+passed (outside the sandbox); `npm run typecheck` and `npm run build` clean.
+Manual check pending, for the human.
+
+Deviations (small, two-way):
+
+- The tool name comes from `session.tool.input.started` (the only event
+  carrying it) and is held with the `called` input by call id, because `read`
+  also has `input.path`; this state lives in `toolWrites()` in `normalise.ts`,
+  one per stream.
+- A stored tool call counts as completed when its `state` has a `content`
+  array and no `error` key (or `status: 'completed'`); research names the
+  state variants but not their discriminator. Checked by hand in the manual
+  step, not against captured payloads.
+- With several paths (a patch), the last one inside a feature folder wins, so
+  a `Move to` beats its source. A file directly in the feature root or in a
+  dot folder links nothing.
+- Catch-up reads the root session's own messages only (newest first, up to 5
+  pages of 200), not its subagents'; a session that got a live write since the
+  re-sync began is skipped.
+- A write to a not-yet-listed folder is held per session until discovery lists
+  it; held entries for removed or pinned sessions are dropped.
+- `status.apply` ignores `wrote`; core handles it before the snapshot queue.
+- `snapshot` and `lastWrites` share a private `get` in `HttpOpenCode`.
 
 ## Open questions
