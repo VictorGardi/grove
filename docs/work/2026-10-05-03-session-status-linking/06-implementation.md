@@ -88,7 +88,8 @@ Verification: the slice's test commands pass (46 + 35 tests); `npm test` 247
 passed, run outside the Claude Code sandbox (inside it, the stub-server tests in
 `client.test.ts` fail with `listen EPERM` and the real-tmux tests with
 `posix_spawnp`); `npm run typecheck` and `npm run build` clean. Manual check
-(service stop → banner, restart → statuses back): pending, for the human.
+(service stop → banner, restart → statuses back): passed, confirmed by the
+human on 2026-10-06.
 
 Deviations (small, two-way):
 

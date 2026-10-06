@@ -465,7 +465,7 @@ Service banner, Dead pane; risk Experimental API):
   (the tmux file outside the sandbox), then
   `npm test -- src/core/opencode/normalise.test.ts src/core/status.test.ts src/renderer/src/sessionStatus.test.ts`,
   `npm test`, `npm run typecheck` and `npm run build`.
-- [ ] Manual (human): with an OpenCode session open in grove, `opencode service stop`
+- [x] Manual (human): with an OpenCode session open in grove, `opencode service stop`
   → banner within ~5 s, cards "running"; start a TUI (`opencode`) → banner
   gone, statuses back.
 
