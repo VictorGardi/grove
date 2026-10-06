@@ -56,3 +56,10 @@ const bySlugDoneLast = (a: Feature, b: Feature) =>
 export function childrenOf(feature: Feature, features: Feature[]): Feature[] {
   return features.filter((f) => f.projectId === feature.projectId && f.parent === feature.slug).sort(bySlugDoneLast)
 }
+
+// ⌘B: on a project page switch its board, elsewhere open the context project's page.
+export function boardKey(ui: UiState, projects: Project[], sessions: Session[], features: Feature[]): Partial<UiState> | null {
+  if (content(ui, projects, sessions, features).kind === 'project') return { board: ui.board === 'features' ? 'sessions' : 'features' }
+  const id = boardProject(ui, projects, sessions, features)
+  return id ? { focusedProject: id } : null
+}

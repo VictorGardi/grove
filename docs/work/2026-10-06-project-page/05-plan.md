@@ -2,7 +2,7 @@
 feature: 2026-10-06-project-page
 phase: plan
 status: approved
-version: 1
+version: 2
 created: 2026-10-06
 updated: 2026-10-06
 approved_at:
@@ -166,5 +166,81 @@ a session while on a project page shows its terminal; breadcrumbs go up; ⌘B
 from a session opens its project's board, also with the terminal focused;
 Projects tab rows show counts and open their pages; a parent tag opens the
 parent page, and the parent lists its children.
+
+## Slice 2 — Sessions board and the Features | Sessions switch
+
+Context (code at `3b2c32a`): the project page (`ProjectPage.tsx`) renders the
+Features `Board` only. `content()` / `boardProject()` live in
+`src/renderer/src/navigation.ts`; ⌘B sends `projectBoard` and `App.tsx`
+opens `boardProject(...)`. `shownStatus()` (`sessionStatus.ts`) gives
+`running | gone | working | waiting | idle`; `statusView()` gives the label
+and `StatusTone`. The store tracks `waitingSince` (ms, renderer memory) via
+`trackWaiting`; no time is kept for other statuses. `Session.endedAt` is
+persisted. `ListRow` has `tone: 'waiting'` (amber card). `linkedFeature()` and
+`colorTags()` give a session's feature and its tag colour. No duration
+formatter exists.
+
+Behaviour defined here, from decisions 3, 5 and 9:
+- `UiState.board: 'features' | 'sessions'`, default `'features'`, persisted
+  (old files get the default via `loadState`'s defaults merge).
+- The project page header (`ContentHeader` `right`) shows a Features |
+  Sessions switch, styled like the removed `ViewToggle` (two `Button`s,
+  `size="sm"`, `secondary` when active, `ghost` otherwise, `aria-pressed`).
+- Sessions board columns, in order: Waiting (`waiting`), Working
+  (`working`, `running`), Idle (`idle`), Ended (`gone`). Within a column,
+  sessions by `startedAt`. Only the project's sessions.
+- Session card (`ListRow`): title = label; icon = kind icon as in the sidebar
+  card; meta = linked feature `Tag` (clickable → feature page) when linked;
+  status = `statusView()` label plus " · <duration>"; tone `waiting` for
+  waiting sessions, else `default`. Clicking focuses the session.
+- Time in state: the store keeps `statusSince: Record<id, { status: ShownStatus; since: number }>`
+  (renderer memory, reset when the status changes; first seen = app
+  start or session creation). Ended sessions use `endedAt` when set.
+  Duration text: `<1m` → "now", minutes "Nm", hours "Nh", days "Nd". The
+  board re-renders every 30 s.
+- ⌘B: when the content area shows a project page, it switches `board`
+  (features ↔ sessions); otherwise it opens the context project's page.
+
+Steps:
+
+- [x] Write failing tests in `src/renderer/src/tree.test.ts` for
+  `sessionColumns(sessions)` → `{ id: 'waiting' | 'working' | 'idle' | 'ended'; label: string; sessions: Session[] }[]`
+  per the mapping above.
+- [x] Write failing tests in `src/renderer/src/sessionStatus.test.ts` for
+  `trackStatus(prev, sessions, now)` (keeps `since` while the status is
+  unchanged, resets it on change, drops removed sessions, returns `prev`
+  when nothing changed) and `duration(ms)` ("now", "5m", "3h", "2d").
+- [x] Write failing tests in `src/renderer/src/navigation.test.ts` for
+  `boardKey(ui, projects, sessions, features)` → `Partial<UiState> | null`:
+  `{ board: 'sessions' }` / `{ board: 'features' }` when the content is a
+  project page (including the first-project fallback), else
+  `{ focusedProject: <boardProject> }`, null with no projects.
+- [x] Write a failing test in `src/core/store/stateStore.test.ts`: an old ui
+  without `board` loads `board: 'features'`; the round-trip fixture carries
+  `board: 'sessions'`.
+- [x] `src/shared/types.ts`: `UiState.board: 'features' | 'sessions'`;
+  `DEFAULT_UI.board = 'features'`.
+- [x] Implement `sessionColumns` (`tree.ts`), `trackStatus` and `duration`
+  (`sessionStatus.ts`), `boardKey` (`navigation.ts`, replacing
+  `boardProject` use in `App.tsx`; keep `boardProject` exported for it).
+- [x] `src/renderer/src/stores/slices.ts`: `statusSince` state updated next
+  to `waitingSince` in `setSessions`; `setBoard(board)` → `ui:set { board }`.
+- [x] New `src/renderer/src/components/shell/BoardSwitch.tsx`
+  (+ `.module.css` `.toggle { display: flex; gap: var(--sp-1); }`).
+- [x] New `src/renderer/src/components/SessionsBoard.tsx`: columns from
+  `sessionColumns`, cards as above; reuse `Board.module.css` classes by
+  importing it. A 30 s `setInterval` state tick re-renders durations.
+- [x] `ProjectPage.tsx`: props add `board`, `sessions`, `statusSince`,
+  `onFocusSession`; renders `Board` or `SessionsBoard`. `App.tsx`: pass
+  them; `ContentHeader right={<BoardSwitch …/>}` on a project page; the
+  `projectBoard` menu action applies `boardKey(...)` via `go`.
+- [x] Run `npm run typecheck`
+- [x] Run `npm test`
+- [x] Run `npm run build`
+
+Manual check (human): the switch flips the board; ⌘B on a project page
+flips it, elsewhere opens the board; sessions sit in the right columns and
+move as their status changes; waiting cards are amber; durations count up;
+clicking a card opens the session; a linked feature tag opens the feature.
 
 ## Open questions

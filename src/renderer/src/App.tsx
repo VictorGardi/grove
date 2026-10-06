@@ -8,11 +8,12 @@ import { ProjectPage } from './components/ProjectPage'
 import { Sidebar } from './components/Sidebar'
 import { TerminalView } from './components/TerminalView'
 import { AppShell } from './components/shell/AppShell'
+import { BoardSwitch } from './components/shell/BoardSwitch'
 import { ContentHeader } from './components/shell/ContentHeader'
 import { TopBar } from './components/shell/TopBar'
 import { Banner } from './components/ui/Banner'
 import { Button } from './components/ui/Button'
-import { boardProject, childrenOf, content, crumbs } from './navigation'
+import { boardKey, childrenOf, content, crumbs } from './navigation'
 import { longestWaiting, serviceBanners, shownStatus } from './sessionStatus'
 import { useSlices } from './stores/slices'
 import { sessionGroups, sessionOrder } from './tree'
@@ -20,7 +21,7 @@ import { viewableFiles } from './viewerFiles'
 import s from './App.module.css'
 
 export default function App() {
-  const { projects, sessions, ui, features, opencode, errors, waitingSince, hydrate, setFocused, focusFeature, openProject, go,
+  const { projects, sessions, ui, features, opencode, errors, waitingSince, statusSince, hydrate, setFocused, focusFeature, go, setBoard,
     openArtifact, closeViewer, setViewerWidth, toggleViewerExpanded, reloadViewer } = useSlices()
   const [newFor, setNewFor] = useState<{ projectId?: string } | null>(null)
   const [confirmKill, setConfirmKill] = useState<Session | null>(null)
@@ -41,11 +42,11 @@ export default function App() {
         const target = sessionOrder(sessionGroups(projects, sessions, ui))[a.n - 1]
         if (target) setFocused(target.id)
       } else if (a.type === 'projectBoard') {
-        const id = boardProject(ui, projects, sessions, features.items)
-        if (id) openProject(id)
+        const to = boardKey(ui, projects, sessions, features.items)
+        if (to) go(to)
       }
     })
-  }, [setFocused, openProject])
+  }, [setFocused, go])
 
   const openNew = (projectId?: string) => setNewFor({ projectId })
   const shown = content(ui, projects, sessions, features.items)
@@ -71,10 +72,12 @@ export default function App() {
         sidebar={<Sidebar onNew={openNew} />}
         content={
           <>
-            <ContentHeader crumbs={header} />
+            <ContentHeader crumbs={header}
+              right={shown.kind === 'project' ? <BoardSwitch board={ui.board} onChange={setBoard} /> : undefined} />
             {shown.kind === 'project' ? (
-              <ProjectPage project={shown.project} projects={projects} stages={features.stages} features={features.items}
-                onOpenFeature={openFeature} />
+              <ProjectPage project={shown.project} projects={projects} board={ui.board} stages={features.stages}
+                features={features.items} sessions={sessions} statusSince={statusSince}
+                onOpenFeature={openFeature} onFocusSession={setFocused} />
             ) : shown.kind === 'feature' ? (
               <FeaturePage feature={shown.feature}
                 parent={features.items.find((f) => f.projectId === shown.feature.projectId && f.slug === shown.feature.parent) ?? null}

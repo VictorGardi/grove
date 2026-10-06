@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import { DEFAULT_UI, type Feature, type Project, type Session, type UiState } from '@shared/types'
-import { boardProject, childrenOf, content, crumbs } from './navigation'
+import { boardKey, boardProject, childrenOf, content, crumbs } from './navigation'
 
 const project = (id: string): Project => ({ id, name: id.toUpperCase(), path: '/' + id })
 
@@ -95,5 +95,17 @@ describe('childrenOf', () => {
       feature('x', { parent: 'e', projectId: 'q' }),
     ]
     expect(childrenOf(fs[0], fs).map((f) => f.slug)).toEqual(['b', 'd', 'c'])
+  })
+})
+
+describe('boardKey', () => {
+  const of = (u: Partial<UiState>) => boardKey(ui(u), projects, sessions, features)
+
+  it('switches the board on a project page, else opens the context project', () => {
+    expect(of({ focusedProject: 'q' })).toEqual({ board: 'sessions' })
+    expect(of({ focusedProject: 'q', board: 'sessions' })).toEqual({ board: 'features' })
+    expect(of({})).toEqual({ board: 'sessions' })
+    expect(of({ focusedSessionId: 't' })).toEqual({ focusedProject: 'q' })
+    expect(boardKey(ui(), [], [], [])).toBeNull()
   })
 })

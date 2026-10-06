@@ -23,6 +23,29 @@ export function trackWaiting(prev: Record<string, number>, sessions: Session[], 
   return same ? prev : next
 }
 
+export interface StatusSince { status: ShownStatus; since: number }
+
+// When the renderer first saw each session in its current shown status (ms). Same object when unchanged.
+export function trackStatus(prev: Record<string, StatusSince>, sessions: Session[], now: number): Record<string, StatusSince> {
+  const next: Record<string, StatusSince> = {}
+  for (const s of sessions) {
+    const status = shownStatus(s)
+    next[s.id] = prev[s.id]?.status === status ? prev[s.id] : { status, since: now }
+  }
+  const keys = Object.keys(next)
+  const same = keys.length === Object.keys(prev).length && keys.every((k) => prev[k] === next[k])
+  return same ? prev : next
+}
+
+// A short age: "now", "5m", "3h", "2d".
+export function duration(ms: number): string {
+  const m = Math.floor(ms / 60_000)
+  if (m < 1) return 'now'
+  if (m < 60) return `${m}m`
+  const h = Math.floor(m / 60)
+  return h < 24 ? `${h}h` : `${Math.floor(h / 24)}d`
+}
+
 // The waiting session seen waiting first; unknown times sort last, ties keep list order.
 export function longestWaiting(sessions: Session[], since: Record<string, number>): Session | null {
   let best: Session | null = null

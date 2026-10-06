@@ -8,7 +8,7 @@ updated: 2026-10-06
 approved_at:
 based_on:
   - 01-questions.md@1
-  - 05-plan.md@1
+  - 05-plan.md@2
 forced:
   - "size M / UI-state shape change in small flow: every decision, including the ui-state shape, was made by the human in grilling and recorded in ADR 0018 and 00-ticket.md; small flow chosen deliberately (2026-10-06)"
 ---
@@ -18,7 +18,7 @@ forced:
 ## Progress
 
 - [x] Slice 1 — Project page, three-way focus, Projects tab, breadcrumbs, ⌘B
-- [ ] Slice 2 — Sessions board and the Features | Sessions switch
+- [x] Slice 2 — Sessions board and the Features | Sessions switch
 - [ ] Slice 3 — Rich feature cards
 - [ ] Slice 4 — `CONTEXT.md`
 
@@ -39,5 +39,17 @@ Deviations:
 - The empty state with no projects now says "Add a project with the folder ＋
   in the sidebar" (there's always a project page once a project exists).
 - Tests run outside the sandbox: the OpenCode client tests bind a local port.
+
+## Slice 2
+
+Deviations:
+
+- "Time in state" for live sessions is counted from when the renderer first
+  saw the current status (app start, session creation, or the last status
+  change), since no status-change time is persisted; ended sessions use
+  `endedAt`. Restarting the app resets live durations.
+- The Sessions board's feature tag uses the feature's group colour (its own
+  slug for a group feature, else its parent's), like the sidebar card.
+- `tree.ts` now imports `shownStatus` from `sessionStatus.ts`.
 
 ## Open questions

@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import type { Feature, Project, Session } from '@shared/types'
-import { boardColumns, linkedFeature, sessionGroups, sessionOrder } from './tree'
+import { boardColumns, linkedFeature, sessionColumns, sessionGroups, sessionOrder } from './tree'
 
 const project = (id: string): Project => ({ id, name: id, path: '/' + id })
 
@@ -77,5 +77,23 @@ describe('boardColumns', () => {
       feature('c', { parent: 'e', projectId: 'q' }),
     ])
     expect(cols[0].cards.map((k) => [k.feature.slug, k.parent?.title ?? null])).toEqual([['a', 'Parent E'], ['b', null], ['c', null]])
+  })
+})
+
+describe('sessionColumns', () => {
+  it('sorts sessions into Waiting, Working, Idle and Ended by start time', () => {
+    const cols = sessionColumns([
+      session('t2', { startedAt: '2026-10-05T12:00:00.000Z' }),
+      session('w', { status: 'waiting' }),
+      session('k', { status: 'working', startedAt: '2026-10-05T11:00:00.000Z' }),
+      session('i', { status: 'idle' }),
+      session('g', { lastStatus: 'gone', status: 'idle' }),
+    ])
+    expect(cols.map((c) => [c.id, c.label, c.sessions.map((s) => s.id)])).toEqual([
+      ['waiting', 'Waiting', ['w']],
+      ['working', 'Working', ['k', 't2']],
+      ['idle', 'Idle', ['i']],
+      ['ended', 'Ended', ['g']],
+    ])
   })
 })

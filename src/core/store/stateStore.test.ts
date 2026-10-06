@@ -30,7 +30,7 @@ describe('stateStore', () => {
     const s: StateFile = {
       schemaVersion: 1,
       sessions: [newSession({ projectId: 'p', kind: 'terminal', now: new Date(), id: 'a' })],
-      ui: { sidebarWidth: 300, focusedSessionId: null, focusedFeature: null, focusedProject: 'p', sidebarTab: 'projects', collapsed: ['p:x'],
+      ui: { sidebarWidth: 300, focusedSessionId: null, focusedFeature: null, focusedProject: 'p', sidebarTab: 'projects', board: 'sessions', collapsed: ['p:x'],
         viewer: { projectId: 'p', slug: 'f', path: '03-design.html', hash: 'q1' }, viewerWidth: 600, viewerExpanded: true },
     }
     saveState(file, s)
@@ -69,6 +69,7 @@ describe('stateStore', () => {
     const { ui } = loadState(file)
     expect(ui).not.toHaveProperty('view')
     expect(ui.sidebarTab).toBe('projects')
+    expect(ui.board).toBe('features')
   })
 
   it('loads an old ui without viewer layout keys with the defaults', () => {

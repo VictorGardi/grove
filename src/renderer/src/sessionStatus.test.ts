@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import type { Session } from '@shared/types'
-import { longestWaiting, serviceBanners, shownStatus, statusView, trackWaiting } from './sessionStatus'
+import { duration, longestWaiting, serviceBanners, shownStatus, statusView, trackStatus, trackWaiting } from './sessionStatus'
 
 function session(over: Partial<Session> = {}): Session {
   return {
@@ -64,5 +64,23 @@ describe('serviceBanners', () => {
     expect(serviceBanners({ state: 'connected', version: '2.1.0' }, [])).toEqual([
       { tone: 'info', text: 'Untested OpenCode version 2.1.0 (grove is tested with 2.0.20)' },
     ])
+  })
+})
+
+describe('trackStatus', () => {
+  it('keeps since while the status holds, resets it on change, drops removed sessions', () => {
+    const first = trackStatus({}, [session({ id: 'a', status: 'working' }), session({ id: 'b' })], 100)
+    expect(first).toEqual({ a: { status: 'working', since: 100 }, b: { status: 'running', since: 100 } })
+    expect(trackStatus(first, [session({ id: 'a', status: 'working' }), session({ id: 'b' })], 200)).toBe(first)
+    expect(trackStatus(first, [session({ id: 'a', status: 'idle' })], 300)).toEqual({ a: { status: 'idle', since: 300 } })
+  })
+})
+
+describe('duration', () => {
+  it('rounds down to now, minutes, hours or days', () => {
+    expect(duration(30_000)).toBe('now')
+    expect(duration(5 * 60_000 + 1)).toBe('5m')
+    expect(duration(3 * 3_600_000 + 1)).toBe('3h')
+    expect(duration(2 * 86_400_000 + 1)).toBe('2d')
   })
 })
