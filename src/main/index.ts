@@ -49,7 +49,7 @@ app.whenReady().then(async () => {
         win.show()
         win.focus()
       }
-      void core.commands.uiSet({ view: 'list', focusedSessionId: s.id })
+      void core.commands.uiSet({ focusedSessionId: s.id })
     })
     n.on('failed', (_e, error) => {
       shown.delete(n)

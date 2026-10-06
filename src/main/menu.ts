@@ -43,6 +43,7 @@ export function buildMenu(send: (a: MenuAction) => void): void {
     },
   ]
   const view: MenuItemConstructorOptions[] = [
+    { label: 'Project Board', accelerator: 'CmdOrCtrl+B', click: () => send({ type: 'projectBoard' }) },
     { label: 'Command Palette', accelerator: 'CmdOrCtrl+K', click: () => {} }, // child 7
   ]
   if (!app.isPackaged) view.push({ type: 'separator' }, { role: 'toggleDevTools' }, { role: 'reload' })

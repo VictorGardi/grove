@@ -3,7 +3,7 @@ import type { Feature, Project } from '@shared/types'
 // Size of the --tag-N palette in tokens.css (and .tN classes in ui/Tag.module.css).
 export const TAG_COUNT = 8
 
-// Projects take palette colours by position; each project's groups (epics) take the
+// Projects take palette colours by position; each project's group features take the
 // colours after it, by slug, so a group differs from its own project's colour.
 export function colorTags(projects: Project[], features: Feature[]) {
   const projectIndex = new Map(projects.map((p, i) => [p.id, i]))

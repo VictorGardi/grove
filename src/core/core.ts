@@ -283,10 +283,9 @@ export function createCore(opts: CoreOptions): Core {
     if (next !== slices.sessions) set('sessions', next)
   }
 
-  // The session the human is looking at: focused window, list view, no feature page.
+  // The session the human is looking at: focused window, session focused (the focuses are exclusive).
   function onScreenId(): string | null {
-    const { ui } = slices
-    return windowFocused && ui.view === 'list' && !ui.focusedFeature ? ui.focusedSessionId : null
+    return windowFocused ? slices.ui.focusedSessionId : null
   }
 
   function refreshStatus(): void {
@@ -398,9 +397,10 @@ export function createCore(opts: CoreOptions): Core {
   }
 
   function dropSessions(keep: (s: Session) => boolean): void {
-    const focused = slices.ui.focusedSessionId
+    const focused = slices.ui.focusedSessionId ? findSession(slices.ui.focusedSessionId) : undefined
     set('sessions', slices.sessions.filter(keep))
-    if (focused && !findSession(focused)) set('ui', { ...slices.ui, focusedSessionId: null })
+    // the last project page takes over (ADR 0018)
+    if (focused && !findSession(focused.id)) set('ui', { ...slices.ui, focusedSessionId: null, focusedProject: focused.projectId })
   }
 
   const commands: Commands = {
@@ -416,6 +416,7 @@ export function createCore(opts: CoreOptions): Core {
       if (hasLiveSessions(id, slices.sessions)) return { ok: false, error: 'has-live-sessions' }
       set('projects', slices.projects.filter((p) => p.id !== id))
       dropSessions((s) => s.projectId !== id)
+      if (slices.ui.focusedProject === id) set('ui', { ...slices.ui, focusedProject: null })
       syncProjects(false)
       return { ok: true, data: { id } }
     },
@@ -487,9 +488,10 @@ export function createCore(opts: CoreOptions): Core {
 
     async uiSet(partial) {
       const next = { ...slices.ui, ...partial }
-      // one focus at a time: a feature page or a session
-      if (partial.focusedFeature) next.focusedSessionId = null
-      if (partial.focusedSessionId) next.focusedFeature = null
+      // one focus at a time: a session, a feature page or a project page
+      if (partial.focusedSessionId) Object.assign(next, { focusedFeature: null, focusedProject: null })
+      if (partial.focusedFeature) Object.assign(next, { focusedSessionId: null, focusedProject: null })
+      if (partial.focusedProject) Object.assign(next, { focusedSessionId: null, focusedFeature: null })
       set('ui', next)
       refreshStatus() // the on-screen session may have changed
       return { ok: true, data: slices.ui }

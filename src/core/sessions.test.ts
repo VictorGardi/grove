@@ -178,7 +178,7 @@ describe('core sessions', () => {
     expect(a.getSlices().sessions).toEqual([])
   })
 
-  it('clears focus when the focused session is removed', async () => {
+  it('moves focus to the project page when the focused session is removed', async () => {
     const { make } = setup()
     const a = make()
     await a.start()
@@ -186,7 +186,7 @@ describe('core sessions', () => {
     await a.commands.uiSet({ focusedSessionId: s.id })
     await a.commands.sessionKill({ id: s.id })
     await a.commands.sessionRemove({ id: s.id })
-    expect(a.getSlices().ui.focusedSessionId).toBeNull()
+    expect(a.getSlices().ui).toMatchObject({ focusedSessionId: null, focusedProject: s.projectId })
   })
 
   it('renames and pins the label across restarts', async () => {

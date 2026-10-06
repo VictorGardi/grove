@@ -1,6 +1,6 @@
 import { isViewable } from '@shared/artifactUrl'
 import type { Feature, Session } from '@shared/types'
-import { CARD_STATE_LABELS, progressLabel } from '../featureLabels'
+import { CARD_STATE_LABELS, featureStage, progressLabel } from '../featureLabels'
 import { statusView } from '../sessionStatus'
 import { reviewTarget } from '../viewerFiles'
 import { Badge } from './ui/Badge'
@@ -9,10 +9,13 @@ import { cx } from './ui/cx'
 import { ListRow } from './ui/ListRow'
 import s from './FeaturePage.module.css'
 
-export function FeaturePage({ feature: f, sessions, onFocusSession, onOpenArtifact }: {
+export function FeaturePage({ feature: f, parent, children, sessions, onFocusSession, onOpenFeature, onOpenArtifact }: {
   feature: Feature
+  parent: Feature | null
+  children: Feature[] // features whose parent is this one (navigation.childrenOf)
   sessions: Session[]
   onFocusSession: (id: string) => void
+  onOpenFeature: (f: Feature) => void
   onOpenArtifact: (name: string) => void
 }) {
   const linked = sessions.filter((x) => x.projectId === f.projectId && x.feature === f.slug)
@@ -33,6 +36,12 @@ export function FeaturePage({ feature: f, sessions, onFocusSession, onOpenArtifa
           {f.progress && <span>{progressLabel(f)}</span>}
           {f.flags.map((fl) => <Badge key={fl.id} tone="muted">{fl.label}</Badge>)}
         </div>
+        {parent && (
+          <div className={s.meta}>
+            Parent:
+            <button type="button" className={s.fileLink} onClick={() => onOpenFeature(parent)}>{parent.title}</button>
+          </div>
+        )}
         {f.warnings.length > 0 && <div className={s.warning}>{f.warnings.join(' · ')}</div>}
       </header>
 
@@ -62,6 +71,19 @@ export function FeaturePage({ feature: f, sessions, onFocusSession, onOpenArtifa
           ))}
         </ul>
       </section>
+
+      {children.length > 0 && (
+        <section className={s.section}>
+          <h2 className={s.heading}>Children</h2>
+          <div className={s.sessions}>
+            {children.map((c) => (
+              <ListRow key={c.slug} title={c.title} meta={featureStage(c)}
+                status={{ label: CARD_STATE_LABELS[c.cardState], tone: 'idle' }}
+                onClick={() => onOpenFeature(c)} />
+            ))}
+          </div>
+        </section>
+      )}
 
       <section className={s.section}>
         <h2 className={s.heading}>Sessions</h2>

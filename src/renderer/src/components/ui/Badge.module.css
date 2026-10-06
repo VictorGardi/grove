@@ -19,3 +19,8 @@
   background: var(--muted-badge-bg);
   color: var(--text-2);
 }
+
+.waiting {
+  background: var(--status-waiting);
+  color: var(--chrome-bg);
+}

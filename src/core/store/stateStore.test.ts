@@ -30,7 +30,7 @@ describe('stateStore', () => {
     const s: StateFile = {
       schemaVersion: 1,
       sessions: [newSession({ projectId: 'p', kind: 'terminal', now: new Date(), id: 'a' })],
-      ui: { sidebarWidth: 300, focusedSessionId: 'a', focusedFeature: null, view: 'list', sidebarTab: 'features', collapsed: ['p:x'],
+      ui: { sidebarWidth: 300, focusedSessionId: null, focusedFeature: null, focusedProject: 'p', sidebarTab: 'projects', collapsed: ['p:x'],
         viewer: { projectId: 'p', slug: 'f', path: '03-design.html', hash: 'q1' }, viewerWidth: 600, viewerExpanded: true },
     }
     saveState(file, s)
@@ -61,6 +61,14 @@ describe('stateStore', () => {
     const file = tmpFile()
     fs.writeFileSync(file, '{"schemaVersion":1,"sessions":[],"ui":{"sidebarWidth":230,"focusedSessionId":null,"view":"board","collapsed":[]}}')
     expect(loadState(file).ui.sidebarTab).toBe('sessions')
+  })
+
+  it('drops a saved view and reads the old features tab as projects', () => {
+    const file = tmpFile()
+    fs.writeFileSync(file, '{"schemaVersion":1,"sessions":[],"ui":{"sidebarWidth":230,"focusedSessionId":null,"view":"board","sidebarTab":"features","collapsed":[]}}')
+    const { ui } = loadState(file)
+    expect(ui).not.toHaveProperty('view')
+    expect(ui.sidebarTab).toBe('projects')
   })
 
   it('loads an old ui without viewer layout keys with the defaults', () => {

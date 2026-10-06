@@ -18,10 +18,3 @@ export function featureStage(f: Feature): string {
   if (f.cardState === 'active') return progressLabel(f)
   return f.stages.find((s) => s.id === f.currentStage)?.label ?? 'Done'
 }
-
-// One line for a feature row: "<current stage> · <card state>", "Active · n / m done", or "Done".
-export function featureSummary(f: Feature): string {
-  if (f.cardState === 'active') return `${CARD_STATE_LABELS.active} · ${progressLabel(f)}`
-  const stage = f.stages.find((s) => s.id === f.currentStage)
-  return stage ? `${stage.label} · ${CARD_STATE_LABELS[f.cardState]}` : 'Done'
-}

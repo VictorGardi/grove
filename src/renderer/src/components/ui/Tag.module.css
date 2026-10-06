@@ -23,6 +23,18 @@
   color: var(--tag);
 }
 
+.link {
+  padding: 0;
+  border: 0;
+  background: none;
+  font: inherit;
+  cursor: pointer;
+}
+
+.link:hover {
+  text-decoration: underline;
+}
+
 .dot {
   width: 6px;
   height: 6px;

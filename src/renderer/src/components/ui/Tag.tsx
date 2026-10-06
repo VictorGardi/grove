@@ -8,11 +8,13 @@ export function tagClass(index: number | null, use: 'fg' | 'rail'): string | und
   return index === null ? undefined : cx(s[`t${index}`], s[use])
 }
 
-export function Tag({ index, children }: { index: number | null; children: ReactNode }) {
+export function Tag({ index, children, onClick }: { index: number | null; children: ReactNode; onClick?: () => void }) {
+  const className = cx(index !== null && s[`t${index}`], s.chip, onClick && s.link)
+  if (!onClick) return <span className={className}><span className={s.dot} />{children}</span>
   return (
-    <span className={cx(index !== null && s[`t${index}`], s.chip)}>
+    <button type="button" className={className} onClick={(e) => { e.stopPropagation(); onClick() }}>
       <span className={s.dot} />
       {children}
-    </span>
+    </button>
   )
 }

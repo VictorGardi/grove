@@ -1,16 +1,15 @@
 import { useState } from 'react'
 import type { Feature, Project, Session } from '@shared/types'
 import { useSlices } from '../stores/slices'
-import { featureStage, featureSummary } from '../featureLabels'
-import { statusView } from '../sessionStatus'
+import { featureStage } from '../featureLabels'
+import { shownStatus, statusView } from '../sessionStatus'
 import { colorTags } from '../tags'
-import { buildTree, linkedFeature, sessionGroups, type TreeNode } from '../tree'
+import { linkedFeature, sessionGroups } from '../tree'
 import { Badge } from './ui/Badge'
 import { Button } from './ui/Button'
 import { Icon } from './ui/Icon'
 import { LinkPicker } from './LinkPicker'
 import { ListRow } from './ui/ListRow'
-import { cx } from './ui/cx'
 import { Tag, tagClass } from './ui/Tag'
 import css from './Sidebar.module.css'
 
@@ -23,7 +22,7 @@ function toggle(set: Set<string>, id: string): Set<string> {
 function SessionCard({ s, feature, tag, focused, compact, onFocus, onOpenFeature, onToggleCompact, onLink }: {
   s: Session
   feature: Feature | null // the linked feature, if it exists
-  tag: number | null // its epic's colour
+  tag: number | null // its parent feature's colour
   focused: boolean // a focused card shows selected; otherwise terminals are muted
   compact: boolean
   onFocus: () => void
@@ -100,34 +99,42 @@ function SessionCard({ s, feature, tag, focused, compact, onFocus, onOpenFeature
   )
 }
 
-type FeatureNode = Extract<TreeNode, { type: 'feature' }>
-
-function FeatureRow({ node, tag, focused, onFocus, onToggle }: {
-  node: FeatureNode
-  tag: number | null // set for groups (epics)
+// Projects tab: one row per project; clicking opens its page (ADR 0018).
+function ProjectRow({ project: p, tag, live, waiting, focused, refused, onOpen, onRemove, onNew }: {
+  project: Project
+  tag: number | null
+  live: number // running sessions
+  waiting: number
   focused: boolean
-  onFocus: () => void
-  onToggle: () => void
+  refused: boolean
+  onOpen: () => void
+  onRemove: () => void
+  onNew: () => void
 }) {
-  const f = node.feature
   return (
-    <ListRow
-      title={f.title}
-      icon={
-        <>
-          {node.children.length > 0 && (
-            <button className={css.chevron} aria-label={node.collapsed ? 'Expand' : 'Collapse'}
-              onClick={(e) => { e.stopPropagation(); onToggle() }}>
-              <Icon name={node.collapsed ? 'chevron-right' : 'chevron-down'} size={12} />
-            </button>
-          )}
-          <Icon name="folder" size={14} className={cx(css.iconFeature, tagClass(tag, 'fg'))} />
-        </>
-      }
-      meta={featureSummary(f)}
-      tone={focused ? 'selected' : 'default'}
-      onClick={onFocus}
-    />
+    <>
+      <ListRow
+        title={p.name}
+        icon={<Icon name="folder" size={14} className={tagClass(tag, 'fg')} />}
+        meta={
+          <div className={css.projectMeta}>
+            <span>{live} live</span>
+            {waiting > 0 && <Badge tone="waiting">{waiting} waiting</Badge>}
+          </div>
+        }
+        tone={focused ? 'selected' : 'default'}
+        onClick={onOpen}
+        actions={
+          <>
+            <Button variant="ghost" size="sm" round icon="plus" aria-label="New session in project" title="New session"
+              onClick={onNew} />
+            <Button variant="ghost" size="sm" round icon="trash" aria-label="Remove project" title="Remove project"
+              onClick={onRemove} />
+          </>
+        }
+      />
+      {refused && <div className={css.refused}>Can't remove: project has running sessions</div>}
+    </>
   )
 }
 
@@ -159,7 +166,7 @@ function ProjectHeader({ project: p, collapsed, tag, refused, onToggle, onRemove
 }
 
 export function Sidebar({ onNew }: { onNew: (projectId?: string) => void }) {
-  const { projects, sessions, ui, features, setFocused, toggleCollapsed, focusFeature, setSidebarTab } = useSlices()
+  const { projects, sessions, ui, features, setFocused, toggleCollapsed, focusFeature, openProject, setSidebarTab } = useSlices()
   const [refused, setRefused] = useState<string | null>(null)
   const [compact, setCompact] = useState<Set<string>>(new Set())
   const [linking, setLinking] = useState<Session | null>(null)
@@ -193,29 +200,9 @@ export function Sidebar({ onNew }: { onNew: (projectId?: string) => void }) {
       onToggle={() => toggleCollapsed(key)} onRemove={() => void removeProject(p.id)} onNew={() => onNew(p.id)} />
   )
 
-  // Features tab: a feature's children follow it, indented.
-  function renderNode(n: TreeNode) {
-    if (n.type === 'project') return null
-    const tag = n.feature.group ? tags.group(n.feature.projectId, n.feature.slug) : null
-    return (
-      <div key={n.key} className={css.cards}>
-        <FeatureRow
-          node={n}
-          tag={tag}
-          focused={ui.focusedFeature?.projectId === n.feature.projectId && ui.focusedFeature.slug === n.feature.slug}
-          onFocus={() => focusFeature({ projectId: n.feature.projectId, slug: n.feature.slug })}
-          onToggle={() => toggleCollapsed(n.key)}
-        />
-        {!n.collapsed && n.children.length > 0 && (
-          <div className={cx(css.children, tagClass(tag, 'rail'))}>{n.children.map(renderNode)}</div>
-        )}
-      </div>
-    )
-  }
-
   const tabs = [
     { id: 'sessions' as const, label: 'Sessions', badge: <Badge>{sessions.length}</Badge> },
-    { id: 'features' as const, label: 'Features', badge: null },
+    { id: 'projects' as const, label: 'Projects', badge: null },
   ]
 
   return (
@@ -239,11 +226,12 @@ export function Sidebar({ onNew }: { onNew: (projectId?: string) => void }) {
               {!g.collapsed && <div className={css.cards}>{g.sessions.map(sessionCard)}</div>}
             </div>
           ))
-          : buildTree(projects, features.items, ui).map((n) => n.type === 'project' && (
-            <div key={n.key} className={css.project}>
-              {projectHeader(n.project, n.key, n.collapsed)}
-              {!n.collapsed && <div className={css.cards}>{n.children.map(renderNode)}</div>}
-            </div>
+          : projects.map((p) => (
+            <ProjectRow key={p.id} project={p} tag={tags.project(p.id)}
+              live={sessions.filter((x) => x.projectId === p.id && x.lastStatus === 'running').length}
+              waiting={sessions.filter((x) => x.projectId === p.id && shownStatus(x) === 'waiting').length}
+              focused={ui.focusedProject === p.id} refused={refused === p.id}
+              onOpen={() => openProject(p.id)} onRemove={() => void removeProject(p.id)} onNew={() => onNew(p.id)} />
           ))}
       </div>
       {linking && <LinkPicker session={linking} onClose={() => setLinking(null)} />}

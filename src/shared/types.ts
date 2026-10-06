@@ -28,10 +28,10 @@ export interface ViewerTarget {
 export interface UiState {
   sidebarWidth: number
   focusedSessionId: string | null
-  focusedFeature: { projectId: string; slug: string } | null // exclusive with focusedSessionId
-  view: 'list' | 'board'
-  sidebarTab: 'sessions' | 'features'
-  collapsed: string[] // tree keys: p:<projectId>, f:<projectId>/<slug>
+  focusedFeature: { projectId: string; slug: string } | null
+  focusedProject: string | null // the project page; the three focuses are exclusive (ADR 0018)
+  sidebarTab: 'sessions' | 'projects'
+  collapsed: string[] // collapsed project folders on the Sessions tab: p:<projectId>
   viewer: ViewerTarget | null // artifact open in the right-hand panel
   viewerWidth: number
   viewerExpanded: boolean     // the viewer fills the content area
@@ -70,6 +70,6 @@ export interface OpenCodeSlice { state: 'connecting' | 'connected' | 'unreachabl
 export type Slices = { projects: Project[]; sessions: Session[]; ui: UiState; features: FeaturesSlice; opencode: OpenCodeSlice }
 export interface ConfigFile { schemaVersion: 1; projects: Project[]; workflow?: string }
 export interface StateFile { schemaVersion: 1; sessions: Session[]; ui: UiState }
-export const DEFAULT_UI: UiState = { sidebarWidth: 230, focusedSessionId: null, focusedFeature: null, view: 'list', sidebarTab: 'sessions', collapsed: [], viewer: null, viewerWidth: 480, viewerExpanded: false }
+export const DEFAULT_UI: UiState = { sidebarWidth: 230, focusedSessionId: null, focusedFeature: null, focusedProject: null, sidebarTab: 'sessions', collapsed: [], viewer: null, viewerWidth: 480, viewerExpanded: false }
 export const EMPTY_FEATURES: FeaturesSlice = { workflowError: null, stages: [], items: [] }
 export const OPENCODE_CONNECTING: OpenCodeSlice = { state: 'connecting', version: null }

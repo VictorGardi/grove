@@ -144,15 +144,17 @@ describe('core features', () => {
     expect(core.getSlices().features.workflowError).toEqual(expect.any(String))
   })
 
-  it('keeps the focused feature and the focused session exclusive', async () => {
+  it('keeps the focused session, feature and project exclusive', async () => {
     const s = setup()
     const core = s.make()
     await core.start()
     await core.commands.uiSet({ focusedSessionId: 'x' })
     await core.commands.uiSet({ focusedFeature: { projectId: 'p', slug: 'a' } })
-    expect(core.getSlices().ui).toMatchObject({ focusedSessionId: null, focusedFeature: { projectId: 'p', slug: 'a' } })
+    expect(core.getSlices().ui).toMatchObject({ focusedSessionId: null, focusedFeature: { projectId: 'p', slug: 'a' }, focusedProject: null })
+    await core.commands.uiSet({ focusedProject: 'p' })
+    expect(core.getSlices().ui).toMatchObject({ focusedSessionId: null, focusedFeature: null, focusedProject: 'p' })
     await core.commands.uiSet({ focusedSessionId: 'y' })
-    expect(core.getSlices().ui).toMatchObject({ focusedSessionId: 'y', focusedFeature: null })
+    expect(core.getSlices().ui).toMatchObject({ focusedSessionId: 'y', focusedFeature: null, focusedProject: null })
   })
 
   it('links a session to a feature by hand and keeps it across restarts', async () => {

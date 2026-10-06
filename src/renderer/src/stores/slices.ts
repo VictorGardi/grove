@@ -13,11 +13,10 @@ interface SlicesState {
   waitingSince: Record<string, number> // session id → when first seen waiting (ms)
   hydrate(): Promise<void>
   setFocused(id: string | null): void
-  showSession(id: string): void // list view, focused
   toggleCollapsed(key: string): void
   focusFeature(ref: { projectId: string; slug: string }): void
-  openFeature(ref: { projectId: string; slug: string }): void
-  setView(view: UiState['view']): void
+  openProject(id: string): void
+  go(to: Partial<UiState>): void // a breadcrumb up-link
   setSidebarTab(tab: UiState['sidebarTab']): void
   openArtifact(t: ViewerTarget): void
   closeViewer(): void
@@ -54,10 +53,9 @@ export const useSlices = create<SlicesState>((set, get) => {
       if (errors.ok) set({ errors: errors.data })
     },
     setFocused: (id) => { void window.api.invoke('ui:set', { focusedSessionId: id }) },
-    showSession: (id) => { void window.api.invoke('ui:set', { view: 'list', focusedSessionId: id }) },
     focusFeature: (ref) => { void window.api.invoke('ui:set', { focusedFeature: ref }) },
-    openFeature: (ref) => { void window.api.invoke('ui:set', { view: 'list', focusedFeature: ref }) },
-    setView: (view) => { void window.api.invoke('ui:set', { view }) },
+    openProject: (id) => { void window.api.invoke('ui:set', { focusedProject: id }) },
+    go: (to) => { void window.api.invoke('ui:set', to) },
     setSidebarTab: (tab) => { void window.api.invoke('ui:set', { sidebarTab: tab }) },
     openArtifact: (t) => { void window.api.invoke('ui:set', { viewer: t }) },
     closeViewer: () => { void window.api.invoke('ui:set', { viewer: null }) },

@@ -2,7 +2,7 @@ import type { FeaturesSlice, OpenCodeSlice, Project, Session, SessionKind, Slice
 
 export type Result<T> = { ok: true; data: T } | { ok: false; error: string }
 export type MenuAction =
-  | { type: 'newSession' } | { type: 'closeSession' } | { type: 'focusIndex'; n: number }
+  | { type: 'newSession' } | { type: 'closeSession' } | { type: 'focusIndex'; n: number } | { type: 'projectBoard' }
 // invoke channels: name → [args, result data]
 export interface InvokeMap {
   'state:get': [void, Slices]

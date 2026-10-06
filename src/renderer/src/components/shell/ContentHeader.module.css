@@ -19,6 +19,20 @@
   color: var(--text-2);
 }
 
+.link {
+  padding: 0;
+  border: 0;
+  background: none;
+  font: inherit;
+  color: var(--text-2);
+  cursor: pointer;
+}
+
+.link:hover {
+  color: var(--text);
+  text-decoration: underline;
+}
+
 .current {
   color: var(--text);
   font-weight: var(--fw-bold);
