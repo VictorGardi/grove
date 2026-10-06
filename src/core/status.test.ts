@@ -1,0 +1,67 @@
+import { describe, expect, it } from 'vitest'
+import type { Session } from '@shared/types'
+import { newSession } from './sessions'
+import { apply, statusOf, withStatus, type Tracker } from './status'
+import { NOW } from './testing/setup'
+
+const AT = '2026-10-05T10:05:00.000Z'
+const none = new Map<string, string>()
+
+function tracker(over: Partial<Tracker> = {}): Tracker {
+  return { running: false, pending: new Map(), idleAt: null, children: new Set(), ...over }
+}
+
+function oc(id: string, ocId: string, over: Partial<Session> = {}): Session {
+  return { ...newSession({ projectId: 'p', kind: 'opencode', now: NOW, id }), opencodeSessionId: ocId, ...over }
+}
+
+describe('apply', () => {
+  it('tracks a turn starting and ending', () => {
+    const started = apply(new Map(), none, { type: 'exec-started', sessionId: 'ses_a' })
+    expect(started.get('ses_a')).toEqual(tracker({ running: true }))
+    const ended = apply(started, none, { type: 'exec-ended', sessionId: 'ses_a', at: AT })
+    expect(ended.get('ses_a')).toEqual(tracker({ idleAt: AT }))
+    expect(started.get('ses_a')?.running).toBe(true) // input not mutated
+  })
+
+  it('folds a child session into its root', () => {
+    const out = apply(new Map(), new Map([['ses_child', 'ses_root']]), { type: 'exec-started', sessionId: 'ses_child' })
+    expect([...out.keys()]).toEqual(['ses_root'])
+  })
+
+  it('leaves the map alone on connection events', () => {
+    const t = new Map([['ses_a', tracker()]])
+    expect(apply(t, none, { type: 'connected', version: 'v' })).toBe(t)
+    expect(apply(t, none, { type: 'disconnected' })).toBe(t)
+  })
+})
+
+describe('statusOf', () => {
+  it('is idle without a tracker or turn, working while running', () => {
+    expect(statusOf(undefined, null)).toEqual({ status: 'idle' })
+    expect(statusOf(tracker(), null)).toEqual({ status: 'idle' })
+    expect(statusOf(tracker({ running: true }), null)).toEqual({ status: 'working' })
+  })
+})
+
+describe('withStatus', () => {
+  const term = { ...newSession({ projectId: 'p', kind: 'terminal', now: NOW, id: 't' }) }
+
+  it('sets OpenCode sessions from their trackers while connected, never terminals', () => {
+    const out = withStatus([oc('a', 'ses_a'), oc('b', 'ses_b'), term], new Map([['ses_a', tracker({ running: true })]]), true)
+    expect(out.map((s) => s.status)).toEqual(['working', 'idle', undefined])
+    expect('status' in out[2]).toBe(false)
+  })
+
+  it('removes status when disconnected', () => {
+    const out = withStatus([oc('a', 'ses_a', { status: 'working' })], new Map(), false)
+    expect('status' in out[0]).toBe(false)
+  })
+
+  it('returns the same array when nothing changed', () => {
+    const list = [oc('a', 'ses_a', { status: 'idle' }), term]
+    expect(withStatus(list, new Map(), true)).toBe(list)
+    const off = [term]
+    expect(withStatus(off, new Map(), false)).toBe(off)
+  })
+})

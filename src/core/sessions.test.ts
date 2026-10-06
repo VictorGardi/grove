@@ -5,7 +5,7 @@ import { DEFAULT_UI, type Session } from '@shared/types'
 import { terminalTheme } from '@shared/theme'
 import { makeLabel, newSession, reconcile } from './sessions'
 import { loadState } from './store/stateStore'
-import { createTerminal as create, LATER, NOW, setupCore } from './testing/setup'
+import { createOpenCode, createTerminal as create, LATER, NOW, setupCore } from './testing/setup'
 
 function session(id: string, over: Partial<Session> = {}): Session {
   return { ...newSession({ projectId: 'p', kind: 'terminal', now: NOW, id }), ...over }
@@ -208,5 +208,49 @@ describe('core sessions', () => {
     expect(await a.commands.sessionKill({ id: 'x' })).toEqual(nf)
     expect(await a.commands.sessionRemove({ id: 'x' })).toEqual(nf)
     expect(await a.commands.sessionRename({ id: 'x', label: 'y' })).toEqual(nf)
+  })
+})
+
+describe('core opencode status', () => {
+  let disposeAll = () => {}
+  afterEach(() => disposeAll())
+
+  async function connected() {
+    const s = setupCore()
+    disposeAll = s.disposeAll
+    const core = s.make()
+    await core.start()
+    s.oc.emit({ type: 'connected', version: '2.0.20' })
+    return { ...s, core }
+  }
+  const find = (core: { getSlices(): { sessions: Session[] } }, id: string) => core.getSlices().sessions.find((x) => x.id === id)
+
+  it('shows a new OpenCode session idle while connected, and terminals without status', async () => {
+    const { core } = await connected()
+    const o = await createOpenCode(core)
+    const t = await create(core)
+    expect(find(core, o.id)?.status).toBe('idle')
+    expect(find(core, t.id)).not.toHaveProperty('status')
+  })
+
+  it('follows a turn: working, then idle, never saving status', async () => {
+    const { core, oc, statePath } = await connected()
+    const o = await createOpenCode(core)
+    const sessionId = o.opencodeSessionId!
+    oc.emit({ type: 'exec-started', sessionId })
+    expect(find(core, o.id)?.status).toBe('working')
+    const saved = JSON.parse(fs.readFileSync(statePath, 'utf8')) as { sessions: Session[] }
+    expect(saved.sessions[0]).not.toHaveProperty('status')
+    oc.emit({ type: 'exec-ended', sessionId, at: LATER.toISOString() })
+    expect(find(core, o.id)?.status).toBe('idle')
+  })
+
+  it('drops status on disconnect and stops the source on dispose', async () => {
+    const { core, oc } = await connected()
+    const o = await createOpenCode(core)
+    oc.emit({ type: 'disconnected' })
+    expect(find(core, o.id)).not.toHaveProperty('status')
+    core.dispose()
+    expect(oc.stopped).toBe(true)
   })
 })

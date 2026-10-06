@@ -13,8 +13,10 @@ import { chokidarWatchers, type Closer, type Watchers } from './discovery/watche
 import { loginShellArgv } from './env'
 import { hasLiveSessions, newProject } from './projects'
 import { readBranch } from './git'
+import type { OcEvent, OpenCodeSource } from './opencode/types'
 import { link, markGone, newSession, reconcile, rename, withBranches } from './sessions'
 import { loadConfig, saveConfig } from './store/configStore'
+import { apply, withStatus, type Tracker } from './status'
 import { loadState, saveState } from './store/stateStore'
 import { deriveFeatures } from './workflow/derive'
 import { parseWorkflow, type Workflow } from './workflow/parse'
@@ -25,6 +27,7 @@ export interface CoreOptions {
   bundledWorkflowPath: string // used when config.json sets no `workflow`
   watchers?: Watchers // tests inject fakes
   backend: SessionBackend
+  opencode?: OpenCodeSource // absent: tmux-only
   now?: () => Date // tests inject this
 }
 
@@ -73,6 +76,9 @@ export function createCore(opts: CoreOptions): Core {
     rootWatch?: Closer
     fileWatch?: Closer
   }>()
+  let trackers = new Map<string, Tracker>() // OpenCode state per root session id
+  const roots = new Map<string, string>() // subagent session id → root session id
+  let ocConnected = false
 
   function set<K extends keyof Slices>(k: K, v: Slices[K]): void {
     slices[k] = v
@@ -85,7 +91,7 @@ export function createCore(opts: CoreOptions): Core {
       })
     }
     else if (k !== 'features') {
-      const sessions = slices.sessions.map(({ branch: _live, ...s }) => s) // branch is live-only
+      const sessions = slices.sessions.map(({ branch: _branch, status: _status, ...s }) => s) // live-only
       saveState(opts.statePath, { schemaVersion: 1, sessions, ui: slices.ui })
     }
     if (k === 'sessions') publish() // card state reads linked sessions
@@ -212,6 +218,19 @@ export function createCore(opts: CoreOptions): Core {
     if (next !== slices.sessions) set('sessions', next)
   }
 
+  function refreshStatus(): void {
+    const next = withStatus(slices.sessions, trackers, ocConnected)
+    if (next !== slices.sessions) set('sessions', next)
+  }
+
+  function onOcEvent(e: OcEvent): void {
+    if (e.type === 'connected' || e.type === 'disconnected') {
+      ocConnected = e.type === 'connected'
+      trackers = new Map()
+    } else trackers = apply(trackers, roots, e)
+    refreshStatus()
+  }
+
   const findSession = (id: string) => slices.sessions.find((s) => s.id === id)
 
   function replaceSession(next: Session): void {
@@ -249,7 +268,8 @@ export function createCore(opts: CoreOptions): Core {
       await backend.create({ name: session.tmuxName, cwd: project.path, cols, rows, argv })
       await backend.setColors(session.tmuxName, terminalTheme.foreground, terminalTheme.background)
       set('sessions', [...slices.sessions, session])
-      return { ok: true, data: session }
+      refreshStatus()
+      return { ok: true, data: findSession(session.id) ?? session }
     },
 
     async sessionKill({ id }) {
@@ -328,6 +348,7 @@ export function createCore(opts: CoreOptions): Core {
         void checkLiveness()
         syncProjects(false) // picks up a root that appears later
       }, 5000)
+      opts.opencode?.start(onOcEvent)
     },
     getSlices: () => slices,
     getErrors: () => [...errors],
@@ -361,6 +382,7 @@ export function createCore(opts: CoreOptions): Core {
     },
     dispose() {
       clearInterval(poll)
+      opts.opencode?.stop()
       void workflowWatch?.close()
       for (const id of [...discovery.keys()]) closeEntry(id)
       for (const h of [...handles]) h.kill()

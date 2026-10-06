@@ -5,6 +5,7 @@ import { fileURLToPath } from 'node:url'
 import { createCore, type Core } from '../core'
 import { saveConfig } from '../store/configStore'
 import { FakeBackend } from './fakeBackend'
+import { FakeOpenCode } from './fakeOpenCode'
 import { FakeWatchers } from './fakeWatchers'
 
 const bundledWorkflowPath = fileURLToPath(new URL('../../../resources/workflow.yaml', import.meta.url))
@@ -21,18 +22,25 @@ export function setupCore() {
   saveConfig(configPath, { schemaVersion: 1, projects: [{ id: 'p', name: 'proj', path: dir }] })
   const fake = new FakeBackend()
   const watchers = new FakeWatchers()
+  const oc = new FakeOpenCode()
   const cores: Core[] = []
   const make = (now = NOW) => {
-    const core = createCore({ configPath, statePath, bundledWorkflowPath, watchers, backend: fake, now: () => now })
+    const core = createCore({ configPath, statePath, bundledWorkflowPath, watchers, backend: fake, opencode: oc, now: () => now })
     cores.push(core)
     return core
   }
   const disposeAll = () => { for (const c of cores.splice(0)) c.dispose() }
-  return { dir, fake, watchers, make, configPath, statePath, disposeAll }
+  return { dir, fake, watchers, oc, make, configPath, statePath, disposeAll }
 }
 
 export async function createTerminal(core: Core, projectId = 'p') {
   const res = await core.commands.sessionCreate({ projectId, kind: 'terminal', cols: 80, rows: 24 })
+  if (!res.ok) throw new Error(res.error)
+  return res.data
+}
+
+export async function createOpenCode(core: Core, projectId = 'p') {
+  const res = await core.commands.sessionCreate({ projectId, kind: 'opencode', cols: 80, rows: 24 })
   if (!res.ok) throw new Error(res.error)
   return res.data
 }

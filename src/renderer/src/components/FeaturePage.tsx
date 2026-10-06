@@ -1,6 +1,7 @@
 import { isViewable } from '@shared/artifactUrl'
 import type { Feature, Session } from '@shared/types'
 import { CARD_STATE_LABELS, progressLabel } from '../featureLabels'
+import { statusView } from '../sessionStatus'
 import { reviewTarget } from '../viewerFiles'
 import { Badge } from './ui/Badge'
 import { Button } from './ui/Button'
@@ -69,7 +70,7 @@ export function FeaturePage({ feature: f, sessions, onFocusSession, onOpenArtifa
           : (
             <div className={s.sessions}>
               {linked.map((x) => (
-                <ListRow key={x.id} title={x.label} status={{ label: x.lastStatus, tone: x.lastStatus }}
+                <ListRow key={x.id} title={x.label} status={statusView(x)}
                   onClick={() => onFocusSession(x.id)} />
               ))}
             </div>

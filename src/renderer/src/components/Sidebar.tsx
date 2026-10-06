@@ -2,6 +2,7 @@ import { useState } from 'react'
 import type { Feature, Project, Session } from '@shared/types'
 import { useSlices } from '../stores/slices'
 import { featureStage, featureSummary } from '../featureLabels'
+import { statusView } from '../sessionStatus'
 import { colorTags } from '../tags'
 import { buildTree, linkedFeature, sessionGroups, type TreeNode } from '../tree'
 import { Badge } from './ui/Badge'
@@ -53,7 +54,7 @@ function SessionCard({ s, feature, tag, focused, compact, onFocus, onOpenFeature
           )}
         </div>
       )}
-      status={{ label: s.lastStatus, tone: s.lastStatus }}
+      status={statusView(s)}
       tone={focused ? 'selected' : opencode ? 'default' : 'muted'}
       compact={compact}
       onClick={onFocus}

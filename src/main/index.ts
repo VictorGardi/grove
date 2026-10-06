@@ -5,6 +5,7 @@ import { chromeBackground } from '@shared/theme'
 import { TmuxBackend } from '../core/backend/tmux'
 import { createCore } from '../core/core'
 import { findTmux, minimalEnv } from '../core/env'
+import { HttpOpenCode, serviceFilePath } from '../core/opencode/client'
 import { guardNavigation, handleArtifacts, registerArtifactScheme } from './artifacts'
 import { registerIpc } from './ipc'
 import { buildMenu } from './menu'
@@ -28,6 +29,7 @@ app.whenReady().then(async () => {
       confPath: path.join(app.getAppPath(), 'resources', 'tmux.conf'),
       env: minimalEnv(process.env),
     }),
+    opencode: new HttpOpenCode({ serviceFile: serviceFilePath(process.env, os.homedir()) }),
   })
   await core.start()
   handleArtifacts(core)
