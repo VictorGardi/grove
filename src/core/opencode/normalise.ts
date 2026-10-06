@@ -1,4 +1,4 @@
-import type { OcEvent } from './types'
+import type { OcEvent, SessionSnapshot } from './types'
 
 // Every OpenCode 2.0.20 event shape grove reads lives here (design risk: Experimental API).
 // Envelope: { id, type, created, data, location? }.
@@ -41,4 +41,37 @@ export function normalise(raw: unknown, version: string): OcEvent | null {
   if (e.type === 'session.execution.started') return { type: 'exec-started', sessionId }
   if (ENDED.has(e.type)) return { type: 'exec-ended', sessionId, at: toIso(e.created) }
   return null
+}
+
+// HTTP bodies used on re-sync (research Q5). Responses usually come as { data: … }.
+export function unwrap(body: unknown): unknown {
+  const b = obj(body)
+  return b && 'data' in b ? b.data : body
+}
+
+const ids = (list: unknown): string[] =>
+  Array.isArray(list) ? list.map((x) => obj(x)?.id).filter((id): id is string => typeof id === 'string') : []
+
+// GET /api/session?parentID=… → the children's ids.
+export function childIds(body: unknown): string[] {
+  const list = Array.isArray(body) ? body : obj(body)?.items
+  return ids(list)
+}
+
+// info: GET /api/session/:id (null on 404, not started yet); active: GET /api/session/active;
+// permissions, forms: GET /api/session/:id/permission and /form. Bodies already unwrapped.
+export function snapshotOf(info: unknown, active: unknown, permissions: unknown, forms: unknown): SessionSnapshot {
+  const i = obj(info)
+  if (!i) return { running: false, idleAt: null, pending: [], children: [] }
+  const idle = obj(i.time)?.idle
+  const a = obj(active)
+  return {
+    running: typeof i.id === 'string' && !!a && i.id in a,
+    idleAt: idle === undefined || idle === null ? null : toIso(idle),
+    pending: [
+      ...ids(permissions).map((id) => ({ id, kind: 'permission' as const })),
+      ...ids(forms).map((id) => ({ id, kind: 'question' as const })),
+    ],
+    children: [],
+  }
 }

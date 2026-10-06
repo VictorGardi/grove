@@ -7,7 +7,16 @@ export type OcEvent =
   | { type: 'pending'; sessionId: string; id: string; kind: 'permission' | 'question'; open: boolean }
   | { type: 'child'; sessionId: string; parentId: string } // a subagent session and its parent
 
+// A session's state as read on (re)connect; pending items are its own, children listed separately.
+export interface SessionSnapshot {
+  running: boolean
+  idleAt: string | null
+  pending: { id: string; kind: 'permission' | 'question' }[]
+  children: string[]
+}
+
 export interface OpenCodeSource {
   start(onEvent: (e: OcEvent) => void): void // connects and reconnects until stop()
+  snapshot(ids: string[]): Promise<Map<string, SessionSnapshot>> // ids and their children; a session OpenCode doesn't know yet is blank
   stop(): void
 }

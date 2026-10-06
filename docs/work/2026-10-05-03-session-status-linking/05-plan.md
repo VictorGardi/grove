@@ -283,4 +283,190 @@ ties and unknowns fall back to session order.
   linked feature card `waiting`; approve → "working". Click "1 waiting" from
   another session → that session is focused.
 
+## Slice 3 — Re-sync, reconnect, fallback banner
+
+Context (code at `e597d53`, after slice 2): `src/core/opencode/client.ts`
+`HttpOpenCode({ serviceFile, retryMs? })` loops: read `service.json` (`url`,
+`password`) → `GET /api/info` (2 s timeout, version from `data.version` or
+`version`) → `GET /api/event` SSE, feeding `sseData` → `normalise`; emits
+`disconnected` once after a `connected` stream ends; fixed `retryMs` (1 s)
+between attempts; exports `sseData`, `serviceFilePath`. `src/core/opencode/types.ts`
+has `OcEvent` and `OpenCodeSource { start, stop }`. `src/core/status.ts` has
+`Tracker`, `apply`, `statusOf`, `withStatus`. `src/core/core.ts` `onOcEvent`:
+`connected`/`disconnected` set `ocConnected` and reset `trackers` and `roots`;
+other events `apply`; then `refreshStatus()`. `set(k, v)` saves `state.json`
+for every slice except `projects` (config) and `features`. `src/main/ipc.ts`
+pushes every slice as `state:${key}`. Renderer store `useSlices`
+(`src/renderer/src/stores/slices.ts`) subscribes per slice in `hydrate`.
+`Banner({ tone: 'error' | 'info', children })` in `src/renderer/src/components/ui/Banner.tsx`;
+`App.tsx` passes `banners` to `AppShell`. `TmuxBackend.list()`
+(`src/core/backend/tmux.ts`) runs `list-sessions -F '#{session_name}'`;
+`resources/tmux.conf` sets `remain-on-exit failed`, so an OpenCode exit ≠ 0
+leaves a dead pane in a live session. The real-tmux tests in
+`src/core/backend/tmux.test.ts` fail inside the Claude Code sandbox
+(`posix_spawnp`); run them outside it.
+
+OpenCode 2.0.20 re-sync facts (research Q5, S2; design two-way row "Re-sync
+calls"). All responses are JSON, usually wrapped as `{data: …}` (accept bare too):
+`GET /api/session/active` → `{data: {[sessionID]: {type: "running"}}}`,
+present means running (a blocked turn still shows running);
+`GET /api/session/:id` → `{data: {id, parentID?, outcome?, time: {created, updated, idle?}}}`
+(`time.idle` epoch ms or ISO; absent → `idleAt: null`), 404 when the session
+has not started yet (→ blank snapshot: not running, idle, nothing pending);
+`GET /api/session/:id/permission` → `{data: [{id: "per_…", …}]}`;
+`GET /api/session/:id/form` → `{data: [{id: "frm_…", …}]}` (every form is a
+question); `GET /api/session?parentID=<id>` → `{data: [Session.Info]}` (also
+accept `{data: {items: […]}}`), the subagent children. A service stop drops
+pending items without events, so every connect replaces the trackers from a
+fresh snapshot.
+
+Rules (design flows *Connect / re-sync*, *Disconnect*; rows SSE client,
+Service banner, Dead pane; risk Experimental API):
+- Connect: on `connected`, core snapshots the `opencodeSessionId`s of OpenCode
+  sessions with `lastStatus 'running'` and replaces `trackers` and `roots`
+  from it. Events arriving while the snapshot is in flight are queued and
+  re-applied on top of it; a snapshot that resolves after a later
+  `connected`/`disconnected` is dropped; a failed snapshot keeps the event-built
+  trackers.
+- Disconnect: `status` cleared (already), `opencode` slice
+  `{state: 'connecting', version: null}`, and `unreachable` 5 s later unless
+  connected again. The same 5 s timer runs from `start()`.
+- Client reconnect: backoff 1 s, doubling to at most 10 s, reset after a
+  `connected`; a stream with no bytes for 45 s is aborted (heartbeat is 15 s);
+  a change of `service.json` (polled with `fs.watchFile`, 1 s) aborts the
+  current attempt or sleep and reconnects at once. Nothing is logged; the
+  password never leaves the client.
+- Banners (renderer): "OpenCode service unreachable — showing tmux status only"
+  (tone `error`) while `opencode.state === 'unreachable'` and any OpenCode
+  session has `lastStatus 'running'`; "Untested OpenCode version <v> (grove
+  is tested with 2.0.20)" (tone `info`) while connected with a version other
+  than `2.0.20`.
+- Dead pane: a session is live only if it exists and its pane is not dead.
+
+- [x] In `src/core/opencode/types.ts` add
+  `export interface SessionSnapshot { running: boolean; idleAt: string | null; pending: { id: string; kind: 'permission' | 'question' }[]; children: string[] }`
+  and `snapshot(ids: string[]): Promise<Map<string, SessionSnapshot>> // ids and their children; a session OpenCode doesn't know yet is blank`
+  to `OpenCodeSource`.
+- [x] Extend `src/core/opencode/normalise.test.ts` (failing first) for
+  `unwrap(body: unknown): unknown` (`{data: x}` → `x`, else the body),
+  `childIds(body: unknown): string[]` (array or `{items}` of objects → their
+  string `id`s, else `[]`), and
+  `snapshotOf(info: unknown, active: unknown, permissions: unknown, forms: unknown): SessionSnapshot`
+  (info `null` → blank `{running:false, idleAt:null, pending:[], children:[]}`;
+  `running` = info `id` is a key of `active`; `idleAt` = ISO of `time.idle`
+  (number ms and ISO string) or `null`; `pending` = permission `id`s as
+  `permission` then form `id`s as `question`, non-arrays and items without a
+  string `id` skipped; `children: []`).
+- [x] Implement `unwrap`, `childIds`, `snapshotOf` in `src/core/opencode/normalise.ts`
+  (all shapes stay in this file; `snapshotOf` takes already-unwrapped bodies).
+- [x] Extend `src/core/status.test.ts` (failing first) for
+  `fromSnapshot(snaps: Map<string, SessionSnapshot>, ids: string[]): { trackers: Map<string, Tracker>; roots: Map<string, string> }`:
+  each id with a snapshot gets `{running, idleAt, children: Set(children), pending}`
+  where `pending` holds its own items plus each child's (child snapshots read
+  from `snaps`, missing child → none); each child maps to its root in `roots`;
+  an id without a snapshot gets no tracker.
+- [x] Implement `fromSnapshot` in `src/core/status.ts`.
+- [x] Write failing tests in `src/core/opencode/client.test.ts`,
+  `describe('HttpOpenCode')`, against a local `node:http` stub on
+  `127.0.0.1:0` (helper in the test file: `stub(password, handler)` →
+  `{ url, close, requests }`, and a temp `service.json` writer). Construct with
+  `{ serviceFile, retryMs: 10, maxRetryMs: 20, silenceMs, watchMs: 20 }`:
+  - sends `authorization: Basic base64("opencode:<password>")` on `/api/info`
+    and `/api/event`, and emits `{type:'connected', version}` from the info
+    version after the `server.connected` frame;
+  - a frame split over two writes (`session.execution.started`) emits one
+    `exec-started`;
+  - the server ending the stream → `disconnected`, then a new `connected`;
+  - a stream silent for `silenceMs: 50` → `disconnected` then `connected`;
+  - with `retryMs: 60000`, rewriting `service.json` to point at a second stub
+    (other password) connects to it without waiting for the retry;
+  - `snapshot(['ses_a', 'ses_new'])` with `ses_a` active, idle at a ms time,
+    one permission, one form and child `ses_c` (with one form) → entries for
+    `ses_a` (children `['ses_c']`), `ses_c`, and `ses_new` (404 → blank);
+  - `stop()` → no further requests.
+- [x] Rework `src/core/opencode/client.ts`: constructor
+  `{ serviceFile: string; retryMs?: number /* 1000 */; maxRetryMs?: number /* 10000 */; silenceMs?: number /* 45000 */; watchMs?: number /* 1000 */ }`.
+  Keep the connected service as `private svc: { url: string; headers: Record<string, string> } | null`
+  (set after `/api/info` succeeds, cleared when the attempt ends).
+  `start` also calls `fs.watchFile(serviceFile, { interval: watchMs }, kick)`;
+  `stop` calls `fs.unwatchFile(serviceFile, kick)`. `kick` aborts the current
+  attempt's `AbortController` and resolves the current backoff sleep early
+  (an interruptible sleep: `new Promise` whose resolver is kept in a field).
+  The loop: `delay = retryMs`; after an attempt that emitted `connected`,
+  `delay = retryMs`; else `delay = Math.min(delay * 2, maxRetryMs)` after
+  sleeping `delay`. The event fetch uses the attempt's controller; a
+  `setTimeout(silenceMs)` re-armed on every chunk aborts it.
+  `snapshot(ids)`: throws `'not connected'` without `svc`; `get(path)` fetches
+  with the Basic headers and `AbortSignal.timeout(5000)`, returns `null` on
+  404, throws on other non-2xx, else `unwrap(await res.json())`. Reads
+  `/api/session/active` once; per id (`encodeURIComponent`), reads
+  `/api/session/:id` (null → blank snapshot, no further calls), then
+  `/permission`, `/form` (`?? []`), `snapshotOf(...)`, then children from
+  `/api/session?parentID=<id>` via `childIds`, and the same snapshot for each
+  child (its `children` left `[]`). Returns the map of all of them.
+- [x] In `src/core/testing/fakeOpenCode.ts` add `snapshots = new Map<string, SessionSnapshot>()`,
+  `snapshotCalls: string[][] = []`, and `async snapshot(ids)` recording `ids`
+  and returning the entries of `snapshots` for `ids` plus their children.
+- [x] In `src/shared/types.ts` add
+  `export interface OpenCodeSlice { state: 'connecting' | 'connected' | 'unreachable'; version: string | null } // not persisted`,
+  `opencode: OpenCodeSlice` in `Slices`, and
+  `export const OPENCODE_CONNECTING: OpenCodeSlice = { state: 'connecting', version: null }`.
+  In `src/shared/ipc.ts` add `'state:opencode': OpenCodeSlice` to `PushMap`.
+- [x] Write failing core tests in `src/core/sessions.test.ts`
+  `describe('core opencode status')`: (1) after `start()`, `opencode` slice is
+  `connecting`; `connected` (version `'2.0.20'`) → `{state:'connected', version:'2.0.20'}`
+  and `oc.snapshotCalls` holds the live OpenCode session's id (not a
+  terminal, not a gone session); (2) a snapshot with a pending permission
+  for the session → `waiting`/`permission` after the snapshot resolves;
+  (3) a snapshot whose child has a pending form → `waiting`/`question`, and a
+  later `pending` close on the child (no `child` event) → `idle`;
+  (4) `disconnected` → `status` cleared, slice `connecting`, and, with
+  `vi.useFakeTimers({ toFake: ['setTimeout'] })` + `vi.advanceTimersByTime(5000)`,
+  `unreachable`; a `connected` before 5 s keeps it `connected`;
+  (5) `state.json` has no `opencode` key.
+- [x] In `src/core/core.ts`: initial `opencode: OPENCODE_CONNECTING` in
+  `slices`; `set` saves `state.json` only for `sessions` and `ui`
+  (`else if (k === 'sessions' || k === 'ui')`). Add
+  `let unreachableTimer`, `armUnreachable()` (clears and sets a 5000 ms
+  `setTimeout` that sets `opencode` to `{ state: 'unreachable', version: null }`),
+  `let syncGen = 0` and `let queue: OcEvent[] | null = null`. `onOcEvent`:
+  `connected` → `ocConnected = true`, reset trackers/roots, clear the timer,
+  `set('opencode', { state: 'connected', version: e.version })`, `resync()`;
+  `disconnected` → `ocConnected = false`, reset, `syncGen++`, `queue = null`,
+  `set('opencode', OPENCODE_CONNECTING)`, `armUnreachable()`; other events:
+  push to `queue` when it is not `null`, and apply as today either way. Then
+  `refreshStatus()`. `async function resync()`: `const gen = ++syncGen`,
+  `queue = []`, ids = `opencodeSessionId` of sessions with `kind 'opencode'`
+  and `lastStatus 'running'`; `await opts.opencode.snapshot(ids)` in
+  `try/catch` (on error: if `gen === syncGen` set `queue = null`; return);
+  if `gen !== syncGen` return; `const r = fromSnapshot(snaps, ids)`; set
+  `roots` to `r.roots`, `trackers = r.trackers`; replay the queued events
+  through the same `child`/`apply` code; `queue = null`; `refreshStatus()`.
+  In `start()` call `armUnreachable()` before `opts.opencode.start`, only when
+  `opts.opencode` is set. `dispose()` clears the timer.
+- [x] In `src/renderer/src/stores/slices.ts` add `opencode: OpenCodeSlice`
+  (initial `OPENCODE_CONNECTING`) and `api.on('state:opencode', (opencode) => set({ opencode }))`.
+- [x] Extend `src/renderer/src/sessionStatus.test.ts` (failing first) for
+  `serviceBanners(oc: OpenCodeSlice, sessions: Session[]): { tone: 'error' | 'info'; text: string }[]`:
+  unreachable with a live OpenCode session → the unreachable banner;
+  unreachable with only terminals or gone OpenCode sessions → none;
+  connecting → none; connected `2.0.20` → none; connected `2.1.0` → the
+  version banner.
+- [x] Implement `serviceBanners` in `src/renderer/src/sessionStatus.ts` with
+  the texts above, and render them in `src/renderer/src/App.tsx` after the
+  workflow banner: `...serviceBanners(opencode, sessions).map((b) => <Banner key={b.text} tone={b.tone}>{b.text}</Banner>)`.
+- [x] Add a failing real-tmux test to `src/core/backend/tmux.test.ts`:
+  `create` with `argv: ['sh', '-c', 'exit 1']`, wait until tmux shows
+  `#{pane_dead}` = 1 for it (poll `display-message -p -t =<name>: '#{pane_dead}'`
+  up to 3 s), then `list()` does not have it and `has-session` still succeeds.
+- [x] In `src/core/backend/tmux.ts` `list()`: format `'#{session_name}\t#{pane_dead}'`,
+  keep names whose second field is not `1`.
+- [x] Run `npm test -- src/core/opencode/client.test.ts src/core/sessions.test.ts src/core/backend/tmux.test.ts`
+  (the tmux file outside the sandbox), then
+  `npm test -- src/core/opencode/normalise.test.ts src/core/status.test.ts src/renderer/src/sessionStatus.test.ts`,
+  `npm test`, `npm run typecheck` and `npm run build`.
+- [ ] Manual (human): with an OpenCode session open in grove, `opencode service stop`
+  → banner within ~5 s, cards "running"; start a TUI (`opencode`) → banner
+  gone, statuses back.
+
 ## Open questions

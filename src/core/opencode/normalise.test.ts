@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { normalise } from './normalise'
+import { childIds, normalise, snapshotOf, unwrap } from './normalise'
 
 // Envelopes as OpenCode 2.0.20 sends them on /api/event.
 const env = (type: string, data: unknown, created: unknown = 1791194400000) => ({ id: 'evt_1', type, created, data })
@@ -64,5 +64,45 @@ describe('normalise', () => {
     expect(normalise(env('permission.asked', { sessionID: 'ses_a' }), 'v')).toBeNull()
     expect(normalise(env('form.created', { form: { sessionID: 'ses_a' } }), 'v')).toBeNull()
     expect(normalise(env('permission.replied', { sessionID: 'ses_a' }), 'v')).toBeNull()
+  })
+})
+
+describe('unwrap', () => {
+  it('takes data out of the envelope, else returns the body', () => {
+    expect(unwrap({ data: [1] })).toEqual([1])
+    expect(unwrap([1])).toEqual([1])
+    expect(unwrap(null)).toBe(null)
+  })
+})
+
+describe('childIds', () => {
+  it('reads ids from an array or an items list', () => {
+    expect(childIds([{ id: 'ses_c' }, { id: 1 }, null])).toEqual(['ses_c'])
+    expect(childIds({ items: [{ id: 'ses_d' }] })).toEqual(['ses_d'])
+    expect(childIds('nope')).toEqual([])
+  })
+})
+
+describe('snapshotOf', () => {
+  const blank = { running: false, idleAt: null, pending: [], children: [] }
+  const info = (time: unknown) => ({ id: 'ses_a', time })
+
+  it('is blank for a session OpenCode does not know yet', () => {
+    expect(snapshotOf(null, { ses_a: { type: 'running' } }, [], [])).toEqual(blank)
+  })
+
+  it('reads running from the active map and idle time as ISO', () => {
+    expect(snapshotOf(info({ idle: 1791194400000 }), { ses_a: { type: 'running' } }, [], []))
+      .toEqual({ ...blank, running: true, idleAt: new Date(1791194400000).toISOString() })
+    expect(snapshotOf(info({ idle: '2026-10-05T10:00:00.000Z' }), {}, [], []).idleAt).toBe('2026-10-05T10:00:00.000Z')
+    expect(snapshotOf(info({}), {}, [], []).idleAt).toBe(null)
+  })
+
+  it('lists pending permissions, then forms as questions', () => {
+    expect(snapshotOf(info({}), {}, [{ id: 'per_1' }, { x: 1 }], [{ id: 'frm_1' }]).pending).toEqual([
+      { id: 'per_1', kind: 'permission' },
+      { id: 'frm_1', kind: 'question' },
+    ])
+    expect(snapshotOf(info({}), {}, 'bad', null).pending).toEqual([])
   })
 })

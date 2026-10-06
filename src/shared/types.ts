@@ -65,8 +65,10 @@ export interface FeaturesSlice {
   stages: { id: string; label: string }[] // all workflow stages, in order
   items: Feature[]
 }
-export type Slices = { projects: Project[]; sessions: Session[]; ui: UiState; features: FeaturesSlice }
+export interface OpenCodeSlice { state: 'connecting' | 'connected' | 'unreachable'; version: string | null } // not persisted
+export type Slices = { projects: Project[]; sessions: Session[]; ui: UiState; features: FeaturesSlice; opencode: OpenCodeSlice }
 export interface ConfigFile { schemaVersion: 1; projects: Project[]; workflow?: string }
 export interface StateFile { schemaVersion: 1; sessions: Session[]; ui: UiState }
 export const DEFAULT_UI: UiState = { sidebarWidth: 230, focusedSessionId: null, focusedFeature: null, view: 'list', sidebarTab: 'sessions', collapsed: [], viewer: null, viewerWidth: 480, viewerExpanded: false }
 export const EMPTY_FEATURES: FeaturesSlice = { workflowError: null, stages: [], items: [] }
+export const OPENCODE_CONNECTING: OpenCodeSlice = { state: 'connecting', version: null }

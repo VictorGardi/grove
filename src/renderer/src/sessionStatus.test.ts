@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import type { Session } from '@shared/types'
-import { longestWaiting, shownStatus, statusView, trackWaiting } from './sessionStatus'
+import { longestWaiting, serviceBanners, shownStatus, statusView, trackWaiting } from './sessionStatus'
 
 function session(over: Partial<Session> = {}): Session {
   return {
@@ -45,5 +45,24 @@ describe('waiting', () => {
     expect(longestWaiting(list, { a: 300, b: 100 })?.id).toBe('b')
     expect(longestWaiting(list, {})?.id).toBe('a')
     expect(longestWaiting([session()], {})).toBeNull()
+  })
+})
+
+describe('serviceBanners', () => {
+  const unreachable = { state: 'unreachable' as const, version: null }
+  const UNREACHABLE = { tone: 'error', text: 'OpenCode service unreachable — showing tmux status only' }
+
+  it('shows the unreachable banner only while an OpenCode session is live', () => {
+    expect(serviceBanners(unreachable, [session()])).toEqual([UNREACHABLE])
+    expect(serviceBanners(unreachable, [session({ kind: 'terminal', opencodeSessionId: null })])).toEqual([])
+    expect(serviceBanners(unreachable, [session({ lastStatus: 'gone' })])).toEqual([])
+    expect(serviceBanners({ state: 'connecting', version: null }, [session()])).toEqual([])
+  })
+
+  it('flags an untested OpenCode version', () => {
+    expect(serviceBanners({ state: 'connected', version: '2.0.20' }, [session()])).toEqual([])
+    expect(serviceBanners({ state: 'connected', version: '2.1.0' }, [])).toEqual([
+      { tone: 'info', text: 'Untested OpenCode version 2.1.0 (grove is tested with 2.0.20)' },
+    ])
   })
 })

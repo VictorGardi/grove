@@ -13,14 +13,14 @@ import { TopBar } from './components/shell/TopBar'
 import { ViewToggle } from './components/shell/ViewToggle'
 import { Banner } from './components/ui/Banner'
 import { Button } from './components/ui/Button'
-import { longestWaiting, shownStatus } from './sessionStatus'
+import { longestWaiting, serviceBanners, shownStatus } from './sessionStatus'
 import { useSlices } from './stores/slices'
 import { sessionGroups, sessionOrder } from './tree'
 import { viewableFiles } from './viewerFiles'
 import s from './App.module.css'
 
 export default function App() {
-  const { projects, sessions, ui, features, errors, waitingSince, hydrate, setFocused, showSession, setView, openFeature,
+  const { projects, sessions, ui, features, opencode, errors, waitingSince, hydrate, setFocused, showSession, setView, openFeature,
     openArtifact, closeViewer, setViewerWidth, toggleViewerExpanded, reloadViewer } = useSlices()
   const [newFor, setNewFor] = useState<{ projectId?: string } | null>(null)
   const [confirmKill, setConfirmKill] = useState<Session | null>(null)
@@ -68,6 +68,7 @@ export default function App() {
         banners={[
           ...errors.map((e, i) => <Banner key={i}>{e}</Banner>),
           ...(features.workflowError ? [<Banner key="workflow">Workflow: {features.workflowError}</Banner>] : []),
+          ...serviceBanners(opencode, sessions).map((b) => <Banner key={b.text} tone={b.tone}>{b.text}</Banner>),
         ]}
         sidebar={<Sidebar onNew={openNew} />}
         content={

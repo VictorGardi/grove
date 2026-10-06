@@ -1,6 +1,6 @@
 import fs from 'node:fs'
 import path from 'node:path'
-import { afterEach, describe, expect, it } from 'vitest'
+import { afterEach, describe, expect, it, vi } from 'vitest'
 import { DEFAULT_UI, type Session } from '@shared/types'
 import { terminalTheme } from '@shared/theme'
 import { makeLabel, newSession, reconcile } from './sessions'
@@ -255,6 +255,83 @@ describe('core opencode status', () => {
     expect(saved.sessions[0]).not.toHaveProperty('waitingFor')
     oc.emit({ type: 'pending', sessionId: 'ses_child', id: 'per_1', kind: 'permission', open: false })
     expect(find(core, o.id)?.status).toBe('idle')
+  })
+
+  const flush = () => new Promise((r) => setImmediate(r))
+  const snap = (over = {}) => ({ running: false, idleAt: null, pending: [], children: [], ...over })
+
+  async function started() {
+    const s = setupCore()
+    disposeAll = s.disposeAll
+    const core = s.make()
+    await core.start()
+    return { ...s, core }
+  }
+
+  it('reports the connection and snapshots live OpenCode sessions on connect', async () => {
+    const { core, oc, fake } = await started()
+    expect(core.getSlices().opencode).toEqual({ state: 'connecting', version: null })
+    const o = await createOpenCode(core)
+    const ended = await createOpenCode(core)
+    await create(core)
+    fake.live.delete(ended.tmuxName)
+    await core.checkLiveness()
+    oc.emit({ type: 'connected', version: '2.0.20' })
+    expect(core.getSlices().opencode).toEqual({ state: 'connected', version: '2.0.20' })
+    expect(oc.snapshotCalls).toEqual([[o.opencodeSessionId]])
+  })
+
+  it('restores a pending permission from the snapshot', async () => {
+    const { core, oc } = await started()
+    const o = await createOpenCode(core)
+    oc.snapshots.set(o.opencodeSessionId!, snap({ running: true, pending: [{ id: 'per_1', kind: 'permission' }] }))
+    oc.emit({ type: 'connected', version: '2.0.20' })
+    await flush()
+    expect(find(core, o.id)).toMatchObject({ status: 'waiting', waitingFor: 'permission' })
+  })
+
+  it('folds a snapshot child\'s form into its root, and its later reply', async () => {
+    const { core, oc } = await started()
+    const o = await createOpenCode(core)
+    oc.snapshots.set(o.opencodeSessionId!, snap({ children: ['ses_child'] }))
+    oc.snapshots.set('ses_child', snap({ pending: [{ id: 'frm_1', kind: 'question' }] }))
+    oc.emit({ type: 'connected', version: '2.0.20' })
+    await flush()
+    expect(find(core, o.id)).toMatchObject({ status: 'waiting', waitingFor: 'question' })
+    oc.emit({ type: 'pending', sessionId: 'ses_child', id: 'frm_1', kind: 'question', open: false })
+    expect(find(core, o.id)?.status).toBe('idle')
+  })
+
+  it('replays events that arrive while the snapshot is in flight', async () => {
+    const { core, oc } = await started()
+    const o = await createOpenCode(core)
+    oc.snapshots.set(o.opencodeSessionId!, snap())
+    oc.emit({ type: 'connected', version: '2.0.20' })
+    oc.emit({ type: 'exec-started', sessionId: o.opencodeSessionId! })
+    await flush()
+    expect(find(core, o.id)?.status).toBe('working')
+  })
+
+  it('falls back on disconnect and is unreachable after 5 s', async () => {
+    const { core, oc, statePath } = await started()
+    const o = await createOpenCode(core)
+    oc.emit({ type: 'connected', version: '2.0.20' })
+    vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout'] })
+    try {
+      oc.emit({ type: 'disconnected' })
+      expect(find(core, o.id)).not.toHaveProperty('status')
+      expect(core.getSlices().opencode.state).toBe('connecting')
+      vi.advanceTimersByTime(4000)
+      oc.emit({ type: 'connected', version: '2.0.20' })
+      vi.advanceTimersByTime(2000)
+      expect(core.getSlices().opencode.state).toBe('connected')
+      oc.emit({ type: 'disconnected' })
+      vi.advanceTimersByTime(5000)
+      expect(core.getSlices().opencode).toEqual({ state: 'unreachable', version: null })
+    } finally {
+      vi.useRealTimers()
+    }
+    expect(JSON.parse(fs.readFileSync(statePath, 'utf8'))).not.toHaveProperty('opencode')
   })
 
   it('drops status on disconnect and stops the source on dispose', async () => {

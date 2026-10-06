@@ -19,10 +19,18 @@ forced: []
 
 - [x] Slice 1 — Tracer: live working / idle
 - [x] Slice 2 — Waiting on a permission or question
-- [ ] Slice 3 — Re-sync, reconnect, fallback banner
+- [x] Slice 3 — Re-sync, reconnect, fallback banner
 - [ ] Slice 4 — Finished turn waits until seen; notifications
 - [ ] Slice 5 — Auto-link
 - [ ] Slice 6 — Resume
+
+## Approval note
+
+2026-10-06: `03-design.md` and `04-structure.md` had been `status: stale` since
+2026-10-05 with unchanged input versions; slices 1–2 were built on them without
+a recorded `--force`. The human re-approved `design+structure` (content
+unchanged), which marked this file and `05-plan.md` stale; on the human's OK
+both were cleared (slices 1–2 done, nothing planned ahead) before slice 3.
 
 ## Slice 1 — Tracer: live working / idle
 
@@ -73,5 +81,34 @@ Deviations (small, two-way):
 - `src/core/features.test.ts` "links a session to a feature by hand": a linked
   terminal now leaves the card `backlog`, not `running` (Card roll-up row).
 - New store action `showSession(id)` (list view + focus) for the header chip.
+
+## Slice 3 — Re-sync, reconnect, fallback banner
+
+Verification: the slice's test commands pass (46 + 35 tests); `npm test` 247
+passed, run outside the Claude Code sandbox (inside it, the stub-server tests in
+`client.test.ts` fail with `listen EPERM` and the real-tmux tests with
+`posix_spawnp`); `npm run typecheck` and `npm run build` clean. Manual check
+(service stop → banner, restart → statuses back): pending, for the human.
+
+Deviations (small, two-way):
+
+- Events that arrive while a snapshot is in flight are queued and re-applied on
+  top of it; a snapshot that resolves after a later connect/disconnect is
+  dropped; a failed snapshot keeps the event-built trackers.
+- Snapshot children: `SessionSnapshot.pending` holds a session's own items;
+  the adapter returns an entry for each child too, and the pure
+  `fromSnapshot` in `status.ts` folds children's pending items into their root.
+- A session OpenCode doesn't know yet (404) gets a blank snapshot with no
+  further calls (no children lookup).
+- Snapshot ids: OpenCode sessions with `lastStatus 'running'` only.
+- `service.json` is polled with `fs.watchFile` (1 s); a change aborts the
+  current attempt or wakes the backoff sleep and reconnects without waiting.
+- The unreachable timer also runs from `start()`, so a service that is down at
+  launch shows the banner after 5 s; the banner needs a live OpenCode session.
+- The version banner shows whenever connected to a version other than 2.0.20
+  (no live-session condition).
+- `SessionBackend.list()` doc comment updated: live = exists and pane not dead.
+- The OpenCode `opencode` slice is never written to `state.json`: `set` now
+  saves only for `sessions` and `ui`.
 
 ## Open questions

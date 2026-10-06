@@ -73,6 +73,17 @@ describe.skipIf(!tmuxPath)('TmuxBackend', () => {
     expect(fs.realpathSync(cwds.get('grove-abc')!)).toBe(fs.realpathSync(os.tmpdir()))
   })
 
+  it('does not count a session whose pane died as live', async () => {
+    await backend.create({ name: 'grove-dead', cwd: os.tmpdir(), cols: 80, rows: 24, argv: ['sh', '-c', 'exit 1'] })
+    for (let i = 0; i < 30; i++) {
+      const { stdout } = await tmux('display-message', '-p', '-t', '=grove-dead:', '#{pane_dead}')
+      if (stdout.trim() === '1') break
+      await new Promise((r) => setTimeout(r, 100))
+    }
+    expect((await backend.list()).has('grove-dead')).toBe(false)
+    await expect(tmux('has-session', '-t', '=grove-dead')).resolves.toBeDefined()
+  })
+
   it('sets pane colours for OSC 10/11', async () => {
     await create('grove-c')
     await backend.setColors('grove-c', '#d4d4d4', '#1e1e1e')

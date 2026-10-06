@@ -1,4 +1,4 @@
-import type { Session } from '@shared/types'
+import type { OpenCodeSlice, Session } from '@shared/types'
 import type { StatusTone } from './components/ui/StatusDot'
 
 export type ShownStatus = 'running' | 'gone' | 'working' | 'waiting' | 'idle'
@@ -31,4 +31,17 @@ export function longestWaiting(sessions: Session[], since: Record<string, number
     if (!best || (since[s.id] ?? Infinity) < (since[best.id] ?? Infinity)) best = s
   }
   return best
+}
+
+const TESTED_OPENCODE = '2.0.20'
+
+// Banners about the OpenCode service: unreachable (only matters with a live OpenCode session), untested version.
+export function serviceBanners(oc: OpenCodeSlice, sessions: Session[]): { tone: 'error' | 'info'; text: string }[] {
+  if (oc.state === 'unreachable' && sessions.some((s) => s.kind === 'opencode' && s.lastStatus === 'running')) {
+    return [{ tone: 'error', text: 'OpenCode service unreachable — showing tmux status only' }]
+  }
+  if (oc.state === 'connected' && oc.version !== TESTED_OPENCODE) {
+    return [{ tone: 'info', text: `Untested OpenCode version ${oc.version} (grove is tested with ${TESTED_OPENCODE})` }]
+  }
+  return []
 }

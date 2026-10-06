@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest'
 import type { Session } from '@shared/types'
 import { newSession } from './sessions'
-import { apply, statusOf, withStatus, type Tracker } from './status'
+import { apply, fromSnapshot, statusOf, withStatus, type Tracker } from './status'
 import { NOW } from './testing/setup'
 
 const AT = '2026-10-05T10:05:00.000Z'
@@ -97,5 +97,26 @@ describe('withStatus', () => {
     expect(withStatus(list, new Map(), true)).toBe(list)
     const off = [term]
     expect(withStatus(off, new Map(), false)).toBe(off)
+  })
+})
+
+describe('fromSnapshot', () => {
+  const snap = (over = {}) => ({ running: false, idleAt: null, pending: [], children: [], ...over })
+
+  it('builds root trackers with their children\'s pending items', () => {
+    const snaps = new Map([
+      ['ses_a', snap({ running: true, idleAt: AT, pending: [{ id: 'per_1', kind: 'permission' as const }], children: ['ses_c', 'ses_x'] })],
+      ['ses_c', snap({ running: true, pending: [{ id: 'frm_1', kind: 'question' as const }] })],
+    ])
+    const { trackers, roots } = fromSnapshot(snaps, ['ses_a', 'ses_missing'])
+    expect(trackers.get('ses_a')).toEqual(tracker({
+      running: true,
+      idleAt: AT,
+      children: new Set(['ses_c', 'ses_x']),
+      pending: new Map([['per_1', 'permission'], ['frm_1', 'question']]),
+    }))
+    expect(trackers.has('ses_missing')).toBe(false)
+    expect(trackers.has('ses_c')).toBe(false)
+    expect(roots).toEqual(new Map([['ses_c', 'ses_a'], ['ses_x', 'ses_a']]))
   })
 })

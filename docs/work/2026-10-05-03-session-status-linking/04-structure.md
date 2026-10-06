@@ -1,11 +1,11 @@
 ---
 feature: 2026-10-05-03-session-status-linking
 phase: structure
-status: stale
+status: approved
 version: 1
 created: 2026-10-05
 updated: 2026-10-05
-approved_at: 2026-10-05
+approved_at: 2026-10-06
 based_on:
   - 03-design.md@1
   - parent:04-structure.md@5

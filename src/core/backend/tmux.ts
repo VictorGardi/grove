@@ -51,8 +51,9 @@ export class TmuxBackend implements SessionBackend {
 
   async list(): Promise<Set<string>> {
     try {
-      const { stdout } = await this.tmux('list-sessions', '-F', '#{session_name}')
-      return new Set(stdout.split('\n').filter(Boolean))
+      // a pane left by `remain-on-exit failed` keeps its session, but the program is gone
+      const { stdout } = await this.tmux('list-sessions', '-F', '#{session_name}\t#{pane_dead}')
+      return new Set(stdout.split('\n').filter(Boolean).map((l) => l.split('\t')).filter(([, dead]) => dead !== '1').map(([name]) => name))
     } catch (e) {
       if (NO_SERVER.test(stderrOf(e))) return new Set()
       throw e

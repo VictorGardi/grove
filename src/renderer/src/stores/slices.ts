@@ -1,6 +1,6 @@
 import { create } from 'zustand'
-import type { FeaturesSlice, Project, Session, UiState, ViewerTarget } from '@shared/types'
-import { DEFAULT_UI, EMPTY_FEATURES } from '@shared/types'
+import type { FeaturesSlice, OpenCodeSlice, Project, Session, UiState, ViewerTarget } from '@shared/types'
+import { DEFAULT_UI, EMPTY_FEATURES, OPENCODE_CONNECTING } from '@shared/types'
 import { trackWaiting } from '../sessionStatus'
 
 interface SlicesState {
@@ -8,6 +8,7 @@ interface SlicesState {
   sessions: Session[]
   ui: UiState
   features: FeaturesSlice
+  opencode: OpenCodeSlice
   errors: string[]
   waitingSince: Record<string, number> // session id → when first seen waiting (ms)
   hydrate(): Promise<void>
@@ -34,6 +35,7 @@ export const useSlices = create<SlicesState>((set, get) => {
     sessions: [],
     ui: DEFAULT_UI,
     features: EMPTY_FEATURES,
+    opencode: OPENCODE_CONNECTING,
     errors: [],
     waitingSince: {},
     async hydrate() {
@@ -43,6 +45,7 @@ export const useSlices = create<SlicesState>((set, get) => {
       api.on('state:sessions', setSessions)
       api.on('state:ui', (ui) => set({ ui }))
       api.on('state:features', (features) => set({ features }))
+      api.on('state:opencode', (opencode) => set({ opencode }))
       const [slices, errors] = await Promise.all([api.invoke('state:get'), api.invoke('app:errors')])
       if (slices.ok) {
         set(slices.data)

@@ -1,11 +1,11 @@
 ---
 feature: 2026-10-05-03-session-status-linking
 phase: design
-status: stale
+status: approved
 version: 1
 created: 2026-10-05
 updated: 2026-10-05
-approved_at: 2026-10-05
+approved_at: 2026-10-06
 based_on:
   - 01-questions.md@1
   - 02-research.md@2

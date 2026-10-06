@@ -3,7 +3,7 @@ import fs from 'node:fs'
 import os from 'node:os'
 import path from 'node:path'
 import type { Project, Session, SessionKind, Slices, UiState } from '@shared/types'
-import { DEFAULT_UI, EMPTY_FEATURES } from '@shared/types'
+import { DEFAULT_UI, EMPTY_FEATURES, OPENCODE_CONNECTING } from '@shared/types'
 import type { Result } from '@shared/ipc'
 import { safeArtifactPath } from './artifacts/path'
 import type { AttachHandle, SessionBackend } from './backend/types'
@@ -16,7 +16,7 @@ import { readBranch } from './git'
 import type { OcEvent, OpenCodeSource } from './opencode/types'
 import { link, markGone, newSession, reconcile, rename, withBranches } from './sessions'
 import { loadConfig, saveConfig } from './store/configStore'
-import { apply, withStatus, type Tracker } from './status'
+import { apply, fromSnapshot, withStatus, type Tracker } from './status'
 import { loadState, saveState } from './store/stateStore'
 import { deriveFeatures } from './workflow/derive'
 import { parseWorkflow, type Workflow } from './workflow/parse'
@@ -30,6 +30,8 @@ export interface CoreOptions {
   opencode?: OpenCodeSource // absent: tmux-only
   now?: () => Date // tests inject this
 }
+
+type OcChange = Exclude<OcEvent, { type: 'connected' | 'disconnected' }>
 
 type SliceListener = <K extends keyof Slices>(k: K, v: Slices[K]) => void
 
@@ -59,7 +61,7 @@ export interface Core {
 export function createCore(opts: CoreOptions): Core {
   const { backend } = opts
   const now = opts.now ?? (() => new Date())
-  const slices: Slices = { projects: [], sessions: [], ui: DEFAULT_UI, features: EMPTY_FEATURES }
+  const slices: Slices = { projects: [], sessions: [], ui: DEFAULT_UI, features: EMPTY_FEATURES, opencode: OPENCODE_CONNECTING }
   const errors: string[] = []
   const listeners = new Set<SliceListener>()
   const handles = new Set<AttachHandle>()
@@ -79,6 +81,9 @@ export function createCore(opts: CoreOptions): Core {
   let trackers = new Map<string, Tracker>() // OpenCode state per root session id
   const roots = new Map<string, string>() // subagent session id → root session id
   let ocConnected = false
+  let unreachableTimer: ReturnType<typeof setTimeout> | undefined
+  let syncGen = 0 // bumped per re-sync and on disconnect; a stale snapshot is dropped
+  let queue: OcChange[] | null = null // events seen while a snapshot is in flight
 
   function set<K extends keyof Slices>(k: K, v: Slices[K]): void {
     slices[k] = v
@@ -90,7 +95,7 @@ export function createCore(opts: CoreOptions): Core {
         ...(configWorkflow !== undefined && { workflow: configWorkflow }),
       })
     }
-    else if (k !== 'features') {
+    else if (k === 'sessions' || k === 'ui') {
       const sessions = slices.sessions.map(({ branch: _branch, status: _status, waitingFor: _waitingFor, ...s }) => s) // live-only
       saveState(opts.statePath, { schemaVersion: 1, sessions, ui: slices.ui })
     }
@@ -223,15 +228,63 @@ export function createCore(opts: CoreOptions): Core {
     if (next !== slices.sessions) set('sessions', next)
   }
 
+  // The banner shows once the service has been away for 5 s.
+  function armUnreachable(): void {
+    clearTimeout(unreachableTimer)
+    unreachableTimer = setTimeout(() => set('opencode', { state: 'unreachable', version: null }), 5000)
+  }
+
+  function applyOc(e: OcChange): void {
+    if (e.type === 'child') roots.set(e.sessionId, roots.get(e.parentId) ?? e.parentId)
+    trackers = apply(trackers, roots, e)
+  }
+
   function onOcEvent(e: OcEvent): void {
     if (e.type === 'connected' || e.type === 'disconnected') {
       ocConnected = e.type === 'connected'
       trackers = new Map()
       roots.clear()
+      syncGen++
+      queue = null
+      if (e.type === 'connected') {
+        clearTimeout(unreachableTimer)
+        set('opencode', { state: 'connected', version: e.version })
+        void resync()
+      } else {
+        set('opencode', OPENCODE_CONNECTING)
+        armUnreachable()
+      }
     } else {
-      if (e.type === 'child') roots.set(e.sessionId, roots.get(e.parentId) ?? e.parentId)
-      trackers = apply(trackers, roots, e)
+      queue?.push(e)
+      applyOc(e)
     }
+    refreshStatus()
+  }
+
+  // A service stop drops pending items silently: every connect rebuilds the trackers from a snapshot.
+  async function resync(): Promise<void> {
+    const source = opts.opencode
+    if (!source) return
+    const gen = ++syncGen
+    queue = []
+    const ids = slices.sessions
+      .filter((s) => s.kind === 'opencode' && s.lastStatus === 'running' && s.opencodeSessionId)
+      .map((s) => s.opencodeSessionId!)
+    let snaps
+    try {
+      snaps = await source.snapshot(ids)
+    } catch {
+      if (gen === syncGen) queue = null // keep what the events built
+      return
+    }
+    if (gen !== syncGen) return
+    const r = fromSnapshot(snaps, ids)
+    trackers = r.trackers
+    roots.clear()
+    for (const [child, root] of r.roots) roots.set(child, root)
+    const replay = queue ?? []
+    queue = null
+    for (const e of replay) applyOc(e)
     refreshStatus()
   }
 
@@ -352,7 +405,10 @@ export function createCore(opts: CoreOptions): Core {
         void checkLiveness()
         syncProjects(false) // picks up a root that appears later
       }, 5000)
-      opts.opencode?.start(onOcEvent)
+      if (opts.opencode) {
+        armUnreachable()
+        opts.opencode.start(onOcEvent)
+      }
     },
     getSlices: () => slices,
     getErrors: () => [...errors],
@@ -386,6 +442,7 @@ export function createCore(opts: CoreOptions): Core {
     },
     dispose() {
       clearInterval(poll)
+      clearTimeout(unreachableTimer)
       opts.opencode?.stop()
       void workflowWatch?.close()
       for (const id of [...discovery.keys()]) closeEntry(id)

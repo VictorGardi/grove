@@ -10,7 +10,7 @@ export interface SessionBackend {
   ensureConfig(): Promise<void>
   create(o: { name: string; cwd: string; cols: number; rows: number; argv?: string[] }): Promise<void>
   setColors(name: string, fg: string, bg: string): Promise<void>
-  list(): Promise<Set<string>> // empty when no server
+  list(): Promise<Set<string>> // live: the session exists and its pane is not dead; empty when no server
   cwds(): Promise<Map<string, string>> // session name → current directory of its active pane
   kill(name: string): Promise<void>
   attach(name: string, cols: number, rows: number): AttachHandle

@@ -1,5 +1,5 @@
 import type { Session } from '@shared/types'
-import type { OcEvent } from './opencode/types'
+import type { OcEvent, SessionSnapshot } from './opencode/types'
 
 // Live OpenCode state per root session; a subagent's events fold into its root.
 export interface Tracker {
@@ -29,6 +29,23 @@ export function apply(t: Map<string, Tracker>, roots: Map<string, string>, e: Oc
     next = { ...cur, pending }
   }
   return new Map(t).set(root, next)
+}
+
+// Trackers rebuilt from a re-sync: one per requested root, its children's pending items folded in.
+export function fromSnapshot(snaps: Map<string, SessionSnapshot>, ids: string[]): { trackers: Map<string, Tracker>; roots: Map<string, string> } {
+  const trackers = new Map<string, Tracker>()
+  const roots = new Map<string, string>()
+  for (const id of ids) {
+    const s = snaps.get(id)
+    if (!s) continue
+    const pending = new Map<string, 'permission' | 'question'>()
+    for (const sid of [id, ...s.children]) {
+      for (const p of snaps.get(sid)?.pending ?? []) pending.set(p.id, p.kind)
+      if (sid !== id) roots.set(sid, id)
+    }
+    trackers.set(id, { running: s.running, idleAt: s.idleAt, children: new Set(s.children), pending })
+  }
+  return { trackers, roots }
 }
 
 // Precedence: permission > question > working > idle.
