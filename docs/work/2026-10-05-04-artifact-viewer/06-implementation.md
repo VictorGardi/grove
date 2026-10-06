@@ -1,11 +1,11 @@
 ---
 feature: 2026-10-05-04-artifact-viewer
 phase: implementation
-status: draft
+status: approved
 version: 2
 created: 2026-10-05
 updated: 2026-10-05
-approved_at:
+approved_at: 2026-10-06
 based_on:
   - 03-design.md@1
   - 04-structure.md@1
