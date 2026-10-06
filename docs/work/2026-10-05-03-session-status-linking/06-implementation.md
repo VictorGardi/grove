@@ -141,7 +141,8 @@ Deviations (small, two-way):
 
 Verification: the slice's test command passes (46 tests); `npm test` 275
 passed (outside the sandbox); `npm run typecheck` and `npm run build` clean.
-Manual check pending, for the human.
+Manual check (`/grove-questions` in an unlinked session → linked to the new
+feature; restart → link kept): passed, confirmed by the human on 2026-10-06.
 
 Deviations (small, two-way):
 

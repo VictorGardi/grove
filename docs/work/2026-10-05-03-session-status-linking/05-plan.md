@@ -736,7 +736,7 @@ Subagents; E-D6):
   skip if `wroteSince.has(session.id)` or no paths; else `linkWrite(id, paths)`.
 - [x] Run `npm test -- src/core/autolink.test.ts src/core/opencode/normalise.test.ts src/core/features.test.ts`,
   then `npm test` (outside the sandbox), `npm run typecheck` and `npm run build`.
-- [ ] Manual (human): in an unlinked OpenCode session run `/grove-questions`
+- [x] Manual (human): in an unlinked OpenCode session run `/grove-questions`
   on a new idea → the card shows the new feature; restart grove → link kept.
 
 ## Open questions
