@@ -16,6 +16,7 @@ forced: []
 
 - [x] Slice 1 — `grove ls` from a grove session (tracer)
 - [x] Slice 2 — `grove new` in any folder, with prompt, label and link
+- [x] Slice 3 — `grove send` and `grove read`
 
 ## Slice 1
 
@@ -61,3 +62,13 @@ Real core, tmux backend (own socket and temp state), CLI server and the built `g
 - Kill then resume: restarted in the stored folder, history intact.
 - A prompt starting with `-` works as `--prompt=-text`. `--prompt -text` (space) is rejected by `node:util` `parseArgs` ("argument is ambiguous") with its own hint. Left as is; `--prompt -` reads stdin.
 - Claude shows its workspace-trust dialog in a never-trusted folder; the prompt waits behind it. Claude's behaviour, not grove's.
+
+## Slice 3
+
+Deviations (small; none touch a one-way decision):
+
+- `sessionRead` is on `Commands` (not a separate `Core` method); an unknown id is `not-found`, a gone session returns whatever the pane capture gives (empty).
+- `send` and `read` resolve refs over all sessions, gone ones included (so `send` can resume a gone agent session).
+- New server messages for `gone` and `not-ready`.
+- `grove send` prints nothing on success.
+- Tests and code were written together rather than strictly red-first.
