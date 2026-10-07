@@ -1,7 +1,7 @@
 ---
 feature: 2026-10-07-session-diff
 phase: plan
-status: draft
+status: stale
 version: 1
 created: 2026-10-07
 updated: 2026-10-07

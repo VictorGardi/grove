@@ -1,11 +1,11 @@
 ---
 feature: 2026-10-07-session-diff
 phase: structure
-status: draft
+status: approved
 version: 1
 created: 2026-10-07
 updated: 2026-10-07
-approved_at:
+approved_at: 2026-10-07
 based_on:
   - 03-design.md@1
 forced: []

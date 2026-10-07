@@ -1,7 +1,7 @@
 ---
 feature: 2026-10-07-session-diff
 phase: implementation
-status: draft
+status: stale
 version: 1
 created: 2026-10-07
 updated: 2026-10-07
