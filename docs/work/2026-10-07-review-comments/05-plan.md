@@ -53,3 +53,18 @@ Slice 1 creates only note drafts from the UI; the model accepts any anchor, and
 - [x] Run `npm test`
 - [x] Run `npm run typecheck`
 - [ ] Manual: comment on 2 lines and on a removed line, send, and check the agent receives all three with their line numbers.
+
+## Slice 3 — Diff drafts re-anchor and orphan
+
+Rules (from the design, D3): only a session's drafts with a `diff` anchor whose `root` equals `diff.root`, when `diff.state === 'ok'` and `!diff.truncated`. A file that is `binary` or `truncated` is left alone (its lines can't be judged). A line run is contiguous numbers on one side across a file's hunks: `new` side = `add` and `context` lines (number `.new`), `old` side = `del` and `context` lines (number `.old`). Match = same `lines` texts in order, consecutive numbers; take the match whose start is nearest the stored `start` (ties: the lower start). No match, or the file is not in the diff → `orphaned: true`, anchor kept. A match → `start`/`end` updated, `orphaned: false`. Returns the same array reference when nothing changed.
+
+- [x] Write failing test `src/core/comments/anchor.test.ts`: "unchanged → same reference"; "lines moved down → start/end updated"; "two matches → nearest"; "lines removed → orphaned, anchor text kept"; "found again → not orphaned"; "file left the diff → orphaned"; "old side matches del and context lines"; "other session, other root, sent, note and artifact comments untouched"; "diff not ok or truncated → untouched".
+- [x] Create `src/core/comments/anchor.ts` with `reanchorDiff(cs: Comment[], diff: SessionDiff): Comment[]` per the rules above (pure; updates `updatedAt` not at all).
+- [x] Write failing core test in `src/core/comments/core.test.ts` "diff drafts follow their lines": temp git repo in the project folder (as `src/core/diff/core.test.ts`), modify `a.txt`, open the diff viewer, add a `diff` draft on the changed line (root = `diff.root`), insert two lines above it on disk, wait for the diff to change, expect `start` +2; then replace the line's text and expect `orphaned: true`.
+- [x] `src/core/core.ts`: after `set('diff', d)` in the `createDiffWatch` callback, `const next = reanchorDiff(slices.comments, d)` when `d` is non-null and `next !== slices.comments` → `set('comments', next)`.
+- [x] `src/renderer/src/components/ReviewTray.tsx` + `.module.css`: for `orphaned` drafts show an "orphaned" tag beside the quote (CSS variables only).
+- [x] `src/core/comments/format.ts`: for an orphaned diff draft, append `(The lines have changed since this comment was written.)` after the body, as in the design's message format.
+- [x] Add to `src/core/comments/format.test.ts`: "orphaned diff draft is marked".
+- [x] Run `npm test`
+- [x] Run `npm run typecheck`
+- [ ] Manual: comment on a line in `npm run dev`, insert lines above it in the file, and the draft in the tray shows the new line number; delete the line and it shows orphaned.

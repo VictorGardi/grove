@@ -70,3 +70,29 @@ stays. Shift+Enter (or ⌘↩) saves in `CommentEditor`. Slice 4 reuses the patt
 
 **Not done:** the manual check (comment on 2 lines and a removed line, send,
 agent receives all three).
+
+## Slice 3 — Diff drafts re-anchor and orphan
+
+**Changed:** new `core/comments/anchor.ts` (`reanchorDiff`); `core.ts` runs it after
+each `set('diff')` and sets `comments` only when it returns a new array;
+`format.ts` marks an orphaned diff draft ("The lines have changed since this
+comment was written."); the tray shows an **orphaned** tag.
+
+**Tests:** `anchor.test.ts` (moved down, nearest of two, gone, gap, found again,
+file left the diff, old side, untouched kinds, not ok/truncated); `format.test.ts`
+(orphan note); `reanchor.test.ts` (real git repo: insert lines above → `start`
+moves; change the line → orphaned). `npm test` 434 pass; typecheck clean.
+
+**Deviations:**
+- The core test lives in `comments/reanchor.test.ts`, not `core.test.ts` (it
+  needs a git-repo setup).
+- Left alone, not orphaned: a diff that is not `ok` or is `truncated`, a file
+  that is `binary` or `truncated`, and a draft whose `root` differs from the
+  diff's root. Their lines can't be judged, and the design doesn't say.
+- Only drafts are re-anchored; sent comments keep their anchor.
+- Re-anchoring happens only while the diff is on screen (the diff is computed
+  only then, design D4 of session-diff), so a closed diff's drafts update the
+  next time it is opened.
+
+**Not done:** the manual check (insert lines above a drafted line in the file,
+tray shows the new line; delete the line, it shows orphaned).

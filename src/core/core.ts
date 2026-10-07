@@ -14,6 +14,7 @@ import { loginShellArgv, minimalEnv } from './env'
 import { computeDiff } from './diff/compute'
 import { gitRunner } from './diff/git'
 import { createDiffWatch } from './diff/watch'
+import { reanchorDiff } from './comments/anchor'
 import { slugFor } from './autolink'
 import { formatReview } from './comments/format'
 import { addComment, draftsOf, dropSession, markSent, removeComment, updateComment } from './comments/model'
@@ -325,7 +326,13 @@ export function createCore(opts: CoreOptions): Core {
     return computeDiff({ sessionId: id, dir, project, features: slices.features.items, git })
   }
 
-  const diffWatch = createDiffWatch(runDiff, (d) => set('diff', d))
+  const diffWatch = createDiffWatch(runDiff, (d) => {
+    set('diff', d)
+    if (d) {
+      const next = reanchorDiff(slices.comments, d)
+      if (next !== slices.comments) set('comments', next)
+    }
+  })
 
   // Computed only while the viewer shows a diff (D4).
   function syncDiff(): void {

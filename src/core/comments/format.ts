@@ -17,7 +17,8 @@ function shownPath(file: string, projectPath: string): string {
 function diffBlock(c: Anchored): string {
   const { side, start, end, lines } = c.anchor
   const where = `L${start === end ? start : `${start}-${end}`} (${side === 'old' ? 'removed' : 'new'})`
-  return [`${where}:`, ...lines.map((l) => `> ${l}`), c.body].join('\n')
+  const body = c.orphaned ? `${c.body} (The lines have changed since this comment was written.)` : c.body
+  return [`${where}:`, ...lines.map((l) => `> ${l}`), body].join('\n')
 }
 
 // The message sent to a session (design: Message format). Artifact comments are added by slice 4.

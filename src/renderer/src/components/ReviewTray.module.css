@@ -154,3 +154,12 @@
   color: var(--text-2);
   white-space: pre-wrap;
 }
+
+.orphan {
+  flex: none;
+  padding: 0 var(--sp-1);
+  border: 1px solid var(--border);
+  border-radius: var(--r-md);
+  color: var(--text-2);
+  font-size: var(--fs-xs);
+}

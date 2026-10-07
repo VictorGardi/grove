@@ -55,4 +55,9 @@ describe('formatReview', () => {
       'Check z',
     ].join('\n'))
   })
+
+  it('orphaned diff draft is marked', () => {
+    const out = formatReview([{ ...diff({ start: 3, end: 3, lines: ['z'] }, 'Check z'), orphaned: true }], ctx)
+    expect(out).toContain('> z\nCheck z (The lines have changed since this comment was written.)')
+  })
 })

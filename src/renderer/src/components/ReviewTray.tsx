@@ -27,6 +27,7 @@ function TrayItem({ comment, onJump }: { comment: Comment; onJump: () => void })
     <li className={s.item}>
       <button type="button" className={s.where} onClick={onJump}>
         <span>{lineLabel(comment)}</span>
+        {comment.orphaned && <span className={s.orphan}>orphaned</span>}
         {a.kind === 'diff' && <span className={s.quote}>{a.lines[0]}</span>}
       </button>
       {editing ? <CommentEditor initial={comment.body} error={error} onSave={(b) => void save(b)} onCancel={() => setEditing(false)} /> : (
