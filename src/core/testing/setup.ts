@@ -5,7 +5,7 @@ import { fileURLToPath } from 'node:url'
 import { createCore, type Core, type CoreOptions } from '../core'
 import { saveConfig } from '../store/configStore'
 import { FakeBackend } from './fakeBackend'
-import { FakeOpenCode } from './fakeOpenCode'
+import { FakeAgentSource } from './fakeAgentSource'
 import { FakeWatchers } from './fakeWatchers'
 
 const bundledWorkflowPath = fileURLToPath(new URL('../../../resources/workflow.yaml', import.meta.url))
@@ -22,12 +22,12 @@ export function setupCore() {
   saveConfig(configPath, { schemaVersion: 1, projects: [{ id: 'p', name: 'proj', path: dir }] })
   const fake = new FakeBackend()
   const watchers = new FakeWatchers()
-  const oc = new FakeOpenCode()
+  const oc = new FakeAgentSource('opencode')
   const claudeDir = path.join(dir, 'agents', 'claude')
   const cores: Core[] = []
   const make = (now = NOW, over: Partial<CoreOptions> = {}) => {
     const core = createCore({
-      configPath, statePath, bundledWorkflowPath, watchers, backend: fake, opencode: oc, claudeSpoolDir: claudeDir, now: () => now, ...over,
+      configPath, statePath, bundledWorkflowPath, watchers, backend: fake, sources: [oc], claudeSpoolDir: claudeDir, now: () => now, ...over,
     })
     cores.push(core)
     return core

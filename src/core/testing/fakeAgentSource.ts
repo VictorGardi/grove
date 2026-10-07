@@ -1,20 +1,33 @@
-import type { OcEvent, OpenCodeSource, SessionSnapshot } from '../opencode/types'
+import { randomUUID } from 'node:crypto'
+import type { AgentEvent, AgentKind, AgentSource, SessionSnapshot } from '../agents/types'
+import { mintSessionId } from '../opencodeId'
 
-export class FakeOpenCode implements OpenCodeSource {
+export class FakeAgentSource implements AgentSource {
   started = false
   stopped = false
   snapshots = new Map<string, SessionSnapshot>() // what snapshot() returns, by session id
   snapshotCalls: string[][] = []
   writes = new Map<string, string[]>() // what lastWrites() returns, by session id
-  private cb: ((e: OcEvent) => void) | null = null
+  forgotten: string[] = []
+  private cb: ((e: AgentEvent) => void) | null = null
 
-  start(onEvent: (e: OcEvent) => void): void {
+  constructor(readonly kind: AgentKind, readonly statusNeedsEvent = false) {}
+
+  mintId(now: Date): string {
+    return this.kind === 'opencode' ? mintSessionId(now.getTime()) : randomUUID()
+  }
+
+  argv(id: string, _mode: 'start' | 'resume'): string[] {
+    return [this.kind, '-s', id]
+  }
+
+  start(onEvent: (e: AgentEvent) => void): void {
     this.started = true
     this.cb = onEvent
   }
 
-  emit(e: OcEvent): void {
-    if (!this.cb) throw new Error('FakeOpenCode: emit before start')
+  emit(e: AgentEvent): void {
+    if (!this.cb) throw new Error('FakeAgentSource: emit before start')
     this.cb(e)
   }
 
@@ -35,6 +48,10 @@ export class FakeOpenCode implements OpenCodeSource {
 
   async lastWrites(id: string): Promise<string[]> {
     return this.writes.get(id) ?? []
+  }
+
+  forget(id: string): void {
+    this.forgotten.push(id)
   }
 
   stop(): void {

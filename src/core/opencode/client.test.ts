@@ -5,7 +5,7 @@ import os from 'node:os'
 import path from 'node:path'
 import { afterEach, describe, expect, it } from 'vitest'
 import { HttpOpenCode, serviceFilePath, sseData } from './client'
-import type { OcEvent } from './types'
+import type { AgentEvent } from '../agents/types'
 
 describe('sseData', () => {
   it('splits data frames and keeps a partial one', () => {
@@ -70,20 +70,32 @@ function serviceFile(url: string, password: string, file?: string) {
 
 // Resolves once `n` events matching `pred` have arrived.
 function collector() {
-  const events: OcEvent[] = []
-  const waiters: { pred: (e: OcEvent[]) => boolean; resolve: () => void }[] = []
-  const onEvent = (e: OcEvent) => {
+  const events: AgentEvent[] = []
+  const waiters: { pred: (e: AgentEvent[]) => boolean; resolve: () => void }[] = []
+  const onEvent = (e: AgentEvent) => {
     events.push(e)
     for (const w of [...waiters]) if (w.pred(events)) { waiters.splice(waiters.indexOf(w), 1); w.resolve() }
   }
-  const until = (pred: (e: OcEvent[]) => boolean, ms = 2000) => new Promise<void>((resolve, reject) => {
+  const until = (pred: (e: AgentEvent[]) => boolean, ms = 2000) => new Promise<void>((resolve, reject) => {
     if (pred(events)) return resolve()
     const t = setTimeout(() => reject(new Error(`timeout; got ${JSON.stringify(events)}`)), ms)
     waiters.push({ pred, resolve: () => { clearTimeout(t); resolve() } })
   })
-  const count = (type: OcEvent['type']) => (es: OcEvent[]) => es.filter((e) => e.type === type).length
+  const count = (type: AgentEvent['type']) => (es: AgentEvent[]) => es.filter((e) => e.type === type).length
   return { events, onEvent, until, count }
 }
+
+describe('HttpOpenCode as an agent source', () => {
+  it('mints ses_ ids and runs opencode -s for start and resume', () => {
+    const source = new HttpOpenCode({ serviceFile: '/nope/service.json' })
+    expect(source.kind).toBe('opencode')
+    expect(source.statusNeedsEvent).toBe(false)
+    expect(source.mintId(new Date())).toMatch(/^ses_/)
+    expect(source.argv('ses_x', 'start')).toEqual(['opencode', '-s', 'ses_x'])
+    expect(source.argv('ses_x', 'resume')).toEqual(['opencode', '-s', 'ses_x'])
+    expect(() => source.forget('ses_x')).not.toThrow()
+  })
+})
 
 describe('HttpOpenCode', () => {
   const cleanups: (() => unknown)[] = []

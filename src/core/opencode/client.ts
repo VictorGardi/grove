@@ -1,7 +1,8 @@
 import fs from 'node:fs'
 import path from 'node:path'
 import { childIds, lastWritesOf, normalise, snapshotOf, toolWrites, unwrap } from './normalise'
-import type { OcEvent, OpenCodeSource, SessionSnapshot } from './types'
+import type { AgentEvent, AgentSource, SessionSnapshot } from '../agents/types'
+import { mintSessionId } from '../opencodeId'
 
 // The shared OpenCode service's registration file. Holds a password: never log or push it.
 export function serviceFilePath(env: NodeJS.ProcessEnv, home: string): string {
@@ -28,7 +29,9 @@ interface ClientOptions {
   watchMs?: number // service.json poll interval; default 1000
 }
 
-export class HttpOpenCode implements OpenCodeSource {
+export class HttpOpenCode implements AgentSource {
+  readonly kind = 'opencode' as const
+  readonly statusNeedsEvent = false
   private abort: AbortController | null = null
   private wake: (() => void) | null = null
   private svc: { url: string; headers: Record<string, string> } | null = null // while connected
@@ -42,7 +45,17 @@ export class HttpOpenCode implements OpenCodeSource {
 
   constructor(private readonly o: ClientOptions) {}
 
-  start(onEvent: (e: OcEvent) => void): void {
+  mintId(now: Date): string {
+    return mintSessionId(now.getTime())
+  }
+
+  argv(id: string, _mode: 'start' | 'resume'): string[] {
+    return ['opencode', '-s', id] // resume is the same: -s picks up the session's history
+  }
+
+  forget(_id: string): void {} // OpenCode keeps its own sessions
+
+  start(onEvent: (e: AgentEvent) => void): void {
     fs.watchFile(this.o.serviceFile, { interval: this.o.watchMs ?? 1000 }, this.kick)
     void this.loop(onEvent)
   }
@@ -111,7 +124,7 @@ export class HttpOpenCode implements OpenCodeSource {
     })
   }
 
-  private async loop(onEvent: (e: OcEvent) => void): Promise<void> {
+  private async loop(onEvent: (e: AgentEvent) => void): Promise<void> {
     const min = this.o.retryMs ?? 1000
     let delay = min
     while (!this.stopped) {
@@ -134,7 +147,7 @@ export class HttpOpenCode implements OpenCodeSource {
     }
   }
 
-  private async stream(onEvent: (e: OcEvent) => void): Promise<void> {
+  private async stream(onEvent: (e: AgentEvent) => void): Promise<void> {
     const abort = (this.abort = new AbortController())
     const { url, password } = JSON.parse(fs.readFileSync(this.o.serviceFile, 'utf8')) as { url: string; password: string }
     const headers = { authorization: 'Basic ' + Buffer.from(`opencode:${password}`).toString('base64') }

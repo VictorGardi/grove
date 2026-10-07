@@ -71,32 +71,44 @@ describe('withStatus', () => {
   const term = { ...newSession({ projectId: 'p', kind: 'terminal', now: NOW, id: 't', agentSessionId: null }) }
 
   it('sets OpenCode sessions from their trackers while connected, never terminals', () => {
-    const out = withStatus([oc('a', 'ses_a'), oc('b', 'ses_b'), term], new Map([['ses_a', tracker({ running: true })]]), true)
+    const out = withStatus([oc('a', 'ses_a'), oc('b', 'ses_b'), term], 'opencode', new Map([['ses_a', tracker({ running: true })]]), true, false)
     expect(out.map((s) => s.status)).toEqual(['working', 'idle', undefined])
     expect('status' in out[2]).toBe(false)
   })
 
   it('sets and clears waitingFor with the status', () => {
     const waiting = new Map([['ses_a', tracker({ pending: new Map([['per_1', 'permission' as const]]) })]])
-    const [w] = withStatus([oc('a', 'ses_a')], waiting, true)
+    const [w] = withStatus([oc('a', 'ses_a')], 'opencode', waiting, true, false)
     expect(w).toMatchObject({ status: 'waiting', waitingFor: 'permission' })
-    const [i] = withStatus([w], new Map(), true)
+    const [i] = withStatus([w], 'opencode', new Map(), true, false)
     expect(i.status).toBe('idle')
     expect('waitingFor' in i).toBe(false)
-    const [off] = withStatus([w], new Map(), false)
+    const [off] = withStatus([w], 'opencode', new Map(), false, false)
     expect('status' in off || 'waitingFor' in off).toBe(false)
   })
 
   it('removes status when disconnected', () => {
-    const out = withStatus([oc('a', 'ses_a', { status: 'working' })], new Map(), false)
+    const out = withStatus([oc('a', 'ses_a', { status: 'working' })], 'opencode', new Map(), false, false)
     expect('status' in out[0]).toBe(false)
+  })
+
+  it('leaves sessions of other kinds alone', () => {
+    const claude = { ...oc('c', 'u-1'), kind: 'claude' as const, status: 'working' as const }
+    const [out] = withStatus([claude], 'opencode', new Map([['u-1', tracker()]]), true, false)
+    expect(out).toBe(claude)
+  })
+
+  it('needsEvent: no status until the session has a tracker', () => {
+    const claude = (id: string, aid: string) => ({ ...oc(id, aid), kind: 'claude' as const })
+    const out = withStatus([claude('a', 'u-a'), claude('b', 'u-b')], 'claude', new Map([['u-a', tracker()]]), true, true)
+    expect(out.map((s) => s.status)).toEqual(['idle', undefined])
   })
 
   it('returns the same array when nothing changed', () => {
     const list = [oc('a', 'ses_a', { status: 'idle' }), term]
-    expect(withStatus(list, new Map(), true)).toBe(list)
+    expect(withStatus(list, 'opencode', new Map(), true, false)).toBe(list)
     const off = [term]
-    expect(withStatus(off, new Map(), false)).toBe(off)
+    expect(withStatus(off, 'opencode', new Map(), false, false)).toBe(off)
   })
 })
 
@@ -140,7 +152,7 @@ describe('statusOf: finished turns', () => {
 
   it('reads each session\'s seenAt in withStatus', () => {
     const t = new Map([['ses_a', tracker({ idleAt: AT })], ['ses_b', tracker({ idleAt: AT })]])
-    const out = withStatus([oc('a', 'ses_a'), oc('b', 'ses_b', { seenAt: AFTER })], t, true)
+    const out = withStatus([oc('a', 'ses_a'), oc('b', 'ses_b', { seenAt: AFTER })], 'opencode', t, true, false)
     expect(out.map((s) => s.waitingFor ?? s.status)).toEqual(['done', 'idle'])
   })
 })

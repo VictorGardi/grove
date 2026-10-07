@@ -1,4 +1,4 @@
-import type { OcEvent, SessionSnapshot } from './types'
+import type { AgentEvent, SessionSnapshot } from '../agents/types'
 
 // Every OpenCode 2.0.20 event shape grove reads lives here (design risk: Experimental API).
 // Envelope: { id, type, created, data, location? }.
@@ -13,13 +13,13 @@ function toIso(v: unknown): string {
 
 const FORM = new Set(['form.created', 'form.replied', 'form.cancelled']) // every form counts as a question
 
-function pending(sessionId: unknown, id: unknown, kind: 'permission' | 'question', open: boolean): OcEvent | null {
+function pending(sessionId: unknown, id: unknown, kind: 'permission' | 'question', open: boolean): AgentEvent | null {
   return typeof sessionId === 'string' && typeof id === 'string' ? { type: 'pending', sessionId, id, kind, open } : null
 }
 
 const ENDED = new Set(['session.execution.succeeded', 'session.execution.failed', 'session.execution.interrupted'])
 
-export function normalise(raw: unknown, version: string): OcEvent | null {
+export function normalise(raw: unknown, version: string): AgentEvent | null {
   const e = obj(raw)
   if (!e || typeof e.type !== 'string') return null
   if (e.type === 'server.connected') return { type: 'connected', version }
@@ -92,7 +92,7 @@ function writePaths(name: unknown, input: unknown): string[] | null {
 
 // Tool events → `wrote` on success. Only input.started names the tool, only called has the
 // parsed input, so both are held by call id until success or failure. One per stream.
-export function toolWrites(): (raw: unknown) => OcEvent | null {
+export function toolWrites(): (raw: unknown) => AgentEvent | null {
   const calls = new Map<string, { name?: unknown; input?: unknown }>()
   return (raw) => {
     const e = obj(raw)

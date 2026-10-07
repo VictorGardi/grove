@@ -29,7 +29,7 @@ app.whenReady().then(async () => {
       confPath: path.join(app.getAppPath(), 'resources', 'tmux.conf'),
       env: minimalEnv(process.env),
     }),
-    opencode: new HttpOpenCode({ serviceFile: serviceFilePath(process.env, os.homedir()) }),
+    sources: [new HttpOpenCode({ serviceFile: serviceFilePath(process.env, os.homedir()) })],
     claudeSpoolDir: path.join(app.getPath('userData'), 'agents', 'claude'),
   })
   await core.start()

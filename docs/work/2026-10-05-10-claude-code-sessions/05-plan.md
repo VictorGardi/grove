@@ -2,7 +2,7 @@
 feature: 2026-10-05-10-claude-code-sessions
 phase: plan
 status: approved
-version: 1
+version: 2
 created: 2026-10-07
 updated: 2026-10-07
 approved_at:
@@ -42,5 +42,28 @@ until slice 5.
 - [x] Rename `opencodeSessionId` → `agentSessionId` in `src/core/status.test.ts`, `src/core/features.test.ts`, `src/renderer/src/navigation.test.ts`, `src/renderer/src/tree.test.ts`, `src/renderer/src/sessionStatus.test.ts`.
 - [x] Run `npm test -- src/core/store src/core/claude src/core/sessions.test.ts`
 - [x] Run `npm run typecheck` and `npm test`
-- [ ] Manual (human): `npm run dev`, start Claude Code from the ＋ modal, then in that session: a plain prompt; a Bash command needing permission (wait > 6 s); a prompt that makes it ask a question (AskUserQuestion); Esc mid-turn and wait 60 s; a prompt making parallel Edits; `/clear` and a prompt; kill the tmux server (`tmux -L grove kill-server`) and run `claude --resume <uuid>` by hand.
+- [x] Manual (human, partial — see `06-implementation.md`; remaining capture items and the design findings deferred by the human on 2026-10-07): `npm run dev`, start Claude Code from the ＋ modal, then in that session: a plain prompt; a Bash command needing permission (wait > 6 s); a prompt that makes it ask a question (AskUserQuestion); Esc mid-turn and wait 60 s; a prompt making parallel Edits; `/clear` and a prompt; kill the tmux server (`tmux -L grove kill-server`) and run `claude --resume <uuid>` by hand.
 - [x] Copy `~/Library/Application Support/grove/agents/claude/<uuid>.jsonl` to `src/core/claude/fixtures/capture-2.1.285.jsonl` and record per hook in `06-implementation.md`: fired or not, fields used by the mapping, sizes, any corrupt span. No hook record at all → stop: E-D10 reopens.
+
+## Slice 2 — Seam generalised (D1), OpenCode unchanged
+
+Context: core today takes one `opencode?: OpenCodeSource` and keeps module-level `trackers, roots,
+ocConnected, syncGen, queue, primed, wroteSince`. This slice renames the seam to agent-neutral
+names in `src/core/agents/types.ts` (design "Seam"), moves OpenCode's id minting and argv into
+`HttpOpenCode`, and makes core keep one `SourceState` per source kind (D1). OpenCode behaviour is
+unchanged. There is no Claude source yet (slice 3): until then core keeps slice 1's
+`claudeSpoolDir` launch path for `kind === 'claude'`, and a session whose kind has no source
+gets no status, seen mark or notification, so Claude cards stay running / gone.
+
+- [x] Create `src/core/agents/types.ts` with `AgentEvent` (the variants of today's `OcEvent`, unchanged), `SessionSnapshot` (unchanged), `AgentKind = Exclude<SessionKind, 'terminal'>` and `AgentSource { kind: AgentKind; statusNeedsEvent: boolean; mintId(now: Date): string; argv(id: string, mode: 'start' | 'resume'): string[]; start(onEvent: (e: AgentEvent) => void): void; snapshot(ids: string[]): Promise<Map<string, SessionSnapshot>>; lastWrites(id: string): Promise<string[]>; forget(id: string): void; stop(): void }`, with the comments from `src/core/opencode/types.ts` and the design's. Delete `src/core/opencode/types.ts`.
+- [x] Write failing tests in `src/core/opencode/client.test.ts`: `new HttpOpenCode({ serviceFile })` has `kind === 'opencode'`, `statusNeedsEvent === false`, `mintId(new Date())` matching `/^ses_/`, `argv('ses_x', 'start')` and `argv('ses_x', 'resume')` both `['opencode', '-s', 'ses_x']`, and `forget('ses_x')` does not throw.
+- [x] `src/core/opencode/client.ts`: `implements AgentSource`; add `readonly kind = 'opencode' as const`, `readonly statusNeedsEvent = false`, `mintId(now) { return mintSessionId(now.getTime()) }` (import from `../opencodeId`), `argv(id) { return ['opencode', '-s', id] }`, `forget() {}` (OpenCode keeps its own sessions). `OcEvent` → `AgentEvent` imports from `../agents/types`. Same import rename in `src/core/opencode/normalise.ts` and `src/core/opencode/client.test.ts`.
+- [x] Create `src/core/testing/fakeAgentSource.ts`: `FakeAgentSource implements AgentSource`, constructor `(kind: AgentKind, statusNeedsEvent = false)`; the members of `FakeOpenCode` (`started, stopped, snapshots, snapshotCalls, writes, emit, snapshot, lastWrites, stop`) plus `mintId(now)` = `mintSessionId(now.getTime())` for `opencode`, else `randomUUID()`; `argv(id)` = `[kind, '-s', id]`; `forgotten: string[]` filled by `forget`. Delete `src/core/testing/fakeOpenCode.ts`.
+- [x] `src/core/testing/setup.ts`: `const oc = new FakeAgentSource('opencode')`, pass `sources: [oc]` instead of `opencode: oc`.
+- [x] `src/core/status.ts`: import `AgentEvent`/`SessionSnapshot`/`AgentKind` from `./agents/types`; `withStatus(sessions, kind, t, connected, needsEvent)` touches only sessions with `s.kind === kind` (others returned as they are); live status when `connected && s.agentSessionId && (!needsEvent || t.has(s.agentSessionId))`. Update `src/core/status.test.ts` calls to pass `'opencode', …, false`, and add a test: `needsEvent` true and no tracker → no status; a session of another kind is left untouched.
+- [x] `src/core/core.ts`: `CoreOptions.opencode` → `sources?: AgentSource[] // one per agent kind; none: tmux-only`. Add `interface SourceState { source; connected; trackers; roots; syncGen; queue: Change[] | null; primed; wroteSince }` and `const states = new Map<AgentKind, SourceState>()` built from `opts.sources`. Make `onEvent(st, e)`, `applyEvent(st, e)`, `resync(st)`, `catchUp(st, gen, ids)`, `linkWrite(st, id, paths)` use the state's fields, and find sessions by `s.kind === st.source.kind && s.agentSessionId === id`. `refreshStatus`: apply `withStatus(…, kind, st.trackers, st.connected, st.source.statusNeedsEvent)` for every state; the seen mark applies when the on-screen session's kind has a state; `notifyTransitions` runs per state with `connected && queue === null`, over sessions of that kind, notifying only when that state is `primed`. The `opencode` slice and `armUnreachable`/`unreachableTimer` run only for the state with `kind === 'opencode'` (on connected/disconnected, and armed in `start()` when an opencode source exists). `start()` calls `st.source.start((e) => onEvent(st, e))` per state; `dispose()` stops every source. `sessionCreate`: with a state for `kind`, `agentSessionId = source.mintId(now())` and `argv = loginShellArgv(source.argv(id, 'start'))`; else `kind === 'claude'` keeps slice 1's `claudeSpoolDir` path; else agent kind → `no-source`; terminal → no id, no argv. `sessionResume` keeps its `kind !== 'opencode'` → `not-opencode` check and uses `loginShellArgv(st.source.argv(id, 'resume'))`, then `if (st.connected) void resync(st)`.
+- [x] `src/main/index.ts`: `sources: [new HttpOpenCode({ serviceFile: serviceFilePath(process.env, os.homedir()) })]`.
+- [x] `src/core/sessions.test.ts`: `OcEvent` → `AgentEvent` from `./agents/types`.
+- [x] Run `npm test` and `npm run typecheck`
+- [ ] Manual (human): `npm run dev`, an OpenCode session still shows working → idle and waiting · permission.
+

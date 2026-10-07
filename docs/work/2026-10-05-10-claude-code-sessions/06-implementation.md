@@ -15,8 +15,8 @@ forced: []
 
 ## Progress
 
-- [ ] Slice 1 — Tracer: start a Claude session, spool fills; state v2 (code committed; live hook capture pending)
-- [ ] Slice 2 — Seam generalised (D1), OpenCode unchanged
+- [x] Slice 1 — Tracer: start a Claude session, spool fills; state v2 (capture partial; see below)
+- [x] Slice 2 — Seam generalised (D1), OpenCode unchanged (manual check pending)
 - [ ] Slice 3 — Claude live status
 - [ ] Slice 4 — Claude auto-link and restart catch-up
 - [ ] Slice 5 — Claude resume and cleanup
@@ -61,5 +61,20 @@ Findings against `03-design.md` (not acted on; see the slice 1 stop):
 1. `PermissionRequest` with `tool_name: AskUserQuestion` would open `perm:main` next to `q:<id>`; with precedence permission > question the card would say "waiting · permission" for a question, and nothing would close it until the next prompt or Stop (a rejected question fires no Post hook).
 2. `PostToolBatch` copies every tool's input and response (Bash output, and Read file contents) into the spool, which contradicts two-way decision 4 ("Read/Bash payloads stay out of the spool").
 3. Not exercised: a real tool's `PermissionRequest`, an answered AskUserQuestion, Esc during a working turn + `idle_prompt` after 60 s, Edit/MultiEdit, parallel hooks writing at once, subagent scope.
+
+Human decision (2026-10-07): continue to slice 2 now. The second capture (item 3) and a `grove-design` revise of the mapping for findings 1–2 are deferred; both must be settled before slice 3, which implements the mapping.
+
+## Slice 2
+
+Deviations (mechanical, no design impact):
+
+- Temporary bridge: Claude has no source until slice 3, so `sessionCreate` keeps slice 1's `claudeSpoolDir` launch path when no `claude` source is registered. Without either, an agent kind returns `no-source`. Slice 3 removes the bridge.
+- A session whose kind has no registered source gets no status, seen mark or notification. This is how "kind filters" work for now: Claude cards stay running / gone until slice 3 adds `SpoolClaude`.
+- `sessionResume` still accepts only `kind === 'opencode'` (`not-opencode`; slice 5 generalises it) and returns `no-source` when no OpenCode source is registered. Before, it built the argv inline even without a source.
+- Added `withAllStatus` (runs `withStatus` for each state) and `sessionOf(st, agentId)` helpers in `core.ts`.
+- `HttpOpenCode.argv` / `forget` and `FakeAgentSource.argv` declare the interface's unused parameters (`_mode`, `_id`) so direct calls typecheck.
+- `FakeAgentSource.argv(id)` returns `[kind, '-s', id]`, so the existing `exec opencode -s <id>` expectations hold unchanged.
+
+Verification: `npm run typecheck` clean; `npm test` 301 passed (outside the sandbox), including the existing "core opencode status", "core seen and notify", "core auto-link" and "resume" tests with only import renames and the fake swapped. Manual OpenCode check pending (human).
 
 ## Open questions

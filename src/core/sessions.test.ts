@@ -5,7 +5,7 @@ import { DEFAULT_UI, type Session } from '@shared/types'
 import { terminalTheme } from '@shared/theme'
 import { makeLabel, newSession, reconcile } from './sessions'
 import { loadState } from './store/stateStore'
-import type { OcEvent } from './opencode/types'
+import type { AgentEvent } from './agents/types'
 import { createOpenCode, createTerminal as create, LATER, NOW, setupCore } from './testing/setup'
 
 function session(id: string, over: Partial<Session> = {}): Session {
@@ -389,7 +389,7 @@ describe('core seen and notify', () => {
     return { ...s, core, notified }
   }
 
-  async function connect(oc: { emit(e: OcEvent): void }) {
+  async function connect(oc: { emit(e: AgentEvent): void }) {
     oc.emit({ type: 'connected', version: '2.0.20' })
     await flush()
   }

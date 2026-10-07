@@ -1,7 +1,7 @@
 import type { Session } from '@shared/types'
-import type { OcEvent, SessionSnapshot } from './opencode/types'
+import type { AgentEvent, AgentKind, SessionSnapshot } from './agents/types'
 
-// Live OpenCode state per root session; a subagent's events fold into its root.
+// Live agent state per root session; a subagent's events fold into its root.
 export interface Tracker {
   running: boolean
   pending: Map<string, 'permission' | 'question'>
@@ -13,7 +13,7 @@ const blank = (): Tracker => ({ running: false, pending: new Map(), idleAt: null
 
 // Returns the same map for events that change no tracker; never mutates its input.
 // A child's pending items count for its root; its own turns don't (the parent's turn spans them).
-export function apply(t: Map<string, Tracker>, roots: Map<string, string>, e: OcEvent): Map<string, Tracker> {
+export function apply(t: Map<string, Tracker>, roots: Map<string, string>, e: AgentEvent): Map<string, Tracker> {
   if (e.type === 'connected' || e.type === 'disconnected' || e.type === 'wrote') return t
   if ((e.type === 'exec-started' || e.type === 'exec-ended') && roots.has(e.sessionId)) return t
   const root = e.type === 'child' ? roots.get(e.parentId) ?? e.parentId : roots.get(e.sessionId) ?? e.sessionId
@@ -58,12 +58,14 @@ export function statusOf(t: Tracker | undefined, seenAt: string | null): Pick<Se
   return { status: 'idle' }
 }
 
-// OpenCode sessions get a status while the service is connected; others none (tmux liveness shows).
-// Same array when unchanged.
-export function withStatus(sessions: Session[], t: Map<string, Tracker>, connected: boolean): Session[] {
+// Sessions of `kind` get a status while their source is connected (with `needsEvent`, only once it has
+// a tracker); otherwise none, and tmux liveness shows. Other kinds are left alone. Same array when unchanged.
+export function withStatus(sessions: Session[], kind: AgentKind, t: Map<string, Tracker>, connected: boolean, needsEvent: boolean): Session[] {
   let changed = false
   const out = sessions.map((s) => {
-    const live = s.kind === 'opencode' && connected && s.agentSessionId ? statusOf(t.get(s.agentSessionId), s.seenAt) : {}
+    if (s.kind !== kind) return s
+    const id = s.agentSessionId
+    const live = connected && id && (!needsEvent || t.has(id)) ? statusOf(t.get(id), s.seenAt) : {}
     const same = (k: 'status' | 'waitingFor') => live[k] === s[k] && (live[k] !== undefined || !(k in s))
     if (same('status') && same('waitingFor')) return s
     changed = true
