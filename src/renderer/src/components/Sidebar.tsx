@@ -41,9 +41,9 @@ function SessionCard({ s, feature, tag, focused, compact, onFocus, onOpenFeature
     <ListRow
       title={s.label}
       icon={agent
-        ? <Icon name={done ? 'agent-done' : 'agent'} size={14} className={done ? css.iconDone : shown === 'gone' ? css.iconGone : css.iconAgent} />
-        : <Icon name="terminal" size={14} className={css.iconTerminal} />}
-      badge={needsYou && <Icon name="agent-alert" size={14} className={css.iconAgent} />}
+        ? <Icon name={done ? 'agent-done' : 'agent'} size={13} className={done ? css.iconDone : shown === 'gone' ? css.iconGone : css.iconAgent} />
+        : <Icon name="terminal" size={13} className={css.iconTerminal} />}
+      badge={needsYou && <Icon name="agent-alert" size={13} className={css.iconAgent} />}
       meta={(feature || s.branch) && (
         <div className={css.cardInfo}>
           {feature && (
@@ -120,7 +120,7 @@ function ProjectRow({ project: p, tag, live, waiting, focused, refused, onOpen, 
     <>
       <ListRow
         title={p.name}
-        icon={<Icon name="folder" size={14} className={tagClass(tag, 'fg')} />}
+        icon={<Icon name="folder" size={13} className={tagClass(tag, 'fg')} />}
         meta={
           <div className={css.projectMeta}>
             <span>{live} live</span>

@@ -113,6 +113,7 @@ export interface CommentsFile { schemaVersion: 1; comments: Comment[] }
 export type Slices = { projects: Project[]; sessions: Session[]; ui: UiState; features: FeaturesSlice; opencode: OpenCodeSlice; diff: SessionDiff | null; comments: Comment[] } // diff: the one on screen, not persisted
 export interface ConfigFile { schemaVersion: 1; projects: Project[]; workflow?: string }
 export interface StateFile { schemaVersion: 4; sessions: Session[]; ui: UiState }
-export const DEFAULT_UI: UiState = { sidebarWidth: 220, focusedSessionId: null, focusedFeature: null, focusedProject: null, sidebarTab: 'sessions', board: 'sessions', collapsed: [], viewer: null, viewerWidth: 480, viewerExpanded: false }
+export const SIDEBAR_WIDTH = 200 // fixed: the sidebar has no resize handle, so a saved width is ignored
+export const DEFAULT_UI: UiState = { sidebarWidth: SIDEBAR_WIDTH, focusedSessionId: null, focusedFeature: null, focusedProject: null, sidebarTab: 'sessions', board: 'sessions', collapsed: [], viewer: null, viewerWidth: 480, viewerExpanded: false }
 export const EMPTY_FEATURES: FeaturesSlice = { workflowError: null, stages: [], items: [] }
 export const OPENCODE_CONNECTING: OpenCodeSlice = { state: 'connecting', version: null }

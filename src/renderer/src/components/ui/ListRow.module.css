@@ -2,8 +2,8 @@
   position: relative;
   display: flex;
   flex-direction: column;
-  gap: 2px;
-  padding: 6px 10px;
+  gap: 1px;
+  padding: 5px 10px;
   background: var(--card-bg);
   border: 1px solid var(--card-border);
   border-radius: var(--r-card);
@@ -15,7 +15,7 @@
 }
 
 .compact {
-  padding: 4px 10px;
+  padding: 3px 10px;
 }
 
 .selected,
@@ -51,7 +51,7 @@
   display: flex;
   align-items: center;
   gap: var(--sp-2);
-  min-height: 20px;
+  min-height: 18px;
 }
 
 .title {
@@ -60,7 +60,7 @@
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
-  font-size: var(--fs-md);
+  font-size: var(--fs-card);
   font-weight: var(--fw-bold);
   color: var(--text);
 }
@@ -88,13 +88,13 @@
 
 .meta {
   font-family: var(--font-mono);
-  font-size: var(--fs-sm);
+  font-size: var(--fs-xs);
   color: var(--text-2);
 }
 
 .status {
   font-family: var(--font-mono);
-  font-size: var(--fs-sm);
+  font-size: var(--fs-xs);
 }
 
 .s-running { color: var(--status-running); }

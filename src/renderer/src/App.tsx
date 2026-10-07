@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useState } from 'react'
 import type { Feature, Session, ViewerTarget } from '@shared/types'
+import { SIDEBAR_WIDTH } from '@shared/types'
 import { ArtifactViewer } from './components/ArtifactViewer'
 import { ConfirmDialog } from './components/ConfirmDialog'
 import { DiffViewer } from './components/DiffViewer'
@@ -136,7 +137,7 @@ export default function App() {
             onOpen={(path) => openArtifact({ ...v, path, hash: null })}
             onBack={v.fromDiff ? () => openDiff(v.fromDiff!) : undefined} onClose={closeViewer} />
         ) : undefined}
-        sidebarWidth={ui.sidebarWidth}
+        sidebarWidth={SIDEBAR_WIDTH}
         viewerWidth={ui.viewerWidth}
         viewerExpanded={ui.viewerExpanded}
         onViewerWidth={setViewerWidth}

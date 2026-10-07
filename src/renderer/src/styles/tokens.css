@@ -74,6 +74,7 @@
   --font-mono: Menlo, monospace;
   --fs-xs: 10px;
   --fs-sm: 11px;
+  --fs-card: 12px;
   --fs-md: 13px;
   --fs-lg: 14px;
   --fs-xl: 15px;
@@ -100,5 +101,5 @@
   --topbar-h: 51px;
   --header-h: 47px;
   --traffic-inset: 100px;
-  --sidebar-w: 220px; /* overridden at runtime from ui.sidebarWidth */
+  --sidebar-w: 200px; /* overridden at runtime from ui.sidebarWidth */
 }
