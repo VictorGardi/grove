@@ -41,9 +41,9 @@ function SessionCard({ s, feature, tag, focused, compact, onFocus, onOpenFeature
     <ListRow
       title={s.label}
       icon={agent
-        ? <Icon name={done ? 'agent-done' : 'agent'} size={16} className={done ? css.iconDone : shown === 'gone' ? css.iconGone : css.iconAgent} />
-        : <Icon name="terminal" size={16} className={css.iconTerminal} />}
-      badge={needsYou && <Icon name="agent-alert" size={16} className={css.iconAgent} />}
+        ? <Icon name={done ? 'agent-done' : 'agent'} size={14} className={done ? css.iconDone : shown === 'gone' ? css.iconGone : css.iconAgent} />
+        : <Icon name="terminal" size={14} className={css.iconTerminal} />}
+      badge={needsYou && <Icon name="agent-alert" size={14} className={css.iconAgent} />}
       meta={(feature || s.branch) && (
         <div className={css.cardInfo}>
           {feature && (
@@ -154,7 +154,7 @@ function ProjectHeader({ project: p, tag, refused, onToggle, onRemove, onNew }: 
   return (
     <>
       <div className={css.folder} title={p.path} onClick={onToggle}>
-        <Icon name="folder" size={18} className={tagClass(tag, 'fg')} />
+        <Icon name="folder" size={16} className={tagClass(tag, 'fg')} />
         <span className={css.folderName}>{p.name}</span>
         <div className={css.folderActions} onClick={(e) => e.stopPropagation()}>
           <Button variant="ghost" size="sm" round icon="trash" aria-label="Remove project" title="Remove project"

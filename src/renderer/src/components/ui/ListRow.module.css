@@ -2,8 +2,8 @@
   position: relative;
   display: flex;
   flex-direction: column;
-  gap: var(--sp-1);
-  padding: 10px 12px;
+  gap: 2px;
+  padding: 6px 10px;
   background: var(--card-bg);
   border: 1px solid var(--card-border);
   border-radius: var(--r-card);
@@ -15,7 +15,7 @@
 }
 
 .compact {
-  padding: 8px 12px;
+  padding: 4px 10px;
 }
 
 .selected,
@@ -50,8 +50,8 @@
 .head {
   display: flex;
   align-items: center;
-  gap: 10px;
-  min-height: 22px;
+  gap: var(--sp-2);
+  min-height: 20px;
 }
 
 .title {
@@ -60,7 +60,7 @@
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
-  font-size: var(--fs-lg);
+  font-size: var(--fs-md);
   font-weight: var(--fw-bold);
   color: var(--text);
 }
@@ -88,13 +88,13 @@
 
 .meta {
   font-family: var(--font-mono);
-  font-size: var(--fs-md);
+  font-size: var(--fs-sm);
   color: var(--text-2);
 }
 
 .status {
   font-family: var(--font-mono);
-  font-size: var(--fs-md);
+  font-size: var(--fs-sm);
 }
 
 .s-running { color: var(--status-running); }
