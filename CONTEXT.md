@@ -48,10 +48,20 @@ specific meaning, so humans and agents stay consistent.
 - **Unlinked session**: a session with no link, shown directly under its project.
 - **Next action**: a workflow action offered for the current stage; clicking it
   starts a linked session with a templated prompt.
-- **Comment draft**: an inline comment anchored on quoted text in an artifact,
-  held by the app until the human explicitly sends it.
-- **Review tray**: the per-feature list of comment drafts, from which the human
-  sends feedback to a session.
+- **Comment draft**: a comment on session diff lines or on quoted text in a
+  markdown artifact, held in a session's review tray until the human explicitly
+  sends it (ADR 0025).
+- **Orphaned comment**: a draft whose anchored lines or quote can no longer be
+  found in the file; still listed and sendable, marked in the message.
+- **Review tray**: the per-session list of comment drafts plus one general
+  note; **Send** delivers them as one message to that session, then keeps
+  them in a collapsed Sent list (ADR 0024).
+- **Send path**: `sendToSession`, the one way core puts text into a session:
+  tmux bracketed paste then Enter, resuming a gone agent session first
+  (ADR 0023). Used by review comments and the Grove CLI.
+- **Grove CLI**: the `grove` command talking to the running app over
+  `<userData>/grove.sock`; sessions know themselves by `GROVE_SESSION_ID`
+  (ADR 0027).
 - **Slice**: one domain's whole state (`projects`, `sessions`, `ui`, later
   `features`, `comments`), held in memory by core and pushed to the renderer as a
   whole on every change (ADR 0011).

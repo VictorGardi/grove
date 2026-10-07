@@ -33,7 +33,11 @@ The app is built around sessions and review first. The order is:
 4. **Review comments** (`2026-10-07-review-comments`): several comments on
    diff lines and on markdown artifacts, collected in a tray and sent together
    to one session as a single message.
-5. **Packaging** (epic child 8).
+5. **Grove CLI** (added 2026-10-07): a `grove` command talking to the
+   running app, so agents in grove sessions can list, start and message other
+   grove sessions, as with Xirp's and herdr's CLIs. It reuses review
+   comments' send path.
+6. **Packaging** (epic child 8).
 
 Epic children 5 (next actions) and 7 (command palette and grid) are on hold.
 Child 6 (artifact comments) is superseded by review comments, which covers

@@ -13,10 +13,29 @@ export function TerminalView({ sessionId }: { sessionId: string }) {
     const term = new Terminal({
       allowProposedApi: true,
       macOptionIsMeta: false,
+      macOptionClickForcesSelection: true, // Option-drag selects in xterm, bypassing tmux's mouse
       theme: terminalTheme,
       fontFamily: 'Menlo, monospace',
       fontSize: 13,
       lineHeight: 1.35,
+    })
+    // tmux has the mouse, so a drag selects in tmux and it copies with OSC 52 ("52;c;<base64>").
+    term.parser.registerOscHandler(52, (data) => {
+      const b64 = data.slice(data.indexOf(';') + 1)
+      if (b64 && b64 !== '?') {
+        try {
+          const bytes = Uint8Array.from(atob(b64), (c) => c.charCodeAt(0))
+          void navigator.clipboard.writeText(new TextDecoder().decode(bytes)).catch(() => {})
+        } catch {
+          // not base64: ignore
+        }
+      }
+      return true
+    })
+    // Copy on select, for xterm's own selections (Option-drag, or apps that take the mouse).
+    const selection = term.onSelectionChange(() => {
+      const text = term.getSelection()
+      if (text) void navigator.clipboard.writeText(text).catch(() => {})
     })
     const fit = new FitAddon()
     term.loadAddon(fit)
@@ -70,6 +89,7 @@ export function TerminalView({ sessionId }: { sessionId: string }) {
       offData()
       offExit()
       input.dispose()
+      selection.dispose()
       term.dispose()
     }
   }, [sessionId])
