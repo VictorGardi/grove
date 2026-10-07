@@ -163,4 +163,4 @@ capture-2.1.285 `SessionStart`s are `4049dd18-706b-47d5-8458-0b22ffd98930` (star
 - [x] `src/renderer/src/components/Sidebar.tsx` line 86 and `src/renderer/src/App.tsx` line 93: `kind === 'opencode'` → `kind !== 'terminal'` (Resume button).
 - [x] Run `npm test -- src/core/claude src/core/sessions.test.ts`
 - [x] Run `npm run typecheck` and `npm test`
-- [ ] Manual (human): `npm run dev`, a Claude session, `/clear`, a prompt, kill the tmux server (`tmux -L grove kill-server`) → card gone → Resume → the post-clear conversation with its history; Remove the card → its spool file in `~/Library/Application Support/grove/agents/claude/` is gone.
+- [x] Manual (human): `npm run dev`, a Claude session, `/clear`, a prompt, kill the tmux server (`tmux -L grove kill-server`) → card gone → Resume → the post-clear conversation with its history; Remove the card → its spool file in `~/Library/Application Support/grove/agents/claude/` is gone.

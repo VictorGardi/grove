@@ -1,11 +1,11 @@
 ---
 feature: 2026-10-05-10-claude-code-sessions
 phase: implementation
-status: draft
+status: approved
 version: 1
 created: 2026-10-07
 updated: 2026-10-07
-approved_at:
+approved_at: 2026-10-07
 based_on:
   - 05-plan.md@3
 forced: []
@@ -19,7 +19,7 @@ forced: []
 - [x] Slice 2 — Seam generalised (D1), OpenCode unchanged 
 - [x] Slice 3 — Claude live status
 - [x] Slice 4 — Claude auto-link and restart catch-up
-- [ ] Slice 5 — Claude resume and cleanup
+- [x] Slice 5 — Claude resume and cleanup
 
 ## Slice 1
 
@@ -136,7 +136,7 @@ Deviations (mechanical, no design impact):
 - `forgetAgents(sessions)` helper in `core.ts`, called by `sessionRemove` and `projectRemove`.
 - `step` now returns a new fold when only the fold changed (`SessionStart` sets `resumeId` with no events); previously "no events" meant "same fold".
 
-Verification: `npm test -- src/core/claude src/core/sessions.test.ts` (76 passed), `npm run typecheck` clean, `npm test` (342 passed, outside the sandbox), `npm run build` ok. Manual check: pending (human).
+Verification: `npm test -- src/core/claude src/core/sessions.test.ts` (76 passed), `npm run typecheck` clean, `npm test` (342 passed, outside the sandbox), `npm run build` ok. Manual check passed (human, 2026-10-07).
 
 ## PR description
 
