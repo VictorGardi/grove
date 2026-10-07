@@ -36,4 +36,60 @@ describe('sendToSession', () => {
     backend.paste = async () => { throw new Error('no server running') }
     expect(await sendToSession(deps, { id: 'a', text: 'x' })).toEqual({ ok: false, error: 'no server running' })
   })
+
+  describe('gone agent sessions', () => {
+    const agent = { ...live, id: 'c', tmuxName: 'grove-c', kind: 'claude' as const, agentSessionId: 'x', lastStatus: 'gone' as const }
+
+    // A fake clock: sleeping advances it; the pane text is a function of the time.
+    function clocked(paneAt: (t: number) => string, resume: () => Promise<{ ok: true; data: null } | { ok: false; error: string }> = async () => ({ ok: true, data: null })) {
+      const backend = new FakeBackend()
+      let t = 0
+      const log: string[] = []
+      backend.capture = async () => paneAt(t)
+      const paste = backend.paste.bind(backend)
+      backend.paste = async (name, text, submit) => { log.push(`paste@${t}`); await paste(name, text, submit) }
+      const deps = {
+        find: (id: string) => [live, gone, agent].find((x) => x.id === id), backend,
+        resume: async () => { log.push('resume'); return resume() },
+        sleep: async (ms: number) => { t += ms },
+        now: () => t,
+      }
+      return { deps, backend, log, time: () => t }
+    }
+
+    it('resumes, waits for 1 s of stable capture, then pastes', async () => {
+      const { deps, backend, log } = clocked((t) => (t < 1500 ? 'loading' : t < 2250 ? 'booting' : 'ready'))
+      expect(await sendToSession(deps, { id: 'c', text: 'hi' })).toEqual({ ok: true, data: { id: 'c' } })
+      expect(log[0]).toBe('resume')
+      const at = Number(log[1].split('@')[1])
+      expect(at).toBeGreaterThanOrEqual(3250)
+      expect(at).toBeLessThan(4000)
+      expect(backend.pastes).toEqual([{ name: 'grove-c', text: 'hi', submit: true }])
+    })
+
+    it('says not-ready when the pane never settles', async () => {
+      const { deps, backend, time } = clocked((t) => String(t))
+      expect(await sendToSession(deps, { id: 'c', text: 'hi' })).toEqual({ ok: false, error: 'not-ready' })
+      expect(backend.pastes).toEqual([])
+      expect(time()).toBeGreaterThanOrEqual(20_000)
+      expect(time()).toBeLessThan(21_500)
+    })
+
+    it('an empty pane never counts as stable', async () => {
+      const { deps } = clocked(() => '')
+      expect(await sendToSession(deps, { id: 'c', text: 'hi' })).toEqual({ ok: false, error: 'not-ready' })
+    })
+
+    it('returns a resume failure and pastes nothing', async () => {
+      const { deps, backend } = clocked(() => 'ready', async () => ({ ok: false, error: 'no-source' }))
+      expect(await sendToSession(deps, { id: 'c', text: 'hi' })).toEqual({ ok: false, error: 'no-source' })
+      expect(backend.pastes).toEqual([])
+    })
+
+    it('a gone terminal stays gone', async () => {
+      const { deps, log } = clocked(() => 'ready')
+      expect(await sendToSession(deps, { id: 'b', text: 'hi' })).toEqual({ ok: false, error: 'gone' })
+      expect(log).toEqual([])
+    })
+  })
 })

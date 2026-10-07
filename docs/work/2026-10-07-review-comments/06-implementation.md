@@ -123,3 +123,23 @@ tray shows the new line; delete the line, it shows orphaned).
 - An unreadable file (deleted) is left alone, not orphaned.
 
 **Not done:** the manual check (insert a paragraph above a commented quote on disk; tray lines follow; edit the quote; orphaned).
+
+## Slice 6 — Send to working and gone sessions
+
+**Changed:** `send.ts`: a gone agent session (with an `agentSessionId`) is resumed through `deps.resume`, then after 1 s the pane is polled every 250 ms until its non-empty text has held for 1 s (`not-ready` at 20 s); a gone terminal stays `gone`; live and `working` sessions paste at once. Deps `sleep`/`now` allow a fake clock. Core wires `resume` to `sessionResume`. The tray maps `not-ready`, `gone`, `busy`, `empty` to readable messages and shows **Resuming…** while a gone session is resumed (else **Sending…**).
+
+**Tests:** `send.test.ts` (resume then 1 s stable then paste, never stable → `not-ready`, empty pane, resume failure, gone terminal), `comments/core.test.ts` (gone Claude session resumed and sent). `npm test` 457 pass; typecheck and `npm run build` clean.
+
+**Deviations:**
+- A gone agent session without an `agentSessionId` returns `gone`, like a terminal.
+- The core test waits about 1 s of real time (no clock injection into core).
+
+**Not done:** the manual check (kill a Claude pane with `tmux -L grove kill-session`, Send, agent answers).
+
+## PR description
+
+**Review comments.** Add several comments to a session's diff and to markdown artifacts, then send them to that session as one message.
+
+- **Design:** one `comments.json` (ADR 0024); sends are a tmux bracketed paste plus Enter for every session kind (ADR 0023); anchors hold position plus text and are re-anchored in core (ADR 0025); markdown artifacts load a bundled `comments.js` that talks over checked `postMessage` (ADR 0026).
+- **Slices:** 1 general note and Send from the **Review (n)** tray; 2 comments on diff lines (gutter **+**, shift range, selection); 3 diff drafts re-anchor and orphan; 4 comments on markdown artifacts; 5 markdown drafts re-anchor and orphan; 6 Send resumes a gone agent session and waits for a stable pane.
+- **Verify:** `npm test`, `npm run typecheck`, `npm run build`. By hand in `npm run dev`: send a note to an OpenCode and a Claude session; comment on diff lines and on a removed line; insert lines above a comment and see it follow, delete the line and see it orphaned; select text in a `03-design.md`, comment, reload, send; kill a Claude pane and Send.

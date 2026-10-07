@@ -96,3 +96,16 @@ Rules (design D3): `blockText(source)` returns one entry per leaf block (inline 
 - [x] Run `npm test`
 - [x] Run `npm run typecheck`
 - [ ] Manual: comment in a `03-design.md`, insert a paragraph above it on disk, and the tray line numbers follow; edit the quoted words and it shows orphaned.
+
+## Slice 6 — Send to working and gone sessions
+
+Rules (design "Send path"): `sendToSession` on a `gone` session: a terminal or an agent session without `agentSessionId` → `gone`. Otherwise call `deps.resume(id)` (failure → its error), sleep 1 s, then poll `backend.capture(name, 50)` every 250 ms; the pane is ready once its non-empty text has stayed unchanged for 1 s; still not ready 20 s after the resume → `not-ready`. Then paste and submit. A live session (`working` included) pastes at once. `deps` gets `resume`, `sleep(ms)` and `now()` (defaults: `setTimeout`, `Date.now`) so tests run on a fake clock.
+
+- [x] Write failing tests in `src/core/send.test.ts`: "gone agent → resume, waits for 1 s stable capture, then pastes" (fake clock; capture changes twice then holds; paste happens at ≥ 1 s after the last change, after the resume call), "never stable → not-ready at 20 s" (capture changes every poll; nothing pasted), "gone terminal → gone", "resume failure is returned", "empty capture never counts as stable".
+- [x] `src/core/send.ts`: implement per the rules (`SendDeps.resume`, `sleep`, `now`).
+- [x] `src/core/core.ts`: `sendDeps.resume = (id) => commands.sessionResume({ id })`.
+- [x] Write core test in `src/core/comments/core.test.ts`: a gone claude session with `agentSessionId`, `fake.captured` set for its pane, `reviewSend` resumes it and pastes once, marks sent.
+- [x] `src/renderer/src/components/ReviewTray.tsx`: show "Resuming the session… (Sending…)" text while sending a gone agent session; map errors `not-ready` → "The session did not become ready. Try again.", `gone` → "This session has ended and cannot be resumed.", `busy` → "A send is already running.".
+- [x] Run `npm test`
+- [x] Run `npm run typecheck`
+- [ ] Manual: `tmux -L grove kill-session` a Claude session's pane, then Send; it resumes and the agent answers.

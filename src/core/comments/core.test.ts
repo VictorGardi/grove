@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it } from 'vitest'
-import { createTerminal as create, setupCore } from '../testing/setup'
+import { createClaude, createTerminal as create, setupCore } from '../testing/setup'
 
 describe('core review comments', () => {
   let disposeAll = () => {}
@@ -70,4 +70,21 @@ describe('core review comments', () => {
     await third.start()
     expect(third.getSlices().comments).toEqual([])
   })
+
+  it('resumes a gone agent session before sending', async () => {
+    const s = setupCore()
+    disposeAll = s.disposeAll
+    const core = s.make()
+    await core.start()
+    const session = await createClaude(core)
+    s.fake.live.clear()
+    await core.checkLiveness()
+    expect(core.getSlices().sessions[0].lastStatus).toBe('gone')
+    s.fake.captured.set(session.tmuxName, 'prompt >')
+    await core.commands.commentAdd({ sessionId: session.id, anchor: { kind: 'note' }, body: 'hello again' })
+    expect(await core.commands.reviewSend({ sessionId: session.id })).toEqual({ ok: true, data: { sent: 1 } })
+    expect(core.getSlices().sessions[0].lastStatus).toBe('running')
+    expect(s.fake.pastes).toHaveLength(1)
+    expect(core.getSlices().comments[0].state).toBe('sent')
+  }, 15000)
 })

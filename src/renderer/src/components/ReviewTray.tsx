@@ -6,6 +6,13 @@ import { CommentEditor } from './CommentEditor'
 import { Button } from './ui/Button'
 import s from './ReviewTray.module.css'
 
+const SEND_ERRORS: Record<string, string> = {
+  empty: 'Nothing to send',
+  'not-ready': 'The session did not become ready. Try again.',
+  gone: 'This session has ended and cannot be resumed.',
+  busy: 'A send is already running.',
+}
+
 const sentAt = (iso: string | null) => (iso ? new Date(iso).toLocaleString([], { dateStyle: 'short', timeStyle: 'short' }) : '')
 
 const lineLabel = (c: Comment) => {
@@ -55,6 +62,8 @@ export function ReviewMenu({ sessionId }: { sessionId: string }) {
   const [open, setOpen] = useState(false)
   const [text, setText] = useState(note?.body ?? '')
   const [sending, setSending] = useState(false)
+  const [resuming, setResuming] = useState(false) // the session was gone when Send was pressed
+  const isGone = useSlices((x) => x.sessions.find((v) => v.id === sessionId)?.lastStatus === 'gone')
   const [error, setError] = useState<string | null>(null)
   const root = useRef<HTMLDivElement>(null)
 
@@ -92,10 +101,11 @@ export function ReviewMenu({ sessionId }: { sessionId: string }) {
   async function send() {
     setError(null)
     setSending(true)
+    setResuming(isGone)
     try {
       if (!(await saveNote())) return
       const res = await window.api.invoke('review:send', { sessionId })
-      if (!res.ok) setError(res.error === 'empty' ? 'Nothing to send' : res.error)
+      if (!res.ok) setError(SEND_ERRORS[res.error] ?? res.error)
     } finally {
       setSending(false)
     }
@@ -124,7 +134,7 @@ export function ReviewMenu({ sessionId }: { sessionId: string }) {
           {error && <div className={s.error}>{error}</div>}
           <div className={s.actions}>
             <Button variant="primary" size="sm" disabled={sending || (drafts.length === 0 && !text.trim())} onClick={() => void send()}>
-              {sending ? 'Sending…' : 'Send'}
+              {sending ? (resuming ? 'Resuming…' : 'Sending…') : 'Send'}
             </Button>
           </div>
           {sent.length > 0 && (

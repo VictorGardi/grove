@@ -508,7 +508,7 @@ export function createCore(opts: CoreOptions): Core {
     for (const s of gone) if (s.kind !== 'terminal' && s.agentSessionId) states.get(s.kind)?.source.forget(s.agentSessionId)
   }
 
-  const sendDeps = { find: findSession, backend }
+  const sendDeps = { find: findSession, backend, resume: (id: string) => commands.sessionResume({ id }) }
 
   const commands: Commands = {
     async projectAdd({ path }) {
