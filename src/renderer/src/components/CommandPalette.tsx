@@ -11,7 +11,9 @@ function Marked({ text, indices }: { text: string; indices: number[] }) {
   return <>{[...text].map((ch, i) => (hit.has(i) ? <mark key={i}>{ch}</mark> : ch))}</>
 }
 
-export function CommandPalette({ items, onClose }: { items: PaletteItem[]; onClose: () => void }) {
+const DEFAULT_PLACEHOLDER = 'Jump to a session, feature or project, or run a command…'
+
+export function CommandPalette({ items, onClose, placeholder = DEFAULT_PLACEHOLDER }: { items: PaletteItem[]; onClose: () => void; placeholder?: string }) {
   const [query, setQuery] = useState('')
   const [at, setAt] = useState(0)
   const results = useMemo(() => rank(items, query), [items, query])
@@ -37,7 +39,7 @@ export function CommandPalette({ items, onClose }: { items: PaletteItem[]; onClo
       <input
         autoFocus
         className={s.input}
-        placeholder="Jump to a session, feature or project, or run a command…"
+        placeholder={placeholder}
         aria-label="Command palette"
         value={query}
         onChange={(e) => { setQuery(e.target.value); setAt(0) }}

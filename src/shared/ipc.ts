@@ -3,7 +3,7 @@ import type { Comment, CommentAnchor, FeaturesSlice, OpenCodeSlice, Project, Ses
 export type Result<T> = { ok: true; data: T } | { ok: false; error: string }
 export type MenuAction =
   | { type: 'newSession' } | { type: 'closeSession' } | { type: 'focusIndex'; n: number } | { type: 'projectBoard' }
-  | { type: 'sessionDiff' }
+  | { type: 'sessionDiff' } | { type: 'toggleSidebar' } | { type: 'addToGrid' }
   | { type: 'newTerminal' } | { type: 'palette' } | { type: 'toggleGrid' } | { type: 'clearGrid' }
 // invoke channels: name → [args, result data]
 export interface InvokeMap {
@@ -12,7 +12,6 @@ export interface InvokeMap {
   'project:add': [void, Project | null]
   'project:remove': [{ id: string }, { id: string }]
   'session:create': [{ projectId: string; kind: SessionKind; cols: number; rows: number }, Session]
-  'session:kill': [{ id: string }, { id: string }]
   'session:remove': [{ id: string }, { id: string }]
   'session:resume': [{ id: string }, Session]
   'session:rename': [{ id: string; label: string }, Session]

@@ -28,7 +28,7 @@ import { readBranch } from './git'
 import type { AgentEvent, AgentKind, AgentSource } from './agents/types'
 import { autoLink, link, markGone, markSeen, newSession, reconcile, rename, resume, withBranches } from './sessions'
 import { loadConfig, saveConfig } from './store/configStore'
-import { apply, fromSnapshot, withStatus, type Tracker } from './status'
+import { apply, fromSnapshot, withContext, withStatus, type Tracker } from './status'
 import { loadState, saveState } from './store/stateStore'
 import { deriveFeatures } from './workflow/derive'
 import { parseWorkflow, type Workflow } from './workflow/parse'
@@ -127,6 +127,25 @@ export function createCore(opts: CoreOptions): Core {
   }]))
   let unreachableTimer: ReturnType<typeof setTimeout> | undefined
   let windowFocused = false
+  // Where focus was before it moved, newest last (in memory): removing the focused session returns to the latest still valid one.
+  type Focus = Pick<UiState, 'focusedSessionId' | 'focusedFeature' | 'focusedProject'>
+  const focusHistory: Focus[] = []
+  const FOCUS_HISTORY_MAX = 20
+  const sameFocus = (a: Focus, b: Focus) =>
+    a.focusedSessionId === b.focusedSessionId && a.focusedProject === b.focusedProject
+    && a.focusedFeature?.projectId === b.focusedFeature?.projectId && a.focusedFeature?.slug === b.focusedFeature?.slug
+  const focusOf = (ui: UiState): Focus => ({ focusedSessionId: ui.focusedSessionId, focusedFeature: ui.focusedFeature, focusedProject: ui.focusedProject })
+  const rememberFocus = (prev: Focus) => {
+    if (!prev.focusedSessionId && !prev.focusedFeature && !prev.focusedProject) return
+    const at = focusHistory.findIndex((f) => sameFocus(f, prev))
+    if (at >= 0) focusHistory.splice(at, 1)
+    focusHistory.push(prev)
+    if (focusHistory.length > FOCUS_HISTORY_MAX) focusHistory.shift()
+  }
+  const focusStillValid = (f: Focus) =>
+    f.focusedSessionId ? !!findSession(f.focusedSessionId)
+      : f.focusedFeature ? slices.features.items.some((x) => x.projectId === f.focusedFeature!.projectId && x.slug === f.focusedFeature!.slug)
+        : !!f.focusedProject && slices.projects.some((p) => p.id === f.focusedProject)
   let lastOnScreen: string | null = null
   const waitKey = new Map<string, string>() // session id → waitingFor it was last seen waiting with
   const held = new Map<string, string>() // session id → slug it wrote to that discovery hasn't listed yet
@@ -165,8 +184,10 @@ export function createCore(opts: CoreOptions): Core {
       })
     }
     else if (k === 'sessions' || k === 'ui') {
-      const sessions = slices.sessions.map(({ branch: _branch, status: _status, waitingFor: _waitingFor, ...s }) => s) // live-only
-      saveState(opts.statePath, { schemaVersion: 4, sessions, ui: slices.ui })
+      const sessions = slices.sessions.map(
+        ({ branch: _branch, status: _status, waitingFor: _waitingFor, contextPct: _p, contextTokens: _t, contextWindow: _w, model: _m, ...s }) => s,
+      ) // live-only
+      saveState(opts.statePath, { schemaVersion: 5, sessions, ui: slices.ui })
     }
     else if (k === 'comments') saveComments(opts.commentsPath, { schemaVersion: 1, comments: slices.comments })
     if (k === 'sessions') publish() // card state reads linked sessions
@@ -404,7 +425,10 @@ export function createCore(opts: CoreOptions): Core {
 
   function withAllStatus(sessions: Session[]): Session[] {
     let next = sessions
-    for (const st of states.values()) next = withStatus(next, st.source.kind, st.trackers, st.connected, st.source.statusNeedsEvent)
+    for (const st of states.values()) {
+      next = withStatus(next, st.source.kind, st.trackers, st.connected, st.source.statusNeedsEvent)
+      next = withContext(next, st.source.kind, st.trackers, st.connected)
+    }
     return next
   }
 
@@ -525,8 +549,15 @@ export function createCore(opts: CoreOptions): Core {
     for (const s of removed) comments = dropSession(comments, s.id)
     if (comments.length !== slices.comments.length) set('comments', comments)
     let ui = slices.ui
-    // the last project page takes over (ADR 0018)
-    if (focused && !findSession(focused.id)) ui = { ...ui, focusedSessionId: null, focusedProject: focused.projectId }
+    // back to where focus was before; failing that, the project page takes over (ADR 0018)
+    if (focused && !findSession(focused.id)) {
+      let back: Focus | undefined
+      while (focusHistory.length > 0 && !back) {
+        const f = focusHistory.pop()!
+        if (focusStillValid(f)) back = f
+      }
+      ui = { ...ui, ...(back ?? { focusedSessionId: null, focusedFeature: null, focusedProject: focused.projectId }) }
+    }
     const v = ui.viewer
     if (v?.kind === 'diff' && !findSession(v.sessionId)) ui = { ...ui, viewer: null }
     else if (v && v.kind !== 'diff' && v.fromDiff && !findSession(v.fromDiff)) ui = { ...ui, viewer: { ...v, fromDiff: null } }
@@ -615,10 +646,11 @@ export function createCore(opts: CoreOptions): Core {
       return { ok: true, data: { id } }
     },
 
+    // Ends the session if it is still running and forgets it. Kill alone leaves a resumable gone session (the CLI).
     async sessionRemove({ id }) {
       const session = findSession(id)
       if (!session) return { ok: false, error: 'not-found' }
-      if (session.lastStatus !== 'gone') return { ok: false, error: 'not-gone' }
+      await backend.kill(session.tmuxName) // already-missing counts as success
       dropSessions((s) => s.id !== id)
       forgetAgents([session])
       return { ok: true, data: { id } }
@@ -669,6 +701,7 @@ export function createCore(opts: CoreOptions): Core {
       if (partial.focusedSessionId) Object.assign(next, { focusedFeature: null, focusedProject: null })
       if (partial.focusedFeature) Object.assign(next, { focusedSessionId: null, focusedProject: null })
       if (partial.focusedProject) Object.assign(next, { focusedSessionId: null, focusedFeature: null })
+      if (!sameFocus(focusOf(slices.ui), focusOf(next))) rememberFocus(focusOf(slices.ui))
       set('ui', next)
       refreshStatus() // the on-screen session may have changed
       syncDiff()

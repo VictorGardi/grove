@@ -42,6 +42,15 @@ describe('SpoolClaude', () => {
     expect(await source.lastWrites('none')).toEqual([])
   })
 
+  it('snapshots the latest StatusLine reading as context', async () => {
+    const { dir, source } = setup()
+    fs.mkdirSync(dir, { recursive: true })
+    const sl = (used_percentage: number) => line({ hook_event_name: 'StatusLine', model: 'm', context_window: { context_window_size: 200000, used_percentage, current_usage: { input_tokens: 5 } } })
+    fs.appendFileSync(path.join(dir, 'u.jsonl'), sl(3) + sl(4))
+    source.start(() => {})
+    expect((await source.snapshot(['u'])).get('u')?.context).toEqual({ pct: 4, tokens: 5, window: 200000, model: 'm' })
+  })
+
   it('emits events for appended records and keeps the fold for snapshots', async () => {
     const { source, events, append } = setup()
     source.start((e) => events.push(e))

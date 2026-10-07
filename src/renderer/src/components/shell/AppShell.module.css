@@ -24,6 +24,7 @@
 .sidebar {
   width: var(--sidebar-w);
   flex-shrink: 0;
+  transition: width 150ms ease;
   display: flex;
   flex-direction: column;
 }

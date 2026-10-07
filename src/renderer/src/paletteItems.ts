@@ -1,5 +1,5 @@
 import type { MenuAction } from '@shared/ipc'
-import type { Feature, GridState, Project, Session } from '@shared/types'
+import type { Feature, GridState, Project, Session, SessionKind } from '@shared/types'
 import { fuzzy } from './fuzzy'
 import { featureStage } from './featureLabels'
 import { shownStatus } from './sessionStatus'
@@ -25,12 +25,33 @@ export interface PaletteActions {
 export const PALETTE_COMMANDS: { id: string; label: string; hint?: string; action: MenuAction }[] = [
   { id: 'newSession', label: 'New session', hint: '⌘T', action: { type: 'newSession' } },
   { id: 'newTerminal', label: 'New terminal', hint: '⌘J', action: { type: 'newTerminal' } },
-  { id: 'closeSession', label: 'Close session', hint: '⌘W', action: { type: 'closeSession' } },
+  { id: 'closeSession', label: 'Remove session', hint: '⌘W', action: { type: 'closeSession' } },
   { id: 'sessionDiff', label: 'Session diff', hint: '⌥⌘B', action: { type: 'sessionDiff' } },
-  { id: 'projectBoard', label: 'Project board', hint: '⌘B', action: { type: 'projectBoard' } },
+  { id: 'projectBoard', label: 'Project board', hint: '⇧⌘B', action: { type: 'projectBoard' } },
+  { id: 'toggleSidebar', label: 'Toggle sidebar', hint: '⌘B', action: { type: 'toggleSidebar' } },
   { id: 'toggleGrid', label: 'Show grid', hint: '⌘G', action: { type: 'toggleGrid' } }, // reads Hide grid while it shows
+  { id: 'addToGrid', label: 'Add session to grid and show', hint: '⇧⌘G', action: { type: 'addToGrid' } },
   { id: 'clearGrid', label: 'Clear grid', action: { type: 'clearGrid' } },
 ]
+
+// ⌘T: one entry per session kind and project, the current project's first. With several projects the name is in
+// the label, so typing "claude oth" reaches another project while a bare "c" still picks the current one.
+const NEW_SESSION_KINDS: { kind: SessionKind; label: string }[] = [
+  { kind: 'opencode', label: 'OpenCode' },
+  { kind: 'claude', label: 'Claude Code' },
+  { kind: 'terminal', label: 'Terminal' },
+]
+
+export function newSessionItems(projects: Project[], projectId: string | undefined, create: (projectId: string, kind: SessionKind) => void): PaletteItem[] {
+  const ordered = [...projects.filter((p) => p.id === projectId), ...projects.filter((p) => p.id !== projectId)]
+  return ordered.flatMap((p) => NEW_SESSION_KINDS.map((k) => ({
+    id: `new:${p.id}:${k.kind}`,
+    kind: 'command' as const,
+    label: projects.length > 1 ? `${k.label} · ${p.name}` : k.label,
+    detail: p.path,
+    run: () => create(p.id, k.kind),
+  })))
+}
 
 const KIND_ORDER: Record<PaletteItem['kind'], number> = { session: 0, feature: 1, project: 2, command: 3 }
 const DETAIL_PENALTY = 10 // a detail-only match ranks below any label match of similar quality

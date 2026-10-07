@@ -1,14 +1,14 @@
 import { describe, expect, it } from 'vitest'
 import type { Session } from '@shared/types'
 import { newSession } from './sessions'
-import { apply, fromSnapshot, statusOf, withStatus, type Tracker } from './status'
+import { apply, fromSnapshot, statusOf, withContext, withStatus, type Tracker } from './status'
 import { NOW } from './testing/setup'
 
 const AT = '2026-10-05T10:05:00.000Z'
 const none = new Map<string, string>()
 
 function tracker(over: Partial<Tracker> = {}): Tracker {
-  return { running: false, pending: new Map(), idleAt: null, children: new Set(), ...over }
+  return { running: false, pending: new Map(), idleAt: null, children: new Set(), context: null, ...over }
 }
 
 function oc(id: string, ocId: string, over: Partial<Session> = {}): Session {
@@ -154,5 +154,51 @@ describe('statusOf: finished turns', () => {
     const t = new Map([['ses_a', tracker({ idleAt: AT })], ['ses_b', tracker({ idleAt: AT })]])
     const out = withStatus([oc('a', 'ses_a'), oc('b', 'ses_b', { seenAt: AFTER })], 'opencode', t, true, false)
     expect(out.map((s) => s.waitingFor ?? s.status)).toEqual(['done', 'idle'])
+  })
+})
+
+describe('context', () => {
+  const ctx = { pct: 19, tokens: 190300, window: 1000000, model: 'm' }
+  const claude = (over: Partial<Session> = {}): Session => ({ ...newSession({ projectId: 'p', kind: 'claude', now: NOW, id: 'a', agentSessionId: 'u' }), ...over })
+
+  it('apply stores a reading on the tracker, creating it if needed', () => {
+    const t = apply(new Map(), none, { type: 'context', sessionId: 'u', context: ctx })
+    expect(t.get('u')).toEqual(tracker({ context: ctx }))
+    const next = apply(new Map([['u', tracker({ running: true })]]), none, { type: 'context', sessionId: 'u', context: ctx })
+    expect(next.get('u')).toEqual(tracker({ running: true, context: ctx }))
+  })
+
+  it('fromSnapshot carries the snapshot reading', () => {
+    const snap = { running: false, idleAt: null, pending: [], children: [], context: ctx }
+    expect(fromSnapshot(new Map([['u', snap]]), ['u']).trackers.get('u')?.context).toEqual(ctx)
+  })
+
+  it('withContext sets live fields and lastContext from the tracker', () => {
+    const [s] = withContext([claude()], 'claude', new Map([['u', tracker({ context: ctx })]]), true)
+    expect(s).toMatchObject({ contextPct: 19, contextTokens: 190300, contextWindow: 1000000, model: 'm', lastContext: { pct: 19, tokens: 190300, window: 1000000 } })
+  })
+
+  it('a null percentage shows "unknown" live but keeps the last reading', () => {
+    const last = { pct: 40, tokens: 1, window: 2 }
+    const unknown = { pct: null, tokens: null, window: 200000, model: 'm' }
+    const [s] = withContext([claude({ lastContext: last })], 'claude', new Map([['u', tracker({ context: unknown })]]), true)
+    expect(s).toMatchObject({ contextPct: null, contextTokens: null, contextWindow: 200000, lastContext: last })
+  })
+
+  it('drops the live fields when disconnected, keeping lastContext; never touches terminals or other kinds', () => {
+    const live = withContext([claude()], 'claude', new Map([['u', tracker({ context: ctx })]]), true)
+    const [s] = withContext(live, 'claude', new Map(), false)
+    expect(s.lastContext).toEqual({ pct: 19, tokens: 190300, window: 1000000 })
+    for (const k of ['contextPct', 'contextTokens', 'contextWindow', 'model']) expect(k in s).toBe(false)
+    const term = newSession({ projectId: 'p', kind: 'terminal', now: NOW, id: 't', agentSessionId: null })
+    expect(withContext([term, oc('o', 'x')], 'claude', new Map(), true)).toEqual([term, oc('o', 'x')])
+  })
+
+  it('returns the same array when nothing changed', () => {
+    const t = new Map([['u', tracker({ context: ctx })]])
+    const once = withContext([claude()], 'claude', t, true)
+    expect(withContext(once, 'claude', t, true)).toBe(once)
+    const sessions = [claude()]
+    expect(withContext(sessions, 'claude', new Map(), true)).toBe(sessions)
   })
 })

@@ -21,7 +21,7 @@ export function buildMenu(send: (a: MenuAction) => void, installCli: () => void)
       submenu: [
         { label: 'New Session', accelerator: 'CmdOrCtrl+T', click: () => send({ type: 'newSession' }) },
         { label: 'New Terminal', accelerator: 'CmdOrCtrl+J', click: () => send({ type: 'newTerminal' }) },
-        { label: 'Close Session', accelerator: 'CmdOrCtrl+W', click: () => send({ type: 'closeSession' }) },
+        { label: 'Remove Session', accelerator: 'CmdOrCtrl+W', click: () => send({ type: 'closeSession' }) },
       ],
     },
     {
@@ -46,12 +46,14 @@ export function buildMenu(send: (a: MenuAction) => void, installCli: () => void)
     },
   ]
   const view: MenuItemConstructorOptions[] = [
-    { label: 'Project Board', accelerator: 'CmdOrCtrl+B', click: () => send({ type: 'projectBoard' }) },
+    { label: 'Toggle Sidebar', accelerator: 'CmdOrCtrl+B', click: () => send({ type: 'toggleSidebar' }) },
+    { label: 'Project Board', accelerator: 'CmdOrCtrl+Shift+B', click: () => send({ type: 'projectBoard' }) },
     { label: 'Session Diff', accelerator: 'CmdOrCtrl+Alt+B', click: () => send({ type: 'sessionDiff' }) },
     { label: 'Session Grid', accelerator: 'CmdOrCtrl+G', click: () => send({ type: 'toggleGrid' }) },
+    { label: 'Add Session to Grid', accelerator: 'CmdOrCtrl+Shift+G', click: () => send({ type: 'addToGrid' }) },
     { label: 'Command Palette', accelerator: 'CmdOrCtrl+K', click: () => send({ type: 'palette' }) },
   ]
   if (!app.isPackaged) view.push({ type: 'separator' }, { role: 'toggleDevTools' }, { role: 'reload' })
-  template.push({ label: 'View', submenu: view })
+  template.push({ label: 'View', submenu: view }, { role: 'windowMenu' }) // minimize and fullscreen, now the window buttons are hidden
   Menu.setApplicationMenu(Menu.buildFromTemplate(template))
 }

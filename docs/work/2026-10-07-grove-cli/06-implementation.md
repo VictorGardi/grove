@@ -1,10 +1,11 @@
 ---
 feature: 2026-10-07-grove-cli
 phase: implementation
-status: draft
+status: approved
 version: 1
 created: 2026-10-07
 updated: 2026-10-07
+approved_at: 2026-10-07
 based_on:
   - 05-plan.md@1
 forced: []

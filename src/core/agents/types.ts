@@ -1,5 +1,13 @@
 import type { SessionKind } from '@shared/types'
 
+// What an agent reports about its context window; null: not known (early in a session, after /compact).
+export interface ContextUsage {
+  pct: number | null // of the window; the agent's own figure
+  tokens: number | null // input incl. cache, excluding output
+  window: number | null // tokens
+  model: string | null
+}
+
 // Agent-neutral events and the adapter seam (ADR 0019). Each agent's own shapes stay in its adapter.
 export type AgentEvent =
   | { type: 'connected'; version: string }
@@ -8,6 +16,7 @@ export type AgentEvent =
   | { type: 'exec-ended'; sessionId: string; at: string } // succeeded | failed | interrupted
   | { type: 'pending'; sessionId: string; id: string; kind: 'permission' | 'question'; open: boolean }
   | { type: 'child'; sessionId: string; parentId: string } // a subagent session and its parent
+  | { type: 'context'; sessionId: string; context: ContextUsage } // a new reading
   | { type: 'wrote'; sessionId: string; paths: string[] } // a write/edit/patch succeeded; raw paths
 
 // A session's state as read on (re)connect; pending items are its own, children listed separately.
@@ -16,6 +25,7 @@ export interface SessionSnapshot {
   idleAt: string | null
   pending: { id: string; kind: 'permission' | 'question' }[]
   children: string[]
+  context?: ContextUsage // the latest reading, if the agent reports one
 }
 
 export type AgentKind = Exclude<SessionKind, 'terminal'>

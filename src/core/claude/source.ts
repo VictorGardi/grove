@@ -38,7 +38,7 @@ export class SpoolClaude implements AgentSource {
     for (const id of ids) {
       const f = this.folds.get(id)
       if (!f) continue // no record yet: no status (live gate)
-      out.set(id, { running: f.running, idleAt: f.idleAt, pending: [...f.pending].map(([id, kind]) => ({ id, kind })), children: [] })
+      out.set(id, { running: f.running, idleAt: f.idleAt, pending: [...f.pending].map(([id, kind]) => ({ id, kind })), children: [], ...(f.context && { context: f.context }) })
     }
     return out
   }

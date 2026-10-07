@@ -1,0 +1,183 @@
+.rail {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  height: 100%;
+  padding: var(--sp-2) 0;
+  gap: var(--sp-2);
+}
+
+.expand,
+.gridBtn {
+  position: relative;
+  width: 36px;
+  height: 36px;
+  flex-shrink: 0;
+  display: grid;
+  place-items: center;
+  border: 0;
+  border-radius: var(--r-md);
+  background: none;
+  color: var(--text-2);
+  cursor: pointer;
+}
+
+.expand:hover,
+.gridBtn:hover:not(:disabled) {
+  background: var(--raised-bg);
+  color: var(--text);
+}
+
+.gridBtn:disabled {
+  color: var(--text-3);
+  cursor: default;
+}
+
+.gridBtn.on {
+  background: var(--raised-bg);
+  color: var(--text);
+}
+
+.count {
+  position: absolute;
+  top: 3px;
+  right: 4px;
+  font-size: 10px;
+  font-weight: var(--fw-bold);
+  line-height: 1;
+  color: var(--text-2);
+}
+
+.list {
+  flex: 1;
+  min-height: 0;
+  width: 100%;
+  overflow-y: auto;
+  scrollbar-width: none;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: var(--sp-3);
+}
+
+.group {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 6px;
+}
+
+/* the project's colour, as a short bar above its tiles */
+.bar {
+  width: 16px;
+  height: 3px;
+  border-radius: var(--r-pill);
+  background: currentColor;
+  opacity: 0.85;
+}
+
+.tile {
+  position: relative;
+  width: 36px;
+  height: 36px;
+  display: grid;
+  place-items: center;
+  border: 1px solid transparent;
+  border-radius: var(--r-md);
+  background: var(--raised-bg);
+  color: var(--text-2);
+  cursor: pointer;
+  transition: background 120ms, color 120ms;
+}
+
+.tile:hover {
+  color: var(--text);
+  background: var(--header-divider);
+}
+
+.focused,
+.focused:hover {
+  color: var(--text);
+  background: var(--header-divider);
+  border-color: var(--text-3);
+}
+
+.ended {
+  opacity: 0.45;
+}
+
+/* status: a dot on the tile's corner */
+.dot {
+  position: absolute;
+  right: 4px;
+  bottom: 4px;
+  width: 7px;
+  height: 7px;
+  border-radius: var(--r-pill);
+  background: var(--status-idle);
+  box-shadow: 0 0 0 2px var(--panel-bg);
+}
+
+.working { background: var(--status-working); }
+.done { background: var(--status-finished); }
+.dot.gone { background: var(--status-gone); }
+
+.dot.waiting {
+  background: var(--status-waiting);
+  animation: pulse 1.6s ease-in-out infinite;
+}
+
+@keyframes pulse {
+  50% { box-shadow: 0 0 0 2px var(--panel-bg), 0 0 0 5px color-mix(in srgb, var(--status-waiting) 35%, transparent); }
+}
+
+/* the "N waiting" count: focuses the longest-waiting session */
+.waitingPill {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 5px;
+  width: 36px;
+  height: 28px;
+  border: 0;
+  border-radius: var(--r-md);
+  background: var(--raised-bg);
+  color: var(--text-2);
+  font: inherit;
+  font-size: var(--fs-sm);
+  cursor: pointer;
+}
+
+.waitingPill:hover {
+  color: var(--text);
+}
+
+.waitingPill::before {
+  content: '';
+  width: 6px;
+  height: 6px;
+  border-radius: var(--r-pill);
+  background: var(--status-waiting);
+}
+
+/* in the session grid */
+.grid {
+  position: absolute;
+  left: 4px;
+  bottom: 4px;
+  width: 7px;
+  height: 7px;
+  border-radius: 2px;
+  background: var(--text-2);
+  box-shadow: 0 0 0 2px var(--panel-bg);
+}
+
+.bottom {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: var(--sp-2);
+  width: 100%;
+  padding-top: var(--sp-2);
+  border-top: 1px solid var(--divider);
+}

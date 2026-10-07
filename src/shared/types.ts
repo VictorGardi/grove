@@ -1,5 +1,7 @@
 export interface Project { id: string; name: string; path: string }
 export type SessionKind = 'opencode' | 'claude' | 'terminal'
+// The last context reading of an agent session, kept so an ended session shows it dimmed; pct is always known.
+export interface ContextReading { pct: number; tokens: number | null; window: number | null }
 export interface Session {
   id: string
   projectId: string
@@ -19,6 +21,11 @@ export interface Session {
   branch?: string | null           // live sessions: branch at the pane's current directory; never saved
   status?: 'working' | 'waiting' | 'idle' // OpenCode sessions while the service is connected; never saved
   waitingFor?: 'permission' | 'question' | 'done' // with status 'waiting'; never saved
+  contextPct?: number | null       // Claude sessions once a reading arrived: % of the context window used; null: not known yet; never saved
+  contextTokens?: number | null    // tokens in context (input incl. cache); never saved
+  contextWindow?: number | null    // size of the context window in tokens; never saved
+  model?: string | null            // the model in use; never saved
+  lastContext: ContextReading | null // the last known reading (pct known); persisted
 }
 export interface ArtifactTarget { kind: 'artifact'; projectId: string; slug: string; path: string; hash: string | null; fromDiff: string | null }
 // a viewable file anywhere in the project folder (ADR 0022); path relative POSIX
@@ -54,6 +61,7 @@ export const GRID_MAX = 9 // one Cmd+1..9 per pane
 export interface GridState { open: boolean; members: string[] } // member session ids, in grid order
 export interface UiState {
   sidebarWidth: number
+  sidebarCollapsed: boolean // ⌘B: the sidebar shrinks to a rail of session tiles
   focusedSessionId: string | null
   focusedFeature: { projectId: string; slug: string } | null
   focusedProject: string | null // the project page; the three focuses are exclusive (ADR 0018)
@@ -115,8 +123,9 @@ export interface Comment {
 export interface CommentsFile { schemaVersion: 1; comments: Comment[] }
 export type Slices = { projects: Project[]; sessions: Session[]; ui: UiState; features: FeaturesSlice; opencode: OpenCodeSlice; diff: SessionDiff | null; comments: Comment[] } // diff: the one on screen, not persisted
 export interface ConfigFile { schemaVersion: 1; projects: Project[]; workflow?: string }
-export interface StateFile { schemaVersion: 4; sessions: Session[]; ui: UiState }
+export interface StateFile { schemaVersion: 5; sessions: Session[]; ui: UiState }
+export const SIDEBAR_RAIL_WIDTH = 56 // the collapsed sidebar
 export const SIDEBAR_WIDTH = 220 // fixed: the sidebar has no resize handle, so a saved width is ignored
-export const DEFAULT_UI: UiState = { sidebarWidth: SIDEBAR_WIDTH, focusedSessionId: null, focusedFeature: null, focusedProject: null, sidebarTab: 'sessions', board: 'sessions', collapsed: [], viewer: null, viewerWidth: 480, viewerExpanded: false, grid: { open: false, members: [] } }
+export const DEFAULT_UI: UiState = { sidebarWidth: SIDEBAR_WIDTH, sidebarCollapsed: false, focusedSessionId: null, focusedFeature: null, focusedProject: null, sidebarTab: 'sessions', board: 'sessions', collapsed: [], viewer: null, viewerWidth: 480, viewerExpanded: false, grid: { open: false, members: [] } }
 export const EMPTY_FEATURES: FeaturesSlice = { workflowError: null, stages: [], items: [] }
 export const OPENCODE_CONNECTING: OpenCodeSlice = { state: 'connecting', version: null }

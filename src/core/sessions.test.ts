@@ -193,14 +193,13 @@ describe('core sessions', () => {
     expect(a.getSlices().sessions[0].lastStatus).toBe('gone')
   })
 
-  it('removes only gone sessions', async () => {
-    const { make } = setup()
+  it('removes a running session, ending it', async () => {
+    const { fake, make } = setup()
     const a = make()
     await a.start()
     const s = await create(a)
-    expect(await a.commands.sessionRemove({ id: s.id })).toEqual({ ok: false, error: 'not-gone' })
-    await a.commands.sessionKill({ id: s.id })
     expect(await a.commands.sessionRemove({ id: s.id })).toEqual({ ok: true, data: { id: s.id } })
+    expect(fake.live.has(s.tmuxName)).toBe(false)
     expect(a.getSlices().sessions).toEqual([])
   })
 
@@ -210,9 +209,33 @@ describe('core sessions', () => {
     await a.start()
     const s = await create(a)
     await a.commands.uiSet({ focusedSessionId: s.id })
-    await a.commands.sessionKill({ id: s.id })
     await a.commands.sessionRemove({ id: s.id })
     expect(a.getSlices().ui).toMatchObject({ focusedSessionId: null, focusedProject: s.projectId })
+  })
+
+  it('returns to the previous focus when the focused session is removed', async () => {
+    const { make } = setup()
+    const a = make()
+    await a.start()
+    const before = await create(a)
+    const term = await create(a)
+    await a.commands.uiSet({ focusedSessionId: before.id })
+    await a.commands.uiSet({ focusedSessionId: term.id })
+    await a.commands.sessionRemove({ id: term.id })
+    expect(a.getSlices().ui).toMatchObject({ focusedSessionId: before.id, focusedProject: null })
+  })
+
+  it('skips previous focuses that are gone', async () => {
+    const { make } = setup()
+    const a = make()
+    await a.start()
+    const gone = await create(a)
+    const term = await create(a)
+    await a.commands.uiSet({ focusedSessionId: gone.id })
+    await a.commands.uiSet({ focusedSessionId: term.id })
+    await a.commands.sessionRemove({ id: gone.id })
+    await a.commands.sessionRemove({ id: term.id })
+    expect(a.getSlices().ui).toMatchObject({ focusedSessionId: null, focusedProject: term.projectId })
   })
 
   it('renames and pins the label across restarts', async () => {

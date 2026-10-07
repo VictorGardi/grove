@@ -6,11 +6,6 @@ describe('gridCols', () => {
   it('picks 1, 2 or 3 columns by count', () => {
     expect([0, 1, 2, 4, 5, 9].map((n) => gridCols(n))).toEqual([1, 1, 2, 2, 3, 3])
   })
-  it('is capped by maxCols', () => {
-    expect(gridCols(9, 2)).toBe(2)
-    expect(gridCols(4, 1)).toBe(1)
-    expect(gridCols(2, 3)).toBe(2)
-  })
 })
 
 describe('gridShown', () => {
@@ -74,13 +69,19 @@ describe('visibleMembers', () => {
   })
 })
 
+describe('visibleMembers with a layout', () => {
+  it('keeps only as many panes as the layout has cells', () => {
+    const many = ['a', 'b', 'c', 'd', 'e'].map((id) => ({ id, projectId: 'p', lastStatus: 'running' }) as Session)
+    expect(visibleMembers(many, { ...DEFAULT_GRID_VIEW, layout: { cols: 2, rows: 2 } }).map((x) => x.id)).toEqual(['a', 'b', 'c', 'd'])
+  })
+})
+
 describe('layoutLabel', () => {
   it('is cols×rows of the visible panes', () => {
-    expect([0, 1, 2, 5, 9].map((n) => layoutLabel(n, 3))).toEqual(['0×0', '1×1', '2×1', '3×2', '3×3'])
+    expect([0, 1, 2, 5, 9].map((n) => layoutLabel(n, null))).toEqual(['0×0', '1×1', '2×1', '3×2', '3×3'])
   })
-  it('respects the maximum columns', () => {
-    expect(layoutLabel(4, 1)).toBe('1×4')
-    expect(layoutLabel(9, 2)).toBe('2×5')
+  it('shows a chosen layout as picked', () => {
+    expect(layoutLabel(9, { cols: 4, rows: 2 })).toBe('4×2')
   })
 })
 

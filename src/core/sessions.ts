@@ -24,6 +24,7 @@ export function newSession(o: { projectId: string; kind: SessionKind; now: Date;
     endedAt: null,
     lastStatus: 'running',
     seenAt: null,
+    lastContext: null,
   }
 }
 

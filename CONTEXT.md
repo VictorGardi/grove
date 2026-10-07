@@ -42,6 +42,9 @@ specific meaning, so humans and agents stay consistent.
   window focused; a finished turn after it makes the session waiting.
 - **Resume**: restarting a gone agent session in a new tmux session with
   `opencode -s <id>` or `claude --resume <id>`, keeping its id, label and link.
+- **Remove**: ends a session if it is running and forgets it, with no confirmation
+  (⌘W, the card's ×, or right-click on a shift-click selection). Not resumable.
+  `grove kill` only ends it, leaving a gone session to resume.
 - **Link**: a session's association with one feature. Set at start by a next
   action, automatically from the session's latest write into a feature folder,
   or manually; a manual link is **pinned** and stops auto-linking.
@@ -65,6 +68,12 @@ specific meaning, so humans and agents stay consistent.
 - **Slice**: one domain's whole state (`projects`, `sessions`, `ui`, later
   `features`, `comments`), held in memory by core and pushed to the renderer as a
   whole on every change (ADR 0011).
+- **Session grid**: the content view that shows the grid's member sessions
+  (up to 9, picked by hand from any project) as auto-tiled live terminals,
+  each with its own attach. Shown when `ui.grid.open` and the focused session
+  is a member; the focused pane is the only one marked seen (ADR 0031).
+- **Command palette**: the Cmd+K overlay that fuzzy-matches sessions,
+  features, projects and app commands, and jumps or runs on Enter.
 - **Attach**: one node-pty `tmux attach` client showing a session in xterm.js.
   Closing an attach never ends the session.
 - **Token**: a named design value (colour, type, spacing, radius, size) as a

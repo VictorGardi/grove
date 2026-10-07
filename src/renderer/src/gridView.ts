@@ -6,10 +6,19 @@ export function gridShown(ui: Pick<UiState, 'grid' | 'focusedSessionId'>): boole
   return open && members.length > 0 && ui.focusedSessionId !== null && members.includes(ui.focusedSessionId)
 }
 
-// Columns for n panes: 1; 2-4 -> 2; 5-9 -> 3; never more than maxCols.
-export function gridCols(n: number, maxCols = 3): 1 | 2 | 3 {
-  const auto = n <= 1 ? 1 : n <= 4 ? 2 : 3
-  return Math.min(auto, maxCols) as 1 | 2 | 3
+// Columns for n panes when the layout is automatic: 1; 2-4 -> 2; 5-9 -> 3.
+export function gridCols(n: number): number {
+  return n <= 1 ? 1 : n <= 4 ? 2 : 3
+}
+
+export interface GridLayout { cols: number; rows: number }
+export const LAYOUT_MAX = 4 // the picker offers up to 4×4
+
+// The shape of n panes: the chosen layout, else automatic columns with as many rows as needed.
+export function gridShape(n: number, layout: GridLayout | null): GridLayout {
+  if (layout) return layout
+  const cols = gridCols(n)
+  return { cols, rows: Math.max(1, Math.ceil(n / cols)) }
 }
 
 // Toggles a session in the grid. A new member goes last and the tenth is refused; the grid closes when emptied.
@@ -28,21 +37,23 @@ export function paneTitle(project: Project | undefined, session: Session): strin
 }
 
 // Toolbar settings: view-only, never persisted.
-export interface GridView { filter: string | null; maxCols: 1 | 2 | 3; hideEnded: boolean; dim: number } // dim: opacity of unfocused panes
-export const DEFAULT_GRID_VIEW: GridView = { filter: null, maxCols: 3, hideEnded: false, dim: 0.65 }
+export interface GridView { filter: string | null; layout: GridLayout | null; hideEnded: boolean; dim: number } // dim: opacity of unfocused panes
+export const DEFAULT_GRID_VIEW: GridView = { filter: null, layout: null, hideEnded: false, dim: 0.65 }
 export const DIM_RANGE = { min: 0.3, max: 1 }
 
-// The panes the grid lays out: the project filter (ignored when no member is in that project), then hide-ended.
+// The panes the grid lays out: the project filter (ignored when no member is in that project), then hide-ended,
+// then as many as a chosen layout has cells.
 export function visibleMembers(members: Session[], view: GridView): Session[] {
   const filter = view.filter !== null && members.some((m) => m.projectId === view.filter) ? view.filter : null
-  return members.filter((m) => (filter === null || m.projectId === filter) && !(view.hideEnded && m.lastStatus === 'gone'))
+  const shown = members.filter((m) => (filter === null || m.projectId === filter) && !(view.hideEnded && m.lastStatus === 'gone'))
+  return view.layout ? shown.slice(0, view.layout.cols * view.layout.rows) : shown
 }
 
 // "cols×rows" of n panes, e.g. "2×1".
-export function layoutLabel(n: number, maxCols: number): string {
-  if (n === 0) return '0×0'
-  const cols = gridCols(n, maxCols)
-  return `${cols}×${Math.ceil(n / cols)}`
+export function layoutLabel(n: number, layout: GridLayout | null): string {
+  if (n === 0 && !layout) return '0×0'
+  const { cols, rows } = gridShape(n, layout)
+  return `${cols}×${rows}`
 }
 
 // Who takes focus when `id` leaves the grid: the member after it, else the one before; null when it was the last.

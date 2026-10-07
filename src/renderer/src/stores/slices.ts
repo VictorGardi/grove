@@ -24,6 +24,7 @@ interface SlicesState {
   go(to: Partial<UiState>): void // a breadcrumb up-link
   setBoard(board: UiState['board']): void
   setSidebarTab(tab: UiState['sidebarTab']): void
+  toggleSidebar(): void
   openArtifact(t: DocTarget): void
   openDiff(sessionId: string): void
   openRendered(projectId: string, sessionId: string, r: NonNullable<DiffFile['rendered']>): void // "← Diff" returns to sessionId
@@ -33,6 +34,7 @@ interface SlicesState {
   reloadViewer(): void
   toggleGrid(): void // show or hide the session grid; no-op with no members
   toggleGridMember(id: string): void
+  addFocusedToGrid(): void // ⇧⌘G: put the focused session in the grid and show it; in a showing grid, pull the focused pane out to full screen
   openAlone(id: string): void // focus a session and turn the grid off
   clearGrid(): void
 }
@@ -78,6 +80,7 @@ export const useSlices = create<SlicesState>((set, get) => {
     openProject: (id) => { void window.api.invoke('ui:set', openBoard(id)) },
     go: (to) => { void window.api.invoke('ui:set', to) },
     setBoard: (board) => { void window.api.invoke('ui:set', { board }) },
+    toggleSidebar: () => { void window.api.invoke('ui:set', { sidebarCollapsed: !get().ui.sidebarCollapsed }) },
     setSidebarTab: (tab) => { void window.api.invoke('ui:set', { sidebarTab: tab }) },
     openArtifact: (t) => { void window.api.invoke('ui:set', { viewer: t }) },
     openDiff: (sessionId) => { void window.api.invoke('ui:set', { viewer: { kind: 'diff', sessionId }, viewerExpanded: true }) }, // the file list shows only when expanded
@@ -106,6 +109,16 @@ export const useSlices = create<SlicesState>((set, get) => {
       void window.api.invoke('ui:set', next
         ? { grid: withMember(ui.grid, id), focusedSessionId: next }
         : { grid: withMember(ui.grid, id) })
+    },
+    addFocusedToGrid() {
+      const { ui } = get()
+      const id = ui.focusedSessionId
+      if (!id) return
+      // the pane leaves the grid and stays focused, so it shows alone; ⇧⌘G again puts it back
+      if (gridShown(ui)) return void window.api.invoke('ui:set', { grid: withMember(ui.grid, id) })
+      const grid = ui.grid.members.includes(id) ? ui.grid : withMember(ui.grid, id)
+      if (!grid.members.includes(id)) return // the grid holds its nine
+      void window.api.invoke('ui:set', { grid: { ...grid, open: true } })
     },
     openAlone: (id) => { void window.api.invoke('ui:set', { focusedSessionId: id, grid: { ...get().ui.grid, open: false } }) },
     clearGrid: () => { void window.api.invoke('ui:set', { grid: { open: false, members: [] } }) },

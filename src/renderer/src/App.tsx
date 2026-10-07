@@ -1,36 +1,38 @@
 import { useCallback, useEffect, useState } from 'react'
-import type { Feature, Session, ViewerTarget } from '@shared/types'
+import type { Feature, Session, SessionKind, ViewerTarget } from '@shared/types'
 import type { MenuAction } from '@shared/ipc'
-import { SIDEBAR_WIDTH } from '@shared/types'
+import { SIDEBAR_RAIL_WIDTH, SIDEBAR_WIDTH } from '@shared/types'
 import { ArtifactViewer } from './components/ArtifactViewer'
 import { CommandPalette } from './components/CommandPalette'
-import { ConfirmDialog } from './components/ConfirmDialog'
 import { DiffViewer } from './components/DiffViewer'
 import { FeaturePage } from './components/FeaturePage'
-import { NewSessionModal } from './components/NewSessionModal'
 import { ProjectPage } from './components/ProjectPage'
 import { SessionGrid } from './components/SessionGrid'
 import { Sidebar } from './components/Sidebar'
+import { SidebarRail } from './components/SidebarRail'
 import { TerminalView } from './components/TerminalView'
 import { AppShell } from './components/shell/AppShell'
 import { BoardSwitch } from './components/shell/BoardSwitch'
+import { ContextPopover } from './components/ContextGauge'
 import { ContentHeader } from './components/shell/ContentHeader'
 import { TopBar } from './components/shell/TopBar'
 import { Banner } from './components/ui/Banner'
+import { ConfirmDialog } from './components/ConfirmDialog'
 import { Button } from './components/ui/Button'
-import { paletteItems } from './paletteItems'
+import { newSessionItems, paletteItems } from './paletteItems'
 import { DEFAULT_GRID_VIEW, gridShown, visibleMembers, type GridView } from './gridView'
+import { contextView } from './contextGauge'
 import { boardKey, childrenOf, content, crumbs, currentProjectId, focusTarget } from './navigation'
-import { longestWaiting, serviceBanners, shownStatus } from './sessionStatus'
+import { serviceBanners } from './sessionStatus'
 import { useSlices } from './stores/slices'
 import { viewableFiles } from './viewerFiles'
 import s from './App.module.css'
 
 export default function App() {
-  const { projects, sessions, ui, features, opencode, diff, errors, waitingSince, statusSince, hydrate, setFocused, focusFeature, openProject, toggleGrid, clearGrid, go, setBoard,
+  const { projects, sessions, ui, features, opencode, diff, errors, statusSince, hydrate, setFocused, focusFeature, openProject, toggleGrid, addFocusedToGrid, toggleSidebar, clearGrid, go, setBoard,
     openArtifact, openDiff, openRendered, closeViewer, setViewerWidth, toggleViewerExpanded, reloadViewer } = useSlices()
-  const [newFor, setNewFor] = useState<{ projectId?: string } | null>(null)
-  const [confirmKill, setConfirmKill] = useState<Session | null>(null)
+  const [quickNew, setQuickNew] = useState<{ projectId?: string } | null>(null) // ⌘T: the new-session palette
+  const [confirmRemove, setConfirmRemove] = useState<Session | null>(null) // ⌘W asks first
   const [paletteOpen, setPaletteOpen] = useState(false)
   const [gridView, setGridView] = useState<GridView>(DEFAULT_GRID_VIEW) // toolbar settings, view-only
 
@@ -50,8 +52,10 @@ export default function App() {
     const { projects, sessions, ui, features } = useSlices.getState()
     if (a.type === 'palette') setPaletteOpen(true)
     else if (a.type === 'toggleGrid') toggleGrid()
+    else if (a.type === 'addToGrid') addFocusedToGrid()
+    else if (a.type === 'toggleSidebar') toggleSidebar()
     else if (a.type === 'clearGrid') clearGrid()
-    else if (a.type === 'newSession') setNewFor({ projectId: currentProjectId(content(ui, projects, sessions, features.items)) ?? undefined })
+    else if (a.type === 'newSession') setQuickNew({ projectId: currentProjectId(content(ui, projects, sessions, features.items)) ?? undefined })
     else if (a.type === 'newTerminal') {
       const projectId = currentProjectId(content(ui, projects, sessions, features.items))
       if (projectId) {
@@ -62,7 +66,7 @@ export default function App() {
     }
     else if (a.type === 'closeSession') {
       const focused = sessions.find((x) => x.id === ui.focusedSessionId)
-      if (focused?.lastStatus === 'running') setConfirmKill(focused)
+      if (focused) setConfirmRemove(focused)
     } else if (a.type === 'focusIndex') {
       const target = focusTarget(ui, projects, sessions, features.items, a.n, gridView)
       if (target) setFocused(target.id)
@@ -72,11 +76,15 @@ export default function App() {
     } else if (a.type === 'sessionDiff') {
       if (ui.focusedSessionId) toggleDiff(ui.focusedSessionId, ui.viewer)
     }
-  }, [setFocused, go, toggleDiff, toggleGrid, clearGrid, gridView])
+  }, [setFocused, go, toggleDiff, toggleGrid, addFocusedToGrid, toggleSidebar, clearGrid, gridView])
 
   useEffect(() => window.api.on('menu:action', runAction), [runAction])
 
-  const openNew = (projectId?: string) => setNewFor({ projectId })
+  const createSession = (projectId: string, kind: SessionKind) => {
+    void window.api.invoke('session:create', { projectId, kind, cols: 120, rows: 40 }).then((res) => {
+      if (res.ok) setFocused(res.data.id)
+    })
+  }
   const shown = content(ui, projects, sessions, features.items)
   // a filter or the eye can hide the focused pane: focus the first one still visible
   const changeGridView = (next: GridView) => {
@@ -86,29 +94,26 @@ export default function App() {
     if (visible.length > 0 && !visible.some((x) => x.id === shown.focused.id)) setFocused(visible[0].id)
   }
   const header = crumbs(shown, projects, features.items).map((c) => ({ label: c.label, onClick: c.to && (() => go(c.to!)) }))
+  const context = shown.kind === 'session' ? contextView(shown.session) : null
   const openFeature = (f: Feature) => focusFeature({ projectId: f.projectId, slug: f.slug })
   const v = ui.viewer
   const viewerFeature = v?.kind === 'artifact' ? features.items.find((f) => f.projectId === v.projectId && f.slug === v.slug) : undefined
   const diffOpen = (id: string) => v?.kind === 'diff' && v.sessionId === id
-  const waitingCount = sessions.filter((x) => shownStatus(x) === 'waiting').length
-  const focusWaiting = () => {
-    const w = longestWaiting(sessions, waitingSince)
-    if (w) setFocused(w.id)
-  }
 
   return (
     <>
       <AppShell
-        topBar={<TopBar onNew={() => openNew()} onSearch={() => setPaletteOpen(true)} waiting={waitingCount} onWaiting={focusWaiting} />}
+        topBar={<TopBar />}
         banners={[
           ...errors.map((e, i) => <Banner key={i}>{e}</Banner>),
           ...(features.workflowError ? [<Banner key="workflow">Workflow: {features.workflowError}</Banner>] : []),
           ...serviceBanners(opencode, sessions).map((b) => <Banner key={b.text} tone={b.tone}>{b.text}</Banner>),
         ]}
-        sidebar={<Sidebar onNew={openNew} onKill={setConfirmKill} />}
+        sidebar={ui.sidebarCollapsed ? <SidebarRail /> : <Sidebar onNew={(projectId) => setQuickNew({ projectId })} />}
         content={
           <>
             <ContentHeader crumbs={header}
+              after={context ? <ContextPopover view={context} /> : undefined}
               right={shown.kind === 'project' ? <BoardSwitch board={ui.board} onChange={setBoard} />
                 : shown.kind === 'session' ? (
                   <div className={s.headerActions}>
@@ -127,9 +132,9 @@ export default function App() {
                 onFocusSession={setFocused} onOpenFeature={openFeature}
                 onOpenArtifact={(name) => openArtifact({ kind: 'artifact', projectId: shown.feature.projectId, slug: shown.feature.slug, path: name, hash: null, fromDiff: null })} />
             ) : shown.kind === 'grid' ? (
-              <SessionGrid sessions={shown.sessions} focusedId={shown.focused.id} view={gridView} onViewChange={changeGridView} onFocusPane={setFocused} overlayOpen={paletteOpen || !!newFor || !!confirmKill} />
+              <SessionGrid sessions={shown.sessions} focusedId={shown.focused.id} view={gridView} onViewChange={changeGridView} onFocusPane={setFocused} overlayOpen={paletteOpen || !!quickNew || !!confirmRemove} />
             ) : shown.kind === 'session' && shown.session.lastStatus === 'running' ? (
-              <TerminalView key={shown.session.id} sessionId={shown.session.id} active={!paletteOpen && !newFor && !confirmKill} />
+              <TerminalView key={shown.session.id} sessionId={shown.session.id} active={!paletteOpen && !quickNew && !confirmRemove} />
             ) : shown.kind === 'session' ? (
               <div className={s.ended}>
                 <div className={s.endedTitle}>Session ended</div>
@@ -156,7 +161,7 @@ export default function App() {
             onOpen={(path) => openArtifact({ ...v, path, hash: null })}
             onBack={v.fromDiff ? () => openDiff(v.fromDiff!) : undefined} onClose={closeViewer} />
         ) : undefined}
-        sidebarWidth={SIDEBAR_WIDTH}
+        sidebarWidth={ui.sidebarCollapsed ? SIDEBAR_RAIL_WIDTH : SIDEBAR_WIDTH}
         viewerWidth={ui.viewerWidth}
         viewerExpanded={ui.viewerExpanded}
         onViewerWidth={setViewerWidth}
@@ -165,18 +170,21 @@ export default function App() {
         <CommandPalette onClose={() => setPaletteOpen(false)}
           items={paletteItems({ projects, sessions, features: features.items, grid: ui.grid, gridShown: gridShown(ui) }, { focusSession: setFocused, focusFeature, openProject, runAction })} />
       )}
-      {newFor && <NewSessionModal initialProjectId={newFor.projectId} onClose={() => setNewFor(null)} />}
-      {confirmKill && (
+      {confirmRemove && (
         <ConfirmDialog
-          title="Close session"
-          body={`Kill session ${confirmKill.label}?`}
-          confirmLabel="Kill"
+          title="Remove session"
+          body={`Remove session ${confirmRemove.label}? It will be ended and can't be resumed.`}
+          confirmLabel="Remove"
           onConfirm={() => {
-            void window.api.invoke('session:kill', { id: confirmKill.id })
-            setConfirmKill(null)
+            void window.api.invoke('session:remove', { id: confirmRemove.id })
+            setConfirmRemove(null)
           }}
-          onCancel={() => setConfirmKill(null)}
+          onCancel={() => setConfirmRemove(null)}
         />
+      )}
+      {quickNew && (
+        <CommandPalette onClose={() => setQuickNew(null)} placeholder="New session — pick a kind…"
+          items={newSessionItems(projects, quickNew.projectId, createSession)} />
       )}
     </>
   )

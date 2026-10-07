@@ -1,13 +1,14 @@
 import { useEffect, useRef, useState } from 'react'
 import type { Project, Session } from '@shared/types'
-import { DIM_RANGE, gridCols, layoutLabel, type GridView } from '../gridView'
+import { DIM_RANGE, LAYOUT_MAX, gridShape, layoutLabel, type GridLayout, type GridView } from '../gridView'
 import { Button } from './ui/Button'
 import { cx } from './ui/cx'
 import s from './GridToolbar.module.css'
 
-// The layout button: opens a popover with one miniature per column count, drawn with the visible panes.
+// The layout button: opens a popover with a grid of cells; hovering a cell previews cols×rows, clicking picks it.
 function SizePicker({ view, visibleCount, onChange }: { view: GridView; visibleCount: number; onChange: (view: GridView) => void }) {
   const [open, setOpen] = useState(false)
+  const [hover, setHover] = useState<GridLayout | null>(null)
   const ref = useRef<HTMLDivElement>(null)
   useEffect(() => {
     if (!open) return
@@ -17,26 +18,27 @@ function SizePicker({ view, visibleCount, onChange }: { view: GridView; visibleC
     document.addEventListener('keydown', esc)
     return () => { document.removeEventListener('mousedown', away); document.removeEventListener('keydown', esc) }
   }, [open])
-  const n = Math.max(visibleCount, 1)
+  const current = gridShape(visibleCount, view.layout)
+  const shown = hover ?? current
+  const cells = Array.from({ length: LAYOUT_MAX * LAYOUT_MAX }, (_, i) => ({ col: (i % LAYOUT_MAX) + 1, row: Math.floor(i / LAYOUT_MAX) + 1 }))
   return (
     <div className={s.size} ref={ref}>
-      <Button variant="ghost" size="sm" icon="grid" aria-expanded={open} title="Grid size" onClick={() => setOpen(!open)}>
-        {layoutLabel(visibleCount, view.maxCols)}
+      <Button size="sm" icon="grid" aria-expanded={open} title="Grid layout" onClick={() => setOpen(!open)}>
+        {layoutLabel(visibleCount, view.layout)}
       </Button>
       {open && (
-        <div className={s.popover} role="menu">
-          {([1, 2, 3] as const).map((c) => {
-            const cols = gridCols(n, c)
-            return (
-              <button key={c} type="button" role="menuitemradio" aria-checked={view.maxCols === c}
-                className={cx(s.option, view.maxCols === c && s.active)} onClick={() => { onChange({ ...view, maxCols: c }); setOpen(false) }}>
-                <span className={cx(s.mini, s[`mini${cols}`])}>
-                  {Array.from({ length: n }, (_, i) => <span key={i} className={s.cell} />)}
-                </span>
-                <span className={s.optionLabel}>{c === 1 ? '1 column' : `up to ${c}`}</span>
-              </button>
-            )
-          })}
+        <div className={s.popover} role="menu" onMouseLeave={() => setHover(null)}>
+          <div className={s.cells}>
+            {cells.map(({ col, row }) => (
+              <button key={`${col}-${row}`} type="button" aria-label={`${col}×${row}`}
+                className={cx(s.cell, col <= shown.cols && row <= shown.rows && s.on)}
+                onMouseEnter={() => setHover({ cols: col, rows: row })}
+                onClick={() => { onChange({ ...view, layout: { cols: col, rows: row } }); setOpen(false) }} />
+            ))}
+          </div>
+          <div className={s.shape}>{shown.cols}×{shown.rows}</div>
+          <button type="button" className={cx(s.auto, view.layout === null && s.autoOn)}
+            onClick={() => { onChange({ ...view, layout: null }); setOpen(false) }}>Auto</button>
         </div>
       )}
     </div>

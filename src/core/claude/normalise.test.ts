@@ -29,6 +29,40 @@ const perm = (over = {}) => ({ hook_event_name: 'PermissionRequest', tool_name: 
 const ask = (id = 'tu1') => ({ hook_event_name: 'PreToolUse', tool_name: 'AskUserQuestion', tool_use_id: id })
 const waiting = run([r(perm()), r(ask('x'))]).fold // perm:main and q:x open
 
+const statusLine = (context_window: unknown, model: unknown = 'claude-opus-5-5') => ({ hook_event_name: 'StatusLine', model, context_window })
+
+describe('step: StatusLine', () => {
+  const cw = (over = {}) => ({
+    context_window_size: 1000000, used_percentage: 19,
+    current_usage: { input_tokens: 2, cache_read_input_tokens: 20, cache_creation_input_tokens: 10 }, ...over,
+  })
+
+  it("folds Claude's percentage and the three input counts, and emits a context event", () => {
+    const { fold, events } = run([r(statusLine(cw()))])
+    const context = { pct: 19, tokens: 32, window: 1000000, model: 'claude-opus-5-5' }
+    expect(fold.context).toEqual(context)
+    expect(events).toEqual([{ type: 'context', sessionId: 'S', context }])
+    expect(fold.running).toBe(false)
+  })
+
+  it('reads null early in a session and after /compact', () => {
+    const { fold } = run([r(statusLine(cw({ used_percentage: null, current_usage: null })))])
+    expect(fold.context).toEqual({ pct: null, tokens: null, window: 1000000, model: 'claude-opus-5-5' })
+  })
+
+  it('tolerates a missing window object and a non-string model', () => {
+    expect(run([r({ hook_event_name: 'StatusLine' })]).fold.context).toEqual({ pct: null, tokens: null, window: null, model: null })
+    expect(run([r(statusLine(cw(), { id: 'x' }))]).fold.context?.model).toBeNull()
+  })
+
+  it('emits nothing for an unchanged reading, and again for a changed one', () => {
+    const first = run([r(statusLine(cw()))]).fold
+    const same = step(first, r(statusLine(cw())))
+    expect(same).toEqual({ fold: first, events: [] })
+    expect(run([r(statusLine(cw({ used_percentage: 20 })))], first).events).toHaveLength(1)
+  })
+})
+
 describe('step', () => {
   it('UserPromptSubmit closes pending of all scopes, then starts a turn', () => {
     const { fold, events } = run([r({ hook_event_name: 'UserPromptSubmit' })], waiting)

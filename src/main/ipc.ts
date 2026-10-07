@@ -38,7 +38,6 @@ export function registerIpc(core: Core, getWindow: () => BrowserWindow | null, g
   }, true)
   handle('project:remove', (a) => core.commands.projectRemove(a), true)
   handle('session:create', (a) => core.commands.sessionCreate(a), true)
-  handle('session:kill', (a) => core.commands.sessionKill(a), true)
   handle('session:remove', (a) => core.commands.sessionRemove(a), true)
   handle('session:resume', (a) => core.commands.sessionResume(a), true)
   handle('session:rename', (a) => core.commands.sessionRename(a), true)

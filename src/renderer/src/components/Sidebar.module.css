@@ -186,5 +186,10 @@
   display: flex;
   align-items: center;
   padding: var(--sp-2);
+  justify-content: space-between;
   border-top: 1px solid var(--divider);
+}
+
+.waiting {
+  color: var(--text);
 }

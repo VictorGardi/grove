@@ -1,6 +1,6 @@
 import { describe, expect, it, vi } from 'vitest'
 import type { Feature, Project, Session } from '@shared/types'
-import { PALETTE_COMMANDS, paletteItems, rank } from './paletteItems'
+import { newSessionItems, PALETTE_COMMANDS, paletteItems, rank } from './paletteItems'
 
 const projects = [{ id: 'p1', name: 'grove', path: '/g' }, { id: 'p2', name: 'other', path: '/o' }] as Project[]
 const session = (id: string, label: string, extra: Partial<Session> = {}) =>
@@ -25,7 +25,7 @@ describe('paletteItems', () => {
   it('lists the app commands, which run through runAction', () => {
     const a = actions()
     const cmds = paletteItems({ projects, sessions, features }, a).filter((i) => i.kind === 'command')
-    expect(cmds.map((c) => c.label)).toEqual(['New session', 'New terminal', 'Close session', 'Session diff', 'Project board', 'Show grid', 'Clear grid'])
+    expect(cmds.map((c) => c.label)).toEqual(['New session', 'New terminal', 'Remove session', 'Session diff', 'Project board', 'Toggle sidebar', 'Show grid', 'Add session to grid and show', 'Clear grid'])
     cmds[1].run()
     expect(a.runAction).toHaveBeenCalledWith({ type: 'newTerminal' })
   })
@@ -85,5 +85,26 @@ describe('rank', () => {
 
   it('returns nothing when nothing matches', () => {
     expect(rank(items(), 'zzz')).toEqual([])
+  })
+})
+
+describe('newSessionItems', () => {
+  it('lists the current project first, and "c" picks Claude Code there', () => {
+    const create = vi.fn()
+    const list = newSessionItems(projects, 'p2', create)
+    expect(list.map((i) => i.label).slice(0, 4)).toEqual(['OpenCode · other', 'Claude Code · other', 'Terminal · other', 'OpenCode · grove'])
+    expect(list).toHaveLength(6)
+    rank(list, 'c')[0].item.run()
+    expect(create).toHaveBeenCalledWith('p2', 'claude')
+  })
+
+  it('reaches another project by typing its name', () => {
+    const create = vi.fn()
+    rank(newSessionItems(projects, 'p2', create), 'claude gro')[0].item.run()
+    expect(create).toHaveBeenCalledWith('p1', 'claude')
+  })
+
+  it('keeps plain labels with a single project', () => {
+    expect(newSessionItems([projects[0]], 'p1', vi.fn()).map((i) => i.label)).toEqual(['OpenCode', 'Claude Code', 'Terminal'])
   })
 })

@@ -1,13 +1,15 @@
-import { useState } from 'react'
+import { useState, type MouseEvent } from 'react'
 import { GRID_MAX, type Feature, type Project, type Session } from '@shared/types'
 import { useSlices } from '../stores/slices'
 import { gridShown } from '../gridView'
 import { featureStage } from '../featureLabels'
-import { shownStatus, statusView } from '../sessionStatus'
+import { longestWaiting, shownStatus, statusView } from '../sessionStatus'
+import { selectRange } from '../selection'
 import { colorTags } from '../tags'
 import { linkedFeature, sessionGroups } from '../tree'
 import { Badge } from './ui/Badge'
 import { Button } from './ui/Button'
+import { ContextMenu } from './ui/ContextMenu'
 import { Icon } from './ui/Icon'
 import { LinkPicker } from './LinkPicker'
 import { ListRow } from './ui/ListRow'
@@ -20,21 +22,23 @@ function toggle(set: Set<string>, id: string): Set<string> {
   return next
 }
 
-function SessionCard({ s, feature, tag, focused, compact, inGrid, gridOn, gridFull, onToggleGrid, onFocus, onOpenFeature, onToggleCompact, onLink, onKill }: {
+function SessionCard({ s, feature, tag, focused, picked, compact, inGrid, gridOn, gridFull, onToggleGrid, onFocus, onOpenFeature, onToggleCompact, onLink, onRemove, onContextMenu }: {
   s: Session
   feature: Feature | null // the linked feature, if it exists
   tag: number | null // its parent feature's colour
   focused: boolean // a focused card shows selected; otherwise terminals are muted
+  picked: boolean // in the shift-click multi-selection
   compact: boolean
   inGrid: boolean // a member of the session grid
   gridOn: boolean // the grid is showing: members keep their check visible
   gridFull: boolean // the grid has its nine
   onToggleGrid: () => void
-  onFocus: () => void
+  onFocus: (e: MouseEvent) => void
   onOpenFeature: () => void
   onToggleCompact: () => void
   onLink: () => void
-  onKill: () => void
+  onRemove: () => void
+  onContextMenu: (e: MouseEvent) => void
 }) {
   const [editing, setEditing] = useState(false)
   const agent = s.kind !== 'terminal'
@@ -75,8 +79,10 @@ function SessionCard({ s, feature, tag, focused, compact, inGrid, gridOn, gridFu
       )}
       status={statusView(s)}
       tone={focused ? 'selected' : needsYou ? 'waiting' : agent ? 'default' : 'muted'}
+      picked={picked}
       compact={compact}
       onClick={onFocus}
+      onContextMenu={onContextMenu}
       onTitleDoubleClick={() => setEditing(true)}
       editor={editing ? (
         <input
@@ -107,10 +113,7 @@ function SessionCard({ s, feature, tag, focused, compact, inGrid, gridOn, gridFu
           )}
           <Button variant="ghost" size="sm" round icon="minus" aria-label={compact ? 'Expand' : 'Compact'}
             title={compact ? 'Expand' : 'Compact'} onClick={onToggleCompact} />
-          {s.lastStatus === 'gone'
-            ? <Button variant="ghost" size="sm" round icon="x" aria-label="Remove session" title="Remove"
-              onClick={() => void window.api.invoke('session:remove', { id: s.id })} />
-            : <Button variant="ghost" size="sm" round icon="x" aria-label="Close session" title="Close session" onClick={onKill} />}
+          <Button variant="ghost" size="sm" round icon="x" aria-label="Remove session" title="Remove session" onClick={onRemove} />
         </>
       }
     />
@@ -181,16 +184,46 @@ function ProjectHeader({ project: p, tag, refused, onToggle, onRemove, onNew }: 
   )
 }
 
-export function Sidebar({ onNew, onKill }: { onNew: (projectId?: string) => void; onKill: (s: Session) => void }) {
-  const { projects, sessions, ui, features, setFocused, toggleCollapsed, focusFeature, openProject, setSidebarTab, toggleGrid, toggleGridMember } = useSlices()
+export function Sidebar({ onNew }: { onNew: (projectId?: string) => void }) {
+  const { projects, sessions, ui, features, setFocused, toggleCollapsed, focusFeature, openProject, setSidebarTab, toggleGrid, toggleGridMember, toggleSidebar, waitingSince } = useSlices()
+  const waitingCount = sessions.filter((x) => shownStatus(x) === 'waiting').length
   const [refused, setRefused] = useState<string | null>(null)
   const [compact, setCompact] = useState<Set<string>>(new Set())
   const [linking, setLinking] = useState<Session | null>(null)
+  const [picked, setPicked] = useState<Set<string>>(new Set()) // shift-click multi-selection
+  const [anchor, setAnchor] = useState<string | null>(null) // where a shift-click range starts
+  const [menu, setMenu] = useState<{ x: number; y: number; ids: string[] } | null>(null)
   const tags = colorTags(projects, features.items)
 
   async function removeProject(id: string) {
     const res = await window.api.invoke('project:remove', { id })
     setRefused(res.ok ? null : id)
+  }
+
+  // the cards on screen, top to bottom: what a shift-click range runs over
+  const order = ui.sidebarTab === 'sessions' ? sessionGroups(projects, sessions, ui).flatMap((g) => (g.collapsed ? [] : g.sessions.map((x) => x.id))) : []
+
+  function clickCard(id: string, e: MouseEvent) {
+    if (e.shiftKey) {
+      setPicked(selectRange(order, anchor ?? ui.focusedSessionId, id))
+      return
+    }
+    setPicked(new Set())
+    setAnchor(id)
+    setFocused(id)
+  }
+
+  function openMenu(id: string, e: MouseEvent) {
+    e.preventDefault()
+    // right-clicking inside the selection acts on all of it; outside, on that card alone
+    const ids = picked.has(id) ? order.filter((x) => picked.has(x)) : [id]
+    if (!picked.has(id)) { setPicked(new Set()); setAnchor(id) }
+    setMenu({ x: e.clientX, y: e.clientY, ids })
+  }
+
+  const removeSessions = (ids: string[]) => {
+    setPicked(new Set())
+    for (const id of ids) void window.api.invoke('session:remove', { id })
   }
 
   const sessionCard = (s: Session) => {
@@ -202,16 +235,18 @@ export function Sidebar({ onNew, onKill }: { onNew: (projectId?: string) => void
         feature={f}
         tag={f && tags.group(f.projectId, f.group ? f.slug : f.parent)}
         focused={s.id === ui.focusedSessionId}
+        picked={picked.has(s.id)}
         compact={compact.has(s.id)}
         inGrid={ui.grid.members.includes(s.id)}
         gridOn={gridShown(ui)}
         gridFull={ui.grid.members.length >= GRID_MAX}
         onToggleGrid={() => toggleGridMember(s.id)}
-        onFocus={() => setFocused(s.id)}
+        onFocus={(e) => clickCard(s.id, e)}
         onOpenFeature={() => f && focusFeature({ projectId: f.projectId, slug: f.slug })}
         onToggleCompact={() => setCompact((c) => toggle(c, s.id))}
         onLink={() => setLinking(s)}
-        onKill={() => onKill(s)}
+        onRemove={() => removeSessions([s.id])}
+        onContextMenu={(e) => openMenu(s.id, e)}
       />
     )
   }
@@ -237,6 +272,8 @@ export function Sidebar({ onNew, onKill }: { onNew: (projectId?: string) => void
         ))}
         <Button variant="ghost" size="sm" round icon="folder-plus" aria-label="Add project" title="Add project"
           className={css.add} onClick={() => void window.api.invoke('project:add')} />
+        <Button variant="ghost" size="sm" round icon="sidebar" aria-label="Collapse sidebar" title="Collapse sidebar (⌘B)"
+          onClick={toggleSidebar} />
       </div>
       <div className={css.list}>
         {projects.length === 0 && <div className={css.hint}>Add a project with the folder ＋ above</div>}
@@ -261,7 +298,17 @@ export function Sidebar({ onNew, onKill }: { onNew: (projectId?: string) => void
           onClick={toggleGrid}>
           Grid {ui.grid.members.length > 0 && ui.grid.members.length}
         </Button>
+        {waitingCount > 0 && (
+          <Button size="sm" className={css.waiting} title="Focus the session that has waited longest"
+            onClick={() => { const w = longestWaiting(sessions, waitingSince); if (w) setFocused(w.id) }}>
+            {waitingCount} waiting
+          </Button>
+        )}
       </div>
+      {menu && (
+        <ContextMenu x={menu.x} y={menu.y} onClose={() => setMenu(null)}
+          items={[{ label: menu.ids.length === 1 ? 'Remove session' : `Remove ${menu.ids.length} sessions`, icon: 'trash', danger: true, onSelect: () => removeSessions(menu.ids) }]} />
+      )}
       {linking && <LinkPicker session={linking} onClose={() => setLinking(null)} />}
     </div>
   )

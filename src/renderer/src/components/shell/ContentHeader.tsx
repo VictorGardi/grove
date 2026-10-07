@@ -3,7 +3,7 @@ import s from './ContentHeader.module.css'
 
 export interface HeaderCrumb { label: string; onClick?: () => void } // onClick: an up-link (ADR 0018)
 
-export function ContentHeader({ crumbs, right }: { crumbs: HeaderCrumb[]; right?: ReactNode }) {
+export function ContentHeader({ crumbs, after, right }: { crumbs: HeaderCrumb[]; after?: ReactNode; right?: ReactNode }) {
   const last = crumbs.length - 1
   return (
     <header className={s.header}>
@@ -19,6 +19,7 @@ export function ContentHeader({ crumbs, right }: { crumbs: HeaderCrumb[]; right?
           )
           : <span key={i} className={s.current}>{c.label}</span>))}
       </div>
+      {after}
       {right && <div className={s.right}>{right}</div>}
     </header>
   )

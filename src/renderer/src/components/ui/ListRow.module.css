@@ -47,6 +47,13 @@
   font-weight: var(--fw-semibold);
 }
 
+.picked,
+.picked:hover {
+  background: var(--card-selected-bg);
+  border-color: var(--text-3);
+  box-shadow: none;
+}
+
 .head {
   display: flex;
   align-items: center;

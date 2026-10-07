@@ -1,4 +1,4 @@
-import type { AgentEvent } from '../agents/types'
+import type { AgentEvent, ContextUsage } from '../agents/types'
 import type { SpoolRecord } from './spool'
 
 // One spool's live state; also its snapshot. `id` is the spool's file id, every event's sessionId.
@@ -9,9 +9,10 @@ export interface ClaudeFold {
   pending: Map<string, 'permission' | 'question'> // perm:<scope> | q:<tool_use_id>
   lastWrite: string[] // paths of the latest successful write; [] if none
   resumeId: string | null // latest SessionStart session_id (a /clear starts a new one); null before one
+  context: ContextUsage | null // latest StatusLine reading (ADR 0032); null before one
 }
 
-export const emptyFold = (id: string): ClaudeFold => ({ id, running: false, idleAt: null, pending: new Map(), lastWrite: [], resumeId: null })
+export const emptyFold = (id: string): ClaudeFold => ({ id, running: false, idleAt: null, pending: new Map(), lastWrite: [], resumeId: null, context: null })
 
 interface Hook {
   hook_event_name?: unknown
@@ -20,6 +21,8 @@ interface Hook {
   agent_id?: unknown
   tool_input?: unknown
   session_id?: unknown
+  model?: unknown
+  context_window?: unknown
 }
 
 const WRITE_TOOLS = new Set(['Write', 'Edit', 'MultiEdit', 'NotebookEdit'])
@@ -30,6 +33,24 @@ function writePath(input: unknown): string | null {
   const { file_path, notebook_path } = input as { file_path?: unknown; notebook_path?: unknown }
   return typeof file_path === 'string' ? file_path : typeof notebook_path === 'string' ? notebook_path : null
 }
+
+const num = (v: unknown) => (typeof v === 'number' && Number.isFinite(v) ? v : null)
+
+// A StatusLine record's context window. Claude's own used_percentage is the figure; null early and after /compact.
+function readContext(e: Hook): ContextUsage {
+  const cw = (typeof e.context_window === 'object' && e.context_window !== null ? e.context_window : {}) as Record<string, unknown>
+  const u = typeof cw.current_usage === 'object' && cw.current_usage !== null ? (cw.current_usage as Record<string, unknown>) : null
+  const parts = u && [u.input_tokens, u.cache_read_input_tokens, u.cache_creation_input_tokens].map(num)
+  return {
+    pct: num(cw.used_percentage),
+    tokens: parts && parts.some((p) => p !== null) ? parts.reduce<number>((a, p) => a + (p ?? 0), 0) : null,
+    window: num(cw.context_window_size),
+    model: typeof e.model === 'string' ? e.model : null,
+  }
+}
+
+const sameContext = (a: ContextUsage | null, b: ContextUsage) =>
+  a !== null && a.pct === b.pct && a.tokens === b.tokens && a.window === b.window && a.model === b.model
 
 // `t` is UTC to the second; seen marks carry milliseconds, and they compare as strings.
 const iso = (t: string) => (/\.\d{3}Z$/.test(t) ? t : t.replace(/Z$/, '.000Z'))
@@ -93,6 +114,13 @@ export function step(f: ClaudeFold, r: SpoolRecord): { fold: ClaudeFold; events:
       close(() => false)
       end()
       break
+    case 'StatusLine': {
+      const context = readContext(e)
+      if (sameContext(f.context, context)) break
+      fold = { ...fold, context }
+      events.push({ type: 'context', sessionId, context })
+      break
+    }
     case 'SessionStart':
       if (typeof e.session_id === 'string') fold = { ...fold, resumeId: e.session_id }
       break

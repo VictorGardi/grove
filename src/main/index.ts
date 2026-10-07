@@ -115,11 +115,11 @@ app.whenReady().then(async () => {
     width: 1200,
     height: 800,
     titleBarStyle: 'hidden',
-    trafficLightPosition: { x: 18, y: 18 },
     backgroundColor: chromeBackground,
     show: false,
     webPreferences: { preload: path.join(__dirname, '../preload/index.js'), contextIsolation: true },
   })
+  win.setWindowButtonVisibility(false)
   guardNavigation(win, core)
   win.once('ready-to-show', () => {
     win?.show()

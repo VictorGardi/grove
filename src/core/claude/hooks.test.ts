@@ -47,6 +47,62 @@ describe('hookSettings', () => {
   })
 })
 
+describe('statusLine', () => {
+  const stdin = JSON.stringify({
+    session_id: 's1', transcript_path: '/big/path', cost: { total_cost_usd: 1 }, model: { id: 'claude-opus-5-5', display_name: 'Opus' },
+    context_window: {
+      total_input_tokens: 99, context_window_size: 1000000, used_percentage: 19,
+      current_usage: { input_tokens: 2, output_tokens: 7, cache_creation_input_tokens: 10, cache_read_input_tokens: 20 },
+    },
+  })
+  const setup = (userSettings?: unknown) => {
+    const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'grove-'))
+    const spool = path.join(dir, 'x.jsonl')
+    if (userSettings) fs.writeFileSync(path.join(dir, 'settings.json'), JSON.stringify(userSettings))
+    const { statusLine } = JSON.parse(hookSettings(spool)) as { statusLine: { type: string; command: string } }
+    const run = (input: string) =>
+      execFileSync('sh', ['-c', statusLine.command], { input, encoding: 'utf8', env: { ...process.env, CLAUDE_CONFIG_DIR: dir } })
+    return { spool, statusLine, run }
+  }
+
+  it('is a command that overrides the user-level statusLine', () => {
+    expect(setup().statusLine.type).toBe('command')
+  })
+
+  it('appends a slim StatusLine record', () => {
+    const { spool, run } = setup()
+    expect(run(stdin)).toBe('')
+    const line = fs.readFileSync(spool, 'utf8')
+    expect(line).toMatch(/^\{"t":"\d{4}-\d\d-\d\dT\d\d:\d\d:\d\dZ","e":\{"hook_event_name":"StatusLine",/)
+    expect(JSON.parse(line).e).toEqual({
+      hook_event_name: 'StatusLine', model: 'claude-opus-5-5',
+      context_window: {
+        context_window_size: 1000000, used_percentage: 19,
+        current_usage: { input_tokens: 2, cache_read_input_tokens: 20, cache_creation_input_tokens: 10 },
+      },
+    })
+  })
+
+  it('keeps nulls early in a session', () => {
+    const { spool, run } = setup()
+    run(JSON.stringify({ model: 'm', context_window: { context_window_size: 200000, used_percentage: null, current_usage: null } }))
+    expect(JSON.parse(fs.readFileSync(spool, 'utf8')).e.context_window).toEqual({ context_window_size: 200000, used_percentage: null, current_usage: null })
+  })
+
+  it("runs the user's statusLine command on the same stdin and prints its output", () => {
+    const { run } = setup({ statusLine: { type: 'command', command: `printf 'chained:%s' "$(jq -r .session_id)"` } })
+    expect(run(stdin)).toBe('chained:s1')
+  })
+
+  it('survives a user statusLine that is missing or a settings file that is not JSON', () => {
+    expect(setup({ other: 1 }).run(stdin)).toBe('')
+    const { spool, run } = setup()
+    fs.writeFileSync(path.join(path.dirname(spool), 'settings.json'), 'not json')
+    expect(run(stdin)).toBe('')
+    expect(fs.readFileSync(spool, 'utf8')).toContain('StatusLine')
+  })
+})
+
 describe('claudeArgv', () => {
   it('starts with our id and resumes with the resume id when given', () => {
     const s = hookSettings('/x.jsonl')

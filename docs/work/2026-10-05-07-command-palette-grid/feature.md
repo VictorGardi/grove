@@ -2,6 +2,7 @@
 kind: feature
 parent: 2026-10-05-opencode-feature-workspace
 order: 9
+flow: standard
 created: 2026-10-05
 ---
 
@@ -16,22 +17,21 @@ Keyboard-first navigation, and several live terminals at once.
 
 ## Outcome
 
-Cmd+K opens a command palette that fuzzy-matches features, sessions and the current feature's next actions. Picking one jumps to the feature, focuses the session, or runs the action through child 5's start path. A grid view shows several live sessions side by side, each attached in its own xterm.js and resized independently. I can choose which sessions are in the grid, focus one with Cmd+1..9, and the layout persists in UI state.
+Cmd+K opens a command palette that fuzzy-matches features, sessions, projects and app commands. Picking one jumps to the feature or project, focuses the session, or runs the command. A grid view shows several live sessions side by side, each attached in its own xterm.js and resized independently. I can pick which sessions are in the grid (from any project), focus pane N with Cmd+1..9 while the grid shows, and the member list and order persist in UI state. Tiles reflow automatically. Only the focused pane clears a finished turn's waiting status.
 
 ## Scope
 
-E-D2 (actions run from the palette), E-D3 (multiple concurrent attaches), E-D7 (grid layout in `ui`). Design: two-way rows Keys (Cmd+K, Cmd+1..9), Terminal and Per-viewer UI state; appetite cut 2.
+E-D3 (multiple concurrent attaches), E-D7 (grid layout in `ui`). Design: two-way rows Keys (Cmd+K, Cmd+1..9), Terminal and Per-viewer UI state; appetite cut 2.
 
 ## Dependencies
 
-3 (session status shown in palette and grid), 5 (actions).
+3 (session status shown in palette and grid). Child 5 (next actions) is on hold, so palette actions are out (2026-10-07).
 
 ## Size estimate
 
 3–4 days, about 5 slices. Palette first, grid second, so the grid can be cut on its own.
 
-## On hold (2026-10-07)
+## Flow log
 
-Not built for now; new workflow features are on hold
-([ADR 0020](../../adr/0020-sessions-and-review-before-workflow.md)). Don't
-start this child without the human reopening it.
+- 2026-10-07: standard (proposed for an epic child, confirmed)
+- 2026-10-07: reopened from the ADR 0020 hold by the human, as written; the human then dropped palette actions (the Cmd+K "next actions" entries, E-D2, and the dependency on child 5, which stays on hold). The rolling-wave warning (siblings 5 and 6 not at implementation) was overridden.
