@@ -34,6 +34,13 @@ describe('parseCommand', () => {
     }
   })
 
+  it('parses focus, kill and skill', () => {
+    expect(parseCommand(['focus', 'abc'])).toEqual({ cmd: 'focus', ref: 'abc' })
+    expect(parseCommand(['kill', 'abc'])).toEqual({ cmd: 'kill', ref: 'abc' })
+    expect(parseCommand(['skill'])).toEqual({ cmd: 'skill' })
+    for (const argv of [['focus'], ['kill'], ['kill', 'a', 'b'], ['skill', 'x']]) expect(parseCommand(argv)).toBeInstanceOf(UsageError)
+  })
+
   it('new needs exactly one known kind', () => {
     for (const argv of [['new'], ['new', 'vim'], ['new', 'claude', 'opencode']]) {
       expect(parseCommand(argv)).toBeInstanceOf(UsageError)

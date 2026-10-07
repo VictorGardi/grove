@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import { DEFAULT_UI, type Feature, type Project, type Session, type UiState } from '@shared/types'
-import { boardKey, boardProject, childrenOf, content, crumbs } from './navigation'
+import { boardKey, boardProject, childrenOf, content, crumbs, currentProjectId } from './navigation'
 
 const project = (id: string): Project => ({ id, name: id.toUpperCase(), path: '/' + id })
 
@@ -107,5 +107,14 @@ describe('boardKey', () => {
     expect(of({ board: 'features' })).toEqual({ board: 'sessions' })
     expect(of({ focusedSessionId: 't', board: 'features' })).toEqual({ focusedProject: 'q', board: 'sessions' })
     expect(boardKey(ui(), [], [], [])).toBeNull()
+  })
+})
+
+describe('currentProjectId', () => {
+  it('is the project of whatever is shown, or null', () => {
+    expect(currentProjectId({ kind: 'none' })).toBeNull()
+    expect(currentProjectId({ kind: 'project', project: { id: 'p1' } as never })).toBe('p1')
+    expect(currentProjectId({ kind: 'feature', feature: { projectId: 'p2' } as never })).toBe('p2')
+    expect(currentProjectId({ kind: 'session', session: { projectId: 'p3' } as never })).toBe('p3')
   })
 })

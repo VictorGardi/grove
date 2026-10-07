@@ -11,6 +11,8 @@ export interface CliMethods {
   }
   'sessions.send': { params: { ref: string; text: string; submit: boolean; wait?: boolean; timeoutS?: number }; data: { id: string; turn?: TurnResult } }
   'sessions.wait': { params: { ref: string; timeoutS?: number }; data: { id: string } & TurnResult }
+  'sessions.focus': { params: { ref: string }; data: { id: string } }
+  'sessions.kill': { params: { ref: string }; data: { id: string } }
   'sessions.read': { params: { ref: string; lines: number }; data: { text: string } }
 }
 

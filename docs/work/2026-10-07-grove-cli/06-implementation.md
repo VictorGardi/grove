@@ -18,6 +18,7 @@ forced: []
 - [x] Slice 2 — `grove new` in any folder, with prompt, label and link
 - [x] Slice 3 — `grove send` and `grove read`
 - [x] Slice 4 — `grove wait`, `send --wait`, `new --wait`
+- [x] Slice 5 — `focus`, `kill`, install and skill
 
 ## Slice 1
 
@@ -83,3 +84,41 @@ Deviations (small; none touch a one-way decision):
 - A `--timeout` of `0` or less is a usage error; timeouts take fractional seconds.
 - A finished-unseen turn (`waiting`/`done`) counts as finished (exit 0); only `permission`/`question` exit 4.
 - Tests and code were written together rather than strictly red-first.
+
+## Slice 5
+
+Deviations (small; none touch a one-way decision):
+
+- `installCommandLineTool` returns `{ ok, target, onPath } | { ok: false, message }`; it refuses (touches nothing) when `~/.local/bin/grove` exists and is not a symlink, and replaces a symlink.
+- The menu item's `PATH` check uses the login shell's `PATH` (`$SHELL -ilc 'printf %s "$PATH"'`, 5 s timeout, fallback `process.env.PATH`), since a GUI app's own `PATH` is minimal. The result shows in a message box.
+- `grove skill` reads `<cli dir>/../../resources/skills/grove/SKILL.md` and needs no running app; dev layout only (packaging, child 8).
+- `buildMenu` takes a second argument, the install handler.
+- Not run by the agent: the menu item, a real macOS Terminal check of `grove focus`/`grove skill`, and the slice 1 follow-up that a terminal session finds `grove` once installed. These stay in the human's manual list below.
+
+### Manual verification for the human (slices 3–5)
+
+- Slice 3: from one grove session, `grove send <other> "reply pong"`, then `grove read <other>` shows the answer.
+- Slice 4: `grove new opencode --prompt "count to 5" --wait` returns when the turn ends; `grove wait <ref> --timeout 2` on a working session exits 124.
+- Slice 5: **grove → Install Command Line Tool…**, open a new macOS Terminal, `grove focus <ref>` raises the window, `grove skill | head`; inside a terminal session in the app, `grove ls` now works (the `path_helper` issue from slice 1).
+
+## Checks after the last slice
+
+`npm test` (524 passed), `npm run typecheck` and `npm run build` pass. No lint command is configured; no tracker.
+
+## PR description
+
+**Grove CLI: `grove` talks to the running app**
+
+Agents in grove sessions, and the human in any terminal, can now list, start,
+message, read, wait on, focus and kill grove sessions.
+
+- **Transport (ADR 0027):** the app listens on `<userData>/grove.sock` (0600), one versioned JSON line per connection; a single-instance lock makes a second launch focus the first.
+- **CLI runtime (ADR 0028):** `out/main/cli.js` runs on the app's Electron binary as Node, through a launcher written to `<userData>/bin/grove` at each start. Grove sessions get `GROVE_SESSION_ID`, `GROVE_SOCKET` and that directory on `PATH`.
+- **Sessions in any folder (ADR 0029):** `grove new <kind> --cwd --prompt --label --link` registers the containing project, stores `Session.cwd` (state v4) and passes the prompt at launch.
+- **Commands:** `ls`, `new`, `send`, `read`, `wait`, `focus`, `kill`, `skill`; `--wait` on `send`/`new`; exit codes 0/1/2/3/4/5/124.
+- **Install:** grove → Install Command Line Tool… symlinks `~/.local/bin/grove`. `resources/skills/grove/SKILL.md` is printed by `grove skill`.
+
+Slices: 1 `grove ls` tracer · 2 `grove new` · 3 `send`/`read` · 4 `wait` · 5 `focus`/`kill`/install/skill.
+
+Verify: `npm test`, `npm run typecheck`, `npm run build`; then the manual list above in `npm run dev`.
+Rollout: state file v3 → v4 (older builds can't read v4); sessions already running have no `GROVE_*` until resumed.

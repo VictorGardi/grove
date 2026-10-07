@@ -17,7 +17,7 @@ const turnOf = (reply: CliReply & { ok: true }): number => {
 
 const text = (arg: string | undefined) => (arg === '-' ? fs.readFileSync(0, 'utf8') : arg)
 
-async function run(cmd: Command, socket: string): Promise<CliReply & { print?: string; exit?: number }> {
+async function run(cmd: Exclude<Command, { cmd: 'skill' }>, socket: string): Promise<CliReply & { print?: string; exit?: number }> {
   if (cmd.cmd === 'ls') {
     const reply = await call(socket, 'sessions.list', { all: cmd.all })
     return reply.ok ? { ...reply, print: formatLs(reply.data as CliMethods['sessions.list']['data'], process.env.GROVE_SESSION_ID ?? null, cmd.json) } : reply
@@ -25,6 +25,10 @@ async function run(cmd: Command, socket: string): Promise<CliReply & { print?: s
   if (cmd.cmd === 'send') {
     const reply = await call(socket, 'sessions.send', { ref: cmd.ref, text: text(cmd.text) ?? '', submit: cmd.submit, wait: cmd.wait, timeoutS: cmd.timeoutS })
     return reply.ok ? { ...reply, print: undefined, exit: turnOf(reply) } : reply
+  }
+  if (cmd.cmd === 'focus' || cmd.cmd === 'kill') {
+    const reply = await call(socket, cmd.cmd === 'focus' ? 'sessions.focus' : 'sessions.kill', { ref: cmd.ref })
+    return reply.ok ? { ...reply, print: undefined } : reply
   }
   if (cmd.cmd === 'wait') {
     const reply = await call(socket, 'sessions.wait', { ref: cmd.ref, timeoutS: cmd.timeoutS })
@@ -46,6 +50,11 @@ async function main(): Promise<number> {
   if (cmd instanceof UsageError) {
     console.error(cmd.message)
     return 2
+  }
+  if (cmd.cmd === 'skill') {
+    // The CLI bundle is <app>/out/main/cli.js (ADR 0028); the skill ships in <app>/resources.
+    process.stdout.write(fs.readFileSync(path.join(__dirname, '..', '..', 'resources', 'skills', 'grove', 'SKILL.md'), 'utf8'))
+    return 0
   }
   const socket = process.env.GROVE_SOCKET
   if (!socket) {

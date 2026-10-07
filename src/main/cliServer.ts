@@ -7,7 +7,7 @@ import { resolveSessionRef } from '../core/cliOps'
 
 export interface CliServerOptions {
   socketPath: string
-  raise(): void // shows and focuses the window (used by `focus`, slice 5)
+  raise(): void // shows and focuses the window (used by `focus`)
 }
 
 const fail = (id: string, code: string, message: string): CliReply => ({ id, ok: false, error: { code, message } })
@@ -61,7 +61,7 @@ const optString = (v: unknown) => (typeof v === 'string' && v !== '' ? v : undef
 const COLS = 120
 const ROWS = 40
 
-async function dispatch(core: Core, line: string): Promise<CliReply> {
+async function dispatch(core: Core, raise: () => void, line: string): Promise<CliReply> {
   let req: { v?: unknown; id?: unknown; method?: unknown; params?: unknown }
   try {
     req = JSON.parse(line)
@@ -108,6 +108,19 @@ async function dispatch(core: Core, line: string): Promise<CliReply> {
       const turn = await core.waitTurn(found.data.id, { expectStart: false, timeoutMs: timeoutMs(params.timeoutS) })
       return turn.ok ? { id, ok: true, data: { id: found.data.id, ...turn.data } } : failFrom(id, turn.error)
     }
+    case 'sessions.focus':
+    case 'sessions.kill': {
+      const { ref } = params
+      if (typeof ref !== 'string' || !ref) return fail(id, 'bad-params', 'ref is required')
+      const found = resolveSessionRef(core.getSlices().sessions, ref)
+      if (!found.ok) return failFrom(id, found.error)
+      const res = req.method === 'sessions.kill'
+        ? await core.commands.sessionKill({ id: found.data.id })
+        : await core.commands.uiSet({ focusedSessionId: found.data.id })
+      if (!res.ok) return failFrom(id, res.error)
+      if (req.method === 'sessions.focus') raise()
+      return { id, ok: true, data: { id: found.data.id } }
+    }
     case 'sessions.read': {
       const { ref, lines } = params
       if (typeof ref !== 'string' || !ref || typeof lines !== 'number' || !Number.isInteger(lines) || lines < 1) {
@@ -136,7 +149,7 @@ export function startCliServer(core: Core, o: CliServerOptions): Promise<{ close
       if (nl < 0) return
       const line = buf.slice(0, nl)
       buf = ''
-      void dispatch(core, line).then((reply) => conn.end(JSON.stringify(reply) + '\n'))
+      void dispatch(core, o.raise, line).then((reply) => conn.end(JSON.stringify(reply) + '\n'))
     })
   })
   return new Promise((resolve, reject) => {

@@ -1,12 +1,14 @@
 import { app, Menu, type MenuItemConstructorOptions } from 'electron'
 import type { MenuAction } from '@shared/ipc'
 
-export function buildMenu(send: (a: MenuAction) => void): void {
+export function buildMenu(send: (a: MenuAction) => void, installCli: () => void): void {
   const template: MenuItemConstructorOptions[] = [
     {
       label: app.name,
       submenu: [
         { role: 'about' },
+        { type: 'separator' },
+        { label: 'Install Command Line Tool…', click: installCli },
         { type: 'separator' },
         { role: 'hide' },
         { role: 'hideOthers' },
@@ -18,6 +20,7 @@ export function buildMenu(send: (a: MenuAction) => void): void {
       label: 'File',
       submenu: [
         { label: 'New Session', accelerator: 'CmdOrCtrl+T', click: () => send({ type: 'newSession' }) },
+        { label: 'New Terminal', accelerator: 'CmdOrCtrl+J', click: () => send({ type: 'newTerminal' }) },
         { label: 'Close Session', accelerator: 'CmdOrCtrl+W', click: () => send({ type: 'closeSession' }) },
       ],
     },

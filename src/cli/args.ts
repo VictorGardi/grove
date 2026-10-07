@@ -6,6 +6,9 @@ export type Command =
   | { cmd: 'new'; kind: SessionKind; cwd?: string; prompt?: string; label?: string; link?: string; json: boolean; wait: boolean; timeoutS?: number }
   | { cmd: 'send'; ref: string; text: string; submit: boolean; wait: boolean; timeoutS?: number }
   | { cmd: 'wait'; ref: string; timeoutS?: number }
+  | { cmd: 'focus'; ref: string }
+  | { cmd: 'kill'; ref: string }
+  | { cmd: 'skill' }
   | { cmd: 'read'; ref: string; lines: number }
 
 export class UsageError extends Error {}
@@ -17,6 +20,9 @@ export const USAGE = `usage: grove <command>
   grove send <ref> <TEXT|-> [--no-enter] [--wait] [--timeout S]
                                                  type text into a session and submit it
   grove wait <ref> [--timeout S]                 block until the session stops working (exit 0 done, 4 needs you, 5 gone, 124 timeout)
+  grove focus <ref>                              show a session and raise the window
+  grove kill <ref>                               end a session
+  grove skill                                    print the agent skill for grove
   grove read <ref> [--lines N]                   print the last N lines (default 100) of a session's screen`
 
 const KINDS = ['opencode', 'claude', 'terminal']
@@ -71,6 +77,15 @@ export function parseCommand(argv: string[]): Command | UsageError {
       if (timeoutS instanceof UsageError) return timeoutS
       if (positionals.length !== 1) return new UsageError(`wait takes a session\n${USAGE}`)
       return { cmd: 'wait', ref: positionals[0], timeoutS }
+    }
+    if (cmd === 'focus' || cmd === 'kill') {
+      const { positionals } = parseArgs({ args: rest, options: {}, allowPositionals: true })
+      if (positionals.length !== 1) return new UsageError(`${cmd} takes a session\n${USAGE}`)
+      return { cmd, ref: positionals[0] }
+    }
+    if (cmd === 'skill') {
+      const { positionals } = parseArgs({ args: rest, options: {}, allowPositionals: true })
+      return positionals.length ? new UsageError(`skill takes no arguments\n${USAGE}`) : { cmd: 'skill' }
     }
     if (cmd === 'read') {
       const { values, positionals } = parseArgs({ args: rest, options: { lines: { type: 'string' } }, allowPositionals: true })

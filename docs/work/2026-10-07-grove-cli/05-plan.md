@@ -132,3 +132,29 @@ decides). The core exposes `Core.waitTurn(id, o)` wired to its slice listener.
 - [x] Run `npm run typecheck`
 - [x] Run `npm run build`
 - Manual (human, not a checkbox): `grove new opencode --prompt "count to 5" --wait` returns when the turn ends.
+
+## Slice 5 — `focus`, `kill`, install and skill
+
+Notes for a cold reader: `grove focus <ref>` calls `sessions.focus` → `core.commands.uiSet({ focusedSessionId })` then the
+server's `raise()`; `grove kill <ref>` calls `sessions.kill` → `core.commands.sessionKill` (any session, any caller; the row
+shows as gone). Both resolve the ref over all sessions, reply `{id}` and print nothing. `grove skill` needs no app: it prints
+`resources/skills/grove/SKILL.md`, found relative to the CLI bundle at `<cli.js dir>/../../resources/skills/grove/SKILL.md`,
+and is handled before `GROVE_SOCKET` is read. `installCommandLineTool({ launcher, targetDir, pathVar })` in
+`src/main/launcher.ts` symlinks `<targetDir>/grove` → `launcher` (creating `targetDir`; replacing an existing symlink; an
+existing non-symlink file → error, nothing touched) and returns `{ target, onPath }` where `onPath` is whether `targetDir` is a
+`pathVar` entry. The menu item **grove → Install Command Line Tool…** (the app-name menu) calls it with `~/.local/bin`, the
+launcher path, and the login shell's `PATH` (`$SHELL -ilc 'printf %s "$PATH"'`, falling back to `process.env.PATH`), and shows
+the result in a message box.
+
+- [x] Write failing test `src/main/cliServer.test.ts`: `sessions.focus` sets `ui.focusedSessionId` and calls `raise` (the test passes a counting `raise`); `sessions.kill` marks the session `gone` and it leaves the backend's live set; both with an unknown ref → `not-found`
+- [x] `src/shared/cli.ts`, `src/main/cliServer.ts`: `sessions.focus`, `sessions.kill`
+- [x] Write failing tests `src/cli/args.test.ts`: `focus abc`, `kill abc`, `skill`; missing ref and `skill x` → `UsageError`
+- [x] `src/cli/args.ts`, `src/cli/index.ts`: `focus`, `kill`, `skill` (skill printed before the socket check)
+- [x] Write failing test `src/main/cliServer.test.ts` (in its launcher describe): `installCommandLineTool` creates the symlink and creates the dir; reports `onPath` true/false; replaces a stale symlink; refuses a regular file and leaves it
+- [x] `src/main/launcher.ts`: `installCommandLineTool`
+- [x] `src/main/menu.ts`: `buildMenu(send, installCli)` and the menu item; `src/main/index.ts`: the handler with the login-shell `PATH` and a message box
+- [x] `resources/skills/grove/SKILL.md`: the agent skill (commands, exit codes, patterns)
+- [x] Run `npm test`
+- [x] Run `npm run typecheck`
+- [x] Run `npm run build`
+- Manual (human, not a checkbox): install from the menu, open a new macOS Terminal, run `grove focus <ref>` (the window comes to the front), then `grove skill | head`; from a terminal session in the app, `grove ls` works once installed.

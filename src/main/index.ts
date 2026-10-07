@@ -1,6 +1,7 @@
 import os from 'node:os'
 import path from 'node:path'
-import { app, BrowserWindow, Notification } from 'electron'
+import { execFile } from 'node:child_process'
+import { app, BrowserWindow, dialog, Notification } from 'electron'
 import { chromeBackground } from '@shared/theme'
 import { TmuxBackend } from '../core/backend/tmux'
 import { createCore } from '../core/core'
@@ -10,7 +11,7 @@ import { HttpOpenCode, serviceFilePath } from '../core/opencode/client'
 import { guardNavigation, handleArtifacts, registerArtifactScheme } from './artifacts'
 import { registerIpc } from './ipc'
 import { startCliServer } from './cliServer'
-import { writeLauncher } from './launcher'
+import { installCommandLineTool, writeLauncher } from './launcher'
 import { buildMenu } from './menu'
 
 let win: BrowserWindow | null = null
@@ -29,6 +30,23 @@ function raise(): void {
 }
 app.on('second-instance', raise)
 
+// The PATH a new terminal would have: a GUI app's own is minimal.
+const loginPath = () => new Promise<string>((resolve) => {
+  execFile(process.env.SHELL || '/bin/zsh', ['-ilc', 'printf %s "$PATH"'], { timeout: 5000 }, (err, out) => resolve(err ? process.env.PATH ?? '' : out))
+})
+
+async function installCli(launcher: string): Promise<void> {
+  const targetDir = path.join(os.homedir(), '.local', 'bin')
+  const res = installCommandLineTool({ launcher, targetDir, pathVar: await loginPath() })
+  const opts = res.ok
+    ? {
+        message: `Installed ${res.target}`,
+        detail: res.onPath ? 'Open a new terminal and run `grove ls`.' : `${targetDir} is not on your PATH. Add it to your shell profile to run \`grove\` from any terminal.`,
+      }
+    : { type: 'error' as const, message: 'Could not install the command line tool', detail: res.message }
+  await (win && !win.isDestroyed() ? dialog.showMessageBox(win, opts) : dialog.showMessageBox(opts))
+}
+
 app.whenReady().then(async () => {
   if (!gotLock) return
   const errors: string[] = []
@@ -38,7 +56,7 @@ app.whenReady().then(async () => {
 
   const socketPath = path.join(app.getPath('userData'), 'grove.sock')
   const binDir = path.join(app.getPath('userData'), 'bin')
-  writeLauncher({ binDir, execPath: process.execPath, cliPath: path.join(app.getAppPath(), 'out', 'main', 'cli.js'), socketPath })
+  const launcher = writeLauncher({ binDir, execPath: process.execPath, cliPath: path.join(app.getAppPath(), 'out', 'main', 'cli.js'), socketPath })
 
   const core = createCore({
     sessionEnv: { socketPath, binDir },
@@ -91,7 +109,7 @@ app.whenReady().then(async () => {
   registerIpc(core, () => win, () => [...errors, ...core.getErrors()])
   buildMenu((a) => {
     if (win && !win.isDestroyed()) win.webContents.send('menu:action', a)
-  })
+  }, () => void installCli(launcher))
 
   win = new BrowserWindow({
     width: 1200,

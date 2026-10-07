@@ -7,6 +7,10 @@ export type Content =
   | { kind: 'session'; session: Session }
   | { kind: 'none' }
 
+// The project the human is in: the session's, the feature's, or the project page's.
+export const currentProjectId = (c: Content): string | null =>
+  c.kind === 'project' ? c.project.id : c.kind === 'feature' ? c.feature.projectId : c.kind === 'session' ? c.session.projectId : null
+
 export interface Crumb { label: string; to?: Partial<UiState> } // `to`: the ui:set partial an up-link applies
 
 const findFeature = (features: Feature[], projectId: string, slug: string | null) =>

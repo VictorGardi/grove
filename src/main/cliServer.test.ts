@@ -7,7 +7,7 @@ import { request } from '../cli/client'
 import type { CliSession } from '@shared/cli'
 import { createOpenCode, createTerminal, LATER, setupCore } from '../core/testing/setup'
 import { startCliServer } from './cliServer'
-import { writeLauncher } from './launcher'
+import { installCommandLineTool, writeLauncher } from './launcher'
 
 describe('cli server', () => {
   let t: ReturnType<typeof setupCore>
@@ -85,6 +85,25 @@ describe('cli server', () => {
     expect(slow).toMatchObject({ ok: false, error: { code: 'timeout' } })
   })
 
+  it('focus raises the window and shows the session; kill ends it', async () => {
+    const core = t.make()
+    await core.start()
+    let raised = 0
+    const socketPath = path.join(t.dir, 'grove.sock')
+    closers.push((await startCliServer(core, { socketPath, raise: () => void raised++ })).close)
+    const s = await createTerminal(core)
+    expect(await request(socketPath, req('sessions.focus', { ref: s.id.slice(0, 5) }))).toMatchObject({ ok: true, data: { id: s.id } })
+    expect(raised).toBe(1)
+    expect(core.getSlices().ui.focusedSessionId).toBe(s.id)
+    expect(await request(socketPath, req('sessions.kill', { ref: s.id }))).toMatchObject({ ok: true, data: { id: s.id } })
+    expect(core.getSlices().sessions.find((x) => x.id === s.id)?.lastStatus).toBe('gone')
+    expect(t.fake.live.has(s.tmuxName)).toBe(false)
+    for (const m of ['sessions.focus', 'sessions.kill']) {
+      expect(await request(socketPath, req(m, { ref: 'nope' }))).toMatchObject({ ok: false, error: { code: 'not-found' } })
+    }
+    expect(raised).toBe(1)
+  })
+
   it('rejects another protocol version and unknown methods', async () => {
     const { socketPath } = await start()
     expect(await request(socketPath, req('sessions.list', {}, 2))).toMatchObject({ ok: false, error: { code: 'bad-version' } })
@@ -118,5 +137,35 @@ describe('writeLauncher', () => {
   it('keeps a GROVE_SOCKET that is already set', () => {
     const out = execFileSync(setup(), [], { env: { PATH: '/usr/bin:/bin', GROVE_SOCKET: '/other.sock' } }).toString().trim()
     expect(out.startsWith('/other.sock|')).toBe(true)
+  })
+})
+
+describe('installCommandLineTool', () => {
+  const setup = () => {
+    const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'grove-'))
+    const launcher = path.join(dir, 'bin', 'grove')
+    fs.mkdirSync(path.dirname(launcher))
+    fs.writeFileSync(launcher, '#!/bin/sh\n', { mode: 0o755 })
+    return { dir, launcher, targetDir: path.join(dir, 'local', 'bin') }
+  }
+
+  it('links the launcher, creating the directory, and reports whether it is on PATH', () => {
+    const { launcher, targetDir } = setup()
+    const res = installCommandLineTool({ launcher, targetDir, pathVar: `/usr/bin:${targetDir}` })
+    expect(res).toEqual({ ok: true, target: path.join(targetDir, 'grove'), onPath: true })
+    expect(fs.readlinkSync(path.join(targetDir, 'grove'))).toBe(launcher)
+    expect(installCommandLineTool({ launcher, targetDir, pathVar: '/usr/bin' })).toMatchObject({ ok: true, onPath: false })
+  })
+
+  it('replaces a stale symlink but refuses a regular file', () => {
+    const { dir, launcher, targetDir } = setup()
+    fs.mkdirSync(targetDir, { recursive: true })
+    fs.symlinkSync(path.join(dir, 'gone'), path.join(targetDir, 'grove'))
+    expect(installCommandLineTool({ launcher, targetDir, pathVar: '' })).toMatchObject({ ok: true })
+    expect(fs.readlinkSync(path.join(targetDir, 'grove'))).toBe(launcher)
+    fs.rmSync(path.join(targetDir, 'grove'))
+    fs.writeFileSync(path.join(targetDir, 'grove'), 'mine')
+    expect(installCommandLineTool({ launcher, targetDir, pathVar: '' })).toMatchObject({ ok: false })
+    expect(fs.readFileSync(path.join(targetDir, 'grove'), 'utf8')).toBe('mine')
   })
 })

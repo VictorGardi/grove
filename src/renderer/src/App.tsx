@@ -14,7 +14,7 @@ import { ContentHeader } from './components/shell/ContentHeader'
 import { TopBar } from './components/shell/TopBar'
 import { Banner } from './components/ui/Banner'
 import { Button } from './components/ui/Button'
-import { boardKey, childrenOf, content, crumbs } from './navigation'
+import { boardKey, childrenOf, content, crumbs, currentProjectId } from './navigation'
 import { longestWaiting, serviceBanners, shownStatus } from './sessionStatus'
 import { useSlices } from './stores/slices'
 import { sessionGroups, sessionOrder } from './tree'
@@ -41,7 +41,15 @@ export default function App() {
     return window.api.on('menu:action', (a) => {
       // read the latest state, not this effect's closure
       const { projects, sessions, ui, features } = useSlices.getState()
-      if (a.type === 'newSession') setNewFor({})
+      if (a.type === 'newSession') setNewFor({ projectId: currentProjectId(content(ui, projects, sessions, features.items)) ?? undefined })
+      else if (a.type === 'newTerminal') {
+        const projectId = currentProjectId(content(ui, projects, sessions, features.items))
+        if (projectId) {
+          void window.api.invoke('session:create', { projectId, kind: 'terminal', cols: 120, rows: 40 }).then((res) => {
+            if (res.ok) setFocused(res.data.id)
+          })
+        }
+      }
       else if (a.type === 'closeSession') {
         const focused = sessions.find((x) => x.id === ui.focusedSessionId)
         if (focused?.lastStatus === 'running') setConfirmKill(focused)
