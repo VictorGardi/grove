@@ -104,9 +104,18 @@ describe('step', () => {
     expect(fold).toMatchObject({ running: false, pending: new Map() })
   })
 
-  it('ignores SessionStart, unknown hooks and non-object payloads, never mutating the fold', () => {
+  it('SessionStart records the resume id, without events or status change', () => {
+    expect(emptyFold('S').resumeId).toBe(null)
+    const x = step(waiting, r({ hook_event_name: 'SessionStart', session_id: 'x' }))
+    expect(x.events).toEqual([])
+    expect(x.fold).toMatchObject({ resumeId: 'x', running: waiting.running, pending: waiting.pending })
+    expect(step(x.fold, r({ hook_event_name: 'SessionStart', session_id: 'y' })).fold.resumeId).toBe('y')
+    expect(step(x.fold, r({ hook_event_name: 'SessionStart' })).fold).toBe(x.fold)
+  })
+
+  it('ignores unknown hooks and non-object payloads, never mutating the fold', () => {
     const before = emptyFold('S')
-    for (const e of [{ hook_event_name: 'SessionStart', session_id: 'x' }, { hook_event_name: 'Nope' }, 1, null]) {
+    for (const e of [{ hook_event_name: 'Nope' }, 1, null]) {
       expect(step(before, r(e))).toEqual({ fold: before, events: [] })
     }
     const copy = new Map(waiting.pending)
@@ -137,7 +146,8 @@ describe('fixture replay', () => {
     ])
     expect(events.some((e) => e.type === 'pending' && e.kind === 'permission')).toBe(false)
     expect(fold).toMatchObject({ running: false, idleAt: '2026-10-07T06:38:12.000Z', pending: new Map(),
-      lastWrite: ['/private/tmp/claude-501/-Users-victor-git-grove/4049dd18-706b-47d5-8458-0b22ffd98930/scratchpad/needs_perms.sh'] })
+      lastWrite: ['/private/tmp/claude-501/-Users-victor-git-grove/4049dd18-706b-47d5-8458-0b22ffd98930/scratchpad/needs_perms.sh'],
+      resumeId: '07e96ba9-735b-4bff-b576-1a719e75df41' })
   })
 
   it('capture-2.1.285-b: permissions, an answered question, an interrupt, Edits and a background subagent', () => {
@@ -153,6 +163,7 @@ describe('fixture replay', () => {
       '+perm:ac0b2a4dd439f0325', '-perm:ac0b2a4dd439f0325', 'start', 'end 07:32:19', // background subagent after the main Stop
     ])
     expect(events.filter((e) => e.type === 'pending' && e.kind === 'question')).toHaveLength(2)
-    expect(fold).toMatchObject({ running: false, idleAt: '2026-10-07T07:32:19.000Z', pending: new Map(), lastWrite: ['/Users/victor/git/grove/CONTEXT.md'] })
+    expect(fold).toMatchObject({ running: false, idleAt: '2026-10-07T07:32:19.000Z', pending: new Map(), lastWrite: ['/Users/victor/git/grove/CONTEXT.md'],
+      resumeId: '1c076504-908e-4f0f-b2bd-c403a36d97f8' })
   })
 })

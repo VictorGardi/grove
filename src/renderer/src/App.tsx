@@ -90,7 +90,7 @@ export default function App() {
               <div className={s.ended}>
                 <div className={s.endedTitle}>Session ended</div>
                 <div className={s.endedActions}>
-                  {shown.session.kind === 'opencode' && (
+                  {shown.session.kind !== 'terminal' && (
                     <Button icon="resume" variant="primary" onClick={() => void window.api.invoke('session:resume', { id: shown.session.id })}>Resume</Button>
                   )}
                   <Button icon="trash" onClick={() => void window.api.invoke('session:remove', { id: shown.session.id })}>Remove</Button>

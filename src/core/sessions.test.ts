@@ -549,7 +549,32 @@ describe('resume', () => {
     await core.commands.sessionKill({ id: t.id })
     expect(await core.commands.sessionResume({ id: 'x' })).toEqual({ ok: false, error: 'not-found' })
     expect(await core.commands.sessionResume({ id: o.id })).toEqual({ ok: false, error: 'not-gone' })
-    expect(await core.commands.sessionResume({ id: t.id })).toEqual({ ok: false, error: 'not-opencode' })
+    expect(await core.commands.sessionResume({ id: t.id })).toEqual({ ok: false, error: 'not-agent' })
+  })
+
+  it('resumes a gone Claude session into its latest conversation, keeping the spool', async () => {
+    const s = setupCore()
+    disposeAll = s.disposeAll
+    const withSpool = () => s.make(NOW, { sources: [s.oc, new SpoolClaude({ dir: s.claudeDir })] })
+    const first = withSpool()
+    await first.start()
+    const c1 = await createClaude(first)
+    const c2 = await createClaude(first)
+    first.dispose()
+    const spool = path.join(s.claudeDir, `${c1.agentSessionId}.jsonl`)
+    fs.writeFileSync(spool, '{"t":"2026-10-05T09:58:00Z","e":{"hook_event_name":"SessionStart","session_id":"post-clear"}}\n')
+    const core = withSpool()
+    await core.start()
+    await core.commands.sessionKill({ id: c1.id })
+    await core.commands.sessionKill({ id: c2.id })
+    const argv = async (id: string) => {
+      s.fake.calls = []
+      expect((await core.commands.sessionResume({ id })).ok).toBe(true)
+      return (s.fake.calls.find((c) => c.method === 'create')!.args[0] as { argv: string[] }).argv[4]
+    }
+    expect(await argv(c1.id)).toMatch(/^exec claude --resume post-clear --settings /)
+    expect(await argv(c2.id)).toMatch(new RegExp(`^exec claude --resume ${c2.agentSessionId} --settings `))
+    expect(fs.existsSync(spool)).toBe(true)
   })
 
   it('re-syncs status when the service is connected', async () => {
@@ -560,5 +585,49 @@ describe('resume', () => {
     oc.snapshotCalls = []
     await core.commands.sessionResume({ id: o.id })
     expect(oc.snapshotCalls).toEqual([[o.agentSessionId]])
+  })
+})
+
+describe('claude cleanup', () => {
+  let disposeAll = () => {}
+  afterEach(() => disposeAll())
+
+  async function withSpool() {
+    const s = setupCore()
+    disposeAll = s.disposeAll
+    const core = s.make(NOW, { sources: [s.oc, new SpoolClaude({ dir: s.claudeDir })] })
+    await core.start()
+    const c = await createClaude(core)
+    const spool = path.join(s.claudeDir, `${c.agentSessionId}.jsonl`)
+    fs.writeFileSync(spool, '{"t":"2026-10-05T09:58:00Z","e":{"hook_event_name":"UserPromptSubmit"}}\n')
+    await core.commands.sessionKill({ id: c.id })
+    return { core, c, spool }
+  }
+
+  it('deletes the spool when the session is removed', async () => {
+    const { core, c, spool } = await withSpool()
+    expect((await core.commands.sessionRemove({ id: c.id })).ok).toBe(true)
+    expect(fs.existsSync(spool)).toBe(false)
+  })
+
+  it('deletes the spool when its project is removed', async () => {
+    const { core, spool } = await withSpool()
+    expect((await core.commands.projectRemove({ id: 'p' })).ok).toBe(true)
+    expect(fs.existsSync(spool)).toBe(false)
+  })
+
+  it('tells only the session\'s own source, and none for terminals', async () => {
+    const s = setupCore()
+    disposeAll = s.disposeAll
+    const core = s.make()
+    await core.start()
+    const t = await create(core)
+    const o = await createOpenCode(core)
+    await core.commands.sessionKill({ id: t.id })
+    await core.commands.sessionKill({ id: o.id })
+    await core.commands.sessionRemove({ id: t.id })
+    expect([s.oc.forgotten, s.claude.forgotten]).toEqual([[], []])
+    await core.commands.sessionRemove({ id: o.id })
+    expect([s.oc.forgotten, s.claude.forgotten]).toEqual([[o.agentSessionId], []])
   })
 })

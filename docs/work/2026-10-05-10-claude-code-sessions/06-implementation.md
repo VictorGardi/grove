@@ -18,7 +18,7 @@ forced: []
 - [x] Slice 1 — Tracer: start a Claude session, spool fills; state v2 (capture partial; see below)
 - [x] Slice 2 — Seam generalised (D1), OpenCode unchanged 
 - [x] Slice 3 — Claude live status
-- [ ] Slice 4 — Claude auto-link and restart catch-up
+- [x] Slice 4 — Claude auto-link and restart catch-up
 - [ ] Slice 5 — Claude resume and cleanup
 
 ## Slice 1
@@ -126,6 +126,34 @@ Deviations (mechanical, no design impact):
 - `NotebookEdit` names its path `tool_input.notebook_path`, not `file_path` (Claude Code's tool schema; not in either capture). The `wrote` row takes `file_path`, else `notebook_path`; no string path → no `wrote`.
 - Tests for kind claude live in a new `describe('core auto-link (claude)')` in `features.test.ts`; the restart test uses a real `SpoolClaude` on `claudeDir` and also checks the restarted core sends no notification.
 
-Verification: `npm test -- src/core/claude src/core/features.test.ts` (53 passed), `npm run typecheck` clean, `npm test` (336 passed, outside the sandbox). Manual check: pending (human).
+Verification: `npm test -- src/core/claude src/core/features.test.ts` (53 passed), `npm run typecheck` clean, `npm test` (336 passed, outside the sandbox). Manual check passed (human, 2026-10-07).
+
+## Slice 5
+
+Deviations (mechanical, no design impact):
+
+- `SpoolTail.forget(id)` added (drops the byte offset), so a removed session's spool doesn't leave stale tail state.
+- `forgetAgents(sessions)` helper in `core.ts`, called by `sessionRemove` and `projectRemove`.
+- `step` now returns a new fold when only the fold changed (`SessionStart` sets `resumeId` with no events); previously "no events" meant "same fold".
+
+Verification: `npm test -- src/core/claude src/core/sessions.test.ts` (76 passed), `npm run typecheck` clean, `npm test` (342 passed, outside the sandbox), `npm run build` ok. Manual check: pending (human).
+
+## PR description
+
+**Claude Code sessions** (child 10 of `2026-10-05-opencode-feature-workspace`)
+
+grove can now run Claude Code sessions next to OpenCode ones. The ＋ modal offers "Claude Code", which starts `claude --session-id <uuid> --settings <hooks>` in tmux via the login shell. Per-launch hooks append each hook payload to an app-owned spool, `<userData>/agents/claude/<id>.jsonl` (ADR 0016). A Claude adapter tails the spool, folds it into the same agent-neutral events OpenCode emits, and core runs both sources side by side, each with its own connect and re-sync state (D1, ADR 0019).
+
+Slices:
+
+1. Tracer: Claude launch with per-launch hooks; `state.json` v2 (`opencodeSessionId` → `agentSessionId`, migrated on read); first live hook capture committed as a fixture.
+2. Seam generalised: `AgentSource[]` with a `SourceState` per kind; OpenCode's id and argv moved into `HttpOpenCode`; OpenCode behaviour unchanged.
+3. Claude live status: spool scanner and tail, hook → event fold, `SpoolClaude`. Cards show working, waiting · permission/question/done, and idle, with the seen mark and notifications. `PostToolBatch` writes a marker only.
+4. Auto-link and restart catch-up: Write/Edit/MultiEdit/NotebookEdit link the session to its feature folder; after a restart, status and links are rebuilt from the spool against the seen mark.
+5. Resume and cleanup: Resume reopens the latest conversation (post-`/clear` included) with `claude --resume`; removing a session or its project deletes its spool.
+
+How to verify: `npm run typecheck`, `npm test` (real-tmux tests need to run outside a sandbox), `npm run build`. By hand (`npm run dev`): start Claude Code from ＋; let it ask permission while another session is focused → a notification and "waiting · permission"; have it edit a file in a feature folder → the card links; quit and relaunch grove after a turn finishes → linked and "waiting · done"; `/clear`, a prompt, `tmux -L grove kill-server` → Resume → the post-clear conversation; Remove → the spool file is gone.
+
+Known limits (design risks): an interrupt shows `working` until the next prompt or `idle_prompt`; a granted long tool stays "waiting · permission" until its batch ends; spools aren't compacted.
 
 ## Open questions

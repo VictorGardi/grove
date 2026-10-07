@@ -54,7 +54,7 @@ export interface Commands {
   sessionCreate(a: { projectId: string; kind: SessionKind; cols: number; rows: number }): Promise<Result<Session>>
   sessionKill(a: { id: string }): Promise<Result<{ id: string }>>
   sessionRemove(a: { id: string }): Promise<Result<{ id: string }>>
-  sessionResume(a: { id: string }): Promise<Result<Session>> // gone OpenCode sessions only
+  sessionResume(a: { id: string }): Promise<Result<Session>> // gone agent sessions only
   sessionRename(a: { id: string; label: string }): Promise<Result<Session>>
   sessionLink(a: { id: string; feature: string | null }): Promise<Result<Session>>
   uiSet(partial: Partial<UiState>): Promise<Result<UiState>>
@@ -417,6 +417,11 @@ export function createCore(opts: CoreOptions): Core {
     if (focused && !findSession(focused.id)) set('ui', { ...slices.ui, focusedSessionId: null, focusedProject: focused.projectId })
   }
 
+  // Removed agent sessions: each source drops what it keeps for them (Claude: the spool).
+  function forgetAgents(gone: Session[]): void {
+    for (const s of gone) if (s.kind !== 'terminal' && s.agentSessionId) states.get(s.kind)?.source.forget(s.agentSessionId)
+  }
+
   const commands: Commands = {
     async projectAdd({ path }) {
       const project = newProject(path, randomUUID())
@@ -429,7 +434,9 @@ export function createCore(opts: CoreOptions): Core {
       if (!slices.projects.some((p) => p.id === id)) return { ok: false, error: 'not-found' }
       if (hasLiveSessions(id, slices.sessions)) return { ok: false, error: 'has-live-sessions' }
       set('projects', slices.projects.filter((p) => p.id !== id))
+      const gone = slices.sessions.filter((s) => s.projectId === id)
       dropSessions((s) => s.projectId !== id)
+      forgetAgents(gone)
       if (slices.ui.focusedProject === id) set('ui', { ...slices.ui, focusedProject: null })
       syncProjects(false)
       return { ok: true, data: { id } }
@@ -464,15 +471,17 @@ export function createCore(opts: CoreOptions): Core {
       if (!session) return { ok: false, error: 'not-found' }
       if (session.lastStatus !== 'gone') return { ok: false, error: 'not-gone' }
       dropSessions((s) => s.id !== id)
+      forgetAgents([session])
       return { ok: true, data: { id } }
     },
 
-    // E-D3: a new tmux session of the same name runs `opencode -s <id>`, picking up its history.
+    // E-D3: a new tmux session of the same name runs the agent's resume argv (`opencode -s <id>`,
+    // `claude --resume <id>`), picking up its history.
     async sessionResume({ id }) {
       const session = findSession(id)
       const project = session && slices.projects.find((p) => p.id === session.projectId)
       if (!session || !project) return { ok: false, error: 'not-found' }
-      if (session.kind !== 'opencode' || !session.agentSessionId) return { ok: false, error: 'not-opencode' }
+      if (session.kind === 'terminal' || !session.agentSessionId) return { ok: false, error: 'not-agent' }
       if (session.lastStatus !== 'gone') return { ok: false, error: 'not-gone' }
       const st = states.get(session.kind)
       if (!st) return { ok: false, error: 'no-source' }

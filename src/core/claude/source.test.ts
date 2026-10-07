@@ -52,6 +52,22 @@ describe('SpoolClaude', () => {
     expect(await source.lastWrites('u')).toEqual([])
   })
 
+  it('resumes the spool\'s latest conversation and forgets a removed session', async () => {
+    const { dir, source } = setup()
+    fs.mkdirSync(dir, { recursive: true })
+    fs.appendFileSync(path.join(dir, 'u.jsonl'), line({ hook_event_name: 'SessionStart', session_id: 'post' }) + line({ hook_event_name: 'UserPromptSubmit' }))
+    fs.appendFileSync(path.join(dir, 'v.jsonl'), line({ hook_event_name: 'UserPromptSubmit' }))
+    source.start(() => {})
+    expect(source.argv('u', 'resume')).toEqual(claudeArgv('u', path.join(dir, 'u.jsonl'), 'resume', 'post'))
+    for (const id of ['v', 'none']) expect(source.argv(id, 'resume')).toEqual(claudeArgv(id, path.join(dir, `${id}.jsonl`), 'resume'))
+    expect(source.argv('u', 'start')).toEqual(claudeArgv('u', path.join(dir, 'u.jsonl'), 'start'))
+    source.forget('u')
+    expect(fs.existsSync(path.join(dir, 'u.jsonl'))).toBe(false)
+    expect((await source.snapshot(['u'])).size).toBe(0)
+    expect(await source.lastWrites('u')).toEqual([])
+    expect(() => source.forget('none')).not.toThrow()
+  })
+
   it('stops tailing on stop()', async () => {
     const { source, events, append } = setup()
     source.start((e) => events.push(e))

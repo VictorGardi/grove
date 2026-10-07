@@ -83,7 +83,7 @@ function SessionCard({ s, feature, tag, focused, compact, onFocus, onOpenFeature
           <Button variant="ghost" size="sm" round icon="link" aria-label="Link…" title="Link…" onClick={onLink} />
           {s.lastStatus === 'gone' && (
             <>
-              {s.kind === 'opencode' && (
+              {s.kind !== 'terminal' && (
                 <Button variant="ghost" size="sm" round icon="resume" aria-label="Resume session" title="Resume"
                   onClick={() => void window.api.invoke('session:resume', { id: s.id })} />
               )}

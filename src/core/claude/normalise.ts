@@ -8,9 +8,10 @@ export interface ClaudeFold {
   idleAt: string | null
   pending: Map<string, 'permission' | 'question'> // perm:<scope> | q:<tool_use_id>
   lastWrite: string[] // paths of the latest successful write; [] if none
+  resumeId: string | null // latest SessionStart session_id (a /clear starts a new one); null before one
 }
 
-export const emptyFold = (id: string): ClaudeFold => ({ id, running: false, idleAt: null, pending: new Map(), lastWrite: [] })
+export const emptyFold = (id: string): ClaudeFold => ({ id, running: false, idleAt: null, pending: new Map(), lastWrite: [], resumeId: null })
 
 interface Hook {
   hook_event_name?: unknown
@@ -18,6 +19,7 @@ interface Hook {
   tool_use_id?: unknown
   agent_id?: unknown
   tool_input?: unknown
+  session_id?: unknown
 }
 
 const WRITE_TOOLS = new Set(['Write', 'Edit', 'MultiEdit', 'NotebookEdit'])
@@ -91,11 +93,14 @@ export function step(f: ClaudeFold, r: SpoolRecord): { fold: ClaudeFold; events:
       close(() => false)
       end()
       break
+    case 'SessionStart':
+      if (typeof e.session_id === 'string') fold = { ...fold, resumeId: e.session_id }
+      break
     case 'Notification': // idle_prompt: an interrupt or an Esc-rejected question fires no other hook
       close(() => false)
       if (fold.running) end()
       break
   }
-  if (events.length === 0) return { fold: f, events }
+  if (events.length === 0 && fold === f) return { fold: f, events }
   return { fold: { ...fold, pending }, events }
 }

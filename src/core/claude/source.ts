@@ -1,4 +1,5 @@
 import { randomUUID } from 'node:crypto'
+import fs from 'node:fs'
 import path from 'node:path'
 import type { AgentEvent, AgentSource, SessionSnapshot } from '../agents/types'
 import { claudeArgv } from './hooks'
@@ -23,7 +24,7 @@ export class SpoolClaude implements AgentSource {
   }
 
   argv(id: string, mode: 'start' | 'resume'): string[] {
-    return claudeArgv(id, path.join(this.opts.dir, `${id}.jsonl`), mode)
+    return claudeArgv(id, this.spool(id), mode, mode === 'resume' ? this.folds.get(id)?.resumeId ?? undefined : undefined)
   }
 
   start(onEvent: (e: AgentEvent) => void): void {
@@ -46,10 +47,23 @@ export class SpoolClaude implements AgentSource {
     return this.folds.get(id)?.lastWrite ?? []
   }
 
-  forget(_id: string): void {}
+  // The session was removed: its spool goes with it.
+  forget(id: string): void {
+    this.folds.delete(id)
+    this.tail.forget(id)
+    try {
+      fs.rmSync(this.spool(id), { force: true })
+    } catch {
+      // nothing to clean up
+    }
+  }
 
   stop(): void {
     this.tail.stop()
+  }
+
+  private spool(id: string): string {
+    return path.join(this.opts.dir, `${id}.jsonl`)
   }
 
   private fold(id: string, records: SpoolRecord[], initial: boolean): void {

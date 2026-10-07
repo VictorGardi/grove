@@ -93,6 +93,10 @@ export class SpoolTail {
     for (const id of this.ids()) this.read(id, false)
   }
 
+  forget(id: string): void {
+    this.offsets.delete(id)
+  }
+
   stop(): void {
     this.stopped = true
     this.watcher?.close()
