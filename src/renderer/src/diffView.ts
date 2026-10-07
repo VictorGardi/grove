@@ -1,4 +1,4 @@
-import type { DiffFile, DiffLine, SessionDiff } from '@shared/types'
+import type { CommentAnchor, DiffFile, DiffLine, SessionDiff } from '@shared/types'
 
 export function visibleFiles(d: SessionDiff, showUntracked: boolean): DiffFile[] {
   return showUntracked ? d.files : d.files.filter((f) => f.status !== 'untracked')
@@ -22,4 +22,14 @@ export function toggleOne(collapsed: ReadonlySet<string>, path: string): Set<str
   const next = new Set(collapsed)
   if (!next.delete(path)) next.add(path)
   return next
+}
+
+export const sideOf = (l: DiffLine): 'old' | 'new' => (l.kind === 'del' ? 'old' : 'new')
+
+// The comment anchor for the lines of one hunk on one side, between two clicked line indices (either order).
+export function rangeAnchor(root: string, file: DiffFile, hunk: number, side: 'old' | 'new', a: number, b: number): Extract<CommentAnchor, { kind: 'diff' }> | null {
+  const lines = file.hunks[hunk]?.lines.slice(Math.min(a, b), Math.max(a, b) + 1).filter((l) => sideOf(l) === side) ?? []
+  if (lines.length === 0) return null
+  const num = (l: DiffLine) => (side === 'old' ? l.old : l.new)!
+  return { kind: 'diff', root, path: file.path, side, start: num(lines[0]), end: num(lines[lines.length - 1]), lines: lines.map((l) => l.text) }
 }

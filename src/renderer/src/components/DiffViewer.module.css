@@ -157,6 +157,54 @@
   color: var(--text);
 }
 
+.lineSelected {
+  box-shadow: inset 2px 0 0 var(--accent);
+}
+
+.plus {
+  flex-shrink: 0;
+  width: 2.5ch;
+  padding: 0;
+  border: 0;
+  background: none;
+  color: var(--accent);
+  font: inherit;
+  text-align: center;
+  cursor: pointer;
+  opacity: 0;
+}
+
+.line:hover .plus,
+.plus:focus-visible {
+  opacity: 1;
+}
+
+.block {
+  position: sticky;
+  left: 0;
+  width: min(560px, 100%);
+  padding: var(--sp-2) var(--sp-3);
+  font-family: var(--font-ui);
+  font-size: var(--fs-md);
+  white-space: normal;
+  background: var(--raised-bg);
+  border-block: 1px solid var(--card-border);
+}
+
+.draft {
+  display: flex;
+  align-items: flex-start;
+  gap: var(--sp-1);
+}
+
+.draftBody {
+  flex: 1;
+  min-width: 0;
+  color: var(--text);
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+
 .num {
   flex-shrink: 0;
   width: 5ch;

@@ -1,15 +1,52 @@
 import { useEffect, useRef, useState } from 'react'
+import type { Comment } from '@shared/types'
+import { groupForTray } from '../reviewView'
 import { useSlices } from '../stores/slices'
+import { CommentEditor } from './CommentEditor'
 import { Button } from './ui/Button'
 import s from './ReviewTray.module.css'
 
 const sentAt = (iso: string | null) => (iso ? new Date(iso).toLocaleString([], { dateStyle: 'short', timeStyle: 'short' }) : '')
+
+const lineLabel = (c: Comment) => {
+  const a = c.anchor
+  return a.kind === 'diff' ? `L${a.start === a.end ? a.start : `${a.start}-${a.end}`}${a.side === 'old' ? ' (removed)' : ''}` : ''
+}
+
+// One draft in the tray: where it is, its quote, its body; Edit and Delete. A click on the quote opens the diff.
+function TrayItem({ comment, onJump }: { comment: Comment; onJump: () => void }) {
+  const [editing, setEditing] = useState(false)
+  const [error, setError] = useState<string | null>(null)
+  const a = comment.anchor
+  async function save(body: string) {
+    const res = await window.api.invoke('comment:update', { id: comment.id, body })
+    if (res.ok) setEditing(false)
+    else setError(res.error)
+  }
+  return (
+    <li className={s.item}>
+      <button type="button" className={s.where} onClick={onJump}>
+        <span>{lineLabel(comment)}</span>
+        {a.kind === 'diff' && <span className={s.quote}>{a.lines[0]}</span>}
+      </button>
+      {editing ? <CommentEditor initial={comment.body} error={error} onSave={(b) => void save(b)} onCancel={() => setEditing(false)} /> : (
+        <div className={s.itemRow}>
+          <span className={s.body}>{comment.body}</span>
+          <Button size="sm" variant="ghost" onClick={() => setEditing(true)}>Edit</Button>
+          <Button size="sm" variant="ghost" onClick={() => void window.api.invoke('comment:delete', { id: comment.id })}>Delete</Button>
+        </div>
+      )}
+    </li>
+  )
+}
 
 // Review (n) in a session's header: its tray of drafts, a general note, Send, and the Sent list.
 export function ReviewMenu({ sessionId }: { sessionId: string }) {
   const comments = useSlices((x) => x.comments).filter((c) => c.sessionId === sessionId)
   const drafts = comments.filter((c) => c.state === 'draft')
   const sent = comments.filter((c) => c.state === 'sent').sort((a, b) => (b.sentAt ?? '').localeCompare(a.sentAt ?? ''))
+  const groups = groupForTray(drafts)
+  const openDiff = useSlices((x) => x.openDiff)
   const note = drafts.find((c) => c.anchor.kind === 'note')
   const [open, setOpen] = useState(false)
   const [text, setText] = useState(note?.body ?? '')
@@ -67,6 +104,14 @@ export function ReviewMenu({ sessionId }: { sessionId: string }) {
       </Button>
       {open && (
         <div className={s.panel} role="dialog" aria-label="Review">
+          {groups.map((g) => (
+            <section key={g.label} className={s.group}>
+              <div className={s.groupLabel}>{g.label}</div>
+              <ul className={s.items}>
+                {g.comments.map((c) => <TrayItem key={c.id} comment={c} onJump={() => openDiff(sessionId)} />)}
+              </ul>
+            </section>
+          ))}
           <label className={s.label} htmlFor={`note-${sessionId}`}>General note</label>
           <textarea id={`note-${sessionId}`} className={s.note} rows={4} value={text} placeholder="Anything for the agent…"
             onChange={(e) => setText(e.target.value)} onBlur={() => void saveNote()} />

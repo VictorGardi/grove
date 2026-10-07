@@ -1,9 +1,15 @@
-import { useState } from 'react'
-import type { DiffFile, SessionDiff } from '@shared/types'
-import { allCollapsed, lineKey, toggleAll, toggleOne, visibleFiles } from '../diffView'
+import { Fragment, useState } from 'react'
+import type { Comment, DiffFile, SessionDiff } from '@shared/types'
+import { allCollapsed, lineKey, rangeAnchor, sideOf, toggleAll, toggleOne, visibleFiles } from '../diffView'
+import { draftsByLine } from '../reviewView'
+import { useSlices } from '../stores/slices'
+import { CommentEditor } from './CommentEditor'
 import { Icon } from './ui/Icon'
 import { Button } from './ui/Button'
 import s from './DiffViewer.module.css'
+
+// The comment being written: lines of one hunk on one side, from `origin` to `end` (hunk line indices).
+interface Draft { path: string; hunk: number; side: 'old' | 'new'; origin: number; end: number }
 
 const STATUS: Record<DiffFile['status'], string> = {
   modified: 'Modified', added: 'Added', deleted: 'Deleted', renamed: 'Renamed', untracked: 'Untracked',
@@ -26,6 +32,19 @@ export function DiffViewer({ diff, sessionId, label, expanded, onOpenRendered, o
   const [fold, setFold] = useState<{ sessionId: string; paths: Set<string> }>({ sessionId, paths: new Set() })
   const collapsed = fold.sessionId === sessionId ? fold.paths : new Set<string>()
   const folded = allCollapsed(collapsed, files)
+  const comments = useSlices((x) => x.comments).filter((c) => c.sessionId === sessionId)
+  const [writing, setWriting] = useState<Draft | null>(null)
+  const [error, setError] = useState<string | null>(null)
+
+  async function save(file: DiffFile, body: string) {
+    const a = writing && d?.root ? rangeAnchor(d.root, file, writing.hunk, writing.side, writing.origin, writing.end) : null
+    if (!a) return
+    const res = await window.api.invoke('comment:add', { sessionId, anchor: a, body })
+    if (res.ok) {
+      setWriting(null)
+      setError(null)
+    } else setError(res.error)
+  }
   return (
     <div className={s.viewer}>
       <div className={s.header}>
@@ -52,7 +71,9 @@ export function DiffViewer({ diff, sessionId, label, expanded, onOpenRendered, o
           : d.state === 'error' ? <div className={s.note}>{d.error}</div>
           : files.length === 0 ? <div className={s.note}>No changes</div>
           : files.map((f) => (
-            <FileSection key={f.path} file={f} collapsed={collapsed.has(f.path)}
+            <FileSection key={f.path} file={f} collapsed={collapsed.has(f.path)} drafts={draftsByLine(comments, f.path)}
+              writing={writing?.path === f.path ? writing : null} error={error}
+              onWrite={(next) => { setError(null); setWriting(next) }} onSave={(body) => save(f, body)} onCancel={() => setWriting(null)}
               onToggle={() => setFold({ sessionId, paths: toggleOne(collapsed, f.path) })}
               onOpenRendered={(r) => onOpenRendered(d.projectId, r)} />
           ))}
@@ -61,9 +82,15 @@ export function DiffViewer({ diff, sessionId, label, expanded, onOpenRendered, o
   )
 }
 
-function FileSection({ file, collapsed, onToggle, onOpenRendered }: {
+function FileSection({ file, collapsed, drafts, writing, error, onWrite, onSave, onCancel, onToggle, onOpenRendered }: {
   file: DiffFile
   collapsed: boolean
+  drafts: Map<string, Comment[]>
+  writing: Draft | null
+  error: string | null
+  onWrite: (d: Draft) => void
+  onSave: (body: string) => void
+  onCancel: () => void
   onToggle: () => void
   onOpenRendered: (r: NonNullable<DiffFile['rendered']>) => void
 }) {
@@ -83,19 +110,60 @@ function FileSection({ file, collapsed, onToggle, onOpenRendered }: {
       {collapsed ? null
         : file.binary ? <div className={s.note}>Binary file</div>
         : file.truncated ? <div className={s.note}>Too large to show</div>
-        : file.hunks.map((h, i) => (
-        <div key={`${i}:${h.header}`} className={s.hunk}>
+        : file.hunks.map((h, hi) => (
+        <div key={`${hi}:${h.header}`} className={s.hunk}>
           <div className={s.hunkHeader}>{h.header}</div>
-          {h.lines.map((l) => (
-            <div key={lineKey(file.path, l)} className={`${s.line} ${l.kind === 'add' ? s.lineAdd : l.kind === 'del' ? s.lineDel : ''}`}>
-              <span className={s.num}>{l.old ?? ''}</span>
-              <span className={s.num}>{l.new ?? ''}</span>
-              <span className={s.sign}>{l.kind === 'add' ? '+' : l.kind === 'del' ? '−' : ' '}</span>
-              <span className={s.text}>{l.text}</span>
-            </div>
-          ))}
+          {h.lines.map((l, li) => {
+            const key = lineKey(file.path, l)
+            const side = sideOf(l)
+            const here = writing?.hunk === hi && writing.side === side
+            const inRange = here && li >= Math.min(writing.origin, writing.end) && li <= Math.max(writing.origin, writing.end)
+            // a shift-click in the same hunk and side extends the range; any other click starts one
+            const start = (e: React.MouseEvent) => onWrite(e.shiftKey && here
+              ? { ...writing, end: li }
+              : { path: file.path, hunk: hi, side, origin: li, end: li })
+            return (
+              <Fragment key={key}>
+                <div className={`${s.line} ${l.kind === 'add' ? s.lineAdd : l.kind === 'del' ? s.lineDel : ''} ${inRange ? s.lineSelected : ''}`}>
+                  <button type="button" className={s.plus} aria-label={`Comment on line ${(side === 'old' ? l.old : l.new) ?? ''}`} onClick={start}>+</button>
+                  <span className={s.num}>{l.old ?? ''}</span>
+                  <span className={s.num}>{l.new ?? ''}</span>
+                  <span className={s.sign}>{l.kind === 'add' ? '+' : l.kind === 'del' ? '−' : ' '}</span>
+                  <span className={s.text}>{l.text}</span>
+                </div>
+                {here && Math.max(writing.origin, writing.end) === li && (
+                  <div className={s.block}>
+                    <CommentEditor key={`${writing.path}:${writing.hunk}:${writing.side}:${writing.origin}`} error={error} onSave={onSave} onCancel={onCancel} />
+                  </div>
+                )}
+                {drafts.get(key)?.map((c) => <DraftBlock key={c.id} comment={c} />)}
+              </Fragment>
+            )
+          })}
         </div>
       ))}
     </section>
+  )
+}
+
+// A saved draft under its last line: its body, with Edit and Delete.
+function DraftBlock({ comment }: { comment: Comment }) {
+  const [editing, setEditing] = useState(false)
+  const [error, setError] = useState<string | null>(null)
+  async function save(body: string) {
+    const res = await window.api.invoke('comment:update', { id: comment.id, body })
+    if (res.ok) setEditing(false)
+    else setError(res.error)
+  }
+  return (
+    <div className={s.block}>
+      {editing ? <CommentEditor initial={comment.body} error={error} onSave={(b) => void save(b)} onCancel={() => setEditing(false)} /> : (
+        <div className={s.draft}>
+          <div className={s.draftBody}>{comment.body}</div>
+          <Button size="sm" variant="ghost" onClick={() => setEditing(true)}>Edit</Button>
+          <Button size="sm" variant="ghost" onClick={() => void window.api.invoke('comment:delete', { id: comment.id })}>Delete</Button>
+        </div>
+      )}
+    </div>
   )
 }

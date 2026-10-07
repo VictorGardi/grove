@@ -41,3 +41,15 @@ Slice 1 creates only note drafts from the UI; the model accepts any anchor, and
 - [x] Run `npm test`
 - [x] Run `npm run typecheck`
 - [ ] Manual: `npm run dev`; send a note "reply with the word pong" to an OpenCode and a Claude session; both submit and answer; restart the app and the Sent list is still there.
+
+## Slice 2 — Comment on diff lines
+
+- [x] Write failing tests: `src/core/comments/format.test.ts` "diff range, removed lines, path outside project"; `src/renderer/src/reviewView.test.ts` (`draftsByLine`, `groupForTray`); `src/renderer/src/diffView.test.ts` (`rangeAnchor`).
+- [x] `src/core/comments/format.ts`: diff blocks under `## <path>` headings (files in order of first comment; `L<a>-<b> (new|removed):`, `> ` quoted lines, body); path project-relative when inside the project, else absolute.
+- [x] `src/renderer/src/diffView.ts`: `sideOf`, `rangeAnchor(root, file, hunk, side, a, b)` (lines of that side in one hunk between two line indices). `src/renderer/src/reviewView.ts`: `draftsByLine`, `groupForTray`.
+- [x] `src/renderer/src/components/CommentEditor.tsx` + `.module.css`: textarea with Save/Cancel; ⌘↩ saves, Esc cancels.
+- [x] `DiffViewer.tsx` + CSS: gutter **+** on each line; click opens the editor under the line; shift-click in the same hunk and side extends the range; saving calls `comment:add` with `anchor` from `rangeAnchor`; drafts render under their last line with Edit/Delete.
+- [x] `ReviewTray.tsx`: list drafts by file (`groupForTray`) with quote, edit and delete; clicking a quote opens the session's diff.
+- [x] Run `npm test`
+- [x] Run `npm run typecheck`
+- [ ] Manual: comment on 2 lines and on a removed line, send, and check the agent receives all three with their line numbers.

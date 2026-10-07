@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import type { DiffFile, SessionDiff } from '@shared/types'
-import { allCollapsed, lineKey, toggleAll, toggleOne, visibleFiles } from './diffView'
+import { allCollapsed, lineKey, rangeAnchor, toggleAll, toggleOne, visibleFiles } from './diffView'
 
 const file = (path: string, status: DiffFile['status']): DiffFile =>
   ({ path, oldPath: null, status, binary: false, additions: 0, deletions: 0, hunks: [], truncated: false, rendered: null })
@@ -38,5 +38,29 @@ describe('collapsing files', () => {
     expect(allCollapsed(all, files)).toBe(true)
     expect([...toggleAll(all, files)]).toEqual([])
     expect(allCollapsed(new Set(), [])).toBe(false)
+  })
+})
+
+describe('rangeAnchor', () => {
+  const f: DiffFile = {
+    ...file('a.ts', 'modified'),
+    hunks: [{ header: '@@', oldStart: 1, newStart: 1, lines: [
+      { kind: 'context', text: 'c1', old: 1, new: 1 },
+      { kind: 'del', text: 'gone', old: 2, new: null },
+      { kind: 'add', text: 'new1', old: null, new: 2 },
+      { kind: 'add', text: 'new2', old: null, new: 3 },
+      { kind: 'context', text: 'c2', old: 3, new: 4 },
+    ] }],
+  }
+  it('covers the new-side lines between two clicks, in either order', () => {
+    const want = { kind: 'diff', root: '/r', path: 'a.ts', side: 'new', start: 2, end: 4, lines: ['new1', 'new2', 'c2'] }
+    expect(rangeAnchor('/r', f, 0, 'new', 2, 4)).toEqual(want)
+    expect(rangeAnchor('/r', f, 0, 'new', 4, 2)).toEqual(want)
+  })
+  it('a removed line is on the old side, numbered by its old number', () => {
+    expect(rangeAnchor('/r', f, 0, 'old', 1, 1)).toEqual({ kind: 'diff', root: '/r', path: 'a.ts', side: 'old', start: 2, end: 2, lines: ['gone'] })
+  })
+  it('is null when no line of that side is in range', () => {
+    expect(rangeAnchor('/r', f, 0, 'old', 2, 3)).toBeNull()
   })
 })

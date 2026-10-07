@@ -42,3 +42,26 @@ header.
 
 **Not done:** the manual check in `05-plan.md` (send "reply with the word pong"
 to an OpenCode and a Claude session; restart and see Sent). It needs live agents.
+
+## Slice 2 — Comment on diff lines
+
+**Changed:** `format.ts` renders diff blocks under `## <path>` headings
+(`L<a>-<b> (new|removed):`, quoted lines, body). Renderer: `diffView.ts`
+(`sideOf`, `rangeAnchor`), new `reviewView.ts` (`draftsByLine`, `groupForTray`),
+`CommentEditor` (⌘↩ saves, Esc cancels), `DiffViewer` gutter **+** (click for a
+line, shift-click in the same hunk and side extends the range; editor and saved
+drafts sit under the range's last line), and the tray lists drafts by file with
+Edit/Delete.
+
+**Tests:** `format.test.ts` (diff range, removed lines, path outside project),
+`reviewView.test.ts`, `diffView.test.ts` (`rangeAnchor`). `npm test` 420 pass;
+typecheck clean.
+
+**Deviations:**
+- A range is limited to one hunk on one side; a shift-click elsewhere starts a
+  new comment instead.
+- The tray's "jump to" opens the session's diff; it does not scroll to the line.
+- Drafts are not highlighted on their lines beyond the block under them.
+
+**Not done:** the manual check (comment on 2 lines and a removed line, send,
+agent receives all three).
