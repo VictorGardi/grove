@@ -101,5 +101,5 @@
   --topbar-h: 51px;
   --header-h: 47px;
   --traffic-inset: 100px;
-  --sidebar-w: 200px; /* overridden at runtime from ui.sidebarWidth */
+  --sidebar-w: 220px; /* overridden at runtime from ui.sidebarWidth */
 }
