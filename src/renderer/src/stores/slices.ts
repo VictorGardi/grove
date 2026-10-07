@@ -1,5 +1,5 @@
 import { create } from 'zustand'
-import type { DocTarget, FeaturesSlice, OpenCodeSlice, Project, Session, SessionDiff, UiState } from '@shared/types'
+import type { DiffFile, DocTarget, FeaturesSlice, OpenCodeSlice, Project, Session, SessionDiff, UiState } from '@shared/types'
 import { DEFAULT_UI, EMPTY_FEATURES, OPENCODE_CONNECTING } from '@shared/types'
 import { openBoard } from '../navigation'
 import { trackStatus, trackWaiting, type StatusSince } from '../sessionStatus'
@@ -24,6 +24,7 @@ interface SlicesState {
   setSidebarTab(tab: UiState['sidebarTab']): void
   openArtifact(t: DocTarget): void
   openDiff(sessionId: string): void
+  openRendered(projectId: string, sessionId: string, r: NonNullable<DiffFile['rendered']>): void // "← Diff" returns to sessionId
   closeViewer(): void
   setViewerWidth(px: number): void
   toggleViewerExpanded(): void
@@ -72,6 +73,10 @@ export const useSlices = create<SlicesState>((set, get) => {
     setSidebarTab: (tab) => { void window.api.invoke('ui:set', { sidebarTab: tab }) },
     openArtifact: (t) => { void window.api.invoke('ui:set', { viewer: t }) },
     openDiff: (sessionId) => { void window.api.invoke('ui:set', { viewer: { kind: 'diff', sessionId } }) },
+    openRendered: (projectId, sessionId, r) => {
+      if (r.slug === null) return // project files: slice 6
+      void window.api.invoke('ui:set', { viewer: { kind: 'artifact', projectId, slug: r.slug, path: r.path, hash: null, fromDiff: sessionId } })
+    },
     closeViewer: () => { void window.api.invoke('ui:set', { viewer: null }) },
     setViewerWidth: (px) => { void window.api.invoke('ui:set', { viewerWidth: Math.round(px) }) },
     toggleViewerExpanded: () => { void window.api.invoke('ui:set', { viewerExpanded: !get().ui.viewerExpanded }) },

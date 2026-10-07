@@ -107,6 +107,10 @@
   color: var(--diff-del-fg);
 }
 
+.open {
+  margin-left: auto;
+}
+
 .hunkHeader {
   padding: 0 var(--sp-3);
   color: var(--text-3);

@@ -106,3 +106,22 @@ a `fromDiff` session).
 
 **Manual check:** add a project that isn't a git repo, start a terminal in it,
 ⌥⌘B: "Not a git repository".
+
+## Slice 5 — Open rendered: feature-folder files
+
+**Changed:** `computeDiff` sets `rendered = { slug, path }` on a changed,
+non-deleted viewable file inside one of the project's feature folders
+(compared on real paths). `slices.ts` `openRendered` opens it as an artifact
+target with `fromDiff: <session>`. `DiffViewer` has an "Open rendered" button
+in such files' headers; `ArtifactViewer` takes `onBack` and shows "← Diff",
+which `App.tsx` wires to `openDiff(v.fromDiff)`. The switcher and followed
+links keep `fromDiff`.
+
+**Tests:** `compute.test.ts`: a changed `docs/work/x/03-design.md` and a new
+`refs/new.html` map to feature `x`; a `.ts` file and a deleted `.md` get `null`;
+another project's feature is ignored.
+
+**Deviations:** none.
+
+**Manual check:** in a diff, "Open rendered" on a changed `docs/work/*/…md`
+shows it rendered; "← Diff" returns to the diff.

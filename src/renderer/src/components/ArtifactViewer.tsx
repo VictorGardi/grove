@@ -6,12 +6,13 @@ import { Button } from './ui/Button'
 import s from './ArtifactViewer.module.css'
 
 // Opaque sandboxed frame: no allow-same-origin, so the artifact gets a null origin (ADR 0007).
-export function ArtifactViewer({ target, groups, mtimeMs, expanded, onOpen, onToggleExpanded, onReload, onClose }: {
+export function ArtifactViewer({ target, groups, mtimeMs, expanded, onOpen, onBack, onToggleExpanded, onReload, onClose }: {
   target: DocTarget
   groups: FileGroup[]
   mtimeMs: number | undefined // the open file's, from the features slice
   expanded: boolean
   onOpen: (path: string) => void
+  onBack?: () => void // opened from a diff: "← Diff"
   onToggleExpanded: () => void
   onReload: () => void
   onClose: () => void
@@ -30,6 +31,7 @@ export function ArtifactViewer({ target, groups, mtimeMs, expanded, onOpen, onTo
   return (
     <div className={s.viewer}>
       <div className={s.header}>
+        {onBack && <Button variant="ghost" size="sm" onClick={onBack}>← Diff</Button>}
         <select className={s.switcher} aria-label="Artifact" value={target.path} onChange={(e) => onOpen(e.target.value)}>
           {!listed && <option value={target.path} disabled>{target.path}</option>}
           {groups.map((g) => (

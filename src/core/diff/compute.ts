@@ -1,6 +1,7 @@
 import { createHash } from 'node:crypto'
 import fs from 'node:fs'
 import path from 'node:path'
+import { isViewable } from '@shared/artifactUrl'
 import type { DiffFile, Feature, Project, SessionDiff } from '@shared/types'
 import { GitError, type GitRun } from './git'
 import { parseUnifiedDiff, untrackedFile } from './parse'
@@ -33,10 +34,33 @@ export async function computeDiff(o: { sessionId: string; dir: string; project: 
     const untracked = await readUntracked(root, names)
     const key = sha1([raw, ...names, ...untracked.stamps].join('\0'))
     const files = [...parseUnifiedDiff(raw, MAX_FILE_BYTES), ...untracked.files]
+    setRendered(files, root, o.features.filter((f) => f.projectId === o.project.id))
     return { key, diff: { ...base, root, files, truncated: capLines(files) } }
   } catch (e) {
     const error = (e as Error).message
     return { key: `error:${error}`, diff: { ...base, state: 'error', error } }
+  }
+}
+
+const real = (p: string) => {
+  try {
+    return fs.realpathSync(p)
+  } catch {
+    return null
+  }
+}
+
+// Where a changed viewable file opens rendered: its feature folder's artifact route (D6).
+function setRendered(files: DiffFile[], root: string, features: Feature[]): void {
+  const folders = features.flatMap((f) => {
+    const dir = real(f.path)
+    return dir ? [{ slug: f.slug, dir }] : []
+  })
+  for (const file of files) {
+    if (file.status === 'deleted' || !isViewable(file.path)) continue
+    const abs = path.join(root, file.path)
+    const f = folders.find((x) => abs.startsWith(x.dir + path.sep))
+    if (f) file.rendered = { slug: f.slug, path: path.relative(f.dir, abs).split(path.sep).join('/') }
   }
 }
 

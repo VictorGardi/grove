@@ -23,7 +23,7 @@ import s from './App.module.css'
 
 export default function App() {
   const { projects, sessions, ui, features, opencode, diff, errors, waitingSince, statusSince, hydrate, setFocused, focusFeature, go, setBoard,
-    openArtifact, openDiff, closeViewer, setViewerWidth, toggleViewerExpanded, reloadViewer } = useSlices()
+    openArtifact, openDiff, openRendered, closeViewer, setViewerWidth, toggleViewerExpanded, reloadViewer } = useSlices()
   const [newFor, setNewFor] = useState<{ projectId?: string } | null>(null)
   const [confirmKill, setConfirmKill] = useState<Session | null>(null)
 
@@ -117,12 +117,14 @@ export default function App() {
         }
         viewer={v?.kind === 'diff' ? (
           <DiffViewer diff={diff} sessionId={v.sessionId} label={sessions.find((x) => x.id === v.sessionId)?.label ?? 'session'}
-            expanded={ui.viewerExpanded} onToggleExpanded={toggleViewerExpanded} onClose={closeViewer} />
+            expanded={ui.viewerExpanded} onOpenRendered={(projectId, r) => openRendered(projectId, v.sessionId, r)}
+            onToggleExpanded={toggleViewerExpanded} onClose={closeViewer} />
         ) : v?.kind === 'artifact' ? (
           <ArtifactViewer target={v} groups={viewerFeature ? viewableFiles(viewerFeature, features.stages) : []}
             mtimeMs={viewerFeature ? viewerFeature.artifacts.find((a) => a.name === v.path)?.mtimeMs : undefined}
             expanded={ui.viewerExpanded} onToggleExpanded={toggleViewerExpanded} onReload={reloadViewer}
-            onOpen={(path) => openArtifact({ ...v, path, hash: null })} onClose={closeViewer} />
+            onOpen={(path) => openArtifact({ ...v, path, hash: null })}
+            onBack={v.fromDiff ? () => openDiff(v.fromDiff!) : undefined} onClose={closeViewer} />
         ) : undefined}
         sidebarWidth={ui.sidebarWidth}
         viewerWidth={ui.viewerWidth}

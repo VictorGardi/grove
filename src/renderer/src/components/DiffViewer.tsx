@@ -9,11 +9,12 @@ const STATUS: Record<DiffFile['status'], string> = {
 }
 
 // The session diff, drawn as text nodes only (D1). The body never remounts, so scroll survives updates.
-export function DiffViewer({ diff, sessionId, label, expanded, onToggleExpanded, onClose }: {
+export function DiffViewer({ diff, sessionId, label, expanded, onOpenRendered, onToggleExpanded, onClose }: {
   diff: SessionDiff | null
   sessionId: string
   label: string
   expanded: boolean
+  onOpenRendered: (projectId: string, r: NonNullable<DiffFile['rendered']>) => void
   onToggleExpanded: () => void
   onClose: () => void
 }) {
@@ -41,13 +42,14 @@ export function DiffViewer({ diff, sessionId, label, expanded, onToggleExpanded,
           : d.state === 'not-git' ? <div className={s.note}>Not a git repository</div>
           : d.state === 'error' ? <div className={s.note}>{d.error}</div>
           : files.length === 0 ? <div className={s.note}>No changes</div>
-          : files.map((f) => <FileSection key={f.path} file={f} />)}
+          : files.map((f) => <FileSection key={f.path} file={f} onOpenRendered={(r) => onOpenRendered(d.projectId, r)} />)}
       </div>
     </div>
   )
 }
 
-function FileSection({ file }: { file: DiffFile }) {
+function FileSection({ file, onOpenRendered }: { file: DiffFile; onOpenRendered: (r: NonNullable<DiffFile['rendered']>) => void }) {
+  const { rendered } = file
   return (
     <section className={s.file}>
       <div className={s.fileHeader}>
@@ -55,6 +57,7 @@ function FileSection({ file }: { file: DiffFile }) {
         <span className={s.path}>{file.oldPath ? `${file.oldPath} → ${file.path}` : file.path}</span>
         <span className={s.add}>+{file.additions}</span>
         <span className={s.del}>−{file.deletions}</span>
+        {rendered && <Button variant="ghost" size="sm" className={s.open} onClick={() => onOpenRendered(rendered)}>Open rendered</Button>}
       </div>
       {file.binary ? <div className={s.note}>Binary file</div>
         : file.truncated ? <div className={s.note}>Too large to show</div>

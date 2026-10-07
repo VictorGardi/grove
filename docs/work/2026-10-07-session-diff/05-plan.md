@@ -291,25 +291,25 @@ conflicts with the code, follow the design's intent, note the deviation in
 
 ## Slice 5 — Open rendered: feature-folder files
 
-- [ ] `compute.ts`: for each file with `status !== 'deleted'` and
+- [x] `compute.ts`: for each file with `status !== 'deleted'` and
   `isViewable(path)` (from `@shared/artifactUrl`): `abs = path.join(root, file.path)`;
   a feature `f` of this project with `abs` inside `realpath(f.path) + sep` →
   `rendered = { slug: f.slug, path: posix rel to the feature folder }`;
   otherwise `null` (slice 6 adds project files).
-- [ ] `slices.ts`: `openRendered(projectId, sessionId, r)` → `ui:set` viewer
+- [x] `slices.ts`: `openRendered(projectId, sessionId, r)` → `ui:set` viewer
   `{ kind: 'artifact', projectId, slug: r.slug, path: r.path, hash: null, fromDiff: sessionId }`
   (slice 6 adds the `file` branch).
-- [ ] `DiffViewer`: "Open rendered" ghost button in the file header when
+- [x] `DiffViewer`: "Open rendered" ghost button in the file header when
   `file.rendered`.
-- [ ] `ArtifactViewer`: `onBack?: () => void`; when set, a "← Diff" ghost
+- [x] `ArtifactViewer`: `onBack?: () => void`; when set, a "← Diff" ghost
   button at the left of the header. `App.tsx` passes it when
   `v.fromDiff` → `openDiff(v.fromDiff)`. Opening another artifact from the
   switcher keeps `fromDiff`.
-- [ ] Tests: `compute.test.ts` — a feature folder in the repo
+- [x] Tests: `compute.test.ts` — a feature folder in the repo
   (`docs/work/x/feature.md`), a changed `docs/work/x/03-design.md` gets
   `{ slug: 'x', path: '03-design.md' }`; a `.ts` file gets `null`. Feed
   `features` built with the same shape `core` uses (`Feature.path` absolute).
-- [ ] Commit slice 5.
+- [x] Commit slice 5.
 
 ## Slice 6 — Open rendered: any project file (D6)
 
