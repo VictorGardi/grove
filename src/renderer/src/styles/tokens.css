@@ -102,4 +102,5 @@
   --header-h: 47px;
   --traffic-inset: 100px;
   --sidebar-w: 220px; /* overridden at runtime from ui.sidebarWidth */
+  --pane-dim: 0.65; /* opacity of unfocused panes in the session grid */
 }

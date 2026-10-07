@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import { DEFAULT_UI, type Feature, type Project, type Session, type UiState } from '@shared/types'
-import { boardKey, boardProject, childrenOf, content, crumbs, currentProjectId } from './navigation'
+import { boardKey, boardProject, childrenOf, content, crumbs, currentProjectId, focusTarget } from './navigation'
 
 const project = (id: string): Project => ({ id, name: id.toUpperCase(), path: '/' + id })
 
@@ -129,5 +129,27 @@ describe('currentProjectId', () => {
     expect(currentProjectId({ kind: 'feature', feature: { projectId: 'p2' } as never })).toBe('p2')
     expect(currentProjectId({ kind: 'session', session: { projectId: 'p3' } as never })).toBe('p3')
     expect(currentProjectId({ kind: 'grid', sessions: [], focused: { projectId: 'p4' } as never })).toBe('p4')
+  })
+})
+
+describe('focusTarget', () => {
+  const many = [session('a'), session('b', { startedAt: '2026-10-05T09:00:00.000Z' }), session('c', { projectId: 'q' })]
+  const at = (u: Partial<UiState>, n: number) => focusTarget(ui(u), projects, many, features, n)
+
+  it('is the nth session in sidebar order outside the grid', () => {
+    expect(at({}, 1)?.id).toBe('b') // p's sessions by start time, then q's
+    expect(at({}, 3)?.id).toBe('c')
+    expect(at({}, 4)).toBeUndefined()
+  })
+
+  it('is the nth pane in grid order while the grid shows', () => {
+    const grid = { open: true, members: ['c', 'a'] }
+    expect(at({ grid, focusedSessionId: 'a' }, 1)?.id).toBe('c')
+    expect(at({ grid, focusedSessionId: 'a' }, 2)?.id).toBe('a')
+    expect(at({ grid, focusedSessionId: 'a' }, 3)).toBeUndefined()
+  })
+
+  it('counts sidebar order when the grid is on but hidden', () => {
+    expect(at({ grid: { open: true, members: ['c', 'a'] }, focusedSessionId: 'b' }, 1)?.id).toBe('b')
   })
 })

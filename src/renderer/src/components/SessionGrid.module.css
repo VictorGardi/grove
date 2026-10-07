@@ -21,6 +21,15 @@
   overflow: hidden;
 }
 
+/* the focused pane stands out; the rest are dimmed and hover does not undim them */
+.focused {
+  border-color: var(--card-selected-border);
+}
+
+.dim {
+  opacity: var(--pane-dim);
+}
+
 .ended {
   flex: 1;
   display: flex;

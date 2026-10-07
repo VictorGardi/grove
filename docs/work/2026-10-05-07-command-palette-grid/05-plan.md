@@ -68,3 +68,15 @@ Notes for a cold reader: design D1 puts the grid in `UiState.grid: { open, membe
 - [x] Run `npx vitest run src/renderer/src/gridView.test.ts src/renderer/src/navigation.test.ts src/shared/grid.test.ts src/core/store/stateStore.test.ts`
 - [x] Run `npm test`
 - [x] Run `npm run typecheck`
+
+## Slice 4 — Focus, Cmd+1..9 and dimming
+
+Notes for a cold reader: the focused pane is `ui.focusedSessionId` (design D1); `content()` already returns `{ kind: 'grid', sessions, focused }`, and `SessionGrid` gets `sessions` in grid order. Cmd+1..9 sends `{ type: 'focusIndex', n }` through `runAction`; while the grid shows, n counts grid panes, otherwise `sessionOrder(...)` as before. The seen mark already reads `focusedSessionId`, so only the focused pane clears a finished turn's waiting status with no core change (design "Seen mark"); the existing seen-mark tests in `sessions.test.ts` must keep passing. Dimming is `opacity: var(--pane-dim)` (0.65) on unfocused panes, hover does not undim; the focused pane has an accent border.
+
+- [x] Write failing test `src/renderer/src/navigation.test.ts` for `focusTarget(ui, projects, sessions, features, n)`: with the grid shown it returns grid pane n (1-based; undefined past the end); without the grid it returns the nth session in sidebar order (`sessionOrder(sessionGroups(...))`)
+- [x] `src/renderer/src/navigation.ts`: export `focusTarget`; `App.tsx` `focusIndex` uses it
+- [x] `src/renderer/src/styles/tokens.css`: add `--pane-dim: 0.65` in the same block as the other tokens
+- [x] `src/renderer/src/components/SessionGrid.tsx` (+ css): prop `onFocusPane(id)`; each pane gets `.focused` (accent border) or `.dim` (`opacity: var(--pane-dim)`, no hover change); `onMouseDownCapture` on the pane and `TerminalView onFocus` call `onFocusPane` when the pane is not the focused one
+- [x] `src/renderer/src/App.tsx`: pass `onFocusPane={setFocused}`
+- [x] Run `npm test`
+- [x] Run `npm run typecheck`

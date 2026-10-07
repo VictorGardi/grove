@@ -17,7 +17,7 @@ forced: []
 - [x] Slice 1 — Palette tracer: Cmd+K jumps to sessions, features, projects
 - [x] Slice 2 — Palette commands and terminal refocus
 - [x] Slice 3 — Two sessions side by side
-- [ ] Slice 4 — Focus, Cmd+1..9 and dimming
+- [x] Slice 4 — Focus, Cmd+1..9 and dimming
 - [ ] Slice 5 — Pane header, ended tiles and the cap
 - [ ] Slice 6 — Grid toolbar
 
@@ -57,3 +57,15 @@ Deviations (small, none touch a one-way decision):
 - Core's `dropSessions` pruning has no direct test (no core harness for it); `pruneGrid` and `loadState` are tested.
 
 Verified: `gridView.test.ts`, `navigation.test.ts`, `grid.test.ts`, `stateStore.test.ts` (and `paletteItems.test.ts`), `npm test` (59 files, 557 tests), `npm run typecheck`. Manual (two running sessions, Cmd+G, typing in both, resize, restart) not done by the agent.
+
+## Slice 4
+
+Deviations (small, none touch a one-way decision):
+
+- Cmd+1..9 routing is a pure `focusTarget(ui, projects, sessions, features, n)` in `navigation.ts` (tested), used by `runAction`; the structure only named `focusIndex` in `App.tsx`. It uses grid panes in grid order; slice 6 will switch that to the visible list.
+- A hidden grid (on, but the focused session is not a member) counts sidebar order for Cmd+N, as the single view does.
+- Focus on click: `onMouseDownCapture` on the pane (covers the ended tile and the terminal) plus `TerminalView`'s `onFocus`; both call `onFocusPane` only when the pane is not already focused.
+- No core change for "only the focused pane clears waiting": `onScreenId` already reads `focusedSessionId`. Seen-mark tests (`sessions.test.ts`) still pass. Unfocused panes keep notifications, per design.
+- `npm run build` also run once as a sanity check (CSS modules, bundling); it passed.
+
+Verified: `npm test` (59 files, 560 tests), `npm run typecheck`. Manual (finished turn in unfocused pane stays waiting; Cmd+2 focuses pane 2; outside the grid Cmd+2 focuses sidebar session 2; dimming in both themes) not done by the agent.

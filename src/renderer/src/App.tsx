@@ -20,10 +20,9 @@ import { Banner } from './components/ui/Banner'
 import { Button } from './components/ui/Button'
 import { paletteItems } from './paletteItems'
 import { gridShown } from './gridView'
-import { boardKey, childrenOf, content, crumbs, currentProjectId } from './navigation'
+import { boardKey, childrenOf, content, crumbs, currentProjectId, focusTarget } from './navigation'
 import { longestWaiting, serviceBanners, shownStatus } from './sessionStatus'
 import { useSlices } from './stores/slices'
-import { sessionGroups, sessionOrder } from './tree'
 import { viewableFiles } from './viewerFiles'
 import s from './App.module.css'
 
@@ -64,7 +63,7 @@ export default function App() {
       const focused = sessions.find((x) => x.id === ui.focusedSessionId)
       if (focused?.lastStatus === 'running') setConfirmKill(focused)
     } else if (a.type === 'focusIndex') {
-      const target = sessionOrder(sessionGroups(projects, sessions, ui))[a.n - 1]
+      const target = focusTarget(ui, projects, sessions, features.items, a.n)
       if (target) setFocused(target.id)
     } else if (a.type === 'projectBoard') {
       const to = boardKey(ui, projects, sessions, features.items)
@@ -120,7 +119,7 @@ export default function App() {
                 onFocusSession={setFocused} onOpenFeature={openFeature}
                 onOpenArtifact={(name) => openArtifact({ kind: 'artifact', projectId: shown.feature.projectId, slug: shown.feature.slug, path: name, hash: null, fromDiff: null })} />
             ) : shown.kind === 'grid' ? (
-              <SessionGrid sessions={shown.sessions} focusedId={shown.focused.id} overlayOpen={paletteOpen || !!newFor || !!confirmKill} />
+              <SessionGrid sessions={shown.sessions} focusedId={shown.focused.id} onFocusPane={setFocused} overlayOpen={paletteOpen || !!newFor || !!confirmKill} />
             ) : shown.kind === 'session' && shown.session.lastStatus === 'running' ? (
               <TerminalView key={shown.session.id} sessionId={shown.session.id} active={!paletteOpen && !newFor && !confirmKill} />
             ) : shown.kind === 'session' ? (
