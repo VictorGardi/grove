@@ -110,3 +110,16 @@ tray shows the new line; delete the line, it shows orphaned).
 - Selection in the frame ignores selections that start or end outside a `data-line` block (e.g. the frontmatter table).
 
 **Not done:** the manual checks (iframe script has no automated test; needs `npm run dev`).
+
+## Slice 5 — Markdown drafts re-anchor and orphan
+
+**Changed:** `anchor.ts` gains `blockText` (rendered text per leaf block, whole-file lines) and `reanchorArtifact`; `markdown.ts` exports `parseMarkdown` (shared with `renderMarkdown`). Core: after each `publish()` it re-anchors drafts of any feature artifact whose `mtimeMs` differs from the last one seen (or unseen) and that has an artifact draft.
+
+**Tests:** `anchor.test.ts` (blockText; moved by insert, edited, ambiguous with and without prefix/suffix, frontmatter, two blocks, found again, untouched kinds), `reanchor.test.ts` "core artifact drafts" (edit on disk → lines follow, then orphaned). `npm test` 451 pass; typecheck clean.
+
+**Deviations:**
+- Matching tries four tiers (`prefix+exact+suffix`, `prefix+exact`, `exact+suffix`, `exact`) and stops at the first tier with any hit; one hit places it, several orphan it. The design said "prefix+exact+suffix, then exact"; the two middle tiers were added so a frontmatter-table prefix at the document start doesn't defeat the tie-break.
+- Blocks are joined with a space, so a quote that spans blocks places `start` at the first block and `end` at the last.
+- An unreadable file (deleted) is left alone, not orphaned.
+
+**Not done:** the manual check (insert a paragraph above a commented quote on disk; tray lines follow; edit the quote; orphaned).

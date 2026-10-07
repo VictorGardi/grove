@@ -14,7 +14,7 @@ import { loginShellArgv, minimalEnv } from './env'
 import { computeDiff } from './diff/compute'
 import { gitRunner } from './diff/git'
 import { createDiffWatch } from './diff/watch'
-import { reanchorDiff } from './comments/anchor'
+import { reanchorArtifact, reanchorDiff } from './comments/anchor'
 import { slugFor } from './autolink'
 import { formatReview } from './comments/format'
 import { addComment, draftsOf, dropSession, markSent, removeComment, updateComment } from './comments/model'
@@ -238,6 +238,32 @@ export function createCore(opts: CoreOptions): Core {
       items: deriveFeatures(wf, folders, slices.sessions),
     })
     applyHeld()
+    void reanchorArtifacts()
+  }
+
+  // Drafts on an artifact follow its text when the file changed on disk (design D3).
+  const seenMtime = new Map<string, number>() // projectId/slug/name → mtimeMs at the last re-anchor
+  async function reanchorArtifacts(): Promise<void> {
+    for (const f of slices.features.items) {
+      for (const a of f.artifacts) {
+        const key = `${f.projectId}/${f.slug}/${a.name}`
+        if (seenMtime.get(key) === a.mtimeMs) continue
+        const has = (c: Comment) => c.state === 'draft' && c.anchor.kind === 'artifact'
+          && c.anchor.projectId === f.projectId && c.anchor.slug === f.slug && c.anchor.path === a.name
+        if (!slices.comments.some(has)) continue
+        seenMtime.set(key, a.mtimeMs)
+        const file = safeArtifactPath(f.path, a.name)
+        if (!file) continue
+        let source: string
+        try {
+          source = await fs.promises.readFile(file, 'utf8')
+        } catch {
+          continue
+        }
+        const next = reanchorArtifact(slices.comments, { projectId: f.projectId, slug: f.slug, path: a.name }, source)
+        if (next !== slices.comments) set('comments', next)
+      }
+    }
   }
 
   const listed = (projectId: string, slug: string) => discovery.get(projectId)?.folders.has(slug) ?? false

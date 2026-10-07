@@ -83,3 +83,16 @@ Protocol additions beyond the design's four messages (log as deviation): iframe 
 - [x] Run `npm test`
 - [x] Run `npm run typecheck`
 - [ ] Manual: select text across two paragraphs in a `03-design.md`, comment, reload the app (highlight is back), send; an HTML artifact shows no Comment popover.
+
+## Slice 5 — Markdown drafts re-anchor and orphan
+
+Rules (design D3): `blockText(source)` returns one entry per leaf block (inline token → plain rendered text from its `text`/`code_inline`/image-alt children, softbreak → space; `fence`/`code_block` → content), whitespace-collapsed, with 1-based whole-file `start`/`end` (frontmatter offset; table cells use their row's lines). `reanchorArtifact` joins the blocks with one space and, per draft of that file (any session), tries in order `prefix+exact+suffix`, `prefix+exact`, `exact+suffix`, `exact`; the first tier with any match decides: exactly one → `start` = first block's `start`, `end` = last block's `end`; several (ambiguous) or none overall → orphaned. A match clears the orphan mark. Same array when unchanged. Core runs it when a feature artifact's `mtimeMs` differs from the last one seen (or has not been seen) and a draft exists for that file.
+
+- [x] Write failing tests `src/core/comments/anchor.test.ts` (new `describe('reanchorArtifact')`, `blockText`): "quote moved by an insert above", "quote edited → orphaned", "ambiguous → orphaned, prefix/suffix breaks the tie", "frontmatter offset", "spans two blocks", "found again clears orphaned", "same array when unchanged", "other files, sent and diff drafts untouched".
+- [x] `src/core/artifacts/markdown.ts`: export `parseMarkdown(source)` (tokens, env, frontmatter) used by `renderMarkdown`.
+- [x] `src/core/comments/anchor.ts`: `blockText`, `reanchorArtifact(cs, file: { projectId; slug; path }, source)`.
+- [x] `src/core/core.ts`: after `publish()` derives features, for each feature artifact with a changed or unseen `mtimeMs` and an artifact draft on it, read the file (`artifactPath`), run `reanchorArtifact` on the current `slices.comments`, `set('comments')` when changed.
+- [x] Write core test `src/core/comments/reanchor.test.ts` "artifact drafts follow an edited file": a feature folder under the project (copy the fixture style of existing core tests), add an artifact draft, edit the file, expect `start` to move.
+- [x] Run `npm test`
+- [x] Run `npm run typecheck`
+- [ ] Manual: comment in a `03-design.md`, insert a paragraph above it on disk, and the tray line numbers follow; edit the quoted words and it shows orphaned.

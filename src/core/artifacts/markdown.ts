@@ -1,4 +1,5 @@
 import MarkdownIt from 'markdown-it'
+import type { Token } from 'markdown-it'
 import { ARTIFACT_SCHEME, ASSETS_HOST } from '@shared/artifactUrl'
 import { readFrontmatter } from '../workflow/frontmatter'
 import { MERMAID_SCRIPTS } from './html'
@@ -46,20 +47,24 @@ function fmValue(v: unknown): string {
   return String(v)
 }
 
+// Tokens of a file's body, and how many lines the frontmatter takes (none when it is broken and shown as text).
+export function parseMarkdown(source: string): { tokens: Token[]; env: { lineOffset: number }; fm: ReturnType<typeof readFrontmatter> } {
+  const fm = readFrontmatter(source)
+  const body = fm.error ? source : fm.body
+  const env = { lineOffset: fm.error ? 0 : source.split(/\r?\n/).length - body.split('\n').length }
+  return { tokens: md.parse(body, env), env, fm }
+}
+
 // A full HTML document for the viewer: frontmatter table, then the body.
 // Broken frontmatter is rendered as part of the text.
 export function renderMarkdown(source: string, name: string): string {
-  const fm = readFrontmatter(source)
-  const body = fm.error ? source : fm.body
+  const { tokens, env, fm } = parseMarkdown(source)
   const entries = fm.error ? [] : Object.entries(fm.data)
   const table = entries.length === 0
     ? ''
     : '<table class="frontmatter"><tbody>'
       + entries.map(([k, v]) => `<tr><th>${esc(k)}</th><td>${esc(fmValue(v))}</td></tr>`).join('')
       + '</tbody></table>'
-  // the body starts after the frontmatter block (none when it is broken and shown as text)
-  const env = { lineOffset: fm.error ? 0 : source.split(/\r?\n/).length - body.split('\n').length }
-  const tokens = md.parse(body, env)
   const mermaid = tokens.some((t) => t.type === 'fence' && t.info.trim() === 'mermaid')
   return '<!doctype html><html><head><meta charset="utf-8">'
     + `<title>${esc(name)}</title>`
