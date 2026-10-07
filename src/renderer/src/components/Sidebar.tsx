@@ -31,12 +31,12 @@ function SessionCard({ s, feature, tag, focused, compact, onFocus, onOpenFeature
   onLink: () => void
 }) {
   const [editing, setEditing] = useState(false)
-  const opencode = s.kind === 'opencode'
+  const agent = s.kind !== 'terminal'
 
   return (
     <ListRow
       title={s.label}
-      icon={<Icon name={opencode ? 'opencode' : 'terminal'} size={14} className={opencode ? css.iconOpencode : css.iconTerminal} />}
+      icon={<Icon name={s.kind} size={14} className={agent ? css.iconAgent : css.iconTerminal} />}
       meta={(feature || s.branch) && (
         <div className={css.cardInfo}>
           {feature && (
@@ -54,7 +54,7 @@ function SessionCard({ s, feature, tag, focused, compact, onFocus, onOpenFeature
         </div>
       )}
       status={statusView(s)}
-      tone={focused ? 'selected' : opencode ? 'default' : 'muted'}
+      tone={focused ? 'selected' : agent ? 'default' : 'muted'}
       compact={compact}
       onClick={onFocus}
       onTitleDoubleClick={() => setEditing(true)}

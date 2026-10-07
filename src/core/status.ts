@@ -58,12 +58,12 @@ export function statusOf(t: Tracker | undefined, seenAt: string | null): Pick<Se
   return { status: 'idle' }
 }
 
-// OpenCode sessions get a status while the service is connected; otherwise none (tmux liveness shows).
+// OpenCode sessions get a status while the service is connected; others none (tmux liveness shows).
 // Same array when unchanged.
 export function withStatus(sessions: Session[], t: Map<string, Tracker>, connected: boolean): Session[] {
   let changed = false
   const out = sessions.map((s) => {
-    const live = connected && s.opencodeSessionId ? statusOf(t.get(s.opencodeSessionId), s.seenAt) : {}
+    const live = s.kind === 'opencode' && connected && s.agentSessionId ? statusOf(t.get(s.agentSessionId), s.seenAt) : {}
     const same = (k: 'status' | 'waitingFor') => live[k] === s[k] && (live[k] !== undefined || !(k in s))
     if (same('status') && same('waitingFor')) return s
     changed = true

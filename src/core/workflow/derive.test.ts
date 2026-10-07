@@ -20,7 +20,7 @@ function folder(slug: string, files: Record<string, string>): FolderSnapshot & {
 const fm = (fields: string) => `---\n${fields}\n---\n`
 const approved = fm('status: approved')
 const session = (over: Partial<Session>): Session =>
-  ({ ...newSession({ projectId: 'p', kind: 'terminal', now: new Date(0), id: 's' }), feature: 'a', ...over })
+  ({ ...newSession({ projectId: 'p', kind: 'terminal', now: new Date(0), id: 's', agentSessionId: null }), feature: 'a', ...over })
 const ids = (m: Record<string, unknown>) => effectiveStages(wf, m).map((s) => s.id)
 
 describe('effectiveStages', () => {

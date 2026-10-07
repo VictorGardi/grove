@@ -1,8 +1,16 @@
-import { DEFAULT_UI, type StateFile, type UiState } from '@shared/types'
+import { DEFAULT_UI, type Session, type StateFile, type UiState } from '@shared/types'
 import { atomicWrite, readVersioned } from './jsonFile'
 
+type V1Session = Omit<Session, 'agentSessionId'> & { opencodeSessionId?: string | null }
+
+// v1 → v2 (ADR 0017): opencodeSessionId becomes the agent-neutral agentSessionId.
+const v1ToV2 = (s: { sessions?: V1Session[] }) => ({
+  ...s,
+  sessions: (s.sessions ?? []).map(({ opencodeSessionId, ...x }) => ({ ...x, agentSessionId: opencodeSessionId ?? null })),
+})
+
 export function loadState(file: string, onBad?: (msg: string) => void): StateFile {
-  const s = readVersioned<StateFile>(file, 1, { schemaVersion: 1, sessions: [], ui: DEFAULT_UI }, onBad)
+  const s = readVersioned<StateFile>(file, 2, { schemaVersion: 2, sessions: [], ui: DEFAULT_UI }, onBad, { 1: v1ToV2 })
   const sessions = (s.sessions ?? []).map((x) => ({ ...x, seenAt: x.seenAt ?? null })) // seenAt: added after v1 shipped
   // v1 files from before ADR 0018 carry `view` and may have the old features tab
   const { view: _view, ...saved } = (s.ui ?? {}) as Partial<UiState> & { view?: unknown }

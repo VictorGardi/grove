@@ -10,11 +10,13 @@ import type { AttachHandle, SessionBackend } from './backend/types'
 import { terminalTheme } from '@shared/theme'
 import { listFolders, readFolder, resolveRoot, type FolderSnapshot } from './discovery/folder'
 import { chokidarWatchers, type Closer, type Watchers } from './discovery/watcher'
+import { claudeArgv } from './claude/hooks'
 import { loginShellArgv } from './env'
 import { slugFor } from './autolink'
 import { hasLiveSessions, newProject } from './projects'
 import { readBranch } from './git'
 import type { OcEvent, OpenCodeSource } from './opencode/types'
+import { mintSessionId } from './opencodeId'
 import { autoLink, link, markGone, markSeen, newSession, reconcile, rename, resume, withBranches } from './sessions'
 import { loadConfig, saveConfig } from './store/configStore'
 import { apply, fromSnapshot, withStatus, type Tracker } from './status'
@@ -29,6 +31,7 @@ export interface CoreOptions {
   watchers?: Watchers // tests inject fakes
   backend: SessionBackend
   opencode?: OpenCodeSource // absent: tmux-only
+  claudeSpoolDir?: string // <userData>/agents/claude; absent: no Claude sessions
   now?: () => Date // tests inject this
 }
 
@@ -108,7 +111,7 @@ export function createCore(opts: CoreOptions): Core {
     }
     else if (k === 'sessions' || k === 'ui') {
       const sessions = slices.sessions.map(({ branch: _branch, status: _status, waitingFor: _waitingFor, ...s }) => s) // live-only
-      saveState(opts.statePath, { schemaVersion: 1, sessions, ui: slices.ui })
+      saveState(opts.statePath, { schemaVersion: 2, sessions, ui: slices.ui })
     }
     if (k === 'sessions') publish() // card state reads linked sessions
   }
@@ -217,7 +220,7 @@ export function createCore(opts: CoreOptions): Core {
   // Auto-link (E-D6): an unpinned OpenCode session follows the feature folder it last wrote to.
   function linkWrite(ocSessionId: string, paths: string[]): void {
     const root = roots.get(ocSessionId) ?? ocSessionId
-    const session = slices.sessions.find((s) => s.opencodeSessionId === root)
+    const session = slices.sessions.find((s) => s.kind === 'opencode' && s.agentSessionId === root)
     if (!session || session.linkPinned) return
     const project = slices.projects.find((p) => p.id === session.projectId)
     const slug = project && slugFor(paths, project.path, discovery.get(project.id)?.root ?? null)
@@ -246,7 +249,7 @@ export function createCore(opts: CoreOptions): Core {
     const source = opts.opencode
     if (!source) return
     for (const id of ids) {
-      const session = slices.sessions.find((s) => s.opencodeSessionId === id)
+      const session = slices.sessions.find((s) => s.kind === 'opencode' && s.agentSessionId === id)
       if (!session || session.linkPinned) continue
       let paths: string[]
       try {
@@ -346,7 +349,7 @@ export function createCore(opts: CoreOptions): Core {
       }
     } else if (e.type === 'wrote') {
       const root = roots.get(e.sessionId) ?? e.sessionId
-      const session = slices.sessions.find((s) => s.opencodeSessionId === root)
+      const session = slices.sessions.find((s) => s.kind === 'opencode' && s.agentSessionId === root)
       if (session) wroteSince.add(session.id)
       linkWrite(e.sessionId, e.paths)
       return
@@ -365,8 +368,8 @@ export function createCore(opts: CoreOptions): Core {
     queue = []
     wroteSince.clear()
     const ids = slices.sessions
-      .filter((s) => s.kind === 'opencode' && s.lastStatus === 'running' && s.opencodeSessionId)
-      .map((s) => s.opencodeSessionId!)
+      .filter((s) => s.kind === 'opencode' && s.lastStatus === 'running' && s.agentSessionId)
+      .map((s) => s.agentSessionId!)
     let snaps
     try {
       snaps = await source.snapshot(ids)
@@ -424,8 +427,16 @@ export function createCore(opts: CoreOptions): Core {
     async sessionCreate({ projectId, kind, cols, rows }) {
       const project = slices.projects.find((p) => p.id === projectId)
       if (!project) return { ok: false, error: 'not-found' }
-      const session = newSession({ projectId, kind, now: now(), id: randomUUID() })
-      const argv = session.opencodeSessionId ? loginShellArgv(['opencode', '-s', session.opencodeSessionId]) : undefined
+      const dir = opts.claudeSpoolDir
+      if (kind === 'claude' && !dir) return { ok: false, error: 'no-source' }
+      const agentSessionId = kind === 'opencode' ? mintSessionId(now().getTime()) : kind === 'claude' ? randomUUID() : null
+      const session = newSession({ projectId, kind, now: now(), id: randomUUID(), agentSessionId })
+      let argv: string[] | undefined
+      if (kind === 'opencode') argv = loginShellArgv(['opencode', '-s', agentSessionId!])
+      else if (kind === 'claude') {
+        fs.mkdirSync(dir!, { recursive: true, mode: 0o700 })
+        argv = loginShellArgv(claudeArgv(agentSessionId!, path.join(dir!, `${agentSessionId}.jsonl`), 'start'))
+      }
       await backend.create({ name: session.tmuxName, cwd: project.path, cols, rows, argv })
       await backend.setColors(session.tmuxName, terminalTheme.foreground, terminalTheme.background)
       set('sessions', [...slices.sessions, session])
@@ -455,10 +466,10 @@ export function createCore(opts: CoreOptions): Core {
       const session = findSession(id)
       const project = session && slices.projects.find((p) => p.id === session.projectId)
       if (!session || !project) return { ok: false, error: 'not-found' }
-      if (session.kind !== 'opencode' || !session.opencodeSessionId) return { ok: false, error: 'not-opencode' }
+      if (session.kind !== 'opencode' || !session.agentSessionId) return { ok: false, error: 'not-opencode' }
       if (session.lastStatus !== 'gone') return { ok: false, error: 'not-gone' }
       await backend.kill(session.tmuxName) // a leftover dead pane
-      const argv = loginShellArgv(['opencode', '-s', session.opencodeSessionId])
+      const argv = loginShellArgv(['opencode', '-s', session.agentSessionId])
       await backend.create({ name: session.tmuxName, cwd: project.path, cols: 80, rows: 24, argv }) // attaching resizes it
       await backend.setColors(session.tmuxName, terminalTheme.foreground, terminalTheme.background)
       replaceSession(resume(findSession(id) ?? session))

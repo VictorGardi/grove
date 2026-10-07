@@ -3,11 +3,13 @@ import type { SessionKind } from '@shared/types'
 import { useSlices } from '../stores/slices'
 import { Button } from './ui/Button'
 import { cx } from './ui/cx'
+import type { IconName } from './ui/Icon'
 import { Modal } from './ui/Modal'
 import s from './NewSessionModal.module.css'
 
-const kinds: { kind: SessionKind; label: string; icon: 'opencode' | 'terminal' }[] = [
+const kinds: { kind: SessionKind; label: string; icon: IconName }[] = [
   { kind: 'opencode', label: 'OpenCode', icon: 'opencode' },
+  { kind: 'claude', label: 'Claude Code', icon: 'claude' },
   { kind: 'terminal', label: 'Terminal', icon: 'terminal' },
 ]
 

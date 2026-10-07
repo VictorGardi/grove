@@ -225,7 +225,7 @@ describe('core auto-link', () => {
     const o = await createOpenCode(core)
     s.oc.emit({ type: 'connected', version: '2.0.20' })
     await flush()
-    const wrote = (paths: string[], sessionId = o.opencodeSessionId!) => s.oc.emit({ type: 'wrote', sessionId, paths })
+    const wrote = (paths: string[], sessionId = o.agentSessionId!) => s.oc.emit({ type: 'wrote', sessionId, paths })
     return { ...s, work, feature, core, o, wrote }
   }
 
@@ -239,7 +239,7 @@ describe('core auto-link', () => {
 
   it('counts a subagent\'s writes for its root session', async () => {
     const { core, o, oc, wrote } = await setup()
-    oc.emit({ type: 'child', sessionId: 'ses_child', parentId: o.opencodeSessionId! })
+    oc.emit({ type: 'child', sessionId: 'ses_child', parentId: o.agentSessionId! })
     wrote(['docs/work/b/y.md'], 'ses_child')
     expect(find(core, o.id)?.feature).toBe('b')
   })
@@ -271,8 +271,8 @@ describe('core auto-link', () => {
     const { core, o, oc } = await setup()
     const pinned = await createOpenCode(core)
     await core.commands.sessionLink({ id: pinned.id, feature: 'a' })
-    oc.writes.set(o.opencodeSessionId!, ['docs/work/b/z.md'])
-    oc.writes.set(pinned.opencodeSessionId!, ['docs/work/b/z.md'])
+    oc.writes.set(o.agentSessionId!, ['docs/work/b/z.md'])
+    oc.writes.set(pinned.agentSessionId!, ['docs/work/b/z.md'])
     oc.emit({ type: 'disconnected' })
     oc.emit({ type: 'connected', version: '2.0.20' })
     await flush()

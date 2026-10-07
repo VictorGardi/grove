@@ -1,5 +1,5 @@
 export interface Project { id: string; name: string; path: string }
-export type SessionKind = 'opencode' | 'terminal'
+export type SessionKind = 'opencode' | 'claude' | 'terminal'
 export interface Session {
   id: string
   projectId: string
@@ -7,7 +7,7 @@ export interface Session {
   label: string
   labelPinned: boolean
   tmuxName: string                 // `grove-${id}`
-  opencodeSessionId: string | null // set for kind 'opencode' (slice 3)
+  agentSessionId: string | null    // set for agent kinds (opencode, claude)
   feature: string | null           // linked feature slug in this project
   linkPinned: boolean              // true once set by hand; auto-linking (child 3) leaves it alone
   action: { stage: string; actionId: string } | null // always null
@@ -70,7 +70,7 @@ export interface FeaturesSlice {
 export interface OpenCodeSlice { state: 'connecting' | 'connected' | 'unreachable'; version: string | null } // not persisted
 export type Slices = { projects: Project[]; sessions: Session[]; ui: UiState; features: FeaturesSlice; opencode: OpenCodeSlice }
 export interface ConfigFile { schemaVersion: 1; projects: Project[]; workflow?: string }
-export interface StateFile { schemaVersion: 1; sessions: Session[]; ui: UiState }
+export interface StateFile { schemaVersion: 2; sessions: Session[]; ui: UiState }
 export const DEFAULT_UI: UiState = { sidebarWidth: 230, focusedSessionId: null, focusedFeature: null, focusedProject: null, sidebarTab: 'sessions', board: 'features', collapsed: [], viewer: null, viewerWidth: 480, viewerExpanded: false }
 export const EMPTY_FEATURES: FeaturesSlice = { workflowError: null, stages: [], items: [] }
 export const OPENCODE_CONNECTING: OpenCodeSlice = { state: 'connecting', version: null }

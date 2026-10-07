@@ -5,7 +5,7 @@ import { duration, longestWaiting, serviceBanners, shownStatus, statusView, trac
 function session(over: Partial<Session> = {}): Session {
   return {
     id: 'a', projectId: 'p', kind: 'opencode', label: 'a', labelPinned: false, tmuxName: 'grove-a',
-    opencodeSessionId: 'ses_a', feature: null, linkPinned: false, action: null,
+    agentSessionId: 'ses_a', feature: null, linkPinned: false, action: null,
     startedAt: '2026-10-05T10:00:00.000Z', endedAt: null, lastStatus: 'running', seenAt: null, ...over,
   }
 }
@@ -54,7 +54,7 @@ describe('serviceBanners', () => {
 
   it('shows the unreachable banner only while an OpenCode session is live', () => {
     expect(serviceBanners(unreachable, [session()])).toEqual([UNREACHABLE])
-    expect(serviceBanners(unreachable, [session({ kind: 'terminal', opencodeSessionId: null })])).toEqual([])
+    expect(serviceBanners(unreachable, [session({ kind: 'terminal', agentSessionId: null })])).toEqual([])
     expect(serviceBanners(unreachable, [session({ lastStatus: 'gone' })])).toEqual([])
     expect(serviceBanners({ state: 'connecting', version: null }, [session()])).toEqual([])
   })

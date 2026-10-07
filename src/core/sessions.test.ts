@@ -9,7 +9,7 @@ import type { OcEvent } from './opencode/types'
 import { createOpenCode, createTerminal as create, LATER, NOW, setupCore } from './testing/setup'
 
 function session(id: string, over: Partial<Session> = {}): Session {
-  return { ...newSession({ projectId: 'p', kind: 'terminal', now: NOW, id }), ...over }
+  return { ...newSession({ projectId: 'p', kind: 'terminal', now: NOW, id, agentSessionId: null }), ...over }
 }
 
 describe('reconcile', () => {
@@ -32,6 +32,7 @@ describe('reconcile', () => {
 describe('makeLabel', () => {
   it('uses local HH:MM', () => {
     expect(makeLabel('terminal', new Date(2026, 9, 5, 9, 7))).toBe('Terminal · 09:07')
+    expect(makeLabel('claude', new Date(2026, 9, 5, 9, 7))).toBe('Claude · 09:07')
   })
 })
 
@@ -114,11 +115,35 @@ describe('core sessions', () => {
     await a.start()
     const res = await a.commands.sessionCreate({ projectId: 'p', kind: 'opencode', cols: 80, rows: 24 })
     if (!res.ok) throw new Error(res.error)
-    expect(res.data.opencodeSessionId).toMatch(/^ses_/)
+    expect(res.data.agentSessionId).toMatch(/^ses_/)
     expect(res.data.label).toMatch(/^OpenCode · /)
     const call = fake.calls.find((c) => c.method === 'create')!
     const { argv } = call.args[0] as { argv: string[] }
-    expect(argv[4]).toBe(`exec opencode -s ${res.data.opencodeSessionId}`)
+    expect(argv[4]).toBe(`exec opencode -s ${res.data.agentSessionId}`)
+  })
+
+  it('starts claude sessions with a uuid, per-launch hooks and a private spool dir', async () => {
+    const { fake, make, claudeDir } = setup()
+    const a = make()
+    await a.start()
+    const res = await a.commands.sessionCreate({ projectId: 'p', kind: 'claude', cols: 80, rows: 24 })
+    if (!res.ok) throw new Error(res.error)
+    const id = res.data.agentSessionId!
+    expect(id).toMatch(/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/)
+    expect(res.data.label).toMatch(/^Claude · /)
+    const call = fake.calls.find((c) => c.method === 'create')!
+    const { argv } = call.args[0] as { argv: string[] }
+    expect(argv[4].startsWith(`exec claude --session-id ${id} --settings `)).toBe(true)
+    expect(argv[4]).toContain(path.join(claudeDir, `${id}.jsonl`))
+    expect(fs.statSync(claudeDir).mode & 0o777).toBe(0o700)
+  })
+
+  it('refuses claude sessions without a spool dir', async () => {
+    const { fake, make } = setup()
+    const a = make(NOW, { claudeSpoolDir: undefined })
+    await a.start()
+    expect(await a.commands.sessionCreate({ projectId: 'p', kind: 'claude', cols: 80, rows: 24 })).toEqual({ ok: false, error: 'no-source' })
+    expect(fake.calls.some((c) => c.method === 'create')).toBe(false)
   })
 
   it('sets the terminal colours on create', async () => {
@@ -237,7 +262,7 @@ describe('core opencode status', () => {
   it('follows a turn: working, then waiting until seen (off screen), never saving status', async () => {
     const { core, oc, statePath } = await connected()
     const o = await createOpenCode(core)
-    const sessionId = o.opencodeSessionId!
+    const sessionId = o.agentSessionId!
     oc.emit({ type: 'exec-started', sessionId })
     expect(find(core, o.id)?.status).toBe('working')
     const saved = JSON.parse(fs.readFileSync(statePath, 'utf8')) as { sessions: Session[] }
@@ -249,7 +274,7 @@ describe('core opencode status', () => {
   it('waits on a subagent permission, never saving it', async () => {
     const { core, oc, statePath } = await connected()
     const o = await createOpenCode(core)
-    oc.emit({ type: 'child', sessionId: 'ses_child', parentId: o.opencodeSessionId! })
+    oc.emit({ type: 'child', sessionId: 'ses_child', parentId: o.agentSessionId! })
     oc.emit({ type: 'pending', sessionId: 'ses_child', id: 'per_1', kind: 'permission', open: true })
     expect(find(core, o.id)).toMatchObject({ status: 'waiting', waitingFor: 'permission' })
     const saved = JSON.parse(fs.readFileSync(statePath, 'utf8')) as { sessions: Session[] }
@@ -279,13 +304,13 @@ describe('core opencode status', () => {
     await core.checkLiveness()
     oc.emit({ type: 'connected', version: '2.0.20' })
     expect(core.getSlices().opencode).toEqual({ state: 'connected', version: '2.0.20' })
-    expect(oc.snapshotCalls).toEqual([[o.opencodeSessionId]])
+    expect(oc.snapshotCalls).toEqual([[o.agentSessionId]])
   })
 
   it('restores a pending permission from the snapshot', async () => {
     const { core, oc } = await started()
     const o = await createOpenCode(core)
-    oc.snapshots.set(o.opencodeSessionId!, snap({ running: true, pending: [{ id: 'per_1', kind: 'permission' }] }))
+    oc.snapshots.set(o.agentSessionId!, snap({ running: true, pending: [{ id: 'per_1', kind: 'permission' }] }))
     oc.emit({ type: 'connected', version: '2.0.20' })
     await flush()
     expect(find(core, o.id)).toMatchObject({ status: 'waiting', waitingFor: 'permission' })
@@ -294,7 +319,7 @@ describe('core opencode status', () => {
   it('folds a snapshot child\'s form into its root, and its later reply', async () => {
     const { core, oc } = await started()
     const o = await createOpenCode(core)
-    oc.snapshots.set(o.opencodeSessionId!, snap({ children: ['ses_child'] }))
+    oc.snapshots.set(o.agentSessionId!, snap({ children: ['ses_child'] }))
     oc.snapshots.set('ses_child', snap({ pending: [{ id: 'frm_1', kind: 'question' }] }))
     oc.emit({ type: 'connected', version: '2.0.20' })
     await flush()
@@ -306,9 +331,9 @@ describe('core opencode status', () => {
   it('replays events that arrive while the snapshot is in flight', async () => {
     const { core, oc } = await started()
     const o = await createOpenCode(core)
-    oc.snapshots.set(o.opencodeSessionId!, snap())
+    oc.snapshots.set(o.agentSessionId!, snap())
     oc.emit({ type: 'connected', version: '2.0.20' })
-    oc.emit({ type: 'exec-started', sessionId: o.opencodeSessionId! })
+    oc.emit({ type: 'exec-started', sessionId: o.agentSessionId! })
     await flush()
     expect(find(core, o.id)?.status).toBe('working')
   })
@@ -373,7 +398,7 @@ describe('core seen and notify', () => {
     const { core, oc, notified, make } = await setup()
     const o = await createOpenCode(core)
     await connect(oc)
-    const sessionId = o.opencodeSessionId!
+    const sessionId = o.agentSessionId!
     oc.emit({ type: 'exec-started', sessionId })
     oc.emit({ type: 'exec-ended', sessionId, at: ENDED })
     expect(find(core, o.id)).toMatchObject({ status: 'waiting', waitingFor: 'done' })
@@ -399,8 +424,8 @@ describe('core seen and notify', () => {
     await connect(oc)
     core.setWindowFocused(true)
     await core.commands.uiSet({ focusedSessionId: o.id })
-    oc.emit({ type: 'exec-started', sessionId: o.opencodeSessionId! })
-    oc.emit({ type: 'exec-ended', sessionId: o.opencodeSessionId!, at: ENDED })
+    oc.emit({ type: 'exec-started', sessionId: o.agentSessionId! })
+    oc.emit({ type: 'exec-ended', sessionId: o.agentSessionId!, at: ENDED })
     expect(find(core, o.id)?.status).toBe('idle')
     expect(notified).toEqual([])
   })
@@ -409,11 +434,11 @@ describe('core seen and notify', () => {
     const { core, oc, notified } = await setup()
     const a = await createOpenCode(core)
     const b = await createOpenCode(core)
-    oc.snapshots.set(a.opencodeSessionId!, snap({ pending: [{ id: 'per_1', kind: 'permission' }] }))
+    oc.snapshots.set(a.agentSessionId!, snap({ pending: [{ id: 'per_1', kind: 'permission' }] }))
     await connect(oc)
     expect(find(core, a.id)).toMatchObject({ status: 'waiting', waitingFor: 'permission' })
     expect(notified).toEqual([])
-    oc.emit({ type: 'pending', sessionId: b.opencodeSessionId!, id: 'frm_1', kind: 'question', open: true })
+    oc.emit({ type: 'pending', sessionId: b.agentSessionId!, id: 'frm_1', kind: 'question', open: true })
     expect(notified.map((x) => [x.id, x.waitingFor])).toEqual([[b.id, 'question']])
   })
 
@@ -421,13 +446,13 @@ describe('core seen and notify', () => {
     const { core, oc, notified } = await setup()
     const a = await createOpenCode(core)
     const b = await createOpenCode(core)
-    oc.snapshots.set(a.opencodeSessionId!, snap({ pending: [{ id: 'per_1', kind: 'permission' }] }))
+    oc.snapshots.set(a.agentSessionId!, snap({ pending: [{ id: 'per_1', kind: 'permission' }] }))
     await connect(oc)
     oc.emit({ type: 'disconnected' })
     await connect(oc)
     expect(notified).toEqual([])
     oc.emit({ type: 'disconnected' })
-    oc.snapshots.set(b.opencodeSessionId!, snap({ pending: [{ id: 'frm_1', kind: 'question' }] }))
+    oc.snapshots.set(b.agentSessionId!, snap({ pending: [{ id: 'frm_1', kind: 'question' }] }))
     await connect(oc)
     expect(notified.map((x) => [x.id, x.waitingFor])).toEqual([[b.id, 'question']])
   })
@@ -461,7 +486,7 @@ describe('resume', () => {
     expect(fake.calls[0].args[0]).toBe(o.tmuxName)
     const created = fake.calls[1].args[0] as { name: string; cwd: string; argv: string[] }
     expect(created).toMatchObject({ name: o.tmuxName, cwd: dir })
-    expect(created.argv[4]).toBe(`exec opencode -s ${o.opencodeSessionId}`)
+    expect(created.argv[4]).toBe(`exec opencode -s ${o.agentSessionId}`)
     expect(loadState(statePath).sessions[0]).toMatchObject({ lastStatus: 'running', endedAt: null })
   })
 
@@ -482,6 +507,6 @@ describe('resume', () => {
     await core.commands.sessionKill({ id: o.id })
     oc.snapshotCalls = []
     await core.commands.sessionResume({ id: o.id })
-    expect(oc.snapshotCalls).toEqual([[o.opencodeSessionId]])
+    expect(oc.snapshotCalls).toEqual([[o.agentSessionId]])
   })
 })

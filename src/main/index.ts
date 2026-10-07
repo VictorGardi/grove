@@ -30,6 +30,7 @@ app.whenReady().then(async () => {
       env: minimalEnv(process.env),
     }),
     opencode: new HttpOpenCode({ serviceFile: serviceFilePath(process.env, os.homedir()) }),
+    claudeSpoolDir: path.join(app.getPath('userData'), 'agents', 'claude'),
   })
   await core.start()
 

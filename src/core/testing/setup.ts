@@ -2,7 +2,7 @@ import fs from 'node:fs'
 import os from 'node:os'
 import path from 'node:path'
 import { fileURLToPath } from 'node:url'
-import { createCore, type Core } from '../core'
+import { createCore, type Core, type CoreOptions } from '../core'
 import { saveConfig } from '../store/configStore'
 import { FakeBackend } from './fakeBackend'
 import { FakeOpenCode } from './fakeOpenCode'
@@ -23,14 +23,17 @@ export function setupCore() {
   const fake = new FakeBackend()
   const watchers = new FakeWatchers()
   const oc = new FakeOpenCode()
+  const claudeDir = path.join(dir, 'agents', 'claude')
   const cores: Core[] = []
-  const make = (now = NOW) => {
-    const core = createCore({ configPath, statePath, bundledWorkflowPath, watchers, backend: fake, opencode: oc, now: () => now })
+  const make = (now = NOW, over: Partial<CoreOptions> = {}) => {
+    const core = createCore({
+      configPath, statePath, bundledWorkflowPath, watchers, backend: fake, opencode: oc, claudeSpoolDir: claudeDir, now: () => now, ...over,
+    })
     cores.push(core)
     return core
   }
   const disposeAll = () => { for (const c of cores.splice(0)) c.dispose() }
-  return { dir, fake, watchers, oc, make, configPath, statePath, disposeAll }
+  return { dir, fake, watchers, oc, make, configPath, statePath, claudeDir, disposeAll }
 }
 
 export async function createTerminal(core: Core, projectId = 'p') {
@@ -41,6 +44,12 @@ export async function createTerminal(core: Core, projectId = 'p') {
 
 export async function createOpenCode(core: Core, projectId = 'p') {
   const res = await core.commands.sessionCreate({ projectId, kind: 'opencode', cols: 80, rows: 24 })
+  if (!res.ok) throw new Error(res.error)
+  return res.data
+}
+
+export async function createClaude(core: Core, projectId = 'p') {
+  const res = await core.commands.sessionCreate({ projectId, kind: 'claude', cols: 80, rows: 24 })
   if (!res.ok) throw new Error(res.error)
   return res.data
 }

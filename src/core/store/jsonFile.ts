@@ -12,7 +12,8 @@ export function readVersioned<T extends { schemaVersion: number }>(
   file: string,
   schemaVersion: number,
   empty: T,
-  onBad?: (msg: string) => void
+  onBad?: (msg: string) => void,
+  migrations?: Record<number, (old: any) => any> // migrations[n] turns version n into n+1
 ): T {
   let raw: string
   try {
@@ -23,7 +24,10 @@ export function readVersioned<T extends { schemaVersion: number }>(
   }
   let problem: string
   try {
-    const parsed = JSON.parse(raw)
+    let parsed = JSON.parse(raw)
+    for (let v = parsed?.schemaVersion; v !== schemaVersion && migrations?.[v]; v = parsed.schemaVersion) {
+      parsed = { ...migrations[v](parsed), schemaVersion: v + 1 }
+    }
     if (parsed?.schemaVersion === schemaVersion) return parsed as T
     problem = `unknown schemaVersion ${JSON.stringify(parsed?.schemaVersion)}`
   } catch (e) {

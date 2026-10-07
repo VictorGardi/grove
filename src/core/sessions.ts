@@ -1,14 +1,13 @@
 import type { Session, SessionKind } from '@shared/types'
-import { mintSessionId } from './opencodeId'
 
-const KIND_NAMES: Record<SessionKind, string> = { opencode: 'OpenCode', terminal: 'Terminal' }
+const KIND_NAMES: Record<SessionKind, string> = { opencode: 'OpenCode', claude: 'Claude', terminal: 'Terminal' }
 const pad = (n: number) => String(n).padStart(2, '0')
 
 export function makeLabel(kind: SessionKind, date: Date): string {
   return `${KIND_NAMES[kind]} · ${pad(date.getHours())}:${pad(date.getMinutes())}`
 }
 
-export function newSession(o: { projectId: string; kind: SessionKind; now: Date; id: string }): Session {
+export function newSession(o: { projectId: string; kind: SessionKind; now: Date; id: string; agentSessionId: string | null }): Session {
   return {
     id: o.id,
     projectId: o.projectId,
@@ -16,7 +15,7 @@ export function newSession(o: { projectId: string; kind: SessionKind; now: Date;
     label: makeLabel(o.kind, o.now),
     labelPinned: false,
     tmuxName: 'grove-' + o.id,
-    opencodeSessionId: o.kind === 'opencode' ? mintSessionId(o.now.getTime()) : null,
+    agentSessionId: o.agentSessionId,
     feature: null,
     linkPinned: false,
     action: null,

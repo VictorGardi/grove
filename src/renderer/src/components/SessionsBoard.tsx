@@ -38,7 +38,7 @@ export function SessionsBoard({ sessions, features, projects, statusSince, onFoc
               <ListRow
                 key={x.id}
                 title={x.label}
-                icon={<Icon name={x.kind === 'opencode' ? 'opencode' : 'terminal'} size={14} />}
+                icon={<Icon name={x.kind} size={14} />}
                 meta={f ? (
                   <span className={s.tags}>
                     <Tag index={tags.group(f.projectId, f.group ? f.slug : f.parent)} onClick={() => onOpenFeature(f)}>{f.title}</Tag>

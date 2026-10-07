@@ -12,7 +12,7 @@ function tracker(over: Partial<Tracker> = {}): Tracker {
 }
 
 function oc(id: string, ocId: string, over: Partial<Session> = {}): Session {
-  return { ...newSession({ projectId: 'p', kind: 'opencode', now: NOW, id }), opencodeSessionId: ocId, ...over }
+  return { ...newSession({ projectId: 'p', kind: 'opencode', now: NOW, id, agentSessionId: ocId }), ...over }
 }
 
 describe('apply', () => {
@@ -68,7 +68,7 @@ describe('statusOf', () => {
 })
 
 describe('withStatus', () => {
-  const term = { ...newSession({ projectId: 'p', kind: 'terminal', now: NOW, id: 't' }) }
+  const term = { ...newSession({ projectId: 'p', kind: 'terminal', now: NOW, id: 't', agentSessionId: null }) }
 
   it('sets OpenCode sessions from their trackers while connected, never terminals', () => {
     const out = withStatus([oc('a', 'ses_a'), oc('b', 'ses_b'), term], new Map([['ses_a', tracker({ running: true })]]), true)

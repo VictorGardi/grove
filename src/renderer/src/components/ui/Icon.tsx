@@ -2,7 +2,7 @@ import type { ReactNode } from 'react'
 
 export type IconName =
   | 'plus' | 'folder' | 'folder-plus' | 'chevron-down' | 'chevron-right'
-  | 'terminal' | 'opencode' | 'branch' | 'search' | 'info' | 'trash'
+  | 'terminal' | 'opencode' | 'claude' | 'branch' | 'search' | 'info' | 'trash'
   | 'minimize' | 'maximize' | 'x' | 'link' | 'logo' | 'resume'
 
 const folder = 'M20 20a2 2 0 0 0 2-2V8a2 2 0 0 0-2-2h-7.9a2 2 0 0 1-1.69-.9L9.6 3.9A2 2 0 0 0 7.93 3H4a2 2 0 0 0-2 2v13a2 2 0 0 0 2 2Z'
@@ -16,6 +16,7 @@ const shapes: Record<IconName, ReactNode> = {
   'chevron-right': <path d="m9 18 6-6-6-6" />,
   terminal: <><path d="m4 17 6-6-6-6" /><path d="M12 19h8" /></>,
   opencode: <><circle cx="12" cy="12" r="9" /><path d="M10 9v6" /><path d="M14 9v6" /></>,
+  claude: <><path d="M12 6v12" /><path d="M17.196 9 6.804 15" /><path d="m6.804 9 10.392 6" /></>,
   branch: <><path d="M6 3v12" /><circle cx="18" cy="6" r="3" /><circle cx="6" cy="18" r="3" /><path d="M18 9a9 9 0 0 1-9 9" /></>,
   search: <><circle cx="11" cy="11" r="8" /><path d="m21 21-4.3-4.3" /></>,
   info: <><circle cx="12" cy="12" r="10" /><path d="M12 16v-4" /><path d="M12 8h.01" /></>,
