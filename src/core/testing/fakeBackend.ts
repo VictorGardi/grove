@@ -9,6 +9,8 @@ export class FakeBackend implements SessionBackend {
   paths = new Map<string, string>() // what cwds() returns; create sets the start directory
   calls: { method: string; args: unknown[] }[] = []
   handles: FakeHandle[] = []
+  pastes: { name: string; text: string; submit: boolean }[] = []
+  captured = new Map<string, string>() // what capture() returns per session name
 
   private record(method: string, args: unknown[]) {
     this.calls.push({ method, args })
@@ -40,6 +42,15 @@ export class FakeBackend implements SessionBackend {
   async kill(name: string): Promise<void> {
     this.record('kill', [name])
     this.live.delete(name)
+  }
+
+  async paste(name: string, text: string, submit: boolean): Promise<void> {
+    this.record('paste', [name, text, submit])
+    this.pastes.push({ name, text, submit })
+  }
+
+  async capture(name: string): Promise<string> {
+    return this.captured.get(name) ?? ''
   }
 
   attach(name: string, cols: number, rows: number): FakeHandle {

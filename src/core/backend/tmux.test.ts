@@ -93,4 +93,17 @@ describe.skipIf(!tmuxPath)('TmuxBackend', () => {
     expect(out).toContain('#d4d4d4')
     expect(out).toContain('#1e1e1e')
   })
+
+  it('paste puts multi-line text into a pane', async () => {
+    await backend.create({ name: 'grove-paste', cwd: os.tmpdir(), cols: 80, rows: 24, argv: ['cat'] })
+    await backend.paste('grove-paste', 'line one\nline two', true)
+    let out = ''
+    for (let i = 0; i < 30 && !(out.includes('line one') && out.includes('line two')); i++) {
+      await new Promise((r) => setTimeout(r, 100))
+      out = await backend.capture('grove-paste', 50)
+    }
+    expect(out).toContain('line one')
+    expect(out).toContain('line two')
+    expect(await backend.capture('grove-missing', 50)).toBe('')
+  })
 })

@@ -1,4 +1,4 @@
-import type { FeaturesSlice, OpenCodeSlice, Project, Session, SessionDiff, SessionKind, Slices, UiState } from './types'
+import type { Comment, CommentAnchor, FeaturesSlice, OpenCodeSlice, Project, Session, SessionDiff, SessionKind, Slices, UiState } from './types'
 
 export type Result<T> = { ok: true; data: T } | { ok: false; error: string }
 export type MenuAction =
@@ -16,6 +16,10 @@ export interface InvokeMap {
   'session:resume': [{ id: string }, Session]
   'session:rename': [{ id: string; label: string }, Session]
   'session:link': [{ id: string; feature: string | null }, Session]
+  'comment:add': [{ sessionId: string; anchor: CommentAnchor; body: string }, Comment]
+  'comment:update': [{ id: string; body: string }, Comment]
+  'comment:delete': [{ id: string }, { id: string }]
+  'review:send': [{ sessionId: string }, { sent: number }]
   'ui:set': [Partial<UiState>, UiState]
   'viewer:reload': [void, void]
   'pty:attach': [{ sessionId: string; cols: number; rows: number }, { attachId: string }]
@@ -34,6 +38,7 @@ export interface PushMap {
   'state:features': FeaturesSlice
   'state:opencode': OpenCodeSlice
   'state:diff': SessionDiff | null
+  'state:comments': Comment[]
   'pty:data': { attachId: string; data: string }
   'pty:exit': { attachId: string }
   'menu:action': MenuAction

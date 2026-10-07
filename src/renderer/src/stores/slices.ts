@@ -1,5 +1,5 @@
 import { create } from 'zustand'
-import type { DiffFile, DocTarget, FeaturesSlice, OpenCodeSlice, Project, Session, SessionDiff, UiState } from '@shared/types'
+import type { Comment, DiffFile, DocTarget, FeaturesSlice, OpenCodeSlice, Project, Session, SessionDiff, UiState } from '@shared/types'
 import { DEFAULT_UI, EMPTY_FEATURES, OPENCODE_CONNECTING } from '@shared/types'
 import { openBoard } from '../navigation'
 import { trackStatus, trackWaiting, type StatusSince } from '../sessionStatus'
@@ -11,6 +11,7 @@ interface SlicesState {
   features: FeaturesSlice
   opencode: OpenCodeSlice
   diff: SessionDiff | null
+  comments: Comment[]
   errors: string[]
   waitingSince: Record<string, number> // session id → when first seen waiting (ms)
   statusSince: Record<string, StatusSince> // session id → its shown status and since when (ms)
@@ -46,6 +47,7 @@ export const useSlices = create<SlicesState>((set, get) => {
     features: EMPTY_FEATURES,
     opencode: OPENCODE_CONNECTING,
     diff: null,
+    comments: [],
     errors: [],
     waitingSince: {},
     statusSince: {},
@@ -58,6 +60,7 @@ export const useSlices = create<SlicesState>((set, get) => {
       api.on('state:features', (features) => set({ features }))
       api.on('state:opencode', (opencode) => set({ opencode }))
       api.on('state:diff', (diff) => set({ diff }))
+      api.on('state:comments', (comments) => set({ comments }))
       const [slices, errors] = await Promise.all([api.invoke('state:get'), api.invoke('app:errors')])
       if (slices.ok) {
         set(slices.data)

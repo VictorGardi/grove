@@ -19,7 +19,11 @@ function stderrOf(e: unknown): string {
   return String((e as { stderr?: unknown }).stderr ?? '')
 }
 
+const SUBMIT_DELAY_MS = 150
+
 export class TmuxBackend implements SessionBackend {
+  private pasting: Promise<unknown> = Promise.resolve() // the one paste buffer is used by one paste at a time
+
   constructor(private readonly opts: TmuxBackendOptions) {}
 
   private tmux(...args: string[]) {
@@ -77,6 +81,28 @@ export class TmuxBackend implements SessionBackend {
       const err = stderrOf(e)
       if (/can't find session/.test(err) || NO_SERVER.test(err)) return
       throw e
+    }
+  }
+
+  paste(name: string, text: string, submit: boolean): Promise<void> {
+    const target = `=${name}:`
+    const job = this.pasting.then(async () => {
+      await this.tmux('set-buffer', '-b', 'grove-send', '--', text)
+      await this.tmux('paste-buffer', '-p', '-d', '-b', 'grove-send', '-t', target)
+      if (!submit) return
+      await new Promise((r) => setTimeout(r, SUBMIT_DELAY_MS)) // a TUI takes Enter inside the paste otherwise
+      await this.tmux('send-keys', '-t', target, 'Enter')
+    })
+    this.pasting = job.catch(() => {})
+    return job
+  }
+
+  async capture(name: string, lines: number): Promise<string> {
+    try {
+      const { stdout } = await this.tmux('capture-pane', '-p', '-J', '-S', `-${lines}`, '-t', `=${name}:`)
+      return stdout
+    } catch {
+      return ''
     }
   }
 

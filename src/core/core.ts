@@ -2,7 +2,7 @@ import { randomUUID } from 'node:crypto'
 import fs from 'node:fs'
 import os from 'node:os'
 import path from 'node:path'
-import type { Project, Session, SessionDiff, SessionKind, Slices, UiState } from '@shared/types'
+import type { Comment, CommentAnchor, Project, Session, SessionDiff, SessionKind, Slices, UiState } from '@shared/types'
 import { DEFAULT_UI, EMPTY_FEATURES, OPENCODE_CONNECTING } from '@shared/types'
 import type { Result } from '@shared/ipc'
 import { safeArtifactPath } from './artifacts/path'
@@ -15,6 +15,10 @@ import { computeDiff } from './diff/compute'
 import { gitRunner } from './diff/git'
 import { createDiffWatch } from './diff/watch'
 import { slugFor } from './autolink'
+import { formatReview } from './comments/format'
+import { addComment, draftsOf, dropSession, markSent, removeComment, updateComment } from './comments/model'
+import { loadComments, saveComments } from './comments/store'
+import { sendToSession } from './send'
 import { hasLiveSessions, newProject } from './projects'
 import { readBranch } from './git'
 import type { AgentEvent, AgentKind, AgentSource } from './agents/types'
@@ -28,6 +32,7 @@ import { parseWorkflow, type Workflow } from './workflow/parse'
 export interface CoreOptions {
   configPath: string // ~/.config/grove/config.json
   statePath: string // <userData>/state.json
+  commentsPath: string // <userData>/comments.json
   bundledWorkflowPath: string // used when config.json sets no `workflow`
   watchers?: Watchers // tests inject fakes
   backend: SessionBackend
@@ -62,6 +67,11 @@ export interface Commands {
   sessionRename(a: { id: string; label: string }): Promise<Result<Session>>
   sessionLink(a: { id: string; feature: string | null }): Promise<Result<Session>>
   uiSet(partial: Partial<UiState>): Promise<Result<UiState>>
+  commentAdd(a: { sessionId: string; anchor: CommentAnchor; body: string }): Promise<Result<Comment>>
+  commentUpdate(a: { id: string; body: string }): Promise<Result<Comment>>
+  commentDelete(a: { id: string }): Promise<Result<{ id: string }>>
+  reviewSend(a: { sessionId: string }): Promise<Result<{ sent: number }>> // the session's drafts as one message; none: 'empty'
+  sendToSession(a: { id: string; text: string; submit?: boolean }): Promise<Result<{ id: string }>>
 }
 
 export interface Core {
@@ -82,7 +92,7 @@ export interface Core {
 export function createCore(opts: CoreOptions): Core {
   const { backend } = opts
   const now = opts.now ?? (() => new Date())
-  const slices: Slices = { projects: [], sessions: [], ui: DEFAULT_UI, features: EMPTY_FEATURES, opencode: OPENCODE_CONNECTING, diff: null }
+  const slices: Slices = { projects: [], sessions: [], ui: DEFAULT_UI, features: EMPTY_FEATURES, opencode: OPENCODE_CONNECTING, diff: null, comments: [] }
   const errors: string[] = []
   const listeners = new Set<SliceListener>()
   const notifyListeners = new Set<(s: Session) => void>()
@@ -109,6 +119,7 @@ export function createCore(opts: CoreOptions): Core {
   const waitKey = new Map<string, string>() // session id → waitingFor it was last seen waiting with
   const held = new Map<string, string>() // session id → slug it wrote to that discovery hasn't listed yet
   let lastCwds = new Map<string, string>() // tmux name → pane cwd, from the last refresh
+  const sending = new Set<string>() // sessions with a review send in flight
   const git = opts.git === null ? null : gitRunner(opts.git ?? 'git', minimalEnv(process.env))
 
   function set<K extends keyof Slices>(k: K, v: Slices[K]): void {
@@ -125,6 +136,7 @@ export function createCore(opts: CoreOptions): Core {
       const sessions = slices.sessions.map(({ branch: _branch, status: _status, waitingFor: _waitingFor, ...s }) => s) // live-only
       saveState(opts.statePath, { schemaVersion: 3, sessions, ui: slices.ui })
     }
+    else if (k === 'comments') saveComments(opts.commentsPath, { schemaVersion: 1, comments: slices.comments })
     if (k === 'sessions') publish() // card state reads linked sessions
   }
 
@@ -443,7 +455,11 @@ export function createCore(opts: CoreOptions): Core {
 
   function dropSessions(keep: (s: Session) => boolean): void {
     const focused = slices.ui.focusedSessionId ? findSession(slices.ui.focusedSessionId) : undefined
+    const removed = slices.sessions.filter((s) => !keep(s))
     set('sessions', slices.sessions.filter(keep))
+    let comments = slices.comments
+    for (const s of removed) comments = dropSession(comments, s.id)
+    if (comments.length !== slices.comments.length) set('comments', comments)
     let ui = slices.ui
     // the last project page takes over (ADR 0018)
     if (focused && !findSession(focused.id)) ui = { ...ui, focusedSessionId: null, focusedProject: focused.projectId }
@@ -458,6 +474,8 @@ export function createCore(opts: CoreOptions): Core {
   function forgetAgents(gone: Session[]): void {
     for (const s of gone) if (s.kind !== 'terminal' && s.agentSessionId) states.get(s.kind)?.source.forget(s.agentSessionId)
   }
+
+  const sendDeps = { find: findSession, backend }
 
   const commands: Commands = {
     async projectAdd({ path }) {
@@ -562,6 +580,52 @@ export function createCore(opts: CoreOptions): Core {
       syncDiff()
       return { ok: true, data: slices.ui }
     },
+
+    async commentAdd({ sessionId, anchor, body }) {
+      if (!findSession(sessionId)) return { ok: false, error: 'not-found' }
+      const r = addComment(slices.comments, { id: randomUUID(), sessionId, anchor, body, now: now().toISOString() })
+      if (!r.ok) return r
+      set('comments', r.comments)
+      return { ok: true, data: r.comment }
+    },
+
+    async commentUpdate({ id, body }) {
+      const r = updateComment(slices.comments, id, body, now().toISOString())
+      if (!r.ok) return r
+      set('comments', r.comments)
+      return { ok: true, data: r.comment }
+    },
+
+    async commentDelete({ id }) {
+      if (!slices.comments.some((c) => c.id === id)) return { ok: false, error: 'not-found' }
+      set('comments', removeComment(slices.comments, id))
+      return { ok: true, data: { id } }
+    },
+
+    async reviewSend({ sessionId }) {
+      const session = findSession(sessionId)
+      const project = session && slices.projects.find((p) => p.id === session.projectId)
+      if (!session || !project) return { ok: false, error: 'not-found' }
+      if (sending.has(sessionId)) return { ok: false, error: 'busy' }
+      const drafts = draftsOf(slices.comments, sessionId)
+      if (drafts.length === 0) return { ok: false, error: 'empty' }
+      const text = formatReview(drafts, {
+        projectPath: project.path,
+        featurePath: (slug) => slices.features.items.find((f) => f.projectId === project.id && f.slug === slug)?.path ?? null,
+      })
+      sending.add(sessionId)
+      try {
+        const sent = await sendToSession(sendDeps, { id: sessionId, text })
+        if (!sent.ok) return sent
+        // re-read: the drafts may have changed while the paste ran; only these were sent
+        set('comments', markSent(slices.comments, drafts.map((c) => c.id), now().toISOString()))
+        return { ok: true, data: { sent: drafts.length } }
+      } finally {
+        sending.delete(sessionId)
+      }
+    },
+
+    sendToSession: (a) => sendToSession(sendDeps, a),
   }
 
   return {
@@ -573,6 +637,7 @@ export function createCore(opts: CoreOptions): Core {
       const state = loadState(opts.statePath, onBad)
       slices.sessions = state.sessions
       slices.ui = state.ui
+      slices.comments = loadComments(opts.commentsPath, onBad).comments
       const file = workflowFile()
       if (file) {
         loadWorkflow(file)

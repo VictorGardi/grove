@@ -24,3 +24,9 @@
   justify-content: center;
   color: var(--text-3);
 }
+
+.headerActions {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-1);
+}

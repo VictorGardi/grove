@@ -19,6 +19,7 @@ export function setupCore() {
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'grove-'))
   const configPath = path.join(dir, 'config.json')
   const statePath = path.join(dir, 'state.json')
+  const commentsPath = path.join(dir, 'comments.json')
   saveConfig(configPath, { schemaVersion: 1, projects: [{ id: 'p', name: 'proj', path: dir }] })
   const fake = new FakeBackend()
   const watchers = new FakeWatchers()
@@ -28,13 +29,13 @@ export function setupCore() {
   const cores: Core[] = []
   const make = (now = NOW, over: Partial<CoreOptions> = {}) => {
     const core = createCore({
-      configPath, statePath, bundledWorkflowPath, watchers, backend: fake, sources: [oc, claude], now: () => now, ...over,
+      configPath, statePath, commentsPath, bundledWorkflowPath, watchers, backend: fake, sources: [oc, claude], now: () => now, ...over,
     })
     cores.push(core)
     return core
   }
   const disposeAll = () => { for (const c of cores.splice(0)) c.dispose() }
-  return { dir, fake, watchers, oc, claude, make, configPath, statePath, claudeDir, disposeAll }
+  return { dir, fake, watchers, oc, claude, make, configPath, statePath, commentsPath, claudeDir, disposeAll }
 }
 
 export async function createTerminal(core: Core, projectId = 'p') {

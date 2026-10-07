@@ -92,7 +92,24 @@ export interface FeaturesSlice {
   items: Feature[]
 }
 export interface OpenCodeSlice { state: 'connecting' | 'connected' | 'unreachable'; version: string | null } // not persisted
-export type Slices = { projects: Project[]; sessions: Session[]; ui: UiState; features: FeaturesSlice; opencode: OpenCodeSlice; diff: SessionDiff | null } // diff: the one on screen, not persisted
+// A review comment (ADR 0024, 0025): a draft in a session's tray until it is sent.
+export type CommentAnchor =
+  | { kind: 'diff'; root: string; path: string; side: 'old' | 'new'; start: number; end: number; lines: string[] }
+  | { kind: 'artifact'; projectId: string; slug: string; path: string; exact: string; prefix: string; suffix: string; start: number; end: number }
+  | { kind: 'note' } // at most one draft note per session
+export interface Comment {
+  id: string
+  sessionId: string
+  anchor: CommentAnchor
+  body: string
+  state: 'draft' | 'sent'
+  orphaned: boolean
+  createdAt: string // ISO
+  updatedAt: string // ISO
+  sentAt: string | null // ISO
+}
+export interface CommentsFile { schemaVersion: 1; comments: Comment[] }
+export type Slices = { projects: Project[]; sessions: Session[]; ui: UiState; features: FeaturesSlice; opencode: OpenCodeSlice; diff: SessionDiff | null; comments: Comment[] } // diff: the one on screen, not persisted
 export interface ConfigFile { schemaVersion: 1; projects: Project[]; workflow?: string }
 export interface StateFile { schemaVersion: 3; sessions: Session[]; ui: UiState }
 export const DEFAULT_UI: UiState = { sidebarWidth: 230, focusedSessionId: null, focusedFeature: null, focusedProject: null, sidebarTab: 'sessions', board: 'sessions', collapsed: [], viewer: null, viewerWidth: 480, viewerExpanded: false }
