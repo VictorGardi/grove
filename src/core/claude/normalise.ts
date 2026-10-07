@@ -7,15 +7,26 @@ export interface ClaudeFold {
   running: boolean
   idleAt: string | null
   pending: Map<string, 'permission' | 'question'> // perm:<scope> | q:<tool_use_id>
+  lastWrite: string[] // paths of the latest successful write; [] if none
 }
 
-export const emptyFold = (id: string): ClaudeFold => ({ id, running: false, idleAt: null, pending: new Map() })
+export const emptyFold = (id: string): ClaudeFold => ({ id, running: false, idleAt: null, pending: new Map(), lastWrite: [] })
 
 interface Hook {
   hook_event_name?: unknown
   tool_name?: unknown
   tool_use_id?: unknown
   agent_id?: unknown
+  tool_input?: unknown
+}
+
+const WRITE_TOOLS = new Set(['Write', 'Edit', 'MultiEdit', 'NotebookEdit'])
+
+// The path a write tool's input names (NotebookEdit calls it notebook_path); null if none.
+function writePath(input: unknown): string | null {
+  if (typeof input !== 'object' || input === null) return null
+  const { file_path, notebook_path } = input as { file_path?: unknown; notebook_path?: unknown }
+  return typeof file_path === 'string' ? file_path : typeof notebook_path === 'string' ? notebook_path : null
 }
 
 // `t` is UTC to the second; seen marks carry milliseconds, and they compare as strings.
@@ -63,6 +74,13 @@ export function step(f: ClaudeFold, r: SpoolRecord): { fold: ClaudeFold; events:
     case 'PostToolUse':
     case 'PostToolUseFailure':
       close((id) => id !== `perm:${scope}` && id !== `q:${String(e.tool_use_id)}`)
+      if (e.hook_event_name === 'PostToolUse' && WRITE_TOOLS.has(String(e.tool_name))) {
+        const p = writePath(e.tool_input)
+        if (p !== null) {
+          fold = { ...fold, lastWrite: [p] }
+          events.push({ type: 'wrote', sessionId, paths: [p] })
+        }
+      }
       break
     case 'PostToolBatch': // a marker without scope
       close((id) => !id.startsWith('perm:'))

@@ -1,4 +1,5 @@
 import fs from 'node:fs'
+import path from 'node:path'
 import { describe, expect, it } from 'vitest'
 import type { AgentEvent } from '../agents/types'
 import { emptyFold, step, type ClaudeFold } from './normalise'
@@ -52,8 +53,22 @@ describe('step', () => {
       const { fold, events } = run([r({ hook_event_name, tool_name: 'AskUserQuestion', tool_use_id: 'x' })], waiting)
       expect(events).toEqual([close('perm:main', 'permission'), close('q:x', 'question')])
       expect(fold.pending.size).toBe(0)
-      expect(run([r({ hook_event_name, tool_name: 'Write', tool_use_id: 'y', tool_input: { file_path: '/a' } })]).events).toEqual([])
     }
+  })
+
+  it('PostToolUse of a write tool reports its path, from any scope', () => {
+    const wrote = (p: string): AgentEvent => ({ type: 'wrote', sessionId: 'S', paths: [p] })
+    for (const tool_name of ['Write', 'Edit', 'MultiEdit']) {
+      const { fold, events } = run([r({ hook_event_name: 'PostToolUse', tool_name, tool_use_id: 'y', tool_input: { file_path: '/a' } })])
+      expect(events).toEqual([wrote('/a')])
+      expect(fold.lastWrite).toEqual(['/a'])
+    }
+    expect(run([r({ hook_event_name: 'PostToolUse', tool_name: 'NotebookEdit', tool_input: { notebook_path: '/n.ipynb' } })]).events).toEqual([wrote('/n.ipynb')])
+    expect(run([r({ hook_event_name: 'PostToolUse', tool_name: 'Write', agent_id: 'a1', tool_input: { file_path: '/a' } })]).events).toEqual([wrote('/a')])
+    expect(run([r({ hook_event_name: 'PostToolUseFailure', tool_name: 'Write', tool_input: { file_path: '/a' } })]).events).toEqual([])
+    expect(run([r({ hook_event_name: 'PostToolUse', tool_name: 'Bash', tool_input: { file_path: '/a' } })]).events).toEqual([])
+    expect(run([r({ hook_event_name: 'PostToolUse', tool_name: 'Write' })]).events).toEqual([])
+    expect(emptyFold('S').lastWrite).toEqual([])
   })
 
   it('PostToolBatch closes permissions of all scopes, keeping questions', () => {
@@ -103,6 +118,7 @@ describe('step', () => {
 // Compact form: "start", "end HH:MM:SS", "+id", "-id" (question ids carry their kind via q:).
 const short = (e: AgentEvent) => e.type === 'exec-started' ? 'start'
   : e.type === 'exec-ended' ? `end ${e.at.slice(11, 19)}`
+  : e.type === 'wrote' ? `wrote ${path.basename(e.paths[0])}`
   : e.type === 'pending' ? `${e.open ? '+' : '-'}${e.id}${e.kind === 'permission' && !e.id.startsWith('perm:') ? '!' : ''}`
   : e.type
 
@@ -115,12 +131,13 @@ describe('fixture replay', () => {
   it('capture-2.1.285: turns, and a rejected question shown as a question, closed by the next prompt', () => {
     const { fold, events } = replay('capture-2.1.285.jsonl')
     expect(events.map(short)).toEqual([
-      'start', 'end 06:35:03', 'start', 'end 06:35:16', 'start', 'end 06:35:59', 'start',
-      '+q:toolu_01QTKr2HMANZKPADarYMkipa', '-q:toolu_01QTKr2HMANZKPADarYMkipa', 'start', 'end 06:37:57',
+      'start', 'end 06:35:03', 'start', 'end 06:35:16', 'start', 'wrote say_hej.sh', 'end 06:35:59', 'start',
+      '+q:toolu_01QTKr2HMANZKPADarYMkipa', '-q:toolu_01QTKr2HMANZKPADarYMkipa', 'start', 'wrote needs_perms.sh', 'end 06:37:57',
       'start', 'end 06:38:12',
     ])
     expect(events.some((e) => e.type === 'pending' && e.kind === 'permission')).toBe(false)
-    expect(fold).toMatchObject({ running: false, idleAt: '2026-10-07T06:38:12.000Z', pending: new Map() })
+    expect(fold).toMatchObject({ running: false, idleAt: '2026-10-07T06:38:12.000Z', pending: new Map(),
+      lastWrite: ['/private/tmp/claude-501/-Users-victor-git-grove/4049dd18-706b-47d5-8458-0b22ffd98930/scratchpad/needs_perms.sh'] })
   })
 
   it('capture-2.1.285-b: permissions, an answered question, an interrupt, Edits and a background subagent', () => {
@@ -131,11 +148,11 @@ describe('fixture replay', () => {
       'start', '+q:toolu_019chusa7jvh2gwUUZkRaqbc', '-q:toolu_019chusa7jvh2gwUUZkRaqbc', 'end 07:30:55', // answered
       'start', '+perm:main', '-perm:main', 'end 07:31:10',
       'start', 'start', // Esc: no Stop; the next prompt starts over
-      'start', '+perm:main', '-perm:main', '+perm:main', '-perm:main', '+perm:main', '-perm:main', 'end 07:32:02', // Edit, Edit, Bash
+      'start', '+perm:main', '-perm:main', 'wrote CONTEXT.md', '+perm:main', '-perm:main', 'wrote CONTEXT.md', '+perm:main', '-perm:main', 'end 07:32:02', // Edit, Edit, Bash
       'start', 'end 07:32:12',
       '+perm:ac0b2a4dd439f0325', '-perm:ac0b2a4dd439f0325', 'start', 'end 07:32:19', // background subagent after the main Stop
     ])
     expect(events.filter((e) => e.type === 'pending' && e.kind === 'question')).toHaveLength(2)
-    expect(fold).toMatchObject({ running: false, idleAt: '2026-10-07T07:32:19.000Z', pending: new Map() })
+    expect(fold).toMatchObject({ running: false, idleAt: '2026-10-07T07:32:19.000Z', pending: new Map(), lastWrite: ['/Users/victor/git/grove/CONTEXT.md'] })
   })
 })

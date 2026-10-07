@@ -118,4 +118,14 @@ Part B deviations (mechanical, no design impact):
 
 Verification: `npm test -- src/core/claude src/core/sessions.test.ts` (69 passed), `npm run typecheck` clean, `npm test` (332 passed, outside the sandbox). Manual check passed (human, 2026-10-07: "works").
 
+## Slice 4
+
+Deviations (mechanical, no design impact):
+
+- `src/core/core.ts` unchanged: slice 2 already made `linkWrite`, `catchUp` and `resync` per `SourceState`, and a replayed `Stop` reaches `statusOf` through the snapshot, so "per-state catch-up" needed no code.
+- `NotebookEdit` names its path `tool_input.notebook_path`, not `file_path` (Claude Code's tool schema; not in either capture). The `wrote` row takes `file_path`, else `notebook_path`; no string path → no `wrote`.
+- Tests for kind claude live in a new `describe('core auto-link (claude)')` in `features.test.ts`; the restart test uses a real `SpoolClaude` on `claudeDir` and also checks the restarted core sends no notification.
+
+Verification: `npm test -- src/core/claude src/core/features.test.ts` (53 passed), `npm run typecheck` clean, `npm test` (336 passed, outside the sandbox). Manual check: pending (human).
+
 ## Open questions

@@ -2,8 +2,9 @@ import fs from 'node:fs'
 import path from 'node:path'
 import { afterEach, describe, expect, it } from 'vitest'
 import type { FeaturesSlice, Session } from '@shared/types'
+import { SpoolClaude } from './claude/source'
 import { loadConfig, saveConfig } from './store/configStore'
-import { createOpenCode, createTerminal, setupCore } from './testing/setup'
+import { createClaude, createOpenCode, createTerminal, LATER, NOW, setupCore } from './testing/setup'
 
 const bundled = fs.readFileSync(new URL('../../resources/workflow.yaml', import.meta.url), 'utf8')
 
@@ -279,5 +280,102 @@ describe('core auto-link', () => {
     await flush()
     expect(find(core, o.id)?.feature).toBe('b')
     expect(find(core, pinned.id)?.feature).toBe('a')
+  })
+})
+
+describe('core auto-link (claude)', () => {
+  let disposeAll = () => {}
+  afterEach(() => disposeAll())
+
+  const flush = () => new Promise((r) => setImmediate(r))
+  const find = (core: { getSlices(): { sessions: Session[] } }, id: string) => core.getSlices().sessions.find((x) => x.id === id)
+
+  function setup() {
+    const s = setupCore()
+    disposeAll = s.disposeAll
+    const work = path.join(s.dir, 'docs', 'work')
+    const feature = (slug: string) => {
+      fs.mkdirSync(path.join(work, slug), { recursive: true })
+      fs.writeFileSync(path.join(work, slug, 'feature.md'), `---\nkind: feature\n---\n# ${slug}\n`)
+    }
+    feature('a')
+    feature('b')
+    return { ...s, work, feature }
+  }
+
+  it('links on a write, leaves a pinned link alone and holds an unlisted folder', async () => {
+    const { dir, make, claude, feature, watchers, work } = setup()
+    const core = make()
+    await core.start()
+    const c = await createClaude(core)
+    claude.emit({ type: 'connected', version: 'spool' })
+    await flush()
+    const wrote = (rel: string) => claude.emit({ type: 'wrote', sessionId: c.agentSessionId!, paths: [path.join(dir, rel)] })
+
+    wrote('docs/work/a/x.md')
+    expect(find(core, c.id)).toMatchObject({ feature: 'a', linkPinned: false })
+
+    wrote('docs/work/new/01-questions.md')
+    expect(find(core, c.id)?.feature).toBe('a')
+    feature('new')
+    watchers.roots.get(work)!('new')
+    expect(find(core, c.id)?.feature).toBe('new')
+
+    await core.commands.sessionLink({ id: c.id, feature: 'a' })
+    wrote('docs/work/b/y.md')
+    expect(find(core, c.id)).toMatchObject({ feature: 'a', linkPinned: true })
+  })
+
+  it('catches links up from each unpinned session\'s last write on connect', async () => {
+    const { dir, make, claude } = setup()
+    const core = make()
+    await core.start()
+    const c = await createClaude(core)
+    const pinned = await createClaude(core)
+    await core.commands.sessionLink({ id: pinned.id, feature: 'a' })
+    claude.writes.set(c.agentSessionId!, [path.join(dir, 'docs/work/b/z.md')])
+    claude.writes.set(pinned.agentSessionId!, [path.join(dir, 'docs/work/b/z.md')])
+    claude.emit({ type: 'connected', version: 'spool' })
+    await flush()
+    await flush()
+    expect(find(core, c.id)?.feature).toBe('b')
+    expect(find(core, pinned.id)?.feature).toBe('a')
+  })
+
+  it('rebuilds status and links from the spool after a restart, against the seen mark', async () => {
+    const { dir, make, oc, claudeDir } = setup()
+    const core = make(NOW, { sources: [oc, new SpoolClaude({ dir: claudeDir })] })
+    await core.start()
+    const c1 = await createClaude(core)
+    const c2 = await createClaude(core)
+    core.setWindowFocused(true)
+    await core.commands.uiSet({ focusedSessionId: c1.id })
+    await core.commands.uiSet({ focusedSessionId: c2.id })
+    await core.commands.uiSet({ focusedSessionId: null })
+    expect(find(core, c1.id)?.seenAt).toBe(NOW.toISOString())
+    expect(find(core, c2.id)?.seenAt).toBe(NOW.toISOString())
+    core.dispose()
+
+    const spool = (id: string, records: [string, unknown][]) =>
+      fs.writeFileSync(path.join(claudeDir, `${id}.jsonl`), records.map(([t, e]) => JSON.stringify({ t, e }) + '\n').join(''))
+    spool(c1.agentSessionId!, [
+      ['2026-10-05T09:58:00Z', { hook_event_name: 'UserPromptSubmit' }],
+      ['2026-10-05T09:58:30Z', { hook_event_name: 'PostToolUse', tool_name: 'Write', tool_input: { file_path: path.join(dir, 'docs/work/b/x.md') } }],
+      ['2026-10-05T09:59:00Z', { hook_event_name: 'Stop' }],
+    ])
+    spool(c2.agentSessionId!, [
+      ['2026-10-05T10:10:00Z', { hook_event_name: 'UserPromptSubmit' }],
+      ['2026-10-05T10:20:00Z', { hook_event_name: 'Stop' }],
+    ])
+
+    const next = make(LATER, { sources: [oc, new SpoolClaude({ dir: claudeDir })] })
+    const notified: Session[] = []
+    next.on('notify', (x) => notified.push(x))
+    await next.start()
+    await flush()
+    await flush()
+    expect(find(next, c1.id)).toMatchObject({ status: 'idle', feature: 'b' })
+    expect(find(next, c2.id)).toMatchObject({ status: 'waiting', waitingFor: 'done' })
+    expect(notified).toEqual([])
   })
 })

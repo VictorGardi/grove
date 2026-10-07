@@ -33,10 +33,13 @@ describe('SpoolClaude', () => {
     const { dir, source, events } = setup()
     fs.mkdirSync(dir, { recursive: true })
     fs.appendFileSync(path.join(dir, 'u.jsonl'), line({ hook_event_name: 'UserPromptSubmit' }))
+    fs.appendFileSync(path.join(dir, 'u.jsonl'), line({ hook_event_name: 'PostToolUse', tool_name: 'Write', tool_input: { file_path: '/w/a.md' } }))
     source.start((e) => events.push(e))
     expect(events).toEqual([{ type: 'connected', version: 'spool' }])
     const snaps = await source.snapshot(['u', 'none'])
     expect([...snaps]).toEqual([['u', { running: true, idleAt: null, pending: [], children: [] }]])
+    expect(await source.lastWrites('u')).toEqual(['/w/a.md'])
+    expect(await source.lastWrites('none')).toEqual([])
   })
 
   it('emits events for appended records and keeps the fold for snapshots', async () => {

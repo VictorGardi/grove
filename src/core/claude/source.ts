@@ -42,8 +42,8 @@ export class SpoolClaude implements AgentSource {
     return out
   }
 
-  async lastWrites(_id: string): Promise<string[]> {
-    return []
+  async lastWrites(id: string): Promise<string[]> {
+    return this.folds.get(id)?.lastWrite ?? []
   }
 
   forget(_id: string): void {}
