@@ -50,6 +50,31 @@ describe('core session diff', () => {
     await vi.waitFor(() => expect(again.getSlices().diff?.files).toHaveLength(1))
   })
 
+  it('follows edits on the tick, and pushes nothing while unchanged', async () => {
+    const { core, repo, session } = await setup()
+    repo.write('a.txt', 'one\nTWO\n')
+    await core.commands.uiSet({ viewer: { kind: 'diff', sessionId: session.id } })
+    await vi.waitFor(() => expect(core.getSlices().diff?.files).toHaveLength(1))
+    let pushes = 0
+    core.on('slice', (k) => { if (k === 'diff') pushes++ })
+    await core.checkLiveness()
+    await core.checkLiveness()
+    repo.write('a.txt', 'ONE\nTWO\n')
+    await core.checkLiveness()
+    await vi.waitFor(() => expect(core.getSlices().diff?.files[0].additions).toBe(2))
+    await new Promise((r) => setTimeout(r, 100)) // let any queued rerun settle
+    expect(pushes).toBe(1) // the unchanged ticks pushed nothing
+  })
+
+  it('recomputes on an agent write', async () => {
+    const { core, repo, session } = await setup()
+    await core.commands.uiSet({ viewer: { kind: 'diff', sessionId: session.id } })
+    await vi.waitFor(() => expect(core.getSlices().diff?.files).toEqual([]))
+    repo.write('a.txt', 'written\n')
+    s.claude.emit({ type: 'wrote', sessionId: 'other', paths: [`${s.dir}/a.txt`] })
+    await vi.waitFor(() => expect(core.getSlices().diff?.files).toHaveLength(1))
+  })
+
   it('reports git not found', async () => {
     s = setupCore()
     const core = s.make(undefined, { git: null })

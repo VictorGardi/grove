@@ -285,6 +285,7 @@ export function createCore(opts: CoreOptions): Core {
     const next = reconcile(slices.sessions, live, now().toISOString())
     if (next !== slices.sessions) set('sessions', next)
     await refreshBranches()
+    diffWatch.poke() // the 5 s tick keeps an open diff current
   }
 
   async function refreshBranches(): Promise<void> {
@@ -392,10 +393,12 @@ export function createCore(opts: CoreOptions): Core {
       const session = sessionOf(st, st.roots.get(e.sessionId) ?? e.sessionId)
       if (session) st.wroteSince.add(session.id)
       linkWrite(st, e.sessionId, e.paths)
+      diffWatch.poke() // any session's write: a shared checkout shares its diff
       return
     } else {
       st.queue?.push(e)
       applyEvent(st, e)
+      if (e.type === 'exec-ended') diffWatch.poke()
     }
     refreshStatus()
   }

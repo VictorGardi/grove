@@ -44,3 +44,20 @@ session.
 **Manual check:** `npm run dev`, focus a session whose project is a git repo,
 edit a tracked file: ⌥⌘B (or the Diff button) shows it with line numbers;
 ⌥⌘B again closes it.
+
+## Slice 2 — Live: the open diff follows the agent
+
+**Changed:** `core.ts` pokes the diff watch after each 5 s liveness tick, on
+every `wrote` event (any session: a shared checkout shares its diff) and on
+`exec-ended`. The watch's key dedupe means unchanged output pushes nothing.
+`DiffViewer`'s scroll container has no changing `key`, so scroll survives
+updates (already so in slice 1).
+
+**Tests:** `diff/core.test.ts`: a tick picks up a new edit with exactly one
+`diff` push across two unchanged ticks; a fake Claude `wrote` event triggers a
+recompute.
+
+**Deviations:** none.
+
+**Manual check:** with a Claude session's diff open, let it edit a file: the
+diff updates within ~5 s and the scroll position stays.

@@ -227,20 +227,20 @@ conflicts with the code, follow the design's intent, note the deviation in
 
 ## Slice 2 — Live: the open diff follows the agent
 
-- [ ] `core.ts`: `checkLiveness` → after `refreshBranches()` call
+- [x] `core.ts`: `checkLiveness` → after `refreshBranches()` call
   `diffWatch.poke()` (the 5 s tick).
-- [ ] `core.ts` `onEvent`: on `wrote` (any session — a shared checkout
+- [x] `core.ts` `onEvent`: on `wrote` (any session — a shared checkout
   means anyone's write changes the diff) and on `exec-ended`, call
   `diffWatch.poke()`.
-- [ ] `computeDiff` key already dedupes tracked output; confirm `set('diff')`
+- [x] `computeDiff` key already dedupes tracked output; confirm `set('diff')`
   only fires on a new key (covered by watch tests).
-- [ ] `DiffViewer`: preserve scroll across updates — the scroll container
+- [x] `DiffViewer`: preserve scroll across updates — the scroll container
   must not remount (no `key` on it that changes with the diff).
-- [ ] `diff/core.test.ts`: with a diff open, edit another line and call
+- [x] `diff/core.test.ts`: with a diff open, edit another line and call
   `core.checkLiveness()` → new content; call it again unchanged → the `slice`
   listener sees no `diff` push (count pushes via `core.on('slice')`); a
   fake `claude.emit({ type: 'wrote', … })` triggers a recompute.
-- [ ] Commit slice 2.
+- [x] Commit slice 2.
 
 ## Slice 3 — Untracked files and the toggle
 
