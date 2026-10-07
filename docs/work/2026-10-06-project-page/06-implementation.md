@@ -1,11 +1,11 @@
 ---
 feature: 2026-10-06-project-page
 phase: implementation
-status: draft
+status: approved
 version: 1
 created: 2026-10-06
 updated: 2026-10-06
-approved_at:
+approved_at: 2026-10-07
 based_on:
   - 01-questions.md@1
   - 05-plan.md@4
