@@ -183,7 +183,7 @@
   width: 5ch;
   padding-right: var(--sp-1);
   text-align: right;
-  color: var(--text-3);
+  color: var(--text-2);
   user-select: none;
 }
 
@@ -400,7 +400,7 @@
   display: flex;
   white-space: pre-wrap;
   overflow-wrap: anywhere;
-  color: var(--text-2);
+  color: var(--text);
 }
 
 .srow > .cell + .cell {
