@@ -1,6 +1,7 @@
 import { useState } from 'react'
 import type { DiffFile, SessionDiff } from '@shared/types'
-import { lineKey, visibleFiles } from '../diffView'
+import { allCollapsed, lineKey, toggleAll, toggleOne, visibleFiles } from '../diffView'
+import { Icon } from './ui/Icon'
 import { Button } from './ui/Button'
 import s from './DiffViewer.module.css'
 
@@ -21,6 +22,10 @@ export function DiffViewer({ diff, sessionId, label, expanded, onOpenRendered, o
   const d = diff && diff.sessionId === sessionId ? diff : null
   const [showUntracked, setShowUntracked] = useState(true)
   const files = d ? visibleFiles(d, showUntracked) : []
+  // collapsed file paths, per session: another session's diff starts expanded
+  const [fold, setFold] = useState<{ sessionId: string; paths: Set<string> }>({ sessionId, paths: new Set() })
+  const collapsed = fold.sessionId === sessionId ? fold.paths : new Set<string>()
+  const folded = allCollapsed(collapsed, files)
   return (
     <div className={s.viewer}>
       <div className={s.header}>
@@ -32,6 +37,10 @@ export function DiffViewer({ diff, sessionId, label, expanded, onOpenRendered, o
           <input type="checkbox" checked={showUntracked} onChange={(e) => setShowUntracked(e.target.checked)} />
           Untracked
         </label>
+        <Button variant="ghost" size="sm" icon={folded ? 'chevrons-up-down' : 'chevrons-down-up'} round
+          disabled={files.length === 0} aria-label={folded ? 'Expand all files' : 'Collapse all files'}
+          title={folded ? 'Expand all files' : 'Collapse all files'}
+          onClick={() => setFold({ sessionId, paths: toggleAll(collapsed, files) })} />
         <Button variant="ghost" size="sm" icon={expanded ? 'minimize' : 'maximize'} round
           aria-label={expanded ? 'Collapse viewer' : 'Expand viewer'} onClick={onToggleExpanded} />
         <Button variant="ghost" size="sm" icon="x" round aria-label="Close viewer" onClick={onClose} />
@@ -42,24 +51,37 @@ export function DiffViewer({ diff, sessionId, label, expanded, onOpenRendered, o
           : d.state === 'not-git' ? <div className={s.note}>Not a git repository</div>
           : d.state === 'error' ? <div className={s.note}>{d.error}</div>
           : files.length === 0 ? <div className={s.note}>No changes</div>
-          : files.map((f) => <FileSection key={f.path} file={f} onOpenRendered={(r) => onOpenRendered(d.projectId, r)} />)}
+          : files.map((f) => (
+            <FileSection key={f.path} file={f} collapsed={collapsed.has(f.path)}
+              onToggle={() => setFold({ sessionId, paths: toggleOne(collapsed, f.path) })}
+              onOpenRendered={(r) => onOpenRendered(d.projectId, r)} />
+          ))}
       </div>
     </div>
   )
 }
 
-function FileSection({ file, onOpenRendered }: { file: DiffFile; onOpenRendered: (r: NonNullable<DiffFile['rendered']>) => void }) {
+function FileSection({ file, collapsed, onToggle, onOpenRendered }: {
+  file: DiffFile
+  collapsed: boolean
+  onToggle: () => void
+  onOpenRendered: (r: NonNullable<DiffFile['rendered']>) => void
+}) {
   const { rendered } = file
   return (
     <section className={s.file}>
       <div className={s.fileHeader}>
-        <span className={s.status}>{STATUS[file.status]}</span>
-        <span className={s.path}>{file.oldPath ? `${file.oldPath} → ${file.path}` : file.path}</span>
-        <span className={s.add}>+{file.additions}</span>
-        <span className={s.del}>−{file.deletions}</span>
+        <button type="button" className={s.fold} aria-expanded={!collapsed} onClick={onToggle}>
+          <Icon name={collapsed ? 'chevron-right' : 'chevron-down'} size={14} />
+          <span className={s.status}>{STATUS[file.status]}</span>
+          <span className={s.path}>{file.oldPath ? `${file.oldPath} → ${file.path}` : file.path}</span>
+          <span className={s.add}>+{file.additions}</span>
+          <span className={s.del}>−{file.deletions}</span>
+        </button>
         {rendered && <Button variant="ghost" size="sm" className={s.open} onClick={() => onOpenRendered(rendered)}>Open rendered</Button>}
       </div>
-      {file.binary ? <div className={s.note}>Binary file</div>
+      {collapsed ? null
+        : file.binary ? <div className={s.note}>Binary file</div>
         : file.truncated ? <div className={s.note}>Too large to show</div>
         : file.hunks.map((h, i) => (
         <div key={`${i}:${h.header}`} className={s.hunk}>

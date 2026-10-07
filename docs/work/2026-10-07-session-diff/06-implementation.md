@@ -164,3 +164,18 @@ are relative to a project that is a repo subfolder).
    "← Diff" returns.
 6. Restart the app with a diff open: it reopens; with an artifact open from a
    diff: "← Diff" still works.
+
+## Follow-up — Collapse files
+
+**Changed:** each file header in `DiffViewer` is a toggle (chevron) that
+collapses the file to its header; a header button collapses all files, or
+expands all once every file is collapsed. Collapsed paths are local state per
+session (not persisted) and survive live updates. Helpers `toggleOne`,
+`toggleAll`, `allCollapsed` in `diffView.ts`; icons `chevrons-down-up` /
+`chevrons-up-down`.
+
+**Tests:** `diffView.test.ts` (toggle one, collapse/expand all).
+
+**Manual check:** click a file header to collapse and reopen it; the header
+button collapses all, then expands all; collapsed files stay collapsed while
+the diff refreshes.
