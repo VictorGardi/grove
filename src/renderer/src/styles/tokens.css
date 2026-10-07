@@ -30,7 +30,7 @@
 
   /* status */
   --status-running: #fb923c;
-  --status-working: #fb923c;
+  --status-working: #5ee0a0;
   --status-waiting: #fbc024;
   --status-finished: #24d3ef;
   --status-idle: #5e5e66;
@@ -100,5 +100,5 @@
   --topbar-h: 51px;
   --header-h: 47px;
   --traffic-inset: 100px;
-  --sidebar-w: 230px; /* overridden at runtime from ui.sidebarWidth */
+  --sidebar-w: 220px; /* overridden at runtime from ui.sidebarWidth */
 }

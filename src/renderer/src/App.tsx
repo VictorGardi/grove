@@ -87,7 +87,7 @@ export default function App() {
           ...(features.workflowError ? [<Banner key="workflow">Workflow: {features.workflowError}</Banner>] : []),
           ...serviceBanners(opencode, sessions).map((b) => <Banner key={b.text} tone={b.tone}>{b.text}</Banner>),
         ]}
-        sidebar={<Sidebar onNew={openNew} />}
+        sidebar={<Sidebar onNew={openNew} onKill={setConfirmKill} />}
         content={
           <>
             <ContentHeader crumbs={header}

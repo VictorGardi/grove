@@ -19,7 +19,7 @@ function toggle(set: Set<string>, id: string): Set<string> {
   return next
 }
 
-function SessionCard({ s, feature, tag, focused, compact, onFocus, onOpenFeature, onToggleCompact, onLink }: {
+function SessionCard({ s, feature, tag, focused, compact, onFocus, onOpenFeature, onToggleCompact, onLink, onKill }: {
   s: Session
   feature: Feature | null // the linked feature, if it exists
   tag: number | null // its parent feature's colour
@@ -29,14 +29,21 @@ function SessionCard({ s, feature, tag, focused, compact, onFocus, onOpenFeature
   onOpenFeature: () => void
   onToggleCompact: () => void
   onLink: () => void
+  onKill: () => void
 }) {
   const [editing, setEditing] = useState(false)
   const agent = s.kind !== 'terminal'
+  const shown = shownStatus(s)
+  const done = shown === 'waiting' && s.waitingFor === 'done' // the agent finished and nobody has looked
+  const needsYou = shown === 'waiting' && !done
 
   return (
     <ListRow
       title={s.label}
-      icon={<Icon name={s.kind} size={14} className={agent ? css.iconAgent : css.iconTerminal} />}
+      icon={agent
+        ? <Icon name={done ? 'agent-done' : 'agent'} size={16} className={done ? css.iconDone : shown === 'gone' ? css.iconGone : css.iconAgent} />
+        : <Icon name="terminal" size={16} className={css.iconTerminal} />}
+      badge={needsYou && <Icon name="agent-alert" size={16} className={css.iconAgent} />}
       meta={(feature || s.branch) && (
         <div className={css.cardInfo}>
           {feature && (
@@ -54,7 +61,7 @@ function SessionCard({ s, feature, tag, focused, compact, onFocus, onOpenFeature
         </div>
       )}
       status={statusView(s)}
-      tone={focused ? 'selected' : agent ? 'default' : 'muted'}
+      tone={focused ? 'selected' : needsYou ? 'waiting' : agent ? 'default' : 'muted'}
       compact={compact}
       onClick={onFocus}
       onTitleDoubleClick={() => setEditing(true)}
@@ -81,18 +88,16 @@ function SessionCard({ s, feature, tag, focused, compact, onFocus, onOpenFeature
               onClick={onOpenFeature} />
           )}
           <Button variant="ghost" size="sm" round icon="link" aria-label="Link…" title="Link…" onClick={onLink} />
-          {s.lastStatus === 'gone' && (
-            <>
-              {s.kind !== 'terminal' && (
-                <Button variant="ghost" size="sm" round icon="resume" aria-label="Resume session" title="Resume"
-                  onClick={() => void window.api.invoke('session:resume', { id: s.id })} />
-              )}
-              <Button variant="ghost" size="sm" round icon="trash" aria-label="Remove session" title="Remove"
-                onClick={() => void window.api.invoke('session:remove', { id: s.id })} />
-            </>
+          {s.lastStatus === 'gone' && s.kind !== 'terminal' && (
+            <Button variant="ghost" size="sm" round icon="resume" aria-label="Resume session" title="Resume"
+              onClick={() => void window.api.invoke('session:resume', { id: s.id })} />
           )}
-          <Button variant="ghost" size="sm" round icon="minimize" aria-label={compact ? 'Expand' : 'Compact'}
+          <Button variant="ghost" size="sm" round icon="minus" aria-label={compact ? 'Expand' : 'Compact'}
             title={compact ? 'Expand' : 'Compact'} onClick={onToggleCompact} />
+          {s.lastStatus === 'gone'
+            ? <Button variant="ghost" size="sm" round icon="x" aria-label="Remove session" title="Remove"
+              onClick={() => void window.api.invoke('session:remove', { id: s.id })} />
+            : <Button variant="ghost" size="sm" round icon="x" aria-label="Close session" title="Close session" onClick={onKill} />}
         </>
       }
     />
@@ -138,9 +143,8 @@ function ProjectRow({ project: p, tag, live, waiting, focused, refused, onOpen, 
   )
 }
 
-function ProjectHeader({ project: p, collapsed, tag, refused, onToggle, onRemove, onNew }: {
+function ProjectHeader({ project: p, tag, refused, onToggle, onRemove, onNew }: {
   project: Project
-  collapsed: boolean
   tag: number | null
   refused: boolean
   onToggle: () => void
@@ -150,8 +154,7 @@ function ProjectHeader({ project: p, collapsed, tag, refused, onToggle, onRemove
   return (
     <>
       <div className={css.folder} title={p.path} onClick={onToggle}>
-        <Icon name={collapsed ? 'chevron-right' : 'chevron-down'} size={12} />
-        <Icon name="folder" size={14} className={tagClass(tag, 'fg')} />
+        <Icon name="folder" size={18} className={tagClass(tag, 'fg')} />
         <span className={css.folderName}>{p.name}</span>
         <div className={css.folderActions} onClick={(e) => e.stopPropagation()}>
           <Button variant="ghost" size="sm" round icon="trash" aria-label="Remove project" title="Remove project"
@@ -165,7 +168,7 @@ function ProjectHeader({ project: p, collapsed, tag, refused, onToggle, onRemove
   )
 }
 
-export function Sidebar({ onNew }: { onNew: (projectId?: string) => void }) {
+export function Sidebar({ onNew, onKill }: { onNew: (projectId?: string) => void; onKill: (s: Session) => void }) {
   const { projects, sessions, ui, features, setFocused, toggleCollapsed, focusFeature, openProject, setSidebarTab } = useSlices()
   const [refused, setRefused] = useState<string | null>(null)
   const [compact, setCompact] = useState<Set<string>>(new Set())
@@ -191,12 +194,13 @@ export function Sidebar({ onNew }: { onNew: (projectId?: string) => void }) {
         onOpenFeature={() => f && focusFeature({ projectId: f.projectId, slug: f.slug })}
         onToggleCompact={() => setCompact((c) => toggle(c, s.id))}
         onLink={() => setLinking(s)}
+        onKill={() => onKill(s)}
       />
     )
   }
 
-  const projectHeader = (p: Project, key: string, collapsed: boolean) => (
-    <ProjectHeader project={p} collapsed={collapsed} tag={tags.project(p.id)} refused={refused === p.id}
+  const projectHeader = (p: Project, key: string) => (
+    <ProjectHeader project={p} tag={tags.project(p.id)} refused={refused === p.id}
       onToggle={() => toggleCollapsed(key)} onRemove={() => void removeProject(p.id)} onNew={() => onNew(p.id)} />
   )
 
@@ -222,7 +226,7 @@ export function Sidebar({ onNew }: { onNew: (projectId?: string) => void }) {
         {ui.sidebarTab === 'sessions'
           ? sessionGroups(projects, sessions, ui).map((g) => (
             <div key={g.key} className={css.project}>
-              {projectHeader(g.project, g.key, g.collapsed)}
+              {projectHeader(g.project, g.key)}
               {!g.collapsed && <div className={css.cards}>{g.sessions.map(sessionCard)}</div>}
             </div>
           ))
