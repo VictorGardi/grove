@@ -88,9 +88,10 @@ export function guardNavigation(win: BrowserWindow, core: Core): void {
     if (scheme(e.url) === `${ARTIFACT_SCHEME}:`) {
       const t = parseArtifactUrl(e.url)
       const cur = core.getSlices().ui.viewer
-      if (t && cur && t.projectId === cur.projectId && t.slug === cur.slug && t.path === cur.path && t.hash === cur.hash) return
+      if (t && cur?.kind === 'artifact' && t.projectId === cur.projectId && t.slug === cur.slug && t.path === cur.path && t.hash === cur.hash) return
       e.preventDefault()
-      if (t) void core.commands.uiSet({ viewer: t })
+      // a followed link keeps "← Diff"
+      if (t) void core.commands.uiSet({ viewer: { ...t, fromDiff: cur?.kind === 'artifact' ? cur.fromDiff : null } })
       return
     }
     e.preventDefault()

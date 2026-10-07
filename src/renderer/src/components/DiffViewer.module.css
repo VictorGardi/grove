@@ -1,0 +1,159 @@
+.viewer {
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+}
+
+.header {
+  height: var(--header-h);
+  flex-shrink: 0;
+  padding: 0 var(--sp-3);
+  display: flex;
+  align-items: center;
+  gap: var(--sp-2);
+  border-bottom: 1px solid var(--card-border);
+}
+
+.title {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  align-items: baseline;
+  gap: var(--sp-2);
+  white-space: nowrap;
+}
+
+.label {
+  font-size: var(--fs-md);
+  font-weight: var(--fw-semibold);
+  color: var(--text);
+}
+
+.root {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  direction: rtl; /* keep the end of a long path visible */
+  font-size: var(--fs-sm);
+  color: var(--text-3);
+}
+
+.toggle {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-1);
+  font-size: var(--fs-sm);
+  color: var(--text-2);
+  white-space: nowrap;
+  cursor: pointer;
+}
+
+.body {
+  flex: 1;
+  min-height: 0;
+  overflow: auto;
+  background: var(--panel-bg);
+  font-family: var(--font-mono);
+  font-size: var(--fs-sm);
+}
+
+.notice {
+  padding: var(--sp-2) var(--sp-3);
+  font-family: var(--font-ui);
+  color: var(--status-waiting);
+  border-bottom: 1px solid var(--card-border);
+}
+
+.note {
+  padding: var(--sp-3);
+  font-family: var(--font-ui);
+  color: var(--text-2);
+}
+
+.file {
+  width: max-content;
+  min-width: 100%;
+  border-bottom: 1px solid var(--card-border);
+}
+
+.fileHeader {
+  position: sticky;
+  top: 0;
+  z-index: 1;
+  display: flex;
+  align-items: center;
+  gap: var(--sp-2);
+  padding: var(--sp-1) var(--sp-3);
+  font-family: var(--font-ui);
+  background: var(--raised-bg);
+  border-bottom: 1px solid var(--card-border);
+}
+
+.status {
+  color: var(--text-2);
+}
+
+.path {
+  color: var(--text);
+  font-weight: var(--fw-semibold);
+}
+
+.add {
+  color: var(--diff-add-fg);
+}
+
+.del {
+  color: var(--diff-del-fg);
+}
+
+.hunkHeader {
+  padding: 0 var(--sp-3);
+  color: var(--text-3);
+  background: var(--diff-hunk-bg);
+  white-space: pre;
+}
+
+.line {
+  display: flex;
+  white-space: pre;
+  color: var(--text-2);
+}
+
+.lineAdd {
+  background: var(--diff-add-bg);
+  color: var(--text);
+}
+
+.lineDel {
+  background: var(--diff-del-bg);
+  color: var(--text);
+}
+
+.num {
+  flex-shrink: 0;
+  width: 5ch;
+  padding-right: var(--sp-1);
+  text-align: right;
+  color: var(--text-3);
+  user-select: none;
+}
+
+.sign {
+  flex-shrink: 0;
+  width: 2ch;
+  text-align: center;
+  user-select: none;
+}
+
+.lineAdd .sign {
+  color: var(--diff-add-fg);
+}
+
+.lineDel .sign {
+  color: var(--diff-del-fg);
+}
+
+.text {
+  padding-right: var(--sp-3);
+}

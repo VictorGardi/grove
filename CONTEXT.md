@@ -91,9 +91,18 @@ specific meaning, so humans and agents stay consistent.
   dots, and turns amber with "Input required" while a linked session waits.
   The **sessions board** groups the project's sessions into Waiting, Working
   (also plain terminals), Idle and Ended, with time in the current status.
-- **Artifact viewer**: the right-hand panel showing one artifact of a feature,
-  next to the main area or expanded over it; HTML in an opaque sandboxed iframe
+- **Artifact viewer**: the right-hand panel showing one viewer target (an
+  artifact, a project file, or a session diff), next to the main area or
+  expanded over it; HTML in an opaque sandboxed iframe
   served by `grove-artifact://`, markdown rendered in main.
+- **Session diff**: `git diff HEAD` plus untracked files of the repo holding a
+  session's working directory, shown in the viewer (ADR 0021). Per working
+  directory, so sessions sharing a checkout share it.
+- **Diff line identity**: `(path, side, number)` of a diff line: `add` →
+  new-side number, `del` → old-side, context → new-side.
+- **Viewer target**: what the viewer shows: an `artifact`, a project `file`
+  (ADR 0022), or a session's `diff`. A file opened from a diff keeps
+  `fromDiff` for "← Diff".
 - **Artifact path**: an artifact's identity within its feature: the path
   relative to the feature folder (POSIX), as in
   `grove-artifact://<projectId>/<slug>/<path>`.

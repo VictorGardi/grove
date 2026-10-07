@@ -1,5 +1,5 @@
 import { useEffect, useRef } from 'react'
-import type { ViewerTarget } from '@shared/types'
+import type { DocTarget } from '@shared/types'
 import { artifactUrl } from '@shared/artifactUrl'
 import type { FileGroup } from '../viewerFiles'
 import { Button } from './ui/Button'
@@ -7,7 +7,7 @@ import s from './ArtifactViewer.module.css'
 
 // Opaque sandboxed frame: no allow-same-origin, so the artifact gets a null origin (ADR 0007).
 export function ArtifactViewer({ target, groups, mtimeMs, expanded, onOpen, onToggleExpanded, onReload, onClose }: {
-  target: ViewerTarget
+  target: DocTarget
   groups: FileGroup[]
   mtimeMs: number | undefined // the open file's, from the features slice
   expanded: boolean

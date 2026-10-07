@@ -10,7 +10,7 @@ const tmpFile = () => path.join(fs.mkdtempSync(path.join(os.tmpdir(), 'grove-'))
 
 describe('stateStore', () => {
   it('returns an empty state for a missing file', () => {
-    expect(loadState(tmpFile())).toEqual({ schemaVersion: 2, sessions: [], ui: DEFAULT_UI })
+    expect(loadState(tmpFile())).toEqual({ schemaVersion: 3, sessions: [], ui: DEFAULT_UI })
   })
 
   it.each([['bad JSON', '{'], ['unknown schemaVersion', '{"schemaVersion":9}']])(
@@ -19,7 +19,7 @@ describe('stateStore', () => {
       const file = tmpFile()
       fs.writeFileSync(file, content)
       const onBad = vi.fn()
-      expect(loadState(file, onBad)).toEqual({ schemaVersion: 2, sessions: [], ui: DEFAULT_UI })
+      expect(loadState(file, onBad)).toEqual({ schemaVersion: 3, sessions: [], ui: DEFAULT_UI })
       expect(onBad).toHaveBeenCalledTimes(1)
       expect(fs.readdirSync(path.dirname(file))).toEqual([expect.stringMatching(/^state\.json\.bad-\d+$/)])
     }
@@ -28,16 +28,16 @@ describe('stateStore', () => {
   it('round-trips', () => {
     const file = tmpFile()
     const s: StateFile = {
-      schemaVersion: 2,
+      schemaVersion: 3,
       sessions: [newSession({ projectId: 'p', kind: 'terminal', now: new Date(), id: 'a', agentSessionId: null })],
       ui: { sidebarWidth: 300, focusedSessionId: null, focusedFeature: null, focusedProject: 'p', sidebarTab: 'projects', board: 'sessions', collapsed: ['p:x'],
-        viewer: { projectId: 'p', slug: 'f', path: '03-design.html', hash: 'q1' }, viewerWidth: 600, viewerExpanded: true },
+        viewer: { kind: 'artifact', projectId: 'p', slug: 'f', path: '03-design.html', hash: 'q1', fromDiff: 's1' }, viewerWidth: 600, viewerExpanded: true },
     }
     saveState(file, s)
     expect(loadState(file)).toEqual(s)
   })
 
-  it('migrates a v1 file: opencodeSessionId becomes agentSessionId, and it saves as v2', () => {
+  it('migrates a v1 file: opencodeSessionId becomes agentSessionId, and it saves as v3', () => {
     const file = tmpFile()
     const v1 = (id: string, kind: string, opencodeSessionId: string | null) => {
       const { agentSessionId: _a, ...rest } = newSession({ projectId: 'p', kind: 'terminal', now: new Date(), id, agentSessionId: null })
@@ -45,11 +45,26 @@ describe('stateStore', () => {
     }
     fs.writeFileSync(file, JSON.stringify({ schemaVersion: 1, sessions: [v1('a', 'opencode', 'ses_x'), v1('b', 'terminal', null)], ui: DEFAULT_UI }))
     const s = loadState(file)
-    expect(s.schemaVersion).toBe(2)
+    expect(s.schemaVersion).toBe(3)
     expect(s.sessions.map((x) => x.agentSessionId)).toEqual(['ses_x', null])
     expect(s.sessions.every((x) => !('opencodeSessionId' in x))).toBe(true)
     saveState(file, s)
-    expect(JSON.parse(fs.readFileSync(file, 'utf8')).schemaVersion).toBe(2)
+    expect(JSON.parse(fs.readFileSync(file, 'utf8')).schemaVersion).toBe(3)
+  })
+
+  it('migrates a v2 viewer to an artifact target without fromDiff', () => {
+    const file = tmpFile()
+    const viewer = { projectId: 'p', slug: 'f', path: '03-design.html', hash: null }
+    fs.writeFileSync(file, JSON.stringify({ schemaVersion: 2, sessions: [], ui: { ...DEFAULT_UI, viewer } }))
+    const s = loadState(file)
+    expect(s.schemaVersion).toBe(3)
+    expect(s.ui.viewer).toEqual({ kind: 'artifact', ...viewer, fromDiff: null })
+  })
+
+  it('migrates a v2 file without a viewer', () => {
+    const file = tmpFile()
+    fs.writeFileSync(file, JSON.stringify({ schemaVersion: 2, sessions: [], ui: DEFAULT_UI }))
+    expect(loadState(file).ui.viewer).toBeNull()
   })
 
   it('loads a session saved before seenAt with seenAt null, and keeps a set one', () => {

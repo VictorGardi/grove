@@ -4,7 +4,7 @@ import { app, BrowserWindow, Notification } from 'electron'
 import { chromeBackground } from '@shared/theme'
 import { TmuxBackend } from '../core/backend/tmux'
 import { createCore } from '../core/core'
-import { findTmux, minimalEnv } from '../core/env'
+import { findBin, findTmux, minimalEnv } from '../core/env'
 import { SpoolClaude } from '../core/claude/source'
 import { HttpOpenCode, serviceFilePath } from '../core/opencode/client'
 import { guardNavigation, handleArtifacts, registerArtifactScheme } from './artifacts'
@@ -19,6 +19,7 @@ app.whenReady().then(async () => {
   const errors: string[] = []
   const tmuxPath = findTmux(process.env)
   if (!tmuxPath) errors.push('tmux not found (looked in PATH, /opt/homebrew/bin, /usr/local/bin)')
+  const gitPath = findBin('git', process.env) // null: the diff viewer says so, no banner
 
   const core = createCore({
     configPath: path.join(os.homedir(), '.config', 'grove', 'config.json'),
@@ -34,6 +35,7 @@ app.whenReady().then(async () => {
       new HttpOpenCode({ serviceFile: serviceFilePath(process.env, os.homedir()) }),
       new SpoolClaude({ dir: path.join(app.getPath('userData'), 'agents', 'claude') }),
     ],
+    git: gitPath,
   })
   await core.start()
 

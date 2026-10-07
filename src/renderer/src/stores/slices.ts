@@ -1,5 +1,5 @@
 import { create } from 'zustand'
-import type { FeaturesSlice, OpenCodeSlice, Project, Session, UiState, ViewerTarget } from '@shared/types'
+import type { DocTarget, FeaturesSlice, OpenCodeSlice, Project, Session, SessionDiff, UiState } from '@shared/types'
 import { DEFAULT_UI, EMPTY_FEATURES, OPENCODE_CONNECTING } from '@shared/types'
 import { openBoard } from '../navigation'
 import { trackStatus, trackWaiting, type StatusSince } from '../sessionStatus'
@@ -10,6 +10,7 @@ interface SlicesState {
   ui: UiState
   features: FeaturesSlice
   opencode: OpenCodeSlice
+  diff: SessionDiff | null
   errors: string[]
   waitingSince: Record<string, number> // session id → when first seen waiting (ms)
   statusSince: Record<string, StatusSince> // session id → its shown status and since when (ms)
@@ -21,7 +22,8 @@ interface SlicesState {
   go(to: Partial<UiState>): void // a breadcrumb up-link
   setBoard(board: UiState['board']): void
   setSidebarTab(tab: UiState['sidebarTab']): void
-  openArtifact(t: ViewerTarget): void
+  openArtifact(t: DocTarget): void
+  openDiff(sessionId: string): void
   closeViewer(): void
   setViewerWidth(px: number): void
   toggleViewerExpanded(): void
@@ -42,6 +44,7 @@ export const useSlices = create<SlicesState>((set, get) => {
     ui: DEFAULT_UI,
     features: EMPTY_FEATURES,
     opencode: OPENCODE_CONNECTING,
+    diff: null,
     errors: [],
     waitingSince: {},
     statusSince: {},
@@ -53,6 +56,7 @@ export const useSlices = create<SlicesState>((set, get) => {
       api.on('state:ui', (ui) => set({ ui }))
       api.on('state:features', (features) => set({ features }))
       api.on('state:opencode', (opencode) => set({ opencode }))
+      api.on('state:diff', (diff) => set({ diff }))
       const [slices, errors] = await Promise.all([api.invoke('state:get'), api.invoke('app:errors')])
       if (slices.ok) {
         set(slices.data)
@@ -67,6 +71,7 @@ export const useSlices = create<SlicesState>((set, get) => {
     setBoard: (board) => { void window.api.invoke('ui:set', { board }) },
     setSidebarTab: (tab) => { void window.api.invoke('ui:set', { sidebarTab: tab }) },
     openArtifact: (t) => { void window.api.invoke('ui:set', { viewer: t }) },
+    openDiff: (sessionId) => { void window.api.invoke('ui:set', { viewer: { kind: 'diff', sessionId } }) },
     closeViewer: () => { void window.api.invoke('ui:set', { viewer: null }) },
     setViewerWidth: (px) => { void window.api.invoke('ui:set', { viewerWidth: Math.round(px) }) },
     toggleViewerExpanded: () => { void window.api.invoke('ui:set', { viewerExpanded: !get().ui.viewerExpanded }) },

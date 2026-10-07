@@ -17,10 +17,10 @@ export function minimalEnv(base: NodeJS.ProcessEnv): NodeJS.ProcessEnv {
   return env
 }
 
-export function findTmux(env: NodeJS.ProcessEnv, dirs: string[] = FIXED_DIRS): string | null {
+export function findBin(name: string, env: NodeJS.ProcessEnv, dirs: string[] = FIXED_DIRS): string | null {
   for (const dir of [...(env.PATH ?? '').split(':'), ...dirs]) {
     if (!dir) continue
-    const p = path.join(dir, 'tmux')
+    const p = path.join(dir, name)
     try {
       fs.accessSync(p, fs.constants.X_OK)
       return p
@@ -30,6 +30,8 @@ export function findTmux(env: NodeJS.ProcessEnv, dirs: string[] = FIXED_DIRS): s
   }
   return null
 }
+
+export const findTmux = (env: NodeJS.ProcessEnv, dirs?: string[]) => findBin('tmux', env, dirs)
 
 function shellQuote(arg: string): string {
   return /^[A-Za-z0-9_\-./=:@%+,]+$/.test(arg) ? arg : `'${arg.replace(/'/g, `'\\''`)}'`

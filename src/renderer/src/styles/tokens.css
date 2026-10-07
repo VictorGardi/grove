@@ -60,6 +60,13 @@
   --danger-bg: #2a1517;
   --danger-border: #5c2427;
 
+  /* diff lines */
+  --diff-add-bg: #132a1c;
+  --diff-add-fg: #4ade80;
+  --diff-del-bg: #2a1517;
+  --diff-del-fg: #f87171;
+  --diff-hunk-bg: #16161a;
+
   /* type */
   --font-ui: -apple-system, system-ui, sans-serif;
   --font-mono: Menlo, monospace;

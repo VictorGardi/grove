@@ -71,6 +71,11 @@
   color: var(--text);
 }
 
+.ghost[aria-pressed='true'] {
+  color: var(--text);
+  background: var(--raised-bg);
+}
+
 .danger {
   background: var(--danger-bg);
   color: var(--danger);

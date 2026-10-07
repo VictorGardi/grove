@@ -2,7 +2,7 @@ import { randomUUID } from 'node:crypto'
 import fs from 'node:fs'
 import os from 'node:os'
 import path from 'node:path'
-import type { Project, Session, SessionKind, Slices, UiState } from '@shared/types'
+import type { Project, Session, SessionDiff, SessionKind, Slices, UiState } from '@shared/types'
 import { DEFAULT_UI, EMPTY_FEATURES, OPENCODE_CONNECTING } from '@shared/types'
 import type { Result } from '@shared/ipc'
 import { safeArtifactPath } from './artifacts/path'
@@ -10,7 +10,10 @@ import type { AttachHandle, SessionBackend } from './backend/types'
 import { terminalTheme } from '@shared/theme'
 import { listFolders, readFolder, resolveRoot, type FolderSnapshot } from './discovery/folder'
 import { chokidarWatchers, type Closer, type Watchers } from './discovery/watcher'
-import { loginShellArgv } from './env'
+import { loginShellArgv, minimalEnv } from './env'
+import { computeDiff } from './diff/compute'
+import { gitRunner } from './diff/git'
+import { createDiffWatch } from './diff/watch'
 import { slugFor } from './autolink'
 import { hasLiveSessions, newProject } from './projects'
 import { readBranch } from './git'
@@ -30,6 +33,7 @@ export interface CoreOptions {
   backend: SessionBackend
   sources?: AgentSource[] // one per agent kind; none: tmux-only
   now?: () => Date // tests inject this
+  git?: string | null // path to git; undefined: 'git' from PATH, null: not found
 }
 
 type Change = Exclude<AgentEvent, { type: 'connected' | 'disconnected' | 'wrote' }>
@@ -77,7 +81,7 @@ export interface Core {
 export function createCore(opts: CoreOptions): Core {
   const { backend } = opts
   const now = opts.now ?? (() => new Date())
-  const slices: Slices = { projects: [], sessions: [], ui: DEFAULT_UI, features: EMPTY_FEATURES, opencode: OPENCODE_CONNECTING }
+  const slices: Slices = { projects: [], sessions: [], ui: DEFAULT_UI, features: EMPTY_FEATURES, opencode: OPENCODE_CONNECTING, diff: null }
   const errors: string[] = []
   const listeners = new Set<SliceListener>()
   const notifyListeners = new Set<(s: Session) => void>()
@@ -103,6 +107,8 @@ export function createCore(opts: CoreOptions): Core {
   let lastOnScreen: string | null = null
   const waitKey = new Map<string, string>() // session id → waitingFor it was last seen waiting with
   const held = new Map<string, string>() // session id → slug it wrote to that discovery hasn't listed yet
+  let lastCwds = new Map<string, string>() // tmux name → pane cwd, from the last refresh
+  const git = opts.git === null ? null : gitRunner(opts.git ?? 'git', minimalEnv(process.env))
 
   function set<K extends keyof Slices>(k: K, v: Slices[K]): void {
     slices[k] = v
@@ -116,7 +122,7 @@ export function createCore(opts: CoreOptions): Core {
     }
     else if (k === 'sessions' || k === 'ui') {
       const sessions = slices.sessions.map(({ branch: _branch, status: _status, waitingFor: _waitingFor, ...s }) => s) // live-only
-      saveState(opts.statePath, { schemaVersion: 2, sessions, ui: slices.ui })
+      saveState(opts.statePath, { schemaVersion: 3, sessions, ui: slices.ui })
     }
     if (k === 'sessions') publish() // card state reads linked sessions
   }
@@ -288,8 +294,29 @@ export function createCore(opts: CoreOptions): Core {
     } catch {
       return // retried by the next poll
     }
+    lastCwds = cwds
     const next = withBranches(slices.sessions, cwds, readBranch)
     if (next !== slices.sessions) set('sessions', next)
+  }
+
+  // The diff of the session's working directory: the pane's cwd, or the project once it's gone.
+  async function runDiff(id: string): Promise<{ key: string; diff: SessionDiff }> {
+    const s = findSession(id)
+    const project = s && slices.projects.find((p) => p.id === s.projectId)
+    if (!s || !project) {
+      const error = 'session not found'
+      return { key: `error:${error}`, diff: { sessionId: id, projectId: s?.projectId ?? '', state: 'error', error, root: null, files: [], truncated: false } }
+    }
+    const dir = s.lastStatus === 'running' ? lastCwds.get(s.tmuxName) ?? project.path : project.path
+    return computeDiff({ sessionId: id, dir, project, features: slices.features.items, git })
+  }
+
+  const diffWatch = createDiffWatch(runDiff, (d) => set('diff', d))
+
+  // Computed only while the viewer shows a diff (D4).
+  function syncDiff(): void {
+    const v = slices.ui.viewer
+    diffWatch.target(v?.kind === 'diff' ? v.sessionId : null)
   }
 
   // The session the human is looking at: focused window, session focused (the focuses are exclusive).
@@ -415,6 +442,7 @@ export function createCore(opts: CoreOptions): Core {
     set('sessions', slices.sessions.filter(keep))
     // the last project page takes over (ADR 0018)
     if (focused && !findSession(focused.id)) set('ui', { ...slices.ui, focusedSessionId: null, focusedProject: focused.projectId })
+    syncDiff()
   }
 
   // Removed agent sessions: each source drops what it keeps for them (Claude: the spool).
@@ -522,6 +550,7 @@ export function createCore(opts: CoreOptions): Core {
       if (partial.focusedProject) Object.assign(next, { focusedSessionId: null, focusedFeature: null })
       set('ui', next)
       refreshStatus() // the on-screen session may have changed
+      syncDiff()
       return { ok: true, data: slices.ui }
     },
   }
@@ -552,6 +581,7 @@ export function createCore(opts: CoreOptions): Core {
       } catch (e) {
         errors.push(`tmux: ${(e as Error).message}`)
       }
+      syncDiff()
       poll = setInterval(() => {
         void checkLiveness()
         syncProjects(false) // picks up a root that appears later
@@ -597,6 +627,7 @@ export function createCore(opts: CoreOptions): Core {
     dispose() {
       clearInterval(poll)
       clearTimeout(unreachableTimer)
+      diffWatch.dispose()
       for (const st of states.values()) st.source.stop()
       void workflowWatch?.close()
       for (const id of [...discovery.keys()]) closeEntry(id)

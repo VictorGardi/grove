@@ -1,10 +1,10 @@
 import { describe, expect, it } from 'vitest'
-import type { ViewerTarget } from './types'
+import type { ArtifactTarget } from './types'
 import { artifactUrl, isViewable, parseArtifactUrl } from './artifactUrl'
 
 describe('artifactUrl', () => {
   it('encodes path segments and appends the hash', () => {
-    const t: ViewerTarget = { projectId: 'p1', slug: 'my-feat', path: 'refs/a b.html', hash: 'q1-x' }
+    const t: ArtifactTarget = { kind: 'artifact', projectId: 'p1', slug: 'my-feat', path: 'refs/a b.html', hash: 'q1-x', fromDiff: null }
     expect(artifactUrl(t)).toBe('grove-artifact://p1/my-feat/refs/a%20b.html#q1-x')
     expect(artifactUrl({ ...t, hash: null })).toBe('grove-artifact://p1/my-feat/refs/a%20b.html')
   })
@@ -12,7 +12,7 @@ describe('artifactUrl', () => {
   it('round-trips through parseArtifactUrl', () => {
     for (const path of ['03-design.html', 'a b/c d.html', 'x#y.html']) {
       for (const hash of [null, 'sec-2']) {
-        const t: ViewerTarget = { projectId: 'p1', slug: 's', path, hash }
+        const t: ArtifactTarget = { kind: 'artifact', projectId: 'p1', slug: 's', path, hash, fromDiff: null }
         expect(parseArtifactUrl(artifactUrl(t))).toEqual(t)
       }
     }

@@ -1,8 +1,9 @@
-import type { FeaturesSlice, OpenCodeSlice, Project, Session, SessionKind, Slices, UiState } from './types'
+import type { FeaturesSlice, OpenCodeSlice, Project, Session, SessionDiff, SessionKind, Slices, UiState } from './types'
 
 export type Result<T> = { ok: true; data: T } | { ok: false; error: string }
 export type MenuAction =
   | { type: 'newSession' } | { type: 'closeSession' } | { type: 'focusIndex'; n: number } | { type: 'projectBoard' }
+  | { type: 'sessionDiff' }
 // invoke channels: name → [args, result data]
 export interface InvokeMap {
   'state:get': [void, Slices]
@@ -32,6 +33,7 @@ export interface PushMap {
   'state:ui': UiState
   'state:features': FeaturesSlice
   'state:opencode': OpenCodeSlice
+  'state:diff': SessionDiff | null
   'pty:data': { attachId: string; data: string }
   'pty:exit': { attachId: string }
   'menu:action': MenuAction

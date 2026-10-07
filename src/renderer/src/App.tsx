@@ -1,7 +1,8 @@
-import { useEffect, useState } from 'react'
-import type { Feature, Session } from '@shared/types'
+import { useCallback, useEffect, useState } from 'react'
+import type { Feature, Session, ViewerTarget } from '@shared/types'
 import { ArtifactViewer } from './components/ArtifactViewer'
 import { ConfirmDialog } from './components/ConfirmDialog'
+import { DiffViewer } from './components/DiffViewer'
 import { FeaturePage } from './components/FeaturePage'
 import { NewSessionModal } from './components/NewSessionModal'
 import { ProjectPage } from './components/ProjectPage'
@@ -21,14 +22,20 @@ import { viewableFiles } from './viewerFiles'
 import s from './App.module.css'
 
 export default function App() {
-  const { projects, sessions, ui, features, opencode, errors, waitingSince, statusSince, hydrate, setFocused, focusFeature, go, setBoard,
-    openArtifact, closeViewer, setViewerWidth, toggleViewerExpanded, reloadViewer } = useSlices()
+  const { projects, sessions, ui, features, opencode, diff, errors, waitingSince, statusSince, hydrate, setFocused, focusFeature, go, setBoard,
+    openArtifact, openDiff, closeViewer, setViewerWidth, toggleViewerExpanded, reloadViewer } = useSlices()
   const [newFor, setNewFor] = useState<{ projectId?: string } | null>(null)
   const [confirmKill, setConfirmKill] = useState<Session | null>(null)
 
   useEffect(() => {
     void hydrate()
   }, [hydrate])
+
+  // the Diff button and ⌥⌘B: open this session's diff, or close it when it's the one shown
+  const toggleDiff = useCallback((id: string, viewer: ViewerTarget | null) => {
+    if (viewer?.kind === 'diff' && viewer.sessionId === id) closeViewer()
+    else openDiff(id)
+  }, [openDiff, closeViewer])
 
   useEffect(() => {
     return window.api.on('menu:action', (a) => {
@@ -44,16 +51,19 @@ export default function App() {
       } else if (a.type === 'projectBoard') {
         const to = boardKey(ui, projects, sessions, features.items)
         if (to) go(to)
+      } else if (a.type === 'sessionDiff') {
+        if (ui.focusedSessionId) toggleDiff(ui.focusedSessionId, ui.viewer)
       }
     })
-  }, [setFocused, go])
+  }, [setFocused, go, toggleDiff])
 
   const openNew = (projectId?: string) => setNewFor({ projectId })
   const shown = content(ui, projects, sessions, features.items)
   const header = crumbs(shown, projects, features.items).map((c) => ({ label: c.label, onClick: c.to && (() => go(c.to!)) }))
   const openFeature = (f: Feature) => focusFeature({ projectId: f.projectId, slug: f.slug })
   const v = ui.viewer
-  const viewerFeature = v && features.items.find((f) => f.projectId === v.projectId && f.slug === v.slug)
+  const viewerFeature = v?.kind === 'artifact' ? features.items.find((f) => f.projectId === v.projectId && f.slug === v.slug) : undefined
+  const diffOpen = (id: string) => v?.kind === 'diff' && v.sessionId === id
   const waitingCount = sessions.filter((x) => shownStatus(x) === 'waiting').length
   const focusWaiting = () => {
     const w = longestWaiting(sessions, waitingSince)
@@ -73,7 +83,11 @@ export default function App() {
         content={
           <>
             <ContentHeader crumbs={header}
-              right={shown.kind === 'project' ? <BoardSwitch board={ui.board} onChange={setBoard} /> : undefined} />
+              right={shown.kind === 'project' ? <BoardSwitch board={ui.board} onChange={setBoard} />
+                : shown.kind === 'session' ? (
+                  <Button variant="ghost" size="sm" aria-pressed={diffOpen(shown.session.id)}
+                    onClick={() => toggleDiff(shown.session.id, v)}>Diff</Button>
+                ) : undefined} />
             {shown.kind === 'project' ? (
               <ProjectPage project={shown.project} projects={projects} board={ui.board} stages={features.stages}
                 features={features.items} sessions={sessions} statusSince={statusSince}
@@ -83,7 +97,7 @@ export default function App() {
                 parent={features.items.find((f) => f.projectId === shown.feature.projectId && f.slug === shown.feature.parent) ?? null}
                 children={childrenOf(shown.feature, features.items)} sessions={sessions}
                 onFocusSession={setFocused} onOpenFeature={openFeature}
-                onOpenArtifact={(name) => openArtifact({ projectId: shown.feature.projectId, slug: shown.feature.slug, path: name, hash: null })} />
+                onOpenArtifact={(name) => openArtifact({ kind: 'artifact', projectId: shown.feature.projectId, slug: shown.feature.slug, path: name, hash: null, fromDiff: null })} />
             ) : shown.kind === 'session' && shown.session.lastStatus === 'running' ? (
               <TerminalView key={shown.session.id} sessionId={shown.session.id} />
             ) : shown.kind === 'session' ? (
@@ -101,11 +115,14 @@ export default function App() {
             )}
           </>
         }
-        viewer={v ? (
+        viewer={v?.kind === 'diff' ? (
+          <DiffViewer diff={diff} sessionId={v.sessionId} label={sessions.find((x) => x.id === v.sessionId)?.label ?? 'session'}
+            expanded={ui.viewerExpanded} onToggleExpanded={toggleViewerExpanded} onClose={closeViewer} />
+        ) : v?.kind === 'artifact' ? (
           <ArtifactViewer target={v} groups={viewerFeature ? viewableFiles(viewerFeature, features.stages) : []}
             mtimeMs={viewerFeature ? viewerFeature.artifacts.find((a) => a.name === v.path)?.mtimeMs : undefined}
             expanded={ui.viewerExpanded} onToggleExpanded={toggleViewerExpanded} onReload={reloadViewer}
-            onOpen={(path) => openArtifact({ projectId: v.projectId, slug: v.slug, path, hash: null })} onClose={closeViewer} />
+            onOpen={(path) => openArtifact({ ...v, path, hash: null })} onClose={closeViewer} />
         ) : undefined}
         sidebarWidth={ui.sidebarWidth}
         viewerWidth={ui.viewerWidth}

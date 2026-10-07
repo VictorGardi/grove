@@ -2,7 +2,7 @@ import fs from 'node:fs'
 import os from 'node:os'
 import path from 'node:path'
 import { describe, expect, it } from 'vitest'
-import { findTmux, loginShellArgv, minimalEnv } from './env'
+import { findBin, findTmux, loginShellArgv, minimalEnv } from './env'
 
 describe('loginShellArgv', () => {
   it('wraps argv in a login interactive shell', () => {
@@ -33,6 +33,12 @@ describe('findTmux', () => {
   it('returns null when nothing is found', () => {
     const empty = fs.mkdtempSync(path.join(os.tmpdir(), 'grove-'))
     expect(findTmux({ PATH: '' }, [empty])).toBeNull()
+  })
+})
+
+describe('findBin', () => {
+  it('finds git on PATH', () => {
+    expect(findBin('git', { PATH: '/usr/bin' }, [])).toBe('/usr/bin/git')
   })
 })
 
