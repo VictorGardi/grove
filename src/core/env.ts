@@ -38,6 +38,9 @@ function shellQuote(arg: string): string {
 }
 
 // Each session gets the user's own login-shell env, re-read at every start (ADR 0010).
-export function loginShellArgv(argv: string[], shell = process.env.SHELL ?? '/bin/zsh'): string[] {
-  return [shell, '-l', '-i', '-c', 'exec ' + argv.map(shellQuote).join(' ')]
+// `pathPrefix` goes on PATH after the rc files ran, so they can't hide it (ADR 0027).
+export function loginShellArgv(argv: string[], o: { shell?: string; pathPrefix?: string } = {}): string[] {
+  const shell = o.shell ?? process.env.SHELL ?? '/bin/zsh'
+  const prefix = o.pathPrefix ? `export PATH=${shellQuote(o.pathPrefix)}:"$PATH"; ` : ''
+  return [shell, '-l', '-i', '-c', prefix + 'exec ' + argv.map(shellQuote).join(' ')]
 }

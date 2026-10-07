@@ -40,6 +40,7 @@ export interface CoreOptions {
   sources?: AgentSource[] // one per agent kind; none: tmux-only
   now?: () => Date // tests inject this
   git?: string | null // path to git; undefined: 'git' from PATH, null: not found
+  sessionEnv?: { socketPath: string; binDir: string } // the grove CLI's socket and launcher dir; none: sessions get no CLI env
 }
 
 type Change = Exclude<AgentEvent, { type: 'connected' | 'disconnected' | 'wrote' }>
@@ -122,6 +123,18 @@ export function createCore(opts: CoreOptions): Core {
   let lastCwds = new Map<string, string>() // tmux name → pane cwd, from the last refresh
   const sending = new Set<string>() // sessions with a review send in flight
   const git = opts.git === null ? null : gitRunner(opts.git ?? 'git', minimalEnv(process.env))
+
+  // GROVE_* for the grove CLI (ADR 0027). Terminal sessions get PATH here; agent sessions through loginShellArgv.
+  function cliEnv(session: Session): Record<string, string> | undefined {
+    const e = opts.sessionEnv
+    if (!e) return undefined
+    return {
+      GROVE_SESSION_ID: session.id,
+      GROVE_SOCKET: e.socketPath,
+      ...(session.kind === 'terminal' && { PATH: `${e.binDir}:${minimalEnv(process.env).PATH}` }),
+    }
+  }
+  const shellOpts = () => ({ pathPrefix: opts.sessionEnv?.binDir })
 
   function set<K extends keyof Slices>(k: K, v: Slices[K]): void {
     slices[k] = v
@@ -537,8 +550,8 @@ export function createCore(opts: CoreOptions): Core {
       if (kind !== 'terminal' && !source) return { ok: false, error: 'no-source' }
       const agentSessionId = source ? source.mintId(now()) : null
       const session = newSession({ projectId, kind, now: now(), id: randomUUID(), agentSessionId })
-      const argv = source ? loginShellArgv(source.argv(agentSessionId!, 'start')) : undefined
-      await backend.create({ name: session.tmuxName, cwd: project.path, cols, rows, argv })
+      const argv = source ? loginShellArgv(source.argv(agentSessionId!, 'start'), shellOpts()) : undefined
+      await backend.create({ name: session.tmuxName, cwd: project.path, cols, rows, argv, env: cliEnv(session) })
       await backend.setColors(session.tmuxName, terminalTheme.foreground, terminalTheme.background)
       set('sessions', [...slices.sessions, session])
       refreshStatus()
@@ -574,8 +587,8 @@ export function createCore(opts: CoreOptions): Core {
       const st = states.get(session.kind)
       if (!st) return { ok: false, error: 'no-source' }
       await backend.kill(session.tmuxName) // a leftover dead pane
-      const argv = loginShellArgv(st.source.argv(session.agentSessionId, 'resume'))
-      await backend.create({ name: session.tmuxName, cwd: project.path, cols: 80, rows: 24, argv }) // attaching resizes it
+      const argv = loginShellArgv(st.source.argv(session.agentSessionId, 'resume'), shellOpts())
+      await backend.create({ name: session.tmuxName, cwd: project.path, cols: 80, rows: 24, argv, env: cliEnv(session) }) // attaching resizes it
       await backend.setColors(session.tmuxName, terminalTheme.foreground, terminalTheme.background)
       replaceSession(resume(findSession(id) ?? session))
       if (st.connected) void resync(st)

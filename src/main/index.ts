@@ -9,19 +9,39 @@ import { SpoolClaude } from '../core/claude/source'
 import { HttpOpenCode, serviceFilePath } from '../core/opencode/client'
 import { guardNavigation, handleArtifacts, registerArtifactScheme } from './artifacts'
 import { registerIpc } from './ipc'
+import { startCliServer } from './cliServer'
+import { writeLauncher } from './launcher'
 import { buildMenu } from './menu'
 
 let win: BrowserWindow | null = null
 
 registerArtifactScheme()
 
+// A second launch focuses the first instead of starting a second app (ADR 0027).
+const gotLock = app.requestSingleInstanceLock()
+if (!gotLock) app.quit()
+
+function raise(): void {
+  if (!win || win.isDestroyed()) return
+  if (win.isMinimized()) win.restore()
+  win.show()
+  win.focus()
+}
+app.on('second-instance', raise)
+
 app.whenReady().then(async () => {
+  if (!gotLock) return
   const errors: string[] = []
   const tmuxPath = findTmux(process.env)
   if (!tmuxPath) errors.push('tmux not found (looked in PATH, /opt/homebrew/bin, /usr/local/bin)')
   const gitPath = findBin('git', process.env) // null: the diff viewer says so, no banner
 
+  const socketPath = path.join(app.getPath('userData'), 'grove.sock')
+  const binDir = path.join(app.getPath('userData'), 'bin')
+  writeLauncher({ binDir, execPath: process.execPath, cliPath: path.join(app.getAppPath(), 'out', 'main', 'cli.js'), socketPath })
+
   const core = createCore({
+    sessionEnv: { socketPath, binDir },
     configPath: path.join(os.homedir(), '.config', 'grove', 'config.json'),
     statePath: path.join(app.getPath('userData'), 'state.json'),
     commentsPath: path.join(app.getPath('userData'), 'comments.json'),
@@ -39,6 +59,10 @@ app.whenReady().then(async () => {
     git: gitPath,
   })
   await core.start()
+  const cliServer = await startCliServer(core, { socketPath, raise }).catch((e: Error) => {
+    errors.push(`grove CLI: ${e.message}`)
+    return null
+  })
 
   // Unsigned builds can't show these (design D3): `failed` is logged once per run.
   const shown = new Set<Notification>() // held until closed or clicked, or a click may be lost
@@ -51,11 +75,7 @@ app.whenReady().then(async () => {
     n.on('close', () => shown.delete(n))
     n.on('click', () => {
       shown.delete(n)
-      if (win && !win.isDestroyed()) {
-        if (win.isMinimized()) win.restore()
-        win.show()
-        win.focus()
-      }
+      raise()
       void core.commands.uiSet({ focusedSessionId: s.id })
     })
     n.on('failed', (_e, error) => {
@@ -99,7 +119,10 @@ app.whenReady().then(async () => {
   if (process.env.ELECTRON_RENDERER_URL) win.loadURL(process.env.ELECTRON_RENDERER_URL)
   else win.loadFile(path.join(__dirname, '../renderer/index.html'))
 
-  app.on('before-quit', () => core.dispose())
+  app.on('before-quit', () => {
+    cliServer?.close()
+    core.dispose()
+  })
 })
 
 app.on('window-all-closed', () => app.quit())

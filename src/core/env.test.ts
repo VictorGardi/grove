@@ -6,13 +6,19 @@ import { findBin, findTmux, loginShellArgv, minimalEnv } from './env'
 
 describe('loginShellArgv', () => {
   it('wraps argv in a login interactive shell', () => {
-    expect(loginShellArgv(['opencode', '-s', 'ses_abc'], '/bin/zsh')).toEqual([
+    expect(loginShellArgv(['opencode', '-s', 'ses_abc'], { shell: '/bin/zsh' })).toEqual([
       '/bin/zsh', '-l', '-i', '-c', 'exec opencode -s ses_abc',
     ])
   })
 
   it('single-quotes arguments with spaces or quotes', () => {
-    expect(loginShellArgv(['echo', "a b'c"], '/bin/zsh')[4]).toBe("exec echo 'a b'\\''c'")
+    expect(loginShellArgv(['echo', "a b'c"], { shell: '/bin/zsh' })[4]).toBe("exec echo 'a b'\\''c'")
+  })
+})
+
+describe('loginShellArgv pathPrefix', () => {
+  it('PATH prefix runs after rc', () => {
+    expect(loginShellArgv(['x'], { shell: '/bin/zsh', pathPrefix: '/b' })[4]).toBe('export PATH=/b:"$PATH"; exec x')
   })
 })
 

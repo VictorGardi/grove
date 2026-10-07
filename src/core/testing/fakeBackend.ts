@@ -20,7 +20,7 @@ export class FakeBackend implements SessionBackend {
     this.record('ensureConfig', [])
   }
 
-  async create(o: { name: string; cwd: string; cols: number; rows: number; argv?: string[] }): Promise<void> {
+  async create(o: { name: string; cwd: string; cols: number; rows: number; argv?: string[]; env?: Record<string, string> }): Promise<void> {
     this.record('create', [o])
     this.live.add(o.name)
     this.paths.set(o.name, o.cwd)

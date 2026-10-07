@@ -40,10 +40,11 @@ export class TmuxBackend implements SessionBackend {
     await this.tmux('source-file', this.opts.confPath)
   }
 
-  async create(o: { name: string; cwd: string; cols: number; rows: number; argv?: string[] }): Promise<void> {
+  async create(o: { name: string; cwd: string; cols: number; rows: number; argv?: string[]; env?: Record<string, string> }): Promise<void> {
     await this.tmux(
       '-f', this.opts.confPath,
       'new-session', '-d', '-s', o.name, '-c', o.cwd, '-x', String(o.cols), '-y', String(o.rows),
+      ...Object.entries(o.env ?? {}).flatMap(([k, v]) => ['-e', `${k}=${v}`]),
       ...(o.argv ? ['--', ...o.argv] : [])
     )
   }
