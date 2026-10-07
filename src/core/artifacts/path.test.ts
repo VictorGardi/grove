@@ -64,9 +64,12 @@ describe('artifact paths', () => {
     for (const url of [
       'grove-artifact://p/a/%2e%2e/%2e%2e/outside.html',
       'grove-artifact://p/a/..%2F..%2F..%2Foutside.html',
+      'grove-artifact://p/~file/%2e%2e/outside.html',
+      'grove-artifact://p/~file/..%2F..%2Foutside.html',
     ]) {
       const t = parseArtifactUrl(url)
-      expect(t === null || core.artifactPath(t.projectId, t.slug, t.path) === null, url).toBe(true)
+      const file = t && (t.kind === 'file' ? core.filePath(t.projectId, t.path) : core.artifactPath(t.projectId, t.slug, t.path))
+      expect(t === null || file === null, url).toBe(true)
     }
   })
 })

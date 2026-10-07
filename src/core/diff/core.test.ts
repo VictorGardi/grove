@@ -1,4 +1,5 @@
 import fs from 'node:fs'
+import path from 'node:path'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { createTerminal, setupCore } from '../testing/setup'
 import { gitRepo } from '../testing/gitRepo'
@@ -90,6 +91,17 @@ describe('core session diff', () => {
     await core.commands.sessionKill({ id: other.id })
     await core.commands.sessionRemove({ id: other.id })
     expect(core.getSlices().ui.viewer).toEqual({ ...doc, fromDiff: null })
+  })
+
+  it('serves project files through filePath and refuses escapes', async () => {
+    const { core, repo } = await setup()
+    repo.write('docs/adr/x.md', '# x\n')
+    fs.symlinkSync('/etc/hosts', path.join(s.dir, 'docs', 'out.md'))
+    expect(core.filePath('p', 'docs/adr/x.md')).toBe(fs.realpathSync(path.join(s.dir, 'docs/adr/x.md')))
+    for (const rel of ['../x.md', '.git/HEAD', 'docs/out.md', 'docs/missing.md', 'docs/adr', '/etc/hosts']) {
+      expect(core.filePath('p', rel), rel).toBeNull()
+    }
+    expect(core.filePath('nope', 'docs/adr/x.md')).toBeNull()
   })
 
   it('reports git not found', async () => {

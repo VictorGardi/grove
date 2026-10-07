@@ -313,35 +313,35 @@ conflicts with the code, follow the design's intent, note the deviation in
 
 ## Slice 6 — Open rendered: any project file (D6)
 
-- [ ] `artifactUrl.ts`: `export const FILE_SEGMENT = '~file'`;
+- [x] `artifactUrl.ts`: `export const FILE_SEGMENT = '~file'`;
   `artifactUrl` for `kind: 'file'` → `grove-artifact://<projectId>/~file/<encoded path>`;
   `parseArtifactUrl` returns `FileTarget` when the first segment is `~file`.
   Tests: round trip, nested path, hash.
-- [ ] `core.ts`: `filePath(projectId, rel): string | null` on `Core` →
+- [x] `core.ts`: `filePath(projectId, rel): string | null` on `Core` →
   `safeArtifactPath(project.path, rel)` (it already refuses absolute,
   backslash, dot-segments incl. `.git`, symlink escapes, non-files).
-- [ ] `main/artifacts.ts`: for a `file` target,
+- [x] `main/artifacts.ts`: for a `file` target,
   `file = isViewable(t.path) ? core.filePath(t.projectId, t.path) : null`;
   then the same `.md` / `.html` / binary branches. `guardNavigation`:
   compare `artifact` by projectId/slug/path/hash and `file` by
   projectId/path/hash; a followed link inherits `fromDiff`.
-- [ ] `compute.ts`: when not in a feature folder, `rel = path.relative(realpath(project.path), abs)`;
+- [x] `compute.ts`: when not in a feature folder, `rel = path.relative(realpath(project.path), abs)`;
   inside (no `..`, not absolute) and viewable → `{ slug: null, path: posix rel }`.
-- [ ] `slices.ts` `openRendered`: `r.slug === null` →
+- [x] `slices.ts` `openRendered`: `r.slug === null` →
   `{ kind: 'file', projectId, path: r.path, hash: null, fromDiff: sessionId }`.
-- [ ] `ArtifactViewer` / `App.tsx`: a `file` target has `groups = []`,
+- [x] `ArtifactViewer` / `App.tsx`: a `file` target has `groups = []`,
   `mtimeMs = undefined` (no auto-reload; deferred).
-- [ ] Tests: `diff/core.test.ts` — `filePath` returns a path for
+- [x] Tests: `diff/core.test.ts` — `filePath` returns a path for
   `docs/adr/x.md`, `null` for `../x.md`, `.git/HEAD`, a symlink pointing
   outside, a missing file; `compute.test.ts` — a changed `docs/adr/0001.md`
   gets `{ slug: null, path: 'docs/adr/0001.md' }`.
-- [ ] Leave ADR 0021 and 0022 at `Proposed` (only approval flips them). Update `06-implementation.md` with the full manual checklist:
+- [x] Leave ADR 0021 and 0022 at `Proposed` (only approval flips them). Update `06-implementation.md` with the full manual checklist:
   1. ⌥⌘B on a session with edits shows the diff; ⌥⌘B again closes.
   2. A Claude session edits a file: the diff updates within ~5 s, scroll kept.
   3. A new untracked file appears; the toggle hides it.
   4. A non-git project's session shows "Not a git repository".
   5. Open rendered on a changed `docs/work/*/…md` and on a changed ADR; "← Diff" returns.
   6. Restart the app with a diff open: it reopens; with an artifact open from a diff: "← Diff" still works.
-- [ ] Commit slice 6.
+- [x] Commit slice 6.
 
 ## Open questions

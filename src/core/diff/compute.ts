@@ -34,7 +34,7 @@ export async function computeDiff(o: { sessionId: string; dir: string; project: 
     const untracked = await readUntracked(root, names)
     const key = sha1([raw, ...names, ...untracked.stamps].join('\0'))
     const files = [...parseUnifiedDiff(raw, MAX_FILE_BYTES), ...untracked.files]
-    setRendered(files, root, o.features.filter((f) => f.projectId === o.project.id))
+    setRendered(files, root, o.project.path, o.features.filter((f) => f.projectId === o.project.id))
     return { key, diff: { ...base, root, files, truncated: capLines(files) } }
   } catch (e) {
     const error = (e as Error).message
@@ -50,8 +50,12 @@ const real = (p: string) => {
   }
 }
 
-// Where a changed viewable file opens rendered: its feature folder's artifact route (D6).
-function setRendered(files: DiffFile[], root: string, features: Feature[]): void {
+const posix = (rel: string) => rel.split(path.sep).join('/')
+
+// Where a changed viewable file opens rendered (D6): its feature folder's artifact route, else the
+// project's ~file route. Dot segments (.github/…) are refused by the route, so they get none.
+function setRendered(files: DiffFile[], root: string, projectPath: string, features: Feature[]): void {
+  const project = real(projectPath)
   const folders = features.flatMap((f) => {
     const dir = real(f.path)
     return dir ? [{ slug: f.slug, dir }] : []
@@ -60,7 +64,14 @@ function setRendered(files: DiffFile[], root: string, features: Feature[]): void
     if (file.status === 'deleted' || !isViewable(file.path)) continue
     const abs = path.join(root, file.path)
     const f = folders.find((x) => abs.startsWith(x.dir + path.sep))
-    if (f) file.rendered = { slug: f.slug, path: path.relative(f.dir, abs).split(path.sep).join('/') }
+    if (f) {
+      file.rendered = { slug: f.slug, path: posix(path.relative(f.dir, abs)) }
+      continue
+    }
+    const rel = project && path.relative(project, abs)
+    if (rel && !rel.startsWith('..') && !path.isAbsolute(rel) && !rel.split(path.sep).some((seg) => seg.startsWith('.'))) {
+      file.rendered = { slug: null, path: posix(rel) }
+    }
   }
 }
 

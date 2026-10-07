@@ -74,8 +74,10 @@ export const useSlices = create<SlicesState>((set, get) => {
     openArtifact: (t) => { void window.api.invoke('ui:set', { viewer: t }) },
     openDiff: (sessionId) => { void window.api.invoke('ui:set', { viewer: { kind: 'diff', sessionId } }) },
     openRendered: (projectId, sessionId, r) => {
-      if (r.slug === null) return // project files: slice 6
-      void window.api.invoke('ui:set', { viewer: { kind: 'artifact', projectId, slug: r.slug, path: r.path, hash: null, fromDiff: sessionId } })
+      const viewer = r.slug === null
+        ? { kind: 'file' as const, projectId, path: r.path, hash: null, fromDiff: sessionId }
+        : { kind: 'artifact' as const, projectId, slug: r.slug, path: r.path, hash: null, fromDiff: sessionId }
+      void window.api.invoke('ui:set', { viewer })
     },
     closeViewer: () => { void window.api.invoke('ui:set', { viewer: null }) },
     setViewerWidth: (px) => { void window.api.invoke('ui:set', { viewerWidth: Math.round(px) }) },

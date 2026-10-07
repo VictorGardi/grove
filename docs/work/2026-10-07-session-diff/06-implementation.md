@@ -125,3 +125,42 @@ another project's feature is ignored.
 
 **Manual check:** in a diff, "Open rendered" on a changed `docs/work/*/…md`
 shows it rendered; "← Diff" returns to the diff.
+
+## Slice 6 — Open rendered: any project file (D6)
+
+**Changed:** `artifactUrl`/`parseArtifactUrl` handle `kind: 'file'` as
+`grove-artifact://<projectId>/~file/<path>` (`FILE_SEGMENT`). `Core.filePath`
+runs `safeArtifactPath(project.path, rel)`. The protocol handler serves a
+`file` target through it with the same markdown / HTML / image branches and
+CSP; `guardNavigation` compares artifact and file targets by kind (`sameDoc`)
+and a followed link inherits `fromDiff`. `computeDiff` gives a changed viewable
+file outside every feature folder but inside the project
+`{ slug: null, path }` relative to the project; `openRendered` opens it as a
+`file` target. `App.tsx` renders `ArtifactViewer` for any doc target (a `file`
+has no switcher groups and no auto-reload). ADR 0021 and 0022 stay Proposed.
+
+**Tests:** `artifactUrl.test.ts` (`~file` round trip, nested path, hash, empty
+path rejected), `diff/core.test.ts` (`filePath` serves `docs/adr/x.md`, refuses
+`../x.md`, `.git/HEAD`, a symlink to `/etc/hosts`, a missing file, a folder, an
+absolute path and an unknown project), `artifacts/path.test.ts` (encoded
+traversal through `~file` URLs), `compute.test.ts` (a changed `docs/adr/0001.md`
+gets `{ slug: null, path: 'docs/adr/0001.md' }`; `.github/…` gets none; paths
+are relative to a project that is a repo subfolder).
+
+**Deviations:**
+- `computeDiff` gives no `rendered` to paths with a dot segment (`.github/…`),
+  since the route would refuse them anyway (design's "Dot paths" row).
+- The refusal page now reads "outside the project" instead of "outside the
+  feature folders".
+
+## Manual checks (`npm run dev`)
+
+1. ⌥⌘B on a session with edits shows the diff; ⌥⌘B again closes. The Diff
+   button in the session header does the same and shows pressed while open.
+2. A Claude session edits a file: the diff updates within ~5 s, scroll kept.
+3. A new untracked file appears; the "Untracked" toggle hides it.
+4. A non-git project's session shows "Not a git repository".
+5. "Open rendered" on a changed `docs/work/*/…md` and on a changed ADR;
+   "← Diff" returns.
+6. Restart the app with a diff open: it reopens; with an artifact open from a
+   diff: "← Diff" still works.

@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import type { ArtifactTarget } from './types'
+import type { ArtifactTarget, FileTarget } from './types'
 import { artifactUrl, isViewable, parseArtifactUrl } from './artifactUrl'
 
 describe('artifactUrl', () => {
@@ -18,12 +18,24 @@ describe('artifactUrl', () => {
     }
   })
 
+  it('round-trips project files through the ~file segment', () => {
+    for (const path of ['CONTEXT.md', 'docs/adr/0021 x.md', 'a/b/c.html']) {
+      for (const hash of [null, 'h']) {
+        const t: FileTarget = { kind: 'file', projectId: 'p1', path, hash, fromDiff: null }
+        expect(parseArtifactUrl(artifactUrl(t))).toEqual(t)
+      }
+    }
+    expect(artifactUrl({ kind: 'file', projectId: 'p1', path: 'docs/adr/a b.md', hash: 'x', fromDiff: null }))
+      .toBe('grove-artifact://p1/~file/docs/adr/a%20b.md#x')
+  })
+
   it('rejects assets, other schemes, missing paths and garbage', () => {
     for (const url of [
       'grove-artifact://assets/mermaid.min.js',
       'https://p1/s/x.html',
       'grove-artifact://p1/s',
       'grove-artifact://p1/s/',
+      'grove-artifact://p1/~file/',
       'not a url',
     ]) expect(parseArtifactUrl(url)).toBeNull()
   })

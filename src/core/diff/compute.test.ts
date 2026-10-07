@@ -150,4 +150,33 @@ describe('computeDiff', () => {
       ['docs/work/x/refs/new.html', { slug: 'x', path: 'refs/new.html' }],
     ])
   })
+
+  it('opens a changed viewable file elsewhere in the project as a project file', async () => {
+    const r = gitRepo()
+    r.write('docs/adr/0001.md', 'a\n')
+    r.write('.github/notes.md', 'a\n')
+    r.commit()
+    r.write('docs/adr/0001.md', 'b\n')
+    r.write('.github/notes.md', 'b\n')
+    const { diff } = await compute(r.dir)
+    expect(diff.files.map((f) => [f.path, f.rendered])).toEqual([
+      ['.github/notes.md', null],
+      ['docs/adr/0001.md', { slug: null, path: 'docs/adr/0001.md' }],
+    ])
+  })
+
+  it('maps project files relative to the project when it is a subfolder of the repo', async () => {
+    const r = gitRepo()
+    r.write('app/CONTEXT.md', 'a\n')
+    r.write('README.md', 'a\n')
+    r.commit()
+    r.write('app/CONTEXT.md', 'b\n')
+    r.write('README.md', 'b\n')
+    const sub = path.join(r.dir, 'app')
+    const { diff } = await compute(sub, { project: project(sub) })
+    expect(diff.files.map((f) => [f.path, f.rendered])).toEqual([
+      ['README.md', null],
+      ['app/CONTEXT.md', { slug: null, path: 'CONTEXT.md' }],
+    ])
+  })
 })

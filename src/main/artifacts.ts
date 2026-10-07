@@ -5,12 +5,13 @@ import mermaidJs from 'mermaid/dist/mermaid.min.js?asset'
 import { ARTIFACT_SCHEME, ASSETS_HOST, isViewable, parseArtifactUrl } from '@shared/artifactUrl'
 import { rewriteHtml } from '../core/artifacts/html'
 import { renderMarkdown } from '../core/artifacts/markdown'
+import type { DocTarget, ViewerTarget } from '@shared/types'
 import type { Core } from '../core/core'
 
 // Every response: no network, scripts only from bundled assets, opaque sandboxed origin (ADR 0007).
 const CSP = "default-src 'none'; script-src grove-artifact://assets; style-src 'unsafe-inline' grove-artifact://assets; img-src grove-artifact: data:; font-src data:; base-uri 'none'; form-action 'none'; sandbox allow-scripts"
 const REFUSAL = '<!doctype html><meta charset="utf-8"><title>Not available</title>'
-  + '<p>Not available in the viewer (outside the feature folders or not a viewable file)</p>'
+  + '<p>Not available in the viewer (outside the project or not a viewable file)</p>'
 
 const HTML = 'text/html; charset=utf-8'
 const MIME: Record<string, string> = {
@@ -53,7 +54,8 @@ export function handleArtifacts(core: Core): void {
       }
     }
     const t = parseArtifactUrl(req.url)
-    const file = t && isViewable(t.path) ? core.artifactPath(t.projectId, t.slug, t.path) : null
+    const file = !t || !isViewable(t.path) ? null
+      : t.kind === 'file' ? core.filePath(t.projectId, t.path) : core.artifactPath(t.projectId, t.slug, t.path)
     if (!t || !file) return respond(REFUSAL, 404)
     const ext = path.extname(t.path).toLowerCase() // the checked name, not a symlink target's
     try {
@@ -75,6 +77,9 @@ const scheme = (url: string) => {
 }
 const web = (url: string) => scheme(url) === 'http:' || scheme(url) === 'https:'
 
+const sameDoc = (a: DocTarget, b: ViewerTarget | null) => b !== null && b.kind === a.kind && a.projectId === b.projectId
+  && a.path === b.path && a.hash === b.hash && (a.kind !== 'artifact' || (b.kind === 'artifact' && a.slug === b.slug))
+
 // The viewer frame follows ui.viewer: artifact links go through uiSet, http(s) to the browser,
 // everything else is denied. The renderer's own load of ui.viewer is the one navigation let through.
 export function guardNavigation(win: BrowserWindow, core: Core): void {
@@ -88,10 +93,10 @@ export function guardNavigation(win: BrowserWindow, core: Core): void {
     if (scheme(e.url) === `${ARTIFACT_SCHEME}:`) {
       const t = parseArtifactUrl(e.url)
       const cur = core.getSlices().ui.viewer
-      if (t && cur?.kind === 'artifact' && t.projectId === cur.projectId && t.slug === cur.slug && t.path === cur.path && t.hash === cur.hash) return
+      if (t && sameDoc(t, cur)) return
       e.preventDefault()
       // a followed link keeps "← Diff"
-      if (t) void core.commands.uiSet({ viewer: { ...t, fromDiff: cur?.kind === 'artifact' ? cur.fromDiff : null } })
+      if (t) void core.commands.uiSet({ viewer: { ...t, fromDiff: cur && cur.kind !== 'diff' ? cur.fromDiff : null } })
       return
     }
     e.preventDefault()

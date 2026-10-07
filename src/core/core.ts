@@ -75,6 +75,7 @@ export interface Core {
   commands: Commands
   attach(sessionId: string, cols: number, rows: number): AttachHandle
   artifactPath(projectId: string, slug: string, rel: string): string | null // null: not a file of a discovered feature
+  filePath(projectId: string, rel: string): string | null // the ~file route (ADR 0022); null: refused
   dispose(): void
 }
 
@@ -631,6 +632,10 @@ export function createCore(opts: CoreOptions): Core {
     artifactPath(projectId, slug, rel) {
       const f = slices.features.items.find((x) => x.projectId === projectId && x.slug === slug)
       return f ? safeArtifactPath(f.path, rel) : null
+    },
+    filePath(projectId, rel) {
+      const p = slices.projects.find((x) => x.id === projectId)
+      return p ? safeArtifactPath(p.path, rel) : null
     },
     dispose() {
       clearInterval(poll)
