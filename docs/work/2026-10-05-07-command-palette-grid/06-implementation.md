@@ -102,6 +102,17 @@ Deviations (small, none touch a one-way decision):
 
 Verified: `gridView.test.ts`, `navigation.test.ts` (33 tests), `noInlineStyles.test.ts`, `npm test` (59 files, 570 tests), `npm run typecheck`, `npm run build`. Manual not done by the agent: tabs filter panes, slider changes columns, eye hides ended members, Empty grid clears and closes, Cmd+N with a filter counts visible panes.
 
+## Review follow-up (after slice 6)
+
+Human feedback from trying slices 5–6, with a reference screenshot of xirp's toolbar (not a design change, but it supersedes the design's "slider = maximum columns"):
+
+- Removing the focused pane left `focusedSessionId` on a non-member, so the grid hid itself. Now removing the focused pane of a showing grid focuses its neighbour (`focusAfterRemove`: next member, else previous) and the grid stays and reflows. Removing the last member still closes the grid.
+- The toolbar slider is now xirp's: it sets how dimmed the unfocused panes are (`GridView.dim`, 0.3–1, default 0.65; set as `--pane-dim` on the grid root by ref, no inline style). View-only, like the other toolbar settings. Thinner track and a small thumb.
+- Grid size moved to a layout button (grid icon + `cols×rows`) with a popover: one miniature per column count (1, up to 2, up to 3), drawn with the current visible panes. It still sets `maxCols`; rows follow from the pane count. xirp's picker sets cols and rows; here rows are not capped, because capping would hide panes.
+- Toolbar order: tabs, size button, eye, dim slider, Empty grid.
+
+Verified: `npm test` (59 files, 572 tests), `npm run typecheck`, `npm run build`. Not tried in the app by the agent.
+
 ## Final checks
 
 `npm test` (59 files, 570 tests) passed, `npm run typecheck` passed, `npm run build` passed. No lint command is configured.

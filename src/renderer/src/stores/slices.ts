@@ -1,7 +1,7 @@
 import { create } from 'zustand'
 import type { Comment, DiffFile, DocTarget, FeaturesSlice, OpenCodeSlice, Project, Session, SessionDiff, UiState } from '@shared/types'
 import { DEFAULT_UI, EMPTY_FEATURES, OPENCODE_CONNECTING } from '@shared/types'
-import { gridShown, withMember } from '../gridView'
+import { focusAfterRemove, gridShown, withMember } from '../gridView'
 import { openBoard } from '../navigation'
 import { trackStatus, trackWaiting, type StatusSince } from '../sessionStatus'
 
@@ -99,7 +99,14 @@ export const useSlices = create<SlicesState>((set, get) => {
       const focus = ui.focusedSessionId && members.includes(ui.focusedSessionId) ? ui.focusedSessionId : members[0]
       void window.api.invoke('ui:set', { grid: { ...ui.grid, open: true }, focusedSessionId: focus })
     },
-    toggleGridMember: (id) => { void window.api.invoke('ui:set', { grid: withMember(get().ui.grid, id) }) },
+    toggleGridMember(id) {
+      const { ui } = get()
+      // removing the focused pane of a showing grid hands focus to a neighbour, so the grid stays and reflows
+      const next = ui.focusedSessionId === id && gridShown(ui) ? focusAfterRemove(ui.grid.members, id) : null
+      void window.api.invoke('ui:set', next
+        ? { grid: withMember(ui.grid, id), focusedSessionId: next }
+        : { grid: withMember(ui.grid, id) })
+    },
     openAlone: (id) => { void window.api.invoke('ui:set', { focusedSessionId: id, grid: { ...get().ui.grid, open: false } }) },
     clearGrid: () => { void window.api.invoke('ui:set', { grid: { open: false, members: [] } }) },
     toggleCollapsed(key) {

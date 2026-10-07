@@ -1,3 +1,4 @@
+import { useEffect, useRef } from 'react'
 import type { Session } from '@shared/types'
 import { featureStage } from '../featureLabels'
 import { gridCols, paneTitle, visibleMembers, type GridView } from '../gridView'
@@ -27,9 +28,12 @@ export function SessionGrid({ sessions, focusedId, view, onViewChange, onFocusPa
 }) {
   const { projects, features, toggleGridMember, openAlone, clearGrid } = useSlices()
   const visible = visibleMembers(sessions, view)
+  const root = useRef<HTMLDivElement>(null)
+  // the dimming slider sets the unfocused panes' opacity for this grid only
+  useEffect(() => { root.current?.style.setProperty('--pane-dim', String(view.dim)) }, [view.dim])
   const tags = colorTags(projects, features.items)
   return (
-    <div className={s.root}>
+    <div className={s.root} ref={root}>
       <GridToolbar members={sessions} projects={projects} view={view} visibleCount={visible.length} onChange={onViewChange} onEmpty={clearGrid} />
       <div className={cx(s.grid, COLS[gridCols(visible.length, view.maxCols)])}>
         {visible.length === 0 && <div className={s.none}>No sessions match</div>}

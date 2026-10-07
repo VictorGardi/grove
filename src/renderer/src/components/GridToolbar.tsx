@@ -1,10 +1,49 @@
+import { useEffect, useRef, useState } from 'react'
 import type { Project, Session } from '@shared/types'
-import { layoutLabel, type GridView } from '../gridView'
+import { DIM_RANGE, gridCols, layoutLabel, type GridView } from '../gridView'
 import { Button } from './ui/Button'
 import { cx } from './ui/cx'
 import s from './GridToolbar.module.css'
 
-// Filter tabs, layout label, column slider, eye and Empty grid. View-only: nothing here is persisted.
+// The layout button: opens a popover with one miniature per column count, drawn with the visible panes.
+function SizePicker({ view, visibleCount, onChange }: { view: GridView; visibleCount: number; onChange: (view: GridView) => void }) {
+  const [open, setOpen] = useState(false)
+  const ref = useRef<HTMLDivElement>(null)
+  useEffect(() => {
+    if (!open) return
+    const away = (e: MouseEvent) => { if (!ref.current?.contains(e.target as Node)) setOpen(false) }
+    const esc = (e: KeyboardEvent) => { if (e.key === 'Escape') setOpen(false) }
+    document.addEventListener('mousedown', away)
+    document.addEventListener('keydown', esc)
+    return () => { document.removeEventListener('mousedown', away); document.removeEventListener('keydown', esc) }
+  }, [open])
+  const n = Math.max(visibleCount, 1)
+  return (
+    <div className={s.size} ref={ref}>
+      <Button variant="ghost" size="sm" icon="grid" aria-expanded={open} title="Grid size" onClick={() => setOpen(!open)}>
+        {layoutLabel(visibleCount, view.maxCols)}
+      </Button>
+      {open && (
+        <div className={s.popover} role="menu">
+          {([1, 2, 3] as const).map((c) => {
+            const cols = gridCols(n, c)
+            return (
+              <button key={c} type="button" role="menuitemradio" aria-checked={view.maxCols === c}
+                className={cx(s.option, view.maxCols === c && s.active)} onClick={() => { onChange({ ...view, maxCols: c }); setOpen(false) }}>
+                <span className={cx(s.mini, s[`mini${cols}`])}>
+                  {Array.from({ length: n }, (_, i) => <span key={i} className={s.cell} />)}
+                </span>
+                <span className={s.optionLabel}>{c === 1 ? '1 column' : `up to ${c}`}</span>
+              </button>
+            )
+          })}
+        </div>
+      )}
+    </div>
+  )
+}
+
+// Filter tabs, grid size, dimming slider, eye and Empty grid. View-only: nothing here is persisted.
 export function GridToolbar({ members, projects, view, visibleCount, onChange, onEmpty }: {
   members: Session[]
   projects: Project[]
@@ -31,13 +70,14 @@ export function GridToolbar({ members, projects, view, visibleCount, onChange, o
         {tabs.map((t) => tab(t.id, t.name, t.count))}
       </div>
       <span className={s.spacer} />
-      <span className={s.layout} title="Columns × rows">{layoutLabel(visibleCount, view.maxCols)}</span>
-      <input type="range" className={s.slider} min={1} max={3} step={1} value={view.maxCols} aria-label="Maximum columns"
-        title="Maximum columns" onChange={(e) => onChange({ ...view, maxCols: Number(e.target.value) as 1 | 2 | 3 })} />
+      <SizePicker view={view} visibleCount={visibleCount} onChange={onChange} />
       <Button variant="ghost" size="sm" round icon={view.hideEnded ? 'eye-off' : 'eye'} aria-pressed={view.hideEnded}
         aria-label={view.hideEnded ? 'Show ended sessions' : 'Hide ended sessions'}
         title={view.hideEnded ? 'Show ended sessions' : 'Hide ended sessions'}
         onClick={() => onChange({ ...view, hideEnded: !view.hideEnded })} />
+      <input type="range" className={s.slider} min={DIM_RANGE.min} max={DIM_RANGE.max} step={0.05} value={view.dim}
+        aria-label="Dim unfocused panes" title="How dimmed the unfocused panes are (left is darker)"
+        onChange={(e) => onChange({ ...view, dim: Number(e.target.value) })} />
       <Button size="sm" onClick={onEmpty}>Empty grid</Button>
     </div>
   )

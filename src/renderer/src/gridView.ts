@@ -28,8 +28,9 @@ export function paneTitle(project: Project | undefined, session: Session): strin
 }
 
 // Toolbar settings: view-only, never persisted.
-export interface GridView { filter: string | null; maxCols: 1 | 2 | 3; hideEnded: boolean }
-export const DEFAULT_GRID_VIEW: GridView = { filter: null, maxCols: 3, hideEnded: false }
+export interface GridView { filter: string | null; maxCols: 1 | 2 | 3; hideEnded: boolean; dim: number } // dim: opacity of unfocused panes
+export const DEFAULT_GRID_VIEW: GridView = { filter: null, maxCols: 3, hideEnded: false, dim: 0.65 }
+export const DIM_RANGE = { min: 0.3, max: 1 }
 
 // The panes the grid lays out: the project filter (ignored when no member is in that project), then hide-ended.
 export function visibleMembers(members: Session[], view: GridView): Session[] {
@@ -42,4 +43,11 @@ export function layoutLabel(n: number, maxCols: number): string {
   if (n === 0) return '0×0'
   const cols = gridCols(n, maxCols)
   return `${cols}×${Math.ceil(n / cols)}`
+}
+
+// Who takes focus when `id` leaves the grid: the member after it, else the one before; null when it was the last.
+export function focusAfterRemove(members: string[], id: string): string | null {
+  const i = members.indexOf(id)
+  if (i < 0) return null
+  return members[i + 1] ?? members[i - 1] ?? null
 }

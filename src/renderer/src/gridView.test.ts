@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import type { Project, Session } from '@shared/types'
-import { DEFAULT_GRID_VIEW, gridCols, gridShown, layoutLabel, paneTitle, visibleMembers, withMember } from './gridView'
+import { DEFAULT_GRID_VIEW, focusAfterRemove, gridCols, gridShown, layoutLabel, paneTitle, visibleMembers, withMember } from './gridView'
 
 describe('gridCols', () => {
   it('picks 1, 2 or 3 columns by count', () => {
@@ -81,5 +81,16 @@ describe('layoutLabel', () => {
   it('respects the maximum columns', () => {
     expect(layoutLabel(4, 1)).toBe('1×4')
     expect(layoutLabel(9, 2)).toBe('2×5')
+  })
+})
+
+describe('focusAfterRemove', () => {
+  it('takes the next member, else the previous one', () => {
+    expect(focusAfterRemove(['a', 'b', 'c'], 'b')).toBe('c')
+    expect(focusAfterRemove(['a', 'b', 'c'], 'c')).toBe('b')
+  })
+  it('is null for the last member or an unknown id', () => {
+    expect(focusAfterRemove(['a'], 'a')).toBeNull()
+    expect(focusAfterRemove(['a'], 'z')).toBeNull()
   })
 })
