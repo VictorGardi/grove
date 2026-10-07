@@ -88,7 +88,7 @@ export default function App() {
   return (
     <>
       <AppShell
-        topBar={<TopBar onNew={() => openNew()} waiting={waitingCount} onWaiting={focusWaiting} />}
+        topBar={<TopBar onNew={() => openNew()} onSearch={() => setPaletteOpen(true)} waiting={waitingCount} onWaiting={focusWaiting} />}
         banners={[
           ...errors.map((e, i) => <Banner key={i}>{e}</Banner>),
           ...(features.workflowError ? [<Banner key="workflow">Workflow: {features.workflowError}</Banner>] : []),
@@ -116,7 +116,7 @@ export default function App() {
                 onFocusSession={setFocused} onOpenFeature={openFeature}
                 onOpenArtifact={(name) => openArtifact({ kind: 'artifact', projectId: shown.feature.projectId, slug: shown.feature.slug, path: name, hash: null, fromDiff: null })} />
             ) : shown.kind === 'session' && shown.session.lastStatus === 'running' ? (
-              <TerminalView key={shown.session.id} sessionId={shown.session.id} />
+              <TerminalView key={shown.session.id} sessionId={shown.session.id} active={!paletteOpen && !newFor && !confirmKill} />
             ) : shown.kind === 'session' ? (
               <div className={s.ended}>
                 <div className={s.endedTitle}>Session ended</div>
@@ -150,7 +150,7 @@ export default function App() {
       />
       {paletteOpen && (
         <CommandPalette onClose={() => setPaletteOpen(false)}
-          items={paletteItems({ projects, sessions, features: features.items }, { focusSession: setFocused, focusFeature, openProject })} />
+          items={paletteItems({ projects, sessions, features: features.items }, { focusSession: setFocused, focusFeature, openProject, runAction })} />
       )}
       {newFor && <NewSessionModal initialProjectId={newFor.projectId} onClose={() => setNewFor(null)} />}
       {confirmKill && (

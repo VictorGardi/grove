@@ -3,8 +3,9 @@ import { cx } from '../ui/cx'
 import { Icon } from '../ui/Icon'
 import s from './TopBar.module.css'
 
-export function TopBar({ onNew, waiting, onWaiting }: {
+export function TopBar({ onNew, onSearch, waiting, onWaiting }: {
   onNew: () => void
+  onSearch: () => void // opens the command palette
   waiting: number // sessions waiting on the human
   onWaiting: () => void // focuses the longest-waiting one
 }) {
@@ -15,11 +16,10 @@ export function TopBar({ onNew, waiting, onWaiting }: {
         <span className={s.wordmark}>grove</span>
       </div>
       <div className={s.centre}>
-        {/* inert until search lands (child 7) */}
-        <div role="search" aria-disabled="true" className={cx(s.search, 'app-no-drag')}>
+        <button type="button" className={cx(s.search, 'app-no-drag')} onClick={onSearch}>
           <Icon name="search" />
           Search grove
-        </div>
+        </button>
         <Button round icon="plus" aria-label="New session" className="app-no-drag" onClick={onNew} />
       </div>
       {waiting > 0 ? (

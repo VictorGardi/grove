@@ -31,3 +31,16 @@ Notes for a cold reader: renderer code lives in `src/renderer/src`, shared types
 - [x] Run `npx vitest run src/renderer/src/fuzzy.test.ts src/renderer/src/paletteItems.test.ts`
 - [x] Run `npm run typecheck`
 - [x] Run `npm test`
+
+## Slice 2 — Palette commands and terminal refocus
+
+Notes for a cold reader: slice 1 added `paletteItems.ts` (`PaletteActions`, `paletteItems`, `rank`) and `App.tsx`'s `runAction(a: MenuAction)`. Commands are a static list that run through `runAction` (design D3). `TerminalView` gets an `active` prop; when it becomes true the xterm takes keyboard focus (design "Terminal focus"). Grid commands (Show/Hide grid, Clear grid) are NOT added here; they arrive in slice 3.
+
+- [x] `src/renderer/src/paletteItems.ts`: add `runAction(a: MenuAction)` to `PaletteActions`; export `PALETTE_COMMANDS` (New session, New terminal, Close session, Session diff, Project board, each with hint and `MenuAction`); `paletteItems` appends one `command` item per entry
+- [x] `src/renderer/src/paletteItems.test.ts`: commands listed, last in empty-query order, run through `runAction`, rank by label ("new term" finds New terminal)
+- [x] `src/renderer/src/components/TerminalView.tsx`: props `{ sessionId, active, onFocus? }`; keep the xterm in a ref; an effect on `[active, sessionId]` calls `term.focus()` when `active`; remove the unconditional focus on mount; `onFocus` on the terminal's container div
+- [x] `src/renderer/src/App.tsx`: pass `runAction` to the palette actions; `TerminalView active={!paletteOpen && !newFor && !confirmKill}` (modals that autofocus must not lose focus to the terminal); TopBar gets `onSearch` that opens the palette
+- [x] `src/renderer/src/components/shell/TopBar.tsx` (+ css): the search box becomes a `<button>` calling `onSearch`
+- [x] Run `npx vitest run src/renderer/src/paletteItems.test.ts`
+- [x] Run `npm run typecheck`
+- [x] Run `npm test`

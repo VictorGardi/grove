@@ -15,7 +15,7 @@ forced: []
 ## Progress
 
 - [x] Slice 1 — Palette tracer: Cmd+K jumps to sessions, features, projects
-- [ ] Slice 2 — Palette commands and terminal refocus
+- [x] Slice 2 — Palette commands and terminal refocus
 - [ ] Slice 3 — Two sessions side by side
 - [ ] Slice 4 — Focus, Cmd+1..9 and dimming
 - [ ] Slice 5 — Pane header, ended tiles and the cap
@@ -30,3 +30,14 @@ Deviations (small, none touch a one-way decision):
 - Palette placeholder says "Jump to a session, feature or project…"; slice 2 adds commands.
 
 Verified: `fuzzy.test.ts`, `paletteItems.test.ts` (13 tests), `npm run typecheck`, `npm test` (57 files, 538 tests). Manual check (Cmd+K in the running app) not done by the agent.
+
+## Slice 2
+
+Deviations (small, none touch a one-way decision):
+
+- `active` is `!paletteOpen && !newFor && !confirmKill`, not only `!paletteOpen`: "New session" and "Close session" from the palette open a modal right as the palette closes, and the terminal must not take focus from it.
+- The TopBar search box is now a `<button>` (was an inert `div role="search"`), with border/font reset in `TopBar.module.css`.
+- Commands' `detail` is the word "command"; so "command" as a query lists all of them via the detail fallback.
+- Session diff and Close session are listed even with no session focused; `runAction` already no-ops then.
+
+Verified: `paletteItems.test.ts` (9 tests), `npm run typecheck`, `npm test` (57 files, 540 tests). Manual (New terminal from the palette; Cmd+K, Esc, typing reaches the terminal) not done by the agent.

@@ -37,7 +37,7 @@ export function CommandPalette({ items, onClose }: { items: PaletteItem[]; onClo
       <input
         autoFocus
         className={s.input}
-        placeholder="Jump to a session, feature or project…"
+        placeholder="Jump to a session, feature or project, or run a command…"
         aria-label="Command palette"
         value={query}
         onChange={(e) => { setQuery(e.target.value); setAt(0) }}

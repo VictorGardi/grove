@@ -5,8 +5,10 @@ import { WebglAddon } from '@xterm/addon-webgl'
 import { terminalTheme } from '@shared/theme'
 import s from './TerminalView.module.css'
 
-export function TerminalView({ sessionId }: { sessionId: string }) {
+// active: this terminal should hold the keyboard (it is the focused pane and no overlay is open)
+export function TerminalView({ sessionId, active, onFocus }: { sessionId: string; active: boolean; onFocus?: () => void }) {
   const ref = useRef<HTMLDivElement>(null)
+  const termRef = useRef<Terminal | null>(null)
 
   useEffect(() => {
     const { api } = window
@@ -48,7 +50,7 @@ export function TerminalView({ sessionId }: { sessionId: string }) {
       // no WebGL: stay on the DOM renderer
     }
     fit.fit()
-    term.focus()
+    termRef.current = term
 
     let attachId: string | null = null
     let disposed = false
@@ -91,12 +93,16 @@ export function TerminalView({ sessionId }: { sessionId: string }) {
       input.dispose()
       selection.dispose()
       term.dispose()
+      termRef.current = null
     }
   }, [sessionId])
 
+  // taking the keyboard back after an overlay (the palette) closes, and on mount
+  useEffect(() => { if (active) termRef.current?.focus() }, [active, sessionId])
+
   return (
     <div className={s.frame}>
-      <div ref={ref} className={s.term} />
+      <div ref={ref} className={s.term} onFocus={onFocus} />
     </div>
   )
 }

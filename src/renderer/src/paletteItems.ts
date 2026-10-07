@@ -1,3 +1,4 @@
+import type { MenuAction } from '@shared/ipc'
 import type { Feature, Project, Session } from '@shared/types'
 import { fuzzy } from './fuzzy'
 import { featureStage } from './featureLabels'
@@ -17,7 +18,17 @@ export interface PaletteActions {
   focusSession(id: string): void
   focusFeature(ref: { projectId: string; slug: string }): void
   openProject(id: string): void
+  runAction(a: MenuAction): void
 }
+
+// App commands (design D3): static, run through the same `runAction` as the menu. Grid commands arrive with the grid.
+export const PALETTE_COMMANDS: { id: string; label: string; hint?: string; action: MenuAction }[] = [
+  { id: 'newSession', label: 'New session', hint: '⌘T', action: { type: 'newSession' } },
+  { id: 'newTerminal', label: 'New terminal', hint: '⌘J', action: { type: 'newTerminal' } },
+  { id: 'closeSession', label: 'Close session', hint: '⌘W', action: { type: 'closeSession' } },
+  { id: 'sessionDiff', label: 'Session diff', hint: '⌥⌘B', action: { type: 'sessionDiff' } },
+  { id: 'projectBoard', label: 'Project board', hint: '⌘B', action: { type: 'projectBoard' } },
+]
 
 const KIND_ORDER: Record<PaletteItem['kind'], number> = { session: 0, feature: 1, project: 2, command: 3 }
 const DETAIL_PENALTY = 10 // a detail-only match ranks below any label match of similar quality
@@ -53,7 +64,15 @@ export function paletteItems(
     detail: p.path,
     run: () => actions.openProject(p.id),
   }))
-  return [...sessions, ...features, ...projects]
+  const commands: PaletteItem[] = PALETTE_COMMANDS.map((c) => ({
+    id: `command:${c.id}`,
+    kind: 'command',
+    label: c.label,
+    detail: 'command',
+    hint: c.hint,
+    run: () => actions.runAction(c.action),
+  }))
+  return [...sessions, ...features, ...projects, ...commands]
 }
 
 // Empty query: kind order, waiting sessions first. Otherwise best score first, ties by kind order, then list order.
