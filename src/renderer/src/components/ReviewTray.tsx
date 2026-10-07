@@ -10,10 +10,11 @@ const sentAt = (iso: string | null) => (iso ? new Date(iso).toLocaleString([], {
 
 const lineLabel = (c: Comment) => {
   const a = c.anchor
-  return a.kind === 'diff' ? `L${a.start === a.end ? a.start : `${a.start}-${a.end}`}${a.side === 'old' ? ' (removed)' : ''}` : ''
+  if (a.kind === 'note') return ''
+  return `L${a.start === a.end ? a.start : `${a.start}-${a.end}`}${a.kind === 'diff' && a.side === 'old' ? ' (removed)' : ''}`
 }
 
-// One draft in the tray: where it is, its quote, its body; Edit and Delete. A click on the quote opens the diff.
+// One draft in the tray: where it is, its quote, its body; Edit and Delete. A click on the quote opens the diff or the artifact.
 function TrayItem({ comment, onJump }: { comment: Comment; onJump: () => void }) {
   const [editing, setEditing] = useState(false)
   const [error, setError] = useState<string | null>(null)
@@ -29,6 +30,7 @@ function TrayItem({ comment, onJump }: { comment: Comment; onJump: () => void })
         <span>{lineLabel(comment)}</span>
         {comment.orphaned && <span className={s.orphan}>orphaned</span>}
         {a.kind === 'diff' && <span className={s.quote}>{a.lines[0]}</span>}
+        {a.kind === 'artifact' && <span className={s.quote}>{a.exact}</span>}
       </button>
       {editing ? <CommentEditor initial={comment.body} error={error} onSave={(b) => void save(b)} onCancel={() => setEditing(false)} /> : (
         <div className={s.itemRow}>
@@ -48,6 +50,7 @@ export function ReviewMenu({ sessionId }: { sessionId: string }) {
   const sent = comments.filter((c) => c.state === 'sent').sort((a, b) => (b.sentAt ?? '').localeCompare(a.sentAt ?? ''))
   const groups = groupForTray(drafts)
   const openDiff = useSlices((x) => x.openDiff)
+  const openArtifact = useSlices((x) => x.openArtifact)
   const note = drafts.find((c) => c.anchor.kind === 'note')
   const [open, setOpen] = useState(false)
   const [text, setText] = useState(note?.body ?? '')
@@ -109,7 +112,9 @@ export function ReviewMenu({ sessionId }: { sessionId: string }) {
             <section key={g.label} className={s.group}>
               <div className={s.groupLabel}>{g.label}</div>
               <ul className={s.items}>
-                {g.comments.map((c) => <TrayItem key={c.id} comment={c} onJump={() => openDiff(sessionId)} />)}
+                {g.comments.map((c) => <TrayItem key={c.id} comment={c} onJump={() => (c.anchor.kind === 'artifact'
+                  ? openArtifact({ kind: 'artifact', projectId: c.anchor.projectId, slug: c.anchor.slug, path: c.anchor.path, hash: null, fromDiff: null })
+                  : openDiff(sessionId))} />)}
               </ul>
             </section>
           ))}

@@ -68,3 +68,18 @@ Rules (from the design, D3): only a session's drafts with a `diff` anchor whose 
 - [x] Run `npm test`
 - [x] Run `npm run typecheck`
 - [ ] Manual: comment on a line in `npm run dev`, insert lines above it in the file, and the draft in the tray shows the new line number; delete the line and it shows orphaned.
+
+## Slice 4 — Comment on markdown artifacts
+
+Protocol additions beyond the design's four messages (log as deviation): iframe → app `{grove:1,type:'ready'}`; app → iframe `{grove:1,type:'config',canComment:boolean}` (Comment is disabled when no session is focused). Selection text is the whitespace-collapsed rendered text, with a space between blocks. Only `kind: 'artifact'` targets whose path ends `.md` get the bridge.
+
+- [x] Write failing tests `src/core/artifacts/markdown.test.ts` "blocks carry data-line offset by frontmatter" (`<p data-line="6-6">` after a 4-line frontmatter block + title; `<h1 data-line=…>`; fence `<code data-line>`; script tag `grove-artifact://assets/comments.js` present) and `src/core/comments/format.test.ts` "artifact quote" (`## <featurePath>/<path>` heading, `L40-41, on "quote":`, body; orphaned marked; long quotes cut at 200 chars).
+- [x] `src/core/artifacts/markdown.ts`: core rule setting `data-line="<start>-<end>"` (1-based, + frontmatter line offset) on block tokens that have `map` (nesting 1, `fence`, `code_block`, `hr`); mermaid `<pre>` gets it too; load `comments.js` script tag in head.
+- [x] `src/core/comments/format.ts`: artifact blocks under the same `## <path>` headings as diff blocks.
+- [x] `resources/viewer/comments.js` (selection → `select`, popover Comment button, `config`, `highlights` via `CSS.highlights`, click → `open`, `reveal`), `resources/viewer/markdown.css` (`::highlight(grove-comment)`, popover), `src/main/artifacts.ts` asset entry.
+- [x] `src/renderer/src/artifactComments.ts` (+ test): `parseIframeMessage(data)` validation, `draftsForFile(cs, sessionId, target)`.
+- [x] `ArtifactViewer.tsx` + CSS: message bridge (`event.source === iframe.contentWindow`, markdown artifact only), editor panel under the frame (new from `select`, edit from `open`), send `config` and `highlights` on `ready` and on change; props `sessionId`, `comments`. `App.tsx` passes them.
+- [x] `ReviewTray.tsx`: artifact drafts grouped by file with quote; Jump opens the artifact.
+- [x] Run `npm test`
+- [x] Run `npm run typecheck`
+- [ ] Manual: select text across two paragraphs in a `03-design.md`, comment, reload the app (highlight is back), send; an HTML artifact shows no Comment popover.

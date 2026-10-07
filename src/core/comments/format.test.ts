@@ -60,4 +60,31 @@ describe('formatReview', () => {
     const out = formatReview([{ ...diff({ start: 3, end: 3, lines: ['z'] }, 'Check z'), orphaned: true }], ctx)
     expect(out).toContain('> z\nCheck z (The lines have changed since this comment was written.)')
   })
+
+  const art = (over: Partial<Extract<CommentAnchor, { kind: 'artifact' }>>, body: string, orphaned = false): Comment => ({
+    ...note(body), orphaned,
+    anchor: { kind: 'artifact', projectId: 'p', slug: 'f', path: '03-design.md', exact: 'the quoted text', prefix: '', suffix: '', start: 40, end: 41, ...over },
+  })
+  const actx = { projectPath: '/p', featurePath: (slug: string) => (slug === 'f' ? '/p/docs/work/f' : null) }
+
+  it('artifact quote', () => {
+    const long = 'x'.repeat(250)
+    const out = formatReview([
+      art({}, 'Too vague'), art({ start: 5, end: 5, exact: long }, 'Cut', true), art({ slug: 'gone', path: 'a.md' }, 'Unknown'),
+    ], actx)
+    expect(out).toBe([
+      'Review comments from Grove (3). Please address each one.',
+      '',
+      '## docs/work/f/03-design.md',
+      'L40-41, on "the quoted text":',
+      'Too vague',
+      '',
+      `L5, on "${'x'.repeat(200)}…":`,
+      'Cut (The text has changed since this comment was written.)',
+      '',
+      '## a.md',
+      'L40-41, on "the quoted text":',
+      'Unknown',
+    ].join('\n'))
+  })
 })

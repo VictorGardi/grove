@@ -96,3 +96,17 @@ moves; change the line → orphaned). `npm test` 434 pass; typecheck clean.
 
 **Not done:** the manual check (insert lines above a drafted line in the file,
 tray shows the new line; delete the line, it shows orphaned).
+
+## Slice 4 — Comment on markdown artifacts
+
+**Changed:** `markdown.ts` adds `data-line="<start>-<end>"` (whole-file lines, offset by the frontmatter) to block tokens and loads `comments.js` (`defer`). New `resources/viewer/comments.js` (selection → Comment popover → `select`; `CSS.highlights` for drafts; click a highlight → `open`; `reveal`), `markdown.css` styles, `main/artifacts.ts` asset. `format.ts` renders artifact blocks (`L<a>-<b>, on "quote":`, quote cut at 200 chars, orphan note) under the same `## path` headings as diff blocks. Renderer: `artifactComments.ts` (`parseIframeMessage`, `isCommentable`, `artifactAnchor`, `draftsForFile`), `ArtifactViewer` bridge and editor panel under the frame, tray lists artifact drafts (label `slug/path`, quote, Jump opens the artifact).
+
+**Tests:** `markdown.test.ts` (data-line with frontmatter offset, script tag), `format.test.ts` "artifact quote", `artifactComments.test.ts`. `npm test` 441 pass; typecheck clean. Existing markdown tests loosened for the new attributes.
+
+**Deviations:**
+- Two messages beyond the design: iframe → app `ready`, app → iframe `config {canComment}` (Comment is disabled with no focused session). The app also sends `highlights` on `ready` and whenever drafts or the focused session change.
+- The iframe computes the quote from its own whitespace-collapsed rendered text with a space between blocks; `start`/`end` are the source lines of the nearest `data-line` blocks at each end of the selection (coarse; slice 5 refines).
+- The editor panel sits below the frame, with a Delete button when editing an existing draft.
+- Selection in the frame ignores selections that start or end outside a `data-line` block (e.g. the frontmatter table).
+
+**Not done:** the manual checks (iframe script has no automated test; needs `npm run dev`).

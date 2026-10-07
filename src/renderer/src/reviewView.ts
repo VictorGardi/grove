@@ -19,7 +19,7 @@ export function groupForTray(cs: Comment[]): TrayGroup[] {
   const groups = new Map<string, Comment[]>()
   for (const c of cs) {
     if (c.state !== 'draft' || c.anchor.kind === 'note') continue
-    const label = c.anchor.path
+    const label = c.anchor.kind === 'artifact' ? `${c.anchor.slug}/${c.anchor.path}` : c.anchor.path
     groups.set(label, [...(groups.get(label) ?? []), c])
   }
   return [...groups].map(([label, comments]) => ({ label, comments }))

@@ -38,3 +38,8 @@ li.task-list-item input { margin: 0 .4em 0 -1.3em; }
 pre.mermaid { background: none; text-align: center; }
 img { max-width: 100%; }
 hr { border: 0; border-top: 1px solid var(--border); }
+
+::highlight(grove-comment) { background: rgba(255, 200, 0, .35); }
+.grove-pop { position: absolute; z-index: 10; }
+.grove-pop button { font: 12px system-ui, sans-serif; padding: 3px 10px; color: var(--fg); background: var(--subtle); border: 1px solid var(--border); border-radius: 6px; cursor: pointer; box-shadow: 0 2px 8px rgba(0, 0, 0, .25); }
+.grove-pop button:disabled { opacity: .5; cursor: not-allowed; }

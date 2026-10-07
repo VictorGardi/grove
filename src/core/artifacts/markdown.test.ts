@@ -10,7 +10,7 @@ describe('renderMarkdown', () => {
     expect(out).toContain('<table class="frontmatter">')
     expect(out).toContain('<th>status</th><td>approved</td>')
     expect(out).toContain('<th>based_on</th><td>a@1, b@2</td>')
-    expect(out).toContain('<h1>Title</h1>')
+    expect(out).toContain('>Title</h1>')
     expect(out).not.toContain('status: approved')
   })
 
@@ -25,7 +25,7 @@ describe('renderMarkdown', () => {
 
   it('renders a mermaid fence as <pre class="mermaid"> with the bundled scripts', () => {
     const out = renderMarkdown('```mermaid\nflowchart LR\n  A-->B\n```\n', 'r.md')
-    expect(out).toContain('<pre class="mermaid">flowchart LR\n  A--&gt;B\n</pre>')
+    expect(out).toContain('<pre class="mermaid" data-line="1-4">flowchart LR\n  A--&gt;B\n</pre>')
     expect(out).toContain(MERMAID_SCRIPTS)
     expect(renderMarkdown('# no diagram\n', 'r.md')).not.toContain('mermaid.min.js')
   })
@@ -46,7 +46,7 @@ describe('renderMarkdown', () => {
     expect(out.startsWith('<!doctype html>')).toBe(true)
     expect(out).toContain('<title>00-ticket.md</title>')
     expect(out).toContain('<link rel="stylesheet" href="grove-artifact://assets/markdown.css">')
-    expect(out).toContain('<h3>')
+    expect(out).toContain('<h3 ')
     expect(out).not.toContain('class="frontmatter"')
   })
 
@@ -54,5 +54,17 @@ describe('renderMarkdown', () => {
     const out = renderMarkdown('---\na: [\n---\nbody\n', 'x.md')
     expect(out).toContain('body')
     expect(out).not.toContain('class="frontmatter"')
+  })
+
+  it('blocks carry data-line offset by frontmatter', () => {
+    const out = renderMarkdown('---\nstatus: x\n---\n# Title\n\npara one\nstill one\n\n```ts\ncode\n```\n', 'a.md')
+    expect(out).toContain('<h1 data-line="4-4">Title</h1>')
+    expect(out).toContain('<p data-line="6-7">para one')
+    expect(out).toContain('<code data-line="9-11" class="language-ts">')
+    expect(out).toContain('<script src="grove-artifact://assets/comments.js" defer></script>')
+  })
+
+  it('numbers lines from 1 without frontmatter', () => {
+    expect(renderMarkdown('# T\n', 'a.md')).toContain('<h1 data-line="1-1">')
   })
 })

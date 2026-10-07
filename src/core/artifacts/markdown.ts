@@ -23,11 +23,20 @@ md.core.ruler.push('task_lists', (state) => {
   }
 })
 
+// Source lines of every block (1-based, whole file) for the comment script: `data-line="<start>-<end>"`.
+md.core.ruler.push('data_lines', (state) => {
+  const offset = (state.env as { lineOffset?: number }).lineOffset ?? 0
+  for (const t of state.tokens) {
+    if (!t.map || !t.block || t.nesting === -1 || t.type === 'inline') continue
+    t.attrSet('data-line', `${t.map[0] + 1 + offset}-${t.map[1] + offset}`)
+  }
+})
+
 // Mermaid reads the diagram from the element's text, so the escaped source is enough.
 const fence = md.renderer.rules.fence!
 md.renderer.rules.fence = (tokens, idx, opts, env, self) =>
   tokens[idx].info.trim() === 'mermaid'
-    ? `<pre class="mermaid">${esc(tokens[idx].content)}</pre>\n`
+    ? `<pre class="mermaid"${tokens[idx].attrGet('data-line') ? ` data-line="${tokens[idx].attrGet('data-line')}"` : ''}>${esc(tokens[idx].content)}</pre>\n`
     : fence(tokens, idx, opts, env, self)
 
 function fmValue(v: unknown): string {
@@ -48,11 +57,14 @@ export function renderMarkdown(source: string, name: string): string {
     : '<table class="frontmatter"><tbody>'
       + entries.map(([k, v]) => `<tr><th>${esc(k)}</th><td>${esc(fmValue(v))}</td></tr>`).join('')
       + '</tbody></table>'
-  const tokens = md.parse(body, {})
+  // the body starts after the frontmatter block (none when it is broken and shown as text)
+  const env = { lineOffset: fm.error ? 0 : source.split(/\r?\n/).length - body.split('\n').length }
+  const tokens = md.parse(body, env)
   const mermaid = tokens.some((t) => t.type === 'fence' && t.info.trim() === 'mermaid')
   return '<!doctype html><html><head><meta charset="utf-8">'
     + `<title>${esc(name)}</title>`
     + `<link rel="stylesheet" href="${ARTIFACT_SCHEME}://${ASSETS_HOST}/markdown.css">`
     + (mermaid ? MERMAID_SCRIPTS : '')
-    + `</head><body><main class="markdown-body">${table}${md.renderer.render(tokens, md.options, {})}</main></body></html>`
+    + `<script src="${ARTIFACT_SCHEME}://${ASSETS_HOST}/comments.js" defer></script>`
+    + `</head><body><main class="markdown-body">${table}${md.renderer.render(tokens, md.options, env)}</main></body></html>`
 }

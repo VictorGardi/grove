@@ -39,6 +39,7 @@ export function handleArtifacts(core: Core): void {
   const assets = new Map([
     ['mermaid.min.js', mermaidJs],
     ['mermaid-init.js', path.join(app.getAppPath(), 'resources', 'viewer', 'mermaid-init.js')],
+    ['comments.js', path.join(app.getAppPath(), 'resources', 'viewer', 'comments.js')],
     ['markdown.css', path.join(app.getAppPath(), 'resources', 'viewer', 'markdown.css')],
   ])
 
