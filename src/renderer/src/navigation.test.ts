@@ -53,7 +53,7 @@ describe('crumbs', () => {
 
   it('goes project › parent › feature, each up-link clickable', () => {
     expect(of({ focusedFeature: { projectId: 'p', slug: 'a' } })).toEqual([
-      { label: 'P', to: { focusedProject: 'p' } },
+      { label: 'P', to: { focusedProject: 'p', board: 'sessions' } },
       { label: 'Te', to: { focusedFeature: { projectId: 'p', slug: 'e' } } },
       { label: 'Ta' },
     ])
@@ -61,11 +61,11 @@ describe('crumbs', () => {
 
   it('goes project › linked feature › session, or project › session', () => {
     expect(of({ focusedSessionId: 's' })).toEqual([
-      { label: 'P', to: { focusedProject: 'p' } },
+      { label: 'P', to: { focusedProject: 'p', board: 'sessions' } },
       { label: 'Ta', to: { focusedFeature: { projectId: 'p', slug: 'a' } } },
       { label: 'Ls' },
     ])
-    expect(of({ focusedSessionId: 't' })).toEqual([{ label: 'Q', to: { focusedProject: 'q' } }, { label: 'Lt' }])
+    expect(of({ focusedSessionId: 't' })).toEqual([{ label: 'Q', to: { focusedProject: 'q', board: 'sessions' } }, { label: 'Lt' }])
   })
 
   it('is empty with nothing to show', () => {
@@ -102,10 +102,10 @@ describe('boardKey', () => {
   const of = (u: Partial<UiState>) => boardKey(ui(u), projects, sessions, features)
 
   it('switches the board on a project page, else opens the context project', () => {
-    expect(of({ focusedProject: 'q' })).toEqual({ board: 'sessions' })
+    expect(of({ focusedProject: 'q', board: 'features' })).toEqual({ board: 'sessions' })
     expect(of({ focusedProject: 'q', board: 'sessions' })).toEqual({ board: 'features' })
-    expect(of({})).toEqual({ board: 'sessions' })
-    expect(of({ focusedSessionId: 't' })).toEqual({ focusedProject: 'q' })
+    expect(of({ board: 'features' })).toEqual({ board: 'sessions' })
+    expect(of({ focusedSessionId: 't', board: 'features' })).toEqual({ focusedProject: 'q', board: 'sessions' })
     expect(boardKey(ui(), [], [], [])).toBeNull()
   })
 })

@@ -22,8 +22,11 @@ export function content(ui: UiState, projects: Project[], sessions: Session[], f
   return project ? { kind: 'project', project } : { kind: 'none' }
 }
 
+// Going to a project page always lands on its Sessions board (ADR 0020); the switch still flips it there.
+export const openBoard = (id: string): Partial<UiState> => ({ focusedProject: id, board: 'sessions' })
+
 const projectCrumb = (projects: Project[], id: string): Crumb =>
-  ({ label: projects.find((p) => p.id === id)?.name ?? id, to: { focusedProject: id } })
+  ({ label: projects.find((p) => p.id === id)?.name ?? id, to: openBoard(id) })
 const featureCrumb = (f: Feature): Crumb => ({ label: f.title, to: { focusedFeature: { projectId: f.projectId, slug: f.slug } } })
 
 // Breadcrumb up-links; the last crumb is the current page and has no `to`.
@@ -61,5 +64,5 @@ export function childrenOf(feature: Feature, features: Feature[]): Feature[] {
 export function boardKey(ui: UiState, projects: Project[], sessions: Session[], features: Feature[]): Partial<UiState> | null {
   if (content(ui, projects, sessions, features).kind === 'project') return { board: ui.board === 'features' ? 'sessions' : 'features' }
   const id = boardProject(ui, projects, sessions, features)
-  return id ? { focusedProject: id } : null
+  return id ? openBoard(id) : null
 }

@@ -84,7 +84,7 @@ describe('stateStore', () => {
     const { ui } = loadState(file)
     expect(ui).not.toHaveProperty('view')
     expect(ui.sidebarTab).toBe('projects')
-    expect(ui.board).toBe('features')
+    expect(ui.board).toBe('sessions')
   })
 
   it('loads an old ui without viewer layout keys with the defaults', () => {

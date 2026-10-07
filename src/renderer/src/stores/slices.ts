@@ -1,6 +1,7 @@
 import { create } from 'zustand'
 import type { FeaturesSlice, OpenCodeSlice, Project, Session, UiState, ViewerTarget } from '@shared/types'
 import { DEFAULT_UI, EMPTY_FEATURES, OPENCODE_CONNECTING } from '@shared/types'
+import { openBoard } from '../navigation'
 import { trackStatus, trackWaiting, type StatusSince } from '../sessionStatus'
 
 interface SlicesState {
@@ -61,7 +62,7 @@ export const useSlices = create<SlicesState>((set, get) => {
     },
     setFocused: (id) => { void window.api.invoke('ui:set', { focusedSessionId: id }) },
     focusFeature: (ref) => { void window.api.invoke('ui:set', { focusedFeature: ref }) },
-    openProject: (id) => { void window.api.invoke('ui:set', { focusedProject: id }) },
+    openProject: (id) => { void window.api.invoke('ui:set', openBoard(id)) },
     go: (to) => { void window.api.invoke('ui:set', to) },
     setBoard: (board) => { void window.api.invoke('ui:set', { board }) },
     setSidebarTab: (tab) => { void window.api.invoke('ui:set', { sidebarTab: tab }) },
