@@ -106,4 +106,4 @@ needs the same form).
 - [x] `src/renderer/src/sessionStatus.ts`: `shownStatus` comment says "the live agent status" instead of "the live OpenCode status".
 - [x] Run `npm test -- src/core/claude src/core/sessions.test.ts`
 - [x] Run `npm run typecheck` and `npm test`
-- [ ] Manual (human): `npm run dev`, Claude session asks permission while another session is focused → notification, card "waiting · permission"; approve → working → idle.
+- [x] Manual (human): `npm run dev`, Claude session asks permission while another session is focused → notification, card "waiting · permission"; approve → working → idle.

@@ -17,7 +17,7 @@ forced: []
 
 - [x] Slice 1 — Tracer: start a Claude session, spool fills; state v2 (capture partial; see below)
 - [x] Slice 2 — Seam generalised (D1), OpenCode unchanged 
-- [x] Slice 3 — Claude live status (manual check pending)
+- [x] Slice 3 — Claude live status
 - [ ] Slice 4 — Claude auto-link and restart catch-up
 - [ ] Slice 5 — Claude resume and cleanup
 
@@ -116,6 +116,6 @@ Part B deviations (mechanical, no design impact):
 - `scanRecords` resyncs on the literal `{"t":"`; an object nested in `e` whose first key is `"t"` with a string value only matters inside a corrupt span.
 - `setupCore()` now registers `FakeAgentSource('claude', true)` next to the OpenCode fake and returns it as `claude`; the Claude launch test uses a real `SpoolClaude` on `claudeDir`.
 
-Verification: `npm test -- src/core/claude src/core/sessions.test.ts` (69 passed), `npm run typecheck` clean, `npm test` (332 passed, outside the sandbox). Manual check pending (human).
+Verification: `npm test -- src/core/claude src/core/sessions.test.ts` (69 passed), `npm run typecheck` clean, `npm test` (332 passed, outside the sandbox). Manual check passed (human, 2026-10-07: "works").
 
 ## Open questions
