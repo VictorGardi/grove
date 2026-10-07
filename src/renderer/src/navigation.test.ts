@@ -33,6 +33,14 @@ describe('content', () => {
     expect(at({ focusedProject: 'q' })).toEqual({ kind: 'project', project: projects[1] })
   })
 
+  it('shows the grid while it is on and the focused session is a member', () => {
+    const grid = { open: true, members: ['s', 'gone', 't'] }
+    expect(at({ grid, focusedSessionId: 't' })).toEqual({ kind: 'grid', sessions: [sessions[0], sessions[1]], focused: sessions[1] })
+    expect(at({ grid: { ...grid, open: false }, focusedSessionId: 't' }).kind).toBe('session')
+    expect(at({ grid, focusedSessionId: null }).kind).toBe('project')
+    expect(at({ grid: { open: true, members: ['s'] }, focusedSessionId: 't' }).kind).toBe('session')
+  })
+
   it("falls back to the first project's page with nothing focused", () => {
     expect(at({})).toEqual({ kind: 'project', project: projects[0] })
     expect(at({ focusedSessionId: 'gone' })).toEqual({ kind: 'project', project: projects[0] })
@@ -49,6 +57,10 @@ describe('crumbs', () => {
 
   it('is the project alone on its page', () => {
     expect(of({ focusedProject: 'p' })).toEqual([{ label: 'P' }])
+  })
+
+  it('is just "Session grid" on the grid', () => {
+    expect(of({ grid: { open: true, members: ['s'] }, focusedSessionId: 's' })).toEqual([{ label: 'Session grid' }])
   })
 
   it('goes project › parent › feature, each up-link clickable', () => {
@@ -116,5 +128,6 @@ describe('currentProjectId', () => {
     expect(currentProjectId({ kind: 'project', project: { id: 'p1' } as never })).toBe('p1')
     expect(currentProjectId({ kind: 'feature', feature: { projectId: 'p2' } as never })).toBe('p2')
     expect(currentProjectId({ kind: 'session', session: { projectId: 'p3' } as never })).toBe('p3')
+    expect(currentProjectId({ kind: 'grid', sessions: [], focused: { projectId: 'p4' } as never })).toBe('p4')
   })
 })

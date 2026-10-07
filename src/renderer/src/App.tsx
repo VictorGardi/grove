@@ -9,6 +9,7 @@ import { DiffViewer } from './components/DiffViewer'
 import { FeaturePage } from './components/FeaturePage'
 import { NewSessionModal } from './components/NewSessionModal'
 import { ProjectPage } from './components/ProjectPage'
+import { SessionGrid } from './components/SessionGrid'
 import { Sidebar } from './components/Sidebar'
 import { TerminalView } from './components/TerminalView'
 import { AppShell } from './components/shell/AppShell'
@@ -18,6 +19,7 @@ import { TopBar } from './components/shell/TopBar'
 import { Banner } from './components/ui/Banner'
 import { Button } from './components/ui/Button'
 import { paletteItems } from './paletteItems'
+import { gridShown } from './gridView'
 import { boardKey, childrenOf, content, crumbs, currentProjectId } from './navigation'
 import { longestWaiting, serviceBanners, shownStatus } from './sessionStatus'
 import { useSlices } from './stores/slices'
@@ -26,7 +28,7 @@ import { viewableFiles } from './viewerFiles'
 import s from './App.module.css'
 
 export default function App() {
-  const { projects, sessions, ui, features, opencode, diff, errors, waitingSince, statusSince, hydrate, setFocused, focusFeature, openProject, go, setBoard,
+  const { projects, sessions, ui, features, opencode, diff, errors, waitingSince, statusSince, hydrate, setFocused, focusFeature, openProject, toggleGrid, clearGrid, go, setBoard,
     openArtifact, openDiff, openRendered, closeViewer, setViewerWidth, toggleViewerExpanded, reloadViewer } = useSlices()
   const [newFor, setNewFor] = useState<{ projectId?: string } | null>(null)
   const [confirmKill, setConfirmKill] = useState<Session | null>(null)
@@ -47,6 +49,8 @@ export default function App() {
     // read the latest state, not this callback's closure
     const { projects, sessions, ui, features } = useSlices.getState()
     if (a.type === 'palette') setPaletteOpen(true)
+    else if (a.type === 'toggleGrid') toggleGrid()
+    else if (a.type === 'clearGrid') clearGrid()
     else if (a.type === 'newSession') setNewFor({ projectId: currentProjectId(content(ui, projects, sessions, features.items)) ?? undefined })
     else if (a.type === 'newTerminal') {
       const projectId = currentProjectId(content(ui, projects, sessions, features.items))
@@ -68,7 +72,7 @@ export default function App() {
     } else if (a.type === 'sessionDiff') {
       if (ui.focusedSessionId) toggleDiff(ui.focusedSessionId, ui.viewer)
     }
-  }, [setFocused, go, toggleDiff])
+  }, [setFocused, go, toggleDiff, toggleGrid, clearGrid])
 
   useEffect(() => window.api.on('menu:action', runAction), [runAction])
 
@@ -115,6 +119,8 @@ export default function App() {
                 children={childrenOf(shown.feature, features.items)} sessions={sessions}
                 onFocusSession={setFocused} onOpenFeature={openFeature}
                 onOpenArtifact={(name) => openArtifact({ kind: 'artifact', projectId: shown.feature.projectId, slug: shown.feature.slug, path: name, hash: null, fromDiff: null })} />
+            ) : shown.kind === 'grid' ? (
+              <SessionGrid sessions={shown.sessions} focusedId={shown.focused.id} overlayOpen={paletteOpen || !!newFor || !!confirmKill} />
             ) : shown.kind === 'session' && shown.session.lastStatus === 'running' ? (
               <TerminalView key={shown.session.id} sessionId={shown.session.id} active={!paletteOpen && !newFor && !confirmKill} />
             ) : shown.kind === 'session' ? (
@@ -150,7 +156,7 @@ export default function App() {
       />
       {paletteOpen && (
         <CommandPalette onClose={() => setPaletteOpen(false)}
-          items={paletteItems({ projects, sessions, features: features.items }, { focusSession: setFocused, focusFeature, openProject, runAction })} />
+          items={paletteItems({ projects, sessions, features: features.items, grid: ui.grid, gridShown: gridShown(ui) }, { focusSession: setFocused, focusFeature, openProject, runAction })} />
       )}
       {newFor && <NewSessionModal initialProjectId={newFor.projectId} onClose={() => setNewFor(null)} />}
       {confirmKill && (

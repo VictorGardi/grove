@@ -25,9 +25,17 @@ describe('paletteItems', () => {
   it('lists the app commands, which run through runAction', () => {
     const a = actions()
     const cmds = paletteItems({ projects, sessions, features }, a).filter((i) => i.kind === 'command')
-    expect(cmds.map((c) => c.label)).toEqual(['New session', 'New terminal', 'Close session', 'Session diff', 'Project board'])
+    expect(cmds.map((c) => c.label)).toEqual(['New session', 'New terminal', 'Close session', 'Session diff', 'Project board', 'Show grid', 'Clear grid'])
     cmds[1].run()
     expect(a.runAction).toHaveBeenCalledWith({ type: 'newTerminal' })
+  })
+
+  it('shows grid membership and flips Show grid to Hide grid', () => {
+    const on = paletteItems({ projects, sessions, features, grid: { open: true, members: ['s2'] }, gridShown: true }, actions())
+    expect(on.find((i) => i.id === 'session:s2')?.detail).toContain('in grid')
+    expect(on.find((i) => i.id === 'session:s1')?.detail).not.toContain('in grid')
+    expect(on.some((i) => i.label === 'Hide grid')).toBe(true)
+    expect(items().some((i) => i.label === 'Show grid')).toBe(true)
   })
 
   it('runs the matching action for each kind', () => {

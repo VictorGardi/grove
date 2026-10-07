@@ -5,6 +5,7 @@ import path from 'node:path'
 import type { Comment, CommentAnchor, Project, Session, SessionDiff, SessionKind, Slices, UiState } from '@shared/types'
 import { DEFAULT_UI, EMPTY_FEATURES, OPENCODE_CONNECTING } from '@shared/types'
 import type { Result } from '@shared/ipc'
+import { pruneGrid } from '@shared/grid'
 import { safeArtifactPath } from './artifacts/path'
 import type { AttachHandle, SessionBackend } from './backend/types'
 import { terminalTheme } from '@shared/theme'
@@ -529,6 +530,8 @@ export function createCore(opts: CoreOptions): Core {
     const v = ui.viewer
     if (v?.kind === 'diff' && !findSession(v.sessionId)) ui = { ...ui, viewer: null }
     else if (v && v.kind !== 'diff' && v.fromDiff && !findSession(v.fromDiff)) ui = { ...ui, viewer: { ...v, fromDiff: null } }
+    const grid = pruneGrid(ui.grid, (id) => !!findSession(id))
+    if (grid !== ui.grid) ui = { ...ui, grid }
     if (ui !== slices.ui) set('ui', ui)
     syncDiff()
   }

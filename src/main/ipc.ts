@@ -8,7 +8,8 @@ import type { Core } from '../core/core'
 
 type Handler<K extends keyof InvokeMap> = (arg: InvokeMap[K][0]) => Promise<InvokeMap[K][1] | Result<InvokeMap[K][1]>> | InvokeMap[K][1]
 
-export function registerIpc(core: Core, getWindow: () => BrowserWindow | null, getErrors: () => string[]): void {
+// Returns killAttaches: the window calls it when it reloads or closes, so no client stays attached.
+export function registerIpc(core: Core, getWindow: () => BrowserWindow | null, getErrors: () => string[]): { killAttaches: () => void } {
   const push = <K extends keyof PushMap>(ch: K, payload: PushMap[K]) => {
     const win = getWindow()
     if (win && !win.isDestroyed()) win.webContents.send(ch, payload)
@@ -57,11 +58,7 @@ export function registerIpc(core: Core, getWindow: () => BrowserWindow | null, g
 
   const attaches = new Map<string, AttachHandle>()
   handle('pty:attach', ({ sessionId, cols, rows }) => {
-    // one live attach: the focused session
-    for (const [id, h] of attaches) {
-      h.kill()
-      attaches.delete(id)
-    }
+    // many live attaches (ADR 0030): the renderer detaches each when its terminal unmounts
     const attachId = randomUUID()
     const h = core.attach(sessionId, cols, rows)
     attaches.set(attachId, h)
@@ -94,4 +91,11 @@ export function registerIpc(core: Core, getWindow: () => BrowserWindow | null, g
       pending.clear()
     })
   })
+
+  return {
+    killAttaches() {
+      for (const h of attaches.values()) h.kill()
+      attaches.clear()
+    },
+  }
 }

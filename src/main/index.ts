@@ -106,7 +106,7 @@ app.whenReady().then(async () => {
   })
   handleArtifacts(core)
 
-  registerIpc(core, () => win, () => [...errors, ...core.getErrors()])
+  const { killAttaches } = registerIpc(core, () => win, () => [...errors, ...core.getErrors()])
   buildMenu((a) => {
     if (win && !win.isDestroyed()) win.webContents.send('menu:action', a)
   }, () => void installCli(launcher))
@@ -130,7 +130,10 @@ app.whenReady().then(async () => {
     void core.checkLiveness()
   })
   win.on('blur', () => core.setWindowFocused(false))
+  // a reload leaves the old page's attaches behind (ADR 0030)
+  win.webContents.on('did-start-loading', killAttaches)
   win.on('closed', () => {
+    killAttaches()
     win = null
     app.quit()
   })

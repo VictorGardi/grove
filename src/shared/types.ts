@@ -50,6 +50,8 @@ export interface DiffFile {
 export interface DiffHunk { header: string; oldStart: number; newStart: number; lines: DiffLine[] }
 // Line identity: (path, side, number) — add → new, del → old, context → new.
 export interface DiffLine { kind: 'context' | 'add' | 'del'; text: string; old: number | null; new: number | null }
+export const GRID_MAX = 9 // one Cmd+1..9 per pane
+export interface GridState { open: boolean; members: string[] } // member session ids, in grid order
 export interface UiState {
   sidebarWidth: number
   focusedSessionId: string | null
@@ -61,6 +63,7 @@ export interface UiState {
   viewer: ViewerTarget | null // what the right-hand panel shows
   viewerWidth: number
   viewerExpanded: boolean     // the viewer fills the content area
+  grid: GridState             // the session grid (ADR 0031); the focused pane is focusedSessionId
 }
 export interface FeatureStage {
   id: string
@@ -114,6 +117,6 @@ export type Slices = { projects: Project[]; sessions: Session[]; ui: UiState; fe
 export interface ConfigFile { schemaVersion: 1; projects: Project[]; workflow?: string }
 export interface StateFile { schemaVersion: 4; sessions: Session[]; ui: UiState }
 export const SIDEBAR_WIDTH = 220 // fixed: the sidebar has no resize handle, so a saved width is ignored
-export const DEFAULT_UI: UiState = { sidebarWidth: SIDEBAR_WIDTH, focusedSessionId: null, focusedFeature: null, focusedProject: null, sidebarTab: 'sessions', board: 'sessions', collapsed: [], viewer: null, viewerWidth: 480, viewerExpanded: false }
+export const DEFAULT_UI: UiState = { sidebarWidth: SIDEBAR_WIDTH, focusedSessionId: null, focusedFeature: null, focusedProject: null, sidebarTab: 'sessions', board: 'sessions', collapsed: [], viewer: null, viewerWidth: 480, viewerExpanded: false, grid: { open: false, members: [] } }
 export const EMPTY_FEATURES: FeaturesSlice = { workflowError: null, stages: [], items: [] }
 export const OPENCODE_CONNECTING: OpenCodeSlice = { state: 'connecting', version: null }

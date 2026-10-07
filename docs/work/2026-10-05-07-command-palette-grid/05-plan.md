@@ -44,3 +44,27 @@ Notes for a cold reader: slice 1 added `paletteItems.ts` (`PaletteActions`, `pal
 - [x] Run `npx vitest run src/renderer/src/paletteItems.test.ts`
 - [x] Run `npm run typecheck`
 - [x] Run `npm test`
+
+## Slice 3 — Two sessions side by side
+
+Notes for a cold reader: design D1 puts the grid in `UiState.grid: { open, members }` (additive; `schemaVersion` stays 4; `GRID_MAX = 9`); the focused pane is the existing `focusedSessionId`. D2: `pty:attach` stops killing earlier attaches; the renderer owns each attach and detaches on unmount; main kills all attaches when the window's `webContents` reloads or is destroyed. `content()` returns `{ kind: 'grid', sessions, focused }` first when `grid.open`, members are non-empty and `focusedSessionId` is a member. Tiles are a CSS grid (`gridCols(n)` → 1, 2 or 3 columns, equal rows), panes keyed by session id, no inline styles. Ended members show a bare "Session ended" tile and are not attached (the full tile is slice 5). Pane focus by click and Cmd+1..9 are slice 4, so here only the focused pane is `active`. Palette gets Show/Hide grid and Clear grid. Helper not named in the structure: `src/shared/grid.ts` `pruneGrid` (shared by main-side `loadState`/core and tested once).
+
+- [x] Write failing tests `src/renderer/src/gridView.test.ts`: `gridCols` (0/1 → 1; 2–4 → 2; 5–9 → 3; capped by `maxCols`), `gridShown` (needs open, non-empty members, focused session a member), `withMember` (adds, removes, appends in order, refuses a 10th, sets `open: false` when emptied, leaves `open` otherwise)
+- [x] Write failing test `src/shared/grid.test.ts`: `pruneGrid` drops unknown ids, de-duplicates, caps at `GRID_MAX`, sets `open: false` when empty, returns the same object when nothing changes
+- [x] `src/shared/types.ts`: `GridState`, `GRID_MAX = 9`, `UiState.grid`, `DEFAULT_UI.grid = { open: false, members: [] }`; update `stateStore.test.ts` round-trip literal with `grid`
+- [x] Create `src/shared/grid.ts` `pruneGrid(grid, known: (id: string) => boolean): GridState`
+- [x] `src/core/store/stateStore.ts`: `loadState` sanitizes `ui.grid` with `pruneGrid` against the loaded sessions (a missing `grid` takes the default); add a `stateStore.test.ts` case: unknown member ids dropped, `open` false when none left, old file without `grid` loads with default
+- [x] `src/core/core.ts` `dropSessions`: prune `ui.grid` with `pruneGrid(grid, (id) => !!findSession(id))` alongside the other ui cleanup
+- [x] Create `src/renderer/src/gridView.ts`: `gridShown(ui)`, `gridCols(n, maxCols = 3)`, `withMember(grid, id)`
+- [x] `src/shared/ipc.ts`: `MenuAction` adds `{ type: 'toggleGrid' }` and `{ type: 'clearGrid' }`; `src/main/menu.ts`: View → "Session Grid" `CmdOrCtrl+G` sends `toggleGrid`
+- [x] `src/main/ipc.ts`: `pty:attach` no longer kills others; `registerIpc` returns `{ killAttaches }`; `src/main/index.ts` calls it on `webContents` `did-start-loading` and on window `closed`
+- [x] `src/renderer/src/navigation.ts`: `Content` gains `grid`; `content()` returns it first per the rule above (members that no longer exist are skipped); `currentProjectId`/`boardProject` use the focused session's project; `crumbs` → `[{ label: 'Session grid' }]`; extend `navigation.test.ts`
+- [x] `src/renderer/src/stores/slices.ts`: `toggleGrid()` (shown → `open: false`; else if members: `open: true` and focus the current session when a member, else the first member; no members: nothing), `toggleGridMember(id)`, `clearGrid()` (members `[]`, open false)
+- [x] Create `src/renderer/src/components/SessionGrid.tsx` + `SessionGrid.module.css`: `<div>` with class by `gridCols`, one pane per member keyed by session id, running members get `TerminalView` (`active` only for the focused one and with no overlay open), ended members show "Session ended"
+- [x] `src/renderer/src/paletteItems.ts`: `PALETTE_COMMANDS` adds Show grid (`toggleGrid`, ⌘G, label becomes Hide grid when the grid shows) and Clear grid (`clearGrid`); session detail says "in grid" for members; `paletteItems` takes `grid`/`gridShown` in its data; extend `paletteItems.test.ts`
+- [x] `src/renderer/src/App.tsx`: `runAction` handles `toggleGrid`/`clearGrid`; render `SessionGrid` when `shown.kind === 'grid'`
+- [x] `src/renderer/src/components/ui/Icon.tsx`: add `check` and `grid` icons; `ListRow.tsx`: optional `leading` node before the icon
+- [x] `src/renderer/src/components/Sidebar.tsx` (+ css): a plus at the card's top left toggles membership (green check when a member; disabled with a title hint at 9 for non-members); a bottom bar with a grid button (`aria-pressed` when shown, disabled with a hint when there are no members)
+- [x] Run `npx vitest run src/renderer/src/gridView.test.ts src/renderer/src/navigation.test.ts src/shared/grid.test.ts src/core/store/stateStore.test.ts`
+- [x] Run `npm test`
+- [x] Run `npm run typecheck`

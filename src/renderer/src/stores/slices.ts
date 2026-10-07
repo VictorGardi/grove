@@ -1,6 +1,7 @@
 import { create } from 'zustand'
 import type { Comment, DiffFile, DocTarget, FeaturesSlice, OpenCodeSlice, Project, Session, SessionDiff, UiState } from '@shared/types'
 import { DEFAULT_UI, EMPTY_FEATURES, OPENCODE_CONNECTING } from '@shared/types'
+import { gridShown, withMember } from '../gridView'
 import { openBoard } from '../navigation'
 import { trackStatus, trackWaiting, type StatusSince } from '../sessionStatus'
 
@@ -30,6 +31,9 @@ interface SlicesState {
   setViewerWidth(px: number): void
   toggleViewerExpanded(): void
   reloadViewer(): void
+  toggleGrid(): void // show or hide the session grid; no-op with no members
+  toggleGridMember(id: string): void
+  clearGrid(): void
 }
 
 export const useSlices = create<SlicesState>((set, get) => {
@@ -86,6 +90,16 @@ export const useSlices = create<SlicesState>((set, get) => {
     setViewerWidth: (px) => { void window.api.invoke('ui:set', { viewerWidth: Math.round(px) }) },
     toggleViewerExpanded: () => { void window.api.invoke('ui:set', { viewerExpanded: !get().ui.viewerExpanded }) },
     reloadViewer: () => { void window.api.invoke('viewer:reload') },
+    toggleGrid() {
+      const { ui } = get()
+      if (gridShown(ui)) return void window.api.invoke('ui:set', { grid: { ...ui.grid, open: false } })
+      const { members } = ui.grid
+      if (members.length === 0) return
+      const focus = ui.focusedSessionId && members.includes(ui.focusedSessionId) ? ui.focusedSessionId : members[0]
+      void window.api.invoke('ui:set', { grid: { ...ui.grid, open: true }, focusedSessionId: focus })
+    },
+    toggleGridMember: (id) => { void window.api.invoke('ui:set', { grid: withMember(get().ui.grid, id) }) },
+    clearGrid: () => { void window.api.invoke('ui:set', { grid: { open: false, members: [] } }) },
     toggleCollapsed(key) {
       const { collapsed } = get().ui
       const next = collapsed.includes(key) ? collapsed.filter((k) => k !== key) : [...collapsed, key]

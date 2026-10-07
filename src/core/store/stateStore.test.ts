@@ -31,10 +31,26 @@ describe('stateStore', () => {
       schemaVersion: 4,
       sessions: [newSession({ projectId: 'p', kind: 'terminal', now: new Date(), id: 'a', agentSessionId: null })],
       ui: { sidebarWidth: 300, focusedSessionId: null, focusedFeature: null, focusedProject: 'p', sidebarTab: 'projects', board: 'sessions', collapsed: ['p:x'],
-        viewer: { kind: 'artifact', projectId: 'p', slug: 'f', path: '03-design.html', hash: 'q1', fromDiff: 'a' }, viewerWidth: 600, viewerExpanded: true },
+        viewer: { kind: 'artifact', projectId: 'p', slug: 'f', path: '03-design.html', hash: 'q1', fromDiff: 'a' }, viewerWidth: 600, viewerExpanded: true, grid: { open: true, members: ['a'] } },
     }
     saveState(file, s)
     expect(loadState(file)).toEqual(s)
+  })
+
+  it('drops grid members of unknown sessions, and closes an emptied grid', () => {
+    const file = tmpFile()
+    const known = newSession({ projectId: 'p', kind: 'terminal', now: new Date(), id: 'a', agentSessionId: null })
+    saveState(file, { schemaVersion: 4, sessions: [known], ui: { ...DEFAULT_UI, grid: { open: true, members: ['a', 'gone'] } } })
+    expect(loadState(file).ui.grid).toEqual({ open: true, members: ['a'] })
+    saveState(file, { schemaVersion: 4, sessions: [], ui: { ...DEFAULT_UI, grid: { open: true, members: ['gone'] } } })
+    expect(loadState(file).ui.grid).toEqual({ open: false, members: [] })
+  })
+
+  it('loads a file saved before the grid with the default grid', () => {
+    const file = tmpFile()
+    const { grid: _grid, ...old } = DEFAULT_UI
+    fs.writeFileSync(file, JSON.stringify({ schemaVersion: 4, sessions: [], ui: old }))
+    expect(loadState(file).ui.grid).toEqual({ open: false, members: [] })
   })
 
   it('migrates a v1 file: opencodeSessionId becomes agentSessionId, and it saves as v4', () => {

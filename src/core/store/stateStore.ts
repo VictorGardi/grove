@@ -1,4 +1,5 @@
 import { DEFAULT_UI, type Session, type StateFile, type UiState } from '@shared/types'
+import { pruneGrid } from '@shared/grid'
 import { atomicWrite, readVersioned } from './jsonFile'
 
 type V1Session = Omit<Session, 'agentSessionId'> & { opencodeSessionId?: string | null }
@@ -31,6 +32,7 @@ export function loadState(file: string, onBad?: (msg: string) => void): StateFil
   const known = (id: string) => sessions.some((x) => x.id === id)
   if (v?.kind === 'diff' && !known(v.sessionId)) ui.viewer = null
   else if (v && v.kind !== 'diff' && v.fromDiff && !known(v.fromDiff)) ui.viewer = { ...v, fromDiff: null }
+  ui.grid = pruneGrid(ui.grid ?? DEFAULT_UI.grid, known)
   return { ...s, sessions, ui }
 }
 

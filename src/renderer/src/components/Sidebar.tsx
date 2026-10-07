@@ -1,8 +1,10 @@
 import { useState } from 'react'
-import type { Feature, Project, Session } from '@shared/types'
+import { GRID_MAX, type Feature, type Project, type Session } from '@shared/types'
 import { useSlices } from '../stores/slices'
+import { gridShown } from '../gridView'
 import { featureStage } from '../featureLabels'
 import { shownStatus, statusView } from '../sessionStatus'
+import { cx } from './ui/cx'
 import { colorTags } from '../tags'
 import { linkedFeature, sessionGroups } from '../tree'
 import { Badge } from './ui/Badge'
@@ -19,12 +21,15 @@ function toggle(set: Set<string>, id: string): Set<string> {
   return next
 }
 
-function SessionCard({ s, feature, tag, focused, compact, onFocus, onOpenFeature, onToggleCompact, onLink, onKill }: {
+function SessionCard({ s, feature, tag, focused, compact, inGrid, gridFull, onToggleGrid, onFocus, onOpenFeature, onToggleCompact, onLink, onKill }: {
   s: Session
   feature: Feature | null // the linked feature, if it exists
   tag: number | null // its parent feature's colour
   focused: boolean // a focused card shows selected; otherwise terminals are muted
   compact: boolean
+  inGrid: boolean // a member of the session grid
+  gridFull: boolean // the grid has its nine
+  onToggleGrid: () => void
   onFocus: () => void
   onOpenFeature: () => void
   onToggleCompact: () => void
@@ -40,6 +45,15 @@ function SessionCard({ s, feature, tag, focused, compact, onFocus, onOpenFeature
   return (
     <ListRow
       title={s.label}
+      leading={
+        <button type="button" className={cx(css.gridToggle, inGrid && css.gridOn)} aria-pressed={inGrid}
+          disabled={!inGrid && gridFull}
+          aria-label={inGrid ? 'Remove from grid' : 'Add to grid'}
+          title={inGrid ? 'Remove from grid' : gridFull ? `The grid holds ${GRID_MAX} sessions` : 'Add to grid'}
+          onClick={(e) => { e.stopPropagation(); onToggleGrid() }}>
+          <Icon name={inGrid ? 'check' : 'plus'} size={11} />
+        </button>
+      }
       icon={agent
         ? <Icon name={done ? 'agent-done' : 'agent'} size={13} className={done ? css.iconDone : shown === 'gone' ? css.iconGone : css.iconAgent} />
         : <Icon name="terminal" size={13} className={css.iconTerminal} />}
@@ -169,7 +183,7 @@ function ProjectHeader({ project: p, tag, refused, onToggle, onRemove, onNew }: 
 }
 
 export function Sidebar({ onNew, onKill }: { onNew: (projectId?: string) => void; onKill: (s: Session) => void }) {
-  const { projects, sessions, ui, features, setFocused, toggleCollapsed, focusFeature, openProject, setSidebarTab } = useSlices()
+  const { projects, sessions, ui, features, setFocused, toggleCollapsed, focusFeature, openProject, setSidebarTab, toggleGrid, toggleGridMember } = useSlices()
   const [refused, setRefused] = useState<string | null>(null)
   const [compact, setCompact] = useState<Set<string>>(new Set())
   const [linking, setLinking] = useState<Session | null>(null)
@@ -190,6 +204,9 @@ export function Sidebar({ onNew, onKill }: { onNew: (projectId?: string) => void
         tag={f && tags.group(f.projectId, f.group ? f.slug : f.parent)}
         focused={s.id === ui.focusedSessionId}
         compact={compact.has(s.id)}
+        inGrid={ui.grid.members.includes(s.id)}
+        gridFull={ui.grid.members.length >= GRID_MAX}
+        onToggleGrid={() => toggleGridMember(s.id)}
         onFocus={() => setFocused(s.id)}
         onOpenFeature={() => f && focusFeature({ projectId: f.projectId, slug: f.slug })}
         onToggleCompact={() => setCompact((c) => toggle(c, s.id))}
@@ -237,6 +254,13 @@ export function Sidebar({ onNew, onKill }: { onNew: (projectId?: string) => void
               focused={ui.focusedProject === p.id} refused={refused === p.id}
               onOpen={() => openProject(p.id)} onRemove={() => void removeProject(p.id)} onNew={() => onNew(p.id)} />
           ))}
+      </div>
+      <div className={css.bottomBar}>
+        <Button variant="ghost" size="sm" icon="grid" aria-pressed={gridShown(ui)} disabled={ui.grid.members.length === 0}
+          title={ui.grid.members.length === 0 ? 'Add sessions to the grid with the + on a card' : 'Session grid (⌘G)'}
+          onClick={toggleGrid}>
+          Grid {ui.grid.members.length > 0 && ui.grid.members.length}
+        </Button>
       </div>
       {linking && <LinkPicker session={linking} onClose={() => setLinking(null)} />}
     </div>
