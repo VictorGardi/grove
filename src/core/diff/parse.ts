@@ -3,8 +3,10 @@ import type { DiffFile, DiffHunk } from '@shared/types'
 const HUNK = /^@@ -(\d+)(?:,(\d+))? \+(\d+)(?:,(\d+))? @@/
 
 // `git diff` output (a/ b/ prefixes, no colour) → one DiffFile per `diff --git` section.
-export function parseUnifiedDiff(text: string): DiffFile[] {
+// A section over `maxFileBytes` keeps its counts but loses its hunks (`truncated`).
+export function parseUnifiedDiff(text: string, maxFileBytes = Infinity): DiffFile[] {
   const files: DiffFile[] = []
+  const bytes: number[] = [] // per file, its section's size
   let file: DiffFile | null = null
   let hunk: DiffHunk | null = null
   let oldNo = 0
@@ -12,6 +14,7 @@ export function parseUnifiedDiff(text: string): DiffFile[] {
   let oldLeft = 0 // lines still to come in this hunk: a body line can look like a header (`--- x`)
   let newLeft = 0
   for (const line of text.split('\n')) {
+    if (file) bytes[bytes.length - 1] += Buffer.byteLength(line) + 1
     if (hunk && (oldLeft > 0 || newLeft > 0)) {
       const c = line[0]
       if (c === ' ' || c === '+' || c === '-') {
@@ -37,6 +40,7 @@ export function parseUnifiedDiff(text: string): DiffFile[] {
       const [a, b] = headerPaths(line.slice('diff --git '.length))
       file = { path: b ?? a ?? '', oldPath: a, status: 'modified', binary: false, additions: 0, deletions: 0, hunks: [], truncated: false, rendered: null }
       files.push(file)
+      bytes.push(Buffer.byteLength(line) + 1)
       hunk = null
       continue
     }
@@ -68,7 +72,10 @@ export function parseUnifiedDiff(text: string): DiffFile[] {
       if (p !== null) file.path = p
     } else if (line.startsWith('Binary files ') && line.endsWith(' differ')) file.binary = true
   }
-  for (const f of files) if (f.status !== 'renamed') f.oldPath = null
+  for (const [i, f] of files.entries()) {
+    if (f.status !== 'renamed') f.oldPath = null
+    if (bytes[i] > maxFileBytes) Object.assign(f, { hunks: [], truncated: true })
+  }
   return files
 }
 

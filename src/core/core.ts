@@ -443,8 +443,13 @@ export function createCore(opts: CoreOptions): Core {
   function dropSessions(keep: (s: Session) => boolean): void {
     const focused = slices.ui.focusedSessionId ? findSession(slices.ui.focusedSessionId) : undefined
     set('sessions', slices.sessions.filter(keep))
+    let ui = slices.ui
     // the last project page takes over (ADR 0018)
-    if (focused && !findSession(focused.id)) set('ui', { ...slices.ui, focusedSessionId: null, focusedProject: focused.projectId })
+    if (focused && !findSession(focused.id)) ui = { ...ui, focusedSessionId: null, focusedProject: focused.projectId }
+    const v = ui.viewer
+    if (v?.kind === 'diff' && !findSession(v.sessionId)) ui = { ...ui, viewer: null }
+    else if (v && v.kind !== 'diff' && v.fromDiff && !findSession(v.fromDiff)) ui = { ...ui, viewer: { ...v, fromDiff: null } }
+    if (ui !== slices.ui) set('ui', ui)
     syncDiff()
   }
 

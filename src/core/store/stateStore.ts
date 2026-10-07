@@ -23,6 +23,11 @@ export function loadState(file: string, onBad?: (msg: string) => void): StateFil
   const { view: _view, ...saved } = (s.ui ?? {}) as Partial<UiState> & { view?: unknown }
   const ui = { ...DEFAULT_UI, ...saved }
   if ((ui.sidebarTab as string) === 'features') ui.sidebarTab = 'projects'
+  // a diff, or "← Diff", of a session that's no longer listed
+  const v = ui.viewer
+  const known = (id: string) => sessions.some((x) => x.id === id)
+  if (v?.kind === 'diff' && !known(v.sessionId)) ui.viewer = null
+  else if (v && v.kind !== 'diff' && v.fromDiff && !known(v.fromDiff)) ui.viewer = { ...v, fromDiff: null }
   return { ...s, sessions, ui }
 }
 

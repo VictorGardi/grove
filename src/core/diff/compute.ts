@@ -2,13 +2,14 @@ import { createHash } from 'node:crypto'
 import fs from 'node:fs'
 import path from 'node:path'
 import type { DiffFile, Feature, Project, SessionDiff } from '@shared/types'
-import type { GitRun } from './git'
+import { GitError, type GitRun } from './git'
 import { parseUnifiedDiff, untrackedFile } from './parse'
 
 export const EMPTY_TREE = '4b825dc642cb6eb9a060e54bf8d69288fbee4904'
 const MAX_UNTRACKED_READ = 200 // files read for lines; the rest are listed without
 const MAX_FILE_BYTES = 1024 * 1024
 const BINARY_SNIFF = 8000 // git's own heuristic: a NUL in the first 8000 bytes
+const MAX_LINES = 20_000 // once passed, later files are listed without lines
 
 const sha1 = (s: string) => createHash('sha1').update(s).digest('hex')
 
@@ -19,16 +20,38 @@ export async function computeDiff(o: { sessionId: string; dir: string; project: 
   const { git } = o
   try {
     if (!git) throw new Error('git not found')
-    const root = (await git(['rev-parse', '--show-toplevel'], o.dir)).trim()
-    const raw = await git(['diff', 'HEAD', '-M', '--no-color', '--no-ext-diff', '--no-relative', '--src-prefix=a/', '--dst-prefix=b/'], root)
+    let root: string
+    try {
+      root = (await git(['rev-parse', '--show-toplevel'], o.dir)).trim()
+    } catch (e) {
+      if (e instanceof GitError && e.notRepo) return { key: 'not-git', diff: { ...base, state: 'not-git' } }
+      throw e
+    }
+    const head = await git(['rev-parse', '--verify', '-q', 'HEAD'], root).then(() => 'HEAD', () => EMPTY_TREE) // no commits yet
+    const raw = await git(['diff', head, '-M', '--no-color', '--no-ext-diff', '--no-relative', '--src-prefix=a/', '--dst-prefix=b/'], root)
     const names = (await git(['ls-files', '--others', '--exclude-standard', '-z'], root)).split('\0').filter(Boolean)
     const untracked = await readUntracked(root, names)
     const key = sha1([raw, ...names, ...untracked.stamps].join('\0'))
-    return { key, diff: { ...base, root, files: [...parseUnifiedDiff(raw), ...untracked.files] } }
+    const files = [...parseUnifiedDiff(raw, MAX_FILE_BYTES), ...untracked.files]
+    return { key, diff: { ...base, root, files, truncated: capLines(files) } }
   } catch (e) {
     const error = (e as Error).message
     return { key: `error:${error}`, diff: { ...base, state: 'error', error } }
   }
+}
+
+// Past MAX_LINES in total, later files lose their lines. true: something was cut.
+function capLines(files: DiffFile[]): boolean {
+  let total = 0
+  let cut = false
+  for (const f of files) {
+    if (total < MAX_LINES) total += f.hunks.reduce((n, h) => n + h.lines.length, 0)
+    else if (f.hunks.length > 0) {
+      Object.assign(f, { hunks: [], truncated: true })
+      cut = true
+    }
+  }
+  return cut
 }
 
 // Untracked files as all-added; `stamps` (size and mtime of each file looked at) feed the key.

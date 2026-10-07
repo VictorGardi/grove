@@ -1,3 +1,6 @@
+import fs from 'node:fs'
+import os from 'node:os'
+import path from 'node:path'
 import { describe, expect, it } from 'vitest'
 import type { Project } from '@shared/types'
 import { gitRepo } from '../testing/gitRepo'
@@ -69,5 +72,57 @@ describe('computeDiff', () => {
     const before = await compute(r.dir)
     r.write('new.md', 'a\nbb\n')
     expect((await compute(r.dir)).key).not.toBe(before.key)
+  })
+
+  it('reports a folder outside any repo as not-git', async () => {
+    const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'grove-plain-'))
+    expect(await compute(dir)).toEqual({ key: 'not-git', diff: expect.objectContaining({ state: 'not-git', root: null, files: [] }) })
+  })
+
+  it('diffs a repo without commits against the empty tree', async () => {
+    const r = gitRepo()
+    r.write('a.txt', 'x\n')
+    r.git('add', 'a.txt')
+    r.write('b.txt', 'y\n')
+    const { diff } = await compute(r.dir)
+    expect(diff.state).toBe('ok')
+    expect(diff.files.map((f) => [f.path, f.status])).toEqual([['a.txt', 'added'], ['b.txt', 'untracked']])
+  })
+
+  it('shows a git mv as a rename', async () => {
+    const r = gitRepo()
+    r.write('old.md', 'same\ncontent\nhere\n')
+    r.commit()
+    r.git('mv', 'old.md', 'new.md')
+    const { diff } = await compute(r.dir)
+    expect(diff.files).toEqual([expect.objectContaining({ path: 'new.md', oldPath: 'old.md', status: 'renamed', hunks: [] })])
+  })
+
+  it('cuts a file whose patch is over 1 MB', async () => {
+    const r = gitRepo()
+    r.write('big.txt', 'a\n')
+    r.write('small.txt', 'a\n')
+    r.commit()
+    r.write('big.txt', 'x'.repeat(99) + '\n'.repeat(1) + ('y'.repeat(99) + '\n').repeat(11_000))
+    r.write('small.txt', 'b\n')
+    const { diff } = await compute(r.dir)
+    expect(diff.files.map((f) => [f.path, f.truncated, f.hunks.length])).toEqual([['big.txt', true, 0], ['small.txt', false, 1]])
+    expect(diff.truncated).toBe(false)
+  })
+
+  it('lists files past 20 000 lines without their lines', async () => {
+    const r = gitRepo()
+    r.commit()
+    r.write('a.txt', 'l\n'.repeat(20_001))
+    r.write('b.txt', 'm\n')
+    r.git('add', '-A')
+    const { diff } = await compute(r.dir)
+    expect(diff.truncated).toBe(true)
+    expect(diff.files.map((f) => [f.path, f.truncated, f.hunks.length])).toEqual([['a.txt', false, 1], ['b.txt', true, 0]])
+  })
+
+  it('reports git not found', async () => {
+    const r = gitRepo()
+    expect((await compute(r.dir, { git: null })).diff).toMatchObject({ state: 'error', error: 'git not found' })
   })
 })

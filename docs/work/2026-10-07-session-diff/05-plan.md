@@ -268,26 +268,26 @@ conflicts with the code, follow the design's intent, note the deviation in
 
 ## Slice 4 — Edge states
 
-- [ ] Not a repo: `rev-parse` `GitError.notRepo` → `state: 'not-git'`,
+- [x] Not a repo: `rev-parse` `GitError.notRepo` → `state: 'not-git'`,
   `root: null`, key `'not-git'`. `DiffViewer` shows "Not a git repository".
-- [ ] No commits yet: `git rev-parse --verify -q HEAD` fails → diff against
+- [x] No commits yet: `git rev-parse --verify -q HEAD` fails → diff against
   `EMPTY_TREE` instead of `HEAD`.
-- [ ] Caps in `compute.ts`: a tracked file whose patch section exceeds 1 MB
+- [x] Caps in `compute.ts`: a tracked file whose patch section exceeds 1 MB
   (track section byte length in the parser, `DiffFile` gets cut:
   `hunks: []`, `truncated: true`); walking files in order, once total lines
   pass 20 000, later files get `hunks: []`, `truncated: true` and
   `diff.truncated = true`. `DiffViewer` shows a top notice when
   `diff.truncated`.
-- [ ] `parse.test.ts`: pure rename (no hunks), rename with edits, binary
+- [x] `parse.test.ts`: pure rename (no hunks), rename with edits, binary
   rename.
-- [ ] Removed session: `dropSessions` → if `ui.viewer` is a diff of a dropped
+- [x] Removed session: `dropSessions` → if `ui.viewer` is a diff of a dropped
   session set `viewer: null`; if it's a doc with `fromDiff` of a dropped
   session set `fromDiff: null`; then `syncDiff()`. `loadState`: a diff
   viewer whose `sessionId` isn't in `sessions` → `viewer: null`.
-- [ ] Tests: `compute.test.ts` (non-git dir, empty repo, `git mv`, a 1.1 MB
+- [x] Tests: `compute.test.ts` (non-git dir, empty repo, `git mv`, a 1.1 MB
   file, > 20k lines, `git: null`), `stateStore.test.ts` (orphan diff
   viewer), `diff/core.test.ts` (`sessionRemove` of the diff's session).
-- [ ] Commit slice 4.
+- [x] Commit slice 4.
 
 ## Slice 5 — Open rendered: feature-folder files
 

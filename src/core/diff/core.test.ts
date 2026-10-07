@@ -75,6 +75,23 @@ describe('core session diff', () => {
     await vi.waitFor(() => expect(core.getSlices().diff?.files).toHaveLength(1))
   })
 
+  it("closes the diff when its session is removed, and drops a doc's fromDiff", async () => {
+    const { core, session } = await setup()
+    await core.commands.uiSet({ viewer: { kind: 'diff', sessionId: session.id } })
+    await vi.waitFor(() => expect(core.getSlices().diff).not.toBeNull())
+    await core.commands.sessionKill({ id: session.id })
+    await core.commands.sessionRemove({ id: session.id })
+    expect(core.getSlices().ui.viewer).toBeNull()
+    expect(core.getSlices().diff).toBeNull()
+
+    const other = await createTerminal(core)
+    const doc = { kind: 'artifact' as const, projectId: 'p', slug: 'f', path: 'x.md', hash: null, fromDiff: other.id }
+    await core.commands.uiSet({ viewer: doc })
+    await core.commands.sessionKill({ id: other.id })
+    await core.commands.sessionRemove({ id: other.id })
+    expect(core.getSlices().ui.viewer).toEqual({ ...doc, fromDiff: null })
+  })
+
   it('reports git not found', async () => {
     s = setupCore()
     const core = s.make(undefined, { git: null })

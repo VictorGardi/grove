@@ -124,6 +124,47 @@ describe('parseUnifiedDiff', () => {
     expect(quoted.path).toBe('é x\tq.md')
   })
 
+  it('parses a pure rename, a rename with edits and a binary rename', () => {
+    const files = parseUnifiedDiff(lines(
+      'diff --git a/old.md b/new.md',
+      'similarity index 100%',
+      'rename from old.md',
+      'rename to new.md',
+      'diff --git a/src/a.ts b/lib/a.ts',
+      'similarity index 80%',
+      'rename from src/a.ts',
+      'rename to lib/a.ts',
+      'index 1111111..2222222 100644',
+      '--- a/src/a.ts',
+      '+++ b/lib/a.ts',
+      '@@ -1,2 +1,2 @@',
+      ' keep',
+      '-x',
+      '+y',
+      'diff --git a/i.png b/img/i.png',
+      'similarity index 90%',
+      'rename from i.png',
+      'rename to img/i.png',
+      'index 1111111..2222222 100644',
+      'Binary files a/i.png and b/img/i.png differ',
+    ))
+    expect(files.map((f) => [f.oldPath, f.path, f.status, f.binary, f.hunks.length, f.additions, f.deletions])).toEqual([
+      ['old.md', 'new.md', 'renamed', false, 0, 0, 0],
+      ['src/a.ts', 'lib/a.ts', 'renamed', false, 1, 1, 1],
+      ['i.png', 'img/i.png', 'renamed', true, 0, 0, 0],
+    ])
+  })
+
+  it('cuts a section over the byte cap but keeps its counts', () => {
+    const [big, small] = parseUnifiedDiff(lines(
+      'diff --git a/big b/big', '--- a/big', '+++ b/big', '@@ -1 +1 @@', '-' + 'x'.repeat(100), '+' + 'y'.repeat(100),
+      'diff --git a/s b/s', '--- a/s', '+++ b/s', '@@ -1 +1 @@', '-a', '+b',
+    ), 150)
+    expect(big).toMatchObject({ truncated: true, hunks: [], additions: 1, deletions: 1 })
+    expect(small).toMatchObject({ truncated: false })
+    expect(small.hunks).toHaveLength(1)
+  })
+
   it('takes the path from the header when there are no ---/+++ lines', () => {
     const [f] = parseUnifiedDiff(lines('diff --git "a/\\303\\251.sh" "b/\\303\\251.sh"', 'old mode 100644', 'new mode 100755'))
     expect(f.path).toBe('é.sh')

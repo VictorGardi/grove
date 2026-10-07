@@ -81,3 +81,28 @@ key changes when an untracked file changes), `parse.test.ts` (`untrackedFile`),
 
 **Manual check:** create a new file in the session's repo: it shows as
 Untracked with all lines added; unticking "Untracked" hides it.
+
+## Slice 4 — Edge states
+
+**Changed:** `computeDiff`: `rev-parse --show-toplevel` failing with "not a git
+repository" → `state: 'not-git'` (key `'not-git'`); no `HEAD` yet → diff
+against the empty tree; `parseUnifiedDiff(raw, 1 MB)` cuts a file whose patch
+section is over the cap (counts kept); `capLines` cuts every file after the
+running total reaches 20 000 lines and sets `diff.truncated`. `DiffViewer` shows
+"Not a git repository" and a top notice when truncated. Core's `dropSessions`
+closes a diff of a removed session and clears a doc's `fromDiff` to it, in one
+`ui` update; `loadState` does the same for a saved file.
+
+**Tests:** `compute.test.ts` (non-git dir, empty repo, `git mv`, a 1.1 MB
+patch, > 20 000 lines, `git: null`), `parse.test.ts` (pure rename, rename with
+edits, binary rename, byte cap), `stateStore.test.ts` (orphan diff viewer and
+`fromDiff`), `diff/core.test.ts` (`sessionRemove` of the diff's session and of
+a `fromDiff` session).
+
+**Deviations:**
+- `loadState` also clears an orphan `fromDiff` (the plan only names diff
+  viewers), so "← Diff" never points at a removed session.
+- The file that crosses 20 000 lines keeps its lines; only later files are cut.
+
+**Manual check:** add a project that isn't a git repo, start a terminal in it,
+⌥⌘B: "Not a git repository".

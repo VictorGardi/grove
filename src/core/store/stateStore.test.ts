@@ -31,7 +31,7 @@ describe('stateStore', () => {
       schemaVersion: 3,
       sessions: [newSession({ projectId: 'p', kind: 'terminal', now: new Date(), id: 'a', agentSessionId: null })],
       ui: { sidebarWidth: 300, focusedSessionId: null, focusedFeature: null, focusedProject: 'p', sidebarTab: 'projects', board: 'sessions', collapsed: ['p:x'],
-        viewer: { kind: 'artifact', projectId: 'p', slug: 'f', path: '03-design.html', hash: 'q1', fromDiff: 's1' }, viewerWidth: 600, viewerExpanded: true },
+        viewer: { kind: 'artifact', projectId: 'p', slug: 'f', path: '03-design.html', hash: 'q1', fromDiff: 'a' }, viewerWidth: 600, viewerExpanded: true },
     }
     saveState(file, s)
     expect(loadState(file)).toEqual(s)
@@ -59,6 +59,19 @@ describe('stateStore', () => {
     const s = loadState(file)
     expect(s.schemaVersion).toBe(3)
     expect(s.ui.viewer).toEqual({ kind: 'artifact', ...viewer, fromDiff: null })
+  })
+
+  it("drops a diff viewer, or a doc's fromDiff, whose session isn't saved", () => {
+    const file = tmpFile()
+    const sessions = [newSession({ projectId: 'p', kind: 'terminal', now: new Date(), id: 'a', agentSessionId: null })]
+    const save = (viewer: unknown) => fs.writeFileSync(file, JSON.stringify({ schemaVersion: 3, sessions, ui: { ...DEFAULT_UI, viewer } }))
+    save({ kind: 'diff', sessionId: 'gone' })
+    expect(loadState(file).ui.viewer).toBeNull()
+    save({ kind: 'diff', sessionId: 'a' })
+    expect(loadState(file).ui.viewer).toEqual({ kind: 'diff', sessionId: 'a' })
+    const doc = { kind: 'artifact', projectId: 'p', slug: 'f', path: 'x.md', hash: null, fromDiff: 'gone' }
+    save(doc)
+    expect(loadState(file).ui.viewer).toEqual({ ...doc, fromDiff: null })
   })
 
   it('migrates a v2 file without a viewer', () => {

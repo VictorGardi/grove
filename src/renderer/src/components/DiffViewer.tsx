@@ -36,7 +36,9 @@ export function DiffViewer({ diff, sessionId, label, expanded, onToggleExpanded,
         <Button variant="ghost" size="sm" icon="x" round aria-label="Close viewer" onClick={onClose} />
       </div>
       <div className={s.body}>
+        {d?.truncated && <div className={s.notice}>Diff too large: later files are listed without their lines</div>}
         {!d ? <div className={s.note}>Loading…</div>
+          : d.state === 'not-git' ? <div className={s.note}>Not a git repository</div>
           : d.state === 'error' ? <div className={s.note}>{d.error}</div>
           : files.length === 0 ? <div className={s.note}>No changes</div>
           : files.map((f) => <FileSection key={f.path} file={f} />)}
