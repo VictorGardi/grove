@@ -6,7 +6,6 @@ import { DiffViewer } from './components/DiffViewer'
 import { FeaturePage } from './components/FeaturePage'
 import { NewSessionModal } from './components/NewSessionModal'
 import { ProjectPage } from './components/ProjectPage'
-import { ReviewMenu } from './components/ReviewTray'
 import { Sidebar } from './components/Sidebar'
 import { TerminalView } from './components/TerminalView'
 import { AppShell } from './components/shell/AppShell'
@@ -87,7 +86,6 @@ export default function App() {
               right={shown.kind === 'project' ? <BoardSwitch board={ui.board} onChange={setBoard} />
                 : shown.kind === 'session' ? (
                   <div className={s.headerActions}>
-                    <ReviewMenu sessionId={shown.session.id} />
                     <Button variant="ghost" size="sm" aria-pressed={diffOpen(shown.session.id)}
                       onClick={() => toggleDiff(shown.session.id, v)}>Diff</Button>
                   </div>

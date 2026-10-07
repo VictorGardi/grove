@@ -50,7 +50,7 @@ function TrayItem({ comment, onJump }: { comment: Comment; onJump: () => void })
   )
 }
 
-// Review (n) in a session's header: its tray of drafts, a general note, Send, and the Sent list.
+// Comments (n) in the diff and artifact viewers' headers: its tray of drafts, a general note, Send, and the Sent list.
 export function ReviewMenu({ sessionId }: { sessionId: string }) {
   const comments = useSlices((x) => x.comments).filter((c) => c.sessionId === sessionId)
   const drafts = comments.filter((c) => c.state === 'draft')
@@ -114,10 +114,10 @@ export function ReviewMenu({ sessionId }: { sessionId: string }) {
   return (
     <div ref={root} className={s.root}>
       <Button variant="ghost" size="sm" aria-expanded={open} onClick={() => setOpen(!open)}>
-        Review ({drafts.length})
+        Comments ({drafts.length})
       </Button>
       {open && (
-        <div className={s.panel} role="dialog" aria-label="Review">
+        <div className={s.panel} role="dialog" aria-label="Comments">
           {groups.map((g) => (
             <section key={g.label} className={s.group}>
               <div className={s.groupLabel}>{g.label}</div>

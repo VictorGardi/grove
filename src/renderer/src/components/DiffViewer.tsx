@@ -8,6 +8,7 @@ import {
 import { draftsByLine } from '../reviewView'
 import { useSlices } from '../stores/slices'
 import { CommentEditor } from './CommentEditor'
+import { ReviewMenu } from './ReviewTray'
 import { Icon } from './ui/Icon'
 import { Button } from './ui/Button'
 import s from './DiffViewer.module.css'
@@ -116,6 +117,7 @@ export function DiffViewer({ diff, sessionId, label, expanded, onOpenRendered, o
             <Button variant="ghost" size="sm" icon="chevron-down" round aria-label="Next file" disabled={at >= files.length - 1} onClick={() => nav(at + 1)} />
           </div>
         )}
+        <ReviewMenu sessionId={sessionId} />
         <Button variant="ghost" size="sm" icon={expanded ? 'minimize' : 'maximize'} round
           aria-label={expanded ? 'Collapse viewer' : 'Expand viewer'} onClick={onToggleExpanded} />
         <Button variant="ghost" size="sm" icon="x" round aria-label="Close viewer" onClick={onClose} />

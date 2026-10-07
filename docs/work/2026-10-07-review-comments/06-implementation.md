@@ -156,3 +156,8 @@ Not a slice; made on the branch after slices 1–6 were checked by hand (the man
 - Expanded unmodified lines are not commentable (anchors come from the diff's own lines).
 - No bar after the last hunk: the file length is not known to the viewer.
 - The tray's Jump opens the diff on the first file, not on the commented one.
+
+## Follow-up (human request): comments live in the viewer, the diff opens expanded
+
+- The tray moved from the session header into the viewers and is renamed **Comments (n)**: the diff viewer's header always has it; a markdown artifact's header has it when a session is focused (so artifact comments can still be reviewed and sent without opening the diff). The session header keeps only **Diff**. This departs from the design's "Review (n) in the session content header" (`03-design.md`, two-way decisions), left unedited.
+- Opening a diff (`openDiff`) also sets `viewerExpanded`, so the file list and side-by-side view show at once. The human can still collapse it; closing the diff does not reset it.

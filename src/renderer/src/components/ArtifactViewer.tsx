@@ -5,6 +5,7 @@ import { artifactAnchor, draftsForFile, isCommentable, parseIframeMessage, type 
 import { useSlices } from '../stores/slices'
 import type { FileGroup } from '../viewerFiles'
 import { CommentEditor } from './CommentEditor'
+import { ReviewMenu } from './ReviewTray'
 import { Button } from './ui/Button'
 import s from './ArtifactViewer.module.css'
 
@@ -87,6 +88,7 @@ export function ArtifactViewer({ target, groups, mtimeMs, expanded, onOpen, onBa
             </optgroup>
           ))}
         </select>
+        {sessionId && <ReviewMenu sessionId={sessionId} />}
         <Button variant="ghost" size="sm" icon={expanded ? 'minimize' : 'maximize'} round
           aria-label={expanded ? 'Collapse viewer' : 'Expand viewer'} onClick={onToggleExpanded} />
         <Button variant="ghost" size="sm" icon="x" round aria-label="Close viewer" onClick={onClose} />
