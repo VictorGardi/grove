@@ -172,6 +172,7 @@
   text-align: center;
   cursor: pointer;
   opacity: 0;
+  user-select: none;
 }
 
 .line:hover .plus,

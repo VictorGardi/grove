@@ -31,3 +31,10 @@
   color: var(--danger);
   font-size: var(--fs-sm);
 }
+
+.hint {
+  margin-right: auto;
+  align-self: center;
+  color: var(--text-3);
+  font-size: var(--fs-sm);
+}

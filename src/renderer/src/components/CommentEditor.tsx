@@ -2,7 +2,7 @@ import { useState } from 'react'
 import { Button } from './ui/Button'
 import s from './CommentEditor.module.css'
 
-// A small editor for one comment: ⌘↩ saves, Esc cancels.
+// A small editor for one comment: ⇧↩ or ⌘↩ saves, Esc cancels.
 export function CommentEditor({ initial = '', error, onSave, onCancel }: {
   initial?: string
   error?: string | null
@@ -22,13 +22,14 @@ export function CommentEditor({ initial = '', error, onSave, onCancel }: {
             e.preventDefault()
             e.stopPropagation()
             onCancel()
-          } else if (e.key === 'Enter' && (e.metaKey || e.ctrlKey)) {
+          } else if (e.key === 'Enter' && (e.shiftKey || e.metaKey || e.ctrlKey)) {
             e.preventDefault()
             save()
           }
         }} />
       {error && <div className={s.error}>{error}</div>}
       <div className={s.actions}>
+        <span className={s.hint}>⇧↩ to save</span>
         <Button size="sm" variant="ghost" onClick={onCancel}>Cancel</Button>
         <Button size="sm" variant="primary" disabled={!text.trim()} onClick={save}>Save</Button>
       </div>
