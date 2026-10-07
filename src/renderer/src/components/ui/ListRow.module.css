@@ -67,11 +67,23 @@
 
 .corner {
   position: absolute;
-  top: -10px;
-  left: 8px;
+  top: -7px;
+  left: -7px;
   z-index: 1;
   display: flex;
   opacity: 0;
+}
+
+.row .corner > button,
+.row .actions > button {
+  width: 18px;
+  height: 18px;
+}
+
+.corner svg,
+.actions svg {
+  width: 11px;
+  height: 11px;
 }
 
 .corner > button {
@@ -94,11 +106,11 @@
 
 .actions {
   position: absolute;
-  top: -10px;
-  right: 8px;
+  top: -7px;
+  right: -7px;
   z-index: 1;
   display: flex;
-  gap: var(--sp-1);
+  gap: 2px;
   opacity: 0;
 }
 
