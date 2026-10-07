@@ -50,3 +50,14 @@ Deviations (small; none touch a one-way decision):
 - A Claude prompt starting with `-` is passed after `--`; not verified against the real `claude` parser (manual check below).
 - Stored `cwd` is the real path (`realpath`) of the folder; equal to the project's real path → `null`.
 - Three renderer test fixtures gained `cwd: null`.
+
+### Slice 2 manual verification (run by the agent, headless)
+
+Real core, tmux backend (own socket and temp state), CLI server and the built `grove` through the real launcher; real Claude sessions. All passed:
+
+- `grove new claude --cwd <repo>/docs --prompt … --label helper`: project registered (git top level), label pinned and shown as Claude's `--name`, cwd stored, the prompt ran and was answered.
+- `grove new terminal --link no-such-slug`: exit 1, `no-feature`, no session created.
+- `grove new terminal --prompt 'echo …'`: typed and run once the pane was stable.
+- Kill then resume: restarted in the stored folder, history intact.
+- A prompt starting with `-` works as `--prompt=-text`. `--prompt -text` (space) is rejected by `node:util` `parseArgs` ("argument is ambiguous") with its own hint. Left as is; `--prompt -` reads stdin.
+- Claude shows its workspace-trust dialog in a never-trusted folder; the prompt waits behind it. Claude's behaviour, not grove's.
