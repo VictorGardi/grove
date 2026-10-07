@@ -30,3 +30,55 @@
   flex-wrap: wrap;
   gap: var(--sp-2);
 }
+
+.card {
+  display: flex;
+  flex-direction: column;
+  gap: var(--sp-2);
+  padding: var(--sp-3);
+  background: var(--card-bg);
+  border: 1px solid var(--card-border);
+  border-radius: var(--r-card);
+  cursor: pointer;
+}
+
+.card:hover {
+  border-color: var(--text-3);
+}
+
+.waiting,
+.waiting:hover {
+  background: var(--card-waiting-bg);
+  border-color: var(--card-waiting-border);
+  box-shadow: 0 0 var(--card-glow) var(--card-waiting-border);
+}
+
+.state {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-1);
+  font-family: var(--font-mono);
+  font-size: var(--fs-xs);
+  color: var(--text-2);
+}
+
+.title {
+  font-size: var(--fs-md);
+  font-weight: var(--fw-bold);
+  color: var(--text);
+  overflow-wrap: anywhere;
+}
+
+.strip {
+  padding: var(--sp-1) var(--sp-2);
+  border: 1px solid var(--card-waiting-border);
+  border-radius: var(--r-card);
+  font-family: var(--font-mono);
+  font-size: var(--fs-sm);
+  color: var(--status-waiting);
+}
+
+.dots {
+  display: flex;
+  gap: var(--sp-1);
+}

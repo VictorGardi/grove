@@ -2,7 +2,7 @@
 feature: 2026-10-06-project-page
 phase: plan
 status: approved
-version: 2
+version: 3
 created: 2026-10-06
 updated: 2026-10-06
 approved_at:
@@ -242,5 +242,53 @@ Manual check (human): the switch flips the board; ⌘B on a project page
 flips it, elsewhere opens the board; sessions sit in the right columns and
 move as their status changes; waiting cards are amber; durations count up;
 clicking a card opens the session; a linked feature tag opens the feature.
+
+## Slice 3 — Rich feature cards
+
+Context (code at `1f16a41`): `Board.tsx` renders each feature as a `ListRow`
+(title, clickable parent `Tag`, status = card-state label with tone
+`idle`). `boardColumns` excludes group features, so group features never
+appear as cards; their progress already shows on their feature page.
+`shownStatus` / `statusView` give each session's status and tone;
+`StatusDot` renders a tone dot. Tokens: `--card-waiting-bg`,
+`--card-waiting-border`, `--card-glow`, `--status-*`.
+
+Behaviour defined here, from decision 4 (Xirp-style feature cards):
+- A card (`FeatureCard` in `Board.tsx`, own styles in `Board.module.css`)
+  shows, top to bottom: the card-state label with a status dot; the title;
+  the parent tag (clickable, as now); a row of linked-session status dots
+  (one `StatusDot` per linked session, `title` = "label · status"), omitted
+  with no linked sessions.
+- Card-state tone: `waiting` → waiting, `running` and `active` → working,
+  `needs-review` → finished, `ready` → running, `backlog` → idle,
+  `done` → gone.
+- When any linked session's shown status is `waiting`, the card uses the
+  waiting look (`--card-waiting-bg`, `--card-waiting-border`, glow) and
+  shows an "Input required" strip under the title.
+- Progress for group features: no change, since group features are not
+  board cards (decision 1 keeps the board to non-group features).
+- Linked sessions: same project, `session.feature === feature.slug`, by start
+  time (`linkedSessions` in `tree.ts`).
+
+Steps:
+
+- [x] Write a failing test in `src/renderer/src/tree.test.ts` for
+  `linkedSessions(feature, sessions)` (same project and slug only, by
+  `startedAt`).
+- [x] Implement `linkedSessions` in `src/renderer/src/tree.ts`.
+- [x] `src/renderer/src/featureLabels.ts`: export
+  `CARD_STATE_TONES: Record<CardState, StatusTone>` per the mapping above.
+- [x] `src/renderer/src/components/Board.tsx`: prop `sessions: Session[]`;
+  replace the `ListRow` with a local `FeatureCard` per the layout above.
+  `Board.module.css`: `.card`, `.card:hover`, `.waiting`, `.state`,
+  `.title`, `.strip`, `.dots` using existing tokens only.
+  `ProjectPage.tsx` passes the project's sessions to `Board`.
+- [x] Run `npm run typecheck`
+- [x] Run `npm test`
+- [x] Run `npm run build`
+
+Manual check (human): cards show state, title, parent tag and session dots;
+a feature with a waiting linked session turns amber with "Input required";
+clicking still opens the feature, and the parent tag the parent.
 
 ## Open questions

@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import type { Feature, Project, Session } from '@shared/types'
-import { boardColumns, linkedFeature, sessionColumns, sessionGroups, sessionOrder } from './tree'
+import { boardColumns, linkedFeature, linkedSessions, sessionColumns, sessionGroups, sessionOrder } from './tree'
 
 const project = (id: string): Project => ({ id, name: id, path: '/' + id })
 
@@ -95,5 +95,17 @@ describe('sessionColumns', () => {
       ['idle', 'Idle', ['i']],
       ['ended', 'Ended', ['g']],
     ])
+  })
+})
+
+describe('linkedSessions', () => {
+  it("lists the feature's sessions in its own project, by start time", () => {
+    const list = [
+      session('b', { feature: 'a', startedAt: '2026-10-05T12:00:00.000Z' }),
+      session('c', { feature: 'a', projectId: 'q' }),
+      session('d', { feature: 'x' }),
+      session('e', { feature: 'a' }),
+    ]
+    expect(linkedSessions(feature('a'), list).map((s) => s.id)).toEqual(['e', 'b'])
   })
 })

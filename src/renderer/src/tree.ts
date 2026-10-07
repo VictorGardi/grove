@@ -41,6 +41,11 @@ export function boardColumns(stages: { id: string; label: string }[], features: 
   }))
 }
 
+// A feature's linked sessions, in its own project, by start time.
+export function linkedSessions(feature: Feature, sessions: Session[]): Session[] {
+  return sessions.filter((s) => s.projectId === feature.projectId && s.feature === feature.slug).sort(byStart)
+}
+
 // The feature a session is linked to, in the session's own project; null when unlinked or missing.
 export function linkedFeature(session: Session, features: Feature[]): Feature | null {
   return features.find((f) => f.projectId === session.projectId && f.slug === session.feature) ?? null

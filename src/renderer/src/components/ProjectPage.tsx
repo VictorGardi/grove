@@ -17,11 +17,12 @@ export function ProjectPage({ project, projects, board, stages, features, sessio
   onFocusSession(id: string): void
 }) {
   const own = features.filter((f) => f.projectId === project.id)
+  const ownSessions = sessions.filter((x) => x.projectId === project.id)
   return (
     <div className={s.page}>
       {board === 'features'
-        ? <Board stages={stages} features={own} projects={projects} onOpen={onOpenFeature} />
-        : <SessionsBoard sessions={sessions.filter((x) => x.projectId === project.id)} features={own} projects={projects}
+        ? <Board stages={stages} features={own} sessions={ownSessions} projects={projects} onOpen={onOpenFeature} />
+        : <SessionsBoard sessions={ownSessions} features={own} projects={projects}
           statusSince={statusSince} onFocus={onFocusSession} onOpenFeature={onOpenFeature} />}
     </div>
   )

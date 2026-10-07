@@ -1,4 +1,5 @@
 import type { CardState, Feature } from '@shared/types'
+import type { StatusTone } from './components/ui/StatusDot'
 
 export const CARD_STATE_LABELS: Record<CardState, string> = {
   backlog: 'Backlog',
@@ -8,6 +9,17 @@ export const CARD_STATE_LABELS: Record<CardState, string> = {
   ready: 'Ready',
   active: 'Active',
   done: 'Done',
+}
+
+// The status-dot tone a feature card shows for its card state.
+export const CARD_STATE_TONES: Record<CardState, StatusTone> = {
+  backlog: 'idle',
+  running: 'working',
+  waiting: 'waiting',
+  'needs-review': 'finished',
+  ready: 'running',
+  active: 'working',
+  done: 'gone',
 }
 
 export const progressLabel = (f: Feature) => (f.progress ? `${f.progress.done} / ${f.progress.total} done` : '')

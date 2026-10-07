@@ -8,7 +8,7 @@ updated: 2026-10-06
 approved_at:
 based_on:
   - 01-questions.md@1
-  - 05-plan.md@2
+  - 05-plan.md@3
 forced:
   - "size M / UI-state shape change in small flow: every decision, including the ui-state shape, was made by the human in grilling and recorded in ADR 0018 and 00-ticket.md; small flow chosen deliberately (2026-10-06)"
 ---
@@ -19,7 +19,7 @@ forced:
 
 - [x] Slice 1 — Project page, three-way focus, Projects tab, breadcrumbs, ⌘B
 - [x] Slice 2 — Sessions board and the Features | Sessions switch
-- [ ] Slice 3 — Rich feature cards
+- [x] Slice 3 — Rich feature cards
 - [ ] Slice 4 — `CONTEXT.md`
 
 ## Slice 1
@@ -51,5 +51,15 @@ Deviations:
 - The Sessions board's feature tag uses the feature's group colour (its own
   slug for a group feature, else its parent's), like the sidebar card.
 - `tree.ts` now imports `shownStatus` from `sessionStatus.ts`.
+
+## Slice 3
+
+Deviations:
+
+- "Progress for group features" (decision 4) adds nothing to the board:
+  group features are not board cards. Their progress stays on their feature
+  page header.
+- The card-state tones (`CARD_STATE_TONES` in `featureLabels.ts`) reuse the
+  existing status palette; no new tokens.
 
 ## Open questions
