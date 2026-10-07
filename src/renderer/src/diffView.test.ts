@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest'
 import type { DiffFile, SessionDiff } from '@shared/types'
-import { allCollapsed, lineKey, rangeAnchor, selectionRange, toggleAll, toggleOne, visibleFiles } from './diffView'
+import type { DiffLine } from '@shared/types'
+import { filterFiles, gaps, lineKey, pickFile, rangeAnchor, selectionRange, splitRows, visibleFiles, wordMarks, wordSegs } from './diffView'
 
 const file = (path: string, status: DiffFile['status']): DiffFile =>
   ({ path, oldPath: null, status, binary: false, additions: 0, deletions: 0, hunks: [], truncated: false, rendered: null })
@@ -21,23 +22,6 @@ describe('lineKey', () => {
     expect(lineKey('a.ts', { kind: 'add', text: 'x', old: null, new: 4 })).toBe('a.ts:new:4')
     expect(lineKey('a.ts', { kind: 'context', text: 'x', old: 2, new: 3 })).toBe('a.ts:new:3')
     expect(lineKey('a.ts', { kind: 'del', text: 'x', old: 7, new: null })).toBe('a.ts:old:7')
-  })
-})
-
-describe('collapsing files', () => {
-  it('toggles one file', () => {
-    expect([...toggleOne(new Set(), 'a.ts')]).toEqual(['a.ts'])
-    expect([...toggleOne(new Set(['a.ts', 'b.ts']), 'a.ts')]).toEqual(['b.ts'])
-  })
-
-  it('collapses all unless every file already is, then expands all', () => {
-    const files = diff.files
-    expect(allCollapsed(new Set(), files)).toBe(false)
-    const all = toggleAll(new Set(['a.ts']), files)
-    expect([...all]).toEqual(['a.ts', 'new.ts', 'b.ts'])
-    expect(allCollapsed(all, files)).toBe(true)
-    expect([...toggleAll(all, files)]).toEqual([])
-    expect(allCollapsed(new Set(), [])).toBe(false)
   })
 })
 
@@ -84,5 +68,71 @@ describe('selectionRange', () => {
     expect(selectionRange(f, at(0), at(1, 'b.ts'))).toBeNull()
     expect(selectionRange(f, at(0), at(1, 'a.ts', 1))).toBeNull()
     expect(selectionRange(f, at(0), at(9))).toBeNull()
+  })
+})
+
+const ctx = (o: number, n: number, text = 'c'): DiffLine => ({ kind: 'context', text, old: o, new: n })
+const del = (o: number, text: string): DiffLine => ({ kind: 'del', text, old: o, new: null })
+const add = (n: number, text: string): DiffLine => ({ kind: 'add', text, old: null, new: n })
+
+describe('wordSegs', () => {
+  it('marks only the words that changed', () => {
+    const [a, b] = wordSegs('const x = foo(1)', 'const y = foo(2)')!
+    expect(a.filter((s) => s.changed).map((s) => s.text)).toEqual(['x', '1'])
+    expect(b.filter((s) => s.changed).map((s) => s.text)).toEqual(['y', '2'])
+    expect(a.map((s) => s.text).join('')).toBe('const x = foo(1)')
+    expect(b.map((s) => s.text).join('')).toBe('const y = foo(2)')
+  })
+  it('gives nothing for lines with no word in common, or very long ones', () => {
+    expect(wordSegs('alpha', 'beta')).toBeNull()
+    expect(wordSegs('a '.repeat(400), 'b '.repeat(400))).toBeNull()
+  })
+})
+
+describe('wordMarks', () => {
+  it('pairs the i-th removed line with the i-th added line of a block', () => {
+    const lines = [ctx(1, 1), del(2, 'one two'), del(3, 'gone'), add(2, 'one three'), ctx(4, 3)]
+    const m = wordMarks(lines)
+    expect([...m.keys()]).toEqual([1, 3])
+    expect(m.get(3)!.find((s) => s.changed)!.text).toBe('three')
+  })
+})
+
+describe('splitRows', () => {
+  it('puts context on both sides and a changed block side by side', () => {
+    const lines = [ctx(1, 1), del(2, 'a'), del(3, 'b'), add(2, 'A'), ctx(4, 3)]
+    const rows = splitRows(lines)
+    expect(rows.map((r) => [r.left?.li ?? null, r.right?.li ?? null])).toEqual([[0, 0], [1, 3], [2, null], [4, 4]])
+  })
+})
+
+describe('gaps', () => {
+  const hunk = (newStart: number, lines: DiffLine[]) => ({ header: '@@', oldStart: newStart, newStart, lines })
+  const f = (hunks: ReturnType<typeof hunk>[], status: DiffFile['status'] = 'modified'): DiffFile => ({ ...file('a.ts', status), hunks })
+
+  it('finds the lines before the first hunk and between hunks, with the old-number shift', () => {
+    const out = gaps(f([
+      hunk(11, [ctx(11, 11), del(12, 'x'), add(12, 'y'), add(13, 'z'), ctx(13, 14)]),
+      hunk(40, [ctx(39, 40), add(41, 'q'), ctx(40, 42)]),
+    ]))
+    expect(out).toEqual([{ index: 0, from: 1, to: 10, delta: 0 }, { index: 1, from: 15, to: 39, delta: -1 }])
+  })
+  it('has none when a hunk starts at line 1, for whole-file hunks, and for deleted files', () => {
+    expect(gaps(f([hunk(1, [add(1, 'x')])], 'added'))).toEqual([])
+    expect(gaps(f([hunk(1, [del(1, 'x')])], 'deleted'))).toEqual([])
+  })
+  it('numbers a removal-only hunk by the line before it', () => {
+    const out = gaps(f([hunk(3, [ctx(3, 3), del(4, 'x')]), hunk(20, [ctx(19, 20), del(20, 'y'), ctx(21, 21)])]))
+    expect(out[1]).toMatchObject({ from: 4, to: 19 })
+  })
+})
+
+describe('file list helpers', () => {
+  it('filters by path and picks the chosen file or the first', () => {
+    expect(filterFiles(diff.files, 'NEW').map((x) => x.path)).toEqual(['new.ts'])
+    expect(filterFiles(diff.files, ' ')).toBe(diff.files)
+    expect(pickFile(diff.files, 'b.ts')!.path).toBe('b.ts')
+    expect(pickFile(diff.files, 'gone.ts')!.path).toBe('a.ts')
+    expect(pickFile([], null)).toBeNull()
   })
 })

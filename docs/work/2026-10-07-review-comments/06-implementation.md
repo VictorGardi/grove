@@ -143,3 +143,16 @@ tray shows the new line; delete the line, it shows orphaned).
 - **Design:** one `comments.json` (ADR 0024); sends are a tmux bracketed paste plus Enter for every session kind (ADR 0023); anchors hold position plus text and are re-anchored in core (ADR 0025); markdown artifacts load a bundled `comments.js` that talks over checked `postMessage` (ADR 0026).
 - **Slices:** 1 general note and Send from the **Review (n)** tray; 2 comments on diff lines (gutter **+**, shift range, selection); 3 diff drafts re-anchor and orphan; 4 comments on markdown artifacts; 5 markdown drafts re-anchor and orphan; 6 Send resumes a gone agent session and waits for a stable pane.
 - **Verify:** `npm test`, `npm run typecheck`, `npm run build`. By hand in `npm run dev`: send a note to an OpenCode and a Claude session; comment on diff lines and on a removed line; insert lines above a comment and see it follow, delete the line and see it orphaned; select text in a `03-design.md`, comment, reload, send; kill a Claude pane and Send.
+
+## Follow-up (human request): the diff viewer looks like xirp's
+
+Not a slice; made on the branch after slices 1–6 were checked by hand (the manual boxes in `05-plan.md` were ticked on the human's word). Decisions the human made: panel stays unified, side-by-side plus a file list only when the viewer is expanded; one file at a time; unmodified lines read on click; own word diff.
+
+**Changed:** `DiffViewer` now shows one file at a time (prev/next with `i / N`; a file switcher in the narrow panel, a filterable file list when expanded). Expanded shows side-by-side rows (removed block left, added block right, hatched gap, drag selects one column); both layouts mark changed words (`wordSegs`/`wordMarks`) and show "N unmodified lines" bars between hunks. A click reads those lines through the new `diff:lines` IPC (`core.diffLines`: only files of the open diff, real path inside the repo root, 20 000 lines max). Pure helpers in `diffView.ts`: `wordSegs`, `wordMarks`, `splitRows`, `gaps`, `filterFiles`, `pickFile`. Removed: collapse all/expand all, per-file folding and the hunk header rows.
+
+**Tests:** `diffView.test.ts` (words, pairing, split rows, gaps, file list), `diff/core.test.ts` (`diffLines`). `npm test` 483 pass; typecheck and build clean. The layout itself was not looked at in a running app.
+
+**Deviations / limits:**
+- Expanded unmodified lines are not commentable (anchors come from the diff's own lines).
+- No bar after the last hunk: the file length is not known to the viewer.
+- The tray's Jump opens the diff on the first file, not on the commented one.

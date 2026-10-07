@@ -9,21 +9,6 @@ export function lineKey(path: string, l: DiffLine): string {
   return l.kind === 'del' ? `${path}:old:${l.old}` : `${path}:new:${l.new}`
 }
 
-// Collapsed files are kept by path. Toggle all: expand when every file is collapsed, else collapse all.
-export function allCollapsed(collapsed: ReadonlySet<string>, files: DiffFile[]): boolean {
-  return files.length > 0 && files.every((f) => collapsed.has(f.path))
-}
-
-export function toggleAll(collapsed: ReadonlySet<string>, files: DiffFile[]): Set<string> {
-  return allCollapsed(collapsed, files) ? new Set() : new Set(files.map((f) => f.path))
-}
-
-export function toggleOne(collapsed: ReadonlySet<string>, path: string): Set<string> {
-  const next = new Set(collapsed)
-  if (!next.delete(path)) next.add(path)
-  return next
-}
-
 export const sideOf = (l: DiffLine): 'old' | 'new' => (l.kind === 'del' ? 'old' : 'new')
 
 // The comment anchor for the lines of one hunk on one side, between two clicked line indices (either order).
@@ -52,3 +37,126 @@ export function selectionRange(file: DiffFile, a: LineRef, b: LineRef): DraftRan
   for (let i = lo; i <= hi; i++) if (sideOf(lines[i]) === side) idx.push(i)
   return { path: file.path, hunk: a.hunk, side, origin: idx[0], end: idx[idx.length - 1] }
 }
+
+// --- Word-level marks: inside a removed line and the added line that replaces it ---
+
+export interface Seg { text: string; changed: boolean }
+
+const MAX_TOKENS = 300 // longer lines are shown without word marks
+const tokens = (t: string) => t.match(/\w+|\s+|[^\w\s]/g) ?? []
+
+const merge = (segs: Seg[]): Seg[] => segs.reduce<Seg[]>((out, s) => {
+  const last = out[out.length - 1]
+  if (last && last.changed === s.changed) last.text += s.text
+  else out.push({ ...s })
+  return out
+}, [])
+
+// The words that differ between two lines, by longest common subsequence of tokens. null: too long,
+// or nothing in common (every word changed, so the whole line colour says it already).
+export function wordSegs(a: string, b: string): [Seg[], Seg[]] | null {
+  const x = tokens(a)
+  const y = tokens(b)
+  if (x.length > MAX_TOKENS || y.length > MAX_TOKENS) return null
+  const lcs: number[][] = Array.from({ length: x.length + 1 }, () => new Array<number>(y.length + 1).fill(0))
+  for (let i = x.length - 1; i >= 0; i--) {
+    for (let j = y.length - 1; j >= 0; j--) lcs[i][j] = x[i] === y[j] ? lcs[i + 1][j + 1] + 1 : Math.max(lcs[i + 1][j], lcs[i][j + 1])
+  }
+  const left: Seg[] = []
+  const right: Seg[] = []
+  let i = 0
+  let j = 0
+  while (i < x.length || j < y.length) {
+    if (i < x.length && j < y.length && x[i] === y[j]) {
+      left.push({ text: x[i], changed: false })
+      right.push({ text: y[j], changed: false })
+      i++
+      j++
+    } else if (j >= y.length || (i < x.length && lcs[i + 1][j] >= lcs[i][j + 1])) left.push({ text: x[i++], changed: true })
+    else right.push({ text: y[j++], changed: true })
+  }
+  if (!left.some((t) => !t.changed && t.text.trim())) return null
+  return [merge(left), merge(right)]
+}
+
+// Segments by line index for the lines of a hunk that sit in a changed block: the i-th removed line of a
+// block pairs with its i-th added line.
+export function wordMarks(lines: DiffLine[]): Map<number, Seg[]> {
+  const out = new Map<number, Seg[]>()
+  for (let i = 0; i < lines.length;) {
+    if (lines[i].kind === 'context') { i++; continue }
+    const dels: number[] = []
+    const adds: number[] = []
+    while (i < lines.length && lines[i].kind === 'del') dels.push(i++)
+    while (i < lines.length && lines[i].kind === 'add') adds.push(i++)
+    for (let k = 0; k < Math.min(dels.length, adds.length); k++) {
+      const pair = wordSegs(lines[dels[k]].text, lines[adds[k]].text)
+      if (!pair) continue
+      out.set(dels[k], pair[0])
+      out.set(adds[k], pair[1])
+    }
+  }
+  return out
+}
+
+// --- Side by side ---
+
+export interface Cell { li: number; line: DiffLine }
+export interface SplitRow { left: Cell | null; right: Cell | null } // a context line is in both
+
+// A hunk's lines as rows: context on both sides; a block of removed then added lines side by side.
+export function splitRows(lines: DiffLine[]): SplitRow[] {
+  const rows: SplitRow[] = []
+  for (let i = 0; i < lines.length;) {
+    if (lines[i].kind === 'context') {
+      rows.push({ left: { li: i, line: lines[i] }, right: { li: i, line: lines[i] } })
+      i++
+      continue
+    }
+    const dels: Cell[] = []
+    const adds: Cell[] = []
+    while (i < lines.length && lines[i].kind === 'del') { dels.push({ li: i, line: lines[i] }); i++ }
+    while (i < lines.length && lines[i].kind === 'add') { adds.push({ li: i, line: lines[i] }); i++ }
+    for (let k = 0; k < Math.max(dels.length, adds.length); k++) rows.push({ left: dels[k] ?? null, right: adds[k] ?? null })
+  }
+  return rows
+}
+
+// --- Unmodified lines between hunks ---
+
+// Lines the diff leaves out before hunk `index` (new-file numbers, inclusive); old = new + delta.
+export interface Gap { index: number; from: number; to: number; delta: number }
+
+export function gaps(file: DiffFile): Gap[] {
+  if (file.status === 'deleted' || file.binary || file.truncated) return []
+  const out: Gap[] = []
+  let prevEnd = 0
+  let delta = 0
+  file.hunks.forEach((h, index) => {
+    const news = h.lines.filter((l) => l.new !== null).map((l) => l.new!)
+    // a hunk with no new lines only removes: git numbers it by the line before
+    const first = news.length ? news[0] : h.newStart + 1
+    const last = news.length ? news[news.length - 1] : h.newStart
+    if (first - 1 >= prevEnd + 1) out.push({ index, from: prevEnd + 1, to: first - 1, delta })
+    prevEnd = last
+    delta += h.lines.filter((l) => l.kind === 'del').length - h.lines.filter((l) => l.kind === 'add').length
+  })
+  return out
+}
+
+// --- The file list ---
+
+export const STATUS_LETTER: Record<DiffFile['status'], string> = { modified: 'M', added: 'A', deleted: 'D', renamed: 'R', untracked: '?' }
+
+export function filterFiles(files: DiffFile[], query: string): DiffFile[] {
+  const q = query.trim().toLowerCase()
+  return q ? files.filter((f) => f.path.toLowerCase().includes(q)) : files
+}
+
+export const splitPath = (p: string): { dir: string; name: string } => {
+  const at = p.lastIndexOf('/')
+  return { dir: at < 0 ? '' : p.slice(0, at + 1), name: p.slice(at + 1) }
+}
+
+// The file to show: the chosen one if still listed, else the first.
+export const pickFile = (files: DiffFile[], path: string | null): DiffFile | null => files.find((f) => f.path === path) ?? files[0] ?? null

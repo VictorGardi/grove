@@ -65,6 +65,8 @@
   --diff-add-fg: #4ade80;
   --diff-del-bg: #2a1517;
   --diff-del-fg: #f87171;
+  --diff-add-word-bg: #1f5b36;
+  --diff-del-word-bg: #6b2328;
   --diff-hunk-bg: #16161a;
 
   /* type */

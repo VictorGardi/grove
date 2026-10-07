@@ -72,6 +72,7 @@ export interface Commands {
   commentAdd(a: { sessionId: string; anchor: CommentAnchor; body: string }): Promise<Result<Comment>>
   commentUpdate(a: { id: string; body: string }): Promise<Result<Comment>>
   commentDelete(a: { id: string }): Promise<Result<{ id: string }>>
+  diffLines(a: { sessionId: string; path: string; from: number; to: number }): Promise<Result<string[]>> // lines of a changed file in the open diff, 1-based inclusive
   reviewSend(a: { sessionId: string }): Promise<Result<{ sent: number }>> // the session's drafts as one message; none: 'empty'
   sendToSession(a: { id: string; text: string; submit?: boolean }): Promise<Result<{ id: string }>>
 }
@@ -90,6 +91,8 @@ export interface Core {
   filePath(projectId: string, rel: string): string | null // the ~file route (ADR 0022); null: refused
   dispose(): void
 }
+
+const MAX_EXPAND = 20_000 // lines one expansion may read
 
 export function createCore(opts: CoreOptions): Core {
   const { backend } = opts
@@ -646,6 +649,23 @@ export function createCore(opts: CoreOptions): Core {
       if (!slices.comments.some((c) => c.id === id)) return { ok: false, error: 'not-found' }
       set('comments', removeComment(slices.comments, id))
       return { ok: true, data: { id } }
+    },
+
+    // Unmodified lines the diff left out, read from the working tree. Only files of the open diff.
+    async diffLines({ sessionId, path: rel, from, to }) {
+      const d = slices.diff
+      const f = d && d.sessionId === sessionId && d.state === 'ok' && d.root ? d.files.find((x) => x.path === rel) : undefined
+      if (!d?.root || !f || f.status === 'deleted' || f.binary) return { ok: false, error: 'not-found' }
+      if (!Number.isInteger(from) || !Number.isInteger(to) || from < 1 || to < from || to - from >= MAX_EXPAND) return { ok: false, error: 'bad-range' }
+      try {
+        const root = await fs.promises.realpath(d.root)
+        const file = await fs.promises.realpath(path.join(root, rel))
+        if (!file.startsWith(root + path.sep)) return { ok: false, error: 'not-found' }
+        const text = await fs.promises.readFile(file, 'utf8')
+        return { ok: true, data: text.split('\n').slice(from - 1, to).map((l) => l.replace(/\r$/, '')) }
+      } catch {
+        return { ok: false, error: 'not-found' }
+      }
     },
 
     async reviewSend({ sessionId }) {

@@ -88,30 +88,6 @@
   font-family: var(--font-ui);
   background: var(--raised-bg);
   border-bottom: 1px solid var(--card-border);
-  cursor: pointer;
-}
-
-.fold {
-  display: flex;
-  align-items: center;
-  gap: var(--sp-2);
-  padding: 0;
-  border: 0;
-  background: none;
-  font: inherit;
-  color: inherit;
-  text-align: left;
-  cursor: pointer;
-}
-
-.fold:focus-visible {
-  outline: 2px solid var(--accent-strong);
-  outline-offset: 2px;
-}
-
-.fold > svg {
-  flex-shrink: 0;
-  color: var(--text-3);
 }
 
 .status {
@@ -133,13 +109,6 @@
 
 .open {
   margin-left: auto;
-}
-
-.hunkHeader {
-  padding: 0 var(--sp-3);
-  color: var(--text-3);
-  background: var(--diff-hunk-bg);
-  white-space: pre;
 }
 
 .line {
@@ -177,6 +146,7 @@
 }
 
 .line:hover .plus,
+.cell:hover .plus,
 .plus:focus-visible {
   opacity: 1;
 }
@@ -250,4 +220,222 @@
   font-size: var(--fs-sm);
   font-weight: var(--fw-semibold);
   cursor: pointer;
+}
+
+.pager {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-1);
+}
+
+.count {
+  font-size: var(--fs-sm);
+  color: var(--text-2);
+  white-space: nowrap;
+}
+
+.main {
+  flex: 1;
+  min-height: 0;
+  display: flex;
+}
+
+.content {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+}
+
+.switcher {
+  flex-shrink: 0;
+  margin: var(--sp-2) var(--sp-3);
+  height: 28px;
+  padding: 0 var(--sp-2);
+  font: inherit;
+  font-size: var(--fs-sm);
+  color: var(--text);
+  background: var(--panel-bg);
+  border: 1px solid var(--card-border);
+  border-radius: var(--r-md);
+}
+
+.list {
+  flex: 0 0 260px;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  border-right: 1px solid var(--card-border);
+  font-family: var(--font-ui);
+}
+
+.filter {
+  flex-shrink: 0;
+  display: flex;
+  align-items: center;
+  gap: var(--sp-2);
+  margin: var(--sp-2);
+  padding: 0 var(--sp-2);
+  height: 28px;
+  color: var(--text-3);
+  border: 1px solid var(--card-border);
+  border-radius: var(--r-md);
+}
+
+.filter input {
+  flex: 1;
+  min-width: 0;
+  border: 0;
+  outline: 0;
+  background: none;
+  color: var(--text);
+  font: inherit;
+  font-size: var(--fs-sm);
+}
+
+.files {
+  flex: 1;
+  min-height: 0;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  overflow: auto;
+}
+
+.fileItem {
+  width: 100%;
+  display: flex;
+  align-items: center;
+  gap: var(--sp-2);
+  padding: var(--sp-1) var(--sp-3);
+  border: 0;
+  background: none;
+  color: var(--text-2);
+  font: inherit;
+  font-size: var(--fs-sm);
+  text-align: left;
+  cursor: pointer;
+}
+
+.fileItem:hover {
+  background: var(--raised-bg);
+}
+
+.fileActive,
+.fileActive:hover {
+  background: var(--card-bg);
+  color: var(--text);
+}
+
+.fileName {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  direction: rtl; /* keep the file name visible when the path is long */
+  text-align: left;
+}
+
+.dir {
+  color: var(--text-3);
+}
+
+.letter {
+  flex-shrink: 0;
+  width: 1.5ch;
+  font-family: var(--font-mono);
+  font-weight: var(--fw-semibold);
+  color: var(--text-2);
+}
+
+.st_added,
+.st_untracked {
+  color: var(--diff-add-fg);
+}
+
+.st_deleted {
+  color: var(--diff-del-fg);
+}
+
+.st_modified,
+.st_renamed {
+  color: var(--status-waiting);
+}
+
+.none {
+  padding: var(--sp-2) var(--sp-3);
+  color: var(--text-3);
+  font-size: var(--fs-sm);
+}
+
+.gap {
+  width: 100%;
+  display: flex;
+  align-items: center;
+  gap: var(--sp-2);
+  padding: var(--sp-1) var(--sp-3);
+  border: 0;
+  border-block: 1px solid var(--card-border);
+  background: var(--diff-hunk-bg);
+  color: var(--text-3);
+  font: inherit;
+  font-family: var(--font-ui);
+  text-align: left;
+  cursor: pointer;
+}
+
+.gap:hover {
+  color: var(--text);
+}
+
+.srow {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+}
+
+.cell {
+  min-width: 0;
+  display: flex;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  color: var(--text-2);
+}
+
+.srow > .cell + .cell {
+  border-left: 1px solid var(--card-border);
+}
+
+.cell .text {
+  flex: 1;
+  min-width: 0;
+}
+
+.empty {
+  background: repeating-linear-gradient(135deg, transparent 0 4px, var(--card-border) 4px 5px);
+  opacity: .5;
+}
+
+.pad {
+  flex-shrink: 0;
+  width: 2.5ch;
+}
+
+.fileSplit {
+  width: 100%;
+}
+
+.body[data-sel="left"] [data-col="right"],
+.body[data-sel="right"] [data-col="left"] {
+  user-select: none;
+}
+
+.wordAdd {
+  background: var(--diff-add-word-bg);
+  color: inherit;
+}
+
+.wordDel {
+  background: var(--diff-del-word-bg);
+  color: inherit;
 }

@@ -40,7 +40,7 @@ Slice 1 creates only note drafts from the UI; the model accepts any anchor, and
 - [x] `src/renderer/src/App.tsx`: render `<ReviewMenu sessionId={shown.session.id} />` beside the Diff button in the session header.
 - [x] Run `npm test`
 - [x] Run `npm run typecheck`
-- [ ] Manual: `npm run dev`; send a note "reply with the word pong" to an OpenCode and a Claude session; both submit and answer; restart the app and the Sent list is still there.
+- [x] Manual: `npm run dev`; send a note "reply with the word pong" to an OpenCode and a Claude session; both submit and answer; restart the app and the Sent list is still there.
 
 ## Slice 2 — Comment on diff lines
 
@@ -52,7 +52,7 @@ Slice 1 creates only note drafts from the UI; the model accepts any anchor, and
 - [x] `ReviewTray.tsx`: list drafts by file (`groupForTray`) with quote, edit and delete; clicking a quote opens the session's diff.
 - [x] Run `npm test`
 - [x] Run `npm run typecheck`
-- [ ] Manual: comment on 2 lines and on a removed line, send, and check the agent receives all three with their line numbers.
+- [x] Manual: comment on 2 lines and on a removed line, send, and check the agent receives all three with their line numbers.
 
 ## Slice 3 — Diff drafts re-anchor and orphan
 
@@ -67,7 +67,7 @@ Rules (from the design, D3): only a session's drafts with a `diff` anchor whose 
 - [x] Add to `src/core/comments/format.test.ts`: "orphaned diff draft is marked".
 - [x] Run `npm test`
 - [x] Run `npm run typecheck`
-- [ ] Manual: comment on a line in `npm run dev`, insert lines above it in the file, and the draft in the tray shows the new line number; delete the line and it shows orphaned.
+- [x] Manual: comment on a line in `npm run dev`, insert lines above it in the file, and the draft in the tray shows the new line number; delete the line and it shows orphaned.
 
 ## Slice 4 — Comment on markdown artifacts
 
@@ -82,7 +82,7 @@ Protocol additions beyond the design's four messages (log as deviation): iframe 
 - [x] `ReviewTray.tsx`: artifact drafts grouped by file with quote; Jump opens the artifact.
 - [x] Run `npm test`
 - [x] Run `npm run typecheck`
-- [ ] Manual: select text across two paragraphs in a `03-design.md`, comment, reload the app (highlight is back), send; an HTML artifact shows no Comment popover.
+- [x] Manual: select text across two paragraphs in a `03-design.md`, comment, reload the app (highlight is back), send; an HTML artifact shows no Comment popover.
 
 ## Slice 5 — Markdown drafts re-anchor and orphan
 
@@ -95,7 +95,7 @@ Rules (design D3): `blockText(source)` returns one entry per leaf block (inline 
 - [x] Write core test `src/core/comments/reanchor.test.ts` "artifact drafts follow an edited file": a feature folder under the project (copy the fixture style of existing core tests), add an artifact draft, edit the file, expect `start` to move.
 - [x] Run `npm test`
 - [x] Run `npm run typecheck`
-- [ ] Manual: comment in a `03-design.md`, insert a paragraph above it on disk, and the tray line numbers follow; edit the quoted words and it shows orphaned.
+- [x] Manual: comment in a `03-design.md`, insert a paragraph above it on disk, and the tray line numbers follow; edit the quoted words and it shows orphaned.
 
 ## Slice 6 — Send to working and gone sessions
 
@@ -108,4 +108,4 @@ Rules (design "Send path"): `sendToSession` on a `gone` session: a terminal or a
 - [x] `src/renderer/src/components/ReviewTray.tsx`: show "Resuming the session… (Sending…)" text while sending a gone agent session; map errors `not-ready` → "The session did not become ready. Try again.", `gone` → "This session has ended and cannot be resumed.", `busy` → "A send is already running.".
 - [x] Run `npm test`
 - [x] Run `npm run typecheck`
-- [ ] Manual: `tmux -L grove kill-session` a Claude session's pane, then Send; it resumes and the agent answers.
+- [x] Manual: `tmux -L grove kill-session` a Claude session's pane, then Send; it resumes and the agent answers.

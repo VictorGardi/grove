@@ -20,6 +20,7 @@ export interface InvokeMap {
   'comment:update': [{ id: string; body: string }, Comment]
   'comment:delete': [{ id: string }, { id: string }]
   'review:send': [{ sessionId: string }, { sent: number }]
+  'diff:lines': [{ sessionId: string; path: string; from: number; to: number }, string[]]
   'ui:set': [Partial<UiState>, UiState]
   'viewer:reload': [void, void]
   'pty:attach': [{ sessionId: string; cols: number; rows: number }, { attachId: string }]

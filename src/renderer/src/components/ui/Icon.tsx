@@ -1,7 +1,7 @@
 import type { ReactNode } from 'react'
 
 export type IconName =
-  | 'plus' | 'folder' | 'folder-plus' | 'chevron-down' | 'chevron-right'
+  | 'plus' | 'folder' | 'folder-plus' | 'chevron-down' | 'chevron-up' | 'chevron-right'
   | 'terminal' | 'opencode' | 'claude' | 'branch' | 'search' | 'info' | 'trash'
   | 'minimize' | 'maximize' | 'x' | 'link' | 'logo' | 'resume' | 'chevrons-down-up' | 'chevrons-up-down'
 
@@ -15,6 +15,7 @@ const shapes: Record<IconName, ReactNode> = {
   folder: <path d={folder} />,
   'folder-plus': <><path d={folder} /><path d="M12 10v6" /><path d="M9 13h6" /></>,
   'chevron-down': <path d="m6 9 6 6 6-6" />,
+  'chevron-up': <path d="m18 15-6-6-6 6" />,
   'chevron-right': <path d="m9 18 6-6-6-6" />,
   terminal: <><path d="m4 17 6-6-6-6" /><path d="M12 19h8" /></>,
   opencode: <><circle cx="12" cy="12" r="9" /><path d="M10 9v6" /><path d="M14 9v6" /></>,
