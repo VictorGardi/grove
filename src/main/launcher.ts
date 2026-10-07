@@ -8,7 +8,7 @@ export function writeLauncher(o: { binDir: string; execPath: string; cliPath: st
   fs.mkdirSync(o.binDir, { recursive: true })
   fs.writeFileSync(
     file,
-    `#!/bin/sh\n: "\${GROVE_SOCKET:=${q(o.socketPath)}}"\nexport GROVE_SOCKET\nELECTRON_RUN_AS_NODE=1 exec ${q(o.execPath)} ${q(o.cliPath)} "$@"\n`
+    `#!/bin/sh\n[ -n "$GROVE_SOCKET" ] || GROVE_SOCKET=${q(o.socketPath)}\nexport GROVE_SOCKET\nELECTRON_RUN_AS_NODE=1 exec ${q(o.execPath)} ${q(o.cliPath)} "$@"\n`
   )
   fs.chmodSync(file, 0o755)
   return file

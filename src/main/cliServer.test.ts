@@ -1,3 +1,4 @@
+import { execFileSync } from 'node:child_process'
 import fs from 'node:fs'
 import os from 'node:os'
 import path from 'node:path'
@@ -52,12 +53,23 @@ describe('cli server', () => {
 })
 
 describe('writeLauncher', () => {
-  it('writes an executable script that runs the cli on Electron as Node', () => {
+  const setup = () => {
     const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'grove-'))
-    const file = writeLauncher({ binDir: path.join(dir, 'bin'), execPath: '/E x/electron', cliPath: '/app/out/main/cli.js', socketPath: '/s/grove.sock' })
+    const fakeExec = path.join(dir, 'E x') // a space, as in "Application Support"
+    fs.writeFileSync(fakeExec, '#!/bin/sh\necho "$GROVE_SOCKET|$ELECTRON_RUN_AS_NODE|$*"\n', { mode: 0o755 })
+    const file = writeLauncher({ binDir: path.join(dir, 'bin'), execPath: fakeExec, cliPath: '/app/out/main/cli.js', socketPath: '/s p/grove.sock' })
+    return file
+  }
+
+  it('is executable and runs the cli on Electron as Node, with the socket defaulted unquoted', () => {
+    const file = setup()
     expect(fs.statSync(file).mode & 0o777).toBe(0o755)
-    const text = fs.readFileSync(file, 'utf8')
-    expect(text).toContain(`ELECTRON_RUN_AS_NODE=1 exec '/E x/electron' '/app/out/main/cli.js' "$@"`)
-    expect(text).toContain(`GROVE_SOCKET:='/s/grove.sock'`)
+    const out = execFileSync(file, ['ls', '--all'], { env: { PATH: '/usr/bin:/bin' } }).toString().trim()
+    expect(out).toBe('/s p/grove.sock|1|/app/out/main/cli.js ls --all')
+  })
+
+  it('keeps a GROVE_SOCKET that is already set', () => {
+    const out = execFileSync(setup(), [], { env: { PATH: '/usr/bin:/bin', GROVE_SOCKET: '/other.sock' } }).toString().trim()
+    expect(out.startsWith('/other.sock|')).toBe(true)
   })
 })
