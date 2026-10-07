@@ -1,7 +1,9 @@
 import { useCallback, useEffect, useState } from 'react'
 import type { Feature, Session, ViewerTarget } from '@shared/types'
+import type { MenuAction } from '@shared/ipc'
 import { SIDEBAR_WIDTH } from '@shared/types'
 import { ArtifactViewer } from './components/ArtifactViewer'
+import { CommandPalette } from './components/CommandPalette'
 import { ConfirmDialog } from './components/ConfirmDialog'
 import { DiffViewer } from './components/DiffViewer'
 import { FeaturePage } from './components/FeaturePage'
@@ -15,6 +17,7 @@ import { ContentHeader } from './components/shell/ContentHeader'
 import { TopBar } from './components/shell/TopBar'
 import { Banner } from './components/ui/Banner'
 import { Button } from './components/ui/Button'
+import { paletteItems } from './paletteItems'
 import { boardKey, childrenOf, content, crumbs, currentProjectId } from './navigation'
 import { longestWaiting, serviceBanners, shownStatus } from './sessionStatus'
 import { useSlices } from './stores/slices'
@@ -23,10 +26,11 @@ import { viewableFiles } from './viewerFiles'
 import s from './App.module.css'
 
 export default function App() {
-  const { projects, sessions, ui, features, opencode, diff, errors, waitingSince, statusSince, hydrate, setFocused, focusFeature, go, setBoard,
+  const { projects, sessions, ui, features, opencode, diff, errors, waitingSince, statusSince, hydrate, setFocused, focusFeature, openProject, go, setBoard,
     openArtifact, openDiff, openRendered, closeViewer, setViewerWidth, toggleViewerExpanded, reloadViewer } = useSlices()
   const [newFor, setNewFor] = useState<{ projectId?: string } | null>(null)
   const [confirmKill, setConfirmKill] = useState<Session | null>(null)
+  const [paletteOpen, setPaletteOpen] = useState(false)
 
   useEffect(() => {
     void hydrate()
@@ -38,33 +42,35 @@ export default function App() {
     else openDiff(id)
   }, [openDiff, closeViewer])
 
-  useEffect(() => {
-    return window.api.on('menu:action', (a) => {
-      // read the latest state, not this effect's closure
-      const { projects, sessions, ui, features } = useSlices.getState()
-      if (a.type === 'newSession') setNewFor({ projectId: currentProjectId(content(ui, projects, sessions, features.items)) ?? undefined })
-      else if (a.type === 'newTerminal') {
-        const projectId = currentProjectId(content(ui, projects, sessions, features.items))
-        if (projectId) {
-          void window.api.invoke('session:create', { projectId, kind: 'terminal', cols: 120, rows: 40 }).then((res) => {
-            if (res.ok) setFocused(res.data.id)
-          })
-        }
+  // the menu and the palette both run actions through here
+  const runAction = useCallback((a: MenuAction) => {
+    // read the latest state, not this callback's closure
+    const { projects, sessions, ui, features } = useSlices.getState()
+    if (a.type === 'palette') setPaletteOpen(true)
+    else if (a.type === 'newSession') setNewFor({ projectId: currentProjectId(content(ui, projects, sessions, features.items)) ?? undefined })
+    else if (a.type === 'newTerminal') {
+      const projectId = currentProjectId(content(ui, projects, sessions, features.items))
+      if (projectId) {
+        void window.api.invoke('session:create', { projectId, kind: 'terminal', cols: 120, rows: 40 }).then((res) => {
+          if (res.ok) setFocused(res.data.id)
+        })
       }
-      else if (a.type === 'closeSession') {
-        const focused = sessions.find((x) => x.id === ui.focusedSessionId)
-        if (focused?.lastStatus === 'running') setConfirmKill(focused)
-      } else if (a.type === 'focusIndex') {
-        const target = sessionOrder(sessionGroups(projects, sessions, ui))[a.n - 1]
-        if (target) setFocused(target.id)
-      } else if (a.type === 'projectBoard') {
-        const to = boardKey(ui, projects, sessions, features.items)
-        if (to) go(to)
-      } else if (a.type === 'sessionDiff') {
-        if (ui.focusedSessionId) toggleDiff(ui.focusedSessionId, ui.viewer)
-      }
-    })
+    }
+    else if (a.type === 'closeSession') {
+      const focused = sessions.find((x) => x.id === ui.focusedSessionId)
+      if (focused?.lastStatus === 'running') setConfirmKill(focused)
+    } else if (a.type === 'focusIndex') {
+      const target = sessionOrder(sessionGroups(projects, sessions, ui))[a.n - 1]
+      if (target) setFocused(target.id)
+    } else if (a.type === 'projectBoard') {
+      const to = boardKey(ui, projects, sessions, features.items)
+      if (to) go(to)
+    } else if (a.type === 'sessionDiff') {
+      if (ui.focusedSessionId) toggleDiff(ui.focusedSessionId, ui.viewer)
+    }
   }, [setFocused, go, toggleDiff])
+
+  useEffect(() => window.api.on('menu:action', runAction), [runAction])
 
   const openNew = (projectId?: string) => setNewFor({ projectId })
   const shown = content(ui, projects, sessions, features.items)
@@ -142,6 +148,10 @@ export default function App() {
         viewerExpanded={ui.viewerExpanded}
         onViewerWidth={setViewerWidth}
       />
+      {paletteOpen && (
+        <CommandPalette onClose={() => setPaletteOpen(false)}
+          items={paletteItems({ projects, sessions, features: features.items }, { focusSession: setFocused, focusFeature, openProject })} />
+      )}
       {newFor && <NewSessionModal initialProjectId={newFor.projectId} onClose={() => setNewFor(null)} />}
       {confirmKill && (
         <ConfirmDialog

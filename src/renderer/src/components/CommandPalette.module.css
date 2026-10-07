@@ -1,0 +1,86 @@
+.input {
+  width: 100%;
+  height: 36px;
+  padding: 0 var(--sp-3);
+  background: var(--raised-bg);
+  border: 1px solid var(--card-border);
+  border-radius: var(--r-md);
+  color: var(--text);
+  font: inherit;
+  font-size: var(--fs-lg);
+  outline: none;
+}
+
+.input:focus {
+  border-color: var(--card-selected-border);
+}
+
+.list {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  max-height: 360px;
+  overflow-y: auto;
+}
+
+.row {
+  display: flex;
+  align-items: baseline;
+  gap: var(--sp-3);
+  padding: var(--sp-2) var(--sp-3);
+  border-radius: var(--r-md);
+  cursor: default;
+}
+
+.on {
+  background: var(--card-selected-bg);
+}
+
+.kind {
+  flex: none;
+  width: 56px;
+  color: var(--text-3);
+  font-size: var(--fs-xs);
+  text-transform: uppercase;
+}
+
+.label {
+  flex: none;
+  max-width: 55%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: var(--fs-md);
+}
+
+.waiting {
+  color: var(--status-waiting);
+}
+
+.label mark {
+  background: none;
+  color: var(--accent);
+  font-weight: var(--fw-bold);
+}
+
+.detail {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: var(--text-2);
+  font-size: var(--fs-sm);
+}
+
+.hint {
+  flex: none;
+  color: var(--text-3);
+  font-size: var(--fs-sm);
+}
+
+.empty {
+  padding: var(--sp-3);
+  color: var(--text-2);
+  font-size: var(--fs-md);
+}

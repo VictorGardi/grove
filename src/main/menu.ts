@@ -48,7 +48,7 @@ export function buildMenu(send: (a: MenuAction) => void, installCli: () => void)
   const view: MenuItemConstructorOptions[] = [
     { label: 'Project Board', accelerator: 'CmdOrCtrl+B', click: () => send({ type: 'projectBoard' }) },
     { label: 'Session Diff', accelerator: 'CmdOrCtrl+Alt+B', click: () => send({ type: 'sessionDiff' }) },
-    { label: 'Command Palette', accelerator: 'CmdOrCtrl+K', click: () => {} }, // child 7
+    { label: 'Command Palette', accelerator: 'CmdOrCtrl+K', click: () => send({ type: 'palette' }) },
   ]
   if (!app.isPackaged) view.push({ type: 'separator' }, { role: 'toggleDevTools' }, { role: 'reload' })
   template.push({ label: 'View', submenu: view })

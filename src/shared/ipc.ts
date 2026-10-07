@@ -4,7 +4,7 @@ export type Result<T> = { ok: true; data: T } | { ok: false; error: string }
 export type MenuAction =
   | { type: 'newSession' } | { type: 'closeSession' } | { type: 'focusIndex'; n: number } | { type: 'projectBoard' }
   | { type: 'sessionDiff' }
-  | { type: 'newTerminal' }
+  | { type: 'newTerminal' } | { type: 'palette' }
 // invoke channels: name → [args, result data]
 export interface InvokeMap {
   'state:get': [void, Slices]
