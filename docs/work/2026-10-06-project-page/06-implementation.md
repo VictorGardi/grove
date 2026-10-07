@@ -8,7 +8,7 @@ updated: 2026-10-06
 approved_at:
 based_on:
   - 01-questions.md@1
-  - 05-plan.md@3
+  - 05-plan.md@4
 forced:
   - "size M / UI-state shape change in small flow: every decision, including the ui-state shape, was made by the human in grilling and recorded in ADR 0018 and 00-ticket.md; small flow chosen deliberately (2026-10-06)"
 ---
@@ -20,7 +20,7 @@ forced:
 - [x] Slice 1 — Project page, three-way focus, Projects tab, breadcrumbs, ⌘B
 - [x] Slice 2 — Sessions board and the Features | Sessions switch
 - [x] Slice 3 — Rich feature cards
-- [ ] Slice 4 — `CONTEXT.md`
+- [x] Slice 4 — `CONTEXT.md`
 
 ## Slice 1
 
@@ -61,5 +61,52 @@ Deviations:
   page header.
 - The card-state tones (`CARD_STATE_TONES` in `featureLabels.ts`) reuse the
   existing status palette; no new tokens.
+
+## Slice 4
+
+Deviations:
+
+- `CONTEXT.md` is edited but **not committed**: its committed Terms list is
+  empty and every entry is uncommitted human work (including other features'
+  entries), so committing only this slice's lines isn't possible. It goes in
+  with the human's next commit of that file.
+
+## Final checks (2026-10-07)
+
+`npm run typecheck`, `npm test` (30 files, 290 tests) and `npm run build`
+pass. No lint command is configured. Tests run outside the sandbox (the
+OpenCode client tests bind a local port).
+
+## PR description
+
+**Project page replaces the global Board mode** (ADR 0018)
+
+The board was a global List/Board mode, so sidebar clicks updated focus
+behind it and showed nothing, opening a card left no way back, and there was
+no shortcut. Now the board is a place:
+
+- **Project page**: the content area for one project, with a Features |
+  Sessions switch. The features board has one column per workflow stage with
+  Xirp-style cards (card state, title, parent tag, linked-session dots, amber
+  "Input required" when a linked session waits). The sessions board has
+  Waiting | Working | Idle | Ended columns with time in status.
+- **Three exclusive focuses** in UI state (session, feature, project;
+  `view` removed). With nothing focused, the first project's page shows;
+  removing the focused session lands on its project's page. Old state files
+  load (`view` dropped, the old features tab reads as projects).
+- **Sidebar**: Sessions | Projects. Projects rows show live and waiting
+  counts and open the project page. The Features tree is gone.
+- **Parent/child**: a card's parent tag opens the parent's page; a feature
+  page links to its parent and lists its children. Generic group kinds only.
+- **Breadcrumb up-links** (project › parent › feature; project › linked
+  feature › session) instead of a back button.
+- **⌘B** (View › Project Board) opens the context project's page and, on it,
+  switches the board.
+
+Slices: 1 project page, focus model, Projects tab, breadcrumbs, ⌘B;
+2 sessions board and switch; 3 rich feature cards; 4 `CONTEXT.md`.
+
+How to verify: `npm test`, `npm run typecheck`, `npm run build`; then
+`npm run dev` and follow the manual checks under each slice in `05-plan.md`.
 
 ## Open questions

@@ -2,7 +2,7 @@
 feature: 2026-10-06-project-page
 phase: plan
 status: approved
-version: 3
+version: 4
 created: 2026-10-06
 updated: 2026-10-06
 approved_at:
@@ -290,5 +290,20 @@ Steps:
 Manual check (human): cards show state, title, parent tag and session dots;
 a feature with a waiting linked session turns amber with "Input required";
 clicking still opens the feature, and the parent tag the parent.
+
+## Slice 4 — `CONTEXT.md`
+
+Context (code at `c31e824`): `CONTEXT.md` still describes the Board as a
+content-area view of `kind: feature` cards, group features as collapsible
+sidebar headers, and project folders as "the sidebar". The file's whole Terms
+list is uncommitted human work, so this slice edits it in place and leaves it
+uncommitted.
+
+- [x] `CONTEXT.md`: update **Project**, **Group feature**, **Project folder**,
+  **Feature page**, **Board**; add **Projects tab**, **Focus**,
+  **Project page**, **Breadcrumb** (ADR 0018).
+- [x] Run `npm run typecheck`
+- [x] Run `npm test`
+- [x] Run `npm run build`
 
 ## Open questions
