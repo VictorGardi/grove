@@ -61,3 +61,23 @@ recompute.
 
 **Manual check:** with a Claude session's diff open, let it edit a file: the
 diff updates within ~5 s and the scroll position stays.
+
+## Slice 3 — Untracked files and the toggle
+
+**Changed:** `computeDiff` lists `git ls-files --others --exclude-standard -z`
+and reads the first 200 with `fs` (over 1 MB → listed, truncated; a NUL in the
+first 8000 bytes → binary), appended after tracked files as `untracked`. The
+key adds the names and each file's size and mtime. `untrackedFile()` in
+`parse.ts`. New `renderer/diffView.ts` (`visibleFiles`, `lineKey`); `DiffViewer`
+gets an "Untracked" checkbox (default on, not persisted), keys lines by
+`lineKey`, and shows "Binary file" / "Too large to show".
+
+**Tests:** `compute.test.ts` (untracked text, binary, a gitignored file absent;
+key changes when an untracked file changes), `parse.test.ts` (`untrackedFile`),
+`diffView.test.ts`.
+
+**Deviations:** an untracked symlink is read with `lstat` and listed as binary
+(no lines) rather than followed, so a link can't pull in a file outside the repo.
+
+**Manual check:** create a new file in the session's repo: it shows as
+Untracked with all lines added; unticking "Untracked" hides it.

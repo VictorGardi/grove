@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { parseUnifiedDiff, unquote } from './parse'
+import { parseUnifiedDiff, unquote, untrackedFile } from './parse'
 
 const lines = (...l: string[]) => l.join('\n') + '\n'
 
@@ -136,5 +136,14 @@ describe('unquote', () => {
     expect(unquote('"\\360\\237\\214\\263"')).toBe('🌳')
     expect(unquote('"🌳 x"')).toBe('🌳 x')
     expect(unquote('plain')).toBe('plain')
+  })
+})
+
+describe('untrackedFile', () => {
+  it('numbers every line, with or without a final newline, and gives an empty file no hunk', () => {
+    expect(untrackedFile('a', 'x\ny', false).hunks[0].lines.map((l) => [l.text, l.new])).toEqual([['x', 1], ['y', 2]])
+    expect(untrackedFile('a', 'x\n', false).additions).toBe(1)
+    expect(untrackedFile('a', '', false).hunks).toEqual([])
+    expect(untrackedFile('a', null, true)).toMatchObject({ status: 'untracked', truncated: true, hunks: [], additions: 0 })
   })
 })

@@ -44,4 +44,30 @@ describe('computeDiff', () => {
     expect(diff.state).toBe('ok')
     expect(diff.files).toEqual([])
   })
+
+  it('lists untracked text files as all added, binaries without lines, and skips ignored files', async () => {
+    const r = gitRepo()
+    r.write('.gitignore', 'ignored.txt\n')
+    r.commit()
+    r.write('new.md', 'a\nb\n')
+    r.write('img.bin', Buffer.from([1, 0, 2]))
+    r.write('ignored.txt', 'x\n')
+    const { diff } = await compute(r.dir)
+    expect(diff.files.map((f) => [f.path, f.status, f.binary])).toEqual([['img.bin', 'untracked', true], ['new.md', 'untracked', false]])
+    expect(diff.files[0].hunks).toEqual([])
+    expect(diff.files[1]).toMatchObject({ additions: 2, deletions: 0 })
+    expect(diff.files[1].hunks).toEqual([{ header: '@@ -0,0 +1,2 @@', oldStart: 0, newStart: 1, lines: [
+      { kind: 'add', text: 'a', old: null, new: 1 },
+      { kind: 'add', text: 'b', old: null, new: 2 },
+    ] }])
+  })
+
+  it('changes the key when an untracked file changes', async () => {
+    const r = gitRepo()
+    r.commit()
+    r.write('new.md', 'a\n')
+    const before = await compute(r.dir)
+    r.write('new.md', 'a\nbb\n')
+    expect((await compute(r.dir)).key).not.toBe(before.key)
+  })
 })

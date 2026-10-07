@@ -244,27 +244,27 @@ conflicts with the code, follow the design's intent, note the deviation in
 
 ## Slice 3 — Untracked files and the toggle
 
-- [ ] `compute.ts`: after the diff,
+- [x] `compute.ts`: after the diff,
   `names = (await git(['ls-files', '--others', '--exclude-standard', '-z'], root)).split('\0').filter(Boolean)`.
   For the first 200: `stat` (real path under root); size > 1 MB →
   `untrackedFile(name, null, true)`; read buffer; NUL byte in the first
   8000 bytes → binary; else `untrackedFile(name, text, false)`. The rest:
   `untrackedFile(name, null, true)`. Append after tracked files. Key =
   sha1 of `raw + '\0' + names.join('\0') + sizes and mtimeMs of the read files`.
-- [ ] `parse.ts`: `export function untrackedFile(path: string, text: string | null, truncated: boolean, binary = false): DiffFile`
+- [x] `parse.ts`: `export function untrackedFile(path: string, text: string | null, truncated: boolean, binary = false): DiffFile`
   — `status: 'untracked'`, one hunk `@@ -0,0 +1,N @@` of `add` lines
   numbered 1..N (drop the final empty element after a trailing `\n`),
   `additions: N`.
-- [ ] `src/renderer/src/diffView.ts` (NEW): `visibleFiles(d, showUntracked)`,
+- [x] `src/renderer/src/diffView.ts` (NEW): `visibleFiles(d, showUntracked)`,
   `lineKey(path, l)` = `` `${path}:${l.kind === 'del' ? 'old' : 'new'}:${l.kind === 'del' ? l.old : l.new}` ``
   (the design's line identity). Use `lineKey` in `DiffViewer`.
-- [ ] `DiffViewer`: header checkbox/toggle "Untracked" (local `useState(true)`),
+- [x] `DiffViewer`: header checkbox/toggle "Untracked" (local `useState(true)`),
   files from `visibleFiles`; binary files show "Binary file"; truncated
   files show "Too large to show".
-- [ ] Tests: `compute.test.ts` (untracked text, untracked binary, a
+- [x] Tests: `compute.test.ts` (untracked text, untracked binary, a
   gitignored file absent); `diffView.test.ts` (filter, `lineKey` for each
   kind).
-- [ ] Commit slice 3.
+- [x] Commit slice 3.
 
 ## Slice 4 — Edge states
 

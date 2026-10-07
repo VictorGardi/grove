@@ -132,3 +132,16 @@ export function unquote(s: string): string {
   }
   return Buffer.from(bytes).toString('utf8')
 }
+
+// An untracked file as all-added lines. text null: listed without lines (binary, or too large).
+export function untrackedFile(path: string, text: string | null, truncated: boolean, binary = false): DiffFile {
+  const lines = text === null ? [] : text.split('\n')
+  if (lines.at(-1) === '') lines.pop()
+  const hunks: DiffHunk[] = lines.length === 0 ? [] : [{
+    header: `@@ -0,0 +1,${lines.length} @@`,
+    oldStart: 0,
+    newStart: 1,
+    lines: lines.map((l, i) => ({ kind: 'add', text: l, old: null, new: i + 1 })),
+  }]
+  return { path, oldPath: null, status: 'untracked', binary, additions: lines.length, deletions: 0, hunks, truncated, rendered: null }
+}
