@@ -49,3 +49,35 @@ Session `cwd` does not exist until slice 2, so `CliSession.cwd` is the project p
 - [x] Run `npm run typecheck`
 - [x] Run `npm run build` and check `out/main/cli.js` exists
 - Manual (human, not a checkbox so resume doesn't reopen the slice): in `npm run dev`, open a terminal session and run `grove ls`; quit the app and run `grove ls` (exit 3); launch the app twice (the first window focuses)
+
+## Slice 2 — `grove new` in any folder, with prompt, label and link
+
+Notes for a cold reader: `grove new <opencode|claude|terminal> [--cwd DIR] [--prompt TEXT|-]
+[--label L] [--link SLUG] [--json]` calls `sessions.create` (params `{kind, cwd, prompt?, label?, feature?}`),
+prints the new session's full id (`--json`: the `CliSession`). `--cwd` defaults to the
+caller's cwd, made absolute in the CLI. Session size is 120×40. `--wait`/`--timeout` come in slice 4.
+Core error codes → CLI messages (exit 1, `grove: <code>: <message>`): `not-found` (bad cwd: "not a folder"),
+`no-feature` ("no such feature in that project"), `no-source`, plus `ambiguous`/`not-found` for refs.
+Project choice: the registered project with the longest path containing the folder; none → register the
+folder's git top level, or the folder itself outside git. `Session.cwd` is `null` when the folder is the
+project path, else the folder. State goes to v4 (`cwd: null` on every existing session). `--link` is
+checked against discovered features of the chosen project before anything is created (a project that
+would be new has no features, so linking fails). Prompt: OpenCode `--prompt <text>`, Claude
+`--name <label>` (only when `--label` given) then the text as the positional argument (after `--` if it
+starts with `-`); a terminal session gets it through `sendToSession` once the pane is stable (two equal
+captures 300 ms apart, up to 10 s), in the background. Start argv gets these opts; resume never does.
+
+- [x] Write failing test `src/core/cliOps.test.ts`: `resolveSessionRef` (full id; unique prefix ≥ 4; prefix < 4 not matched; ambiguous prefix → `ambiguous`; exact label; two same labels → `ambiguous`; none → `not-found`; id beats label); `resolveProject` (longest containing project wins; a subfolder maps to its project; none → git top level registered with `added: true`; none and not in git → the folder; a sibling path with a shared prefix is not "containing"); `paneStable` (resolves when two captures match; gives up after the timeout) with an injected sleep
+- [x] `src/core/cliOps.ts`: `resolveSessionRef(sessions, ref): Result<Session>`, `resolveProject(projects, cwd, gitTop): Promise<{ project: Project; added: boolean }>`, `paneStable(capture, o): Promise<boolean>`
+- [x] Write failing test `src/core/store/stateStore.test.ts`: v3 → v4 sets `cwd: null`; update existing version expectations from 3 to 4
+- [x] `src/shared/types.ts`: `Session.cwd: string | null`, `StateFile.schemaVersion: 4`; `src/core/store/stateStore.ts`: `v3ToV4`, `readVersioned(…, 4, …, { 1, 2, 3 })`; `src/core/core.ts` saves `schemaVersion: 4`; `src/core/sessions.ts` `newSession` sets `cwd` (option `cwd?`, default null) and `label` option pins the label
+- [x] Write failing tests in `src/core/sessions.test.ts`: create argv carries prompt and name per kind (opencode `--prompt`, claude `--name` + positional, claude with a `-`-leading prompt uses `--`); create with `cwd` of a subfolder stores `cwd` and starts the backend there; `cwd` equal to the project path stores null; unknown folder → `not-found`, nothing created; new folder registers a project; `feature` unknown → `no-feature`, nothing created; known feature → linked and pinned; `label` pins; terminal prompt is pasted once the pane is stable; resume starts in the stored cwd
+- [x] `src/core/agents/types.ts`: `argv(id, mode, opts?: { prompt?: string; name?: string })`; `src/core/opencode/client.ts`, `src/core/claude/hooks.ts` (`claudeArgv` gains `opts`), `src/core/claude/source.ts`, `src/core/testing/fakeAgentSource.ts` pass them through
+- [x] `src/core/core.ts`: `sessionCreate` accepts `{ kind, projectId?, cwd?, prompt?, label?, feature?, cols, rows }` (exactly one of `projectId`/`cwd`; the UI passes `projectId` as today), implements the rules in the notes above; `sessionResume` starts in `session.cwd ?? project.path`
+- [x] `src/shared/cli.ts`: `sessions.create` in `CliMethods`; `src/main/cliServer.ts`: `sessions.create` (validates params, calls `sessionCreate` with 120×40, maps errors to `{code, message}`), `cwd` in `CliSession` is `session.cwd ?? project.path`
+- [x] Write failing tests `src/cli/args.test.ts` (`new` with flags, `--prompt -`, missing/unknown kind → `UsageError`) and `src/main/cliServer.test.ts` (`sessions.create` creates a session in a subfolder; unknown `feature` replies `no-feature` and creates nothing)
+- [x] `src/cli/args.ts`: `Command` gains `{ cmd: 'new'; kind; cwd?; prompt?; label?; link?; json }`; `src/cli/output.ts`: `formatNew`; `src/cli/index.ts`: send `sessions.create` (stdin for `--prompt -`, cwd default `process.cwd()`)
+- [x] Run `npm test`
+- [x] Run `npm run typecheck`
+- [x] Run `npm run build`
+- Manual (human, not a checkbox): `grove new claude --cwd ~/git/other --prompt "say hi" --label helper`; the session shows in the sidebar under that folder's project (registered if new) and the prompt runs; `grove new terminal --link no-such-slug` exits 1 and creates nothing; kill, resume from the sidebar, and check it restarts in the same folder.

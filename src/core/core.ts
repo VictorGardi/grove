@@ -19,6 +19,7 @@ import { slugFor } from './autolink'
 import { formatReview } from './comments/format'
 import { addComment, draftsOf, dropSession, markSent, removeComment, updateComment } from './comments/model'
 import { loadComments, saveComments } from './comments/store'
+import { isDirectory, paneStable, realOrSelf, resolveProject } from './cliOps'
 import { sendToSession } from './send'
 import { hasLiveSessions, newProject } from './projects'
 import { readBranch } from './git'
@@ -62,7 +63,9 @@ type SliceListener = <K extends keyof Slices>(k: K, v: Slices[K]) => void
 export interface Commands {
   projectAdd(a: { path: string }): Promise<Result<Project>>
   projectRemove(a: { id: string }): Promise<Result<{ id: string }>>
-  sessionCreate(a: { projectId: string; kind: SessionKind; cols: number; rows: number }): Promise<Result<Session>>
+  sessionCreate(a: {
+    projectId?: string; cwd?: string; kind: SessionKind; prompt?: string; label?: string; feature?: string; cols: number; rows: number
+  }): Promise<Result<Session>> // exactly one of projectId, cwd
   sessionKill(a: { id: string }): Promise<Result<{ id: string }>>
   sessionRemove(a: { id: string }): Promise<Result<{ id: string }>>
   sessionResume(a: { id: string }): Promise<Result<Session>> // gone agent sessions only
@@ -125,6 +128,14 @@ export function createCore(opts: CoreOptions): Core {
   const held = new Map<string, string>() // session id → slug it wrote to that discovery hasn't listed yet
   let lastCwds = new Map<string, string>() // tmux name → pane cwd, from the last refresh
   const sending = new Set<string>() // sessions with a review send in flight
+  const gitTop = async (dir: string): Promise<string | null> => {
+    if (!git) return null
+    try {
+      return (await git(['rev-parse', '--show-toplevel'], dir)).trim() || null
+    } catch {
+      return null // not a repo
+    }
+  }
   const git = opts.git === null ? null : gitRunner(opts.git ?? 'git', minimalEnv(process.env))
 
   // GROVE_* for the grove CLI (ADR 0027). Terminal sessions get PATH here; agent sessions through loginShellArgv.
@@ -151,7 +162,7 @@ export function createCore(opts: CoreOptions): Core {
     }
     else if (k === 'sessions' || k === 'ui') {
       const sessions = slices.sessions.map(({ branch: _branch, status: _status, waitingFor: _waitingFor, ...s }) => s) // live-only
-      saveState(opts.statePath, { schemaVersion: 3, sessions, ui: slices.ui })
+      saveState(opts.statePath, { schemaVersion: 4, sessions, ui: slices.ui })
     }
     else if (k === 'comments') saveComments(opts.commentsPath, { schemaVersion: 1, comments: slices.comments })
     if (k === 'sessions') publish() // card state reads linked sessions
@@ -546,18 +557,46 @@ export function createCore(opts: CoreOptions): Core {
       return { ok: true, data: { id } }
     },
 
-    async sessionCreate({ projectId, kind, cols, rows }) {
-      const project = slices.projects.find((p) => p.id === projectId)
-      if (!project) return { ok: false, error: 'not-found' }
+    // `projectId` (the app) or `cwd` (the CLI, ADR 0029): a folder resolves to its project, registered when new.
+    async sessionCreate({ projectId, cwd, kind, prompt, label, feature, cols, rows }) {
       const source = kind === 'terminal' ? undefined : states.get(kind)?.source
       if (kind !== 'terminal' && !source) return { ok: false, error: 'no-source' }
+      let project = slices.projects.find((p) => p.id === projectId)
+      let added = false
+      let dir: string | null = null // the folder inside the project, null: the project path
+      if (cwd !== undefined) {
+        if (!isDirectory(cwd)) return { ok: false, error: 'not-found' }
+        ;({ project, added } = await resolveProject(slices.projects, cwd, gitTop))
+        const real = fs.realpathSync(cwd)
+        dir = real === realOrSelf(project.path) ? null : real
+      }
+      if (!project) return { ok: false, error: 'not-found' }
+      const chosen = project
+      if (feature !== undefined && (added || !slices.features.items.some((f) => f.projectId === chosen.id && f.slug === feature))) {
+        return { ok: false, error: 'no-feature' } // checked before anything is created
+      }
       const agentSessionId = source ? source.mintId(now()) : null
-      const session = newSession({ projectId, kind, now: now(), id: randomUUID(), agentSessionId })
-      const argv = source ? loginShellArgv(source.argv(agentSessionId!, 'start'), shellOpts()) : undefined
-      await backend.create({ name: session.tmuxName, cwd: project.path, cols, rows, argv, env: cliEnv(session) })
+      const session = {
+        ...newSession({ projectId: project.id, kind, now: now(), id: randomUUID(), agentSessionId, cwd: dir, label }),
+        ...(feature !== undefined && { feature, linkPinned: true }),
+      }
+      const argv = source
+        ? loginShellArgv(source.argv(agentSessionId!, 'start', { prompt, name: label }), shellOpts())
+        : undefined
+      await backend.create({ name: session.tmuxName, cwd: dir ?? project.path, cols, rows, argv, env: cliEnv(session) })
       await backend.setColors(session.tmuxName, terminalTheme.foreground, terminalTheme.background)
+      if (added) {
+        set('projects', [...slices.projects, project])
+        syncProjects(false)
+      }
       set('sessions', [...slices.sessions, session])
       refreshStatus()
+      if (prompt && kind === 'terminal') {
+        // no launch argument for a shell: type it once the prompt has drawn (sent even if the pane never settles)
+        void paneStable(() => backend.capture(session.tmuxName, 50), { intervalMs: 300, timeoutMs: 10_000 })
+          .then(() => commands.sendToSession({ id: session.id, text: prompt, submit: true }))
+          .catch(() => {})
+      }
       return { ok: true, data: findSession(session.id) ?? session }
     },
 
@@ -591,7 +630,7 @@ export function createCore(opts: CoreOptions): Core {
       if (!st) return { ok: false, error: 'no-source' }
       await backend.kill(session.tmuxName) // a leftover dead pane
       const argv = loginShellArgv(st.source.argv(session.agentSessionId, 'resume'), shellOpts())
-      await backend.create({ name: session.tmuxName, cwd: project.path, cols: 80, rows: 24, argv, env: cliEnv(session) }) // attaching resizes it
+      await backend.create({ name: session.tmuxName, cwd: session.cwd ?? project.path, cols: 80, rows: 24, argv, env: cliEnv(session) }) // attaching resizes it
       await backend.setColors(session.tmuxName, terminalTheme.foreground, terminalTheme.background)
       replaceSession(resume(findSession(id) ?? session))
       if (st.connected) void resync(st)

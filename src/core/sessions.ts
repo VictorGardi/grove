@@ -7,14 +7,15 @@ export function makeLabel(kind: SessionKind, date: Date): string {
   return `${KIND_NAMES[kind]} · ${pad(date.getHours())}:${pad(date.getMinutes())}`
 }
 
-export function newSession(o: { projectId: string; kind: SessionKind; now: Date; id: string; agentSessionId: string | null }): Session {
+export function newSession(o: { projectId: string; kind: SessionKind; now: Date; id: string; agentSessionId: string | null; cwd?: string | null; label?: string }): Session {
   return {
     id: o.id,
     projectId: o.projectId,
     kind: o.kind,
-    label: makeLabel(o.kind, o.now),
-    labelPinned: false,
+    label: o.label ?? makeLabel(o.kind, o.now),
+    labelPinned: o.label !== undefined,
     tmuxName: 'grove-' + o.id,
+    cwd: o.cwd ?? null,
     agentSessionId: o.agentSessionId,
     feature: null,
     linkPinned: false,

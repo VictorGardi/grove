@@ -20,6 +20,8 @@ export function formatLs(sessions: CliSession[], caller: string | null, json: bo
   return rows.map((r) => r.map((c, i) => c.padEnd(widths[i])).join(' ').trimEnd()).join('\n')
 }
 
+export const formatNew = (s: CliSession, json: boolean): string => (json ? JSON.stringify(s, null, 2) : s.id)
+
 export function exitCode(reply: CliReply): number {
   if (reply.ok) return 0
   return reply.error.code === NOT_RUNNING ? 3 : 1

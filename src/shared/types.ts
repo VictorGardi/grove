@@ -7,6 +7,7 @@ export interface Session {
   label: string
   labelPinned: boolean
   tmuxName: string                 // `grove-${id}`
+  cwd: string | null               // folder the session starts in; null: the project's path
   agentSessionId: string | null    // set for agent kinds (opencode, claude)
   feature: string | null           // linked feature slug in this project
   linkPinned: boolean              // true once set by hand; auto-linking (child 3) leaves it alone
@@ -111,7 +112,7 @@ export interface Comment {
 export interface CommentsFile { schemaVersion: 1; comments: Comment[] }
 export type Slices = { projects: Project[]; sessions: Session[]; ui: UiState; features: FeaturesSlice; opencode: OpenCodeSlice; diff: SessionDiff | null; comments: Comment[] } // diff: the one on screen, not persisted
 export interface ConfigFile { schemaVersion: 1; projects: Project[]; workflow?: string }
-export interface StateFile { schemaVersion: 3; sessions: Session[]; ui: UiState }
+export interface StateFile { schemaVersion: 4; sessions: Session[]; ui: UiState }
 export const DEFAULT_UI: UiState = { sidebarWidth: 230, focusedSessionId: null, focusedFeature: null, focusedProject: null, sidebarTab: 'sessions', board: 'sessions', collapsed: [], viewer: null, viewerWidth: 480, viewerExpanded: false }
 export const EMPTY_FEATURES: FeaturesSlice = { workflowError: null, stages: [], items: [] }
 export const OPENCODE_CONNECTING: OpenCodeSlice = { state: 'connecting', version: null }

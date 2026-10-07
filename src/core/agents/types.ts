@@ -25,7 +25,7 @@ export interface AgentSource {
   kind: AgentKind
   statusNeedsEvent: boolean // no status for a session until the source has seen an event for it
   mintId(now: Date): string
-  argv(id: string, mode: 'start' | 'resume'): string[] // before loginShellArgv
+  argv(id: string, mode: 'start' | 'resume', opts?: { prompt?: string; name?: string }): string[] // before loginShellArgv; opts only on start
   start(onEvent: (e: AgentEvent) => void): void // connects and reconnects until stop()
   snapshot(ids: string[]): Promise<Map<string, SessionSnapshot>> // ids and their children
   lastWrites(id: string): Promise<string[]> // paths of the session's latest successful write; [] if none

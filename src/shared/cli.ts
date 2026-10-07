@@ -5,6 +5,10 @@ export const PROTOCOL = 1
 
 export interface CliMethods {
   'sessions.list': { params: { all?: boolean }; data: CliSession[] }
+  'sessions.create': {
+    params: { kind: SessionKind; cwd: string; prompt?: string; label?: string; feature?: string }
+    data: CliSession
+  }
 }
 
 export interface CliRequest {

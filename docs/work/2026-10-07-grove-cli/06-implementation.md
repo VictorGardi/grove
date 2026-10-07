@@ -15,6 +15,7 @@ forced: []
 ## Progress
 
 - [x] Slice 1 — `grove ls` from a grove session (tracer)
+- [x] Slice 2 — `grove new` in any folder, with prompt, label and link
 
 ## Slice 1
 
@@ -34,3 +35,18 @@ Deviations (all small, none touch a one-way decision):
 
 - **Launcher bug:** `: "${GROVE_SOCKET:='…'}"` left literal single quotes in the socket path under `sh`, so the CLI reported "not running" with the app up. Now `[ -n "$GROVE_SOCKET" ] || GROVE_SOCKET='…'`; the test runs the launcher against a fake executable instead of matching text.
 - **Decided by the human (option A), no design change:** on this macOS, `/etc/zprofile`'s `path_helper` rebuilds `PATH` from scratch in login shells, so the tmux `-e PATH=<bin>:…` for **terminal** sessions is overwritten and `grove` is not found there. Agent sessions are unaffected (prefix runs after rc). Design C5 chose `-e` for terminal sessions; terminal sessions keep `-e` as designed. `grove` is found there once **Install Command Line Tool…** (slice 5) links `~/.local/bin/grove`; until then use `<userData>/bin/grove`. Slice 5's manual check must confirm this from a terminal session. Human verified `<userData>/bin/grove ls` works.
+
+## Slice 2
+
+Deviations (small; none touch a one-way decision):
+
+- Core tests for `sessionCreate` live in the new `src/core/sessionCreate.test.ts`, not `sessions.test.ts`.
+- `sessionCreate` takes no `caller` option (the design's signature listed one; nothing uses it yet).
+- Exactly one of `projectId`/`cwd` is used: `projectId` wins if both are given; the app passes only `projectId`.
+- New error code `no-feature` (design only said `--link` is checked first). The server maps core codes to `{code, message}`; bad `kind`/`cwd` params reply `bad-params`.
+- `--link` for a folder that would register a new project always fails (`no-feature`): a new project has no discovered features yet.
+- The project is registered after `backend.create` succeeds, so a failed create leaves nothing behind.
+- A terminal's prompt is sent after `paneStable` returns, even when the pane never settled within 10 s (so the prompt isn't lost).
+- A Claude prompt starting with `-` is passed after `--`; not verified against the real `claude` parser (manual check below).
+- Stored `cwd` is the real path (`realpath`) of the folder; equal to the project's real path → `null`.
+- Three renderer test fixtures gained `cwd: null`.

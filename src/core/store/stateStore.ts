@@ -16,8 +16,11 @@ const v2ToV3 = (s: { ui?: { viewer?: Record<string, unknown> | null } }) => {
   return { ...s, ui: { ...s.ui, viewer: { kind: 'artifact', ...viewer, fromDiff: null } } }
 }
 
+// v3 → v4 (ADR 0029): sessions can start in a folder inside their project; existing ones start at the project path.
+const v3ToV4 = (s: { sessions?: Session[] }) => ({ ...s, sessions: (s.sessions ?? []).map((x) => ({ ...x, cwd: null })) })
+
 export function loadState(file: string, onBad?: (msg: string) => void): StateFile {
-  const s = readVersioned<StateFile>(file, 3, { schemaVersion: 3, sessions: [], ui: DEFAULT_UI }, onBad, { 1: v1ToV2, 2: v2ToV3 })
+  const s = readVersioned<StateFile>(file, 4, { schemaVersion: 4, sessions: [], ui: DEFAULT_UI }, onBad, { 1: v1ToV2, 2: v2ToV3, 3: v3ToV4 })
   const sessions = (s.sessions ?? []).map((x) => ({ ...x, seenAt: x.seenAt ?? null })) // seenAt: added after v1 shipped
   // v1 files from before ADR 0018 carry `view` and may have the old features tab
   const { view: _view, ...saved } = (s.ui ?? {}) as Partial<UiState> & { view?: unknown }

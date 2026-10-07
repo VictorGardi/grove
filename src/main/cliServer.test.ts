@@ -2,7 +2,7 @@ import { execFileSync } from 'node:child_process'
 import fs from 'node:fs'
 import os from 'node:os'
 import path from 'node:path'
-import { afterEach, describe, expect, it } from 'vitest'
+import { afterEach, beforeEach, describe, expect, it } from 'vitest'
 import { request } from '../cli/client'
 import type { CliSession } from '@shared/cli'
 import { createTerminal, setupCore } from '../core/testing/setup'
@@ -10,7 +10,8 @@ import { startCliServer } from './cliServer'
 import { writeLauncher } from './launcher'
 
 describe('cli server', () => {
-  const t = setupCore()
+  let t: ReturnType<typeof setupCore>
+  beforeEach(() => { t = setupCore() })
   const closers: (() => void)[] = []
   afterEach(() => {
     t.disposeAll()
@@ -36,6 +37,18 @@ describe('cli server', () => {
     expect(reply.ok && (reply.data as CliSession[]).map((s) => [s.id, s.project, s.lastStatus])).toEqual([[live.id, 'proj', 'running']])
     const all = await request(socketPath, req('sessions.list', { all: true }))
     expect(all.ok && (all.data as CliSession[]).map((s) => s.id).sort()).toEqual([live.id, dead.id].sort())
+  })
+
+  it('creates a session in a subfolder and refuses an unknown feature', async () => {
+    const { core, socketPath } = await start()
+    fs.mkdirSync(path.join(t.dir, 'sub'))
+    const ok = await request(socketPath, req('sessions.create', { kind: 'terminal', cwd: path.join(t.dir, 'sub'), label: 'helper' }))
+    expect(ok.ok && ok.data).toMatchObject({ kind: 'terminal', label: 'helper', project: 'proj', cwd: fs.realpathSync(path.join(t.dir, 'sub')) })
+    expect(core.getSlices().sessions).toHaveLength(1)
+    const bad = await request(socketPath, req('sessions.create', { kind: 'terminal', cwd: t.dir, feature: 'nope' }))
+    expect(bad).toMatchObject({ ok: false, error: { code: 'no-feature' } })
+    expect(core.getSlices().sessions).toHaveLength(1)
+    expect(await request(socketPath, req('sessions.create', { kind: 'vim', cwd: t.dir }))).toMatchObject({ ok: false, error: { code: 'bad-params' } })
   })
 
   it('rejects another protocol version and unknown methods', async () => {

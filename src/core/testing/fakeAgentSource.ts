@@ -17,8 +17,8 @@ export class FakeAgentSource implements AgentSource {
     return this.kind === 'opencode' ? mintSessionId(now.getTime()) : randomUUID()
   }
 
-  argv(id: string, _mode: 'start' | 'resume'): string[] {
-    return [this.kind, '-s', id]
+  argv(id: string, _mode: 'start' | 'resume', opts?: { prompt?: string; name?: string }): string[] {
+    return [this.kind, '-s', id, ...(opts?.name ? ['--name', opts.name] : []), ...(opts?.prompt ? ['--prompt', opts.prompt] : [])]
   }
 
   start(onEvent: (e: AgentEvent) => void): void {

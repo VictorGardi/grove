@@ -23,8 +23,8 @@ export class SpoolClaude implements AgentSource {
     return randomUUID()
   }
 
-  argv(id: string, mode: 'start' | 'resume'): string[] {
-    return claudeArgv(id, this.spool(id), mode, mode === 'resume' ? this.folds.get(id)?.resumeId ?? undefined : undefined)
+  argv(id: string, mode: 'start' | 'resume', opts?: { prompt?: string; name?: string }): string[] {
+    return claudeArgv(id, this.spool(id), mode, mode === 'resume' ? this.folds.get(id)?.resumeId ?? undefined : undefined, opts)
   }
 
   start(onEvent: (e: AgentEvent) => void): void {

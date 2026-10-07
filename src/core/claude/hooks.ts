@@ -27,7 +27,8 @@ export function hookSettings(spool: string): string {
 }
 
 // Before loginShellArgv. Resume uses the spool's latest SessionStart id when known (after /clear).
-export function claudeArgv(id: string, spool: string, mode: 'start' | 'resume', resumeId?: string): string[] {
+export function claudeArgv(id: string, spool: string, mode: 'start' | 'resume', resumeId?: string, opts?: { prompt?: string; name?: string }): string[] {
   const session = mode === 'start' ? ['--session-id', id] : ['--resume', resumeId ?? id]
-  return ['claude', ...session, '--settings', hookSettings(spool)]
+  const prompt = opts?.prompt ? [...(opts.prompt.startsWith('-') ? ['--'] : []), opts.prompt] : []
+  return ['claude', ...session, '--settings', hookSettings(spool), ...(opts?.name ? ['--name', opts.name] : []), ...prompt]
 }
