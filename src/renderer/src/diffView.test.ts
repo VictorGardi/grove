@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import type { DiffFile, SessionDiff } from '@shared/types'
-import { allCollapsed, lineKey, rangeAnchor, toggleAll, toggleOne, visibleFiles } from './diffView'
+import { allCollapsed, lineKey, rangeAnchor, selectionRange, toggleAll, toggleOne, visibleFiles } from './diffView'
 
 const file = (path: string, status: DiffFile['status']): DiffFile =>
   ({ path, oldPath: null, status, binary: false, additions: 0, deletions: 0, hunks: [], truncated: false, rendered: null })
@@ -62,5 +62,27 @@ describe('rangeAnchor', () => {
   })
   it('is null when no line of that side is in range', () => {
     expect(rangeAnchor('/r', f, 0, 'old', 2, 3)).toBeNull()
+  })
+})
+
+describe('selectionRange', () => {
+  const f: DiffFile = {
+    ...file('a.ts', 'modified'),
+    hunks: [{ header: '@@', oldStart: 1, newStart: 1, lines: [
+      { kind: 'context', text: 'c1', old: 1, new: 1 },
+      { kind: 'del', text: 'gone', old: 2, new: null },
+      { kind: 'add', text: 'new1', old: null, new: 2 },
+      { kind: 'context', text: 'c2', old: 3, new: 3 },
+    ] }],
+  }
+  const at = (li: number, path = 'a.ts', hunk = 0) => ({ path, hunk, li })
+  it('uses the side of the first line and drops lines of the other side', () => {
+    expect(selectionRange(f, at(0), at(3))).toEqual({ path: 'a.ts', hunk: 0, side: 'new', origin: 0, end: 3 })
+    expect(selectionRange(f, at(3), at(1))).toEqual({ path: 'a.ts', hunk: 0, side: 'old', origin: 1, end: 1 })
+  })
+  it('is null across files or hunks, or for an unknown line', () => {
+    expect(selectionRange(f, at(0), at(1, 'b.ts'))).toBeNull()
+    expect(selectionRange(f, at(0), at(1, 'a.ts', 1))).toBeNull()
+    expect(selectionRange(f, at(0), at(9))).toBeNull()
   })
 })

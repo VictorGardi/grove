@@ -63,5 +63,10 @@ typecheck clean.
 - The tray's "jump to" opens the session's diff; it does not scroll to the line.
 - Drafts are not highlighted on their lines beyond the block under them.
 
+**Follow-up (human request):** selecting text over diff lines shows a floating
+**Comment** button (`selectionRange` in `diffView.ts`: side of the first line,
+lines of that side only, one hunk) that opens the same editor; the gutter **+**
+stays. Shift+Enter (or ⌘↩) saves in `CommentEditor`. Slice 4 reuses the pattern.
+
 **Not done:** the manual check (comment on 2 lines and a removed line, send,
 agent receives all three).

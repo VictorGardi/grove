@@ -1,6 +1,7 @@
-import { Fragment, useState } from 'react'
+import type { CSSProperties } from 'react'
+import { Fragment, useEffect, useRef, useState } from 'react'
 import type { Comment, DiffFile, SessionDiff } from '@shared/types'
-import { allCollapsed, lineKey, rangeAnchor, sideOf, toggleAll, toggleOne, visibleFiles } from '../diffView'
+import { allCollapsed, lineKey, rangeAnchor, selectionRange, sideOf, toggleAll, toggleOne, visibleFiles, type DraftRange } from '../diffView'
 import { draftsByLine } from '../reviewView'
 import { useSlices } from '../stores/slices'
 import { CommentEditor } from './CommentEditor'
@@ -8,8 +9,7 @@ import { Icon } from './ui/Icon'
 import { Button } from './ui/Button'
 import s from './DiffViewer.module.css'
 
-// The comment being written: lines of one hunk on one side, from `origin` to `end` (hunk line indices).
-interface Draft { path: string; hunk: number; side: 'old' | 'new'; origin: number; end: number }
+type Draft = DraftRange
 
 const STATUS: Record<DiffFile['status'], string> = {
   modified: 'Modified', added: 'Added', deleted: 'Deleted', renamed: 'Renamed', untracked: 'Untracked',
@@ -35,6 +35,35 @@ export function DiffViewer({ diff, sessionId, label, expanded, onOpenRendered, o
   const comments = useSlices((x) => x.comments).filter((c) => c.sessionId === sessionId)
   const [writing, setWriting] = useState<Draft | null>(null)
   const [error, setError] = useState<string | null>(null)
+  const body = useRef<HTMLDivElement>(null)
+  const [picked, setPicked] = useState<{ range: Draft; x: number; y: number } | null>(null) // a text selection's Comment button
+  const filesRef = useRef(files)
+  filesRef.current = files
+
+  // A text selection over diff lines offers a Comment button beside it.
+  useEffect(() => {
+    const rowOf = (n: Node | null) => (n instanceof Element ? n : n?.parentElement)?.closest<HTMLElement>('[data-li]') ?? null
+    const ref = (el: HTMLElement) => ({ path: el.dataset.path!, hunk: Number(el.dataset.hunk), li: Number(el.dataset.li) })
+    const onChange = () => {
+      const sel = document.getSelection()
+      const range = sel && !sel.isCollapsed && sel.rangeCount > 0 ? sel.getRangeAt(0) : null
+      let a = range && body.current?.contains(range.commonAncestorContainer) ? rowOf(range.startContainer) : null
+      let b = range ? rowOf(range.endContainer) : null
+      // a whole-line selection ends at offset 0 of the next row: that row is not part of it
+      if (range && a && b && a !== b && range.endOffset === 0) {
+        let prev = b.previousElementSibling
+        while (prev && !(prev instanceof HTMLElement && prev.dataset.li)) prev = prev.previousElementSibling
+        b = prev as HTMLElement | null
+      }
+      const file = a && filesRef.current.find((f) => f.path === a!.dataset.path)
+      const r = file && a && b ? selectionRange(file, ref(a), ref(b)) : null
+      if (!r || !range) return setPicked(null)
+      const rect = range.getBoundingClientRect()
+      setPicked({ range: r, x: Math.min(rect.right, window.innerWidth - 90), y: Math.max(rect.top, 40) })
+    }
+    document.addEventListener('selectionchange', onChange)
+    return () => document.removeEventListener('selectionchange', onChange)
+  }, [])
 
   async function save(file: DiffFile, body: string) {
     const a = writing && d?.root ? rangeAnchor(d.root, file, writing.hunk, writing.side, writing.origin, writing.end) : null
@@ -64,7 +93,7 @@ export function DiffViewer({ diff, sessionId, label, expanded, onOpenRendered, o
           aria-label={expanded ? 'Collapse viewer' : 'Expand viewer'} onClick={onToggleExpanded} />
         <Button variant="ghost" size="sm" icon="x" round aria-label="Close viewer" onClick={onClose} />
       </div>
-      <div className={s.body}>
+      <div ref={body} className={s.body} onScroll={() => setPicked(null)}>
         {d?.truncated && <div className={s.notice}>Diff too large: later files are listed without their lines</div>}
         {!d ? <div className={s.note}>Loading…</div>
           : d.state === 'not-git' ? <div className={s.note}>Not a git repository</div>
@@ -78,6 +107,16 @@ export function DiffViewer({ diff, sessionId, label, expanded, onOpenRendered, o
               onOpenRendered={(r) => onOpenRendered(d.projectId, r)} />
           ))}
       </div>
+      {picked && (
+        <button type="button" className={s.pick} style={{ '--x': `${picked.x}px`, '--y': `${picked.y}px` } as CSSProperties}
+          onMouseDown={(e) => e.preventDefault()}
+          onClick={() => {
+            setError(null)
+            setWriting(picked.range)
+            setPicked(null)
+            document.getSelection()?.removeAllRanges()
+          }}>Comment</button>
+      )}
     </div>
   )
 }
@@ -124,7 +163,7 @@ function FileSection({ file, collapsed, drafts, writing, error, onWrite, onSave,
               : { path: file.path, hunk: hi, side, origin: li, end: li })
             return (
               <Fragment key={key}>
-                <div className={`${s.line} ${l.kind === 'add' ? s.lineAdd : l.kind === 'del' ? s.lineDel : ''} ${inRange ? s.lineSelected : ''}`}>
+                <div data-path={file.path} data-hunk={hi} data-li={li} className={`${s.line} ${l.kind === 'add' ? s.lineAdd : l.kind === 'del' ? s.lineDel : ''} ${inRange ? s.lineSelected : ''}`}>
                   <button type="button" className={s.plus} aria-label={`Comment on line ${(side === 'old' ? l.old : l.new) ?? ''}`} onClick={start}>+</button>
                   <span className={s.num}>{l.old ?? ''}</span>
                   <span className={s.num}>{l.new ?? ''}</span>
