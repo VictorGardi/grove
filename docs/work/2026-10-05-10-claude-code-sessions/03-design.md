@@ -2,7 +2,7 @@
 feature: 2026-10-05-10-claude-code-sessions
 phase: design
 status: approved
-version: 1
+version: 2
 created: 2026-10-07
 updated: 2026-10-07
 approved_at: 2026-10-07
@@ -83,10 +83,12 @@ export interface AgentSource {
 ```
 
 **Spool record.** One JSON object per hook call, `{"t":"<UTC ISO, s>","e":<hook stdin JSON>}`,
-appended by the hook command (every hook entry, `timeout: 5`, synchronous):
+appended by the hook command (every hook entry, `timeout: 5`, synchronous). `PostToolBatch` carries
+every tool's input and output (slice 1 capture), so its command drops stdin and writes a marker:
 
 ```sh
 x=$(cat); printf '{"t":"%s","e":%s}\n' "$(date -u +%Y-%m-%dT%H:%M:%SZ)" "$x" >> '<spool>'
+cat >/dev/null; printf '{"t":"%s","e":{"hook_event_name":"PostToolBatch"}}\n' "$(date …)" >> '<spool>'
 ```
 
 Hooks in the `--settings` JSON: `SessionStart`, `UserPromptSubmit`,
@@ -101,12 +103,12 @@ Hooks in the `--settings` JSON: `SessionStart`, `UserPromptSubmit`,
 | Hook | Event(s) |
 |---|---|
 | `UserPromptSubmit` | close pending of all scopes; `exec-started` |
-| `PermissionRequest` | `pending` open `perm:<scope>` permission |
+| `PermissionRequest` | `pending` open `perm:<scope>` permission; ignored for `tool_name` AskUserQuestion (it fires for questions too) |
 | `PreToolUse` AskUserQuestion | `pending` open `q:<tool_use_id>` question |
 | `PostToolUse` / `PostToolUseFailure` | close `perm:<scope>`, close `q:<tool_use_id>`; Write/Edit/MultiEdit/NotebookEdit success → `wrote [tool_input.file_path]` |
-| `PostToolBatch` | close `perm:<scope>` |
+| `PostToolBatch` (marker, no scope) | close `perm:*` of all scopes |
 | `Stop`, `StopFailure` (main scope) | close all pending; `exec-ended at t` |
-| `Notification` `idle_prompt` | if running: `exec-ended at t` (turn ended by interrupt) |
+| `Notification` `idle_prompt` | close all pending; if running: `exec-ended at t` (interrupt, or a question rejected with Esc: no hook fires) |
 | `SessionStart` | records `session_id` as the resume id; no status change |
 
 The fold per spool (`running, idleAt, pending, lastWrite, resumeId`) is the
@@ -191,10 +193,10 @@ function step(f: ClaudeFold, r: { t: string; e: unknown }): { fold: ClaudeFold; 
 | 1 | Seam names | `OcEvent` → `AgentEvent`, `OpenCodeSource` → `AgentSource`, in `src/core/agents/`; new `src/core/claude/` |
 | 2 | Claude id | `agentSessionId = randomUUID()`, separate from `Session.id`; spool named by it; events keyed by file name |
 | 3 | Resume id | Latest `SessionStart` `session_id` in the spool, else `agentSessionId`; derived, not persisted |
-| 4 | Hooks | The list and matchers above; Read/Bash payloads stay out of the spool |
-| 5 | Hook command | Inline `sh`, `{t, e}` record, synchronous, 5 s timeout; settings as inline JSON quoted by `loginShellArgv`; nothing shipped |
+| 4 | Hooks | The list and matchers above; Read/Bash payloads stay out of the spool (`PostToolBatch` as a marker) |
+| 5 | Hook command | Inline `sh`, `{t, e}` record (`PostToolBatch`: stdin dropped), synchronous, 5 s timeout; settings as inline JSON quoted by `loginShellArgv`; nothing shipped |
 | 6 | Spool reader | Byte offsets, `fs.watch` on the dir + 1 s stat fallback; newline-agnostic object scanner; a corrupt span is skipped |
-| 7 | Mapping | Table above; interrupt closes on next prompt or `idle_prompt`; subagent events fold via `scope` |
+| 7 | Mapping | Table above, revised from slice 1's capture; interrupt and Esc-rejected questions close on next prompt or `idle_prompt`; subagent events fold via `scope` |
 | 8 | Live gate | Claude source connected from `start()`; per session, status only once its spool has a record |
 | 9 | Kind filters | `kind !== 'terminal'` for seen, notify, re-sync, resume; `not-opencode` → `not-agent` |
 | 10 | Migration | `readVersioned` `migrations` map; stateStore v1 → v2; existing fill-ins kept after it |
@@ -205,7 +207,9 @@ function step(f: ClaudeFold, r: { t: string; e: unknown }): { fold: ClaudeFold; 
 
 ## Risks
 
-- **Unverified hook payloads** (AskUserQuestion, interrupt, `idle_prompt` matcher, `PostToolBatch` size, resume id, ordering): slice 1's human-driven capture checks them and mapping rows adjust; only a delivery failure reopens E-D10. A large `PostToolBatch` is dropped; permissions then close on the next prompt, question or turn end.
+- **Partly verified hook payloads.** Slice 1's capture confirmed delivery, records one per line, resume and `/clear` ids, and the two fixes above. Still unseen: a real tool's `PermissionRequest`, an answered question, `idle_prompt`, Edit, subagent `agent_id`, parallel appends. Slice 3 starts with a second capture; rows adjust, only a delivery failure reopens E-D10.
+- **Batch marker has no scope**: with parallel subagents, one batch ending clears another's permission wait (shows `working`).
+- **Realpaths**: `file_path` arrives resolved (`/private/tmp/…`); `slugFor` already compares realpaths of the feature root and the write.
 - **Interleaved appends** from parallel hooks can corrupt a span; the scanner skips it. A lost `wrote` is fixed by the next write, a lost `Stop` by `idle_prompt`.
 - **Interrupt** shows `working` until the next prompt or `idle_prompt` (~60 s); a **granted long tool** stays `waiting · permission` until its batch ends (no "answered" hook).
 - **Spool growth**: Write/Edit contents and prompts are copied into userData (0700 dir); replay reads whole files.

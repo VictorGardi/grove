@@ -1,7 +1,7 @@
 ---
 feature: 2026-10-05-10-claude-code-sessions
 phase: plan
-status: approved
+status: stale
 version: 2
 created: 2026-10-07
 updated: 2026-10-07
@@ -65,5 +65,5 @@ gets no status, seen mark or notification, so Claude cards stay running / gone.
 - [x] `src/main/index.ts`: `sources: [new HttpOpenCode({ serviceFile: serviceFilePath(process.env, os.homedir()) })]`.
 - [x] `src/core/sessions.test.ts`: `OcEvent` → `AgentEvent` from `./agents/types`.
 - [x] Run `npm test` and `npm run typecheck`
-- [ ] Manual (human): `npm run dev`, an OpenCode session still shows working → idle and waiting · permission.
+- [x] Manual (human): `npm run dev`, an OpenCode session still shows working → idle and waiting · permission.
 

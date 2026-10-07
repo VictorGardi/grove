@@ -2,12 +2,12 @@
 feature: 2026-10-05-10-claude-code-sessions
 phase: structure
 status: approved
-version: 1
+version: 2
 created: 2026-10-07
 updated: 2026-10-07
 approved_at: 2026-10-07
 based_on:
-  - 03-design.md@1
+  - 03-design.md@2
   - parent:04-structure.md@6
 forced: []
 ---
@@ -81,13 +81,24 @@ the listed checks.
   waiting header, notify off screen, and take the seen mark. A session whose
   spool has no record shows running / gone only.
 - **Files:** NEW `src/core/claude/spool.ts`, `normalise.ts`, `source.ts` +
-  tests. MODIFIED `src/core/core.ts` (Claude source wired; kind filters
-  `!== 'terminal'`), `src/main/index.ts` (`new SpoolClaude({dir})`),
+  tests, `src/core/claude/fixtures/capture-2.1.285-b.jsonl` (second
+  capture). MODIFIED `src/core/claude/hooks.ts` + test (`PostToolBatch`
+  marker command), `src/core/core.ts` (Claude source wired; kind filters
+  `!== 'terminal'`; slice 1's `claudeSpoolDir` launch bridge removed),
+  `src/main/index.ts` (`new SpoolClaude({dir})`),
   `src/renderer/src/sessionStatus.ts`.
 - **Signatures:** `scanRecords(text) → {records, consumed}`;
   `step(fold, record) → {fold, events}`; `class SpoolClaude implements AgentSource`.
-- **Verify:** `npm test -- src/core/claude src/core/sessions.test.ts`
-  (fixture replay gives the mapping table's events; scanner handles glued
+- **Verify:** first, a second human-driven capture with the marker command
+  in place, in default permission mode: a Bash command that prompts
+  (approved after > 6 s), an answered question, Esc during a working turn
+  then wait 60 s, an Edit of an existing file, a prompt that uses a
+  subagent. Record per hook in 06-implementation.md; mapping rows adjust to
+  it (a row change is logged; no hook record at all → stop: E-D10 reopens).
+  Then `npm test -- src/core/claude src/core/sessions.test.ts`
+  (both fixtures replay to the mapping table's events, incl. AskUserQuestion
+  → waiting · question not permission, and an Esc-rejected question closed
+  by `idle_prompt`; `PostToolBatch` command writes only the marker; scanner handles glued
   records, a missing trailing newline and a corrupt span; tail emits only
   bytes appended after `start()`; core "claude status": `FakeAgentSource('claude')`
   permission → waiting · permission, notify fires off screen only, no status
@@ -137,8 +148,9 @@ the listed checks.
 
 The epic's structure sizes this child at 4–5 days, about 6 slices and at most
 2 own one-way decisions. This structure has 5 slices (about a day each, slice
-2 the riskiest) and 1 own one-way decision. It fits; the epic's appetite (~6–7
-weeks) is unchanged.
+2 the riskiest) and 1 own one-way decision. Revision 2 adds a second hook
+capture to slice 3 (about half a day). It still fits; the epic's appetite
+(~6–7 weeks) is unchanged.
 
 ## Deferred
 

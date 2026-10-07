@@ -1,7 +1,7 @@
 ---
 feature: 2026-10-05-10-claude-code-sessions
 phase: implementation
-status: draft
+status: stale
 version: 1
 created: 2026-10-07
 updated: 2026-10-07
@@ -16,7 +16,7 @@ forced: []
 ## Progress
 
 - [x] Slice 1 — Tracer: start a Claude session, spool fills; state v2 (capture partial; see below)
-- [x] Slice 2 — Seam generalised (D1), OpenCode unchanged (manual check pending)
+- [x] Slice 2 — Seam generalised (D1), OpenCode unchanged 
 - [ ] Slice 3 — Claude live status
 - [ ] Slice 4 — Claude auto-link and restart catch-up
 - [ ] Slice 5 — Claude resume and cleanup
@@ -75,6 +75,6 @@ Deviations (mechanical, no design impact):
 - `HttpOpenCode.argv` / `forget` and `FakeAgentSource.argv` declare the interface's unused parameters (`_mode`, `_id`) so direct calls typecheck.
 - `FakeAgentSource.argv(id)` returns `[kind, '-s', id]`, so the existing `exec opencode -s <id>` expectations hold unchanged.
 
-Verification: `npm run typecheck` clean; `npm test` 301 passed (outside the sandbox), including the existing "core opencode status", "core seen and notify", "core auto-link" and "resume" tests with only import renames and the fake swapped. Manual OpenCode check pending (human).
+Verification: `npm run typecheck` clean; `npm test` 301 passed (outside the sandbox), including the existing "core opencode status", "core seen and notify", "core auto-link" and "resume" tests with only import renames and the fake swapped. Manual OpenCode check passed (human, 2026-10-07: "works great").
 
 ## Open questions
