@@ -80,3 +80,16 @@ Notes for a cold reader: the focused pane is `ui.focusedSessionId` (design D1); 
 - [x] `src/renderer/src/App.tsx`: pass `onFocusPane={setFocused}`
 - [x] Run `npm test`
 - [x] Run `npm run typecheck`
+
+## Slice 5 — Pane header, ended tiles and the cap
+
+Notes for a cold reader: `SessionGrid.tsx` (slice 3–4) renders one pane per member, with the accent border (`focused`) or dimming (`dim`) and a bare "Session ended" tile. Design "Pane header": `project / label`, branch, linked-feature tag with stage, status dot and label (`statusView`), then Open alone (focus it, grid off) and Remove from grid. No progress, minimise, archive or context-window usage. Ended members stay in `members`; the tile shows "Session ended" with Resume (agents only, not terminals) and Remove from grid; no attach. Sidebar card hover buttons (18px, flush to the corners, `ListRow.module.css`) are not touched. The cap (the 10th plus disabled with a title hint, `withMember` refusing a 10th) already exists from slice 3 and is tested in `gridView.test.ts`; this slice only re-verifies it. The header reuses the sidebar's derivations: `linkedFeature` (`tree.ts`), `colorTags(projects, features.items).group(...)` (`tags.ts`), `featureStage` (`featureLabels.ts`), `statusView` (`sessionStatus.ts`), `Tag`, `StatusDot`, `Button`. `SessionGrid` reads `projects` and `features` from `useSlices()` itself, so `App.tsx` needs no new props except what is listed.
+
+- [x] Write failing test `src/renderer/src/gridView.test.ts` for `paneTitle(project, session)`: `"<project> / <label>"`, and the label alone when the project is unknown
+- [x] `src/renderer/src/gridView.ts`: export `paneTitle(project: Project | undefined, session: Session): string`
+- [x] `src/renderer/src/stores/slices.ts`: add `openAlone(id)` to the interface and store: `ui:set { focusedSessionId: id, grid: { ...grid, open: false } }`
+- [x] `src/renderer/src/components/SessionGrid.tsx`: each pane is a header plus body. Header: title via `paneTitle`; branch (`Icon branch` + name) when set; feature `Tag` + `featureStage` when linked; `StatusDot` + `statusView(s).label`; right side buttons (ghost, sm, round) Open alone (`Icon maximize`, calls `openAlone`) and Remove (`Icon x`, calls `toggleGridMember`). Body: running → `TerminalView`; else an ended tile with "Session ended", Resume (primary, `icon="resume"`, only when `kind !== 'terminal'`, invokes `session:resume`) and Remove (`icon="trash"`, calls `toggleGridMember`, so it leaves the grid but the session stays)
+- [x] `src/renderer/src/components/SessionGrid.module.css`: `.header` (single row, `--sp-*` gaps, truncating title, `--text-2` secondary text), `.title`, `.branch`, `.spacer`, `.endedActions`; ended tile becomes a column with a gap; no inline styles
+- [x] Run `npx vitest run src/renderer/src/gridView.test.ts`
+- [x] Run `npm run typecheck`
+- [x] Run `npm test`

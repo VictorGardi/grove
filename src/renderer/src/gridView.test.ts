@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest'
-import { gridCols, gridShown, withMember } from './gridView'
+import type { Project, Session } from '@shared/types'
+import { gridCols, gridShown, paneTitle, withMember } from './gridView'
 
 describe('gridCols', () => {
   it('picks 1, 2 or 3 columns by count', () => {
@@ -39,5 +40,15 @@ describe('withMember', () => {
   })
   it('closes the grid when the last member leaves', () => {
     expect(withMember({ open: true, members: ['a'] }, 'a')).toEqual({ open: false, members: [] })
+  })
+})
+
+describe('paneTitle', () => {
+  const session = { label: 'fix-login' } as Session
+  it('is project / label', () => {
+    expect(paneTitle({ name: 'grove' } as Project, session)).toBe('grove / fix-login')
+  })
+  it('is the label alone without a project', () => {
+    expect(paneTitle(undefined, session)).toBe('fix-login')
   })
 })

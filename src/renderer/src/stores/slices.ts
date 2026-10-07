@@ -33,6 +33,7 @@ interface SlicesState {
   reloadViewer(): void
   toggleGrid(): void // show or hide the session grid; no-op with no members
   toggleGridMember(id: string): void
+  openAlone(id: string): void // focus a session and turn the grid off
   clearGrid(): void
 }
 
@@ -99,6 +100,7 @@ export const useSlices = create<SlicesState>((set, get) => {
       void window.api.invoke('ui:set', { grid: { ...ui.grid, open: true }, focusedSessionId: focus })
     },
     toggleGridMember: (id) => { void window.api.invoke('ui:set', { grid: withMember(get().ui.grid, id) }) },
+    openAlone: (id) => { void window.api.invoke('ui:set', { focusedSessionId: id, grid: { ...get().ui.grid, open: false } }) },
     clearGrid: () => { void window.api.invoke('ui:set', { grid: { open: false, members: [] } }) },
     toggleCollapsed(key) {
       const { collapsed } = get().ui

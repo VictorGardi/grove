@@ -18,7 +18,7 @@ forced: []
 - [x] Slice 2 — Palette commands and terminal refocus
 - [x] Slice 3 — Two sessions side by side
 - [x] Slice 4 — Focus, Cmd+1..9 and dimming
-- [ ] Slice 5 — Pane header, ended tiles and the cap
+- [x] Slice 5 — Pane header, ended tiles and the cap
 - [ ] Slice 6 — Grid toolbar
 
 ## Slice 1
@@ -75,3 +75,15 @@ Verified: `npm test` (59 files, 560 tests), `npm run typecheck`. Manual (finishe
 Human feedback from trying slices 1–4 (not a design change):
 
 - The grid plus/check moved from an inline button to a floating corner button on the card's top-left (new `corner` / `cornerPinned` props on `ListRow`, replacing `leading`), styled like the right-hand actions and shown only on hover. A member's green check stays visible only while the grid is showing; outside grid mode a member's check also shows on hover so it can be removed.
+
+## Slice 5
+
+Deviations (small, none touch a one-way decision):
+
+- The cap (10th plus disabled with a hint, `withMember` refusing a 10th, emptying closes the grid) already shipped in slice 3 with its tests, so `Sidebar.tsx` is untouched; this slice added only `paneTitle` to `gridView.ts` (+ test).
+- `SessionGrid` reads `projects`/`features` from `useSlices()` itself instead of new props; header derivations reuse the sidebar's (`linkedFeature`, `colorTags`, `featureStage`, `statusView`).
+- New store action `openAlone(id)` (focus the session, grid `open: false`; members are kept).
+- Header: `project / label`, branch, feature tag + stage, status dot + label, Open alone, Remove. No context-window usage, per the human's scope note. Ended tile: "Session ended" with Resume (agents only) and Remove (removes from the grid, the session stays); no attach. Sidebar card hover buttons not touched.
+- The plan's first step was reworded after execution (it mentioned already-covered cap tests).
+
+Verified: `gridView.test.ts` (9 tests), `npm run typecheck`, `npm test` (59 files, 562 tests). Manual (header look, kill a member → ended tile, Resume, Open alone, 10th plus disabled) not done by the agent.

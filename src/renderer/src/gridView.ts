@@ -1,4 +1,4 @@
-import { GRID_MAX, type GridState, type UiState } from '@shared/types'
+import { GRID_MAX, type GridState, type Project, type Session, type UiState } from '@shared/types'
 
 // The grid takes over the content area: it is on, has members, and the focused session is one of them.
 export function gridShown(ui: Pick<UiState, 'grid' | 'focusedSessionId'>): boolean {
@@ -20,4 +20,9 @@ export function withMember(grid: GridState, id: string): GridState {
   }
   if (grid.members.length >= GRID_MAX) return grid
   return { ...grid, members: [...grid.members, id] }
+}
+
+// The pane header's title: "project / label", or the label alone when the project is gone.
+export function paneTitle(project: Project | undefined, session: Session): string {
+  return project ? `${project.name} / ${session.label}` : session.label
 }
