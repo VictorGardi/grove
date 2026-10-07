@@ -23,17 +23,18 @@ export function setupCore() {
   const fake = new FakeBackend()
   const watchers = new FakeWatchers()
   const oc = new FakeAgentSource('opencode')
+  const claude = new FakeAgentSource('claude', true)
   const claudeDir = path.join(dir, 'agents', 'claude')
   const cores: Core[] = []
   const make = (now = NOW, over: Partial<CoreOptions> = {}) => {
     const core = createCore({
-      configPath, statePath, bundledWorkflowPath, watchers, backend: fake, sources: [oc], claudeSpoolDir: claudeDir, now: () => now, ...over,
+      configPath, statePath, bundledWorkflowPath, watchers, backend: fake, sources: [oc, claude], now: () => now, ...over,
     })
     cores.push(core)
     return core
   }
   const disposeAll = () => { for (const c of cores.splice(0)) c.dispose() }
-  return { dir, fake, watchers, oc, make, configPath, statePath, claudeDir, disposeAll }
+  return { dir, fake, watchers, oc, claude, make, configPath, statePath, claudeDir, disposeAll }
 }
 
 export async function createTerminal(core: Core, projectId = 'p') {

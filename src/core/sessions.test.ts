@@ -6,7 +6,8 @@ import { terminalTheme } from '@shared/theme'
 import { makeLabel, newSession, reconcile } from './sessions'
 import { loadState } from './store/stateStore'
 import type { AgentEvent } from './agents/types'
-import { createOpenCode, createTerminal as create, LATER, NOW, setupCore } from './testing/setup'
+import { SpoolClaude } from './claude/source'
+import { createClaude, createOpenCode, createTerminal as create, LATER, NOW, setupCore } from './testing/setup'
 
 function session(id: string, over: Partial<Session> = {}): Session {
   return { ...newSession({ projectId: 'p', kind: 'terminal', now: NOW, id, agentSessionId: null }), ...over }
@@ -123,8 +124,8 @@ describe('core sessions', () => {
   })
 
   it('starts claude sessions with a uuid, per-launch hooks and a private spool dir', async () => {
-    const { fake, make, claudeDir } = setup()
-    const a = make()
+    const { fake, make, oc, claudeDir } = setup()
+    const a = make(NOW, { sources: [oc, new SpoolClaude({ dir: claudeDir })] })
     await a.start()
     const res = await a.commands.sessionCreate({ projectId: 'p', kind: 'claude', cols: 80, rows: 24 })
     if (!res.ok) throw new Error(res.error)
@@ -138,9 +139,9 @@ describe('core sessions', () => {
     expect(fs.statSync(claudeDir).mode & 0o777).toBe(0o700)
   })
 
-  it('refuses claude sessions without a spool dir', async () => {
-    const { fake, make } = setup()
-    const a = make(NOW, { claudeSpoolDir: undefined })
+  it('refuses claude sessions without a claude source', async () => {
+    const { fake, make, oc } = setup()
+    const a = make(NOW, { sources: [oc] })
     await a.start()
     expect(await a.commands.sessionCreate({ projectId: 'p', kind: 'claude', cols: 80, rows: 24 })).toEqual({ ok: false, error: 'no-source' })
     expect(fake.calls.some((c) => c.method === 'create')).toBe(false)
@@ -367,6 +368,57 @@ describe('core opencode status', () => {
     expect(find(core, o.id)).not.toHaveProperty('status')
     core.dispose()
     expect(oc.stopped).toBe(true)
+  })
+})
+
+describe('core claude status', () => {
+  let disposeAll = () => {}
+  afterEach(() => disposeAll())
+
+  const flush = () => new Promise((r) => setImmediate(r))
+  const find = (core: { getSlices(): { sessions: Session[] } }, id: string) => core.getSlices().sessions.find((x) => x.id === id)
+
+  async function connected() {
+    const s = setupCore()
+    disposeAll = s.disposeAll
+    const core = s.make()
+    await core.start()
+    const notified: Session[] = []
+    core.on('notify', (x) => notified.push(x))
+    s.claude.emit({ type: 'connected', version: 'spool' })
+    await flush()
+    return { ...s, core, notified }
+  }
+
+  it('shows no status before the first spool event, then the live one', async () => {
+    const { core, claude } = await connected()
+    const c = await createClaude(core)
+    expect(find(core, c.id)).not.toHaveProperty('status')
+    claude.emit({ type: 'exec-started', sessionId: c.agentSessionId! })
+    expect(find(core, c.id)?.status).toBe('working')
+  })
+
+  it('waits on a permission and notifies only off screen', async () => {
+    const { core, claude, notified } = await connected()
+    const c = await createClaude(core)
+    const d = await createClaude(core)
+    core.setWindowFocused(true)
+    await core.commands.uiSet({ focusedSessionId: d.id })
+    claude.emit({ type: 'pending', sessionId: c.agentSessionId!, id: 'perm:main', kind: 'permission', open: true })
+    expect(find(core, c.id)).toMatchObject({ status: 'waiting', waitingFor: 'permission' })
+    claude.emit({ type: 'pending', sessionId: d.agentSessionId!, id: 'perm:main', kind: 'permission', open: true })
+    expect(find(core, d.id)).toMatchObject({ status: 'waiting', waitingFor: 'permission' })
+    expect(notified.map((x) => [x.id, x.waitingFor])).toEqual([[c.id, 'permission']])
+  })
+
+  it('keeps Claude status when the OpenCode service disconnects', async () => {
+    const { core, claude, oc } = await connected()
+    oc.emit({ type: 'connected', version: '2.0.20' })
+    await flush()
+    const c = await createClaude(core)
+    claude.emit({ type: 'exec-started', sessionId: c.agentSessionId! })
+    oc.emit({ type: 'disconnected' })
+    expect(find(core, c.id)?.status).toBe('working')
   })
 })
 

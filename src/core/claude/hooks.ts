@@ -1,4 +1,5 @@
-// Per-launch hooks (E-D10, ADR 0016): every hook appends {"t": <UTC, s>, "e": <stdin JSON>} to the session's spool.
+// Per-launch hooks (E-D10, ADR 0016): every hook appends {"t": <UTC, s>, "e": <stdin JSON>} to the session's spool,
+// except PostToolBatch, whose stdin holds every tool's input and output: it appends a marker instead.
 const HOOKS: [event: string, matcher?: string][] = [
   ['SessionStart'],
   ['UserPromptSubmit'],
@@ -15,10 +16,12 @@ const HOOKS: [event: string, matcher?: string][] = [
 const shQuote = (s: string) => `'${s.replace(/'/g, `'\\''`)}'`
 
 export function hookSettings(spool: string): string {
-  const command = `x=$(cat); printf '{"t":"%s","e":%s}\\n' "$(date -u +%Y-%m-%dT%H:%M:%SZ)" "$x" >> ${shQuote(spool)}`
+  const stamp = '"$(date -u +%Y-%m-%dT%H:%M:%SZ)"'
+  const record = `x=$(cat); printf '{"t":"%s","e":%s}\\n' ${stamp} "$x" >> ${shQuote(spool)}`
+  const marker = `cat >/dev/null; printf '{"t":"%s","e":{"hook_event_name":"PostToolBatch"}}\\n' ${stamp} >> ${shQuote(spool)}`
   const hooks = Object.fromEntries(HOOKS.map(([event, matcher]) => [
     event,
-    [{ ...(matcher && { matcher }), hooks: [{ type: 'command', command, timeout: 5 }] }],
+    [{ ...(matcher && { matcher }), hooks: [{ type: 'command', command: event === 'PostToolBatch' ? marker : record, timeout: 5 }] }],
   ]))
   return JSON.stringify({ hooks })
 }

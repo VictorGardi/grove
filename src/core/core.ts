@@ -10,7 +10,6 @@ import type { AttachHandle, SessionBackend } from './backend/types'
 import { terminalTheme } from '@shared/theme'
 import { listFolders, readFolder, resolveRoot, type FolderSnapshot } from './discovery/folder'
 import { chokidarWatchers, type Closer, type Watchers } from './discovery/watcher'
-import { claudeArgv } from './claude/hooks'
 import { loginShellArgv } from './env'
 import { slugFor } from './autolink'
 import { hasLiveSessions, newProject } from './projects'
@@ -30,7 +29,6 @@ export interface CoreOptions {
   watchers?: Watchers // tests inject fakes
   backend: SessionBackend
   sources?: AgentSource[] // one per agent kind; none: tmux-only
-  claudeSpoolDir?: string // <userData>/agents/claude; launches Claude until it has a source (slice 3)
   now?: () => Date // tests inject this
 }
 
@@ -441,16 +439,10 @@ export function createCore(opts: CoreOptions): Core {
       const project = slices.projects.find((p) => p.id === projectId)
       if (!project) return { ok: false, error: 'not-found' }
       const source = kind === 'terminal' ? undefined : states.get(kind)?.source
-      const dir = opts.claudeSpoolDir // Claude's launch path until it has a source (slice 3)
-      if (kind !== 'terminal' && !source && !(kind === 'claude' && dir)) return { ok: false, error: 'no-source' }
-      const agentSessionId = source ? source.mintId(now()) : kind === 'claude' ? randomUUID() : null
+      if (kind !== 'terminal' && !source) return { ok: false, error: 'no-source' }
+      const agentSessionId = source ? source.mintId(now()) : null
       const session = newSession({ projectId, kind, now: now(), id: randomUUID(), agentSessionId })
-      let argv: string[] | undefined
-      if (source) argv = loginShellArgv(source.argv(agentSessionId!, 'start'))
-      else if (kind === 'claude') {
-        fs.mkdirSync(dir!, { recursive: true, mode: 0o700 })
-        argv = loginShellArgv(claudeArgv(agentSessionId!, path.join(dir!, `${agentSessionId}.jsonl`), 'start'))
-      }
+      const argv = source ? loginShellArgv(source.argv(agentSessionId!, 'start')) : undefined
       await backend.create({ name: session.tmuxName, cwd: project.path, cols, rows, argv })
       await backend.setColors(session.tmuxName, terminalTheme.foreground, terminalTheme.background)
       set('sessions', [...slices.sessions, session])

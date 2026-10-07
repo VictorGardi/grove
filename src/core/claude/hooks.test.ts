@@ -23,10 +23,13 @@ describe('hookSettings', () => {
       PostToolUseFailure: [undefined], PostToolBatch: [undefined], Stop: [undefined], StopFailure: [undefined],
       Notification: ['idle_prompt'],
     })
-    const handlers = Object.values(hooks).flatMap((v) => v.flatMap((e) => e.hooks))
+    const handlers = Object.entries(hooks).flatMap(([k, v]) => v.flatMap((e) => e.hooks.map((h) => ({ k, ...h }))))
+    expect(handlers.every((h) => h.type === 'command' && h.timeout === 5)).toBe(true)
     const command = handlers[0].command
-    expect(handlers.every((h) => h.type === 'command' && h.timeout === 5 && h.command === command)).toBe(true)
-    expect(command.endsWith(`>> '/a b/it'\\''s/x.jsonl'`)).toBe(true)
+    const marker = hooks.PostToolBatch[0].hooks[0].command
+    expect(handlers.filter((h) => h.k !== 'PostToolBatch').every((h) => h.command === command)).toBe(true)
+    expect(marker).not.toBe(command)
+    for (const c of [command, marker]) expect(c.endsWith(`>> '/a b/it'\\''s/x.jsonl'`)).toBe(true)
   })
 
   it('appends one {t, e} record per call', () => {
@@ -34,6 +37,13 @@ describe('hookSettings', () => {
     const { hooks: h } = JSON.parse(hookSettings(file)) as { hooks: Record<string, Entry[]> }
     execFileSync('sh', ['-c', h.Stop[0].hooks[0].command], { input: '{"a":1}' })
     expect(fs.readFileSync(file, 'utf8')).toMatch(/^\{"t":"\d{4}-\d\d-\d\dT\d\d:\d\d:\d\dZ","e":\{"a":1\}\}\n$/)
+  })
+
+  it('writes only a marker for PostToolBatch, whose stdin holds every tool output', () => {
+    const file = path.join(fs.mkdtempSync(path.join(os.tmpdir(), 'grove-')), 'x.jsonl')
+    const { hooks: h } = JSON.parse(hookSettings(file)) as { hooks: Record<string, Entry[]> }
+    execFileSync('sh', ['-c', h.PostToolBatch[0].hooks[0].command], { input: '{"tool_calls":[{"tool_response":"big"}]}' })
+    expect(fs.readFileSync(file, 'utf8')).toMatch(/^\{"t":"\d{4}-\d\d-\d\dT\d\d:\d\d:\d\dZ","e":\{"hook_event_name":"PostToolBatch"\}\}\n$/)
   })
 })
 

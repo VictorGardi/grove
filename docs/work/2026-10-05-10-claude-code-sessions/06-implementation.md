@@ -1,13 +1,13 @@
 ---
 feature: 2026-10-05-10-claude-code-sessions
 phase: implementation
-status: stale
+status: draft
 version: 1
 created: 2026-10-07
 updated: 2026-10-07
 approved_at:
 based_on:
-  - 05-plan.md@1
+  - 05-plan.md@3
 forced: []
 ---
 
@@ -17,7 +17,7 @@ forced: []
 
 - [x] Slice 1 — Tracer: start a Claude session, spool fills; state v2 (capture partial; see below)
 - [x] Slice 2 — Seam generalised (D1), OpenCode unchanged 
-- [ ] Slice 3 — Claude live status
+- [x] Slice 3 — Claude live status (manual check pending)
 - [ ] Slice 4 — Claude auto-link and restart catch-up
 - [ ] Slice 5 — Claude resume and cleanup
 
@@ -76,5 +76,46 @@ Deviations (mechanical, no design impact):
 - `FakeAgentSource.argv(id)` returns `[kind, '-s', id]`, so the existing `exec opencode -s <id>` expectations hold unchanged.
 
 Verification: `npm run typecheck` clean; `npm test` 301 passed (outside the sandbox), including the existing "core opencode status", "core seen and notify", "core auto-link" and "resume" tests with only import renames and the fake swapped. Manual OpenCode check passed (human, 2026-10-07: "works great").
+
+## Slice 3
+
+Re-planned against design and structure v2 (plan `based_on` updated; slices 1–2 unaffected by v2).
+
+- Part A done: `PostToolBatch` writes only a marker (`hooks.ts` + test, `npm test -- src/core/claude` 4 passed).
+
+### Hook capture 2 (2026-10-07, claude 2.1.285)
+
+Fixture: `src/core/claude/fixtures/capture-2.1.285-b.jsonl` (spool of session `1c076504-…`, default permission mode). 46 records, 40.8 KB, one record per line, 68–7639 bytes each, **no corrupt span**, no interleaving seen. Delivery works; E-D10 holds.
+
+| Hook | Fired | Fields the mapping uses | Notes |
+|---|---|---|---|
+| `SessionStart` | 1× | `session_id` | `source: startup` |
+| `UserPromptSubmit` | 13× | — | 2 of them are Claude's own `<task-notification>` prompts (a background shell task and a background subagent finishing), each starting a turn that ends in `Stop` |
+| `PermissionRequest` | 7× | `tool_name`, `agent_id` | real tools seen: Bash (4×, one approved after 16 s), Edit (2×), AskUserQuestion (1×, ignored as designed); **no `tool_use_id`**. One from a subagent carries `agent_id` + `agent_type` |
+| `PreToolUse` AskUserQuestion | 1× | `tool_use_id` | |
+| `PostToolUse` | 3× | `tool_use_id`, `tool_name` | answered AskUserQuestion (same `tool_use_id` as its PreToolUse: closes `q:`); Edit ×2 (each closes the Edit's `perm:main`). Edit's `tool_response` holds the whole file (~6.9 KB) |
+| `PostToolUseFailure` | 0 | — | |
+| `PostToolBatch` | 13× | — | marker only, 68 bytes; closes Bash permissions (Bash has no PostToolUse hook) |
+| `Stop` | 11× | `agent_id` absent | none after the Esc |
+| `Notification` `idle_prompt` | 0 | — | the Esc was followed by a new prompt after 17 s, so it couldn't fire |
+
+Design risk items: a real tool's `PermissionRequest` — **seen**; an answered question — **seen**; Edit — **seen**; subagent `agent_id` — **seen** (on `PermissionRequest`; its batch marker closes it); parallel appends — none seen; `idle_prompt` after an interrupt — **still unseen** (capture 1 shows `idle_prompt` 60 s after a `Stop`: its table said "0", but the fixture's last record is one).
+
+Esc during a working turn (07:31:18–21) fired no hook; the turn closed on the next `UserPromptSubmit`, as the design's interrupt risk expects.
+
+Mapping rows: **no change**. Every observed record maps through the table as written.
+
+Observed, not acted on: a background subagent's `PermissionRequest` arrived after the main `Stop` (the main turn ends while background work continues). The mapping shows it as `waiting · permission`, which is right; while background work runs without asking anything, the card shows idle / waiting · done.
+
+Part B deviations (mechanical, no design impact):
+
+- `ClaudeFold` carries `id` (the spool's file id), so `step(fold, record)` keeps its two-argument signature and still emits events keyed by file id.
+- `SpoolTail` delivers `(id, records, initial)`; `SpoolClaude.start()` folds records already in the spools without emitting events, then emits `connected` (version `'spool'`). `snapshot` reads the in-memory folds, so it matches the events exactly.
+- A spool whose only record is `SessionStart` has a fold (it shows in `snapshot` after a restart) but no live tracker until its first event (normally the first prompt), so the card shows tmux `running` until then.
+- `PostToolUse(Failure)` closes `q:<tool_use_id>` and `perm:<scope>` only if they are open; `Stop`/`Notification` always close everything; `UserPromptSubmit` and `Stop` always emit their event, even when the fold doesn't change.
+- `scanRecords` resyncs on the literal `{"t":"`; an object nested in `e` whose first key is `"t"` with a string value only matters inside a corrupt span.
+- `setupCore()` now registers `FakeAgentSource('claude', true)` next to the OpenCode fake and returns it as `claude`; the Claude launch test uses a real `SpoolClaude` on `claudeDir`.
+
+Verification: `npm test -- src/core/claude src/core/sessions.test.ts` (69 passed), `npm run typecheck` clean, `npm test` (332 passed, outside the sandbox). Manual check pending (human).
 
 ## Open questions

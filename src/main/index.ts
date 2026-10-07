@@ -5,6 +5,7 @@ import { chromeBackground } from '@shared/theme'
 import { TmuxBackend } from '../core/backend/tmux'
 import { createCore } from '../core/core'
 import { findTmux, minimalEnv } from '../core/env'
+import { SpoolClaude } from '../core/claude/source'
 import { HttpOpenCode, serviceFilePath } from '../core/opencode/client'
 import { guardNavigation, handleArtifacts, registerArtifactScheme } from './artifacts'
 import { registerIpc } from './ipc'
@@ -29,8 +30,10 @@ app.whenReady().then(async () => {
       confPath: path.join(app.getAppPath(), 'resources', 'tmux.conf'),
       env: minimalEnv(process.env),
     }),
-    sources: [new HttpOpenCode({ serviceFile: serviceFilePath(process.env, os.homedir()) })],
-    claudeSpoolDir: path.join(app.getPath('userData'), 'agents', 'claude'),
+    sources: [
+      new HttpOpenCode({ serviceFile: serviceFilePath(process.env, os.homedir()) }),
+      new SpoolClaude({ dir: path.join(app.getPath('userData'), 'agents', 'claude') }),
+    ],
   })
   await core.start()
 
