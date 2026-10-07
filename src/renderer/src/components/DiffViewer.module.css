@@ -88,6 +88,7 @@
   font-family: var(--font-ui);
   background: var(--raised-bg);
   border-bottom: 1px solid var(--card-border);
+  cursor: pointer;
 }
 
 .fold {

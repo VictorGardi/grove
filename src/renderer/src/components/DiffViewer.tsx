@@ -58,8 +58,9 @@ export function DiffViewer({ diff, sessionId, label, expanded, onOpenRendered, o
       const file = a && filesRef.current.find((f) => f.path === a!.dataset.path)
       const r = file && a && b ? selectionRange(file, ref(a), ref(b)) : null
       if (!r || !range) return setPicked(null)
-      const rect = range.getBoundingClientRect()
-      setPicked({ range: r, x: Math.min(rect.right, window.innerWidth - 90), y: Math.max(rect.top, 40) })
+      // above the start of the selection: its bounding box can reach far right on wide lines
+      const first = range.getClientRects()[0] ?? range.getBoundingClientRect()
+      setPicked({ range: r, x: Math.min(first.left, window.innerWidth - 90), y: Math.max(first.top, 40) })
     }
     document.addEventListener('selectionchange', onChange)
     return () => document.removeEventListener('selectionchange', onChange)
@@ -136,15 +137,15 @@ function FileSection({ file, collapsed, drafts, writing, error, onWrite, onSave,
   const { rendered } = file
   return (
     <section className={s.file}>
-      <div className={s.fileHeader}>
-        <button type="button" className={s.fold} aria-expanded={!collapsed} onClick={onToggle}>
+      <div className={s.fileHeader} onClick={onToggle}>
+        <button type="button" className={s.fold} aria-expanded={!collapsed}>
           <Icon name={collapsed ? 'chevron-right' : 'chevron-down'} size={14} />
           <span className={s.status}>{STATUS[file.status]}</span>
           <span className={s.path}>{file.oldPath ? `${file.oldPath} → ${file.path}` : file.path}</span>
           <span className={s.add}>+{file.additions}</span>
           <span className={s.del}>−{file.deletions}</span>
         </button>
-        {rendered && <Button variant="ghost" size="sm" className={s.open} onClick={() => onOpenRendered(rendered)}>Open rendered</Button>}
+        {rendered && <Button variant="ghost" size="sm" className={s.open} onClick={(e) => { e.stopPropagation(); onOpenRendered(rendered) }}>Open rendered</Button>}
       </div>
       {collapsed ? null
         : file.binary ? <div className={s.note}>Binary file</div>
