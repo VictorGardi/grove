@@ -43,4 +43,4 @@ until slice 5.
 - [x] Run `npm test -- src/core/store src/core/claude src/core/sessions.test.ts`
 - [x] Run `npm run typecheck` and `npm test`
 - [ ] Manual (human): `npm run dev`, start Claude Code from the ＋ modal, then in that session: a plain prompt; a Bash command needing permission (wait > 6 s); a prompt that makes it ask a question (AskUserQuestion); Esc mid-turn and wait 60 s; a prompt making parallel Edits; `/clear` and a prompt; kill the tmux server (`tmux -L grove kill-server`) and run `claude --resume <uuid>` by hand.
-- [ ] Copy `~/Library/Application Support/grove/agents/claude/<uuid>.jsonl` to `src/core/claude/fixtures/capture-2.1.285.jsonl` and record per hook in `06-implementation.md`: fired or not, fields used by the mapping, sizes, any corrupt span. No hook record at all → stop: E-D10 reopens.
+- [x] Copy `~/Library/Application Support/grove/agents/claude/<uuid>.jsonl` to `src/core/claude/fixtures/capture-2.1.285.jsonl` and record per hook in `06-implementation.md`: fired or not, fields used by the mapping, sizes, any corrupt span. No hook record at all → stop: E-D10 reopens.

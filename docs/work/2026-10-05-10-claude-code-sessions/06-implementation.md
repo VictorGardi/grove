@@ -34,6 +34,32 @@ Deviations (mechanical, no design impact):
 
 Verification: `npm test -- src/core/store src/core/claude src/core/sessions.test.ts` (57 passed), `npm run typecheck` clean, `npm test` (298 passed, run outside the sandbox). A throwaway check confirmed the `--settings` JSON survives `loginShellArgv` quoting with a userData path containing a space.
 
-Hook capture (manual, pending): per hook, fired or not, fields used by the mapping, sizes, corrupt spans.
+### Hook capture (2026-10-07, claude 2.1.285)
+
+Fixture: `src/core/claude/fixtures/capture-2.1.285.jsonl` (spool of session `4049dd18-…`, permission mode `acceptEdits`, the user's sandbox on). 24 records, 17.6 KB, one record per line, 401–1279 bytes each, **no corrupt span**, no interleaving seen. Delivery works, so E-D10 holds.
+
+What the session actually exercised (in order): resume right after start, plain prompt, Bash, Write + Bash in one batch, AskUserQuestion (rejected with Esc), Write + Bash (sandbox-denied), `/clear` + prompt.
+
+| Hook | Fired | Fields the mapping uses | Notes |
+|---|---|---|---|
+| `SessionStart` | 3× | `source` (`startup`, `resume`, `clear`), `session_id` | `--resume <id>` keeps `session_id`; `/clear` gives a **new** `session_id` (`07e96ba9-…`), so the resume-id rule (latest `SessionStart` id) holds |
+| `UserPromptSubmit` | 6× | `prompt_id`, `permission_mode` | also carries `prompt` text |
+| `PreToolUse` AskUserQuestion | 1× | `tool_use_id`, `tool_name` | as designed |
+| `PermissionRequest` | 1× | `tool_name` = **`AskUserQuestion`** | **fires for the question tool too**; has no `tool_use_id`. No PermissionRequest for a real tool was captured (Bash ran without a prompt under acceptEdits + sandbox) |
+| `PostToolUse` | 2× (Write) | `tool_use_id`, `tool_input.file_path` (absolute, realpath `/private/tmp/…`) | no Edit/MultiEdit captured; none for the rejected AskUserQuestion |
+| `PostToolUseFailure` | 1× (Bash, sandbox deny) | `tool_use_id`, `is_interrupt: false`, `error` | |
+| `PostToolBatch` | 5× | `tool_calls[].tool_use_id` | **each call carries full `tool_input` and `tool_response`, for every tool incl. Bash** (and would for Read) |
+| `Stop` | 4× | — | `stop_hook_active: false`; not after the rejected question |
+| `StopFailure` | 0 | — | not provoked |
+| `Notification` `idle_prompt` | 0 | — | not provoked (the next prompt came 9 s after the Esc) |
+| subagent `agent_id` | 0 | — | not provoked |
+
+The Esc on the question (transcript: "Request interrupted by user for tool use") fired **no** hook at all: no PostToolUse(Failure), no Stop. The turn closed only on the next `UserPromptSubmit`, as the design's interrupt risk expects.
+
+Findings against `03-design.md` (not acted on; see the slice 1 stop):
+
+1. `PermissionRequest` with `tool_name: AskUserQuestion` would open `perm:main` next to `q:<id>`; with precedence permission > question the card would say "waiting · permission" for a question, and nothing would close it until the next prompt or Stop (a rejected question fires no Post hook).
+2. `PostToolBatch` copies every tool's input and response (Bash output, and Read file contents) into the spool, which contradicts two-way decision 4 ("Read/Bash payloads stay out of the spool").
+3. Not exercised: a real tool's `PermissionRequest`, an answered AskUserQuestion, Esc during a working turn + `idle_prompt` after 60 s, Edit/MultiEdit, parallel hooks writing at once, subagent scope.
 
 ## Open questions
