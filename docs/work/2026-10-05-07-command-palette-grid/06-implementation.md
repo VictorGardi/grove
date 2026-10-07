@@ -69,3 +69,9 @@ Deviations (small, none touch a one-way decision):
 - `npm run build` also run once as a sanity check (CSS modules, bundling); it passed.
 
 Verified: `npm test` (59 files, 560 tests), `npm run typecheck`. Manual (finished turn in unfocused pane stays waiting; Cmd+2 focuses pane 2; outside the grid Cmd+2 focuses sidebar session 2; dimming in both themes) not done by the agent.
+
+## Review follow-up (after slice 4)
+
+Human feedback from trying slices 1–4 (not a design change):
+
+- The grid plus/check moved from an inline button to a floating corner button on the card's top-left (new `corner` / `cornerPinned` props on `ListRow`, replacing `leading`), styled like the right-hand actions and shown only on hover. A member's green check stays visible only while the grid is showing; outside grid mode a member's check also shows on hover so it can be removed.

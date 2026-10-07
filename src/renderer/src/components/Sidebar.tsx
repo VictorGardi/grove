@@ -4,7 +4,6 @@ import { useSlices } from '../stores/slices'
 import { gridShown } from '../gridView'
 import { featureStage } from '../featureLabels'
 import { shownStatus, statusView } from '../sessionStatus'
-import { cx } from './ui/cx'
 import { colorTags } from '../tags'
 import { linkedFeature, sessionGroups } from '../tree'
 import { Badge } from './ui/Badge'
@@ -21,13 +20,14 @@ function toggle(set: Set<string>, id: string): Set<string> {
   return next
 }
 
-function SessionCard({ s, feature, tag, focused, compact, inGrid, gridFull, onToggleGrid, onFocus, onOpenFeature, onToggleCompact, onLink, onKill }: {
+function SessionCard({ s, feature, tag, focused, compact, inGrid, gridOn, gridFull, onToggleGrid, onFocus, onOpenFeature, onToggleCompact, onLink, onKill }: {
   s: Session
   feature: Feature | null // the linked feature, if it exists
   tag: number | null // its parent feature's colour
   focused: boolean // a focused card shows selected; otherwise terminals are muted
   compact: boolean
   inGrid: boolean // a member of the session grid
+  gridOn: boolean // the grid is showing: members keep their check visible
   gridFull: boolean // the grid has its nine
   onToggleGrid: () => void
   onFocus: () => void
@@ -45,15 +45,14 @@ function SessionCard({ s, feature, tag, focused, compact, inGrid, gridFull, onTo
   return (
     <ListRow
       title={s.label}
-      leading={
-        <button type="button" className={cx(css.gridToggle, inGrid && css.gridOn)} aria-pressed={inGrid}
+      corner={
+        <Button variant="ghost" size="sm" round icon={inGrid ? 'check' : 'plus'} aria-pressed={inGrid}
           disabled={!inGrid && gridFull}
           aria-label={inGrid ? 'Remove from grid' : 'Add to grid'}
           title={inGrid ? 'Remove from grid' : gridFull ? `The grid holds ${GRID_MAX} sessions` : 'Add to grid'}
-          onClick={(e) => { e.stopPropagation(); onToggleGrid() }}>
-          <Icon name={inGrid ? 'check' : 'plus'} size={11} />
-        </button>
+          onClick={onToggleGrid} />
       }
+      cornerPinned={inGrid && gridOn}
       icon={agent
         ? <Icon name={done ? 'agent-done' : 'agent'} size={13} className={done ? css.iconDone : shown === 'gone' ? css.iconGone : css.iconAgent} />
         : <Icon name="terminal" size={13} className={css.iconTerminal} />}
@@ -205,6 +204,7 @@ export function Sidebar({ onNew, onKill }: { onNew: (projectId?: string) => void
         focused={s.id === ui.focusedSessionId}
         compact={compact.has(s.id)}
         inGrid={ui.grid.members.includes(s.id)}
+        gridOn={gridShown(ui)}
         gridFull={ui.grid.members.length >= GRID_MAX}
         onToggleGrid={() => toggleGridMember(s.id)}
         onFocus={() => setFocused(s.id)}

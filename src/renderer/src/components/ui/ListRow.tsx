@@ -5,7 +5,8 @@ import s from './ListRow.module.css'
 
 interface Props {
   title: string
-  leading?: ReactNode // before the icon, e.g. a toggle
+  corner?: ReactNode // floating on the top-left corner, shown on hover (or always with cornerPinned)
+  cornerPinned?: boolean
   icon?: ReactNode
   meta?: ReactNode
   status?: { label: string; tone: StatusTone }
@@ -18,16 +19,16 @@ interface Props {
   editor?: ReactNode // replaces the title while renaming
 }
 
-export function ListRow({ title, leading, icon, meta, status, tone = 'default', compact, actions, badge, onClick, onTitleDoubleClick, editor }: Props) {
+export function ListRow({ title, corner, cornerPinned, icon, meta, status, tone = 'default', compact, actions, badge, onClick, onTitleDoubleClick, editor }: Props) {
   return (
     <div className={cx(s.row, s[tone], compact && s.compact)} onClick={onClick}>
       <div className={s.head}>
-        {leading}
         {icon}
         {editor ?? <span className={s.title} onDoubleClick={onTitleDoubleClick}>{title}</span>}
         {compact && status && <StatusDot tone={status.tone} />}
         {badge}
       </div>
+      {corner && <div className={cx(s.corner, cornerPinned && s.cornerPinned)} onClick={(e) => e.stopPropagation()}>{corner}</div>}
       {actions && <div className={s.actions} onClick={(e) => e.stopPropagation()}>{actions}</div>}
       {!compact && meta && <div className={s.meta}>{meta}</div>}
       {!compact && status && <div className={cx(s.status, s[`s-${status.tone}`])}>{status.label}</div>}

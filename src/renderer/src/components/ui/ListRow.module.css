@@ -65,6 +65,33 @@
   color: var(--text);
 }
 
+.corner {
+  position: absolute;
+  top: -10px;
+  left: 8px;
+  z-index: 1;
+  display: flex;
+  opacity: 0;
+}
+
+.corner > button {
+  background: var(--chrome-bg);
+  border: 1px solid var(--text-3);
+  color: var(--text);
+}
+
+.corner > button[aria-pressed='true'] {
+  background: var(--status-working);
+  border-color: var(--status-working);
+  color: var(--chrome-bg);
+}
+
+.cornerPinned,
+.row:hover .corner,
+.row:focus-within .corner {
+  opacity: 1;
+}
+
 .actions {
   position: absolute;
   top: -10px;
