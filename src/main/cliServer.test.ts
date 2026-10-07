@@ -51,6 +51,20 @@ describe('cli server', () => {
     expect(await request(socketPath, req('sessions.create', { kind: 'vim', cwd: t.dir }))).toMatchObject({ ok: false, error: { code: 'bad-params' } })
   })
 
+  it('sends text to a session by id prefix and reads its pane', async () => {
+    const { core, socketPath } = await start()
+    const s = await createTerminal(core)
+    expect(await request(socketPath, req('sessions.send', { ref: s.id.slice(0, 6), text: 'hi', submit: false }))).toMatchObject({ ok: true })
+    expect(t.fake.pastes).toEqual([{ name: s.tmuxName, text: 'hi', submit: false }])
+    await request(socketPath, req('sessions.send', { ref: s.id, text: 'yo', submit: true }))
+    expect(t.fake.pastes[1]).toMatchObject({ text: 'yo', submit: true })
+    expect(await request(socketPath, req('sessions.send', { ref: 'nope', text: 'x', submit: true }))).toMatchObject({ ok: false, error: { code: 'not-found' } })
+    expect(await request(socketPath, req('sessions.send', { ref: s.id }))).toMatchObject({ ok: false, error: { code: 'bad-params' } })
+    t.fake.captured.set(s.tmuxName, 'line1\nline2\n')
+    expect(await request(socketPath, req('sessions.read', { ref: s.id, lines: 40 }))).toMatchObject({ ok: true, data: { text: 'line1\nline2\n' } })
+    expect(await request(socketPath, req('sessions.read', { ref: s.id }))).toMatchObject({ ok: false, error: { code: 'bad-params' } })
+  })
+
   it('rejects another protocol version and unknown methods', async () => {
     const { socketPath } = await start()
     expect(await request(socketPath, req('sessions.list', {}, 2))).toMatchObject({ ok: false, error: { code: 'bad-version' } })

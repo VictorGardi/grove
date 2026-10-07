@@ -14,6 +14,16 @@ describe('parseCommand', () => {
     expect(parseCommand(['new', 'terminal'])).toMatchObject({ cmd: 'new', kind: 'terminal', json: false })
   })
 
+  it('parses send and read', () => {
+    expect(parseCommand(['send', 'abc', 'hi'])).toEqual({ cmd: 'send', ref: 'abc', text: 'hi', submit: true })
+    expect(parseCommand(['send', 'abc', '-', '--no-enter'])).toEqual({ cmd: 'send', ref: 'abc', text: '-', submit: false })
+    expect(parseCommand(['read', 'abc'])).toEqual({ cmd: 'read', ref: 'abc', lines: 100 })
+    expect(parseCommand(['read', 'abc', '--lines', '40'])).toEqual({ cmd: 'read', ref: 'abc', lines: 40 })
+    for (const argv of [['send'], ['send', 'abc'], ['read'], ['read', 'abc', '--lines', 'x'], ['read', 'abc', '--lines', '0']]) {
+      expect(parseCommand(argv)).toBeInstanceOf(UsageError)
+    }
+  })
+
   it('new needs exactly one known kind', () => {
     for (const argv of [['new'], ['new', 'vim'], ['new', 'claude', 'opencode']]) {
       expect(parseCommand(argv)).toBeInstanceOf(UsageError)

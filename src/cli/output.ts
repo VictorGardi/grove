@@ -22,6 +22,8 @@ export function formatLs(sessions: CliSession[], caller: string | null, json: bo
 
 export const formatNew = (s: CliSession, json: boolean): string => (json ? JSON.stringify(s, null, 2) : s.id)
 
+export const formatRead = (text: string): string => text.replace(/\s+$/, '')
+
 export function exitCode(reply: CliReply): number {
   if (reply.ok) return 0
   return reply.error.code === NOT_RUNNING ? 3 : 1

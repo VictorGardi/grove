@@ -78,6 +78,7 @@ export interface Commands {
   diffLines(a: { sessionId: string; path: string; from: number; to: number }): Promise<Result<string[]>> // lines of a changed file in the open diff, 1-based inclusive
   reviewSend(a: { sessionId: string }): Promise<Result<{ sent: number }>> // the session's drafts as one message; none: 'empty'
   sendToSession(a: { id: string; text: string; submit?: boolean }): Promise<Result<{ id: string }>>
+  sessionRead(a: { id: string; lines: number }): Promise<Result<{ text: string }>> // the pane's last lines; empty when it is gone
 }
 
 export interface Core {
@@ -731,6 +732,11 @@ export function createCore(opts: CoreOptions): Core {
     },
 
     sendToSession: (a) => sendToSession(sendDeps, a),
+    async sessionRead({ id, lines }) {
+      const session = findSession(id)
+      if (!session) return { ok: false, error: 'not-found' }
+      return { ok: true, data: { text: await backend.capture(session.tmuxName, lines) } }
+    },
   }
 
   return {

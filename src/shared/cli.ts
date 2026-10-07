@@ -9,6 +9,8 @@ export interface CliMethods {
     params: { kind: SessionKind; cwd: string; prompt?: string; label?: string; feature?: string }
     data: CliSession
   }
+  'sessions.send': { params: { ref: string; text: string; submit: boolean }; data: { id: string } }
+  'sessions.read': { params: { ref: string; lines: number }; data: { text: string } }
 }
 
 export interface CliRequest {

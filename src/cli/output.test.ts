@@ -1,6 +1,6 @@
 import type { CliSession } from '@shared/cli'
 import { describe, expect, it } from 'vitest'
-import { exitCode, formatError, formatLs } from './output'
+import { exitCode, formatError, formatLs, formatRead } from './output'
 
 const s = (over: Partial<CliSession>): CliSession => ({
   id: 'aaaaaaaa-1111', kind: 'opencode', label: 'one', status: 'working', waitingFor: null,
@@ -36,5 +36,11 @@ describe('exit codes and errors', () => {
   it('formats errors', () => {
     expect(formatError({ code: 'not-running', message: 'x' })).toBe('grove: the Grove app is not running')
     expect(formatError({ code: 'not-found', message: 'no such session' })).toBe('grove: not-found: no such session')
+  })
+})
+
+describe('formatRead', () => {
+  it('trims trailing whitespace', () => {
+    expect(formatRead('a\nb  \n\n \n')).toBe('a\nb')
   })
 })

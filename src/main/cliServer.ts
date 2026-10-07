@@ -3,6 +3,7 @@ import net from 'node:net'
 import { PROTOCOL, type CliReply, type CliSession } from '@shared/cli'
 import type { Session } from '@shared/types'
 import type { Core } from '../core/core'
+import { resolveSessionRef } from '../core/cliOps'
 
 export interface CliServerOptions {
   socketPath: string
@@ -16,6 +17,8 @@ const MESSAGES: Record<string, string> = {
   'no-feature': 'no such feature in that project',
   'no-source': 'that agent is not available',
   ambiguous: 'more than one session matches',
+  gone: 'the session has ended and cannot be resumed',
+  'not-ready': 'the resumed session did not draw its prompt in time',
 }
 
 const failFrom = (id: string, code: string): CliReply => fail(id, code, MESSAGES[code] ?? code)
@@ -68,6 +71,24 @@ async function dispatch(core: Core, line: string): Promise<CliReply> {
         feature: optString(params.feature), cols: COLS, rows: ROWS,
       })
       return res.ok ? { id, ok: true, data: toCli(core, res.data) } : failFrom(id, res.error)
+    }
+    case 'sessions.send': {
+      const { ref, text } = params
+      if (typeof ref !== 'string' || typeof text !== 'string' || !ref) return fail(id, 'bad-params', 'ref and text are required')
+      const found = resolveSessionRef(core.getSlices().sessions, ref)
+      if (!found.ok) return failFrom(id, found.error)
+      const res = await core.commands.sendToSession({ id: found.data.id, text, submit: params.submit !== false })
+      return res.ok ? { id, ok: true, data: res.data } : failFrom(id, res.error)
+    }
+    case 'sessions.read': {
+      const { ref, lines } = params
+      if (typeof ref !== 'string' || !ref || typeof lines !== 'number' || !Number.isInteger(lines) || lines < 1) {
+        return fail(id, 'bad-params', 'ref and lines are required')
+      }
+      const found = resolveSessionRef(core.getSlices().sessions, ref)
+      if (!found.ok) return failFrom(id, found.error)
+      const res = await core.commands.sessionRead({ id: found.data.id, lines })
+      return res.ok ? { id, ok: true, data: res.data } : failFrom(id, res.error)
     }
     default:
       return fail(id, 'bad-method', `unknown method: ${String(req.method)}`)

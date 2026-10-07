@@ -4,7 +4,7 @@ import path from 'node:path'
 import { PROTOCOL, type CliMethods, type CliReply } from '@shared/cli'
 import { parseCommand, UsageError, type Command } from './args'
 import { request } from './client'
-import { exitCode, formatError, formatLs, formatNew } from './output'
+import { exitCode, formatError, formatLs, formatNew, formatRead } from './output'
 
 const call = (socket: string, method: keyof CliMethods, params: unknown): Promise<CliReply> =>
   request(socket, { v: PROTOCOL, id: randomUUID(), method, params })
@@ -15,6 +15,14 @@ async function run(cmd: Command, socket: string): Promise<CliReply & { print?: s
   if (cmd.cmd === 'ls') {
     const reply = await call(socket, 'sessions.list', { all: cmd.all })
     return reply.ok ? { ...reply, print: formatLs(reply.data as CliMethods['sessions.list']['data'], process.env.GROVE_SESSION_ID ?? null, cmd.json) } : reply
+  }
+  if (cmd.cmd === 'send') {
+    const reply = await call(socket, 'sessions.send', { ref: cmd.ref, text: text(cmd.text) ?? '', submit: cmd.submit })
+    return reply.ok ? { ...reply, print: undefined } : reply
+  }
+  if (cmd.cmd === 'read') {
+    const reply = await call(socket, 'sessions.read', { ref: cmd.ref, lines: cmd.lines })
+    return reply.ok ? { ...reply, print: formatRead((reply.data as CliMethods['sessions.read']['data']).text) } : reply
   }
   const reply = await call(socket, 'sessions.create', {
     kind: cmd.kind, cwd: path.resolve(cmd.cwd ?? process.cwd()), prompt: text(cmd.prompt), label: cmd.label, feature: cmd.link,
@@ -38,7 +46,7 @@ async function main(): Promise<number> {
     console.error(formatError(reply.error))
     return exitCode(reply)
   }
-  console.log(reply.print)
+  if (reply.print !== undefined) console.log(reply.print)
   return 0
 }
 

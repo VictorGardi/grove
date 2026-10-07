@@ -81,3 +81,26 @@ captures 300 ms apart, up to 10 s), in the background. Start argv gets these opt
 - [x] Run `npm run typecheck`
 - [x] Run `npm run build`
 - Manual (human, not a checkbox): `grove new claude --cwd ~/git/other --prompt "say hi" --label helper`; the session shows in the sidebar under that folder's project (registered if new) and the prompt runs; `grove new terminal --link no-such-slug` exits 1 and creates nothing; kill, resume from the sidebar, and check it restarts in the same folder.
+
+## Slice 3 — `grove send` and `grove read`
+
+Notes for a cold reader: `grove send <ref> <TEXT|-> [--no-enter]` calls `sessions.send` (params `{ref, text, submit}`),
+prints nothing on success (exit 0); `-` reads stdin. `grove read <ref> [--lines N]` (default 100) calls `sessions.read`
+(params `{ref, lines}`, data `{text}`) and prints the text with trailing whitespace trimmed. The server resolves `ref`
+with `resolveSessionRef` over all sessions (gone ones too); `not-found`/`ambiguous` reply as errors. `send` uses
+`core.commands.sendToSession` (a gone agent session is resumed first; errors such as `gone`/`not-ready` are replied as
+`{code, message: code}` unless the table in `cliServer.ts` has a message). `read` is `core.commands.sessionRead`,
+which captures the last N lines of the session's pane (a missing pane gives empty text). `--wait` comes in slice 4.
+
+- [x] Write failing test `src/cli/args.test.ts`: `send abc "hi"` → `{cmd:'send', ref:'abc', text:'hi', submit:true}`; `send abc - --no-enter` → `submit:false`; `send abc` and `send` → `UsageError`; `read abc` → `lines: 100`; `read abc --lines 40` → 40; `--lines x` and `--lines 0` → `UsageError`
+- [x] `src/cli/args.ts`: `Command` gains `send` and `read`; usage text lists them
+- [x] Write failing test `src/main/cliServer.test.ts`: `sessions.send` with a ref (id prefix) reaches `t.fake.pastes` with `submit` as given; unknown ref → `not-found`; `sessions.read` returns `t.fake.captured` text for the session's `tmuxName`; missing params → `bad-params`
+- [x] `src/core/core.ts`: `Commands.sessionRead({ id, lines })` → `{ text }` (`not-found` for an unknown id) via `backend.capture`
+- [x] `src/shared/cli.ts`: `sessions.send` and `sessions.read` in `CliMethods`
+- [x] `src/main/cliServer.ts`: `sessions.send`, `sessions.read`, ref resolution, message table gains `gone`, `not-ready`
+- [x] `src/cli/output.ts`: `formatRead(text)` (trims trailing whitespace); add its case to `src/cli/output.test.ts`
+- [x] `src/cli/index.ts`: send and read requests (stdin for `-`)
+- [x] Run `npm test`
+- [x] Run `npm run typecheck`
+- [x] Run `npm run build`
+- Manual (human, not a checkbox): from one grove session, `grove send <other> "reply pong"`, then `grove read <other>` shows the answer.
