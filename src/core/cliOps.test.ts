@@ -1,6 +1,6 @@
-import { describe, expect, it } from 'vitest'
-import type { Project } from '@shared/types'
-import { paneStable, resolveProject, resolveSessionRef } from './cliOps'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
+import type { Project, Session } from '@shared/types'
+import { paneStable, resolveProject, resolveSessionRef, waitTurn } from './cliOps'
 import { newSession } from './sessions'
 
 const NOW = new Date('2026-10-07T10:00:00Z')
@@ -68,5 +68,80 @@ describe('paneStable', () => {
   it('gives up after the timeout', async () => {
     let n = 0
     expect(await paneStable(async () => String(n++), { intervalMs: 10, timeoutMs: 50, sleep })).toBe(false)
+  })
+})
+
+describe('waitTurn', () => {
+  const mk = (over: Partial<Session> = {}) => {
+    let cur: Session | undefined = { ...newSession({ projectId: 'p', kind: 'opencode', now: NOW, id: 's', agentSessionId: 'a' }), status: 'idle', ...over }
+    const cbs = new Set<() => void>()
+    const deps = { find: () => cur, onSessions: (cb: () => void) => (cbs.add(cb), () => void cbs.delete(cb)) }
+    const set = (o: Partial<Session> | undefined) => { cur = o && cur && { ...cur, ...o }; if (!o) cur = undefined; for (const cb of [...cbs]) cb() }
+    return { deps, set, cbs }
+  }
+  beforeEach(() => { vi.useFakeTimers() })
+  afterEach(() => { vi.useRealTimers() })
+
+  it('returns at once when idle, and for a finished-unseen turn', async () => {
+    expect(await waitTurn(mk().deps, 's', { expectStart: false, timeoutMs: 1000 })).toEqual({ ok: true, data: { status: 'idle', waitingFor: null } })
+    const done = mk({ status: 'waiting', waitingFor: 'done' })
+    expect(await waitTurn(done.deps, 's', { expectStart: false, timeoutMs: 1000 })).toMatchObject({ ok: true, data: { status: 'idle' } })
+  })
+
+  it('waits for working to end', async () => {
+    const m = mk({ status: 'working' })
+    const p = waitTurn(m.deps, 's', { expectStart: false, timeoutMs: 1000 })
+    m.set({ status: 'idle' })
+    expect(await p).toMatchObject({ ok: true, data: { status: 'idle' } })
+    expect(m.cbs.size).toBe(0)
+  })
+
+  it('expectStart: ignores idle until working was seen, then ends on idle', async () => {
+    const m = mk()
+    const p = waitTurn(m.deps, 's', { expectStart: true, timeoutMs: 100_000 })
+    m.set({ status: 'idle' })
+    m.set({ status: 'working' })
+    m.set({ status: 'waiting', waitingFor: 'done' })
+    expect(await p).toMatchObject({ ok: true, data: { status: 'idle' } })
+  })
+
+  it('expectStart: resolves with the current state after startWaitMs when no turn begins', async () => {
+    const m = mk()
+    const p = waitTurn(m.deps, 's', { expectStart: true, timeoutMs: 100_000, startWaitMs: 5000 })
+    await vi.advanceTimersByTimeAsync(5000)
+    expect(await p).toMatchObject({ ok: true, data: { status: 'idle' } })
+  })
+
+  it('reports permission and question as waiting, and a gone or removed session as gone', async () => {
+    const perm = mk({ status: 'waiting', waitingFor: 'permission' })
+    expect(await waitTurn(perm.deps, 's', { expectStart: false, timeoutMs: 1000 })).toEqual({ ok: true, data: { status: 'waiting', waitingFor: 'permission' } })
+    const q = mk({ status: 'working' })
+    const p = waitTurn(q.deps, 's', { expectStart: false, timeoutMs: 1000 })
+    q.set({ status: 'waiting', waitingFor: 'question' })
+    expect(await p).toMatchObject({ data: { status: 'waiting', waitingFor: 'question' } })
+    const g = mk({ status: 'working' })
+    const pg = waitTurn(g.deps, 's', { expectStart: true, timeoutMs: 1000 })
+    g.set({ lastStatus: 'gone', status: undefined })
+    expect(await pg).toMatchObject({ data: { status: 'gone' } })
+    const r = mk({ status: 'working' })
+    const pr = waitTurn(r.deps, 's', { expectStart: false, timeoutMs: 1000 })
+    r.set(undefined)
+    expect(await pr).toMatchObject({ data: { status: 'gone' } })
+  })
+
+  it('times out, also with no status (a disconnected source)', async () => {
+    const m = mk({ status: undefined })
+    const p = waitTurn(m.deps, 's', { expectStart: false, timeoutMs: 1000 })
+    await vi.advanceTimersByTimeAsync(1000)
+    expect(await p).toEqual({ ok: false, error: 'timeout' })
+    expect(m.cbs.size).toBe(0)
+  })
+
+  it('refuses a terminal and an unknown session', async () => {
+    const t = mk({ kind: 'terminal' })
+    expect(await waitTurn(t.deps, 's', { expectStart: false, timeoutMs: 1000 })).toEqual({ ok: false, error: 'no-status' })
+    const none = mk()
+    none.set(undefined)
+    expect(await waitTurn(none.deps, 's', { expectStart: false, timeoutMs: 1000 })).toEqual({ ok: false, error: 'not-found' })
   })
 })

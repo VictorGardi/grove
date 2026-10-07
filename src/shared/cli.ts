@@ -6,11 +6,18 @@ export const PROTOCOL = 1
 export interface CliMethods {
   'sessions.list': { params: { all?: boolean }; data: CliSession[] }
   'sessions.create': {
-    params: { kind: SessionKind; cwd: string; prompt?: string; label?: string; feature?: string }
-    data: CliSession
+    params: { kind: SessionKind; cwd: string; prompt?: string; label?: string; feature?: string; wait?: boolean; timeoutS?: number }
+    data: CliSession & { turn?: TurnResult }
   }
-  'sessions.send': { params: { ref: string; text: string; submit: boolean }; data: { id: string } }
+  'sessions.send': { params: { ref: string; text: string; submit: boolean; wait?: boolean; timeoutS?: number }; data: { id: string; turn?: TurnResult } }
+  'sessions.wait': { params: { ref: string; timeoutS?: number }; data: { id: string } & TurnResult }
   'sessions.read': { params: { ref: string; lines: number }; data: { text: string } }
+}
+
+// How a wait ended: `waiting` is for permission or a question. The CLI exits 0, 4, 5.
+export interface TurnResult {
+  status: 'idle' | 'waiting' | 'gone'
+  waitingFor: Session['waitingFor'] | null
 }
 
 export interface CliRequest {

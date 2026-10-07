@@ -104,3 +104,31 @@ which captures the last N lines of the session's pane (a missing pane gives empt
 - [x] Run `npm run typecheck`
 - [x] Run `npm run build`
 - Manual (human, not a checkbox): from one grove session, `grove send <other> "reply pong"`, then `grove read <other>` shows the answer.
+
+## Slice 4 — `grove wait`, `send --wait`, `new --wait`
+
+Notes for a cold reader: `grove wait <ref> [--timeout S]` calls `sessions.wait` (params `{ref, timeoutS}`, default 600),
+data `{id, status: 'idle'|'waiting'|'gone', waitingFor}`. The CLI exits 0 for `idle`, 4 for `waiting`, 5 for `gone`; an
+error reply with code `timeout` exits 124 (`exitCode` maps it), `no-status` (terminal session) exits 1. `send` and `new` take
+`--wait [--timeout S]`: the request carries `wait: true, timeoutS`, the server does the action and then waits with
+`expectStart`, and the reply data gains `turn` (the same `{status, waitingFor}`); the CLI prints as usual, then exits by `turn`.
+A timeout after `new` replies `timeout` with the new id in the message. `waitTurn(deps, id, o)` in `src/core/cliOps.ts`
+(`deps = { find(id), onSessions(cb): () => void }`; `o = { expectStart, timeoutMs, startWaitMs? }`, `startWaitMs` default 30 000)
+decides from `Session.status`: `working` → keep waiting (and counts as started); `waiting` with `waitingFor` `permission`/`question`
+→ `waiting`; `idle`, or `waiting` with `waitingFor: 'done'` → `idle`; `lastStatus: 'gone'` or the session removed → `gone`;
+no `status` on an agent session (source disconnected) → keep waiting; a terminal session → error `no-status`; unknown → `not-found`.
+With `expectStart`, nothing but `gone` resolves until `working` has been seen or `startWaitMs` has passed (then the current state
+decides). The core exposes `Core.waitTurn(id, o)` wired to its slice listener.
+
+- [x] Write failing test `src/core/cliOps.test.ts` for `waitTurn` with fake timers and a settable session: "idle → immediate", "expectStart: working then idle → idle", "expectStart: never working → resolves after startWaitMs", "permission → waiting", "done → idle", "gone → gone", "timeout → error timeout", "terminal → no-status", "no status (disconnected) → times out"
+- [x] `src/core/cliOps.ts`: `waitTurn`
+- [x] `src/core/core.ts`: `Core.waitTurn(id, o)` using `findSession` and the `'sessions'` slice listener
+- [x] `src/shared/cli.ts`: `TurnResult`, `sessions.wait`; `wait?`/`timeoutS?` on `sessions.send` and `sessions.create`, `turn?` in their data
+- [x] Write failing tests `src/main/cliServer.test.ts`: `sessions.wait` on an idle OpenCode session replies `idle`; on a terminal replies `no-status`; `sessions.send` with `wait` on a session whose fake source emits working then idle returns `turn`
+- [x] `src/main/cliServer.ts`: `sessions.wait`, and `wait` on send and create
+- [x] Write failing tests `src/cli/args.test.ts` (`wait abc --timeout 5`; `send`/`new` with `--wait --timeout`; bad timeout → `UsageError`) and `src/cli/output.test.ts` (`exitCode` maps `timeout` → 124; `turnExit`: idle 0, waiting 4, gone 5)
+- [x] `src/cli/args.ts`, `src/cli/output.ts` (`turnExit`), `src/cli/index.ts`: the `wait` command and the flags
+- [x] Run `npm test`
+- [x] Run `npm run typecheck`
+- [x] Run `npm run build`
+- Manual (human, not a checkbox): `grove new opencode --prompt "count to 5" --wait` returns when the turn ends.

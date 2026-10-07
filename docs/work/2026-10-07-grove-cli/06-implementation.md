@@ -17,6 +17,7 @@ forced: []
 - [x] Slice 1 — `grove ls` from a grove session (tracer)
 - [x] Slice 2 — `grove new` in any folder, with prompt, label and link
 - [x] Slice 3 — `grove send` and `grove read`
+- [x] Slice 4 — `grove wait`, `send --wait`, `new --wait`
 
 ## Slice 1
 
@@ -71,4 +72,14 @@ Deviations (small; none touch a one-way decision):
 - `send` and `read` resolve refs over all sessions, gone ones included (so `send` can resume a gone agent session).
 - New server messages for `gone` and `not-ready`.
 - `grove send` prints nothing on success.
+- Tests and code were written together rather than strictly red-first.
+
+## Slice 4
+
+Deviations (small; none touch a one-way decision):
+
+- `waitTurn` lives in `cliOps.ts` as `waitTurn(deps, id, o)` with `deps = { find, onSessions }`; `Core.waitTurn` wires it to the sessions slice listener. `TurnResult` is in `shared/cli.ts`.
+- `--wait` on `send`/`new` runs inside the same request (`wait`, `timeoutS` params; `turn` in the reply data). A timeout after `new` replies `timeout` with the new session id in the message.
+- A `--timeout` of `0` or less is a usage error; timeouts take fractional seconds.
+- A finished-unseen turn (`waiting`/`done`) counts as finished (exit 0); only `permission`/`question` exit 4.
 - Tests and code were written together rather than strictly red-first.

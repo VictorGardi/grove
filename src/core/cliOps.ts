@@ -1,6 +1,7 @@
 import fs from 'node:fs'
 import { randomUUID } from 'node:crypto'
 import path from 'node:path'
+import type { TurnResult } from '@shared/cli'
 import type { Result } from '@shared/ipc'
 import type { Project, Session } from '@shared/types'
 import { newProject } from './projects'
@@ -67,4 +68,47 @@ export async function paneStable(
     prev = next
   }
   return false
+}
+
+export interface WaitDeps {
+  find(id: string): Session | undefined
+  onSessions(cb: () => void): () => void // calls back whenever the sessions slice changes
+}
+
+const START_WAIT_MS = 30_000
+
+// Blocks until the session stops working (ADR 0027). `expectStart`: first give the turn up to `startWaitMs` to begin.
+// An agent session with no status (its source is disconnected) keeps waiting; a terminal has none to wait on.
+export function waitTurn(
+  deps: WaitDeps,
+  id: string,
+  o: { expectStart: boolean; timeoutMs: number; startWaitMs?: number }
+): Promise<Result<TurnResult>> {
+  const first = deps.find(id)
+  if (!first) return Promise.resolve({ ok: false, error: 'not-found' })
+  if (first.kind === 'terminal') return Promise.resolve({ ok: false, error: 'no-status' })
+  return new Promise((resolve) => {
+    let started = !o.expectStart
+    const timers: ReturnType<typeof setTimeout>[] = []
+    let off = () => {}
+    const finish = (r: Result<TurnResult>) => {
+      off()
+      for (const t of timers) clearTimeout(t)
+      resolve(r)
+    }
+    const check = () => {
+      const s = deps.find(id)
+      if (!s || s.lastStatus === 'gone') return finish({ ok: true, data: { status: 'gone', waitingFor: null } })
+      if (s.status === 'working') started = true
+      if (!started || !s.status || s.status === 'working') return
+      const blocked = s.status === 'waiting' && (s.waitingFor === 'permission' || s.waitingFor === 'question')
+      finish({ ok: true, data: blocked ? { status: 'waiting', waitingFor: s.waitingFor ?? null } : { status: 'idle', waitingFor: null } })
+    }
+    off = deps.onSessions(check)
+    timers.push(setTimeout(() => finish({ ok: false, error: 'timeout' }), o.timeoutMs))
+    if (!started) {
+      timers.push(setTimeout(() => { started = true; check() }, o.startWaitMs ?? START_WAIT_MS))
+    }
+    check()
+  })
 }

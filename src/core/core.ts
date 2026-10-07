@@ -19,7 +19,8 @@ import { slugFor } from './autolink'
 import { formatReview } from './comments/format'
 import { addComment, draftsOf, dropSession, markSent, removeComment, updateComment } from './comments/model'
 import { loadComments, saveComments } from './comments/store'
-import { isDirectory, paneStable, realOrSelf, resolveProject } from './cliOps'
+import type { TurnResult } from '@shared/cli'
+import { isDirectory, paneStable, realOrSelf, resolveProject, waitTurn } from './cliOps'
 import { sendToSession } from './send'
 import { hasLiveSessions, newProject } from './projects'
 import { readBranch } from './git'
@@ -90,6 +91,7 @@ export interface Core {
   setWindowFocused(f: boolean): void
   checkLiveness(): Promise<void>
   commands: Commands
+  waitTurn(id: string, o: { expectStart: boolean; timeoutMs: number }): Promise<Result<TurnResult>>
   attach(sessionId: string, cols: number, rows: number): AttachHandle
   artifactPath(projectId: string, slug: string, rel: string): string | null // null: not a file of a discovered feature
   filePath(projectId: string, rel: string): string | null // the ~file route (ADR 0022); null: refused
@@ -787,6 +789,14 @@ export function createCore(opts: CoreOptions): Core {
     },
     checkLiveness,
     commands,
+    waitTurn: (id, o) => waitTurn({
+      find: findSession,
+      onSessions(cb) {
+        const l: SliceListener = (k) => { if (k === 'sessions') cb() }
+        listeners.add(l)
+        return () => void listeners.delete(l)
+      },
+    }, id, o),
     attach(sessionId, cols, rows) {
       const session = slices.sessions.find((s) => s.id === sessionId)
       if (!session) throw new Error('not-found')

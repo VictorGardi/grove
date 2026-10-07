@@ -1,6 +1,6 @@
 import fs from 'node:fs'
 import net from 'node:net'
-import { PROTOCOL, type CliReply, type CliSession } from '@shared/cli'
+import { PROTOCOL, type CliReply, type CliSession, type TurnResult } from '@shared/cli'
 import type { Session } from '@shared/types'
 import type { Core } from '../core/core'
 import { resolveSessionRef } from '../core/cliOps'
@@ -17,6 +17,8 @@ const MESSAGES: Record<string, string> = {
   'no-feature': 'no such feature in that project',
   'no-source': 'that agent is not available',
   ambiguous: 'more than one session matches',
+  timeout: 'timed out waiting for the session',
+  'no-status': 'a terminal session has no status to wait on',
   gone: 'the session has ended and cannot be resumed',
   'not-ready': 'the resumed session did not draw its prompt in time',
 }
@@ -40,6 +42,17 @@ function toCli(core: Core, s: Session): CliSession {
 
 const listSessions = (core: Core, all: boolean): CliSession[] =>
   core.getSlices().sessions.filter((s) => all || s.lastStatus === 'running').map((s) => toCli(core, s))
+
+const DEFAULT_TIMEOUT_S = 600
+
+const timeoutMs = (v: unknown): number => (typeof v === 'number' && v > 0 ? v : DEFAULT_TIMEOUT_S) * 1000
+
+// The turn a send or create started (`wait`): the action already happened, so a timeout names the session.
+async function waitAfter(core: Core, id: string, params: Record<string, unknown>, sessionId: string): Promise<CliReply | TurnResult> {
+  const turn = await core.waitTurn(sessionId, { expectStart: true, timeoutMs: timeoutMs(params.timeoutS) })
+  if (turn.ok) return turn.data
+  return fail(id, turn.error, `${MESSAGES[turn.error] ?? turn.error} (session ${sessionId})`)
+}
 
 const KINDS: string[] = ['opencode', 'claude', 'terminal']
 const optString = (v: unknown) => (typeof v === 'string' && v !== '' ? v : undefined)
@@ -70,7 +83,11 @@ async function dispatch(core: Core, line: string): Promise<CliReply> {
         kind: kind as Session['kind'], cwd, prompt: optString(params.prompt), label: optString(params.label),
         feature: optString(params.feature), cols: COLS, rows: ROWS,
       })
-      return res.ok ? { id, ok: true, data: toCli(core, res.data) } : failFrom(id, res.error)
+      if (!res.ok) return failFrom(id, res.error)
+      const created = toCli(core, res.data)
+      if (params.wait !== true) return { id, ok: true, data: created }
+      const turn = await waitAfter(core, id, params, res.data.id)
+      return 'ok' in turn ? turn : { id, ok: true, data: { ...created, turn } }
     }
     case 'sessions.send': {
       const { ref, text } = params
@@ -78,7 +95,18 @@ async function dispatch(core: Core, line: string): Promise<CliReply> {
       const found = resolveSessionRef(core.getSlices().sessions, ref)
       if (!found.ok) return failFrom(id, found.error)
       const res = await core.commands.sendToSession({ id: found.data.id, text, submit: params.submit !== false })
-      return res.ok ? { id, ok: true, data: res.data } : failFrom(id, res.error)
+      if (!res.ok) return failFrom(id, res.error)
+      if (params.wait !== true) return { id, ok: true, data: res.data }
+      const turn = await waitAfter(core, id, params, found.data.id)
+      return 'ok' in turn ? turn : { id, ok: true, data: { ...res.data, turn } }
+    }
+    case 'sessions.wait': {
+      const { ref } = params
+      if (typeof ref !== 'string' || !ref) return fail(id, 'bad-params', 'ref is required')
+      const found = resolveSessionRef(core.getSlices().sessions, ref)
+      if (!found.ok) return failFrom(id, found.error)
+      const turn = await core.waitTurn(found.data.id, { expectStart: false, timeoutMs: timeoutMs(params.timeoutS) })
+      return turn.ok ? { id, ok: true, data: { id: found.data.id, ...turn.data } } : failFrom(id, turn.error)
     }
     case 'sessions.read': {
       const { ref, lines } = params

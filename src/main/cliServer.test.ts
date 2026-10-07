@@ -2,10 +2,10 @@ import { execFileSync } from 'node:child_process'
 import fs from 'node:fs'
 import os from 'node:os'
 import path from 'node:path'
-import { afterEach, beforeEach, describe, expect, it } from 'vitest'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { request } from '../cli/client'
 import type { CliSession } from '@shared/cli'
-import { createTerminal, setupCore } from '../core/testing/setup'
+import { createOpenCode, createTerminal, LATER, setupCore } from '../core/testing/setup'
 import { startCliServer } from './cliServer'
 import { writeLauncher } from './launcher'
 
@@ -63,6 +63,26 @@ describe('cli server', () => {
     t.fake.captured.set(s.tmuxName, 'line1\nline2\n')
     expect(await request(socketPath, req('sessions.read', { ref: s.id, lines: 40 }))).toMatchObject({ ok: true, data: { text: 'line1\nline2\n' } })
     expect(await request(socketPath, req('sessions.read', { ref: s.id }))).toMatchObject({ ok: false, error: { code: 'bad-params' } })
+  })
+
+  it('waits: idle agent returns at once, terminal has no status, send --wait follows the turn, timeout is an error', async () => {
+    const core = t.make()
+    await core.start()
+    t.oc.emit({ type: 'connected', version: '2.0.20' })
+    const socketPath = path.join(t.dir, 'grove.sock')
+    closers.push((await startCliServer(core, { socketPath, raise: () => {} })).close)
+    const o = await createOpenCode(core)
+    const term = await createTerminal(core)
+    expect(await request(socketPath, req('sessions.wait', { ref: o.id }))).toMatchObject({ ok: true, data: { id: o.id, status: 'idle' } })
+    expect(await request(socketPath, req('sessions.wait', { ref: term.id }))).toMatchObject({ ok: false, error: { code: 'no-status' } })
+    const sent = request(socketPath, req('sessions.send', { ref: o.id, text: 'go', submit: true, wait: true, timeoutS: 5 }))
+    await vi.waitFor(() => expect(t.fake.pastes).toHaveLength(1))
+    t.oc.emit({ type: 'exec-started', sessionId: o.agentSessionId! })
+    t.oc.emit({ type: 'exec-ended', sessionId: o.agentSessionId!, at: LATER.toISOString() })
+    expect(await sent).toMatchObject({ ok: true, data: { id: o.id, turn: { status: 'idle' } } })
+    t.oc.emit({ type: 'exec-started', sessionId: o.agentSessionId! })
+    const slow = await request(socketPath, req('sessions.wait', { ref: o.id, timeoutS: 0.05 }))
+    expect(slow).toMatchObject({ ok: false, error: { code: 'timeout' } })
   })
 
   it('rejects another protocol version and unknown methods', async () => {

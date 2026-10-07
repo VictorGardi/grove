@@ -1,6 +1,6 @@
 import type { CliSession } from '@shared/cli'
 import { describe, expect, it } from 'vitest'
-import { exitCode, formatError, formatLs, formatRead } from './output'
+import { exitCode, formatError, formatLs, formatRead, turnExit } from './output'
 
 const s = (over: Partial<CliSession>): CliSession => ({
   id: 'aaaaaaaa-1111', kind: 'opencode', label: 'one', status: 'working', waitingFor: null,
@@ -42,5 +42,14 @@ describe('exit codes and errors', () => {
 describe('formatRead', () => {
   it('trims trailing whitespace', () => {
     expect(formatRead('a\nb  \n\n \n')).toBe('a\nb')
+  })
+})
+
+describe('exit codes for waits', () => {
+  it('maps a timeout to 124 and a turn to 0, 4 or 5', () => {
+    expect(exitCode({ id: 'r', ok: false, error: { code: 'timeout', message: '' } })).toBe(124)
+    expect(turnExit({ status: 'idle', waitingFor: null })).toBe(0)
+    expect(turnExit({ status: 'waiting', waitingFor: 'permission' })).toBe(4)
+    expect(turnExit({ status: 'gone', waitingFor: null })).toBe(5)
   })
 })
