@@ -26,3 +26,20 @@ export function withMember(grid: GridState, id: string): GridState {
 export function paneTitle(project: Project | undefined, session: Session): string {
   return project ? `${project.name} / ${session.label}` : session.label
 }
+
+// Toolbar settings: view-only, never persisted.
+export interface GridView { filter: string | null; maxCols: 1 | 2 | 3; hideEnded: boolean }
+export const DEFAULT_GRID_VIEW: GridView = { filter: null, maxCols: 3, hideEnded: false }
+
+// The panes the grid lays out: the project filter (ignored when no member is in that project), then hide-ended.
+export function visibleMembers(members: Session[], view: GridView): Session[] {
+  const filter = view.filter !== null && members.some((m) => m.projectId === view.filter) ? view.filter : null
+  return members.filter((m) => (filter === null || m.projectId === filter) && !(view.hideEnded && m.lastStatus === 'gone'))
+}
+
+// "cols×rows" of n panes, e.g. "2×1".
+export function layoutLabel(n: number, maxCols: number): string {
+  if (n === 0) return '0×0'
+  const cols = gridCols(n, maxCols)
+  return `${cols}×${Math.ceil(n / cols)}`
+}

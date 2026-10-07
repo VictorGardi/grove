@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import type { Project, Session } from '@shared/types'
-import { gridCols, gridShown, paneTitle, withMember } from './gridView'
+import { DEFAULT_GRID_VIEW, gridCols, gridShown, layoutLabel, paneTitle, visibleMembers, withMember } from './gridView'
 
 describe('gridCols', () => {
   it('picks 1, 2 or 3 columns by count', () => {
@@ -50,5 +50,36 @@ describe('paneTitle', () => {
   })
   it('is the label alone without a project', () => {
     expect(paneTitle(undefined, session)).toBe('fix-login')
+  })
+})
+
+describe('visibleMembers', () => {
+  const m = (id: string, projectId: string, lastStatus: Session['lastStatus'] = 'running') => ({ id, projectId, lastStatus }) as Session
+  const members = [m('a', 'p'), m('b', 'q', 'gone'), m('c', 'p', 'gone'), m('d', 'q')]
+  const ids = (v: Partial<typeof DEFAULT_GRID_VIEW>) => visibleMembers(members, { ...DEFAULT_GRID_VIEW, ...v }).map((x) => x.id)
+  it('shows everything by default, in order', () => {
+    expect(ids({})).toEqual(['a', 'b', 'c', 'd'])
+  })
+  it('filters by project', () => {
+    expect(ids({ filter: 'q' })).toEqual(['b', 'd'])
+  })
+  it('ignores a filter for a project with no members', () => {
+    expect(ids({ filter: 'zzz' })).toEqual(['a', 'b', 'c', 'd'])
+  })
+  it('hides ended members', () => {
+    expect(ids({ hideEnded: true })).toEqual(['a', 'd'])
+  })
+  it('combines the filter and hide ended', () => {
+    expect(ids({ filter: 'p', hideEnded: true })).toEqual(['a'])
+  })
+})
+
+describe('layoutLabel', () => {
+  it('is cols×rows of the visible panes', () => {
+    expect([0, 1, 2, 5, 9].map((n) => layoutLabel(n, 3))).toEqual(['0×0', '1×1', '2×1', '3×2', '3×3'])
+  })
+  it('respects the maximum columns', () => {
+    expect(layoutLabel(4, 1)).toBe('1×4')
+    expect(layoutLabel(9, 2)).toBe('2×5')
   })
 })

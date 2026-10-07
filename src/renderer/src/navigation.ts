@@ -1,5 +1,5 @@
 import type { Feature, Project, Session, UiState } from '@shared/types'
-import { gridShown } from './gridView'
+import { DEFAULT_GRID_VIEW, gridShown, visibleMembers, type GridView } from './gridView'
 import { sessionGroups, sessionOrder } from './tree'
 
 // What the content area shows (ADR 0018): one of three exclusive focuses, else the first project's page.
@@ -83,8 +83,8 @@ export function boardKey(ui: UiState, projects: Project[], sessions: Session[], 
   return id ? openBoard(id) : null
 }
 
-// Cmd+1..9: pane n while the grid shows, else the nth session in sidebar order.
-export function focusTarget(ui: UiState, projects: Project[], sessions: Session[], features: Feature[], n: number): Session | undefined {
+// Cmd+1..9: visible pane n while the grid shows, else the nth session in sidebar order.
+export function focusTarget(ui: UiState, projects: Project[], sessions: Session[], features: Feature[], n: number, view: GridView = DEFAULT_GRID_VIEW): Session | undefined {
   const c = content(ui, projects, sessions, features)
-  return c.kind === 'grid' ? c.sessions[n - 1] : sessionOrder(sessionGroups(projects, sessions, ui))[n - 1]
+  return c.kind === 'grid' ? visibleMembers(c.sessions, view)[n - 1] : sessionOrder(sessionGroups(projects, sessions, ui))[n - 1]
 }

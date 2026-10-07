@@ -1,0 +1,55 @@
+.toolbar {
+  flex: none;
+  display: flex;
+  align-items: center;
+  gap: var(--sp-2);
+  padding: var(--sp-1) var(--sp-2);
+  border-bottom: 1px solid var(--card-border);
+  font-size: var(--fs-sm);
+  min-width: 0;
+}
+
+.tabs {
+  display: flex;
+  gap: var(--sp-1);
+  min-width: 0;
+  overflow-x: auto;
+}
+
+.tab {
+  flex: none;
+  font: inherit;
+  color: var(--text-2);
+  background: transparent;
+  border: 1px solid transparent;
+  border-radius: var(--r-card);
+  padding: 2px var(--sp-2);
+  cursor: pointer;
+}
+
+.tab:hover {
+  color: var(--text);
+}
+
+.active {
+  color: var(--text);
+  border-color: var(--card-selected-border);
+}
+
+.count {
+  color: var(--text-2);
+}
+
+.spacer {
+  flex: 1;
+}
+
+.layout {
+  color: var(--text-2);
+  font-variant-numeric: tabular-nums;
+}
+
+.slider {
+  width: 72px;
+  accent-color: var(--accent);
+}

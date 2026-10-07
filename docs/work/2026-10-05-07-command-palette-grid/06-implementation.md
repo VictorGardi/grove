@@ -19,7 +19,7 @@ forced: []
 - [x] Slice 3 — Two sessions side by side
 - [x] Slice 4 — Focus, Cmd+1..9 and dimming
 - [x] Slice 5 — Pane header, ended tiles and the cap
-- [ ] Slice 6 — Grid toolbar
+- [x] Slice 6 — Grid toolbar
 
 ## Slice 1
 
@@ -87,3 +87,41 @@ Deviations (small, none touch a one-way decision):
 - The plan's first step was reworded after execution (it mentioned already-covered cap tests).
 
 Verified: `gridView.test.ts` (9 tests), `npm run typecheck`, `npm test` (59 files, 562 tests). Manual (header look, kill a member → ended tile, Resume, Open alone, 10th plus disabled) not done by the agent.
+
+## Slice 6
+
+Deviations (small, none touch a one-way decision):
+
+- The `GridView` state lives in `App.tsx`, not inside `SessionGrid` (design said "renderer-local in `SessionGrid`"): Cmd+N and the focus-the-first-visible rule need it, and it now survives switching between single view and grid in a session. Still view-only, not persisted.
+- A project filter whose project no longer has members reads as ALL (in `visibleMembers` and the toolbar), so a stale tab never empties the grid.
+- `focusTarget` takes an optional `view` (default `DEFAULT_GRID_VIEW`); Cmd+N counts visible panes in the grid only.
+- When the filter or eye hides the focused pane, `changeGridView` focuses the first visible one. If nothing is visible the grid shows "No sessions match" and focus stays.
+- Icon gained `eye` and `eye-off`. The eye shows `eye-off` while ended members are hidden. Slider is a native range input, 1–3 (max columns), label `cols×rows` of visible panes (`0×0` when none).
+- Counts on the tabs are all members of that project (not narrowed by the eye).
+- Sidebar card hover buttons (18px, flush to corners) untouched.
+
+Verified: `gridView.test.ts`, `navigation.test.ts` (33 tests), `noInlineStyles.test.ts`, `npm test` (59 files, 570 tests), `npm run typecheck`, `npm run build`. Manual not done by the agent: tabs filter panes, slider changes columns, eye hides ended members, Empty grid clears and closes, Cmd+N with a filter counts visible panes.
+
+## Final checks
+
+`npm test` (59 files, 570 tests) passed, `npm run typecheck` passed, `npm run build` passed. No lint command is configured.
+
+## PR description
+
+**Command palette and session grid**
+
+Cmd+K opens a command palette that fuzzy-matches sessions, features, projects and app commands; picking one jumps there, focuses the session or runs the command through the same `runAction` the menu uses. A session grid shows up to nine live sessions side by side, from any project, each in its own xterm with its own attach and resize.
+
+Design (one-way decisions): D1 grid state in `ui.grid {open, members}` with the focused pane being `focusedSessionId` (ADR 0031); D2 multi-attach: `pty:attach` no longer kills earlier attaches, the renderer owns each attach and main kills all on reload/destroy (ADR 0030); D3 palette commands run through `runAction`; D4 own fuzzy matcher. `schemaVersion` stays 4. No palette actions (child 5 is on hold) and no context-window usage in the pane header.
+
+Slices:
+1. Palette tracer: Cmd+K jumps to sessions, features, projects.
+2. Palette commands, TopBar search opens it, terminal refocus after closing.
+3. Grid: Cmd+G, sidebar corner plus/check, bottom-bar button, persisted members.
+4. Pane focus by click and Cmd+1..9, dimming, accent border; only the focused pane clears waiting.
+5. Pane header (project / label, branch, feature tag and stage, status, Open alone, Remove), ended tiles with Resume/Remove, nine-member cap.
+6. Toolbar: project tabs with counts, `cols×rows` label, max-columns slider, eye (hide ended), Empty grid; Cmd+N counts visible panes.
+
+How to verify: `npm test`, `npm run typecheck`, `npm run build`; then by hand in `npm run dev`: Cmd+K and pick each kind; add two or more running sessions with the card plus, Cmd+G, type in several panes, resize, restart the app; kill a member and check the ended tile, Resume and Remove; Open alone; try the 10th plus (disabled); use the toolbar tabs, slider, eye and Empty grid; Cmd+1..9 with a project filter set.
+
+Mark done with `grove-approve 2026-10-05-07-command-palette-grid implementation`.

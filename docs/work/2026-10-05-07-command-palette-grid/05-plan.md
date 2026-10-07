@@ -93,3 +93,20 @@ Notes for a cold reader: `SessionGrid.tsx` (slice 3–4) renders one pane per me
 - [x] Run `npx vitest run src/renderer/src/gridView.test.ts`
 - [x] Run `npm run typecheck`
 - [x] Run `npm test`
+
+## Slice 6 — Grid toolbar
+
+Notes for a cold reader: design "Toolbar" and "System design": a toolbar above the tiles with project filter tabs (ALL n, then one tab per project that has members, with counts), a read-only `cols×rows` label of the visible panes, a slider for maximum columns (1 to 3), an eye toggle that hides ended members, and Empty grid (clears members, grid off: the existing `clearGrid` store action). All view-only and not persisted. `GridView = { filter: string | null; maxCols: 1 | 2 | 3; hideEnded: boolean }` is renderer-local; it lives in `App.tsx` state (not inside `SessionGrid`) because Cmd+N (`focusIndex`) must count the visible panes, and it then survives switching between single view and grid within a session. `visibleMembers(members, view)` applies the filter and hide-ended; a filter naming a project with no members is ignored (treated as ALL) so a stale tab never empties the grid. Selecting a filter or the eye that hides the focused pane focuses the first visible pane. Layout and `focusTarget` use the visible list. Existing: `SessionGrid.tsx` (header + tiles, slice 5), `gridCols(n, maxCols)`, `focusTarget(ui, projects, sessions, features, n)` in `navigation.ts`, `Icon.tsx` shapes, tokens in `styles/tokens.css`, CSS modules, no inline styles (`noInlineStyles.test.ts`).
+
+- [x] Write failing tests `src/renderer/src/gridView.test.ts`: `visibleMembers` (filter by project, ignores a filter with no members, hide ended drops `lastStatus: 'gone'`, both combine, order kept); `layoutLabel` (`0` → `0×0`, 1 → `1×1`, 2 → `2×1`, 5 → `3×2`, 9 → `3×3`, 4 with maxCols 1 → `1×4`); `DEFAULT_GRID_VIEW`
+- [x] Write failing test `src/renderer/src/navigation.test.ts`: `focusTarget` with a `view` argument counts only visible panes while the grid shows (hide-ended and project filter), and ignores it outside the grid
+- [x] `src/renderer/src/gridView.ts`: `GridView`, `DEFAULT_GRID_VIEW = { filter: null, maxCols: 3, hideEnded: false }`, `visibleMembers`, `layoutLabel`
+- [x] `src/renderer/src/navigation.ts`: `focusTarget(ui, projects, sessions, features, n, view = DEFAULT_GRID_VIEW)` uses `visibleMembers(c.sessions, view)[n - 1]` in the grid
+- [x] `src/renderer/src/components/ui/Icon.tsx`: add `eye` and `eye-off` (Lucide shapes)
+- [x] Create `src/renderer/src/components/GridToolbar.tsx` + `GridToolbar.module.css`: props `{ members: Session[]; projects: Project[]; view: GridView; visibleCount: number; onChange(view); onEmpty() }`; tabs (buttons, `aria-pressed`, `ALL n` and `<project name> n` for projects with members), layout label (`layoutLabel(visibleCount, view.maxCols)`), `<input type="range" min=1 max=3>` with aria-label "Maximum columns", eye `Button` (`aria-pressed` when ended members are hidden, title "Hide ended sessions" / "Show ended sessions"), `Empty grid` button
+- [x] `src/renderer/src/components/SessionGrid.tsx` (+ css): props `view`, `onViewChange`; wrapper column with `GridToolbar` above the tiles; tiles use `visibleMembers(sessions, view)` and `gridCols(n, view.maxCols)`; with no visible panes show "No sessions match" in place of the tiles; the toolbar's Empty grid calls `clearGrid`
+- [x] `src/renderer/src/App.tsx`: `gridView` state (`DEFAULT_GRID_VIEW`); `changeGridView(next)` sets it and, when the grid shows and the focused pane is not in `visibleMembers(shown.sessions, next)`, focuses the first visible one; `focusIndex` passes `gridView` to `focusTarget`; pass `view`/`onViewChange` to `SessionGrid`
+- [x] Run `npx vitest run src/renderer/src/gridView.test.ts`
+- [x] Run `npm test`
+- [x] Run `npm run typecheck`
+- [x] Run `npm run build`

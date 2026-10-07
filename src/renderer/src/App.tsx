@@ -19,7 +19,7 @@ import { TopBar } from './components/shell/TopBar'
 import { Banner } from './components/ui/Banner'
 import { Button } from './components/ui/Button'
 import { paletteItems } from './paletteItems'
-import { gridShown } from './gridView'
+import { DEFAULT_GRID_VIEW, gridShown, visibleMembers, type GridView } from './gridView'
 import { boardKey, childrenOf, content, crumbs, currentProjectId, focusTarget } from './navigation'
 import { longestWaiting, serviceBanners, shownStatus } from './sessionStatus'
 import { useSlices } from './stores/slices'
@@ -32,6 +32,7 @@ export default function App() {
   const [newFor, setNewFor] = useState<{ projectId?: string } | null>(null)
   const [confirmKill, setConfirmKill] = useState<Session | null>(null)
   const [paletteOpen, setPaletteOpen] = useState(false)
+  const [gridView, setGridView] = useState<GridView>(DEFAULT_GRID_VIEW) // toolbar settings, view-only
 
   useEffect(() => {
     void hydrate()
@@ -63,7 +64,7 @@ export default function App() {
       const focused = sessions.find((x) => x.id === ui.focusedSessionId)
       if (focused?.lastStatus === 'running') setConfirmKill(focused)
     } else if (a.type === 'focusIndex') {
-      const target = focusTarget(ui, projects, sessions, features.items, a.n)
+      const target = focusTarget(ui, projects, sessions, features.items, a.n, gridView)
       if (target) setFocused(target.id)
     } else if (a.type === 'projectBoard') {
       const to = boardKey(ui, projects, sessions, features.items)
@@ -71,12 +72,19 @@ export default function App() {
     } else if (a.type === 'sessionDiff') {
       if (ui.focusedSessionId) toggleDiff(ui.focusedSessionId, ui.viewer)
     }
-  }, [setFocused, go, toggleDiff, toggleGrid, clearGrid])
+  }, [setFocused, go, toggleDiff, toggleGrid, clearGrid, gridView])
 
   useEffect(() => window.api.on('menu:action', runAction), [runAction])
 
   const openNew = (projectId?: string) => setNewFor({ projectId })
   const shown = content(ui, projects, sessions, features.items)
+  // a filter or the eye can hide the focused pane: focus the first one still visible
+  const changeGridView = (next: GridView) => {
+    setGridView(next)
+    if (shown.kind !== 'grid') return
+    const visible = visibleMembers(shown.sessions, next)
+    if (visible.length > 0 && !visible.some((x) => x.id === shown.focused.id)) setFocused(visible[0].id)
+  }
   const header = crumbs(shown, projects, features.items).map((c) => ({ label: c.label, onClick: c.to && (() => go(c.to!)) }))
   const openFeature = (f: Feature) => focusFeature({ projectId: f.projectId, slug: f.slug })
   const v = ui.viewer
@@ -119,7 +127,7 @@ export default function App() {
                 onFocusSession={setFocused} onOpenFeature={openFeature}
                 onOpenArtifact={(name) => openArtifact({ kind: 'artifact', projectId: shown.feature.projectId, slug: shown.feature.slug, path: name, hash: null, fromDiff: null })} />
             ) : shown.kind === 'grid' ? (
-              <SessionGrid sessions={shown.sessions} focusedId={shown.focused.id} onFocusPane={setFocused} overlayOpen={paletteOpen || !!newFor || !!confirmKill} />
+              <SessionGrid sessions={shown.sessions} focusedId={shown.focused.id} view={gridView} onViewChange={changeGridView} onFocusPane={setFocused} overlayOpen={paletteOpen || !!newFor || !!confirmKill} />
             ) : shown.kind === 'session' && shown.session.lastStatus === 'running' ? (
               <TerminalView key={shown.session.id} sessionId={shown.session.id} active={!paletteOpen && !newFor && !confirmKill} />
             ) : shown.kind === 'session' ? (

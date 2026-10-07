@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import { DEFAULT_UI, type Feature, type Project, type Session, type UiState } from '@shared/types'
+import { DEFAULT_GRID_VIEW, type GridView } from './gridView'
 import { boardKey, boardProject, childrenOf, content, crumbs, currentProjectId, focusTarget } from './navigation'
 
 const project = (id: string): Project => ({ id, name: id.toUpperCase(), path: '/' + id })
@@ -147,6 +148,17 @@ describe('focusTarget', () => {
     expect(at({ grid, focusedSessionId: 'a' }, 1)?.id).toBe('c')
     expect(at({ grid, focusedSessionId: 'a' }, 2)?.id).toBe('a')
     expect(at({ grid, focusedSessionId: 'a' }, 3)).toBeUndefined()
+  })
+
+  it('counts only the visible panes while the grid shows', () => {
+    const grid = { open: true, members: ['c', 'a'] }
+    const ended = [session('a'), session('b'), session('c', { projectId: 'q', lastStatus: 'gone' })]
+    const view = (v: Partial<GridView>) => ({ ...DEFAULT_GRID_VIEW, ...v })
+    const hide = focusTarget(ui({ grid, focusedSessionId: 'a' }), projects, ended, features, 1, view({ hideEnded: true }))
+    expect(hide?.id).toBe('a') // c is ended and hidden, so a is pane 1
+    expect(focusTarget(ui({ grid, focusedSessionId: 'a' }), projects, many, features, 1, view({ filter: 'p' }))?.id).toBe('a')
+    // outside the grid the view does not matter
+    expect(focusTarget(ui(), projects, many, features, 1, view({ filter: 'q' }))?.id).toBe('b')
   })
 
   it('counts sidebar order when the grid is on but hidden', () => {
