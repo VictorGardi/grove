@@ -55,7 +55,8 @@
   overflow: auto;
   background: var(--panel-bg);
   font-family: var(--font-mono);
-  font-size: var(--fs-sm);
+  font-size: var(--fs-md);
+  line-height: 1.5;
 }
 
 .notice {
@@ -114,7 +115,7 @@
 .line {
   display: flex;
   white-space: pre;
-  color: var(--text-2);
+  color: var(--text);
 }
 
 .lineAdd {

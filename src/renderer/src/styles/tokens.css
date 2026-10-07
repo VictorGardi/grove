@@ -61,9 +61,9 @@
   --danger-border: #5c2427;
 
   /* diff lines */
-  --diff-add-bg: #132a1c;
+  --diff-add-bg: #173a24;
   --diff-add-fg: #4ade80;
-  --diff-del-bg: #2a1517;
+  --diff-del-bg: #3d1b1f;
   --diff-del-fg: #f87171;
   --diff-add-word-bg: #1f5b36;
   --diff-del-word-bg: #6b2328;
