@@ -28,6 +28,7 @@ interface SlicesState {
   openArtifact(t: DocTarget): void
   openDiff(sessionId: string): void
   backToDiff(sessionId: string): void
+  setDiffBase(sessionId: string, base: string | null): void // what the open diff compares against; null: working tree
   openRendered(projectId: string, sessionId: string, r: NonNullable<DiffFile['rendered']>): void // "← Diff" returns to sessionId
   closeViewer(): void
   setViewerWidth(px: number): void
@@ -86,6 +87,7 @@ export const useSlices = create<SlicesState>((set, get) => {
     openArtifact: (t) => { void window.api.invoke('ui:set', { viewer: t }) },
     openDiff: (sessionId) => { void window.api.invoke('ui:set', { viewer: { kind: 'diff', sessionId }, viewerExpanded: false }) },
     backToDiff: (sessionId) => { void window.api.invoke('ui:set', { viewer: { kind: 'diff', sessionId } }) },
+    setDiffBase: (sessionId, base) => { void window.api.invoke('ui:set', { viewer: { kind: 'diff', sessionId, base } }) },
     openRendered: (projectId, sessionId, r) => {
       const viewer = { kind: 'file' as const, projectId, path: r.path, hash: null, fromDiff: sessionId }
       void window.api.invoke('ui:set', { viewer })

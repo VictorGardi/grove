@@ -13,7 +13,7 @@ import { listFolders, readFolder, resolveRoot, type FolderSnapshot } from './dis
 import { chokidarWatchers, type Closer, type Watchers } from './discovery/watcher'
 import { loginShellArgv, minimalEnv } from './env'
 import { computeDiff } from './diff/compute'
-import { gitRunner } from './diff/git'
+import { defaultBranch, gitRunner, listBranches } from './diff/git'
 import { createDiffWatch } from './diff/watch'
 import { reanchorDiff, reanchorFile } from './comments/anchor'
 import { slugFor } from './autolink'
@@ -79,6 +79,7 @@ export interface Commands {
   commentUpdate(a: { id: string; body: string }): Promise<Result<Comment>>
   commentDelete(a: { id: string }): Promise<Result<{ id: string }>>
   diffLines(a: { sessionId: string; path: string; from: number; to: number }): Promise<Result<string[]>> // lines of a changed file in the open diff, 1-based inclusive
+  diffRefs(a: { sessionId: string }): Promise<Result<{ branches: string[]; default: string | null }>> // branches to offer as a diff base
   reviewSend(a: { sessionId: string }): Promise<Result<{ sent: number }>> // the session's drafts as one message; none: 'empty'
   sendToSession(a: { id: string; text: string; submit?: boolean }): Promise<Result<{ id: string }>>
   sessionRead(a: { id: string; lines: number }): Promise<Result<{ text: string }>> // the pane's last lines; empty when it is gone
@@ -396,15 +397,19 @@ export function createCore(opts: CoreOptions): Core {
   }
 
   // The diff of the session's working directory: the pane's cwd, or the project once it's gone.
+  // The base to diff against is read fresh off the viewer (not passed in): DiffWatch keys only on
+  // session id, so a base change alone doesn't retarget it — syncDiff pokes it instead (D-base).
   async function runDiff(id: string): Promise<{ key: string; diff: SessionDiff }> {
     const s = findSession(id)
     const project = s && slices.projects.find((p) => p.id === s.projectId)
     if (!s || !project) {
       const error = 'session not found'
-      return { key: `error:${error}`, diff: { sessionId: id, projectId: s?.projectId ?? '', state: 'error', error, root: null, files: [], truncated: false } }
+      return { key: `error:${error}`, diff: { sessionId: id, projectId: s?.projectId ?? '', state: 'error', error, root: null, files: [], truncated: false, base: null } }
     }
     const dir = s.lastStatus === 'running' ? lastCwds.get(s.tmuxName) ?? project.path : project.path
-    return computeDiff({ sessionId: id, dir, project, git })
+    const v = slices.ui.viewer
+    const base = v?.kind === 'diff' && v.sessionId === id ? v.base ?? null : null
+    return computeDiff({ sessionId: id, dir, project, git, base })
   }
 
   const diffWatch = createDiffWatch(runDiff, (d) => {
@@ -415,10 +420,16 @@ export function createCore(opts: CoreOptions): Core {
     }
   })
 
-  // Computed only while the viewer shows a diff (D4).
+  // Computed only while the viewer shows a diff (D4). DiffWatch dedupes by session id alone, so a
+  // base change on the same session needs an explicit poke to retarget the recompute.
+  let lastDiffBase: string | null = null
   function syncDiff(): void {
     const v = slices.ui.viewer
-    diffWatch.target(v?.kind === 'diff' ? v.sessionId : null)
+    const id = v?.kind === 'diff' ? v.sessionId : null
+    const base = v?.kind === 'diff' ? v.base ?? null : null
+    diffWatch.target(id)
+    if (id && base !== lastDiffBase) diffWatch.poke()
+    lastDiffBase = base
   }
 
   // The session the human is looking at: focused window, session focused (the focuses are exclusive).
@@ -760,6 +771,21 @@ export function createCore(opts: CoreOptions): Core {
         return { ok: true, data: text.split('\n').slice(from - 1, to).map((l) => l.replace(/\r$/, '')) }
       } catch {
         return { ok: false, error: 'not-found' }
+      }
+    },
+
+    async diffRefs({ sessionId }) {
+      const s = findSession(sessionId)
+      const project = s && slices.projects.find((p) => p.id === s.projectId)
+      if (!s || !project) return { ok: false, error: 'not-found' }
+      if (!git) return { ok: true, data: { branches: [], default: null } }
+      const dir = s.lastStatus === 'running' ? lastCwds.get(s.tmuxName) ?? project.path : project.path
+      try {
+        const root = (await git(['rev-parse', '--show-toplevel'], dir)).trim()
+        const [branches, def] = await Promise.all([listBranches(git, root), defaultBranch(git, root)])
+        return { ok: true, data: { branches, default: def } }
+      } catch {
+        return { ok: true, data: { branches: [], default: null } } // not a repo, or git failed: no bases to offer
       }
     },
 

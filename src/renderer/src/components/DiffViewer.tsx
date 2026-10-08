@@ -1,8 +1,8 @@
-import type { CSSProperties, MouseEvent as ReactMouseEvent } from 'react'
-import { Fragment, useEffect, useRef, useState } from 'react'
+import type { CSSProperties, KeyboardEvent as ReactKeyboardEvent, MouseEvent as ReactMouseEvent } from 'react'
+import { Fragment, useEffect, useMemo, useRef, useState } from 'react'
 import type { Comment, DiffFile, DiffLine, SessionDiff } from '@shared/types'
 import {
-  fileFocusTarget, filterFiles, gaps, lineKey, pickFile, rangeAnchor, selectionRange, sideOf, splitPath, splitRows, STATUS_LETTER, visibleFiles, wordMarks,
+  fileFocusTarget, fileTreeRows, filterFiles, gaps, lineKey, pickFile, rangeAnchor, selectionRange, sideOf, splitRows, STATUS_LETTER, visibleFiles, wordMarks,
   type Cell, type DraftRange, type Gap, type Seg,
 } from '../diffView'
 import { draftsByLine } from '../reviewView'
@@ -33,12 +33,27 @@ export function DiffViewer({ diff, sessionId, label, expanded, onOpenRendered, o
   const d = diff && diff.sessionId === sessionId ? diff : null
   const [showUntracked, setShowUntracked] = useState(true)
   const files = d ? visibleFiles(d, showUntracked) : []
+  const setDiffBase = useSlices((x) => x.setDiffBase)
+  const base = useSlices((x) => (x.ui.viewer?.kind === 'diff' && x.ui.viewer.sessionId === sessionId ? x.ui.viewer.base ?? null : null))
+  const [refs, setRefs] = useState<{ branches: string[]; default: string | null }>({ branches: [], default: null })
+  useEffect(() => {
+    let alive = true
+    void window.api.invoke('diff:refs', { sessionId }).then((res) => { if (alive && res.ok) setRefs(res.data) })
+    return () => { alive = false }
+  }, [sessionId])
+  const baseOptions = [...refs.branches].sort((a, b) => (a === refs.default ? -1 : b === refs.default ? 1 : a.localeCompare(b)))
   // the chosen file, per session: another session's diff starts on its first file
   const [chosen, setChosen] = useState<{ sessionId: string; path: string | null }>({ sessionId, path: null })
   const file = pickFile(files, chosen.sessionId === sessionId ? chosen.path : null)
   const at = file ? files.indexOf(file) : -1
   const choose = (path: string) => setChosen({ sessionId, path })
   const [filter, setFilter] = useState('')
+  const [collapsedDirs, setCollapsedDirs] = useState<Set<string>>(new Set())
+  const toggleDir = (path: string) => setCollapsedDirs((cur) => {
+    const next = new Set(cur)
+    if (!next.delete(path)) next.add(path)
+    return next
+  })
   const filterInput = useRef<HTMLInputElement>(null)
   const comments = useSlices((x) => x.comments).filter((c) => c.sessionId === sessionId)
   const [writing, setWriting] = useState<Draft | null>(null)
@@ -99,7 +114,8 @@ export function DiffViewer({ diff, sessionId, label, expanded, onOpenRendered, o
   async function save(f: DiffFile, text: string) {
     const a = writing && d?.root ? rangeAnchor(d.root, f, writing.hunk, writing.side, writing.origin, writing.end) : null
     if (!a) return
-    const res = await window.api.invoke('comment:add', { sessionId, anchor: a, body: text })
+    // filed under whichever session is focused when the comment is sent, not the session whose diff is open
+    const res = await window.api.invoke('comment:add', { sessionId: useSlices.getState().ui.focusedSessionId ?? sessionId, anchor: a, body: text })
     if (res.ok) {
       setWriting(null)
       setError(null)
@@ -114,24 +130,34 @@ export function DiffViewer({ diff, sessionId, label, expanded, onOpenRendered, o
     }
   }
   const listed = filterFiles(files, filter)
+  const rows = useMemo(() => fileTreeRows(listed, collapsedDirs, filter.trim() !== ''), [listed, collapsedDirs, filter])
   const moveFileFocus = (from: HTMLButtonElement | null, direction: 'up' | 'down') => {
     const buttons = [...(fileList.current?.querySelectorAll<HTMLButtonElement>('button') ?? [])]
     const target = fileFocusTarget(from ? buttons.indexOf(from) : -1, direction, buttons.length)
     if (target === 'filter') filterInput.current?.focus()
     else if (target !== null) buttons[target]?.focus()
   }
+  const onRowKeyDown = (e: ReactKeyboardEvent<HTMLButtonElement>) => {
+    if (e.key !== 'ArrowDown' && e.key !== 'ArrowUp') return
+    e.preventDefault()
+    moveFileFocus(e.currentTarget, e.key === 'ArrowDown' ? 'down' : 'up')
+  }
 
   return (
     <div className={s.viewer}>
       <div className={s.header}>
-        <div className={s.title}>
-          <span className={s.label}>Diff · {label}</span>
-          {d?.root && <span className={s.root}>{d.root}</span>}
-        </div>
-        <label className={s.toggle}>
-          <input type="checkbox" checked={showUntracked} onChange={(e) => setShowUntracked(e.target.checked)} />
-          Untracked
-        </label>
+        <span className={s.label} title={d?.root ?? undefined}>Diff · {label}</span>
+        <select className={s.baseSelect} aria-label="Diff against" value={base ?? ''}
+          onChange={(e) => setDiffBase(sessionId, e.target.value || null)}>
+          <option value="">Working tree</option>
+          {baseOptions.length > 0 && (
+            <optgroup label="Since branched from">
+              {baseOptions.map((b) => <option key={b} value={b}>{b}</option>)}
+            </optgroup>
+          )}
+        </select>
+        <Button variant="ghost" size="sm" icon={showUntracked ? 'eye' : 'eye-off'} aria-pressed={showUntracked}
+          onClick={() => setShowUntracked((v) => !v)}>Untracked</Button>
         {files.length > 0 && (
           <div className={s.pager}>
             <span className={s.count}>{at + 1} / {files.length}</span>
@@ -157,27 +183,32 @@ export function DiffViewer({ diff, sessionId, label, expanded, onOpenRendered, o
                 }} />
             </label>
             <ul className={s.files} ref={fileList}>
-              {listed.map((f) => {
-                const { dir, name } = splitPath(f.path)
-                return (
-                  <li key={f.path}>
-                    <button type="button" className={`${s.fileItem} ${f === file ? s.fileActive : ''}`} title={f.path}
-                      onFocus={() => { choose(f.path); setWriting(null) }}
-                      onKeyDown={(e) => {
-                        if (e.key !== 'ArrowDown' && e.key !== 'ArrowUp') return
-                        e.preventDefault()
-                        moveFileFocus(e.currentTarget, e.key === 'ArrowDown' ? 'down' : 'up')
-                      }}
-                      onClick={() => { choose(f.path); setWriting(null) }}>
-                      <span className={`${s.letter} ${s[`st_${f.status}`]}`}>{STATUS_LETTER[f.status]}</span>
-                      <span className={s.fileName}><span className={s.dir}>{dir}</span>{name}</span>
-                      <span className={s.add}>+{f.additions}</span>
-                      <span className={s.del}>−{f.deletions}</span>
-                    </button>
-                  </li>
-                )
-              })}
-              {listed.length === 0 && <li className={s.none}>No match</li>}
+              {rows.map((row) => row.kind === 'dir' ? (
+                <li key={`dir:${row.path}`}>
+                  <button type="button" className={s.dirItem} style={{ '--depth': row.depth } as CSSProperties}
+                    title={row.path}
+                    onKeyDown={onRowKeyDown}
+                    onClick={() => toggleDir(row.path)}>
+                    <Icon name={row.collapsed ? 'chevron-right' : 'chevron-down'} size={14} className={s.chevron} />
+                    <span className={s.dirName}>{row.name}</span>
+                  </button>
+                </li>
+              ) : (
+                <li key={row.path}>
+                  <button type="button" className={`${s.fileItem} ${row.file === file ? s.fileActive : ''}`}
+                    style={{ '--depth': row.depth } as CSSProperties}
+                    title={row.path}
+                    onFocus={() => { choose(row.path); setWriting(null) }}
+                    onKeyDown={onRowKeyDown}
+                    onClick={() => { choose(row.path); setWriting(null) }}>
+                    <span className={`${s.letter} ${s[`st_${row.file.status}`]}`}>{STATUS_LETTER[row.file.status]}</span>
+                    <span className={s.fileName}>{row.name}</span>
+                    <span className={s.add}>+{row.file.additions}</span>
+                    <span className={s.del}>−{row.file.deletions}</span>
+                  </button>
+                </li>
+              ))}
+              {rows.length === 0 && <li className={s.none}>No match</li>}
             </ul>
           </aside>
         )}

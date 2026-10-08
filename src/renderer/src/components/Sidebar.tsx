@@ -2,7 +2,6 @@ import { useState, type MouseEvent } from 'react'
 import { GRID_MAX, type Feature, type Project, type Session } from '@shared/types'
 import { useSlices } from '../stores/slices'
 import { gridShown } from '../gridView'
-import { featureStage } from '../featureLabels'
 import { longestWaiting, shownStatus, statusView } from '../sessionStatus'
 import { selectRange } from '../selection'
 import { colorTags } from '../tags'
@@ -13,7 +12,7 @@ import { ContextMenu } from './ui/ContextMenu'
 import { Icon } from './ui/Icon'
 import { LinkPicker } from './LinkPicker'
 import { ListRow } from './ui/ListRow'
-import { Tag, tagClass } from './ui/Tag'
+import { tagClass } from './ui/Tag'
 import css from './Sidebar.module.css'
 
 function toggle(set: Set<string>, id: string): Set<string> {
@@ -22,10 +21,9 @@ function toggle(set: Set<string>, id: string): Set<string> {
   return next
 }
 
-function SessionCard({ s, feature, tag, focused, picked, compact, inGrid, gridOn, gridFull, onToggleGrid, onFocus, onOpenFeature, onToggleCompact, onLink, onRemove, onContextMenu }: {
+function SessionCard({ s, feature, focused, picked, compact, inGrid, gridOn, gridFull, onToggleGrid, onFocus, onOpenFeature, onToggleCompact, onLink, onRemove, onContextMenu }: {
   s: Session
   feature: Feature | null // the linked feature, if it exists
-  tag: number | null // its parent feature's colour
   focused: boolean // a focused card shows selected; otherwise terminals are muted
   picked: boolean // in the shift-click multi-selection
   compact: boolean
@@ -61,20 +59,12 @@ function SessionCard({ s, feature, tag, focused, picked, compact, inGrid, gridOn
         ? <Icon name={done ? 'agent-done' : 'agent'} size={13} className={done ? css.iconDone : shown === 'gone' ? css.iconGone : css.iconAgent} />
         : <Icon name="terminal" size={13} className={css.iconTerminal} />}
       badge={needsYou && <Icon name="agent-alert" size={13} className={css.iconAgent} />}
-      meta={(feature || s.branch) && (
+      meta={s.branch && (
         <div className={css.cardInfo}>
-          {feature && (
-            <div className={css.featureLine}>
-              <Tag index={tag}>{feature.title}</Tag>
-              <span className={css.featureStage}>{featureStage(feature)}</span>
-            </div>
-          )}
-          {s.branch && (
-            <div className={css.branchLine}>
-              <Icon name="branch" size={12} />
-              <span className={css.branchName}>{s.branch}</span>
-            </div>
-          )}
+          <div className={css.branchLine}>
+            <Icon name="branch" size={12} />
+            <span className={css.branchName}>{s.branch}</span>
+          </div>
         </div>
       )}
       status={statusView(s)}
@@ -159,9 +149,10 @@ function ProjectRow({ project: p, tag, live, waiting, focused, refused, onOpen, 
   )
 }
 
-function ProjectHeader({ project: p, tag, refused, onToggle, onRemove, onNew }: {
+function ProjectHeader({ project: p, tag, count, refused, onToggle, onRemove, onNew }: {
   project: Project
   tag: number | null
+  count: number // sessions under this project, shown even while collapsed
   refused: boolean
   onToggle: () => void
   onRemove: () => void
@@ -172,6 +163,7 @@ function ProjectHeader({ project: p, tag, refused, onToggle, onRemove, onNew }: 
       <div className={css.folder} title={p.path} onClick={onToggle}>
         <Icon name="folder" size={16} className={tagClass(tag, 'fg')} />
         <span className={css.folderName}>{p.name}</span>
+        {count > 0 && <Badge tone="muted">{count}</Badge>}
         <div className={css.folderActions} onClick={(e) => e.stopPropagation()}>
           <Button variant="ghost" size="sm" round icon="trash" aria-label="Remove project" title="Remove project"
             className={css.hoverOnly} onClick={onRemove} />
@@ -233,7 +225,6 @@ export function Sidebar({ onNew }: { onNew: (projectId?: string) => void }) {
         key={s.id}
         s={s}
         feature={f}
-        tag={f && tags.group(f.projectId, f.group ? f.slug : f.parent)}
         focused={s.id === ui.focusedSessionId}
         picked={picked.has(s.id)}
         compact={compact.has(s.id)}
@@ -251,8 +242,8 @@ export function Sidebar({ onNew }: { onNew: (projectId?: string) => void }) {
     )
   }
 
-  const projectHeader = (p: Project, key: string) => (
-    <ProjectHeader project={p} tag={tags.project(p.id)} refused={refused === p.id}
+  const projectHeader = (p: Project, key: string, count: number) => (
+    <ProjectHeader project={p} tag={tags.project(p.id)} count={count} refused={refused === p.id}
       onToggle={() => toggleCollapsed(key)} onRemove={() => void removeProject(p.id)} onNew={() => onNew(p.id)} />
   )
 
@@ -280,7 +271,7 @@ export function Sidebar({ onNew }: { onNew: (projectId?: string) => void }) {
         {ui.sidebarTab === 'sessions'
           ? sessionGroups(projects, sessions, ui).map((g) => (
             <div key={g.key} className={css.project}>
-              {projectHeader(g.project, g.key)}
+              {projectHeader(g.project, g.key, g.sessions.length)}
               {!g.collapsed && <div className={css.cards}>{g.sessions.map(sessionCard)}</div>}
             </div>
           ))

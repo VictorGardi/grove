@@ -12,7 +12,7 @@ const file = (lines: DiffLine[][], over: Partial<DiffFile> = {}): DiffFile => ({
   ...over,
 })
 const diff = (files: DiffFile[], over: Partial<SessionDiff> = {}): SessionDiff => ({
-  sessionId: 's', projectId: 'p', state: 'ok', error: null, root: '/r', files, truncated: false, ...over,
+  sessionId: 's', projectId: 'p', state: 'ok', error: null, root: '/r', files, truncated: false, base: null, ...over,
 })
 const draft = (a: { side?: 'old' | 'new'; start: number; end: number; lines: string[] }, over: Partial<Comment> = {}): Comment => ({
   id: 'c', sessionId: 's', anchor: { kind: 'diff', root: '/r', path: 'a.ts', side: a.side ?? 'new', start: a.start, end: a.end, lines: a.lines },

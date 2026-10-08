@@ -15,38 +15,28 @@
   border-bottom: 1px solid var(--card-border);
 }
 
-.title {
+.label {
   flex: 1;
   min-width: 0;
-  display: flex;
-  align-items: baseline;
-  gap: var(--sp-2);
+  overflow: hidden;
+  text-overflow: ellipsis;
   white-space: nowrap;
-}
-
-.label {
   font-size: var(--fs-md);
   font-weight: var(--fw-semibold);
   color: var(--text);
 }
 
-.root {
-  min-width: 0;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  direction: rtl; /* keep the end of a long path visible */
+.baseSelect {
+  flex-shrink: 0;
+  max-width: 200px;
+  height: 28px;
+  padding: 0 var(--sp-2);
+  font: inherit;
   font-size: var(--fs-sm);
-  color: var(--text-3);
-}
-
-.toggle {
-  display: flex;
-  align-items: center;
-  gap: var(--sp-1);
-  font-size: var(--fs-sm);
-  color: var(--text-2);
-  white-space: nowrap;
-  cursor: pointer;
+  color: var(--text);
+  background: var(--panel-bg);
+  border: 1px solid var(--card-border);
+  border-radius: var(--r-md);
 }
 
 .body {
@@ -299,7 +289,7 @@
   display: flex;
   align-items: center;
   gap: var(--sp-2);
-  padding: var(--sp-1) var(--sp-3);
+  padding: var(--sp-1) var(--sp-3) var(--sp-1) calc(var(--sp-3) + var(--depth, 0) * 16px);
   border: 0;
   background: none;
   color: var(--text-2);
@@ -325,12 +315,39 @@
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
-  direction: rtl; /* keep the file name visible when the path is long */
-  text-align: left;
 }
 
-.dir {
+.dirItem {
+  width: 100%;
+  display: flex;
+  align-items: center;
+  gap: var(--sp-1);
+  padding: var(--sp-1) var(--sp-2) var(--sp-1) calc(var(--sp-2) + var(--depth, 0) * 16px);
+  border: 0;
+  background: none;
   color: var(--text-3);
+  font: inherit;
+  font-size: var(--fs-sm);
+  font-weight: var(--fw-semibold);
+  text-align: left;
+  cursor: pointer;
+}
+
+.dirItem:hover {
+  background: var(--raised-bg);
+  color: var(--text-2);
+}
+
+.chevron {
+  flex-shrink: 0;
+}
+
+.dirName {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .letter {

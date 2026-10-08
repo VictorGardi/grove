@@ -160,10 +160,62 @@ export function fileFocusTarget(index: number, direction: 'up' | 'down', count: 
   return next < 0 ? 'filter' : next < count ? next : null
 }
 
-export const splitPath = (p: string): { dir: string; name: string } => {
-  const at = p.lastIndexOf('/')
-  return { dir: at < 0 ? '' : p.slice(0, at + 1), name: p.slice(at + 1) }
-}
-
 // The file to show: the chosen one if still listed, else the first.
 export const pickFile = (files: DiffFile[], path: string | null): DiffFile | null => files.find((f) => f.path === path) ?? files[0] ?? null
+
+// --- The file tree (GitHub-style: directories before files, both alphabetical; a run of
+// directories that each hold only one subdirectory collapses into a single "a/b/c" row) ---
+
+export interface DirRow { kind: 'dir'; path: string; name: string; depth: number; collapsed: boolean }
+export interface FileRow { kind: 'file'; path: string; name: string; depth: number; file: DiffFile }
+export type TreeRow = DirRow | FileRow
+
+interface Branch { name: string; path: string; dirs: Map<string, Branch>; files: DiffFile[] }
+
+function branchOf(root: Branch, parts: string[]): Branch {
+  let node = root
+  for (const name of parts) {
+    const path = node.path ? `${node.path}/${name}` : name
+    let next = node.dirs.get(name)
+    if (!next) {
+      next = { name, path, dirs: new Map(), files: [] }
+      node.dirs.set(name, next)
+    }
+    node = next
+  }
+  return node
+}
+
+// A directory with no files of its own and exactly one subdirectory folds into it, repeatedly.
+function collapseChain(node: Branch): Branch {
+  while (node.files.length === 0 && node.dirs.size === 1) {
+    const [only] = node.dirs.values()
+    node = { name: node.name ? `${node.name}/${only.name}` : only.name, path: only.path, dirs: only.dirs, files: only.files }
+  }
+  return node
+}
+
+// `collapsedDirs` holds directory paths the caller has toggled shut; `forceExpand` (e.g. while
+// filtering) ignores that and walks every directory open.
+export function fileTreeRows(files: DiffFile[], collapsedDirs: ReadonlySet<string>, forceExpand: boolean): TreeRow[] {
+  const root: Branch = { name: '', path: '', dirs: new Map(), files: [] }
+  for (const f of files) {
+    const parts = f.path.split('/')
+    branchOf(root, parts.slice(0, -1)).files.push(f)
+  }
+
+  const out: TreeRow[] = []
+  const walk = (node: Branch, depth: number) => {
+    const dirs = [...node.dirs.values()].map(collapseChain).sort((a, b) => a.name.localeCompare(b.name))
+    for (const d of dirs) {
+      const collapsed = !forceExpand && collapsedDirs.has(d.path)
+      out.push({ kind: 'dir', path: d.path, name: d.name, depth, collapsed })
+      if (!collapsed) walk(d, depth + 1)
+    }
+    for (const f of [...node.files].sort((a, b) => a.path.localeCompare(b.path))) {
+      out.push({ kind: 'file', path: f.path, name: f.path.slice(f.path.lastIndexOf('/') + 1), depth, file: f })
+    }
+  }
+  walk(root, 0)
+  return out
+}

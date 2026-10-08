@@ -112,6 +112,46 @@ describe('core session diff', () => {
     await core.commands.uiSet({ viewer: { kind: 'diff', sessionId: session.id } })
     await vi.waitFor(() => expect(core.getSlices().diff).toMatchObject({ state: 'error', error: 'git not found' }))
   })
+
+  it('diffs since a chosen base once committed work would otherwise vanish from the diff', async () => {
+    const { core, repo, session } = await setup()
+    repo.git('checkout', '-b', 'feature')
+    repo.write('a.txt', 'one\ncommitted\n')
+    repo.commit('on feature')
+    await core.commands.uiSet({ viewer: { kind: 'diff', sessionId: session.id } })
+    await vi.waitFor(() => expect(core.getSlices().diff?.state).toBe('ok'))
+    expect(core.getSlices().diff?.files).toEqual([]) // fully committed: nothing against plain HEAD
+
+    await core.commands.uiSet({ viewer: { kind: 'diff', sessionId: session.id, base: 'main' } })
+    await vi.waitFor(() => expect(core.getSlices().diff?.files).toHaveLength(1))
+    expect(core.getSlices().diff).toMatchObject({ base: 'main' })
+
+    // switching back to the working tree drops it again
+    await core.commands.uiSet({ viewer: { kind: 'diff', sessionId: session.id, base: null } })
+    await vi.waitFor(() => expect(core.getSlices().diff?.files).toEqual([]))
+  })
+})
+
+describe('core diffRefs', () => {
+  it('lists local branches and the detected default branch', async () => {
+    const { core, repo, session } = await setup()
+    repo.git('branch', 'feature')
+    const res = await core.commands.diffRefs({ sessionId: session.id })
+    expect(res).toEqual({ ok: true, data: { branches: ['feature', 'main'], default: 'main' } })
+  })
+
+  it('fails for an unknown session', async () => {
+    const { core } = await setup()
+    expect(await core.commands.diffRefs({ sessionId: 'nope' })).toEqual({ ok: false, error: 'not-found' })
+  })
+
+  it('is ok with nothing to offer outside a repo', async () => {
+    s = setupCore() // no gitRepo(): the project folder isn't a repo
+    const core = s.make()
+    await core.start()
+    const session = await createTerminal(core)
+    expect(await core.commands.diffRefs({ sessionId: session.id })).toEqual({ ok: true, data: { branches: [], default: null } })
+  })
 })
 
 describe('core diffLines', () => {

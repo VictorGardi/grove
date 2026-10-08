@@ -21,6 +21,7 @@ export interface InvokeMap {
   'comment:delete': [{ id: string }, { id: string }]
   'review:send': [{ sessionId: string }, { sent: number }]
   'diff:lines': [{ sessionId: string; path: string; from: number; to: number }, string[]]
+  'diff:refs': [{ sessionId: string }, { branches: string[]; default: string | null }]
   'ui:set': [Partial<UiState>, UiState]
   'session:focusLast': [void, { id: string }]
   'viewer:reload': [void, void]

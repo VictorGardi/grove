@@ -30,10 +30,10 @@ export interface Session {
 }
 // a viewable file in the project folder (ADR 0032); path relative to the project, POSIX
 export interface FileTarget { kind: 'file'; projectId: string; path: string; hash: string | null; fromDiff: string | null }
-export interface DiffTarget { kind: 'diff'; sessionId: string }
+export interface DiffTarget { kind: 'diff'; sessionId: string; base?: string | null } // base: a branch to diff since (merge-base); null/unset: working tree vs HEAD
 export type DocTarget = FileTarget // what the iframe viewer shows; hash: fragment without '#'
 export type ViewerTarget = DocTarget | DiffTarget // fromDiff: the session the file was opened from ("← Diff")
-// A session's `git diff HEAD` plus untracked files, parsed in core (ADR 0021).
+// A session's git diff plus untracked files, parsed in core (ADR 0021).
 export interface SessionDiff {
   sessionId: string
   projectId: string
@@ -42,6 +42,7 @@ export interface SessionDiff {
   root: string | null  // repo top level
   files: DiffFile[]
   truncated: boolean   // total over the line cap
+  base: string | null  // the branch actually diffed since (merge-base); null: working tree vs HEAD
 }
 export interface DiffFile {
   path: string           // POSIX, relative to root; the new path for renames

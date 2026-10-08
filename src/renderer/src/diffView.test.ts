@@ -1,12 +1,12 @@
 import { describe, expect, it } from 'vitest'
 import type { DiffFile, SessionDiff } from '@shared/types'
 import type { DiffLine } from '@shared/types'
-import { fileFocusTarget, filterFiles, gaps, lineKey, pickFile, rangeAnchor, selectionRange, splitRows, visibleFiles, wordMarks, wordSegs } from './diffView'
+import { fileFocusTarget, fileTreeRows, filterFiles, gaps, lineKey, pickFile, rangeAnchor, selectionRange, splitRows, visibleFiles, wordMarks, wordSegs } from './diffView'
 
 const file = (path: string, status: DiffFile['status']): DiffFile =>
   ({ path, oldPath: null, status, binary: false, additions: 0, deletions: 0, hunks: [], truncated: false, rendered: null })
 const diff: SessionDiff = {
-  sessionId: 's', projectId: 'p', state: 'ok', error: null, root: '/r', truncated: false,
+  sessionId: 's', projectId: 'p', state: 'ok', error: null, root: '/r', truncated: false, base: null,
   files: [file('a.ts', 'modified'), file('new.ts', 'untracked'), file('b.ts', 'added')],
 }
 
@@ -142,5 +142,45 @@ describe('file list helpers', () => {
     expect(fileFocusTarget(2, 'down', 3)).toBeNull()
     expect(fileFocusTarget(0, 'up', 3)).toBe('filter')
     expect(fileFocusTarget(-1, 'down', 0)).toBeNull()
+  })
+})
+
+describe('fileTreeRows', () => {
+  const files = [
+    file('src/components/Foo.tsx', 'modified'),
+    file('src/components/Bar.tsx', 'added'),
+    file('src/index.ts', 'modified'),
+    file('a/b/c/Deep.tsx', 'added'),
+    file('README.md', 'modified'),
+  ]
+
+  it('nests directories before files, both alphabetical, at an increasing depth', () => {
+    const rows = fileTreeRows(files, new Set(), false)
+    expect(rows.map((r) => [r.kind, r.path, r.depth])).toEqual([
+      ['dir', 'a/b/c', 0],
+      ['file', 'a/b/c/Deep.tsx', 1],
+      ['dir', 'src', 0],
+      ['dir', 'src/components', 1],
+      ['file', 'src/components/Bar.tsx', 2],
+      ['file', 'src/components/Foo.tsx', 2],
+      ['file', 'src/index.ts', 1],
+      ['file', 'README.md', 0],
+    ])
+  })
+
+  it('collapses a chain of single-child directories into one row', () => {
+    const rows = fileTreeRows(files, new Set(), false)
+    const chain = rows.find((r) => r.kind === 'dir' && r.path === 'a/b/c')
+    expect(chain).toMatchObject({ kind: 'dir', name: 'a/b/c' })
+  })
+
+  it('skips the children of a collapsed directory unless forced open', () => {
+    const collapsed = new Set(['src'])
+    const rows = fileTreeRows(files, collapsed, false)
+    expect(rows.find((r) => r.path === 'src')).toMatchObject({ collapsed: true })
+    expect(rows.some((r) => r.path.startsWith('src/'))).toBe(false)
+
+    const forced = fileTreeRows(files, collapsed, true)
+    expect(forced.some((r) => r.path.startsWith('src/'))).toBe(true)
   })
 })

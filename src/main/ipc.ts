@@ -47,6 +47,7 @@ export function registerIpc(core: Core, getWindow: () => BrowserWindow | null, g
   handle('comment:delete', (a) => core.commands.commentDelete(a), true)
   handle('review:send', (a) => core.commands.reviewSend(a), true)
   handle('diff:lines', (a) => core.commands.diffLines(a), true)
+  handle('diff:refs', (a) => core.commands.diffRefs(a), true)
   handle('session:focusLast', () => core.commands.sessionFocusLast(), true)
   handle('ui:set', (a) => core.commands.uiSet(a), true)
   // Reload the viewer frame in place; Chromium restores scroll where it can.

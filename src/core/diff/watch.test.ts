@@ -3,7 +3,7 @@ import type { SessionDiff } from '@shared/types'
 import { createDiffWatch } from './watch'
 
 const diff = (sessionId: string, n = 0): SessionDiff =>
-  ({ sessionId, projectId: 'p', state: 'ok', error: null, root: '/r', files: [], truncated: n > 0 })
+  ({ sessionId, projectId: 'p', state: 'ok', error: null, root: '/r', files: [], truncated: n > 0, base: null })
 
 // A fake `run` whose calls resolve when the test says so.
 function fakeRun() {

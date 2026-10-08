@@ -33,7 +33,8 @@ export function ArtifactViewer({ target, dir, groups, mtimeMs, expanded, onOpen,
 
   // Commenting on markdown (ADR 0026): messages from the frame's comment script, accepted only from this frame.
   const frame = useRef<HTMLIFrameElement>(null)
-  const sessionId = useSlices((x) => x.ui.focusedSessionId)
+  const focusedSessionId = useSlices((x) => x.ui.focusedSessionId)
+  const sessionId = target.fromDiff ?? focusedSessionId
   const comments = useSlices((x) => x.comments)
   const commentable = isCommentable(target)
   const drafts = useMemo(() => draftsForFile(comments, sessionId, target), [comments, sessionId, target])

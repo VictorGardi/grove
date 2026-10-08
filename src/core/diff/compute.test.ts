@@ -35,7 +35,7 @@ describe('computeDiff', () => {
     r.commit()
     r.write('top.txt', 'x\n')
     r.git('add', 'top.txt')
-    const { diff } = await compute(`${r.dir}/sub`)
+    const { diff } = await compute(`${r.dir}/sub`, { project: project(r.dir) })
     expect(diff.files.map((f) => f.path)).toEqual(['top.txt'])
   })
 
@@ -160,18 +160,81 @@ describe('computeDiff', () => {
     ])
   })
 
-  it('maps project files relative to the project when it is a subfolder of the repo', async () => {
+  it('scopes the diff to the project when it is a subfolder of the repo, and maps its files relative to it', async () => {
     const r = gitRepo()
     r.write('app/CONTEXT.md', 'a\n')
     r.write('README.md', 'a\n')
     r.commit()
     r.write('app/CONTEXT.md', 'b\n')
-    r.write('README.md', 'b\n')
+    r.write('README.md', 'b\n') // outside the project: not in its diff at all
     const sub = path.join(r.dir, 'app')
     const { diff } = await compute(sub, { project: project(sub) })
     expect(diff.files.map((f) => [f.path, f.rendered])).toEqual([
-      ['README.md', null],
       ['app/CONTEXT.md', { path: 'CONTEXT.md' }],
     ])
+  })
+
+  it('excludes a sibling project\'s untracked files from the diff (monorepo: two projects, one repo)', async () => {
+    const r = gitRepo()
+    r.write('infra/a.txt', 'a\n')
+    r.write('web/b.txt', 'b\n')
+    r.commit()
+    r.write('infra/new.txt', 'x\n') // untracked, inside the project
+    r.write('web/new.txt', 'x\n') // untracked, in a sibling project
+    const { diff } = await compute(path.join(r.dir, 'infra'), { project: project(path.join(r.dir, 'infra')) })
+    expect(diff.files.map((f) => f.path)).toEqual(['infra/new.txt'])
+  })
+
+  it('given a base, diffs since it forked from the base instead of against HEAD', async () => {
+    const r = gitRepo()
+    r.write('a.txt', 'one\n')
+    r.commit()
+    r.git('checkout', '-b', 'feature')
+    r.write('a.txt', 'one\ntwo\n')
+    r.commit('on feature') // fully committed: a plain HEAD diff shows nothing
+    const plain = await compute(r.dir)
+    expect(plain.diff.files).toEqual([])
+    const { diff } = await compute(r.dir, { base: 'main' })
+    expect(diff.base).toBe('main')
+    expect(diff.files.map((f) => f.path)).toEqual(['a.txt'])
+  })
+
+  it('still shows uncommitted changes on top of a base', async () => {
+    const r = gitRepo()
+    r.commit()
+    r.git('checkout', '-b', 'feature')
+    r.write('a.txt', 'committed\n')
+    r.commit()
+    r.write('a.txt', 'committed\nand uncommitted\n')
+    const { diff } = await compute(r.dir, { base: 'main' })
+    expect(diff.files.map((f) => f.path)).toEqual(['a.txt'])
+    expect(diff.files[0].additions).toBe(2)
+  })
+
+  it('falls back to diffing against the base ref itself when it shares no history with HEAD', async () => {
+    const r = gitRepo()
+    r.write('a.txt', 'x\n')
+    r.commit()
+    r.git('checkout', '--orphan', 'other')
+    r.git('rm', '-rf', '-q', '.')
+    r.write('b.txt', 'y\n')
+    r.commit('unrelated root')
+    r.git('checkout', 'main')
+    const { diff } = await compute(r.dir, { base: 'other' })
+    expect(diff.state).toBe('ok')
+    expect(diff.base).toBe('other')
+    expect(diff.files.map((f) => [f.path, f.status])).toEqual([['a.txt', 'added'], ['b.txt', 'deleted']])
+  })
+
+  it('changes the key when only the base changes', async () => {
+    const r = gitRepo()
+    r.write('a.txt', 'one\n')
+    r.commit()
+    r.git('checkout', '-b', 'feature')
+    r.write('a.txt', 'one\ntwo\n')
+    r.commit()
+    const plain = await compute(r.dir)
+    const sinceMain = await compute(r.dir, { base: 'main' })
+    expect(sinceMain.key).not.toBe(plain.key)
   })
 })
