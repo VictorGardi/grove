@@ -23,8 +23,12 @@ const v3ToV4 = (s: { sessions?: Session[] }) => ({ ...s, sessions: (s.sessions ?
 // v4 → v5 (context gauge): sessions keep their last known context reading; none yet.
 const v4ToV5 = (s: { sessions?: Session[] }) => ({ ...s, sessions: (s.sessions ?? []).map((x) => ({ ...x, lastContext: null })) })
 
+// v5 → v6 (ADR 0032): the slug-keyed artifact viewer target is gone; one saved is closed.
+const v5ToV6 = (s: { ui?: { viewer?: { kind?: string } | null } }) =>
+  s.ui?.viewer?.kind === 'artifact' ? { ...s, ui: { ...s.ui, viewer: null } } : s
+
 export function loadState(file: string, onBad?: (msg: string) => void): StateFile {
-  const s = readVersioned<StateFile>(file, 5, { schemaVersion: 5, sessions: [], ui: DEFAULT_UI }, onBad, { 1: v1ToV2, 2: v2ToV3, 3: v3ToV4, 4: v4ToV5 })
+  const s = readVersioned<StateFile>(file, 6, { schemaVersion: 6, sessions: [], ui: DEFAULT_UI }, onBad, { 1: v1ToV2, 2: v2ToV3, 3: v3ToV4, 4: v4ToV5, 5: v5ToV6 })
   const sessions = (s.sessions ?? []).map((x) => ({ ...x, seenAt: x.seenAt ?? null })) // seenAt: added after v1 shipped
   // v1 files from before ADR 0018 carry `view` and may have the old features tab
   const { view: _view, ...saved } = (s.ui ?? {}) as Partial<UiState> & { view?: unknown }

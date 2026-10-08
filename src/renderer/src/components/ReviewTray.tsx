@@ -37,7 +37,7 @@ function TrayItem({ comment, onJump }: { comment: Comment; onJump: () => void })
         <span>{lineLabel(comment)}</span>
         {comment.orphaned && <span className={s.orphan}>orphaned</span>}
         {a.kind === 'diff' && <span className={s.quote}>{a.lines[0]}</span>}
-        {a.kind === 'artifact' && <span className={s.quote}>{a.exact}</span>}
+        {a.kind === 'file' && <span className={s.quote}>{a.exact}</span>}
       </button>
       {editing ? <CommentEditor initial={comment.body} error={error} onSave={(b) => void save(b)} onCancel={() => setEditing(false)} /> : (
         <div className={s.itemRow}>
@@ -122,8 +122,8 @@ export function ReviewMenu({ sessionId }: { sessionId: string }) {
             <section key={g.label} className={s.group}>
               <div className={s.groupLabel}>{g.label}</div>
               <ul className={s.items}>
-                {g.comments.map((c) => <TrayItem key={c.id} comment={c} onJump={() => (c.anchor.kind === 'artifact'
-                  ? openArtifact({ kind: 'artifact', projectId: c.anchor.projectId, slug: c.anchor.slug, path: c.anchor.path, hash: null, fromDiff: null })
+                {g.comments.map((c) => <TrayItem key={c.id} comment={c} onJump={() => (c.anchor.kind === 'file'
+                  ? openArtifact({ kind: 'file', projectId: c.anchor.projectId, path: c.anchor.path, hash: null, fromDiff: null })
                   : openDiff(sessionId))} />)}
               </ul>
             </section>

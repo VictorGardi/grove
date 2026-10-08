@@ -55,8 +55,7 @@ export function handleArtifacts(core: Core): void {
       }
     }
     const t = parseArtifactUrl(req.url)
-    const file = !t || !isViewable(t.path) ? null
-      : t.kind === 'file' ? core.filePath(t.projectId, t.path) : core.artifactPath(t.projectId, t.slug, t.path)
+    const file = t && isViewable(t.path) ? core.filePath(t.projectId, t.path) : null
     if (!t || !file) return respond(REFUSAL, 404)
     const ext = path.extname(t.path).toLowerCase() // the checked name, not a symlink target's
     try {
@@ -78,8 +77,8 @@ const scheme = (url: string) => {
 }
 const web = (url: string) => scheme(url) === 'http:' || scheme(url) === 'https:'
 
-const sameDoc = (a: DocTarget, b: ViewerTarget | null) => b !== null && b.kind === a.kind && a.projectId === b.projectId
-  && a.path === b.path && a.hash === b.hash && (a.kind !== 'artifact' || (b.kind === 'artifact' && a.slug === b.slug))
+const sameDoc = (a: DocTarget, b: ViewerTarget | null) => b !== null && b.kind === 'file' && a.projectId === b.projectId
+  && a.path === b.path && a.hash === b.hash
 
 // The viewer frame follows ui.viewer: artifact links go through uiSet, http(s) to the browser,
 // everything else is denied. The renderer's own load of ui.viewer is the one navigation let through.

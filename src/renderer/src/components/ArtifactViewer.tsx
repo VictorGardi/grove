@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
 import type { DocTarget } from '@shared/types'
 import { artifactUrl } from '@shared/artifactUrl'
-import { artifactAnchor, draftsForFile, isCommentable, parseIframeMessage, type IframeMessage } from '../artifactComments'
+import { draftsForFile, fileAnchor, isCommentable, parseIframeMessage, type IframeMessage } from '../artifactComments'
 import { useSlices } from '../stores/slices'
 import type { FileGroup } from '../viewerFiles'
 import { CommentEditor } from './CommentEditor'
@@ -10,8 +10,9 @@ import { Button } from './ui/Button'
 import s from './ArtifactViewer.module.css'
 
 // Opaque sandboxed frame: no allow-same-origin, so the artifact gets a null origin (ADR 0007).
-export function ArtifactViewer({ target, groups, mtimeMs, expanded, onOpen, onBack, onToggleExpanded, onReload, onClose }: {
+export function ArtifactViewer({ target, dir, groups, mtimeMs, expanded, onOpen, onBack, onToggleExpanded, onReload, onClose }: {
   target: DocTarget
+  dir: string // the feature folder's project-relative path with a trailing '/', or '' (groups list names inside it)
   groups: FileGroup[]
   mtimeMs: number | undefined // the open file's, from the features slice
   expanded: boolean
@@ -39,7 +40,7 @@ export function ArtifactViewer({ target, groups, mtimeMs, expanded, onOpen, onBa
   const [editing, setEditing] = useState<{ sel: Extract<IframeMessage, { type: 'select' }> } | { id: string } | null>(null)
   const [error, setError] = useState<string | null>(null)
   const tell = (msg: object) => frame.current?.contentWindow?.postMessage({ grove: 1, ...msg }, '*')
-  const highlights = useMemo(() => drafts.map((c) => c.anchor).flatMap((a, i) => (a.kind === 'artifact'
+  const highlights = useMemo(() => drafts.map((c) => c.anchor).flatMap((a, i) => (a.kind === 'file'
     ? [{ id: drafts[i].id, exact: a.exact, prefix: a.prefix, suffix: a.suffix }] : [])), [drafts])
   const sync = () => {
     tell({ type: 'config', canComment: sessionId !== null })
@@ -66,16 +67,16 @@ export function ArtifactViewer({ target, groups, mtimeMs, expanded, onOpen, onBa
   async function save(body: string) {
     if (!editing) return
     const res = 'sel' in editing
-      ? await window.api.invoke('comment:add', { sessionId: sessionId!, anchor: artifactAnchor(target as Extract<typeof target, { kind: 'artifact' }>, editing.sel), body })
+      ? await window.api.invoke('comment:add', { sessionId: sessionId!, anchor: fileAnchor(target, editing.sel), body })
       : await window.api.invoke('comment:update', { id: editing.id, body })
     if (res.ok) setEditing(null)
     else setError(res.error)
   }
   const editingDraft = editing && 'id' in editing ? drafts.find((c) => c.id === editing.id) : undefined
-  const quote = editing && 'sel' in editing ? editing.sel.exact : editingDraft?.anchor.kind === 'artifact' ? editingDraft.anchor.exact : ''
+  const quote = editing && 'sel' in editing ? editing.sel.exact : editingDraft?.anchor.kind === 'file' ? editingDraft.anchor.exact : ''
 
-  // a linked sub-path or another folder's file isn't listed: show it, unselectable
-  const listed = groups.some((g) => g.files.includes(target.path))
+  // a file outside the feature's folder isn't listed: show it, unselectable
+  const listed = groups.some((g) => g.files.some((n) => dir + n === target.path))
   return (
     <div className={s.viewer}>
       <div className={s.header}>
@@ -84,7 +85,7 @@ export function ArtifactViewer({ target, groups, mtimeMs, expanded, onOpen, onBa
           {!listed && <option value={target.path} disabled>{target.path}</option>}
           {groups.map((g) => (
             <optgroup key={g.label} label={g.label}>
-              {g.files.map((n) => <option key={n} value={n}>{n}</option>)}
+              {g.files.map((n) => <option key={n} value={dir + n}>{n}</option>)}
             </optgroup>
           ))}
         </select>

@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest'
 import type { Comment, CommentAnchor } from '@shared/types'
 import { formatReview } from './format'
 
-const ctx = { projectPath: '/p', featurePath: () => null }
+const ctx = { projectPath: '/p' }
 const note = (body: string): Comment => ({
   id: 'n', sessionId: 's', anchor: { kind: 'note' }, body, state: 'draft', orphaned: false,
   createdAt: '', updatedAt: '', sentAt: null,
@@ -61,16 +61,16 @@ describe('formatReview', () => {
     expect(out).toContain('> z\nCheck z (The lines have changed since this comment was written.)')
   })
 
-  const art = (over: Partial<Extract<CommentAnchor, { kind: 'artifact' }>>, body: string, orphaned = false): Comment => ({
+  const art = (over: Partial<Extract<CommentAnchor, { kind: 'file' }>>, body: string, orphaned = false): Comment => ({
     ...note(body), orphaned,
-    anchor: { kind: 'artifact', projectId: 'p', slug: 'f', path: '03-design.md', exact: 'the quoted text', prefix: '', suffix: '', start: 40, end: 41, ...over },
+    anchor: { kind: 'file', projectId: 'p', path: 'docs/work/f/03-design.md', exact: 'the quoted text', prefix: '', suffix: '', start: 40, end: 41, ...over },
   })
-  const actx = { projectPath: '/p', featurePath: (slug: string) => (slug === 'f' ? '/p/docs/work/f' : null) }
+  const actx = { projectPath: '/p' }
 
-  it('artifact quote', () => {
+  it('file quote', () => {
     const long = 'x'.repeat(250)
     const out = formatReview([
-      art({}, 'Too vague'), art({ start: 5, end: 5, exact: long }, 'Cut', true), art({ slug: 'gone', path: 'a.md' }, 'Unknown'),
+      art({}, 'Too vague'), art({ start: 5, end: 5, exact: long }, 'Cut', true), art({ path: 'a.md' }, 'Other file'),
     ], actx)
     expect(out).toBe([
       'Review comments from Grove (3). Please address each one.',
@@ -84,7 +84,7 @@ describe('formatReview', () => {
       '',
       '## a.md',
       'L40-41, on "the quoted text":',
-      'Unknown',
+      'Other file',
     ].join('\n'))
   })
 })

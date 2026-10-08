@@ -18,17 +18,17 @@ describe('parseIframeMessage', () => {
   })
 })
 
-const art: DocTarget = { kind: 'artifact', projectId: 'p', slug: 'f', path: '03-design.md', hash: null, fromDiff: null }
+const art: DocTarget = { kind: 'file', projectId: 'p', path: 'docs/work/f/03-design.md', hash: null, fromDiff: null }
 const draft = (id: string, over: Partial<Comment> = {}): Comment => ({
-  id, sessionId: 's', anchor: { kind: 'artifact', projectId: 'p', slug: 'f', path: '03-design.md', exact: 'e', prefix: '', suffix: '', start: 1, end: 1 },
+  id, sessionId: 's', anchor: { kind: 'file', projectId: 'p', path: 'docs/work/f/03-design.md', exact: 'e', prefix: '', suffix: '', start: 1, end: 1 },
   body: 'b', state: 'draft', orphaned: false, createdAt: '', updatedAt: '', sentAt: null, ...over,
 })
 
 describe('artifact comments', () => {
-  it('only markdown feature artifacts are commentable', () => {
+  it('any markdown file is commentable, feature folder or not', () => {
     expect(isCommentable(art)).toBe(true)
     expect(isCommentable({ ...art, path: 'x.html' })).toBe(false)
-    expect(isCommentable({ kind: 'file', projectId: 'p', path: 'a.md', hash: null, fromDiff: null })).toBe(false)
+    expect(isCommentable({ kind: 'file', projectId: 'p', path: 'CONTEXT.md', hash: null, fromDiff: null })).toBe(true)
   })
   it('lists the session\'s drafts on the file', () => {
     const cs = [draft('1'), draft('2', { sessionId: 'o' }), draft('3', { state: 'sent' }), draft('4', { anchor: { kind: 'note' } })]

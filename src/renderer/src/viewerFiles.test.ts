@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
-import type { Feature, FeatureStage } from '@shared/types'
-import { reviewTarget, viewableFiles } from './viewerFiles'
+import type { Feature, FeatureStage, Project } from '@shared/types'
+import { featureDir, featureOfFile, reviewTarget, viewableFiles } from './viewerFiles'
 
 type Artifact = Feature['artifacts'][number]
 
@@ -80,5 +80,24 @@ describe('reviewTarget', () => {
 
   it('uses the artifact for a stage without a review', () => {
     expect(at(['03-design.md'], { ...design, review: null })).toBe('03-design.md')
+  })
+})
+
+describe('featureOfFile', () => {
+  const projects: Project[] = [{ id: 'p', name: 'proj', path: '/repo' }]
+  const a = feature({ slug: 'a', path: '/repo/docs/work/a' })
+  const outside = feature({ slug: 'o', path: '/elsewhere/o' })
+  const file = (path: string) => ({ kind: 'file' as const, projectId: 'p', path, hash: null, fromDiff: null })
+
+  it('finds the feature whose folder holds the file, with its project-relative dir', () => {
+    expect(featureOfFile(file('docs/work/a/03-design.md'), [outside, a], projects)).toEqual({ feature: a, dir: 'docs/work/a/' })
+    expect(featureDir(a, projects)).toBe('docs/work/a/')
+  })
+
+  it('finds none for project files outside feature folders, or a folder outside the project', () => {
+    expect(featureOfFile(file('CONTEXT.md'), [a], projects)).toBeUndefined()
+    expect(featureOfFile(file('docs/work/ab/x.md'), [a], projects)).toBeUndefined()
+    expect(featureOfFile(file('o/x.md'), [outside], projects)).toBeUndefined()
+    expect(featureDir(outside, projects)).toBeNull()
   })
 })

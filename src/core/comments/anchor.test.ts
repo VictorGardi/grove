@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import type { Comment, DiffFile, DiffLine, SessionDiff } from '@shared/types'
-import { blockText, reanchorArtifact, reanchorDiff } from './anchor'
+import { blockText, reanchorFile, reanchorDiff } from './anchor'
 
 const ctxLine = (n: number, text: string): DiffLine => ({ kind: 'context', text, old: n, new: n })
 const add = (n: number, text: string): DiffLine => ({ kind: 'add', text, old: null, new: n })
@@ -69,13 +69,13 @@ describe('reanchorDiff', () => {
     expect(anchorOf(out[0])).toMatchObject({ start: 5, end: 6 })
   })
 
-  it('leaves other sessions, roots, sent, notes and artifacts alone', () => {
+  it('leaves other sessions, roots, sent, notes and file drafts alone', () => {
     const cs: Comment[] = [
       draft({ start: 2, end: 2, lines: ['b'] }, { id: '1', sessionId: 'other' }),
       { ...draft({ start: 2, end: 2, lines: ['b'] }, { id: '2' }), anchor: { ...anchorOf(draft({ start: 2, end: 2, lines: ['b'] })), root: '/elsewhere' } },
       draft({ start: 2, end: 2, lines: ['b'] }, { id: '3', state: 'sent' }),
       { ...draft({ start: 2, end: 2, lines: ['b'] }, { id: '4' }), anchor: { kind: 'note' } },
-      { ...draft({ start: 2, end: 2, lines: ['b'] }, { id: '5' }), anchor: { kind: 'artifact', projectId: 'p', slug: 's', path: 'x.md', exact: 'e', prefix: '', suffix: '', start: 1, end: 1 } },
+      { ...draft({ start: 2, end: 2, lines: ['b'] }, { id: '5' }), anchor: { kind: 'file', projectId: 'p', path: 'x.md', exact: 'e', prefix: '', suffix: '', start: 1, end: 1 } },
     ]
     expect(reanchorDiff(cs, diff([]))).toBe(cs)
   })
@@ -89,13 +89,13 @@ describe('reanchorDiff', () => {
   })
 })
 
-const FILE = { projectId: 'p', slug: 'f', path: '03-design.md' }
+const FILE = { projectId: 'p', path: 'docs/work/f/03-design.md' }
 const art = (exact: string, over: { prefix?: string; suffix?: string; start?: number; end?: number } = {}, c: Partial<Comment> = {}): Comment => ({
   id: 'a', sessionId: 's', body: 'b', state: 'draft', orphaned: false, createdAt: '', updatedAt: '', sentAt: null,
-  anchor: { kind: 'artifact', ...FILE, exact, prefix: over.prefix ?? '', suffix: over.suffix ?? '', start: over.start ?? 1, end: over.end ?? 1 },
+  anchor: { kind: 'file', ...FILE, exact, prefix: over.prefix ?? '', suffix: over.suffix ?? '', start: over.start ?? 1, end: over.end ?? 1 },
   ...c,
 })
-const lines = (c: Comment) => { const a = c.anchor as Extract<Comment['anchor'], { kind: 'artifact' }>; return [a.start, a.end] }
+const lines = (c: Comment) => { const a = c.anchor as Extract<Comment['anchor'], { kind: 'file' }>; return [a.start, a.end] }
 
 describe('blockText', () => {
   it('gives rendered text per block with whole-file lines', () => {
@@ -112,55 +112,55 @@ describe('blockText', () => {
   })
 })
 
-describe('reanchorArtifact', () => {
+describe('reanchorFile', () => {
   const src = (...paras: string[]) => paras.join('\n\n') + '\n'
 
   it('follows a quote moved by an insert above', () => {
     const cs = [art('the target', { start: 3, end: 3 })]
-    const out = reanchorArtifact(cs, FILE, src('new one', 'new two', 'old', 'the target'))
+    const out = reanchorFile(cs, FILE, src('new one', 'new two', 'old', 'the target'))
     expect(lines(out[0])).toEqual([7, 7])
     expect(out[0].orphaned).toBe(false)
   })
 
   it('orphans an edited quote, keeping its anchor', () => {
     const cs = [art('the target', { start: 3, end: 3 })]
-    const out = reanchorArtifact(cs, FILE, src('a', 'b', 'the edited thing'))
+    const out = reanchorFile(cs, FILE, src('a', 'b', 'the edited thing'))
     expect(out[0].orphaned).toBe(true)
     expect(lines(out[0])).toEqual([3, 3])
   })
 
   it('orphans an ambiguous quote unless prefix/suffix breaks the tie', () => {
     const text = src('first TODO here', 'second TODO there')
-    expect(reanchorArtifact([art('TODO')], FILE, text)[0].orphaned).toBe(true)
-    const out = reanchorArtifact([art('TODO', { prefix: 'second ', suffix: ' there' })], FILE, text)
+    expect(reanchorFile([art('TODO')], FILE, text)[0].orphaned).toBe(true)
+    const out = reanchorFile([art('TODO', { prefix: 'second ', suffix: ' there' })], FILE, text)
     expect(out[0].orphaned).toBe(false)
     expect(lines(out[0])).toEqual([3, 3])
   })
 
   it('offsets by the frontmatter', () => {
-    const out = reanchorArtifact([art('hello')], FILE, '---\na: b\n---\n\nhello world\n')
+    const out = reanchorFile([art('hello')], FILE, '---\na: b\n---\n\nhello world\n')
     expect(lines(out[0])).toEqual([5, 5])
   })
 
   it('spans two blocks', () => {
-    const out = reanchorArtifact([art('end of one start of two')], FILE, src('x', 'the end of one', 'start of two here'))
+    const out = reanchorFile([art('end of one start of two')], FILE, src('x', 'the end of one', 'start of two here'))
     expect(lines(out[0])).toEqual([3, 5])
   })
 
   it('clears the orphan mark when found again, and returns the same array when unchanged', () => {
     const text = src('alpha', 'beta')
-    const found = reanchorArtifact([art('beta', { start: 3, end: 3 }, { orphaned: true })], FILE, text)
+    const found = reanchorFile([art('beta', { start: 3, end: 3 }, { orphaned: true })], FILE, text)
     expect(found[0].orphaned).toBe(false)
     const same = [art('beta', { start: 3, end: 3 })]
-    expect(reanchorArtifact(same, FILE, text)).toBe(same)
+    expect(reanchorFile(same, FILE, text)).toBe(same)
   })
 
   it('leaves other files, sent drafts and diff drafts alone', () => {
     const cs = [
-      art('zzz', {}, { id: '1', anchor: { kind: 'artifact', ...FILE, path: 'other.md', exact: 'zzz', prefix: '', suffix: '', start: 1, end: 1 } }),
+      art('zzz', {}, { id: '1', anchor: { kind: 'file', ...FILE, path: 'other.md', exact: 'zzz', prefix: '', suffix: '', start: 1, end: 1 } }),
       art('zzz', {}, { id: '2', state: 'sent' }),
       draft({ start: 1, end: 1, lines: ['x'] }),
     ]
-    expect(reanchorArtifact(cs, FILE, 'nothing\n')).toBe(cs)
+    expect(reanchorFile(cs, FILE, 'nothing\n')).toBe(cs)
   })
 })

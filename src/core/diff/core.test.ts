@@ -86,7 +86,7 @@ describe('core session diff', () => {
     expect(core.getSlices().diff).toBeNull()
 
     const other = await createTerminal(core)
-    const doc = { kind: 'artifact' as const, projectId: 'p', slug: 'f', path: 'x.md', hash: null, fromDiff: other.id }
+    const doc = { kind: 'file' as const, projectId: 'p', path: 'x.md', hash: null, fromDiff: other.id }
     await core.commands.uiSet({ viewer: doc })
     await core.commands.sessionKill({ id: other.id })
     await core.commands.sessionRemove({ id: other.id })

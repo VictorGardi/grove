@@ -27,11 +27,10 @@ export interface Session {
   model?: string | null            // the model in use; never saved
   lastContext: ContextReading | null // the last known reading (pct known); persisted
 }
-export interface ArtifactTarget { kind: 'artifact'; projectId: string; slug: string; path: string; hash: string | null; fromDiff: string | null }
-// a viewable file anywhere in the project folder (ADR 0022); path relative POSIX
+// a viewable file in the project folder (ADR 0032); path relative to the project, POSIX
 export interface FileTarget { kind: 'file'; projectId: string; path: string; hash: string | null; fromDiff: string | null }
 export interface DiffTarget { kind: 'diff'; sessionId: string }
-export type DocTarget = ArtifactTarget | FileTarget // what the iframe viewer shows; hash: fragment without '#'
+export type DocTarget = FileTarget // what the iframe viewer shows; hash: fragment without '#'
 export type ViewerTarget = DocTarget | DiffTarget // fromDiff: the session the file was opened from ("← Diff")
 // A session's `git diff HEAD` plus untracked files, parsed in core (ADR 0021).
 export interface SessionDiff {
@@ -52,7 +51,7 @@ export interface DiffFile {
   deletions: number
   hunks: DiffHunk[]      // binary: no hunks
   truncated: boolean     // over 1 MB: hunks cut
-  rendered: { slug: string | null; path: string } | null // opens in the viewer; slug null: project file
+  rendered: { path: string } | null // opens in the viewer; path relative to the project
 }
 export interface DiffHunk { header: string; oldStart: number; newStart: number; lines: DiffLine[] }
 // Line identity: (path, side, number) — add → new, del → old, context → new.
@@ -107,7 +106,7 @@ export interface OpenCodeSlice { state: 'connecting' | 'connected' | 'unreachabl
 // A review comment (ADR 0024, 0025): a draft in a session's tray until it is sent.
 export type CommentAnchor =
   | { kind: 'diff'; root: string; path: string; side: 'old' | 'new'; start: number; end: number; lines: string[] }
-  | { kind: 'artifact'; projectId: string; slug: string; path: string; exact: string; prefix: string; suffix: string; start: number; end: number }
+  | { kind: 'file'; projectId: string; path: string; exact: string; prefix: string; suffix: string; start: number; end: number }
   | { kind: 'note' } // at most one draft note per session
 export interface Comment {
   id: string
@@ -120,10 +119,10 @@ export interface Comment {
   updatedAt: string // ISO
   sentAt: string | null // ISO
 }
-export interface CommentsFile { schemaVersion: 1; comments: Comment[] }
+export interface CommentsFile { schemaVersion: 2; comments: Comment[] }
 export type Slices = { projects: Project[]; sessions: Session[]; ui: UiState; features: FeaturesSlice; opencode: OpenCodeSlice; diff: SessionDiff | null; comments: Comment[] } // diff: the one on screen, not persisted
 export interface ConfigFile { schemaVersion: 1; projects: Project[]; workflow?: string }
-export interface StateFile { schemaVersion: 5; sessions: Session[]; ui: UiState }
+export interface StateFile { schemaVersion: 6; sessions: Session[]; ui: UiState }
 export const SIDEBAR_RAIL_WIDTH = 56 // the collapsed sidebar
 export const SIDEBAR_WIDTH = 220 // fixed: the sidebar has no resize handle, so a saved width is ignored
 export const DEFAULT_UI: UiState = { sidebarWidth: SIDEBAR_WIDTH, sidebarCollapsed: false, focusedSessionId: null, focusedFeature: null, focusedProject: null, sidebarTab: 'sessions', board: 'sessions', collapsed: [], viewer: null, viewerWidth: 480, viewerExpanded: false, grid: { open: false, members: [] } }

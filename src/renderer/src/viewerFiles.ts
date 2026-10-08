@@ -1,5 +1,5 @@
 import { isViewable } from '@shared/artifactUrl'
-import type { Feature } from '@shared/types'
+import type { DocTarget, Feature, Project } from '@shared/types'
 
 export type FileGroup = { label: string; files: string[] }
 
@@ -19,4 +19,24 @@ export function reviewTarget(f: Feature): string | null {
   if (!st) return null
   const has = (n: string) => f.artifacts.some((a) => a.name === n)
   return st.review && has(st.review) ? st.review : has(st.artifact) ? st.artifact : null
+}
+
+// The feature whose folder holds the open file, with that folder's project-relative path and trailing '/'.
+// Strings only: shared code is compiled for the renderer too, so no node:path.
+export function featureOfFile(t: DocTarget, features: Feature[], projects: Project[]): { feature: Feature; dir: string } | undefined {
+  const project = projects.find((p) => p.id === t.projectId)
+  if (!project) return undefined
+  const base = project.path.replace(/\/+$/, '') + '/'
+  let best: { feature: Feature; dir: string } | undefined
+  for (const f of features) {
+    if (f.projectId !== t.projectId || !f.path.startsWith(base)) continue
+    const dir = f.path.slice(base.length).replace(/\/+$/, '') + '/'
+    if (t.path.startsWith(dir) && (!best || dir.length > best.dir.length)) best = { feature: f, dir }
+  }
+  return best
+}
+
+export const featureDir = (f: Feature, projects: Project[]): string | null => {
+  const base = projects.find((p) => p.id === f.projectId)?.path.replace(/\/+$/, '') + '/'
+  return f.path.startsWith(base) ? f.path.slice(base.length).replace(/\/+$/, '') + '/' : null
 }

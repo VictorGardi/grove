@@ -75,13 +75,13 @@ export function blockText(source: string): { start: number; end: number; text: s
   return out
 }
 
-type ArtifactAnchor = Extract<CommentAnchor, { kind: 'artifact' }>
+type FileAnchor = Extract<CommentAnchor, { kind: 'file' }>
 
 // Drafts on this file follow their quote through the file's blocks; none or several matches → orphaned (D3).
 // The same array when nothing changed.
-export function reanchorArtifact(cs: Comment[], file: { projectId: string; slug: string; path: string }, source: string): Comment[] {
-  const mine = (c: Comment): c is Comment & { anchor: ArtifactAnchor } => c.state === 'draft' && c.anchor.kind === 'artifact'
-    && c.anchor.projectId === file.projectId && c.anchor.slug === file.slug && c.anchor.path === file.path
+export function reanchorFile(cs: Comment[], file: { projectId: string; path: string }, source: string): Comment[] {
+  const mine = (c: Comment): c is Comment & { anchor: FileAnchor } => c.state === 'draft' && c.anchor.kind === 'file'
+    && c.anchor.projectId === file.projectId && c.anchor.path === file.path
   if (!cs.some(mine)) return cs
   const blocks = blockText(source)
   const spans: { from: number; to: number; start: number; end: number }[] = []

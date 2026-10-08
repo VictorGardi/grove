@@ -2,7 +2,7 @@ import { createHash } from 'node:crypto'
 import fs from 'node:fs'
 import path from 'node:path'
 import { isViewable } from '@shared/artifactUrl'
-import type { DiffFile, Feature, Project, SessionDiff } from '@shared/types'
+import type { DiffFile, Project, SessionDiff } from '@shared/types'
 import { GitError, type GitRun } from './git'
 import { parseUnifiedDiff, untrackedFile } from './parse'
 
@@ -15,7 +15,7 @@ const MAX_LINES = 20_000 // once passed, later files are listed without lines
 const sha1 = (s: string) => createHash('sha1').update(s).digest('hex')
 
 // The session's repo diff against HEAD. `key` fingerprints git's raw output: equal keys, equal diff.
-export async function computeDiff(o: { sessionId: string; dir: string; project: Project; features: Feature[]; git: GitRun | null }):
+export async function computeDiff(o: { sessionId: string; dir: string; project: Project; git: GitRun | null }):
   Promise<{ key: string; diff: SessionDiff }> {
   const base: SessionDiff = { sessionId: o.sessionId, projectId: o.project.id, state: 'ok', error: null, root: null, files: [], truncated: false }
   const { git } = o
@@ -34,7 +34,7 @@ export async function computeDiff(o: { sessionId: string; dir: string; project: 
     const untracked = await readUntracked(root, names)
     const key = sha1([raw, ...names, ...untracked.stamps].join('\0'))
     const files = [...parseUnifiedDiff(raw, MAX_FILE_BYTES), ...untracked.files]
-    setRendered(files, root, o.project.path, o.features.filter((f) => f.projectId === o.project.id))
+    setRendered(files, root, o.project.path)
     return { key, diff: { ...base, root, files, truncated: capLines(files) } }
   } catch (e) {
     const error = (e as Error).message
@@ -52,25 +52,15 @@ const real = (p: string) => {
 
 const posix = (rel: string) => rel.split(path.sep).join('/')
 
-// Where a changed viewable file opens rendered (D6): its feature folder's artifact route, else the
-// project's ~file route. Dot segments (.github/…) are refused by the route, so they get none.
-function setRendered(files: DiffFile[], root: string, projectPath: string, features: Feature[]): void {
+// Where a changed viewable file opens rendered (D6): its path in the project folder. Dot segments
+// (.github/…) are refused by the viewer, so they get none.
+function setRendered(files: DiffFile[], root: string, projectPath: string): void {
   const project = real(projectPath)
-  const folders = features.flatMap((f) => {
-    const dir = real(f.path)
-    return dir ? [{ slug: f.slug, dir }] : []
-  })
   for (const file of files) {
     if (file.status === 'deleted' || !isViewable(file.path)) continue
-    const abs = path.join(root, file.path)
-    const f = folders.find((x) => abs.startsWith(x.dir + path.sep))
-    if (f) {
-      file.rendered = { slug: f.slug, path: posix(path.relative(f.dir, abs)) }
-      continue
-    }
-    const rel = project && path.relative(project, abs)
+    const rel = project && path.relative(project, path.join(root, file.path))
     if (rel && !rel.startsWith('..') && !path.isAbsolute(rel) && !rel.split(path.sep).some((seg) => seg.startsWith('.'))) {
-      file.rendered = { slug: null, path: posix(rel) }
+      file.rendered = { path: posix(rel) }
     }
   }
 }

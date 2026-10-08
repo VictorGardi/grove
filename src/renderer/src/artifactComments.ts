@@ -1,6 +1,6 @@
 import type { Comment, CommentAnchor, DocTarget } from '@shared/types'
 
-type ArtifactAnchor = Extract<CommentAnchor, { kind: 'artifact' }>
+type FileAnchor = Extract<CommentAnchor, { kind: 'file' }>
 
 // What the comment script (ADR 0026) can tell the app; anything else is dropped.
 export type IframeMessage =
@@ -24,18 +24,17 @@ export function parseIframeMessage(data: unknown): IframeMessage | null {
   return { type: 'select', exact, prefix, suffix, start: start as number, end: end as number }
 }
 
-// Comments only on feature-folder markdown.
-export const isCommentable = (t: DocTarget): t is Extract<DocTarget, { kind: 'artifact' }> =>
-  t.kind === 'artifact' && t.path.toLowerCase().endsWith('.md')
+// Comments on any rendered markdown file.
+export const isCommentable = (t: DocTarget): boolean => t.path.toLowerCase().endsWith('.md')
 
-export const artifactAnchor = (t: Extract<DocTarget, { kind: 'artifact' }>, m: Extract<IframeMessage, { type: 'select' }>): ArtifactAnchor => ({
-  kind: 'artifact', projectId: t.projectId, slug: t.slug, path: t.path,
+export const fileAnchor = (t: DocTarget, m: Extract<IframeMessage, { type: 'select' }>): FileAnchor => ({
+  kind: 'file', projectId: t.projectId, path: t.path,
   exact: m.exact, prefix: m.prefix, suffix: m.suffix, start: m.start, end: m.end,
 })
 
-// A session's draft comments on one artifact file.
+// A session's draft comments on one file.
 export function draftsForFile(cs: Comment[], sessionId: string | null, t: DocTarget): Comment[] {
-  if (!sessionId || t.kind !== 'artifact') return []
-  return cs.filter((c) => c.sessionId === sessionId && c.state === 'draft' && c.anchor.kind === 'artifact'
-    && c.anchor.projectId === t.projectId && c.anchor.slug === t.slug && c.anchor.path === t.path)
+  if (!sessionId) return []
+  return cs.filter((c) => c.sessionId === sessionId && c.state === 'draft' && c.anchor.kind === 'file'
+    && c.anchor.projectId === t.projectId && c.anchor.path === t.path)
 }

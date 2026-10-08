@@ -15,7 +15,7 @@ import { loginShellArgv, minimalEnv } from './env'
 import { computeDiff } from './diff/compute'
 import { gitRunner } from './diff/git'
 import { createDiffWatch } from './diff/watch'
-import { reanchorArtifact, reanchorDiff } from './comments/anchor'
+import { reanchorDiff, reanchorFile } from './comments/anchor'
 import { slugFor } from './autolink'
 import { formatReview } from './comments/format'
 import { addComment, draftsOf, dropSession, markSent, removeComment, updateComment } from './comments/model'
@@ -94,8 +94,7 @@ export interface Core {
   commands: Commands
   waitTurn(id: string, o: { expectStart: boolean; timeoutMs: number }): Promise<Result<TurnResult>>
   attach(sessionId: string, cols: number, rows: number): AttachHandle
-  artifactPath(projectId: string, slug: string, rel: string): string | null // null: not a file of a discovered feature
-  filePath(projectId: string, rel: string): string | null // the ~file route (ADR 0022); null: refused
+  filePath(projectId: string, rel: string): string | null // a viewable file of the project (ADR 0032); null: refused
   dispose(): void
 }
 
@@ -187,9 +186,9 @@ export function createCore(opts: CoreOptions): Core {
       const sessions = slices.sessions.map(
         ({ branch: _branch, status: _status, waitingFor: _waitingFor, contextPct: _p, contextTokens: _t, contextWindow: _w, model: _m, ...s }) => s,
       ) // live-only
-      saveState(opts.statePath, { schemaVersion: 5, sessions, ui: slices.ui })
+      saveState(opts.statePath, { schemaVersion: 6, sessions, ui: slices.ui })
     }
-    else if (k === 'comments') saveComments(opts.commentsPath, { schemaVersion: 1, comments: slices.comments })
+    else if (k === 'comments') saveComments(opts.commentsPath, { schemaVersion: 2, comments: slices.comments })
     if (k === 'sessions') publish() // card state reads linked sessions
   }
 
@@ -290,32 +289,35 @@ export function createCore(opts: CoreOptions): Core {
       items: deriveFeatures(wf, folders, slices.sessions),
     })
     applyHeld()
-    void reanchorArtifacts()
+    void reanchorFiles()
   }
 
-  // Drafts on an artifact follow its text when the file changed on disk (design D3).
-  const seenMtime = new Map<string, number>() // projectId/slug/name → mtimeMs at the last re-anchor
-  async function reanchorArtifacts(): Promise<void> {
-    for (const f of slices.features.items) {
-      for (const a of f.artifacts) {
-        const key = `${f.projectId}/${f.slug}/${a.name}`
-        if (seenMtime.get(key) === a.mtimeMs) continue
-        const has = (c: Comment) => c.state === 'draft' && c.anchor.kind === 'artifact'
-          && c.anchor.projectId === f.projectId && c.anchor.slug === f.slug && c.anchor.path === a.name
-        if (!slices.comments.some(has)) continue
-        seenMtime.set(key, a.mtimeMs)
-        const file = safeArtifactPath(f.path, a.name)
-        if (!file) continue
-        let source: string
-        try {
-          source = await fs.promises.readFile(file, 'utf8')
-        } catch {
-          continue
-        }
-        const next = reanchorArtifact(slices.comments, { projectId: f.projectId, slug: f.slug, path: a.name }, source)
-        if (next !== slices.comments) set('comments', next)
-      }
+  // Drafts on a file follow its text when the file changed on disk (design D3).
+  const seenMtime = new Map<string, number>() // projectId/path → mtimeMs at the last re-anchor
+  async function reanchorFiles(): Promise<void> {
+    const files = new Map<string, { projectId: string; path: string }>()
+    for (const c of slices.comments) {
+      if (c.state === 'draft' && c.anchor.kind === 'file') files.set(`${c.anchor.projectId}/${c.anchor.path}`, c.anchor)
     }
+    for (const [key, { projectId, path: rel }] of files) {
+      const file = projectFile(projectId, rel)
+      if (!file) continue
+      let source: string
+      try {
+        const mtimeMs = (await fs.promises.stat(file)).mtimeMs
+        if (seenMtime.get(key) === mtimeMs) continue
+        seenMtime.set(key, mtimeMs)
+        source = await fs.promises.readFile(file, 'utf8')
+      } catch {
+        continue
+      }
+      const next = reanchorFile(slices.comments, { projectId, path: rel }, source)
+      if (next !== slices.comments) set('comments', next)
+    }
+  }
+  const projectFile = (projectId: string, rel: string) => {
+    const p = slices.projects.find((x) => x.id === projectId)
+    return p ? safeArtifactPath(p.path, rel) : null
   }
 
   const listed = (projectId: string, slug: string) => discovery.get(projectId)?.folders.has(slug) ?? false
@@ -401,7 +403,7 @@ export function createCore(opts: CoreOptions): Core {
       return { key: `error:${error}`, diff: { sessionId: id, projectId: s?.projectId ?? '', state: 'error', error, root: null, files: [], truncated: false } }
     }
     const dir = s.lastStatus === 'running' ? lastCwds.get(s.tmuxName) ?? project.path : project.path
-    return computeDiff({ sessionId: id, dir, project, features: slices.features.items, git })
+    return computeDiff({ sessionId: id, dir, project, git })
   }
 
   const diffWatch = createDiffWatch(runDiff, (d) => {
@@ -755,7 +757,6 @@ export function createCore(opts: CoreOptions): Core {
       if (drafts.length === 0) return { ok: false, error: 'empty' }
       const text = formatReview(drafts, {
         projectPath: project.path,
-        featurePath: (slug) => slices.features.items.find((f) => f.projectId === project.id && f.slug === slug)?.path ?? null,
       })
       sending.add(sessionId)
       try {
@@ -851,14 +852,7 @@ export function createCore(opts: CoreOptions): Core {
       })
       return tracked
     },
-    artifactPath(projectId, slug, rel) {
-      const f = slices.features.items.find((x) => x.projectId === projectId && x.slug === slug)
-      return f ? safeArtifactPath(f.path, rel) : null
-    },
-    filePath(projectId, rel) {
-      const p = slices.projects.find((x) => x.id === projectId)
-      return p ? safeArtifactPath(p.path, rel) : null
-    },
+    filePath: (projectId, rel) => projectFile(projectId, rel),
     dispose() {
       clearInterval(poll)
       clearTimeout(unreachableTimer)

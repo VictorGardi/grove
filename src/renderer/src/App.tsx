@@ -25,7 +25,7 @@ import { contextView } from './contextGauge'
 import { boardKey, childrenOf, content, crumbs, currentProjectId, focusTarget } from './navigation'
 import { serviceBanners } from './sessionStatus'
 import { useSlices } from './stores/slices'
-import { viewableFiles } from './viewerFiles'
+import { featureDir, featureOfFile, viewableFiles } from './viewerFiles'
 import s from './App.module.css'
 
 export default function App() {
@@ -97,7 +97,9 @@ export default function App() {
   const context = shown.kind === 'session' ? contextView(shown.session) : null
   const openFeature = (f: Feature) => focusFeature({ projectId: f.projectId, slug: f.slug })
   const v = ui.viewer
-  const viewerFeature = v?.kind === 'artifact' ? features.items.find((f) => f.projectId === v.projectId && f.slug === v.slug) : undefined
+  const viewerHit = v?.kind === 'file' ? featureOfFile(v, features.items, projects) : undefined
+  const viewerFeature = viewerHit?.feature
+  const viewerDir = viewerHit?.dir ?? ''
   const diffOpen = (id: string) => v?.kind === 'diff' && v.sessionId === id
 
   return (
@@ -130,7 +132,10 @@ export default function App() {
                 parent={features.items.find((f) => f.projectId === shown.feature.projectId && f.slug === shown.feature.parent) ?? null}
                 children={childrenOf(shown.feature, features.items)} sessions={sessions}
                 onFocusSession={setFocused} onOpenFeature={openFeature}
-                onOpenArtifact={(name) => openArtifact({ kind: 'artifact', projectId: shown.feature.projectId, slug: shown.feature.slug, path: name, hash: null, fromDiff: null })} />
+                onOpenArtifact={(name) => {
+                  const dir = featureDir(shown.feature, projects)
+                  if (dir !== null) openArtifact({ kind: 'file', projectId: shown.feature.projectId, path: dir + name, hash: null, fromDiff: null })
+                }} />
             ) : shown.kind === 'grid' ? (
               <SessionGrid sessions={shown.sessions} focusedId={shown.focused.id} view={gridView} onViewChange={changeGridView} onFocusPane={setFocused} overlayOpen={paletteOpen || !!quickNew || !!confirmRemove} />
             ) : shown.kind === 'session' && shown.session.lastStatus === 'running' ? (
@@ -155,8 +160,8 @@ export default function App() {
             expanded={ui.viewerExpanded} onOpenRendered={(projectId, r) => openRendered(projectId, v.sessionId, r)}
             onToggleExpanded={toggleViewerExpanded} onClose={closeViewer} />
         ) : v ? (
-          <ArtifactViewer target={v} groups={viewerFeature ? viewableFiles(viewerFeature, features.stages) : []}
-            mtimeMs={viewerFeature ? viewerFeature.artifacts.find((a) => a.name === v.path)?.mtimeMs : undefined}
+          <ArtifactViewer target={v} dir={viewerDir} groups={viewerFeature ? viewableFiles(viewerFeature, features.stages) : []}
+            mtimeMs={viewerFeature ? viewerFeature.artifacts.find((a) => viewerDir + a.name === v.path)?.mtimeMs : undefined}
             expanded={ui.viewerExpanded} onToggleExpanded={toggleViewerExpanded} onReload={reloadViewer}
             onOpen={(path) => openArtifact({ ...v, path, hash: null })}
             onBack={v.fromDiff ? () => openDiff(v.fromDiff!) : undefined} onClose={closeViewer} />

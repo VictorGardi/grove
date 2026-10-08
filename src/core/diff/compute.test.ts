@@ -2,20 +2,15 @@ import fs from 'node:fs'
 import os from 'node:os'
 import path from 'node:path'
 import { describe, expect, it } from 'vitest'
-import type { Feature, Project } from '@shared/types'
+import type { Project } from '@shared/types'
 import { gitRepo } from '../testing/gitRepo'
 import { computeDiff } from './compute'
 import { gitRunner } from './git'
 
 const git = gitRunner('git', process.env)
 const project = (dir: string): Project => ({ id: 'p', name: 'proj', path: dir })
-// The shape core passes: Feature.path is the absolute (not necessarily real) folder.
-const feature = (slug: string, dir: string): Feature => ({
-  projectId: 'p', slug, path: dir, title: slug, kind: 'feature', group: false, parent: null, flow: null, stages: [],
-  currentStage: null, cardState: 'backlog', progress: null, flags: [], warnings: [], artifacts: [],
-})
 const compute = (dir: string, over: Partial<Parameters<typeof computeDiff>[0]> = {}) =>
-  computeDiff({ sessionId: 's', dir, project: project(dir), features: [], git, ...over })
+  computeDiff({ sessionId: 's', dir, project: project(dir), git, ...over })
 
 describe('computeDiff', () => {
   it('diffs an edited tracked file against HEAD', async () => {
@@ -142,12 +137,12 @@ describe('computeDiff', () => {
     r.write('docs/work/x/refs/new.html', '<p>x</p>\n')
     r.write('src/a.ts', 'b\n')
     r.git('rm', '-q', 'docs/work/x/old.md')
-    const { diff } = await compute(r.dir, { features: [feature('x', path.join(r.dir, 'docs/work/x')), { ...feature('y', '/nope'), projectId: 'other' }] })
+    const { diff } = await compute(r.dir)
     expect(diff.files.map((f) => [f.path, f.rendered])).toEqual([
-      ['docs/work/x/03-design.md', { slug: 'x', path: '03-design.md' }],
+      ['docs/work/x/03-design.md', { path: 'docs/work/x/03-design.md' }],
       ['docs/work/x/old.md', null],
       ['src/a.ts', null],
-      ['docs/work/x/refs/new.html', { slug: 'x', path: 'refs/new.html' }],
+      ['docs/work/x/refs/new.html', { path: 'docs/work/x/refs/new.html' }],
     ])
   })
 
@@ -161,7 +156,7 @@ describe('computeDiff', () => {
     const { diff } = await compute(r.dir)
     expect(diff.files.map((f) => [f.path, f.rendered])).toEqual([
       ['.github/notes.md', null],
-      ['docs/adr/0001.md', { slug: null, path: 'docs/adr/0001.md' }],
+      ['docs/adr/0001.md', { path: 'docs/adr/0001.md' }],
     ])
   })
 
@@ -176,7 +171,7 @@ describe('computeDiff', () => {
     const { diff } = await compute(sub, { project: project(sub) })
     expect(diff.files.map((f) => [f.path, f.rendered])).toEqual([
       ['README.md', null],
-      ['app/CONTEXT.md', { slug: null, path: 'CONTEXT.md' }],
+      ['app/CONTEXT.md', { path: 'CONTEXT.md' }],
     ])
   })
 })

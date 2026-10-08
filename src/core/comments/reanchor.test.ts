@@ -51,7 +51,7 @@ describe('core artifact drafts', () => {
     const session = await createTerminal(core)
     const added = await core.commands.commentAdd({
       sessionId: session.id, body: 'hm',
-      anchor: { kind: 'artifact', projectId: 'p', slug: 'a', path: '03-design.md', exact: 'the quoted words', prefix: 'intro ', suffix: '', start: 3, end: 3 },
+      anchor: { kind: 'file', projectId: 'p', path: 'docs/work/a/03-design.md', exact: 'the quoted words', prefix: 'intro ', suffix: '', start: 3, end: 3 },
     })
     expect(added.ok).toBe(true)
 

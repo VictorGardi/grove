@@ -85,9 +85,7 @@ export const useSlices = create<SlicesState>((set, get) => {
     openArtifact: (t) => { void window.api.invoke('ui:set', { viewer: t }) },
     openDiff: (sessionId) => { void window.api.invoke('ui:set', { viewer: { kind: 'diff', sessionId }, viewerExpanded: true }) }, // the file list shows only when expanded
     openRendered: (projectId, sessionId, r) => {
-      const viewer = r.slug === null
-        ? { kind: 'file' as const, projectId, path: r.path, hash: null, fromDiff: sessionId }
-        : { kind: 'artifact' as const, projectId, slug: r.slug, path: r.path, hash: null, fromDiff: sessionId }
+      const viewer = { kind: 'file' as const, projectId, path: r.path, hash: null, fromDiff: sessionId }
       void window.api.invoke('ui:set', { viewer })
     },
     closeViewer: () => { void window.api.invoke('ui:set', { viewer: null }) },

@@ -4,7 +4,7 @@ Date: 2026-10-07
 
 ## Status
 
-Accepted
+Accepted; its second `~file` route and the `file` variant beside `artifact` are superseded by [ADR 0032](0032-one-viewer-file-target.md)
 
 ## Context
 

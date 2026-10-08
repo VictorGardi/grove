@@ -13,13 +13,24 @@ const tmp = () => path.join(fs.mkdtempSync(path.join(os.tmpdir(), 'grove-c-')), 
 
 describe('comments store', () => {
   it('starts empty when the file is missing', () => {
-    expect(loadComments(tmp())).toEqual({ schemaVersion: 1, comments: [] })
+    expect(loadComments(tmp())).toEqual({ schemaVersion: 2, comments: [] })
   })
 
   it('round-trips', () => {
     const file = tmp()
-    saveComments(file, { schemaVersion: 1, comments: [note] })
+    saveComments(file, { schemaVersion: 2, comments: [note] })
     expect(loadComments(file).comments).toEqual([note])
+  })
+
+  it('migrates v1: drafts on artifacts are dropped, sent ones become file anchors labelled slug/path', () => {
+    const file = tmp()
+    const anchor = { kind: 'artifact', projectId: 'p', slug: 'f', path: '03-design.md', exact: 'e', prefix: '', suffix: '', start: 1, end: 1 }
+    const cs = [{ ...note, id: 'd', state: 'draft', anchor }, { ...note, id: 's', state: 'sent', anchor }, note]
+    fs.writeFileSync(file, JSON.stringify({ schemaVersion: 1, comments: cs }))
+    const out = loadComments(file)
+    expect(out.schemaVersion).toBe(2)
+    expect(out.comments.map((c) => c.id)).toEqual(['s', note.id])
+    expect(out.comments[0].anchor).toEqual({ kind: 'file', projectId: 'p', path: 'f/03-design.md', exact: 'e', prefix: '', suffix: '', start: 1, end: 1 })
   })
 
   it('moves a bad file aside and reports it', () => {

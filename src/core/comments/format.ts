@@ -3,7 +3,6 @@ import type { Comment, CommentAnchor } from '@shared/types'
 
 export interface FormatContext {
   projectPath: string
-  featurePath(slug: string): string | null // a feature's folder, for artifact paths
 }
 
 type Anchored = Comment & { anchor: Extract<CommentAnchor, { kind: 'diff' }> }
@@ -23,7 +22,7 @@ function diffBlock(c: Anchored): string {
 
 const QUOTE_MAX = 200
 
-function artifactBlock(c: Comment & { anchor: Extract<CommentAnchor, { kind: 'artifact' }> }): string {
+function fileBlock(c: Comment & { anchor: Extract<CommentAnchor, { kind: 'file' }> }): string {
   const { start, end, exact } = c.anchor
   const quote = exact.length > QUOTE_MAX ? `${exact.slice(0, QUOTE_MAX)}…` : exact
   const body = c.orphaned ? `${c.body} (The text has changed since this comment was written.)` : c.body
@@ -42,10 +41,9 @@ export function formatReview(drafts: Comment[], ctx: FormatContext): string {
     if (c.anchor.kind === 'diff') {
       file = shownPath(path.join(c.anchor.root, c.anchor.path), ctx.projectPath)
       block = diffBlock(c as Anchored)
-    } else if (c.anchor.kind === 'artifact') {
-      const folder = ctx.featurePath(c.anchor.slug)
-      file = folder ? shownPath(path.join(folder, c.anchor.path), ctx.projectPath) : c.anchor.path
-      block = artifactBlock(c as Comment & { anchor: Extract<CommentAnchor, { kind: 'artifact' }> })
+    } else if (c.anchor.kind === 'file') {
+      file = c.anchor.path
+      block = fileBlock(c as Comment & { anchor: Extract<CommentAnchor, { kind: 'file' }> })
     } else continue
     files.set(file, [...(files.get(file) ?? []), block])
   }
