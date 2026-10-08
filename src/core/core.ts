@@ -187,7 +187,7 @@ export function createCore(opts: CoreOptions): Core {
       const sessions = slices.sessions.map(
         ({ branch: _branch, status: _status, waitingFor: _waitingFor, contextPct: _p, contextTokens: _t, contextWindow: _w, model: _m, ...s }) => s,
       ) // live-only
-      saveState(opts.statePath, { schemaVersion: 6, sessions, ui: slices.ui })
+      saveState(opts.statePath, { schemaVersion: 7, sessions, ui: slices.ui })
     }
     else if (k === 'comments') saveComments(opts.commentsPath, { schemaVersion: 2, comments: slices.comments })
     if (k === 'sessions') publish() // card state reads linked sessions

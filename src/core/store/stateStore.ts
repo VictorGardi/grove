@@ -27,8 +27,14 @@ const v4ToV5 = (s: { sessions?: Session[] }) => ({ ...s, sessions: (s.sessions ?
 const v5ToV6 = (s: { ui?: { viewer?: { kind?: string } | null } }) =>
   s.ui?.viewer?.kind === 'artifact' ? { ...s, ui: { ...s.ui, viewer: null } } : s
 
+// v6 → v7: 480px was the old default; null now means the responsive one-third width.
+const v6ToV7 = (s: { ui?: { viewerWidth?: number | null } }) => ({
+  ...s,
+  ui: s.ui ? { ...s.ui, viewerWidth: s.ui.viewerWidth == null || s.ui.viewerWidth === 480 ? null : s.ui.viewerWidth } : s.ui,
+})
+
 export function loadState(file: string, onBad?: (msg: string) => void): StateFile {
-  const s = readVersioned<StateFile>(file, 6, { schemaVersion: 6, sessions: [], ui: DEFAULT_UI }, onBad, { 1: v1ToV2, 2: v2ToV3, 3: v3ToV4, 4: v4ToV5, 5: v5ToV6 })
+  const s = readVersioned<StateFile>(file, 7, { schemaVersion: 7, sessions: [], ui: DEFAULT_UI }, onBad, { 1: v1ToV2, 2: v2ToV3, 3: v3ToV4, 4: v4ToV5, 5: v5ToV6, 6: v6ToV7 })
   const sessions = (s.sessions ?? []).map((x) => ({ ...x, seenAt: x.seenAt ?? null })) // seenAt: added after v1 shipped
   // v1 files from before ADR 0018 carry `view` and may have the old features tab
   const { view: _view, ...saved } = (s.ui ?? {}) as Partial<UiState> & { view?: unknown }

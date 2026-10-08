@@ -69,7 +69,7 @@ export interface UiState {
   board: 'features' | 'sessions' // what the project page's board shows
   collapsed: string[] // collapsed project folders on the Sessions tab: p:<projectId>
   viewer: ViewerTarget | null // what the right-hand panel shows
-  viewerWidth: number
+  viewerWidth: number | null // null uses the responsive default; a number is a user-resized pixel width
   viewerExpanded: boolean     // the viewer fills the content area
   grid: GridState             // the session grid (ADR 0031); the focused pane is focusedSessionId
 }
@@ -123,9 +123,9 @@ export interface Comment {
 export interface CommentsFile { schemaVersion: 2; comments: Comment[] }
 export type Slices = { projects: Project[]; sessions: Session[]; ui: UiState; features: FeaturesSlice; opencode: OpenCodeSlice; diff: SessionDiff | null; comments: Comment[] } // diff: the one on screen, not persisted
 export interface ConfigFile { schemaVersion: 1; projects: Project[]; workflow?: string }
-export interface StateFile { schemaVersion: 6; sessions: Session[]; ui: UiState }
+export interface StateFile { schemaVersion: 7; sessions: Session[]; ui: UiState }
 export const SIDEBAR_RAIL_WIDTH = 56 // the collapsed sidebar
 export const SIDEBAR_WIDTH = 220 // fixed: the sidebar has no resize handle, so a saved width is ignored
-export const DEFAULT_UI: UiState = { sidebarWidth: SIDEBAR_WIDTH, sidebarCollapsed: false, focusedSessionId: null, focusedFeature: null, focusedProject: null, sidebarTab: 'sessions', board: 'sessions', collapsed: [], viewer: null, viewerWidth: 480, viewerExpanded: false, grid: { open: false, members: [] } }
+export const DEFAULT_UI: UiState = { sidebarWidth: SIDEBAR_WIDTH, sidebarCollapsed: false, focusedSessionId: null, focusedFeature: null, focusedProject: null, sidebarTab: 'sessions', board: 'sessions', collapsed: [], viewer: null, viewerWidth: null, viewerExpanded: false, grid: { open: false, members: [] } }
 export const EMPTY_FEATURES: FeaturesSlice = { workflowError: null, stages: [], items: [] }
 export const OPENCODE_CONNECTING: OpenCodeSlice = { state: 'connecting', version: null }

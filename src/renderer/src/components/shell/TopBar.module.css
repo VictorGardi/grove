@@ -7,12 +7,6 @@
   padding-right: var(--sp-4);
 }
 
-.brand {
-  display: flex;
-  align-items: center;
-  gap: var(--sp-2);
-}
-
 .logo {
   width: 22px;
   height: 22px;
@@ -21,10 +15,4 @@
   border-radius: var(--r-card);
   background: var(--text);
   color: var(--chrome-bg);
-}
-
-.wordmark {
-  font-size: var(--fs-xl);
-  font-weight: var(--fw-bold);
-  color: var(--text);
 }

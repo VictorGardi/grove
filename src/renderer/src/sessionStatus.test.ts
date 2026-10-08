@@ -59,11 +59,9 @@ describe('serviceBanners', () => {
     expect(serviceBanners({ state: 'connecting', version: null }, [session()])).toEqual([])
   })
 
-  it('flags an untested OpenCode version', () => {
+  it('does not show a banner for connected OpenCode versions', () => {
     expect(serviceBanners({ state: 'connected', version: '2.0.20' }, [session()])).toEqual([])
-    expect(serviceBanners({ state: 'connected', version: '2.1.0' }, [])).toEqual([
-      { tone: 'info', text: 'Untested OpenCode version 2.1.0 (grove is tested with 2.0.20)' },
-    ])
+    expect(serviceBanners({ state: 'connected', version: '2.1.0' }, [])).toEqual([])
   })
 })
 

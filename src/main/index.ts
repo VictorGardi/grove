@@ -13,6 +13,7 @@ import { registerIpc } from './ipc'
 import { startCliServer } from './cliServer'
 import { installCommandLineTool, writeLauncher } from './launcher'
 import { buildMenu } from './menu'
+import { installAttachCleanup } from './attachCleanup'
 
 let win: BrowserWindow | null = null
 
@@ -130,8 +131,12 @@ app.whenReady().then(async () => {
     void core.checkLiveness()
   })
   win.on('blur', () => core.setWindowFocused(false))
-  // a reload leaves the old page's attaches behind (ADR 0030)
-  win.webContents.on('did-start-loading', killAttaches)
+  // Tear down PTY clients for a document navigation/reload, not for artifact iframe navigation.
+  installAttachCleanup((onNavigation) => {
+    win?.webContents.on('did-start-navigation', (_event, _url, isInPlace, isMainFrame) => {
+      onNavigation(isInPlace, isMainFrame)
+    })
+  }, killAttaches)
   win.on('closed', () => {
     killAttaches()
     win = null

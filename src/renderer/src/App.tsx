@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from 'react'
+import { useCallback, useEffect, useRef, useState } from 'react'
 import type { Feature, Session, SessionKind, ViewerTarget } from '@shared/types'
 import type { MenuAction } from '@shared/ipc'
 import { SIDEBAR_RAIL_WIDTH, SIDEBAR_WIDTH } from '@shared/types'
@@ -24,27 +24,43 @@ import { DEFAULT_GRID_VIEW, gridShown, visibleMembers, type GridView } from './g
 import { contextView } from './contextGauge'
 import { boardKey, childrenOf, content, crumbs, currentProjectId, focusTarget } from './navigation'
 import { serviceBanners } from './sessionStatus'
+import { sessionDiffShortcut, type HiddenRenderedViewer } from './sessionDiffShortcut'
 import { useSlices } from './stores/slices'
 import { featureDir, featureOfFile, viewableFiles } from './viewerFiles'
 import s from './App.module.css'
 
 export default function App() {
   const { projects, sessions, ui, features, opencode, diff, errors, statusSince, hydrate, setFocused, focusFeature, openProject, toggleGrid, addFocusedToGrid, toggleSidebar, clearGrid, go, setBoard,
-    openArtifact, openDiff, openRendered, closeViewer, setViewerWidth, toggleViewerExpanded, reloadViewer } = useSlices()
+    openArtifact, openDiff, backToDiff, openRendered, closeViewer, setViewerWidth, toggleViewerExpanded, reloadViewer } = useSlices()
   const [quickNew, setQuickNew] = useState<{ projectId?: string } | null>(null) // ⌘T: the new-session palette
   const [confirmRemove, setConfirmRemove] = useState<Session | null>(null) // ⌘W asks first
   const [paletteOpen, setPaletteOpen] = useState(false)
   const [gridView, setGridView] = useState<GridView>(DEFAULT_GRID_VIEW) // toolbar settings, view-only
+  const hiddenRendered = useRef<HiddenRenderedViewer | null>(null)
 
   useEffect(() => {
     void hydrate()
   }, [hydrate])
 
-  // the Diff button and ⌥⌘B: open this session's diff, or close it when it's the one shown
+  // The Diff button opens this session's diff, or closes it when it's the one shown.
   const toggleDiff = useCallback((id: string, viewer: ViewerTarget | null) => {
     if (viewer?.kind === 'diff' && viewer.sessionId === id) closeViewer()
     else openDiff(id)
   }, [openDiff, closeViewer])
+
+  const toggleSessionDiff = useCallback((id: string, viewer: ViewerTarget | null) => {
+    const action = sessionDiffShortcut(viewer, hiddenRendered.current)
+    if (action.kind === 'hide-rendered') {
+      hiddenRendered.current = action.hidden
+      closeViewer()
+    } else if (action.kind === 'restore-rendered') {
+      hiddenRendered.current = null
+      openArtifact(action.target)
+    } else {
+      hiddenRendered.current = null
+      toggleDiff(id, viewer)
+    }
+  }, [closeViewer, openArtifact, toggleDiff])
 
   // the menu and the palette both run actions through here
   const runAction = useCallback((a: MenuAction) => {
@@ -76,9 +92,18 @@ export default function App() {
       const to = boardKey(ui, projects, sessions, features.items)
       if (to) go(to)
     } else if (a.type === 'sessionDiff') {
-      if (ui.focusedSessionId) toggleDiff(ui.focusedSessionId, ui.viewer)
+      if (ui.focusedSessionId) toggleSessionDiff(ui.focusedSessionId, ui.viewer)
     }
-  }, [setFocused, go, toggleDiff, toggleGrid, addFocusedToGrid, toggleSidebar, clearGrid, gridView])
+  }, [setFocused, go, toggleSessionDiff, toggleGrid, addFocusedToGrid, toggleSidebar, clearGrid, gridView])
+
+  useEffect(() => {
+    const hidden = hiddenRendered.current
+    if (!hidden) return
+    if (ui.viewer && (
+      ui.viewer.kind !== 'file' || ui.viewer.fromDiff !== hidden.sessionId ||
+      ui.viewer.projectId !== hidden.target.projectId || ui.viewer.path !== hidden.target.path
+    )) hiddenRendered.current = null
+  }, [ui.viewer])
 
   useEffect(() => window.api.on('menu:action', runAction), [runAction])
 
@@ -166,7 +191,7 @@ export default function App() {
             mtimeMs={viewerFeature ? viewerFeature.artifacts.find((a) => viewerDir + a.name === v.path)?.mtimeMs : undefined}
             expanded={ui.viewerExpanded} onToggleExpanded={toggleViewerExpanded} onReload={reloadViewer}
             onOpen={(path) => openArtifact({ ...v, path, hash: null })}
-            onBack={v.fromDiff ? () => openDiff(v.fromDiff!) : undefined} onClose={closeViewer} />
+            onBack={v.fromDiff ? () => backToDiff(v.fromDiff!) : undefined} onClose={closeViewer} />
         ) : undefined}
         sidebarWidth={ui.sidebarCollapsed ? SIDEBAR_RAIL_WIDTH : SIDEBAR_WIDTH}
         viewerWidth={ui.viewerWidth}

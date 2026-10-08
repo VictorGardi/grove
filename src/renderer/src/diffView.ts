@@ -153,6 +153,13 @@ export function filterFiles(files: DiffFile[], query: string): DiffFile[] {
   return q ? files.filter((f) => f.path.toLowerCase().includes(q)) : files
 }
 
+export function fileFocusTarget(index: number, direction: 'up' | 'down', count: number): number | 'filter' | null {
+  if (count === 0) return null
+  if (index < 0) return direction === 'down' ? 0 : 'filter'
+  const next = index + (direction === 'down' ? 1 : -1)
+  return next < 0 ? 'filter' : next < count ? next : null
+}
+
 export const splitPath = (p: string): { dir: string; name: string } => {
   const at = p.lastIndexOf('/')
   return { dir: at < 0 ? '' : p.slice(0, at + 1), name: p.slice(at + 1) }

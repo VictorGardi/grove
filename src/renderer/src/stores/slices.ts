@@ -27,6 +27,7 @@ interface SlicesState {
   toggleSidebar(): void
   openArtifact(t: DocTarget): void
   openDiff(sessionId: string): void
+  backToDiff(sessionId: string): void
   openRendered(projectId: string, sessionId: string, r: NonNullable<DiffFile['rendered']>): void // "← Diff" returns to sessionId
   closeViewer(): void
   setViewerWidth(px: number): void
@@ -83,7 +84,8 @@ export const useSlices = create<SlicesState>((set, get) => {
     toggleSidebar: () => { void window.api.invoke('ui:set', { sidebarCollapsed: !get().ui.sidebarCollapsed }) },
     setSidebarTab: (tab) => { void window.api.invoke('ui:set', { sidebarTab: tab }) },
     openArtifact: (t) => { void window.api.invoke('ui:set', { viewer: t }) },
-    openDiff: (sessionId) => { void window.api.invoke('ui:set', { viewer: { kind: 'diff', sessionId }, viewerExpanded: true }) }, // the file list shows only when expanded
+    openDiff: (sessionId) => { void window.api.invoke('ui:set', { viewer: { kind: 'diff', sessionId }, viewerExpanded: false }) },
+    backToDiff: (sessionId) => { void window.api.invoke('ui:set', { viewer: { kind: 'diff', sessionId } }) },
     openRendered: (projectId, sessionId, r) => {
       const viewer = { kind: 'file' as const, projectId, path: r.path, hash: null, fromDiff: sessionId }
       void window.api.invoke('ui:set', { viewer })

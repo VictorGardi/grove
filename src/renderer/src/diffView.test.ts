@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest'
 import type { DiffFile, SessionDiff } from '@shared/types'
 import type { DiffLine } from '@shared/types'
-import { filterFiles, gaps, lineKey, pickFile, rangeAnchor, selectionRange, splitRows, visibleFiles, wordMarks, wordSegs } from './diffView'
+import { fileFocusTarget, filterFiles, gaps, lineKey, pickFile, rangeAnchor, selectionRange, splitRows, visibleFiles, wordMarks, wordSegs } from './diffView'
 
 const file = (path: string, status: DiffFile['status']): DiffFile =>
   ({ path, oldPath: null, status, binary: false, additions: 0, deletions: 0, hunks: [], truncated: false, rendered: null })
@@ -134,5 +134,13 @@ describe('file list helpers', () => {
     expect(pickFile(diff.files, 'b.ts')!.path).toBe('b.ts')
     expect(pickFile(diff.files, 'gone.ts')!.path).toBe('a.ts')
     expect(pickFile([], null)).toBeNull()
+  })
+
+  it('moves keyboard focus from the filter through the file list and back', () => {
+    expect(fileFocusTarget(-1, 'down', 3)).toBe(0)
+    expect(fileFocusTarget(0, 'down', 3)).toBe(1)
+    expect(fileFocusTarget(2, 'down', 3)).toBeNull()
+    expect(fileFocusTarget(0, 'up', 3)).toBe('filter')
+    expect(fileFocusTarget(-1, 'down', 0)).toBeNull()
   })
 })

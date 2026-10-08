@@ -56,15 +56,10 @@ export function longestWaiting(sessions: Session[], since: Record<string, number
   return best
 }
 
-const TESTED_OPENCODE = '2.0.20'
-
-// Banners about the OpenCode service: unreachable (only matters with a live OpenCode session), untested version.
-export function serviceBanners(oc: OpenCodeSlice, sessions: Session[]): { tone: 'error' | 'info'; text: string }[] {
+// Show an error only when a live OpenCode session loses its service connection.
+export function serviceBanners(oc: OpenCodeSlice, sessions: Session[]): { tone: 'error'; text: string }[] {
   if (oc.state === 'unreachable' && sessions.some((s) => s.kind === 'opencode' && s.lastStatus === 'running')) {
     return [{ tone: 'error', text: 'OpenCode service unreachable — showing tmux status only' }]
-  }
-  if (oc.state === 'connected' && oc.version !== TESTED_OPENCODE) {
-    return [{ tone: 'info', text: `Untested OpenCode version ${oc.version} (grove is tested with ${TESTED_OPENCODE})` }]
   }
   return []
 }

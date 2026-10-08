@@ -2,7 +2,7 @@ import type { CSSProperties, MouseEvent as ReactMouseEvent } from 'react'
 import { Fragment, useEffect, useRef, useState } from 'react'
 import type { Comment, DiffFile, DiffLine, SessionDiff } from '@shared/types'
 import {
-  filterFiles, gaps, lineKey, pickFile, rangeAnchor, selectionRange, sideOf, splitPath, splitRows, STATUS_LETTER, visibleFiles, wordMarks,
+  fileFocusTarget, filterFiles, gaps, lineKey, pickFile, rangeAnchor, selectionRange, sideOf, splitPath, splitRows, STATUS_LETTER, visibleFiles, wordMarks,
   type Cell, type DraftRange, type Gap, type Seg,
 } from '../diffView'
 import { draftsByLine } from '../reviewView'
@@ -39,13 +39,29 @@ export function DiffViewer({ diff, sessionId, label, expanded, onOpenRendered, o
   const at = file ? files.indexOf(file) : -1
   const choose = (path: string) => setChosen({ sessionId, path })
   const [filter, setFilter] = useState('')
+  const filterInput = useRef<HTMLInputElement>(null)
   const comments = useSlices((x) => x.comments).filter((c) => c.sessionId === sessionId)
   const [writing, setWriting] = useState<Draft | null>(null)
   const [error, setError] = useState<string | null>(null)
   const body = useRef<HTMLDivElement>(null)
+  const fileList = useRef<HTMLUListElement>(null)
   const [picked, setPicked] = useState<{ range: Draft; x: number; y: number } | null>(null) // a text selection's Comment button
   const fileRef = useRef(file)
   fileRef.current = file
+
+  // ⌘F / Ctrl+F searches the changed-file list whenever a diff is open.
+  useEffect(() => {
+    const onKeyDown = (e: KeyboardEvent) => {
+      if (!(e.metaKey || e.ctrlKey) || e.altKey || e.shiftKey || e.key.toLowerCase() !== 'f' || !filterInput.current) return
+      if (document.querySelector('[role="dialog"]')) return
+      e.preventDefault()
+      e.stopPropagation()
+      filterInput.current.focus()
+      filterInput.current.select()
+    }
+    window.addEventListener('keydown', onKeyDown, true)
+    return () => window.removeEventListener('keydown', onKeyDown, true)
+  }, [])
 
   // A text selection over diff lines offers a Comment button beside it.
   useEffect(() => {
@@ -98,6 +114,12 @@ export function DiffViewer({ diff, sessionId, label, expanded, onOpenRendered, o
     }
   }
   const listed = filterFiles(files, filter)
+  const moveFileFocus = (from: HTMLButtonElement | null, direction: 'up' | 'down') => {
+    const buttons = [...(fileList.current?.querySelectorAll<HTMLButtonElement>('button') ?? [])]
+    const target = fileFocusTarget(from ? buttons.indexOf(from) : -1, direction, buttons.length)
+    if (target === 'filter') filterInput.current?.focus()
+    else if (target !== null) buttons[target]?.focus()
+  }
 
   return (
     <div className={s.viewer}>
@@ -123,18 +145,30 @@ export function DiffViewer({ diff, sessionId, label, expanded, onOpenRendered, o
         <Button variant="ghost" size="sm" icon="x" round aria-label="Close viewer" onClick={onClose} />
       </div>
       <div className={s.main}>
-        {expanded && files.length > 0 && (
+        {files.length > 0 && (
           <aside className={s.list} aria-label="Changed files">
             <label className={s.filter}>
               <Icon name="search" size={14} />
-              <input value={filter} placeholder="Filter files…" aria-label="Filter files" onChange={(e) => setFilter(e.target.value)} />
+              <input ref={filterInput} value={filter} placeholder="Filter files…" aria-label="Filter files" onChange={(e) => setFilter(e.target.value)}
+                onKeyDown={(e) => {
+                  if (e.key !== 'ArrowDown') return
+                  e.preventDefault()
+                  moveFileFocus(null, 'down')
+                }} />
             </label>
-            <ul className={s.files}>
+            <ul className={s.files} ref={fileList}>
               {listed.map((f) => {
                 const { dir, name } = splitPath(f.path)
                 return (
                   <li key={f.path}>
-                    <button type="button" className={`${s.fileItem} ${f === file ? s.fileActive : ''}`} title={f.path} onClick={() => { choose(f.path); setWriting(null) }}>
+                    <button type="button" className={`${s.fileItem} ${f === file ? s.fileActive : ''}`} title={f.path}
+                      onFocus={() => { choose(f.path); setWriting(null) }}
+                      onKeyDown={(e) => {
+                        if (e.key !== 'ArrowDown' && e.key !== 'ArrowUp') return
+                        e.preventDefault()
+                        moveFileFocus(e.currentTarget, e.key === 'ArrowDown' ? 'down' : 'up')
+                      }}
+                      onClick={() => { choose(f.path); setWriting(null) }}>
                       <span className={`${s.letter} ${s[`st_${f.status}`]}`}>{STATUS_LETTER[f.status]}</span>
                       <span className={s.fileName}><span className={s.dir}>{dir}</span>{name}</span>
                       <span className={s.add}>+{f.additions}</span>
@@ -148,11 +182,6 @@ export function DiffViewer({ diff, sessionId, label, expanded, onOpenRendered, o
           </aside>
         )}
         <div className={s.content}>
-          {!expanded && files.length > 1 && (
-            <select className={s.switcher} aria-label="File" value={file?.path ?? ''} onChange={(e) => { choose(e.target.value); setWriting(null) }}>
-              {files.map((f) => <option key={f.path} value={f.path}>{f.path}</option>)}
-            </select>
-          )}
           <div ref={body} className={s.body} data-sel="" onScroll={() => setPicked(null)} onMouseDown={onMouseDown}>
             {d?.truncated && <div className={s.notice}>Diff too large: later files are listed without their lines</div>}
             {!d ? <div className={s.note}>Loading…</div>

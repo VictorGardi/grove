@@ -11,7 +11,7 @@ export function AppShell({ topBar, banners, sidebar, content, viewer, sidebarWid
   content: ReactNode
   viewer?: ReactNode
   sidebarWidth: number
-  viewerWidth: number
+  viewerWidth: number | null
   viewerExpanded: boolean
   onViewerWidth: (px: number) => void
 }) {
@@ -36,9 +36,10 @@ export function AppShell({ topBar, banners, sidebar, content, viewer, sidebarWid
     limit.current = null
     setDrag(null)
   }
+  const viewerWidthValue = drag !== null ? `${drag}px` : viewerWidth === null ? '33vw' : `${viewerWidth}px`
 
   return (
-    <div className={s.shell} style={{ '--sidebar-w': `${sidebarWidth}px`, '--viewer-w': `${drag ?? viewerWidth}px` } as CSSProperties}>
+    <div className={s.shell} style={{ '--sidebar-w': `${sidebarWidth}px`, '--viewer-w': viewerWidthValue } as CSSProperties}>
       {topBar}
       {banners}
       <div className={cx(s.body, !!viewer && viewerExpanded && s.expanded)}>
