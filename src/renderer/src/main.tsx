@@ -1,18 +1,7 @@
-import "./styles/global.css";
-import { applyTheme, loadThemeFromConfig } from "./styles/loadTheme";
-import { useThemeStore } from "./stores/useThemeStore";
+import '@xterm/xterm/css/xterm.css'
+import './styles/tokens.css'
+import './styles/base.css'
+import { createRoot } from 'react-dom/client'
+import App from './App'
 
-loadThemeFromConfig().then((theme) => {
-  applyTheme(theme);
-  useThemeStore.getState().setTheme(theme);
-});
-
-import { StrictMode } from "react";
-import { createRoot } from "react-dom/client";
-import App from "./App";
-
-createRoot(document.getElementById("root")!).render(
-  <StrictMode>
-    <App />
-  </StrictMode>,
-);
+createRoot(document.getElementById('root')!).render(<App />)

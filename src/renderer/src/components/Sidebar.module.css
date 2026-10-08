@@ -1,0 +1,181 @@
+.sidebar {
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+}
+
+.header {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-2);
+  padding: var(--sp-3) var(--sp-3) 0;
+}
+
+.tab,
+.tabInactive {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-2);
+  padding: 0 0 6px;
+  background: none;
+  border: none;
+  border-bottom: 2px solid var(--accent-strong);
+  color: var(--text);
+  font: inherit;
+  font-size: var(--fs-xl);
+  font-weight: var(--fw-bold);
+  cursor: pointer;
+}
+
+.tabInactive {
+  border-bottom-color: transparent;
+  color: var(--text-3);
+}
+
+.tabInactive:hover {
+  color: var(--text-2);
+}
+
+.add {
+  margin-left: auto;
+}
+
+.list {
+  flex: 1;
+  overflow-y: auto;
+  display: flex;
+  flex-direction: column;
+  gap: var(--sp-3);
+  padding: var(--sp-2);
+}
+
+.hint {
+  padding: var(--sp-2);
+  font-size: var(--fs-sm);
+  color: var(--text-3);
+}
+
+.project {
+  display: flex;
+  flex-direction: column;
+  gap: var(--sp-2);
+}
+
+.folder {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-2);
+  height: 26px;
+  padding: 0 var(--sp-2);
+  color: var(--text-2);
+  font-size: var(--fs-card);
+  cursor: pointer;
+}
+
+.folderName {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.folderActions {
+  display: flex;
+  gap: 2px;
+}
+
+.hoverOnly {
+  opacity: 0;
+}
+
+.folder:hover .hoverOnly,
+.hoverOnly:focus-visible {
+  opacity: 1;
+}
+
+.refused {
+  padding: 0 var(--sp-1);
+  font-size: var(--fs-sm);
+  color: var(--danger);
+}
+
+.cards {
+  display: flex;
+  flex-direction: column;
+  gap: var(--sp-2);
+}
+
+.iconAgent {
+  flex-shrink: 0;
+  color: var(--status-waiting);
+}
+
+
+
+
+.iconDone {
+  flex-shrink: 0;
+  color: var(--status-finished);
+}
+
+.iconGone {
+  flex-shrink: 0;
+  color: var(--status-gone);
+}
+
+.iconTerminal {
+  flex-shrink: 0;
+  color: var(--accent);
+}
+
+.rename {
+  flex: 1;
+  min-width: 0;
+  height: 20px;
+  padding: 0 var(--sp-1);
+  background: var(--raised-bg);
+  border: 1px solid var(--card-border);
+  border-radius: var(--r-card);
+  color: var(--text);
+  font: inherit;
+}
+
+.cardInfo {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.branchLine {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-1);
+  min-width: 0;
+  font-size: var(--fs-xs);
+  color: var(--text-3);
+}
+
+.branchName {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.projectMeta {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-2);
+}
+
+.bottomBar {
+  display: flex;
+  align-items: center;
+  padding: var(--sp-2);
+  justify-content: space-between;
+  border-top: 1px solid var(--divider);
+}
+
+.waiting {
+  color: var(--text);
+}

@@ -1,398 +1,132 @@
-/** Persisted in config.json */
-export interface WorkspaceEntry {
-  name: string; // Display label (directory basename)
-  path: string; // Absolute path — unique identifier
-  /** Default agent for planning sessions */
-  defaultPlanningAgent?: PlanAgent;
-  /** Default model for planning sessions */
-  defaultPlanningModel?: string;
-  /** Default agent for execution sessions */
-  defaultExecutionAgent?: PlanAgent;
-  /** Default model for execution sessions */
-  defaultExecutionModel?: string;
-  /** Custom persona for planning agent */
-  planPersona?: string;
-  /** Custom persona for plan reviewer */
-  planReviewPersona?: string;
-  /** Custom persona for execution agent */
-  executePersona?: string;
-  /** Custom persona for execution reviewer */
-  executeReviewPersona?: string;
-  /** Custom instructions for execution review phase */
-  executeReviewInstructions?: string;
-  /** Hide workspace tasks from views */
-  hidden?: boolean;
+export interface Project { id: string; name: string; path: string }
+export type SessionKind = 'opencode' | 'claude' | 'terminal'
+// The last context reading of an agent session, kept so an ended session shows it dimmed; pct is always known.
+export interface ContextReading { pct: number; tokens: number | null; window: number | null }
+export interface Session {
+  id: string
+  projectId: string
+  kind: SessionKind
+  label: string
+  labelPinned: boolean
+  tmuxName: string                 // `grove-${id}`
+  cwd: string | null               // folder the session starts in; null: the project's path
+  agentSessionId: string | null    // set for agent kinds (opencode, claude)
+  feature: string | null           // linked feature slug in this project
+  linkPinned: boolean              // true once set by hand; auto-linking (child 3) leaves it alone
+  action: { stage: string; actionId: string } | null // always null
+  startedAt: string                // ISO
+  endedAt: string | null           // ISO, set when first seen gone
+  lastStatus: 'running' | 'gone'
+  seenAt: string | null           // ISO, when the human last saw it (on screen); persisted
+  lastFocusedAt?: string | null   // ISO, when the human last focused it (any kind); persisted; orders the palette
+  branch?: string | null           // live sessions: branch at the pane's current directory; never saved
+  status?: 'working' | 'waiting' | 'idle' // OpenCode sessions while the service is connected; never saved
+  waitingFor?: 'permission' | 'question' | 'done' // with status 'waiting'; never saved
+  contextPct?: number | null       // Claude sessions once a reading arrived: % of the context window used; null: not known yet; never saved
+  contextTokens?: number | null    // tokens in context (input incl. cache); never saved
+  contextWindow?: number | null    // size of the context window in tokens; never saved
+  model?: string | null            // the model in use; never saved
+  lastContext: ContextReading | null // the last known reading (pct known); persisted
 }
-
-/** Returned from workspace:list with runtime info */
-export interface WorkspaceInfo extends WorkspaceEntry {
-  branch: string | null; // Current git branch, null if not a git repo
-  isGitRepo: boolean;
-  exists: boolean; // false if directory no longer exists on disk
+// a viewable file in the project folder (ADR 0032); path relative to the project, POSIX
+export interface FileTarget { kind: 'file'; projectId: string; path: string; hash: string | null; fromDiff: string | null }
+export interface DiffTarget { kind: 'diff'; sessionId: string; base?: string | null } // base: a branch to diff since (merge-base); null/unset: working tree vs HEAD
+export type DocTarget = FileTarget // what the iframe viewer shows; hash: fragment without '#'
+export type ViewerTarget = DocTarget | DiffTarget // fromDiff: the session the file was opened from ("← Diff")
+// A session's git diff plus untracked files, parsed in core (ADR 0021).
+export interface SessionDiff {
+  sessionId: string
+  projectId: string
+  state: 'ok' | 'not-git' | 'error'
+  error: string | null // git's message, or 'timed out'
+  root: string | null  // repo top level
+  files: DiffFile[]
+  truncated: boolean   // total over the line cap
+  base: string | null  // the branch actually diffed since (merge-base); null: working tree vs HEAD
 }
-
-/** Persisted in config.json */
-export interface AppConfig {
-  workspaces: WorkspaceEntry[];
-  lastActiveWorkspace: string | null; // workspace path
-  theme: string;
-  windowOpacity: number;
+export interface DiffFile {
+  path: string           // POSIX, relative to root; the new path for renames
+  oldPath: string | null // renames only
+  status: 'modified' | 'added' | 'deleted' | 'renamed' | 'untracked'
+  binary: boolean
+  additions: number
+  deletions: number
+  hunks: DiffHunk[]      // binary: no hunks
+  truncated: boolean     // over 1 MB: hunks cut
+  rendered: { path: string } | null // opens in the viewer; path relative to the project
 }
-
-/** Standard IPC result wrapper */
-export type IpcResult<T> = { ok: true; data: T } | { ok: false; error: string };
-
-/** Persisted in window-state.json */
-export interface WindowState {
-  x: number;
-  y: number;
-  width: number;
-  height: number;
-  isMaximized: boolean;
+export interface DiffHunk { header: string; oldStart: number; newStart: number; lines: DiffLine[] }
+// Line identity: (path, side, number) — add → new, del → old, context → new.
+export interface DiffLine { kind: 'context' | 'add' | 'del'; text: string; old: number | null; new: number | null }
+export const GRID_MAX = 9 // one Cmd+1..9 per pane
+export interface GridState { open: boolean; members: string[] } // member session ids, in grid order
+export interface UiState {
+  sidebarWidth: number
+  sidebarCollapsed: boolean // ⌘B: the sidebar shrinks to a rail of session tiles
+  focusedSessionId: string | null
+  focusedFeature: { projectId: string; slug: string } | null
+  focusedProject: string | null // the project page; the three focuses are exclusive (ADR 0018)
+  sidebarTab: 'sessions' | 'projects'
+  board: 'features' | 'sessions' // what the project page's board shows
+  collapsed: string[] // collapsed project folders on the Sessions tab: p:<projectId>
+  viewer: ViewerTarget | null // what the right-hand panel shows
+  viewerWidth: number | null // null uses the responsive default; a number is a user-resized pixel width
+  viewerExpanded: boolean     // the viewer fills the content area
+  grid: GridState             // the session grid (ADR 0031); the focused pane is focusedSessionId
 }
-
-// ── Phase 2: Tasks ───────────────────────────────────────────────
-
-/** Status columns — maps to directory names in .grove/tasks/ */
-export type TaskStatus = "backlog" | "doing" | "review" | "done";
-
-/** Supported agents for in-app planning */
-export type PlanAgent = "opencode" | "copilot" | "claude";
-
-/** Mode for the plan/execution agent chat */
-export type PlanMode = "plan" | "execute";
-
-/** Parsed from a .tasks/{status}/T-XXX-slug.md file */
-export interface TaskInfo {
-  id: string;
-  title: string;
-  status: TaskStatus;
-  agent: string | null;
-  worktree: string | null;
-  branch: string | null;
-  created: string | null;
-  decisions: string[];
-  description: string;
-  dodTotal: number;
-  dodDone: number;
-  filePath: string;
-  /** Absolute path of the workspace this task belongs to */
-  workspacePath: string;
-  /** When false the agent runs in the workspace root instead of a dedicated
-   *  git worktree. Default true. */
-  useWorktree: boolean;
-  /** Session ID for in-app planning chat (persisted in frontmatter) */
-  planSessionId: string | null;
-  /** Which agent owns the current plan session */
-  planSessionAgent: PlanAgent | null;
-  /** Model used in the current plan session (e.g. "anthropic/claude-opus-4-5") */
-  planModel: string | null;
-  /** Session ID for execution agent chat (persisted in frontmatter) */
-  execSessionId: string | null;
-  /** Which agent owns the current execution session */
-  execSessionAgent: PlanAgent | null;
-  /** Model used in the current execution session */
-  execModel: string | null;
-  /** Tmux session name for planning terminal session (persisted in frontmatter) */
-  terminalPlanSession: string | null;
-  /** Tmux session name for execution terminal session (persisted in frontmatter) */
-  terminalExecSession: string | null;
-  /** Whether initial context has been sent to the exec session */
-  terminalExecContextSent: boolean;
-  /** Last exit code for plan mode (persisted in frontmatter) */
-  planLastExitCode: number | null;
-  /** Last exit code for execute mode (persisted in frontmatter) */
-  execLastExitCode: number | null;
-  /** Date when task was moved to done status (YYYY-MM-DD) */
-  completed: string | null;
+export interface FeatureStage {
+  id: string
+  label: string
+  artifact: string
+  review: string | null
+  state: 'complete' | 'current' | 'unapproved' | 'upcoming'
 }
-
-/** Combined workspace data — returned atomically to avoid stale cross-references */
-export interface WorkspaceData {
-  tasks: TaskInfo[];
+export type CardState = 'backlog' | 'running' | 'waiting' | 'needs-review' | 'ready' | 'active' | 'done'
+export interface Feature {
+  projectId: string
+  slug: string
+  path: string
+  title: string
+  kind: string
+  group: boolean
+  parent: string | null
+  flow: string | null
+  stages: FeatureStage[]          // effective stages only
+  currentStage: string | null     // null when done
+  cardState: CardState
+  progress: { done: number; total: number } | null // group kinds with children only
+  flags: { id: string; label: string }[]
+  warnings: string[]              // e.g. 'flow?', 'frontmatter?: 03-design.md'
+  artifacts: { name: string; stage: string | null; role: 'artifact' | 'review' | null; mtimeMs: number }[]
 }
-
-// ── Phase 3: File Tree & Viewer ──────────────────────────────────
-
-/** A node in the workspace file tree (recursive) */
-export interface FileTreeNode {
-  name: string;
-  path: string; // relative to workspace root
-  type: "file" | "directory";
-  children?: FileTreeNode[];
+export interface FeaturesSlice {
+  workflowError: string | null
+  stages: { id: string; label: string }[] // all workflow stages, in order
+  items: Feature[]
 }
-
-/** Successfully read file content */
-export interface FileContent {
-  content: string;
-  language: string;
-  lineCount: number;
+export interface OpenCodeSlice { state: 'connecting' | 'connected' | 'unreachable'; version: string | null } // not persisted
+// A review comment (ADR 0024, 0025): a draft in a session's tray until it is sent.
+export type CommentAnchor =
+  | { kind: 'diff'; root: string; path: string; side: 'old' | 'new'; start: number; end: number; lines: string[] }
+  | { kind: 'file'; projectId: string; path: string; exact: string; prefix: string; suffix: string; start: number; end: number }
+  | { kind: 'note' } // at most one draft note per session
+export interface Comment {
+  id: string
+  sessionId: string
+  anchor: CommentAnchor
+  body: string
+  state: 'draft' | 'sent'
+  orphaned: boolean
+  createdAt: string // ISO
+  updatedAt: string // ISO
+  sentAt: string | null // ISO
 }
-
-/** Possible results from reading a file */
-export type FileReadResult =
-  | FileContent
-  | { binary: true }
-  | { tooLarge: true; size: number };
-
-// ── Phase 4: Task CRUD ──────────────────────────────────────────
-
-/** Partial frontmatter fields for task updates (read-merge-write pattern) */
-export interface TaskFrontmatter {
-  id: string;
-  title: string;
-  status: TaskStatus;
-  agent: string | null;
-  worktree: string | null;
-  branch: string | null;
-  created: string | null;
-  decisions: string[];
-  /** Only persisted when true; omitted (default false) otherwise */
-  useWorktree?: boolean;
-  /** Session ID for in-app planning chat */
-  planSessionId?: string | null;
-  /** Which agent owns the current plan session */
-  planSessionAgent?: PlanAgent | null;
-  /** Model used in the current plan session */
-  planModel?: string | null;
-  /** Session ID for execution agent chat */
-  execSessionId?: string | null;
-  /** Which agent owns the current execution session */
-  execSessionAgent?: PlanAgent | null;
-  /** Model used in the current execution session */
-  execModel?: string | null;
-  /** Tmux session name for planning terminal mode */
-  terminalPlanSession?: string | null;
-  /** Tmux session name for execution terminal mode */
-  terminalExecSession?: string | null;
-  /** Whether initial context has been sent to the exec session */
-  terminalExecContextSent?: boolean;
-  /** Last exit code for plan mode */
-  planLastExitCode?: number | null;
-  /** Last exit code for execute mode */
-  execLastExitCode?: number | null;
-  /** Date when task was moved to done status (YYYY-MM-DD) */
-  completed?: string | null;
-}
-
-/** A single DoD checklist item parsed from the task body */
-export interface DodItem {
-  text: string;
-  checked: boolean;
-}
-
-// ── Planning Chat ───────────────────────────────────────────────
-
-/** Token usage data from a step_finish event */
-export interface TokenUsage {
-  total: number;
-  input: number;
-  output: number;
-  reasoning: number;
-  cache: {
-    write: number;
-    read: number;
-  };
-}
-
-/** Tool invocation data from a tool_use event */
-export interface ToolUseData {
-  /** Tool name: bash | read | write | edit | glob | grep | task | webfetch | websearch */
-  tool: string;
-  /** Input parameters passed to the tool */
-  input: Record<string, unknown>;
-  /** Tool output, capped at 5KB */
-  output: string;
-  /** True when the original output exceeded 5KB and was truncated */
-  truncated: boolean;
-  /** Human-readable title for the tool call */
-  title: string;
-  /** Process exit code (null for non-shell tools) */
-  exitCode: number | null;
-  /** Start/end timestamps in Unix ms */
-  time: { start: number; end: number } | null;
-}
-
-/** A single block in the ordered content array of a PlanMessage */
-export interface MessageContentBlock {
-  kind: "text" | "thinking" | "tool_use" | "todo_list";
-  /** Text content (markdown for text, raw for thinking, tool title for tool_use, todo title for todo_list) */
-  content: string;
-  /** Present only when kind === "tool_use" */
-  data?: ToolUseData;
-  /** Present only when kind === "todo_list" */
-  todoData?: TodoListData;
-}
-
-/** Todo list data from structured output */
-export interface TodoListData {
-  items: TodoItem[];
-}
-
-/** A single todo item */
-export interface TodoItem {
-  id: string;
-  text: string;
-  completed: boolean;
-}
-
-/** A chunk of streamed output from the planning agent */
-export type PlanChunk =
-  | {
-      type:
-        | "text"
-        | "thinking"
-        | "session_id"
-        | "done"
-        | "error"
-        | "stderr"
-        | "user_message"
-        | "replay_done";
-      content: string;
-    }
-  | { type: "tokens"; content: string; data: TokenUsage }
-  | { type: "tool_use"; content: string; data: ToolUseData }
-  | { type: "todo_list"; content: string; data: TodoListData };
-
-/** IPC envelope wrapping a chunk with routing metadata */
-export interface PlanChunkEnvelope {
-  taskId: string;
-  mode: PlanMode;
-  chunk: PlanChunk;
-}
-
-/** Role in a planning conversation */
-export type PlanMessageRole = "user" | "agent";
-
-/** A single message in the planning chat */
-export interface PlanMessage {
-  id: string;
-  role: PlanMessageRole;
-  /** Concatenated text content — kept for backward compat with stored messages */
-  text: string;
-  /** Concatenated thinking content — kept for backward compat */
-  thinking?: string;
-  /**
-   * Ordered content blocks preserving temporal interleaving of text, thinking,
-   * and tool_use events.  Present on new messages; absent on messages loaded
-   * from older stored logs (use `text` / `thinking` fallback in that case).
-   */
-  content?: MessageContentBlock[];
-  isStreaming: boolean;
-  /** Unix timestamp (ms) when the message was created */
-  timestamp?: number;
-  /**
-   * True for synthetic placeholder messages inserted when a replayed log
-   * contains no grove_user_message lines (i.e. it predates history tracking).
-   */
-  isPlaceholder?: boolean;
-  /** Model active when this message was created */
-  model?: string;
-}
-
-// ── Phase 5: Git Worktrees ──────────────────────────────────────
-
-export type WorktreeErrorCode =
-  | "NOT_A_REPO"
-  | "NOT_FOUND"
-  | "ALREADY_EXISTS"
-  | "BRANCH_LOCKED"
-  | "DIRTY_WORKING_TREE"
-  | "DETACHED_HEAD"
-  | "EMPTY_REPO"
-  | "GIT_NOT_FOUND"
-  | "UNKNOWN";
-
-/** Parsed from `git worktree list --porcelain` */
-export interface WorktreeInfo {
-  path: string; // absolute path
-  head: string; // 40-char SHA
-  branch: string | null; // "refs/heads/feat/T-004" or null if detached
-  branchShort: string | null; // "feat/T-004"
-  isMain: boolean;
-  isBare: boolean;
-  isDetached: boolean;
-  terminalOpen: boolean; // always false in Phase 5; wired in Phase 6
-}
-
-/** Display-ready item for the sidebar worktree list */
-export interface WorktreeDisplayItem {
-  taskId: string;
-  taskTitle: string;
-  branch: string;
-  worktreePath: string;
-  terminalOpen: boolean;
-}
-
-/** Input for the orchestrating git:setupWorktreeForTask IPC handler */
-export interface SetupWorktreeInput {
-  workspacePath: string;
-  taskFilePath: string; // absolute path to .md (already in .tasks/doing/)
-  taskId: string;
-  taskTitle: string;
-}
-
-/** Result from git:setupWorktreeForTask */
-export interface SetupWorktreeResult {
-  worktreePath: string; // relative, e.g. ".worktrees/T-004"
-  branchName: string;
-  alreadyExisted: boolean;
-  taskFilePath: string; // relative path to task in worktree, e.g. ".tasks/doing/T-012.md"
-}
-
-/** Input for git:teardownWorktreeForTask IPC handler */
-export interface TeardownWorktreeInput {
-  workspacePath: string;
-  taskFilePath: string; // absolute path (already in .tasks/done/)
-  worktreePath: string; // relative or absolute from frontmatter
-}
-
-// ── Branch listing (for Files branch selector) ───────────────────
-
-/** A local git branch with optional worktree path */
-export interface BranchInfo {
-  name: string;
-  isCurrent: boolean;
-  /** Absolute path to the worktree if one exists, null otherwise */
-  worktreePath: string | null;
-}
-
-/** A single changed file in the diff summary */
-export interface ChangedFile {
-  path: string;
-  status: "M" | "A" | "D" | "R";
-  additions: number;
-  deletions: number;
-}
-
-/** Result from git:diff — summary of all changed files */
-export interface DiffSummary {
-  files: ChangedFile[];
-  totalAdditions: number;
-  totalDeletions: number;
-}
-
-// ── Tmux Session Monitoring ──────────────────────────────────────
-
-/** Session type for a Grove tmux session (interactive terminal mode only) */
-export type TmuxSessionType = "term-plan" | "term-exec";
-
-/** Information about an active Grove tmux session */
-export interface TmuxSessionInfo {
-  sessionName: string;
-  sessionType: TmuxSessionType;
-  workspaceHash: string;
-  workspacePath: string | null;
-  workspaceName: string | null;
-  taskId: string;
-  taskStatus: TaskStatus | null;
-  agent: string | null;
-  model: string | null;
-  paneCommand: string;
-  panePid: number;
-  paneDead: boolean;
-  sessionCreatedTs: number; // Unix seconds
-  paneActivityTs: number; // Unix seconds
-  idleSeconds: number; // computed
-  durationSeconds: number; // computed
-}
+export interface CommentsFile { schemaVersion: 2; comments: Comment[] }
+export type Slices = { projects: Project[]; sessions: Session[]; ui: UiState; features: FeaturesSlice; opencode: OpenCodeSlice; diff: SessionDiff | null; comments: Comment[] } // diff: the one on screen, not persisted
+export interface ConfigFile { schemaVersion: 1; projects: Project[]; workflow?: string }
+export interface StateFile { schemaVersion: 7; sessions: Session[]; ui: UiState }
+export const SIDEBAR_RAIL_WIDTH = 56 // the collapsed sidebar
+export const SIDEBAR_WIDTH = 220 // fixed: the sidebar has no resize handle, so a saved width is ignored
+export const DEFAULT_UI: UiState = { sidebarWidth: SIDEBAR_WIDTH, sidebarCollapsed: false, focusedSessionId: null, focusedFeature: null, focusedProject: null, sidebarTab: 'sessions', board: 'sessions', collapsed: [], viewer: null, viewerWidth: null, viewerExpanded: false, grid: { open: false, members: [] } }
+export const EMPTY_FEATURES: FeaturesSlice = { workflowError: null, stages: [], items: [] }
+export const OPENCODE_CONNECTING: OpenCodeSlice = { state: 'connecting', version: null }

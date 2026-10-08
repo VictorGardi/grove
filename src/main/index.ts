@@ -1,117 +1,155 @@
-import { app, BrowserWindow, shell } from "electron";
-import { join } from "path";
-import { is } from "@electron-toolkit/utils";
-import { ConfigManager } from "./config";
-import { createWindowStateKeeper } from "./window-state";
-import { registerIpcHandlers, killAllPtys } from "./ipc/index";
-import { stopBranchWatcher } from "./ipc/workspace";
-import { stopWatchers } from "./watchers";
-import { closeAllWorktreeTaskWatchers } from "./ipc/git";
+import os from 'node:os'
+import path from 'node:path'
+import { execFile } from 'node:child_process'
+import { app, BrowserWindow, dialog, Notification } from 'electron'
+import { chromeBackground } from '@shared/theme'
+import { TmuxBackend } from '../core/backend/tmux'
+import { createCore } from '../core/core'
+import { findBin, findTmux, minimalEnv } from '../core/env'
+import { SpoolClaude } from '../core/claude/source'
+import { HttpOpenCode, serviceFilePath } from '../core/opencode/client'
+import { guardNavigation, handleArtifacts, registerArtifactScheme } from './artifacts'
+import { registerIpc } from './ipc'
+import { startCliServer } from './cliServer'
+import { installCommandLineTool, writeLauncher } from './launcher'
+import { buildMenu } from './menu'
+import { installAttachCleanup } from './attachCleanup'
 
-let mainWindow: BrowserWindow | null = null;
-let configManager: ConfigManager | null = null;
+let win: BrowserWindow | null = null
 
-// Single instance lock
-const gotTheLock = app.requestSingleInstanceLock();
+registerArtifactScheme()
 
-if (!gotTheLock) {
-  app.quit();
-} else {
-  app.on("second-instance", () => {
-    if (mainWindow) {
-      if (mainWindow.isMinimized()) mainWindow.restore();
-      mainWindow.focus();
-    }
-  });
+// A second launch focuses the first instead of starting a second app (ADR 0027).
+const gotLock = app.requestSingleInstanceLock()
+if (!gotLock) app.quit()
 
-  function createWindow(): void {
-    configManager = new ConfigManager();
-    const windowStateKeeper = createWindowStateKeeper();
-
-    mainWindow = new BrowserWindow({
-      x: windowStateKeeper.state.x,
-      y: windowStateKeeper.state.y,
-      width: windowStateKeeper.state.width,
-      height: windowStateKeeper.state.height,
-      minWidth: 900,
-      minHeight: 600,
-      show: false,
-      titleBarStyle: "hidden",
-      ...(process.platform === "darwin"
-        ? { trafficLightPosition: { x: 12, y: 12 } }
-        : {
-            titleBarOverlay: {
-              color: "#0b0b0d",
-              symbolColor: "#8b8b96",
-              height: 40,
-            },
-          }),
-      backgroundColor: "#0b0b0d",
-      autoHideMenuBar: true,
-      webPreferences: {
-        preload: join(__dirname, "../preload/index.js"),
-        contextIsolation: true,
-        // sandbox defaults to true — all Node.js work runs in main process
-      },
-    });
-
-    windowStateKeeper.manage(mainWindow);
-
-    if (windowStateKeeper.state.isMaximized) {
-      mainWindow.maximize();
-    }
-
-    mainWindow.on("ready-to-show", () => {
-      mainWindow!.show();
-    });
-
-    mainWindow.webContents.setWindowOpenHandler((details) => {
-      shell.openExternal(details.url);
-      return { action: "deny" };
-    });
-
-    // Register IPC handlers
-    registerIpcHandlers(configManager!, mainWindow);
-
-    // Apply saved window opacity
-    const savedOpacity = configManager!.get().windowOpacity;
-    mainWindow.setOpacity(savedOpacity);
-
-    // Load the app
-    if (is.dev && process.env["ELECTRON_RENDERER_URL"]) {
-      mainWindow.loadURL(process.env["ELECTRON_RENDERER_URL"]);
-    } else {
-      mainWindow.loadFile(join(__dirname, "../renderer/index.html"));
-    }
-
-    mainWindow.on("closed", () => {
-      windowStateKeeper.unmanage();
-      mainWindow = null;
-    });
-  }
-
-  app.whenReady().then(() => {
-    createWindow();
-
-    app.on("activate", () => {
-      if (BrowserWindow.getAllWindows().length === 0) {
-        createWindow();
-      }
-    });
-  });
-
-  app.on("before-quit", async () => {
-    stopBranchWatcher();
-    stopWatchers();
-    closeAllWorktreeTaskWatchers();
-    killAllPtys();
-
-    if (configManager) {
-      configManager.flushSync();
-    }
-  });
-
-  app.on("window-all-closed", () => {
-    app.quit();
-  });
+function raise(): void {
+  if (!win || win.isDestroyed()) return
+  if (win.isMinimized()) win.restore()
+  win.show()
+  win.focus()
 }
+app.on('second-instance', raise)
+
+// The PATH a new terminal would have: a GUI app's own is minimal.
+const loginPath = () => new Promise<string>((resolve) => {
+  execFile(process.env.SHELL || '/bin/zsh', ['-ilc', 'printf %s "$PATH"'], { timeout: 5000 }, (err, out) => resolve(err ? process.env.PATH ?? '' : out))
+})
+
+async function installCli(launcher: string): Promise<void> {
+  const targetDir = path.join(os.homedir(), '.local', 'bin')
+  const res = installCommandLineTool({ launcher, targetDir, pathVar: await loginPath() })
+  const opts = res.ok
+    ? {
+        message: `Installed ${res.target}`,
+        detail: res.onPath ? 'Open a new terminal and run `grove ls`.' : `${targetDir} is not on your PATH. Add it to your shell profile to run \`grove\` from any terminal.`,
+      }
+    : { type: 'error' as const, message: 'Could not install the command line tool', detail: res.message }
+  await (win && !win.isDestroyed() ? dialog.showMessageBox(win, opts) : dialog.showMessageBox(opts))
+}
+
+app.whenReady().then(async () => {
+  if (!gotLock) return
+  const errors: string[] = []
+  const tmuxPath = findTmux(process.env)
+  if (!tmuxPath) errors.push('tmux not found (looked in PATH, /opt/homebrew/bin, /usr/local/bin)')
+  const gitPath = findBin('git', process.env) // null: the diff viewer says so, no banner
+
+  const socketPath = path.join(app.getPath('userData'), 'grove.sock')
+  const binDir = path.join(app.getPath('userData'), 'bin')
+  const launcher = writeLauncher({ binDir, execPath: process.execPath, cliPath: path.join(app.getAppPath(), 'out', 'main', 'cli.js'), socketPath })
+
+  const core = createCore({
+    sessionEnv: { socketPath, binDir },
+    configPath: path.join(os.homedir(), '.config', 'grove', 'config.json'),
+    statePath: path.join(app.getPath('userData'), 'state.json'),
+    commentsPath: path.join(app.getPath('userData'), 'comments.json'),
+    bundledWorkflowPath: path.join(app.getAppPath(), 'resources', 'workflow.yaml'),
+    backend: new TmuxBackend({
+      tmuxPath: tmuxPath ?? 'tmux',
+      socket: 'grove',
+      confPath: path.join(app.getAppPath(), 'resources', 'tmux.conf'),
+      env: minimalEnv(process.env),
+    }),
+    sources: [
+      new HttpOpenCode({ serviceFile: serviceFilePath(process.env, os.homedir()) }),
+      new SpoolClaude({ dir: path.join(app.getPath('userData'), 'agents', 'claude') }),
+    ],
+    git: gitPath,
+  })
+  await core.start()
+  const cliServer = await startCliServer(core, { socketPath, raise }).catch((e: Error) => {
+    errors.push(`grove CLI: ${e.message}`)
+    return null
+  })
+
+  // Unsigned builds can't show these (design D3): `failed` is logged once per run.
+  const shown = new Set<Notification>() // held until closed or clicked, or a click may be lost
+  let notifyFailed = false
+  const BODY = { permission: 'Needs permission', question: 'Has a question', done: 'Finished' }
+  core.on('notify', (s) => {
+    if (!Notification.isSupported() || !s.waitingFor) return
+    const n = new Notification({ title: s.label, body: BODY[s.waitingFor] })
+    shown.add(n)
+    n.on('close', () => shown.delete(n))
+    n.on('click', () => {
+      shown.delete(n)
+      raise()
+      void core.commands.uiSet({ focusedSessionId: s.id })
+    })
+    n.on('failed', (_e, error) => {
+      shown.delete(n)
+      if (notifyFailed) return
+      notifyFailed = true
+      console.error(`notification failed: ${error}`)
+    })
+    n.show()
+  })
+  handleArtifacts(core)
+
+  const { killAttaches } = registerIpc(core, () => win, () => [...errors, ...core.getErrors()])
+  buildMenu((a) => {
+    if (win && !win.isDestroyed()) win.webContents.send('menu:action', a)
+  }, () => void installCli(launcher))
+
+  win = new BrowserWindow({
+    width: 1200,
+    height: 800,
+    titleBarStyle: 'hidden',
+    backgroundColor: chromeBackground,
+    show: false,
+    webPreferences: { preload: path.join(__dirname, '../preload/index.js'), contextIsolation: true },
+  })
+  win.setWindowButtonVisibility(false)
+  guardNavigation(win, core)
+  win.once('ready-to-show', () => {
+    win?.show()
+    core.setWindowFocused(win?.isFocused() ?? false)
+  })
+  win.on('focus', () => {
+    core.setWindowFocused(true)
+    void core.checkLiveness()
+  })
+  win.on('blur', () => core.setWindowFocused(false))
+  // Tear down PTY clients for a document navigation/reload, not for artifact iframe navigation.
+  installAttachCleanup((onNavigation) => {
+    win?.webContents.on('did-start-navigation', (_event, _url, isInPlace, isMainFrame) => {
+      onNavigation(isInPlace, isMainFrame)
+    })
+  }, killAttaches)
+  win.on('closed', () => {
+    killAttaches()
+    win = null
+    app.quit()
+  })
+  if (process.env.ELECTRON_RENDERER_URL) win.loadURL(process.env.ELECTRON_RENDERER_URL)
+  else win.loadFile(path.join(__dirname, '../renderer/index.html'))
+
+  app.on('before-quit', () => {
+    cliServer?.close()
+    core.dispose()
+  })
+})
+
+app.on('window-all-closed', () => app.quit())
+app.on('will-quit', () => app.exit(0))

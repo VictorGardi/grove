@@ -1,0 +1,22 @@
+{
+  "artifactRoot": "docs/work",
+  "adrDir": "docs/adr",
+  "contextFile": "CONTEXT.md",
+  "commitHtml": false,
+  "tracker": {
+    "type": "none"
+  },
+  "commands": {
+    "test": "npm test",
+    "typecheck": "npm run typecheck",
+    "build": "npm run build",
+    "dev": "npm run dev"
+  },
+  "limits": {
+    "maxOneWayDecisions": 8,
+    "maxSlices": 8,
+    "designMaxLines": 220,
+    "epicMaxOneWayDecisions": 10,
+    "epicMaxChildren": 8
+  }
+}

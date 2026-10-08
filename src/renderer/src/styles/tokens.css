@@ -1,0 +1,106 @@
+/* UI design tokens. --chrome-bg, --terminal-bg and --terminal-fg are repeated
+   in src/shared/theme.ts; tokens.test.ts keeps them equal. */
+:root {
+  /* surfaces */
+  --chrome-bg: #0a0a0b;
+  --panel-bg: #121212;
+  --card-bg: #1f1f1f;
+  --raised-bg: #232324;
+  --muted-badge-bg: #16161a;
+  --terminal-bg: #1e1e2e;
+  --terminal-fg: #cdd6f4;
+  --backdrop: rgba(0, 0, 0, 0.5);
+  --shadow-modal: 0 16px 48px rgba(0, 0, 0, 0.5);
+
+  /* borders */
+  --card-border: #292929;
+  --divider: #212123;
+  --header-divider: #303035;
+  --scrollbar-thumb: #38383c;
+
+  /* text */
+  --text: #ffffff;
+  --text-2: #b3b3b3;
+  --text-3: #5e5e66;
+
+  /* accent */
+  --accent: #fb923c;
+  --accent-strong: #f66032;
+  --accent-badge: #ffa42c;
+
+  /* status */
+  --status-running: #fb923c;
+  --status-working: #5ee0a0;
+  --status-waiting: #fbc024;
+  --status-finished: #24d3ef;
+  --status-idle: #5e5e66;
+  --status-gone: #5e5e66;
+
+  /* tags: project and epic colours (src/renderer/src/tags.ts), clear of accent and status hues */
+  --tag-1: #60a5fa;
+  --tag-2: #f472b6;
+  --tag-3: #4ade80;
+  --tag-4: #a78bfa;
+  --tag-5: #a3e635;
+  --tag-6: #fb7185;
+  --tag-7: #818cf8;
+  --tag-8: #e879f9;
+
+  /* card tones */
+  --card-selected-bg: #342519;
+  --card-selected-border: #fb923c;
+  --card-waiting-bg: #1d1b15;
+  --card-waiting-border: #604c1d;
+  --card-finished-bg: #141c1d;
+  --card-finished-border: #1f545c;
+  --card-glow: 5px;
+
+  /* danger */
+  --danger: #f87171;
+  --danger-bg: #2a1517;
+  --danger-border: #5c2427;
+
+  /* diff lines */
+  --diff-add-bg: #173a24;
+  --diff-add-fg: #4ade80;
+  --diff-del-bg: #3d1b1f;
+  --diff-del-fg: #f87171;
+  --diff-add-word-bg: #1f5b36;
+  --diff-del-word-bg: #6b2328;
+  --diff-hunk-bg: #16161a;
+
+  /* type */
+  --font-ui: -apple-system, system-ui, sans-serif;
+  --font-mono: Menlo, monospace;
+  --fs-xs: 10px;
+  --fs-sm: 11px;
+  --fs-card: 12px;
+  --fs-md: 13px;
+  --fs-lg: 14px;
+  --fs-xl: 15px;
+  --fw-regular: 400;
+  --fw-semibold: 600;
+  --fw-bold: 700;
+
+  /* space */
+  --sp-1: 4px;
+  --sp-2: 8px;
+  --sp-3: 12px;
+  --sp-4: 16px;
+  --sp-5: 20px;
+  --sp-6: 24px;
+  --gutter: 8px;
+
+  /* radius */
+  --r-card: 5px;
+  --r-md: 8px;
+  --r-panel: 10px;
+  --r-pill: 999px;
+
+  /* sizes */
+  --topbar-h: 36px;
+  --header-h: 47px;
+  --traffic-inset: var(--sp-4);
+  --sidebar-w: 220px; /* overridden at runtime from ui.sidebarWidth */
+  --pane-dim: 0.65; /* opacity of unfocused panes in the session grid */
+}

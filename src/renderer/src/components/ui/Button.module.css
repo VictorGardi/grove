@@ -1,0 +1,83 @@
+.button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: var(--sp-1);
+  border: 1px solid transparent;
+  border-radius: var(--r-md);
+  font: inherit;
+  font-weight: var(--fw-semibold);
+  white-space: nowrap;
+  cursor: pointer;
+}
+
+.button:hover {
+  filter: brightness(1.15);
+}
+
+.button:focus-visible {
+  outline: 2px solid var(--accent-strong);
+  outline-offset: 2px;
+}
+
+.button:disabled {
+  opacity: 0.5;
+  cursor: default;
+  filter: none;
+}
+
+.sm {
+  height: 24px;
+  padding: 0 var(--sp-2);
+  font-size: var(--fs-sm);
+}
+
+.md {
+  height: 32px;
+  padding: 0 var(--sp-3);
+  font-size: var(--fs-md);
+}
+
+.round {
+  padding: 0;
+  border-radius: var(--r-pill);
+}
+
+.sm.round {
+  width: 24px;
+}
+
+.md.round {
+  width: 32px;
+}
+
+.primary {
+  background: var(--accent);
+  color: var(--chrome-bg);
+}
+
+.secondary {
+  background: var(--raised-bg);
+  color: var(--text);
+  border-color: var(--card-border);
+}
+
+.ghost {
+  background: transparent;
+  color: var(--text-2);
+}
+
+.ghost:hover {
+  color: var(--text);
+}
+
+.ghost[aria-pressed='true'] {
+  color: var(--text);
+  background: var(--raised-bg);
+}
+
+.danger {
+  background: var(--danger-bg);
+  color: var(--danger);
+  border-color: var(--danger-border);
+}

@@ -1,0 +1,151 @@
+.row {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+  padding: 5px 10px;
+  background: var(--card-bg);
+  border: 1px solid var(--card-border);
+  border-radius: var(--r-card);
+  cursor: pointer;
+}
+
+.row:hover {
+  border-color: var(--text-3);
+}
+
+.compact {
+  padding: 3px 10px;
+}
+
+.selected,
+.selected:hover {
+  background: var(--card-selected-bg);
+  border-color: var(--card-selected-border);
+}
+
+.waiting,
+.waiting:hover {
+  background: var(--card-waiting-bg);
+  border-color: var(--card-waiting-border);
+  box-shadow: 0 0 var(--card-glow) var(--card-waiting-border);
+}
+
+.finished,
+.finished:hover {
+  background: var(--card-finished-bg);
+  border-color: var(--card-finished-border);
+  box-shadow: 0 0 var(--card-glow) var(--card-finished-border);
+}
+
+.muted {
+  background: transparent;
+}
+
+.muted .title {
+  color: var(--text-2);
+  font-weight: var(--fw-semibold);
+}
+
+.picked,
+.picked:hover {
+  background: var(--card-selected-bg);
+  border-color: var(--text-3);
+  box-shadow: none;
+}
+
+.head {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-2);
+  min-height: 18px;
+}
+
+.title {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: var(--fs-card);
+  font-weight: var(--fw-bold);
+  color: var(--text);
+}
+
+.corner {
+  position: absolute;
+  top: -7px;
+  left: -7px;
+  z-index: 1;
+  display: flex;
+  opacity: 0;
+}
+
+.row .corner > button,
+.row .actions > button {
+  width: 18px;
+  height: 18px;
+}
+
+.corner svg,
+.actions svg {
+  width: 11px;
+  height: 11px;
+}
+
+.corner > button {
+  background: var(--chrome-bg);
+  border: 1px solid var(--text-3);
+  color: var(--text);
+}
+
+.corner > button[aria-pressed='true'] {
+  background: var(--status-working);
+  border-color: var(--status-working);
+  color: var(--chrome-bg);
+}
+
+.cornerPinned,
+.row:hover .corner,
+.row:focus-within .corner {
+  opacity: 1;
+}
+
+.actions {
+  position: absolute;
+  top: -7px;
+  right: -7px;
+  z-index: 1;
+  display: flex;
+  gap: 2px;
+  opacity: 0;
+}
+
+.actions > button {
+  background: var(--chrome-bg);
+  border: 1px solid var(--text-3);
+  color: var(--text);
+}
+
+.row:hover .actions,
+.row:focus-within .actions {
+  opacity: 1;
+}
+
+.meta {
+  font-family: var(--font-mono);
+  font-size: var(--fs-xs);
+  color: var(--text-2);
+}
+
+.status {
+  font-family: var(--font-mono);
+  font-size: var(--fs-xs);
+}
+
+.s-running { color: var(--status-running); }
+.s-working { color: var(--status-working); }
+.s-waiting { color: var(--status-waiting); }
+.s-idle { color: var(--status-idle); }
+.s-finished { color: var(--status-finished); }
+.s-gone { color: var(--status-gone); }

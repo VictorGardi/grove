@@ -1,0 +1,29 @@
+{
+  "name": "grove",
+  "productName": "grove",
+  "version": "0.0.1",
+  "private": true,
+  "description": "Grove Electron spike",
+  "main": "main.js",
+  "scripts": {
+    "start": "electron .",
+    "pack": "electron-builder --dir --mac -c.mac.identity=null -c.directories.output=$SPIKE_OUT"
+  },
+  "build": {
+    "appId": "se.assaria.grove.spike",
+    "productName": "grove",
+    "asar": true,
+    "asarUnpack": ["node_modules/node-pty/**", "keylog.py", "tmux.conf"],
+    "npmRebuild": false,
+    "files": ["main.js", "preload.js", "index.html", "renderer.js", "tmux.conf", "keylog.py", "package.json", "node_modules/**"],
+    "mac": { "target": "dir" }
+  },
+  "dependencies": {
+    "@xterm/xterm": "6.0.0",
+    "node-pty": "1.1.0"
+  },
+  "devDependencies": {
+    "electron": "44.5.1",
+    "electron-builder": "26.15.3"
+  }
+}

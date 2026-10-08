@@ -1,391 +1,223 @@
-import { useEffect, useState } from "react";
-import { ErrorBoundary } from "./components/ErrorBoundary/ErrorBoundary";
-import { TitleBar } from "./components/TitleBar/TitleBar";
-import { Sidebar } from "./components/Sidebar/Sidebar";
-import { MainArea } from "./components/MainArea/MainArea";
-import { TerminalPanel } from "./components/Terminal/TerminalPanel";
-import { ConfirmDialog } from "./components/shared/ConfirmDialog";
-import { LaunchModal } from "./components/shared/LaunchModal";
-import { useWorkspaceStore } from "./stores/useWorkspaceStore";
-import { useDataStore } from "./stores/useDataStore";
-import { useAllTasksStore } from "./stores/useAllTasksStore";
-import { useFileStore } from "./stores/useFileStore";
-import { useNavStore } from "./stores/useNavStore";
-import { useWorktreeStore } from "./stores/useWorktreeStore";
-import { useTerminalStore, type TerminalTab } from "./stores/useTerminalStore";
-import { usePlanStore } from "./stores/usePlanStore";
-import { useKeyboardShortcuts } from "./hooks/useKeyboardShortcuts";
-import { ShortcutsModal } from "./components/shared/ShortcutsModal";
-import { TaskSwitcherModal } from "./components/shared/TaskSwitcherModal";
-import { HelpButton } from "./components/shared/HelpButton";
-import { useTmuxLivenessStore } from "./stores/useTmuxLivenessStore";
+import { useCallback, useEffect, useRef, useState } from 'react'
+import type { Feature, Session, SessionKind, ViewerTarget } from '@shared/types'
+import type { MenuAction } from '@shared/ipc'
+import { SIDEBAR_RAIL_WIDTH, SIDEBAR_WIDTH } from '@shared/types'
+import { ArtifactViewer } from './components/ArtifactViewer'
+import { CommandPalette } from './components/CommandPalette'
+import { DiffViewer } from './components/DiffViewer'
+import { FeaturePage } from './components/FeaturePage'
+import { ProjectPage } from './components/ProjectPage'
+import { SessionGrid } from './components/SessionGrid'
+import { Sidebar } from './components/Sidebar'
+import { SidebarRail } from './components/SidebarRail'
+import { TerminalView } from './components/TerminalView'
+import { AppShell } from './components/shell/AppShell'
+import { BoardSwitch } from './components/shell/BoardSwitch'
+import { ContextPopover } from './components/ContextGauge'
+import { ContentHeader } from './components/shell/ContentHeader'
+import { TopBar } from './components/shell/TopBar'
+import { Banner } from './components/ui/Banner'
+import { ConfirmDialog } from './components/ConfirmDialog'
+import { Button } from './components/ui/Button'
+import { newSessionItems, paletteItems } from './paletteItems'
+import { DEFAULT_GRID_VIEW, gridShown, visibleMembers, type GridView } from './gridView'
+import { contextView } from './contextGauge'
+import { boardKey, childrenOf, content, crumbs, currentProjectId, focusTarget } from './navigation'
+import { serviceBanners } from './sessionStatus'
+import { sessionDiffShortcut, type HiddenRenderedViewer } from './sessionDiffShortcut'
+import { useSlices } from './stores/slices'
+import { featureDir, featureOfFile, viewableFiles } from './viewerFiles'
+import s from './App.module.css'
 
-function AppContent(): React.JSX.Element {
-  useKeyboardShortcuts();
-
-  const [platform, setPlatform] = useState<NodeJS.Platform | null>(null);
-  const fetchWorkspaces = useWorkspaceStore((s) => s.fetchWorkspaces);
-  const activeWorkspacePath = useWorkspaceStore((s) => s.activeWorkspacePath);
-  const updateBranch = useWorkspaceStore((s) => s.updateBranch);
-  const workspaces = useWorkspaceStore((s) => s.workspaces);
-  const fetchData = useDataStore((s) => s.fetchData);
-  const clearData = useDataStore((s) => s.clear);
-  const tasks = useDataStore((s) => s.tasks);
-  const fetchTasksForWorkspace = useAllTasksStore(
-    (s) => s.fetchTasksForWorkspace,
-  );
-  const allTasks = useAllTasksStore((s) => s.allTasks);
-  const fetched = useDataStore((s) => s.fetched);
-  const sidebarVisible = useNavStore((s) => s.sidebarVisible);
-  const terminalPanelOpen = useNavStore((s) => s.terminalPanelOpen);
+export default function App() {
+  const { projects, sessions, ui, features, opencode, diff, errors, statusSince, hydrate, setFocused, focusFeature, openProject, toggleGrid, addFocusedToGrid, toggleSidebar, clearGrid, go, setBoard,
+    openArtifact, openDiff, backToDiff, openRendered, closeViewer, setViewerWidth, toggleViewerExpanded, reloadViewer } = useSlices()
+  const [quickNew, setQuickNew] = useState<{ projectId?: string } | null>(null) // ⌘T: the new-session palette
+  const [confirmRemove, setConfirmRemove] = useState<Session | null>(null) // ⌘W asks first
+  const [paletteOpen, setPaletteOpen] = useState(false)
+  const [gridView, setGridView] = useState<GridView>(DEFAULT_GRID_VIEW) // toolbar settings, view-only
+  const hiddenRendered = useRef<HiddenRenderedViewer | null>(null)
 
   useEffect(() => {
-    // Get platform for titlebar padding
-    window.api.app.getPlatform().then(setPlatform);
+    void hydrate()
+  }, [hydrate])
 
-    // Initial workspace load
-    fetchWorkspaces();
-  }, [fetchWorkspaces]);
+  // The Diff button opens this session's diff, or closes it when it's the one shown.
+  const toggleDiff = useCallback((id: string, viewer: ViewerTarget | null) => {
+    if (viewer?.kind === 'diff' && viewer.sessionId === id) closeViewer()
+    else openDiff(id)
+  }, [openDiff, closeViewer])
 
-  // Fetch all tasks for all workspaces (used by task switcher)
-  useEffect(() => {
-    for (const ws of workspaces) {
-      if (!allTasks.has(ws.path)) {
-        void fetchTasksForWorkspace(ws.path);
+  const toggleSessionDiff = useCallback((id: string, viewer: ViewerTarget | null) => {
+    const action = sessionDiffShortcut(viewer, hiddenRendered.current)
+    if (action.kind === 'hide-rendered') {
+      hiddenRendered.current = action.hidden
+      closeViewer()
+    } else if (action.kind === 'restore-rendered') {
+      hiddenRendered.current = null
+      openArtifact(action.target)
+    } else {
+      hiddenRendered.current = null
+      toggleDiff(id, viewer)
+    }
+  }, [closeViewer, openArtifact, toggleDiff])
+
+  // the menu and the palette both run actions through here
+  const runAction = useCallback((a: MenuAction) => {
+    // read the latest state, not this callback's closure
+    const { projects, sessions, ui, features } = useSlices.getState()
+    if (a.type === 'palette') setPaletteOpen(true)
+    else if (a.type === 'toggleGrid') toggleGrid()
+    else if (a.type === 'addToGrid') addFocusedToGrid()
+    else if (a.type === 'toggleSidebar') toggleSidebar()
+    else if (a.type === 'clearGrid') clearGrid()
+    else if (a.type === 'newSession') setQuickNew({ projectId: currentProjectId(content(ui, projects, sessions, features.items)) ?? undefined })
+    else if (a.type === 'newTerminal') {
+      const projectId = currentProjectId(content(ui, projects, sessions, features.items))
+      if (projectId) {
+        void window.api.invoke('session:create', { projectId, kind: 'terminal', cols: 120, rows: 40 }).then((res) => {
+          if (res.ok) setFocused(res.data.id)
+        })
       }
     }
-  }, [workspaces, allTasks, fetchTasksForWorkspace]);
-
-  // Live update listener — re-fetch tasks for all workspaces when files change on disk
-  useEffect(() => {
-    if (!window.api.data) return;
-    const unsub = window.api.data.onChanged(async () => {
-      for (const ws of workspaces) {
-        await fetchTasksForWorkspace(ws.path);
-      }
-    });
-    return unsub;
-  }, [workspaces, fetchTasksForWorkspace]);
-
-  // Set up branch change listener
-  useEffect(() => {
-    if (!window.api.workspaces) return;
-    const unsubscribe = window.api.workspaces.onBranchChanged((data) => {
-      updateBranch(data.path, data.branch);
-    });
-    return unsubscribe;
-  }, [updateBranch]);
-
-  // Clear stale data immediately on workspace switch, then fetch fresh
-  useEffect(() => {
-    console.log(
-      "[App] workspace changed, clearing. activeWorkspacePath:",
-      activeWorkspacePath,
-    );
-    clearData();
-    useFileStore.getState().clear();
-    useWorktreeStore.getState().clear();
-    if (activeWorkspacePath) {
-      fetchData();
-      // Pre-fetch workspace defaults so they're available before any task detail
-      // panel opens. Without this, the first open of a task sees an empty
-      // workspaceDefaults map, causing PlanChat to fall back to "opencode" as the
-      // default agent even when the workspace default is "copilot".
-      void useWorkspaceStore.getState().fetchDefaults(activeWorkspacePath);
+    else if (a.type === 'closeSession') {
+      const focused = sessions.find((x) => x.id === ui.focusedSessionId)
+      if (focused) setConfirmRemove(focused)
+    } else if (a.type === 'lastSession') {
+      void window.api.invoke('session:focusLast')
+    } else if (a.type === 'focusIndex') {
+      const target = focusTarget(ui, projects, sessions, features.items, a.n, gridView)
+      if (target) setFocused(target.id)
+    } else if (a.type === 'projectBoard') {
+      const to = boardKey(ui, projects, sessions, features.items)
+      if (to) go(to)
+    } else if (a.type === 'sessionDiff') {
+      if (ui.focusedSessionId) toggleSessionDiff(ui.focusedSessionId, ui.viewer)
     }
-  }, [activeWorkspacePath, clearData, fetchData]);
+  }, [setFocused, go, toggleSessionDiff, toggleGrid, addFocusedToGrid, toggleSidebar, clearGrid, gridView])
 
-  // Restore terminal state after workspace switch (not initial load)
   useEffect(() => {
-    if (!activeWorkspacePath) return;
-    useWorkspaceStore.getState().restoreTerminalState(activeWorkspacePath);
-  }, [activeWorkspacePath]);
+    const hidden = hiddenRendered.current
+    if (!hidden) return
+    if (ui.viewer && (
+      ui.viewer.kind !== 'file' || ui.viewer.fromDiff !== hidden.sessionId ||
+      ui.viewer.projectId !== hidden.target.projectId || ui.viewer.path !== hidden.target.path
+    )) hiddenRendered.current = null
+  }, [ui.viewer])
 
-  // Initial task validation: on first load (Cmd+R), verify the currently
-  // selected task still exists. If not, redirect to home to avoid showing
-  // "No task selected" page.
-  useEffect(() => {
-    if (!activeWorkspacePath || tasks.length === 0) return;
-    if (!tasks[0].filePath.startsWith(activeWorkspacePath)) return;
+  useEffect(() => window.api.on('menu:action', runAction), [runAction])
 
-    const saved =
-      useWorkspaceStore.getState().workspaceBoardStates[activeWorkspacePath];
-    if (!saved?.selectedTaskId) return;
-    if (!tasks.some((t) => t.id === saved.selectedTaskId)) {
-      useDataStore.getState().clearSelectedTask();
-      useNavStore.getState().setActiveView("home");
-    }
-  }, [activeWorkspacePath, tasks]);
-
-  // Session restoration: when tasks load for a workspace, auto-create terminal tabs
-  // for any doing tasks with worktrees that don't already have terminal tabs
-  useEffect(() => {
-    if (!activeWorkspacePath || tasks.length === 0) return;
-
-    const dashboardTasks = tasks.filter(
-      (t) =>
-        t.status === "doing" || t.status === "backlog" || t.status === "review",
-    );
-    for (const task of dashboardTasks) {
-      // Initialize plan session if it has a terminal session or session ID
-      if (task.terminalPlanSession || task.planSessionId) {
-        const key = `plan:${task.id}`;
-        usePlanStore
-          .getState()
-          .initSession(
-            key,
-            task.planSessionAgent ?? "opencode",
-            task.planModel,
-            task.planSessionId,
-            task.planLastExitCode,
-          );
-        if (!task.planSessionId && task.terminalPlanSession) {
-          usePlanStore.getState().setSessionStatus(key, "paused");
-        }
-      }
-      // Initialize exec session if it has a terminal session or session ID
-      if (task.terminalExecSession || task.execSessionId) {
-        const key = `execute:${task.id}`;
-        usePlanStore
-          .getState()
-          .initSession(
-            key,
-            task.execSessionAgent ?? "opencode",
-            task.execModel,
-            task.execSessionId,
-            task.execLastExitCode,
-          );
-        // For terminal sessions without existingSessionId, set status to "paused" so tmux polling activates
-        if (!task.execSessionId && task.terminalExecSession) {
-          usePlanStore.getState().setSessionStatus(key, "paused");
-        }
-      }
-    }
-
-    const doingWithWorktree = tasks.filter(
-      (t) => t.status === "doing" && t.worktree,
-    );
-    if (doingWithWorktree.length === 0) return;
-
-    const existingTabs = useTerminalStore.getState().tabs;
-    let created = 0;
-
-    for (const task of doingWithWorktree) {
-      const tabId = `wt-${task.id}`;
-      if (existingTabs.some((t) => t.id === tabId)) continue;
-
-      const worktreeAbsPath = activeWorkspacePath + "/" + task.worktree;
-      // Create PTY before adding the tab — same pattern as handleDragToDoing
-      window.api.pty.create(tabId, worktreeAbsPath).then(() => {
-        useTerminalStore.getState().addTab({
-          id: tabId,
-          label: task.branch ?? task.id,
-          workspacePath: activeWorkspacePath,
-          worktreePath: worktreeAbsPath,
-          taskId: task.id,
-        });
-      });
-      created++;
-    }
-
-    // Auto-open terminal panel if any tabs were restored
-    if (created > 0 && !useNavStore.getState().terminalPanelOpen) {
-      useNavStore.getState().toggleTerminalPanel();
-    }
-  }, [activeWorkspacePath, tasks]);
-
-  // Ensure a free terminal tab exists when the panel is open and no task tabs were
-  // created by session restoration. Declared AFTER session restoration so React runs
-  // this effect second in the same batch — meaning we can read the live Zustand state
-  // that session restoration already populated and avoid creating a duplicate tab.
-  // Gated on `fetched` so it never fires before the first data load completes.
-  // Also restores hidden tabs when the panel is re-opened.
-  useEffect(() => {
-    if (!terminalPanelOpen || !activeWorkspacePath || !fetched) return;
-
-    const store = useTerminalStore.getState();
-    const hiddenTabs = store.hiddenTabs;
-
-    // Check for hidden tabs for this workspace - collect in insertion order
-    const hiddenTabsForWorkspace: TerminalTab[] = [];
-    hiddenTabs.forEach((tab) => {
-      if (tab.workspacePath === activeWorkspacePath) {
-        hiddenTabsForWorkspace.push(tab);
-      }
-    });
-
-    // Restore hidden tabs in original insertion order
-    for (const tab of hiddenTabsForWorkspace) {
-      useTerminalStore.getState().restoreTab(tab.id);
-    }
-
-    // Re-fetch state after restore - Zustand batches updates so store.tabs is stale
-    const currentTabs = useTerminalStore.getState().tabs;
-
-    // Check if any tabs exist for this workspace (including just-restored ones)
-    const hasTabsForWorkspace = currentTabs.some(
-      (t) => t.workspacePath === activeWorkspacePath,
-    );
-
-    // Only create a new free tab if no live tabs AND no hidden tabs
-    if (!hasTabsForWorkspace && hiddenTabsForWorkspace.length === 0) {
-      const id = `free-${Date.now()}`;
-      window.api.pty.create(id, activeWorkspacePath).then(() => {
-        useTerminalStore.getState().addTab({
-          id,
-          label: "Terminal",
-          workspacePath: activeWorkspacePath,
-          worktreePath: null,
-          taskId: null,
-        });
-      });
-    }
-  }, [terminalPanelOpen, activeWorkspacePath, fetched]);
-
-  // Live update listener — re-fetch when files change on disk
-  useEffect(() => {
-    if (!window.api.data) return;
-    const unsub = window.api.data.onChanged(() => {
-      fetchData(); // debounced in store — safe to call rapidly
-    });
-    return unsub;
-  }, [fetchData]);
-
-  // ── Tmux liveness polling: keep the liveness store updated for all tasks
-  // across all workspaces so the running/agent indicators show in the sidebar
-  // and task switcher even for tasks not currently open in the task detail page.
-  useEffect(() => {
-    let cancelled = false;
-
-    async function pollLiveness(): Promise<void> {
-      if (cancelled) return;
-      const allTasksMap = useAllTasksStore.getState().allTasks;
-      const checks: Promise<void>[] = [];
-
-      for (const [workspacePath, tasks] of allTasksMap) {
-        for (const task of tasks) {
-          if (task.status === "done") continue;
-          const relevantModes = [
-            ["plan", task.terminalPlanSession] as const,
-            ["execute", task.terminalExecSession] as const,
-          ];
-          for (const [mode, session] of relevantModes) {
-            if (!session) continue;
-            const livenessKey = `${workspacePath}:${mode}:${task.id}`;
-            checks.push(
-              window.api.taskterm
-                .isAlive(session)
-                .then((alive) => {
-                  if (cancelled) return;
-                  useTmuxLivenessStore
-                    .getState()
-                    .setLiveness(livenessKey, alive);
-                })
-                .then(() =>
-                  window.api.taskterm.state(
-                    session,
-                    mode === "execute"
-                      ? (task.execSessionAgent ?? "opencode")
-                      : (task.planSessionAgent ?? "opencode"),
-                  ),
-                )
-                .then((state) => {
-                  if (cancelled) return;
-                  useTmuxLivenessStore
-                    .getState()
-                    .setAgentState(livenessKey, state);
-                })
-                .catch(() => {}),
-            );
-          }
-        }
-      }
-
-      await Promise.all(checks);
-    }
-
-    // Poll immediately then every 1s
-    void pollLiveness();
-    const interval = setInterval(() => void pollLiveness(), 1_000);
-
-    return () => {
-      cancelled = true;
-      clearInterval(interval);
-    };
-  }, []);
-
-  // File tree structural changes (files added/removed on disk)
-  useEffect(() => {
-    if (!window.api.fs) return;
-    const unsub = window.api.fs.onTreeChanged(() => {
-      useFileStore.getState().fetchTree();
-    });
-    return unsub;
-  }, []);
-
-  // Open file content changes (agent modified a file)
-  useEffect(() => {
-    if (!window.api.fs) return;
-    const unsub = window.api.fs.onFileChanged(() => {
-      useFileStore.getState().reloadOpenFile();
-    });
-    return unsub;
-  }, []);
-
-  // Get active workspace name for title bar
-  const activeWorkspace = workspaces.find(
-    (w) => w.path === activeWorkspacePath,
-  );
+  const createSession = (projectId: string, kind: SessionKind) => {
+    void window.api.invoke('session:create', { projectId, kind, cols: 120, rows: 40 }).then((res) => {
+      if (res.ok) setFocused(res.data.id)
+    })
+  }
+  const shown = content(ui, projects, sessions, features.items)
+  // a filter or the eye can hide the focused pane: focus the first one still visible
+  const changeGridView = (next: GridView) => {
+    setGridView(next)
+    if (shown.kind !== 'grid') return
+    const visible = visibleMembers(shown.sessions, next)
+    if (visible.length > 0 && !visible.some((x) => x.id === shown.focused.id)) setFocused(visible[0].id)
+  }
+  const header = crumbs(shown, projects, features.items).map((c) => ({ label: c.label, onClick: c.to && (() => go(c.to!)) }))
+  const context = shown.kind === 'session' ? contextView(shown.session) : null
+  const openFeature = (f: Feature) => focusFeature({ projectId: f.projectId, slug: f.slug })
+  const v = ui.viewer
+  const viewerHit = v?.kind === 'file' ? featureOfFile(v, features.items, projects) : undefined
+  const viewerFeature = viewerHit?.feature
+  const viewerDir = viewerHit?.dir ?? ''
+  const diffOpen = (id: string) => v?.kind === 'diff' && v.sessionId === id
 
   return (
-    <div
-      style={{
-        display: "flex",
-        flexDirection: "column",
-        height: "100%",
-        background: "var(--bg-base)",
-        overflow: "hidden",
-      }}
-    >
-      <TitleBar platform={platform} workspaceName={activeWorkspace?.name} />
-      <div
-        style={{
-          position: "relative",
-          display: "flex",
-          flex: 1,
-          overflow: "hidden",
-          minHeight: 0,
-        }}
-      >
-        {sidebarVisible && <Sidebar />}
-        <MainArea />
-        <div
-          style={{
-            position: "absolute",
-            bottom: 0,
-            left: 0,
-            right: 0,
-            zIndex: 100,
+    <>
+      <AppShell
+        topBar={<TopBar />}
+        banners={[
+          ...errors.map((e, i) => <Banner key={i}>{e}</Banner>),
+          ...(features.workflowError ? [<Banner key="workflow">Workflow: {features.workflowError}</Banner>] : []),
+          ...serviceBanners(opencode, sessions).map((b) => <Banner key={b.text} tone={b.tone}>{b.text}</Banner>),
+        ]}
+        sidebar={ui.sidebarCollapsed ? <SidebarRail /> : <Sidebar onNew={(projectId) => setQuickNew({ projectId })} />}
+        content={
+          <>
+            <ContentHeader crumbs={header}
+              after={context ? <ContextPopover view={context} /> : undefined}
+              right={shown.kind === 'project' ? <BoardSwitch board={ui.board} onChange={setBoard} />
+                : shown.kind === 'session' ? (
+                  <div className={s.headerActions}>
+                    <Button variant="ghost" size="sm" aria-pressed={diffOpen(shown.session.id)}
+                      onClick={() => toggleDiff(shown.session.id, v)}>Diff</Button>
+                  </div>
+                ) : undefined} />
+            {shown.kind === 'project' ? (
+              <ProjectPage project={shown.project} projects={projects} board={ui.board} stages={features.stages}
+                features={features.items} sessions={sessions} statusSince={statusSince}
+                onOpenFeature={openFeature} onFocusSession={setFocused} />
+            ) : shown.kind === 'feature' ? (
+              <FeaturePage feature={shown.feature}
+                parent={features.items.find((f) => f.projectId === shown.feature.projectId && f.slug === shown.feature.parent) ?? null}
+                children={childrenOf(shown.feature, features.items)} sessions={sessions}
+                onFocusSession={setFocused} onOpenFeature={openFeature}
+                onOpenArtifact={(name) => {
+                  const dir = featureDir(shown.feature, projects)
+                  if (dir !== null) openArtifact({ kind: 'file', projectId: shown.feature.projectId, path: dir + name, hash: null, fromDiff: null })
+                }} />
+            ) : shown.kind === 'grid' ? (
+              <SessionGrid sessions={shown.sessions} focusedId={shown.focused.id} view={gridView} onViewChange={changeGridView} onFocusPane={setFocused} overlayOpen={paletteOpen || !!quickNew || !!confirmRemove} />
+            ) : shown.kind === 'session' && shown.session.lastStatus === 'running' ? (
+              <TerminalView key={shown.session.id} sessionId={shown.session.id} active={!paletteOpen && !quickNew && !confirmRemove} />
+            ) : shown.kind === 'session' ? (
+              <div className={s.ended}>
+                <div className={s.endedTitle}>Session ended</div>
+                <div className={s.endedActions}>
+                  {shown.session.kind !== 'terminal' && (
+                    <Button icon="resume" variant="primary" onClick={() => void window.api.invoke('session:resume', { id: shown.session.id })}>Resume</Button>
+                  )}
+                  <Button icon="trash" onClick={() => void window.api.invoke('session:remove', { id: shown.session.id })}>Remove</Button>
+                </div>
+              </div>
+            ) : (
+              <div className={s.empty}>Add a project with the folder ＋ in the sidebar</div>
+            )}
+          </>
+        }
+        viewer={v?.kind === 'diff' ? (
+          <DiffViewer diff={diff} sessionId={v.sessionId} label={sessions.find((x) => x.id === v.sessionId)?.label ?? 'session'}
+            expanded={ui.viewerExpanded} onOpenRendered={(projectId, r) => openRendered(projectId, v.sessionId, r)}
+            onToggleExpanded={toggleViewerExpanded} onClose={closeViewer} />
+        ) : v ? (
+          <ArtifactViewer target={v} dir={viewerDir} groups={viewerFeature ? viewableFiles(viewerFeature, features.stages) : []}
+            mtimeMs={viewerFeature ? viewerFeature.artifacts.find((a) => viewerDir + a.name === v.path)?.mtimeMs : undefined}
+            expanded={ui.viewerExpanded} onToggleExpanded={toggleViewerExpanded} onReload={reloadViewer}
+            onOpen={(path) => openArtifact({ ...v, path, hash: null })}
+            onBack={v.fromDiff ? () => backToDiff(v.fromDiff!) : undefined} onClose={closeViewer} />
+        ) : undefined}
+        sidebarWidth={ui.sidebarCollapsed ? SIDEBAR_RAIL_WIDTH : SIDEBAR_WIDTH}
+        viewerWidth={ui.viewerWidth}
+        viewerExpanded={ui.viewerExpanded}
+        onViewerWidth={setViewerWidth}
+      />
+      {paletteOpen && (
+        <CommandPalette onClose={() => setPaletteOpen(false)}
+          items={paletteItems({ projects, sessions, features: features.items, grid: ui.grid, gridShown: gridShown(ui) }, { focusSession: setFocused, focusFeature, openProject, runAction })} />
+      )}
+      {confirmRemove && (
+        <ConfirmDialog
+          title="Remove session"
+          body={`Remove session ${confirmRemove.label}? It will be ended and can't be resumed.`}
+          confirmLabel="Remove"
+          onConfirm={() => {
+            void window.api.invoke('session:remove', { id: confirmRemove.id })
+            setConfirmRemove(null)
           }}
-        >
-          <TerminalPanel visible={terminalPanelOpen} />
-        </div>
-      </div>
-      <ConfirmDialog />
-      <LaunchModal />
-      <ShortcutsModal />
-      <TaskSwitcherModal />
-      <HelpButton />
-    </div>
-  );
+          onCancel={() => setConfirmRemove(null)}
+        />
+      )}
+      {quickNew && (
+        <CommandPalette onClose={() => setQuickNew(null)} placeholder="New session — pick a kind…"
+          items={newSessionItems(projects, quickNew.projectId, createSession)} />
+      )}
+    </>
+  )
 }
-
-function App(): React.JSX.Element {
-  return (
-    <ErrorBoundary>
-      <AppContent />
-    </ErrorBoundary>
-  );
-}
-
-export default App;

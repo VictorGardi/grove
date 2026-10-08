@@ -1,0 +1,133 @@
+.toolbar {
+  flex: none;
+  display: flex;
+  align-items: center;
+  gap: var(--sp-2);
+  padding: var(--sp-1) var(--sp-2);
+  border-bottom: 1px solid var(--card-border);
+  font-size: var(--fs-sm);
+  min-width: 0;
+}
+
+.tabs {
+  display: flex;
+  gap: var(--sp-1);
+  min-width: 0;
+  overflow-x: auto;
+}
+
+.tab {
+  flex: none;
+  font: inherit;
+  color: var(--text-2);
+  background: transparent;
+  border: 1px solid transparent;
+  border-radius: var(--r-card);
+  padding: 2px var(--sp-2);
+  cursor: pointer;
+}
+
+.tab:hover {
+  color: var(--text);
+}
+
+.active {
+  color: var(--text);
+  border-color: var(--card-selected-border);
+}
+
+.count {
+  color: var(--text-2);
+}
+
+.spacer {
+  flex: 1;
+}
+
+.size {
+  position: relative;
+}
+
+.popover {
+  position: absolute;
+  top: calc(100% + var(--sp-2));
+  right: 0;
+  z-index: 20;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: var(--sp-2);
+  padding: var(--sp-3);
+  background: var(--card-bg);
+  border: 1px solid var(--card-border);
+  border-radius: var(--r-card);
+  box-shadow: 0 6px 20px rgb(0 0 0 / 0.4);
+}
+
+.cells {
+  display: grid;
+  grid-template-columns: repeat(4, 24px);
+  gap: var(--sp-1);
+}
+
+.cell {
+  width: 24px;
+  height: 24px;
+  padding: 0;
+  background: var(--card-border);
+  border: 1px solid transparent;
+  border-radius: 3px;
+  cursor: pointer;
+}
+
+.cell.on {
+  background: transparent;
+  border-color: var(--text);
+}
+
+.shape {
+  color: var(--text-2);
+}
+
+.auto {
+  font: inherit;
+  font-size: var(--fs-sm);
+  color: var(--text-2);
+  background: transparent;
+  border: 0;
+  cursor: pointer;
+}
+
+.auto:hover,
+.autoOn {
+  color: var(--text);
+}
+
+/* a thin track with a small thumb, so the slider does not take over the toolbar */
+.slider {
+  appearance: none;
+  width: 64px;
+  height: 14px;
+  margin: 0;
+  background: transparent;
+  cursor: pointer;
+}
+
+.slider::-webkit-slider-runnable-track {
+  height: 2px;
+  border-radius: 1px;
+  background: var(--card-border);
+}
+
+.slider::-webkit-slider-thumb {
+  appearance: none;
+  width: 10px;
+  height: 10px;
+  margin-top: -4px;
+  border-radius: 50%;
+  background: var(--text-2);
+}
+
+.slider:hover::-webkit-slider-thumb {
+  background: var(--text);
+}
