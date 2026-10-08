@@ -16,3 +16,4 @@ so parallel sessions don't share one diff").
 ## Flow log
 
 - 2026-10-08: standard (size M, investigation only — no questions phase run yet)
+- 2026-10-08: standard (size M, questions phase complete — modeling: plain Session.cwd; CLI-only v1; keep-until-merged; hidden cache dir; --branch as-is; auto submodule update)

@@ -3,7 +3,6 @@
   min-height: 0;
   display: flex;
   flex-direction: column;
-  --pane-focus: color-mix(in srgb, var(--accent) 50%, var(--card-border)); /* the accent, softened */
 }
 
 .none {
@@ -36,7 +35,7 @@
 
 /* the focused pane stands out; the rest are dimmed and hover does not undim them */
 .focused {
-  border-color: var(--pane-focus);
+  border-color: var(--focus-border);
 }
 
 .dim {

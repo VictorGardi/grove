@@ -21,6 +21,8 @@ export function buildMenu(send: (a: MenuAction) => void, installCli: () => void)
       submenu: [
         { label: 'New Session', accelerator: 'CmdOrCtrl+T', click: () => send({ type: 'newSession' }) },
         { label: 'New Terminal', accelerator: 'CmdOrCtrl+J', click: () => send({ type: 'newTerminal' }) },
+        { type: 'separator' },
+        { label: 'Scratchpad', accelerator: 'CmdOrCtrl+N', click: () => send({ type: 'scratchpad' }) },
         { label: 'Remove Session', accelerator: 'CmdOrCtrl+W', click: () => send({ type: 'closeSession' }) },
       ],
     },

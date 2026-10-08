@@ -27,3 +27,8 @@
 .md {
   width: 520px;
 }
+
+.lg {
+  width: 90vw;
+  max-width: 900px;
+}

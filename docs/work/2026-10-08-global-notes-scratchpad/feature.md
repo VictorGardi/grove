@@ -1,7 +1,7 @@
 ---
 kind: feature
 created: 2026-10-08
-phase: questions
+phase: implementation
 status: draft
 version: 1
 flow: small

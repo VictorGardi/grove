@@ -5,6 +5,7 @@ export type MenuAction =
   | { type: 'newSession' } | { type: 'closeSession' } | { type: 'focusIndex'; n: number } | { type: 'projectBoard' }
   | { type: 'sessionDiff' } | { type: 'toggleSidebar' } | { type: 'addToGrid' }
   | { type: 'newTerminal' } | { type: 'lastSession' } | { type: 'palette' } | { type: 'toggleGrid' } | { type: 'clearGrid' }
+  | { type: 'scratchpad' }
 // invoke channels: name → [args, result data]
 export interface InvokeMap {
   'state:get': [void, Slices]
@@ -26,6 +27,8 @@ export interface InvokeMap {
   'session:focusLast': [void, { id: string }]
   'viewer:reload': [void, void]
   'pty:attach': [{ sessionId: string; cols: number; rows: number }, { attachId: string }]
+  'notes:read': [void, string]
+  'notes:write': [{ content: string }, void]
 }
 // fire-and-forget renderer → main
 export interface SendMap {

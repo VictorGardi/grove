@@ -1,6 +1,6 @@
 ---
 phase: research
-status: draft
+status: approved
 version: 1
 based_on: []
 repo_heads: ["feature/xirp"]

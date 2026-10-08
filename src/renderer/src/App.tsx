@@ -27,6 +27,7 @@ import { serviceBanners } from './sessionStatus'
 import { sessionDiffShortcut, type HiddenRenderedViewer } from './sessionDiffShortcut'
 import { useSlices } from './stores/slices'
 import { featureDir, featureOfFile, viewableFiles } from './viewerFiles'
+import { ScratchpadOverlay } from './components/ScratchpadOverlay'
 import s from './App.module.css'
 
 export default function App() {
@@ -36,6 +37,7 @@ export default function App() {
   const [confirmRemove, setConfirmRemove] = useState<Session | null>(null) // ⌘W asks first
   const [paletteOpen, setPaletteOpen] = useState(false)
   const [gridView, setGridView] = useState<GridView>(DEFAULT_GRID_VIEW) // toolbar settings, view-only
+  const [scratchpadOpen, setScratchpadOpen] = useState(false) // ⌘N: global notes, not persisted
   const hiddenRendered = useRef<HiddenRenderedViewer | null>(null)
 
   useEffect(() => {
@@ -93,6 +95,8 @@ export default function App() {
       if (to) go(to)
     } else if (a.type === 'sessionDiff') {
       if (ui.focusedSessionId) toggleSessionDiff(ui.focusedSessionId, ui.viewer)
+    } else if (a.type === 'scratchpad') {
+      setScratchpadOpen((o) => !o)
     }
   }, [setFocused, go, toggleSessionDiff, toggleGrid, addFocusedToGrid, toggleSidebar, clearGrid, gridView])
 
@@ -218,6 +222,7 @@ export default function App() {
         <CommandPalette onClose={() => setQuickNew(null)} placeholder="New session — pick a kind…"
           items={newSessionItems(projects, quickNew.projectId, createSession)} />
       )}
+      {scratchpadOpen && <ScratchpadOverlay onClose={() => setScratchpadOpen(false)} />}
     </>
   )
 }

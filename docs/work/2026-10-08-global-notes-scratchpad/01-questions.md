@@ -1,8 +1,9 @@
 ---
 phase: questions
-status: draft
+status: approved
 version: 1
 based_on: feature.md
+approved_at: 2026-10-08
 ---
 
 # Global notes scratchpad
@@ -34,7 +35,7 @@ Add a lightweight, always-accessible personal notes overlay to grove for capturi
 
 1. **Shortcut choice** — answered: **Cmd+N** (no clash in `src/main/menu.ts`: Cmd+T/J/W/1-9/B/Shift+B/Alt+B/G/Shift+G/K are taken).
 2. **Save behavior on unsaved changes** — answered: **autosave**. Debounced save plus flush on close and quit, no warning dialog.
-3. **Search/filter in v1**: should the notes overlay have a search bar, or just the editor?
+3. **Search/filter in v1** — answered: **just the editor** (no search bar). Users can use Cmd+F in the editor or scroll.
 4. ~~Markdown preview / clickable checkboxes~~ — settled in the grill session: source mode with live styling, `- [ ]` clickable in the editor, no preview pane.
 
 ## Size verdict
@@ -45,7 +46,12 @@ Add a lightweight, always-accessible personal notes overlay to grove for capturi
 
 ## Open questions
 
-(none — all decisions made in grill session)
+(none — all decisions made in grill session + follow-up)
+
+## Flow log
+
+- 2026-10-08: small (all decisions made in grill session, confirmed)
+- 2026-10-08: search bar = just the editor (no search)
 
 ## Flow log
 

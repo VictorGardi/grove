@@ -1,10 +1,13 @@
 import { randomUUID } from 'node:crypto'
-import { BrowserWindow, dialog, ipcMain } from 'electron'
+import fs from 'node:fs'
+import path from 'node:path'
+import { app, BrowserWindow, dialog, ipcMain } from 'electron'
 import { ARTIFACT_SCHEME } from '@shared/artifactUrl'
 import type { InvokeMap, PushMap, Result, SendMap } from '@shared/ipc'
 import type { Slices } from '@shared/types'
 import type { AttachHandle } from '../core/backend/types'
 import type { Core } from '../core/core'
+import { atomicWrite } from '../core/store/jsonFile'
 
 type Handler<K extends keyof InvokeMap> = (arg: InvokeMap[K][0]) => Promise<InvokeMap[K][1] | Result<InvokeMap[K][1]>> | InvokeMap[K][1]
 
@@ -55,6 +58,21 @@ export function registerIpc(core: Core, getWindow: () => BrowserWindow | null, g
     const win = getWindow()
     if (!win || win.isDestroyed()) return
     for (const f of win.webContents.mainFrame.framesInSubtree) if (f.url.startsWith(`${ARTIFACT_SCHEME}:`)) f.reload()
+  })
+
+  const notesPath = path.join(app.getPath('userData'), 'notes.md')
+
+  handle('notes:read', () => {
+    try {
+      return fs.readFileSync(notesPath, 'utf8')
+    } catch (e) {
+      if ((e as NodeJS.ErrnoException).code === 'ENOENT') return ''
+      throw e
+    }
+  })
+
+  handle('notes:write', ({ content }) => {
+    atomicWrite(notesPath, content)
   })
 
   const attaches = new Map<string, AttachHandle>()

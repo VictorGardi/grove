@@ -5,7 +5,7 @@ import s from './Modal.module.css'
 interface Props {
   onClose: () => void
   onConfirm?: () => void
-  width?: 'sm' | 'md'
+  width?: 'sm' | 'md' | 'lg'
   children: ReactNode
 }
 

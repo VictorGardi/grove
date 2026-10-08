@@ -33,6 +33,7 @@ export const PALETTE_COMMANDS: { id: string; label: string; hint?: string; actio
   { id: 'toggleGrid', label: 'Show grid', hint: '⌘G', action: { type: 'toggleGrid' } }, // reads Hide grid while it shows
   { id: 'addToGrid', label: 'Add session to grid and show', hint: '⇧⌘G', action: { type: 'addToGrid' } },
   { id: 'clearGrid', label: 'Clear grid', action: { type: 'clearGrid' } },
+  { id: 'scratchpad', label: 'Scratchpad', hint: '⌘N', action: { type: 'scratchpad' } },
 ]
 
 // ⌘T: one entry per session kind and project, the current project's first. With several projects the name is in

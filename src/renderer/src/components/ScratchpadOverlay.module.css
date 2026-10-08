@@ -1,0 +1,44 @@
+.overlay {
+  display: flex;
+  flex-direction: column;
+  gap: var(--sp-3);
+  height: 70vh;
+  min-height: 0;
+}
+
+.header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+}
+
+.header h2 {
+  margin: 0;
+  font-size: 15px;
+  font-weight: 600;
+  color: var(--text);
+}
+
+.actions {
+  display: flex;
+  gap: var(--sp-1);
+}
+
+.footer {
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  gap: var(--sp-1);
+  color: var(--text-3);
+  font-size: 12px;
+}
+
+.footer kbd {
+  background: var(--card-bg);
+  border: 1px solid var(--card-border);
+  border-radius: var(--r-card);
+  padding: 1px 5px;
+  color: var(--text-2);
+  font-family: var(--font-ui);
+  font-size: 11px;
+}

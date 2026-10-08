@@ -14,3 +14,4 @@ generation, not a default for every session.
 ## Flow log
 
 - 2026-10-08: standard (size S/M, investigation only — no questions phase run yet)
+- 2026-10-08: questions approved — Apple `container` CLI, macOS-only, toggle at creation, `sbx` allow-list reference, bind-mount all needed paths, independent of worktree feature

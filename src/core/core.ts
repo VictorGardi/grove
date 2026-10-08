@@ -170,6 +170,11 @@ export function createCore(opts: CoreOptions): Core {
       GROVE_SESSION_ID: session.id,
       GROVE_SOCKET: e.socketPath,
       ...(session.kind === 'terminal' && { PATH: `${e.binDir}:${minimalEnv(process.env).PATH}` }),
+      // OpenCode's TUI tabs and theme are overridden inside grove's own session UI;
+      // the inline cli settings merge over the user's global cli.json.
+      ...(session.kind === 'opencode' && {
+        OPENCODE_CLI_CONFIG_CONTENT: JSON.stringify({ tabs: { mode: 'off' }, theme: { name: 'tokyonight', mode: 'dark' } }),
+      }),
     }
   }
   const shellOpts = () => ({ pathPrefix: opts.sessionEnv?.binDir })

@@ -26,9 +26,14 @@ describe('GROVE_* session env', () => {
     const core = t.make(undefined, { sessionEnv })
     await core.start()
     const s = await createOpenCode(core)
-    expect(created().env).toEqual({ GROVE_SESSION_ID: s.id, GROVE_SOCKET: '/s.sock' })
+    expect(created().env).toEqual({
+      GROVE_SESSION_ID: s.id,
+      GROVE_SOCKET: '/s.sock',
+      OPENCODE_CLI_CONFIG_CONTENT: '{"tabs":{"mode":"off"},"theme":{"name":"tokyonight","mode":"dark"}}',
+    })
     expect(created().argv![4]).toMatch(/^export PATH=\/bin:"\$PATH"; exec /)
     await createClaude(core)
+    expect(created().env).toEqual({ GROVE_SESSION_ID: expect.any(String), GROVE_SOCKET: '/s.sock' })
     expect(created().argv![4]).toMatch(/^export PATH=\/bin:"\$PATH"; exec /)
   })
 
