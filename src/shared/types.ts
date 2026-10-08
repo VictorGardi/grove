@@ -18,6 +18,7 @@ export interface Session {
   endedAt: string | null           // ISO, set when first seen gone
   lastStatus: 'running' | 'gone'
   seenAt: string | null           // ISO, when the human last saw it (on screen); persisted
+  lastFocusedAt?: string | null   // ISO, when the human last focused it (any kind); persisted; orders the palette
   branch?: string | null           // live sessions: branch at the pane's current directory; never saved
   status?: 'working' | 'waiting' | 'idle' // OpenCode sessions while the service is connected; never saved
   waitingFor?: 'permission' | 'question' | 'done' // with status 'waiting'; never saved

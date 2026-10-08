@@ -21,6 +21,8 @@ export function TerminalView({ sessionId, active, onFocus }: { sessionId: string
       fontSize: 13,
       lineHeight: 1.35,
     })
+    // ⌃Tab is the Last Session menu accelerator: xterm would otherwise send it to the shell and swallow it.
+    term.attachCustomKeyEventHandler((e) => !(e.ctrlKey && e.key === 'Tab'))
     // tmux has the mouse, so a drag selects in tmux and it copies with OSC 52 ("52;c;<base64>").
     term.parser.registerOscHandler(52, (data) => {
       const b64 = data.slice(data.indexOf(';') + 1)

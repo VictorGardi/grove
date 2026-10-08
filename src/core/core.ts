@@ -74,6 +74,7 @@ export interface Commands {
   sessionRename(a: { id: string; label: string }): Promise<Result<Session>>
   sessionLink(a: { id: string; feature: string | null }): Promise<Result<Session>>
   uiSet(partial: Partial<UiState>): Promise<Result<UiState>>
+  sessionFocusLast(): Promise<Result<{ id: string }>> // the latest earlier session still valid; ⌃Tab
   commentAdd(a: { sessionId: string; anchor: CommentAnchor; body: string }): Promise<Result<Comment>>
   commentUpdate(a: { id: string; body: string }): Promise<Result<Comment>>
   commentDelete(a: { id: string }): Promise<Result<{ id: string }>>
@@ -704,10 +705,24 @@ export function createCore(opts: CoreOptions): Core {
       if (partial.focusedFeature) Object.assign(next, { focusedSessionId: null, focusedProject: null })
       if (partial.focusedProject) Object.assign(next, { focusedSessionId: null, focusedFeature: null })
       if (!sameFocus(focusOf(slices.ui), focusOf(next))) rememberFocus(focusOf(slices.ui))
+      const entered = partial.focusedSessionId && partial.focusedSessionId !== slices.ui.focusedSessionId ? findSession(partial.focusedSessionId) : undefined
+      if (entered) replaceSession({ ...entered, lastFocusedAt: now().toISOString() })
       set('ui', next)
       refreshStatus() // the on-screen session may have changed
       syncDiff()
       return { ok: true, data: slices.ui }
+    },
+
+    async sessionFocusLast() {
+      const cur = slices.ui.focusedSessionId
+      for (let i = focusHistory.length - 1; i >= 0; i--) {
+        const id = focusHistory[i].focusedSessionId
+        if (id && id !== cur && findSession(id)) {
+          const r = await commands.uiSet({ focusedSessionId: id })
+          return r.ok ? { ok: true, data: { id } } : r
+        }
+      }
+      return { ok: false, error: 'not-found' }
     },
 
     async commentAdd({ sessionId, anchor, body }) {

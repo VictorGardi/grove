@@ -67,6 +67,8 @@ export default function App() {
     else if (a.type === 'closeSession') {
       const focused = sessions.find((x) => x.id === ui.focusedSessionId)
       if (focused) setConfirmRemove(focused)
+    } else if (a.type === 'lastSession') {
+      void window.api.invoke('session:focusLast')
     } else if (a.type === 'focusIndex') {
       const target = focusTarget(ui, projects, sessions, features.items, a.n, gridView)
       if (target) setFocused(target.id)

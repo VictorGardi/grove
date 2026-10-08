@@ -22,10 +22,16 @@ describe('paletteItems', () => {
     expect(all[3]).toMatchObject({ label: 'Session grid', detail: 'grove · Done' })
   })
 
+  it('orders sessions by last focus, newest first; never-focused keep list order', () => {
+    const list = [session('a', 'a'), session('b', 'b', { lastFocusedAt: '2026-10-08T10:00:00Z' }), session('c', 'c', { lastFocusedAt: '2026-10-08T11:00:00Z' }), session('d', 'd')]
+    const labels = paletteItems({ projects, sessions: list, features: [] }, actions()).filter((i) => i.kind === 'session').map((i) => i.label)
+    expect(labels).toEqual(['c', 'b', 'a', 'd'])
+  })
+
   it('lists the app commands, which run through runAction', () => {
     const a = actions()
     const cmds = paletteItems({ projects, sessions, features }, a).filter((i) => i.kind === 'command')
-    expect(cmds.map((c) => c.label)).toEqual(['New session', 'New terminal', 'Remove session', 'Session diff', 'Project board', 'Toggle sidebar', 'Show grid', 'Add session to grid and show', 'Clear grid'])
+    expect(cmds.map((c) => c.label)).toEqual(['New session', 'New terminal', 'Remove session', 'Session diff', 'Project board', 'Toggle sidebar', 'Last session', 'Show grid', 'Add session to grid and show', 'Clear grid'])
     cmds[1].run()
     expect(a.runAction).toHaveBeenCalledWith({ type: 'newTerminal' })
   })

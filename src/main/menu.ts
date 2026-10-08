@@ -38,11 +38,15 @@ export function buildMenu(send: (a: MenuAction) => void, installCli: () => void)
     },
     {
       label: 'Session',
-      submenu: Array.from({ length: 9 }, (_, i) => ({
-        label: `Session ${i + 1}`,
-        accelerator: `CmdOrCtrl+${i + 1}`,
-        click: () => send({ type: 'focusIndex', n: i + 1 }),
-      })),
+      submenu: [
+        ...Array.from({ length: 9 }, (_, i): MenuItemConstructorOptions => ({
+          label: `Session ${i + 1}`,
+          accelerator: `CmdOrCtrl+${i + 1}`,
+          click: () => send({ type: 'focusIndex', n: i + 1 }),
+        })),
+        { type: 'separator' },
+        { label: 'Last Session', accelerator: 'Ctrl+Tab', click: () => send({ type: 'lastSession' }) },
+      ],
     },
   ]
   const view: MenuItemConstructorOptions[] = [

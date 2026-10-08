@@ -4,7 +4,7 @@ export type Result<T> = { ok: true; data: T } | { ok: false; error: string }
 export type MenuAction =
   | { type: 'newSession' } | { type: 'closeSession' } | { type: 'focusIndex'; n: number } | { type: 'projectBoard' }
   | { type: 'sessionDiff' } | { type: 'toggleSidebar' } | { type: 'addToGrid' }
-  | { type: 'newTerminal' } | { type: 'palette' } | { type: 'toggleGrid' } | { type: 'clearGrid' }
+  | { type: 'newTerminal' } | { type: 'lastSession' } | { type: 'palette' } | { type: 'toggleGrid' } | { type: 'clearGrid' }
 // invoke channels: name → [args, result data]
 export interface InvokeMap {
   'state:get': [void, Slices]
@@ -22,6 +22,7 @@ export interface InvokeMap {
   'review:send': [{ sessionId: string }, { sent: number }]
   'diff:lines': [{ sessionId: string; path: string; from: number; to: number }, string[]]
   'ui:set': [Partial<UiState>, UiState]
+  'session:focusLast': [void, { id: string }]
   'viewer:reload': [void, void]
   'pty:attach': [{ sessionId: string; cols: number; rows: number }, { attachId: string }]
 }

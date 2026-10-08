@@ -29,6 +29,7 @@ export const PALETTE_COMMANDS: { id: string; label: string; hint?: string; actio
   { id: 'sessionDiff', label: 'Session diff', hint: '⌥⌘B', action: { type: 'sessionDiff' } },
   { id: 'projectBoard', label: 'Project board', hint: '⇧⌘B', action: { type: 'projectBoard' } },
   { id: 'toggleSidebar', label: 'Toggle sidebar', hint: '⌘B', action: { type: 'toggleSidebar' } },
+  { id: 'lastSession', label: 'Last session', hint: '⌃Tab', action: { type: 'lastSession' } },
   { id: 'toggleGrid', label: 'Show grid', hint: '⌘G', action: { type: 'toggleGrid' } }, // reads Hide grid while it shows
   { id: 'addToGrid', label: 'Add session to grid and show', hint: '⇧⌘G', action: { type: 'addToGrid' } },
   { id: 'clearGrid', label: 'Clear grid', action: { type: 'clearGrid' } },
@@ -62,7 +63,9 @@ export function paletteItems(
   actions: PaletteActions,
 ): PaletteItem[] {
   const projectName = (id: string) => data.projects.find((p) => p.id === id)?.name ?? id
-  const sessions: PaletteItem[] = data.sessions.map((s) => {
+  const recent = (s: Session) => s.lastFocusedAt ?? ''
+  const byRecent = [...data.sessions].sort((a, b) => recent(b).localeCompare(recent(a))) // stable: never-focused keep list order
+  const sessions: PaletteItem[] = byRecent.map((s) => {
     const status = shownStatus(s)
     return {
       id: `session:${s.id}`,
