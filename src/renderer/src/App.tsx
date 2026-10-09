@@ -15,7 +15,6 @@ import { AppShell } from './components/shell/AppShell'
 import { BoardSwitch } from './components/shell/BoardSwitch'
 import { ContextPopover } from './components/ContextGauge'
 import { ContentHeader } from './components/shell/ContentHeader'
-import { TopBar } from './components/shell/TopBar'
 import { Banner } from './components/ui/Banner'
 import { ConfirmDialog } from './components/ConfirmDialog'
 import { Button } from './components/ui/Button'
@@ -136,7 +135,6 @@ export default function App() {
   return (
     <>
       <AppShell
-        topBar={<TopBar />}
         banners={[
           ...errors.map((e, i) => <Banner key={i}>{e}</Banner>),
           ...(features.workflowError ? [<Banner key="workflow">Workflow: {features.workflowError}</Banner>] : []),

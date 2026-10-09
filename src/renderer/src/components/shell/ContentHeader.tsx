@@ -6,8 +6,8 @@ export interface HeaderCrumb { label: string; onClick?: () => void } // onClick:
 export function ContentHeader({ crumbs, after, right }: { crumbs: HeaderCrumb[]; after?: ReactNode; right?: ReactNode }) {
   const last = crumbs.length - 1
   return (
-    <header className={s.header}>
-      <div className={s.crumbs}>
+    <header className={`${s.header} app-drag`}>
+      <div className={`${s.crumbs} app-no-drag`}>
         {crumbs.map((c, i) => (i < last
           ? (
             <Fragment key={i}>
@@ -19,8 +19,8 @@ export function ContentHeader({ crumbs, after, right }: { crumbs: HeaderCrumb[];
           )
           : <span key={i} className={s.current}>{c.label}</span>))}
       </div>
-      {after}
-      {right && <div className={s.right}>{right}</div>}
+      {after && <div className="app-no-drag">{after}</div>}
+      {right && <div className={`${s.right} app-no-drag`}>{right}</div>}
     </header>
   )
 }

@@ -4,8 +4,7 @@ import s from './AppShell.module.css'
 
 const MIN = 320 // px, for both the viewer and the content beside it
 
-export function AppShell({ topBar, banners, sidebar, content, viewer, sidebarWidth, viewerWidth, viewerExpanded, onViewerWidth }: {
-  topBar: ReactNode
+export function AppShell({ banners, sidebar, content, viewer, sidebarWidth, viewerWidth, viewerExpanded, onViewerWidth }: {
   banners?: ReactNode
   sidebar: ReactNode
   content: ReactNode
@@ -40,7 +39,6 @@ export function AppShell({ topBar, banners, sidebar, content, viewer, sidebarWid
 
   return (
     <div className={s.shell} style={{ '--sidebar-w': `${sidebarWidth}px`, '--viewer-w': viewerWidthValue } as CSSProperties}>
-      {topBar}
       {banners}
       <div className={cx(s.body, !!viewer && viewerExpanded && s.expanded)}>
         <aside className={s.sidebar}>{sidebar}</aside>

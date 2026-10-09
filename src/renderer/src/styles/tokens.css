@@ -98,9 +98,7 @@
   --r-pill: 999px;
 
   /* sizes */
-  --topbar-h: 36px;
   --header-h: 47px;
-  --traffic-inset: var(--sp-4);
   --sidebar-w: 220px; /* overridden at runtime from ui.sidebarWidth */
   --focus-border: color-mix(in srgb, var(--accent) 50%, var(--card-border)); /* the accent, softened: focused grid pane, scratchpad */
   --pane-dim: 0.65; /* opacity of unfocused panes in the session grid */
