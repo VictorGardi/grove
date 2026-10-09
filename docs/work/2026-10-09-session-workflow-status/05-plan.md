@@ -22,6 +22,9 @@ Re-planned: the original section added a new marker control beside the card's
 and this slice is written against it — the marker replaces the `icon` slot on
 every session kind.
 
+Re-planned again after the rail was found cluttered: `03-design.md` is now v3,
+and the marker is no longer added to the collapsed sidebar rail.
+
 ## Slice 1 — Persist and edit workflow status
 
 - [ ] Write a failing test in `src/core/store/stateStore.test.ts`: a file written with `schemaVersion: 7` and one session loads as `schemaVersion: 8` with that session's `workflowStatus` equal to `'in-progress'`.
@@ -42,8 +45,7 @@ every session kind.
 - [ ] In `src/renderer/src/components/ui/ListRow.tsx`, keep the `icon` prop and render it unchanged; the button is passed in as `icon` by the callers.
 - [ ] In `src/renderer/src/components/Sidebar.tsx`, replace the `icon={...}` expression in `SessionCard` (lines 58-60) with the picker button for every session kind, holding its open state in `SessionCard`; on pick, call `window.api.invoke('session:workflowStatus', { id: s.id, status })`.
 - [ ] In `src/renderer/src/components/SessionsBoard.tsx`, replace `icon={<Icon name={x.kind} size={14} />}` (line 41) with the same picker button, wired to the same invoke.
-- [ ] In `src/renderer/src/components/SidebarRail.tsx`, render the picker button in the tile's top-left corner, before the centred kind glyph, wired to the same invoke.
-- [ ] Add a `.statusCorner` rule to `src/renderer/src/components/SidebarRail.module.css` positioning the marker at the tile's top-left, and keep the existing `.dot` (bottom-right) and `.grid` (bottom-left) rules as they are.
+- [ ] Leave `src/renderer/src/components/SidebarRail.tsx` and its stylesheet unchanged: the collapsed tile keeps its centred kind glyph, its bottom-right live dot and its bottom-left grid square, with no status marker.
 - [ ] Remove the now-unused `iconAgent`, `iconDone`, `iconGone` and `iconTerminal` rules from `src/renderer/src/components/Sidebar.module.css`, and the now-unused `done`, `shown` and `agent` locals in `SessionCard` only if nothing else reads them.
 - [ ] Run `npm test -- src/core/store/stateStore.test.ts src/core/sessions.test.ts src/renderer/src/workflowStatus.test.ts`.
 - [ ] Run `npm run typecheck`.
