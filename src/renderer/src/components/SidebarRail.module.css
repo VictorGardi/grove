@@ -106,15 +106,6 @@
   opacity: 0.45;
 }
 
-/* the workflow-status marker, in the corner the tile's top-left leaves free */
-.statusCorner {
-  position: absolute;
-  top: 2px;
-  left: 2px;
-  z-index: 1;
-  display: flex;
-}
-
 /* status: a dot on the tile's corner */
 .dot {
   position: absolute;

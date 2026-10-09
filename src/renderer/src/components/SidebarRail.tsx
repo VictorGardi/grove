@@ -7,7 +7,6 @@ import { sessionGroups } from '../tree'
 import { cx } from './ui/cx'
 import { Icon } from './ui/Icon'
 import { tagClass } from './ui/Tag'
-import { WorkflowStatusButton } from './ui/WorkflowStatusPicker'
 import css from './SidebarRail.module.css'
 
 // The collapsed sidebar (⌘B): a tile per session, grouped by project colour. Same state as the full sidebar.
@@ -18,9 +17,6 @@ function Tile({ s, focused, inGrid, onFocus }: { s: Session; focused: boolean; i
   return (
     <button type="button" className={cx(css.tile, focused && css.focused, shown === 'gone' && css.ended)}
       aria-pressed={focused} aria-label={s.label} title={`${s.label} · ${shown}`} onClick={onFocus}>
-      <span className={css.statusCorner} onClick={(e) => e.stopPropagation()}>
-        <WorkflowStatusButton session={s} size={13} />
-      </span>
       <Icon name={s.kind} size={16} />
       <span className={cx(css.dot, css[tone])} />
       {inGrid && <span className={css.grid} />}
