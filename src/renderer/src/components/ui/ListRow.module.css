@@ -38,15 +38,6 @@
   box-shadow: 0 0 var(--card-glow) var(--card-finished-border);
 }
 
-.muted {
-  background: transparent;
-}
-
-.muted .title {
-  color: var(--text-2);
-  font-weight: var(--fw-semibold);
-}
-
 .picked,
 .picked:hover {
   background: var(--card-selected-bg);

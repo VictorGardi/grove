@@ -11,7 +11,7 @@ interface Props {
   meta?: ReactNode
   status?: { label: string; tone: StatusTone }
   picked?: boolean // part of a multi-selection
-  tone?: 'default' | 'selected' | 'waiting' | 'finished' | 'muted'
+  tone?: 'default' | 'selected' | 'waiting' | 'finished'
   compact?: boolean
   actions?: ReactNode // floating buttons on the card's top-right corner, shown on hover
   badge?: ReactNode // right of the title

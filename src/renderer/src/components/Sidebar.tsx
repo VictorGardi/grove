@@ -28,7 +28,7 @@ function toggle(set: Set<string>, id: string): Set<string> {
 function SessionCard({ s, feature, focused, picked, compact, inGrid, gridOn, gridFull, onToggleGrid, onFocus, onOpenFeature, onToggleCompact, onLink, onRemove, onContextMenu }: {
   s: Session
   feature: Feature | null // the linked feature, if it exists
-  focused: boolean // a focused card shows selected; otherwise terminals are muted
+  focused: boolean // a focused card shows selected
   picked: boolean // in the shift-click multi-selection
   compact: boolean
   inGrid: boolean // a member of the session grid
@@ -59,7 +59,6 @@ function SessionCard({ s, feature, focused, picked, compact, inGrid, gridOn, gri
       }
       cornerPinned={inGrid && gridOn}
       icon={<WorkflowStatusButton session={s} />}
-      badge={needsYou && <Icon name="agent-alert" size={13} className={css.iconAgent} />}
       meta={s.branch && (
         <div className={css.cardInfo}>
           <div className={css.branchLine}>
@@ -69,7 +68,7 @@ function SessionCard({ s, feature, focused, picked, compact, inGrid, gridOn, gri
         </div>
       )}
       status={{ ...statusView(s), tone: statusTone(s) }}
-      tone={focused ? 'selected' : needsYou ? 'waiting' : s.kind === 'terminal' ? 'muted' : 'default'}
+      tone={focused ? 'selected' : needsYou ? 'waiting' : 'default'}
       picked={picked}
       compact={compact}
       onClick={onFocus}

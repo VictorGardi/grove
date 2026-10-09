@@ -3,7 +3,7 @@ import type { ReactNode } from 'react'
 export type IconName =
   | 'plus' | 'folder' | 'folder-plus' | 'chevron-down' | 'chevron-up' | 'chevron-right'
   | 'terminal' | 'opencode' | 'claude' | 'branch' | 'search' | 'info' | 'trash'
-  | 'minimize' | 'maximize' | 'x' | 'link' | 'resume' | 'minus' | 'agent' | 'agent-done' | 'agent-alert' | 'chevrons-down-up' | 'chevrons-up-down' | 'check' | 'grid' | 'eye' | 'eye-off' | 'sidebar' | 'sliders'
+  | 'minimize' | 'maximize' | 'x' | 'link' | 'resume' | 'minus' | 'chevrons-down-up' | 'chevrons-up-down' | 'check' | 'grid' | 'eye' | 'eye-off' | 'sidebar' | 'sliders'
 
 const folder = 'M20 20a2 2 0 0 0 2-2V8a2 2 0 0 0-2-2h-7.9a2 2 0 0 1-1.69-.9L9.6 3.9A2 2 0 0 0 7.93 3H4a2 2 0 0 0-2 2v13a2 2 0 0 0 2 2Z'
 
@@ -13,9 +13,6 @@ const shapes: Record<IconName, ReactNode> = {
   minus: <path d="M5 12h14" />,
   check: <path d="M20 6 9 17l-5-5" />,
   grid: <><rect x="3" y="3" width="7" height="7" rx="1" /><rect x="14" y="3" width="7" height="7" rx="1" /><rect x="3" y="14" width="7" height="7" rx="1" /><rect x="14" y="14" width="7" height="7" rx="1" /></>,
-  agent: <><circle cx="12" cy="12" r="9" /><path d="M12 3a9 9 0 0 1 0 18Z" fill="currentColor" /></>,
-  'agent-done': <><circle cx="12" cy="12" r="10" fill="currentColor" stroke="none" /><path d="m7.5 12.5 3 3 6-6.5" stroke="var(--text)" strokeWidth={2} /></>,
-  'agent-alert': <><circle cx="12" cy="12" r="9" /><path d="M12 7.5v5" /><path d="M12 16.2v.1" strokeWidth={2} /></>,
   plus: <><path d="M5 12h14" /><path d="M12 5v14" /></>,
   'chevrons-down-up': <><path d="m7 20 5-5 5 5" /><path d="m7 4 5 5 5-5" /></>,
   'chevrons-up-down': <><path d="m7 15 5 5 5-5" /><path d="m7 9 5-5 5 5" /></>,
