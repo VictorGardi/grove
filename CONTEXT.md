@@ -30,6 +30,16 @@ specific meaning, so humans and agents stay consistent.
 - **Agent source**: the per-kind adapter that reports agent events (turn
   start/end, pending permission or question, writes) to core; one per agent
   kind, each with its own connect and re-sync state (ADR 0019).
+- **Sandboxed session**: an agent session whose process runs inside an Apple
+  `container` Linux VM rather than on the host. Chosen per session at creation
+  and persisted, so resuming it stays sandboxed (ADR 0033). Its working
+  directory and a fixed mount set appear inside at their host-identical paths;
+  nothing else of the host does (ADR 0035). Filesystem isolation only — no
+  egress restriction (ADR 0036).
+- **Sandbox spec**: the image, mounts, env and workdir that `src/core/sandbox/`
+  derives from a session and turns into the pane's `container run …` argv. The
+  container is named after the tmux session, so a leftover is traceable
+  (ADR 0034).
 - **Hook spool**: the app-owned file `<userData>/agents/claude/<id>.jsonl` that
   a Claude session's per-launch hooks append to, and the Claude source tails
   (ADR 0016).

@@ -3,7 +3,7 @@ import type { ReactNode } from 'react'
 export type IconName =
   | 'plus' | 'folder' | 'folder-plus' | 'chevron-down' | 'chevron-up' | 'chevron-right'
   | 'terminal' | 'opencode' | 'claude' | 'branch' | 'search' | 'info' | 'trash'
-  | 'minimize' | 'maximize' | 'x' | 'link' | 'resume' | 'minus' | 'agent' | 'agent-done' | 'agent-alert' | 'chevrons-down-up' | 'chevrons-up-down' | 'check' | 'grid' | 'eye' | 'eye-off' | 'sidebar'
+  | 'minimize' | 'maximize' | 'x' | 'link' | 'resume' | 'minus' | 'agent' | 'agent-done' | 'agent-alert' | 'chevrons-down-up' | 'chevrons-up-down' | 'check' | 'grid' | 'eye' | 'eye-off' | 'sidebar' | 'sliders'
 
 const folder = 'M20 20a2 2 0 0 0 2-2V8a2 2 0 0 0-2-2h-7.9a2 2 0 0 1-1.69-.9L9.6 3.9A2 2 0 0 0 7.93 3H4a2 2 0 0 0-2 2v13a2 2 0 0 0 2 2Z'
 
@@ -33,7 +33,8 @@ const shapes: Record<IconName, ReactNode> = {
   info: <><circle cx="12" cy="12" r="10" /><path d="M12 16v-4" /><path d="M12 8h.01" /></>,
   trash: <><path d="M3 6h18" /><path d="M19 6v14c0 1-1 2-2 2H7c-1 0-2-1-2-2V6" /><path d="M8 6V4c0-1 1-2 2-2h4c1 0 2 1 2 2v2" /></>,
   minimize: <><path d="M4 14h6v6" /><path d="M20 10h-6V4" /><path d="m14 10 7-7" /><path d="m3 21 7-7" /></>,
-  eye: <><path d="M2.06 12.35a1 1 0 0 1 0-.7 10.75 10.75 0 0 1 19.88 0 1 1 0 0 1 0 .7 10.75 10.75 0 0 1-19.88 0" /><circle cx="12" cy="12" r="3" /></>,
+  sliders: <><line x1="21" x2="14" y1="4" y2="4" /><line x1="10" x2="3" y1="4" y2="4" /><line x1="21" x2="12" y1="12" y2="12" /><line x1="8" x2="3" y1="12" y2="12" /><line x1="21" x2="16" y1="20" y2="20" /><line x1="12" x2="3" y1="20" y2="20" /><line x1="14" x2="14" y1="2" y2="6" /><line x1="8" x2="8" y1="10" y2="14" /><line x1="16" x2="16" y1="18" y2="22" /></>,
+  eye: <path d="M2 12s3.5-7 10-7 10 7 10 7-3.5 7-10 7-10-7-10-7Z" />,
   'eye-off': <><path d="M10.73 5.08A10.43 10.43 0 0 1 12 5c7 0 10 7 10 7a13.16 13.16 0 0 1-1.67 2.68" /><path d="M6.61 6.61A13.53 13.53 0 0 0 2 12s3 7 10 7a9.74 9.74 0 0 0 5.39-1.61" /><path d="M2 2l20 20" /></>,
   maximize: <><path d="M15 3h6v6" /><path d="M9 21H3v-6" /><path d="m21 3-7 7" /><path d="m3 21 7-7" /></>,
   x: <><path d="M18 6 6 18" /><path d="m6 6 12 12" /></>,

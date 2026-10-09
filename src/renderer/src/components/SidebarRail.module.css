@@ -58,20 +58,33 @@
   gap: var(--sp-3);
 }
 
+/* a group of tiles, in a row: an optional colour bar, then the tiles */
 .group {
+  display: flex;
+  align-items: stretch;
+  gap: 6px;
+}
+
+/* the group's colour, as a bar running down the left of its tiles */
+.bar {
+  width: 3px;
+  border-radius: var(--r-pill);
+  background: currentColor;
+  opacity: 0.85;
+}
+
+/* a workflow-status group's bar, in the tone its status marker on a card uses */
+.tone-muted { color: var(--text-3); }
+.tone-accent { color: var(--accent); }
+.tone-waiting { color: var(--status-waiting); }
+.tone-working { color: var(--status-working); }
+.tone-finished { color: var(--status-finished); }
+
+.tiles {
   display: flex;
   flex-direction: column;
   align-items: center;
   gap: 6px;
-}
-
-/* the project's colour, as a short bar above its tiles */
-.bar {
-  width: 16px;
-  height: 3px;
-  border-radius: var(--r-pill);
-  background: currentColor;
-  opacity: 0.85;
 }
 
 .tile {

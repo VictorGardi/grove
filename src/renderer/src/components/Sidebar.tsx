@@ -1,19 +1,22 @@
-import { useEffect, useRef, useState, type MouseEvent } from 'react'
+import { useEffect, useId, useRef, useState, type MouseEvent, type ReactNode } from 'react'
 import { GRID_MAX, type Feature, type Project, type Session } from '@shared/types'
 import { useSlices } from '../stores/slices'
 import { gridShown } from '../gridView'
 import { longestWaiting, shownStatus, statusView } from '../sessionStatus'
 import { selectRange } from '../selection'
+import { GROUP_BY_OPTIONS, SORT_OPTIONS, listGroups, visibleSessions, type ListGroup } from '../sessionList'
 import { colorTags } from '../tags'
-import { linkedFeature, sessionGroups } from '../tree'
+import { linkedFeature } from '../tree'
+import { workflowStatusOf } from '../workflowStatus'
 import { Badge } from './ui/Badge'
 import { Button } from './ui/Button'
 import { ContextMenu } from './ui/ContextMenu'
+import { cx } from './ui/cx'
 import { Icon } from './ui/Icon'
 import { LinkPicker } from './LinkPicker'
 import { ListRow } from './ui/ListRow'
 import { tagClass } from './ui/Tag'
-import { WorkflowStatusButton } from './ui/WorkflowStatusPicker'
+import { WorkflowStatusButton, Glyph } from './ui/WorkflowStatusPicker'
 import css from './Sidebar.module.css'
 
 function toggle(set: Set<string>, id: string): Set<string> {
@@ -174,8 +177,43 @@ function ProjectHeader({ project: p, tag, count, refused, onToggle, onRemove, on
   )
 }
 
+// The heading for a group with no project behind it (grouped by workflow status, or by none):
+// the status's own glyph, the label, the count. Clicking it collapses the group, as on a folder.
+function GroupHeading({ group, onToggle }: { group: ListGroup; onToggle: () => void }) {
+  const view = group.status ? workflowStatusOf(group.status) : null
+  return (
+    <div className={css.folder} title={group.label} onClick={onToggle}>
+      {view && <Glyph view={view} size={13} className={cx(css.groupGlyph, css[`tone-${view.tone}`])} />}
+      <span className={css.folderName}>{group.label}</span>
+      {group.sessions.length > 0 && <Badge tone="muted">{group.sessions.length}</Badge>}
+    </div>
+  )
+}
+
+// A titled group of rows in the options panel. `role="group"` is what a menu may contain
+// besides menuitems, and `aria-labelledby` names it from the heading that is already on screen.
+function OptionSection({ headingId, label, children }: { headingId: string; label: string; children: ReactNode }) {
+  return (
+    <div className={css.visibilitySection} role="group" aria-labelledby={headingId}>
+      <div id={headingId} className={css.visibilitySectionHeading}>{label}</div>
+      {children}
+    </div>
+  )
+}
+
+// One choice in a single-select section: a radio row, checked on the right.
+function OptionRow({ label, checked, onSelect }: { label: string; checked: boolean; onSelect: () => void }) {
+  return (
+    <button type="button" role="menuitemradio" aria-checked={checked}
+      className={css.visibilityItem} onClick={onSelect}>
+      <span className={css.visibilityName}>{label}</span>
+      <span className={css.visibilityCheck}>{checked && <Icon name="check" size={13} />}</span>
+    </button>
+  )
+}
+
 export function Sidebar({ onNew }: { onNew: (projectId?: string) => void }) {
-  const { projects, sessions, ui, features, setFocused, toggleCollapsed, toggleProjectVisibility, focusFeature, openProject, setSidebarTab, toggleGrid, toggleGridMember, waitingSince } = useSlices()
+  const { projects, sessions, ui, features, setFocused, toggleCollapsed, toggleProjectVisibility, focusFeature, openProject, setSidebarTab, setGroupBy, setSessionSort, toggleGrid, toggleGridMember, waitingSince } = useSlices()
   const waitingCount = sessions.filter((x) => shownStatus(x) === 'waiting').length
   const [refused, setRefused] = useState<string | null>(null)
   const [compact, setCompact] = useState<Set<string>>(new Set())
@@ -184,28 +222,46 @@ export function Sidebar({ onNew }: { onNew: (projectId?: string) => void }) {
   const [anchor, setAnchor] = useState<string | null>(null) // where a shift-click range starts
   const [menu, setMenu] = useState<{ x: number; y: number; ids: string[] } | null>(null)
   const hidden = ui.hiddenProjects ?? []
-  const [visibilityOpen, setVisibilityOpen] = useState(false)
-  const [popPos, setPopPos] = useState<{ left: number; bottom: number }>({ left: 0, bottom: 0 })
-  const visibilityRef = useRef<HTMLDivElement>(null)
+  const [optionsOpen, setOptionsOpen] = useState(false)
+  const optionsRef = useRef<HTMLDivElement>(null) // the button and its panel, for the outside click
+  const panelRef = useRef<HTMLDivElement>(null) // the panel itself, which takes the position
+  const anchorAt = useRef<{ left: number; bottom: number } | null>(null) // the button rect, captured on open
+  const optionsId = useId()
+  const sidebarId = `${optionsId}-sidebar`
+  const groupById = `${optionsId}-group-by`
+  const sortId = `${optionsId}-sort`
   const tags = colorTags(projects, features.items)
 
-  // Close visibility popover on outside click
+  // the session list, grouped and sorted as the panel says (the Projects tab doesn't draw it)
+  const groups = ui.sidebarTab === 'sessions' ? listGroups(projects, sessions, ui) : []
+
+  // Close the options panel on outside click
   useEffect(() => {
-    if (!visibilityOpen) return
+    if (!optionsOpen) return
     const onDown = (e: globalThis.MouseEvent) => {
-      if (visibilityRef.current && !visibilityRef.current.contains(e.target as Node)) setVisibilityOpen(false)
+      if (optionsRef.current && !optionsRef.current.contains(e.target as Node)) setOptionsOpen(false)
     }
     document.addEventListener('mousedown', onDown)
     return () => document.removeEventListener('mousedown', onDown)
-  }, [visibilityOpen])
+  }, [optionsOpen])
+
+  // Place the panel from the button rect it was opened from, as CSS variables
+  useEffect(() => {
+    const el = panelRef.current
+    const at = anchorAt.current
+    if (!optionsOpen || !el || !at) return
+    el.style.setProperty('--x', `${at.left}px`)
+    el.style.setProperty('--y', `${at.bottom}px`)
+  }, [optionsOpen])
 
   async function removeProject(id: string) {
     const res = await window.api.invoke('project:remove', { id })
     setRefused(res.ok ? null : id)
   }
 
-  // the cards on screen, top to bottom: what a shift-click range runs over
-  const order = ui.sidebarTab === 'sessions' ? sessionGroups(projects, sessions, ui).flatMap((g) => (g.collapsed ? [] : g.sessions.map((x) => x.id))) : []
+  // the cards on screen, top to bottom: what a shift-click range runs over. Collapsed groups are
+  // left out, so a range can't reach sessions that aren't on screen to be deleted.
+  const order = ui.sidebarTab === 'sessions' ? visibleSessions(groups).map((x) => x.id) : []
 
   function clickCard(id: string, e: MouseEvent) {
     if (e.shiftKey) {
@@ -259,6 +315,11 @@ export function Sidebar({ onNew }: { onNew: (projectId?: string) => void }) {
       onToggle={() => toggleCollapsed(key)} onRemove={() => void removeProject(p.id)} onNew={() => onNew(p.id)} />
   )
 
+  // a project's heading when there is a project; a status or plain one when there isn't
+  const groupHeading = (g: ListGroup) =>
+    g.project ? projectHeader(g.project, g.key, g.sessions.length)
+      : <GroupHeading group={g} onToggle={() => toggleCollapsed(g.key)} />
+
   const tabs = [
     { id: 'sessions' as const, label: 'Sessions', badge: <Badge>{sessions.length}</Badge> },
     { id: 'projects' as const, label: 'Projects', badge: null },
@@ -279,9 +340,9 @@ export function Sidebar({ onNew }: { onNew: (projectId?: string) => void }) {
       <div className={css.list}>
         {projects.length === 0 && <div className={css.hint}>Add a project with the folder ＋ above</div>}
         {ui.sidebarTab === 'sessions'
-          ? sessionGroups(projects, sessions, ui).map((g) => (
+          ? groups.map((g) => (
             <div key={g.key} className={css.project}>
-              {projectHeader(g.project, g.key, g.sessions.length)}
+              {groupHeading(g)}
               {!g.collapsed && <div className={css.cards}>{g.sessions.map(sessionCard)}</div>}
             </div>
           ))
@@ -305,45 +366,64 @@ export function Sidebar({ onNew }: { onNew: (projectId?: string) => void }) {
             {waitingCount} waiting
           </Button>
         )}
-        <div className={css.visibilityWrapper} ref={visibilityRef}>
+        <div className={css.visibilityWrapper} ref={optionsRef}>
           <Button
             variant="ghost"
             size="sm"
-            icon={hidden.length > 0 ? 'eye-off' : 'eye'}
+            icon="sliders"
             aria-pressed={hidden.length > 0}
-            aria-expanded={visibilityOpen}
+            aria-expanded={optionsOpen}
             aria-haspopup="menu"
-            title={hidden.length > 0 ? `Project visibility (${hidden.length} hidden)` : 'Project visibility'}
+            title={hidden.length > 0 ? `Session list options (${hidden.length} project hidden)` : 'Session list options'}
             onClick={(e) => {
-              const r = e.currentTarget.getBoundingClientRect()
-              setPopPos({ left: Math.max(8, r.right - 240), bottom: window.innerHeight - r.top + 6 })
-              setVisibilityOpen(!visibilityOpen)
+              const next = !optionsOpen
+              if (next) {
+                const r = e.currentTarget.getBoundingClientRect()
+                anchorAt.current = { left: Math.max(8, r.right - 240), bottom: window.innerHeight - r.top + 6 }
+              }
+              setOptionsOpen(next)
             }}
             className={hidden.length > 0 ? css.visibilityActive : ''} />
-          {visibilityOpen && (
-            <div className={css.visibilityPopover} style={popPos} role="menu" aria-label="Project visibility"
-              onKeyDown={(e) => { if (e.key === 'Escape') { e.stopPropagation(); setVisibilityOpen(false) } }}>
-              <div className={css.visibilityList}>
-                {projects.map((p) => {
-                  const total = sessions.filter((x) => x.projectId === p.id).length
-                  const shown = !hidden.includes(p.id)
-                  return (
-                    <button key={p.id} type="button" role="menuitemcheckbox" aria-checked={shown}
-                      className={shown ? css.visibilityItem : css.visibilityItemOff}
-                      onClick={() => toggleProjectVisibility(p.id)}>
-                      <Icon name="folder" size={13} className={tagClass(tags.project(p.id), 'fg')} />
-                      <span className={css.visibilityName}>{p.name}</span>
-                      {total > 0 && <span className={css.visibilityCount}>{total}</span>}
-                      <span className={css.visibilityCheck}>{shown && <Icon name="check" size={13} />}</span>
-                    </button>
-                  )
-                })}
-              </div>
-              <div className={css.visibilityFooter}>
-                <button type="button" className={css.visibilityAction} disabled={hidden.length === 0}
-                  onClick={() => void window.api.invoke('ui:set', { hiddenProjects: [] })}>Show all</button>
-                <button type="button" className={css.visibilityAction} disabled={hidden.length === projects.length}
-                  onClick={() => void window.api.invoke('ui:set', { hiddenProjects: projects.map((p) => p.id) })}>Hide all</button>
+          {optionsOpen && (
+            <div ref={panelRef} className={css.visibilityPopover} role="menu" aria-label="Session list options"
+              onKeyDown={(e) => { if (e.key === 'Escape') { e.stopPropagation(); setOptionsOpen(false) } }}>
+              <div className={css.visibilitySections}>
+                <OptionSection headingId={sidebarId} label="Sidebar options">
+                  <div className={css.visibilityList}>
+                    {projects.map((p) => {
+                      const total = sessions.filter((x) => x.projectId === p.id).length
+                      const shown = !hidden.includes(p.id)
+                      return (
+                        <button key={p.id} type="button" role="menuitemcheckbox" aria-checked={shown}
+                          className={shown ? css.visibilityItem : css.visibilityItemOff}
+                          onClick={() => toggleProjectVisibility(p.id)}>
+                          <Icon name="folder" size={13} className={tagClass(tags.project(p.id), 'fg')} />
+                          <span className={css.visibilityName}>{p.name}</span>
+                          {total > 0 && <span className={css.visibilityCount}>{total}</span>}
+                          <span className={css.visibilityCheck}>{shown && <Icon name="check" size={13} />}</span>
+                        </button>
+                      )
+                    })}
+                  </div>
+                  <div className={css.visibilityFooter}>
+                    <button type="button" className={css.visibilityAction} disabled={hidden.length === 0}
+                      onClick={() => void window.api.invoke('ui:set', { hiddenProjects: [] })}>Show all</button>
+                    <button type="button" className={css.visibilityAction} disabled={hidden.length === projects.length}
+                      onClick={() => void window.api.invoke('ui:set', { hiddenProjects: projects.map((p) => p.id) })}>Hide all</button>
+                  </div>
+                </OptionSection>
+                <OptionSection headingId={groupById} label="Group by">
+                  {GROUP_BY_OPTIONS.map((o) => (
+                    <OptionRow key={o.value} label={o.label} checked={ui.groupBy === o.value}
+                      onSelect={() => setGroupBy(o.value)} />
+                  ))}
+                </OptionSection>
+                <OptionSection headingId={sortId} label="Sort">
+                  {SORT_OPTIONS.map((o) => (
+                    <OptionRow key={o.value} label={o.label} checked={ui.sessionSort === o.value}
+                      onSelect={() => setSessionSort(o.value)} />
+                  ))}
+                </OptionSection>
               </div>
             </div>
           )}

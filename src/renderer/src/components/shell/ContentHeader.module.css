@@ -12,7 +12,9 @@
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
-  font-size: var(--fs-lg);
+  /* the same type as a grid pane's title (SessionGrid.module.css .header/.title), so a session
+     reads the same whether it is in the grid or alone */
+  font-size: var(--fs-sm);
 }
 
 .parent {
@@ -35,7 +37,7 @@
 
 .current {
   color: var(--text);
-  font-weight: var(--fw-bold);
+  font-weight: var(--fw-semibold);
 }
 
 .right {

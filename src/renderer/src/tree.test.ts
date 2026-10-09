@@ -1,8 +1,6 @@
 import { describe, expect, it } from 'vitest'
-import type { Feature, Project, Session } from '@shared/types'
-import { boardColumns, linkedFeature, linkedSessions, sessionColumns, sessionGroups, sessionOrder } from './tree'
-
-const project = (id: string): Project => ({ id, name: id, path: '/' + id })
+import type { Feature, Session } from '@shared/types'
+import { boardColumns, linkedFeature, linkedSessions, sessionColumns } from './tree'
 
 function feature(slug: string, over: Partial<Feature> = {}): Feature {
   return {
@@ -18,32 +16,6 @@ function session(id: string, over: Partial<Session> = {}): Session {
     startedAt: '2026-10-05T10:00:00.000Z', endedAt: null, lastStatus: 'running', seenAt: null, lastContext: null, workflowStatus: 'in-progress', ...over,
   }
 }
-
-describe('sessionGroups', () => {
-  it('groups by project in config order, sessions by start time, linked ones included', () => {
-    const groups = sessionGroups([project('q'), project('p')], [
-      session('s3', { feature: 'a', startedAt: '2026-10-05T10:03:00.000Z' }),
-      session('s1'),
-      session('s0', { startedAt: '2026-10-05T09:00:00.000Z' }),
-      session('s4', { projectId: 'q', kind: 'opencode' }),
-      session('s5', { projectId: 'gone' }),
-    ], { collapsed: ['p:q'] })
-    expect(groups.map((g) => [g.key, g.collapsed, g.sessions.map((s) => s.id)])).toEqual([
-      ['p:q', true, ['s4']],
-      ['p:p', false, ['s0', 's1', 's3']],
-    ])
-  })
-})
-
-describe('sessionOrder', () => {
-  it('includes collapsed groups, in group order', () => {
-    const groups = sessionGroups([project('p'), project('q')], [
-      session('s2', { projectId: 'q' }),
-      session('s1'),
-    ], { collapsed: ['p:p'] })
-    expect(sessionOrder(groups).map((s) => s.id)).toEqual(['s1', 's2'])
-  })
-})
 
 describe('linkedFeature', () => {
   const features = [feature('a'), feature('b', { projectId: 'q' })]

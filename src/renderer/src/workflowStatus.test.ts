@@ -16,7 +16,7 @@ describe('WORKFLOW_STATUSES', () => {
       'dashed', 'partial', 'partial', 'clock', 'cross', 'check', 'pin',
     ])
     expect(WORKFLOW_STATUSES.map((s) => s.tone)).toEqual([
-      'muted', 'waiting', 'gone', 'working', 'muted', 'finished', 'gone',
+      'muted', 'waiting', 'accent', 'working', 'muted', 'finished', 'accent',
     ])
   })
 

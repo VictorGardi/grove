@@ -5,10 +5,10 @@ import { cx } from './cx'
 import s from './WorkflowStatusPicker.module.css'
 
 // The glyph a status draws, as a ring like the live-status circle it replaces.
-function Glyph({ view, size = 14 }: { view: WorkflowStatusView; size?: number }) {
+export function Glyph({ view, size = 14, className }: { view: WorkflowStatusView; size?: number; className?: string }) {
   return (
     <svg width={size} height={size} viewBox="0 0 20 20" fill="none" stroke="currentColor"
-      strokeWidth={1.75} strokeLinecap="round" strokeLinejoin="round" aria-hidden="true" className={s.glyph}>
+      strokeWidth={1.75} strokeLinecap="round" strokeLinejoin="round" aria-hidden="true" className={cx(s.glyph, className)}>
       {view.glyph === 'dashed' && <circle cx="10" cy="10" r="7" strokeDasharray="2.6 2.4" />}
       {view.glyph === 'partial' && (
         <>
@@ -37,8 +37,9 @@ function Glyph({ view, size = 14 }: { view: WorkflowStatusView; size?: number })
       )}
       {view.glyph === 'pin' && (
         <>
-          <path d="M10 2.6 13.4 8H6.6L10 2.6Z" fill="currentColor" stroke="none" />
-          <path d="M10 8v9.4" />
+          <circle cx="10" cy="10" r="7" />
+          <path d="M10 4.6 12.5 8.6h-5L10 4.6Z" fill="currentColor" stroke="none" />
+          <path d="M10 8.6v6.2" />
         </>
       )}
     </svg>

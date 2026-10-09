@@ -25,6 +25,8 @@ interface SlicesState {
   go(to: Partial<UiState>): void // a breadcrumb up-link
   setBoard(board: UiState['board']): void
   setSidebarTab(tab: UiState['sidebarTab']): void
+  setGroupBy(groupBy: UiState['groupBy']): void
+  setSessionSort(sessionSort: UiState['sessionSort']): void
   toggleSidebar(): void
   openArtifact(t: DocTarget): void
   openDiff(sessionId: string): void
@@ -85,6 +87,8 @@ export const useSlices = create<SlicesState>((set, get) => {
     setBoard: (board) => { void window.api.invoke('ui:set', { board }) },
     toggleSidebar: () => { void window.api.invoke('ui:set', { sidebarCollapsed: !get().ui.sidebarCollapsed }) },
     setSidebarTab: (tab) => { void window.api.invoke('ui:set', { sidebarTab: tab }) },
+    setGroupBy: (groupBy) => { void window.api.invoke('ui:set', { groupBy }) },
+    setSessionSort: (sessionSort) => { void window.api.invoke('ui:set', { sessionSort }) },
     openArtifact: (t) => { void window.api.invoke('ui:set', { viewer: t }) },
     openDiff: (sessionId) => { void window.api.invoke('ui:set', { viewer: { kind: 'diff', sessionId }, viewerExpanded: false }) },
     backToDiff: (sessionId) => { void window.api.invoke('ui:set', { viewer: { kind: 'diff', sessionId } }) },

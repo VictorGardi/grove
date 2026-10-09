@@ -75,9 +75,9 @@
   flex-shrink: 0;
 }
 
-/* tones: the live-status tokens, so a marker sits in the card's own palette */
+/* tones: the live-status tokens plus the accent, so a marker sits in the card's own palette */
 .muted { color: var(--text-3); }
+.accent { color: var(--accent); }
 .waiting { color: var(--status-waiting); }
-.gone { color: var(--status-gone); }
 .working { color: var(--status-working); }
 .finished { color: var(--status-finished); }

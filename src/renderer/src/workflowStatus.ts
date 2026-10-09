@@ -7,17 +7,17 @@ export interface WorkflowStatusView {
   value: WorkflowStatus
   label: string
   glyph: 'dashed' | 'partial' | 'clock' | 'cross' | 'check' | 'pin'
-  tone: 'muted' | 'waiting' | 'gone' | 'working' | 'finished'
+  tone: 'muted' | 'accent' | 'waiting' | 'working' | 'finished'
 }
 
 export const WORKFLOW_STATUSES: WorkflowStatusView[] = [
   { value: 'backlog', label: 'Backlog', glyph: 'dashed', tone: 'muted' },
   { value: 'in-progress', label: 'In Progress', glyph: 'partial', tone: 'waiting' },
-  { value: 'blocked', label: 'Blocked', glyph: 'partial', tone: 'gone' },
+  { value: 'blocked', label: 'Blocked', glyph: 'partial', tone: 'accent' },
   { value: 'in-review', label: 'In Review', glyph: 'clock', tone: 'working' },
   { value: 'cancelled', label: 'Cancelled', glyph: 'cross', tone: 'muted' },
   { value: 'done', label: 'Done', glyph: 'check', tone: 'finished' },
-  { value: 'pinned', label: 'Pinned', glyph: 'pin', tone: 'gone' },
+  { value: 'pinned', label: 'Pinned', glyph: 'pin', tone: 'accent' },
 ]
 
 // An unknown saved value reads as in-progress rather than throwing on a card.

@@ -94,6 +94,19 @@
   opacity: 1;
 }
 
+/* the workflow-status glyph on a group heading that has no project behind it: the same mark
+   the status button draws on a card, so a heading and its cards read as one thing */
+.groupGlyph {
+  flex-shrink: 0;
+}
+
+/* the status's tone, the same live-status palette the marker on a card uses */
+.tone-muted { color: var(--text-3); }
+.tone-accent { color: var(--accent); }
+.tone-waiting { color: var(--status-waiting); }
+.tone-working { color: var(--status-working); }
+.tone-finished { color: var(--status-finished); }
+
 .refused {
   padding: 0 var(--sp-1);
   font-size: var(--fs-sm);
@@ -130,7 +143,7 @@
   gap: var(--sp-1);
   min-width: 0;
   font-size: var(--fs-xs);
-  color: var(--text-3);
+  color: var(--text-2);
 }
 
 .branchName {
@@ -166,9 +179,12 @@
   color: var(--accent);
 }
 
-/* Same surface as the context menu, so it reads as part of one family. */
+/* Same surface as the context menu, so it reads as part of one family.
+   Placed from the button rect, set as variables rather than an inline style. */
 .visibilityPopover {
   position: fixed;
+  left: var(--x, 0);
+  bottom: var(--y, 0);
   width: 240px;
   padding: var(--sp-1);
   display: flex;
@@ -180,11 +196,31 @@
   z-index: 1100;
 }
 
+/* the sections scroll as one, so a long project list can't push the rest off */
+.visibilitySections {
+  display: flex;
+  flex-direction: column;
+  max-height: min(70vh, 460px);
+  overflow-y: auto;
+}
+
+.visibilitySection + .visibilitySection {
+  margin-top: var(--sp-1);
+  padding-top: var(--sp-1);
+  border-top: 1px solid var(--divider);
+}
+
+.visibilitySectionHeading {
+  padding: var(--sp-1) var(--sp-2) 2px;
+  color: var(--text-3);
+  font-size: var(--fs-xs);
+  font-weight: var(--fw-semibold);
+  text-transform: uppercase;
+}
+
 .visibilityList {
   display: flex;
   flex-direction: column;
-  max-height: 320px;
-  overflow-y: auto;
 }
 
 .visibilityItem,
@@ -192,6 +228,10 @@
   display: flex;
   align-items: center;
   gap: var(--sp-2);
+  /* full width in any container: the project rows sit in a flex list and stretch, but the
+     GROUP BY / SORT rows sit in a block section and would otherwise shrink-wrap to the text,
+     leaving only the label clickable */
+  width: 100%;
   padding: 5px var(--sp-2);
   border: 0;
   border-radius: var(--r-card);
