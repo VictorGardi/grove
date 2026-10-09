@@ -25,16 +25,13 @@ function Tile({ s, focused, inGrid, onFocus }: { s: Session; focused: boolean; i
 }
 
 export function SidebarRail() {
-  const { projects, sessions, ui, features, waitingSince, setFocused, toggleGrid, toggleSidebar } = useSlices()
+  const { projects, sessions, ui, features, waitingSince, setFocused, toggleGrid } = useSlices()
   const tags = colorTags(projects, features.items)
   const waiting = sessions.filter((x) => shownStatus(x) === 'waiting').length
   const members = ui.grid.members.length
 
   return (
     <div className={css.rail}>
-      <button type="button" className={css.expand} aria-label="Expand sidebar" title="Expand sidebar (⌘B)" onClick={toggleSidebar}>
-        <Icon name="sidebar" size={16} />
-      </button>
       <div className={css.list}>
         {sessionGroups(projects, sessions, ui).filter((g) => g.sessions.length > 0).map((g) => (
           <div key={g.key} className={css.group} title={g.project.name}>

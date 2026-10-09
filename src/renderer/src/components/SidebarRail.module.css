@@ -7,7 +7,6 @@
   gap: var(--sp-2);
 }
 
-.expand,
 .gridBtn {
   position: relative;
   width: 36px;
@@ -22,7 +21,6 @@
   cursor: pointer;
 }
 
-.expand:hover,
 .gridBtn:hover:not(:disabled) {
   background: var(--raised-bg);
   color: var(--text);
