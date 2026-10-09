@@ -175,7 +175,7 @@ function ProjectHeader({ project: p, tag, count, refused, onToggle, onRemove, on
 }
 
 export function Sidebar({ onNew }: { onNew: (projectId?: string) => void }) {
-  const { projects, sessions, ui, features, setFocused, toggleCollapsed, toggleProjectVisibility, focusFeature, openProject, setSidebarTab, toggleGrid, toggleGridMember, toggleSidebar, waitingSince } = useSlices()
+  const { projects, sessions, ui, features, setFocused, toggleCollapsed, toggleProjectVisibility, focusFeature, openProject, setSidebarTab, toggleGrid, toggleGridMember, waitingSince } = useSlices()
   const waitingCount = sessions.filter((x) => shownStatus(x) === 'waiting').length
   const [refused, setRefused] = useState<string | null>(null)
   const [compact, setCompact] = useState<Set<string>>(new Set())
@@ -275,8 +275,6 @@ export function Sidebar({ onNew }: { onNew: (projectId?: string) => void }) {
         ))}
         <Button variant="ghost" size="sm" round icon="folder-plus" aria-label="Add project" title="Add project"
           className={css.add} onClick={() => void window.api.invoke('project:add')} />
-        <Button variant="ghost" size="sm" round icon="sidebar" aria-label="Collapse sidebar" title="Collapse sidebar (⌘B)"
-          onClick={toggleSidebar} />
       </div>
       <div className={css.list}>
         {projects.length === 0 && <div className={css.hint}>Add a project with the folder ＋ above</div>}
