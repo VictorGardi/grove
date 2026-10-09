@@ -3,7 +3,7 @@ import type { Comment, DiffFile, DocTarget, FeaturesSlice, OpenCodeSlice, Projec
 import { DEFAULT_UI, EMPTY_FEATURES, OPENCODE_CONNECTING } from '@shared/types'
 import { focusAfterRemove, gridShown, withMember } from '../gridView'
 import { openBoard } from '../navigation'
-import { trackStatus, trackWaiting, type StatusSince } from '../sessionStatus'
+import { trackWaiting } from '../sessionStatus'
 
 interface SlicesState {
   projects: Project[]
@@ -15,7 +15,6 @@ interface SlicesState {
   comments: Comment[]
   errors: string[]
   waitingSince: Record<string, number> // session id → when first seen waiting (ms)
-  statusSince: Record<string, StatusSince> // session id → its shown status and since when (ms)
   hydrate(): Promise<void>
   setFocused(id: string | null): void
   toggleCollapsed(key: string): void
@@ -49,7 +48,6 @@ export const useSlices = create<SlicesState>((set, get) => {
     set({
       sessions,
       waitingSince: trackWaiting(get().waitingSince, sessions, Date.now()),
-      statusSince: trackStatus(get().statusSince, sessions, Date.now()),
     })
 
   return {
@@ -62,7 +60,6 @@ export const useSlices = create<SlicesState>((set, get) => {
     comments: [],
     errors: [],
     waitingSince: {},
-    statusSince: {},
     async hydrate() {
       const { api } = window
       // subscribe first so a push between the two can't be lost

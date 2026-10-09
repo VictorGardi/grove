@@ -129,11 +129,14 @@
   box-shadow: 0 0 0 2px var(--panel-bg);
 }
 
-.working { background: var(--status-working); }
-.done { background: var(--status-finished); }
-.dot.gone { background: var(--status-gone); }
+/* the dot's tones, one StatusTone each: the same mapping ListRow's card dot uses */
+.t-running { background: var(--status-running); }
+.t-working { background: var(--status-working); }
+.t-finished { background: var(--status-finished); }
+.t-gone { background: var(--status-gone); }
+/* `idle` has no rule and keeps the tile's default --status-idle */
 
-.dot.waiting {
+.t-waiting {
   background: var(--status-waiting);
   animation: pulse 1.6s ease-in-out infinite;
 }

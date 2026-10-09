@@ -138,14 +138,33 @@
   color: var(--text-2);
 }
 
-.status {
-  font-family: var(--font-mono);
-  font-size: var(--fs-xs);
+/* the live-status dot, in the card's bottom-right corner: the same mark and pulse a collapsed
+   rail tile uses, so a session reads the same in the sidebar and the rail. It takes its colour
+   from the .s-* classes below via currentColor. */
+.statusDot {
+  position: absolute;
+  right: 6px;
+  bottom: 6px;
+  width: 7px;
+  height: 7px;
+  border-radius: var(--r-pill);
+  background: currentColor;
+  box-shadow: 0 0 0 2px var(--card-bg);
 }
 
+/* the dot's tones, mirroring the rail tile's: one StatusTone, one colour, in both views */
 .s-running { color: var(--status-running); }
 .s-working { color: var(--status-working); }
 .s-waiting { color: var(--status-waiting); }
 .s-idle { color: var(--status-idle); }
 .s-finished { color: var(--status-finished); }
 .s-gone { color: var(--status-gone); }
+
+/* waiting pulses on a card exactly as it does on a rail tile */
+.statusDot.s-waiting {
+  animation: statusPulse 1.6s ease-in-out infinite;
+}
+
+@keyframes statusPulse {
+  50% { box-shadow: 0 0 0 2px var(--card-bg), 0 0 0 5px color-mix(in srgb, var(--status-waiting) 35%, transparent); }
+}

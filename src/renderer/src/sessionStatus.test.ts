@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import type { Session } from '@shared/types'
-import { duration, longestWaiting, serviceBanners, shownStatus, statusView, trackStatus, trackWaiting } from './sessionStatus'
+import { longestWaiting, serviceBanners, shownStatus, statusTone, statusView, trackWaiting } from './sessionStatus'
 
 function session(over: Partial<Session> = {}): Session {
   return {
@@ -20,6 +20,25 @@ describe('shownStatus', () => {
 
   it('uses the shown status as label and tone', () => {
     expect(statusView(session({ status: 'working' }))).toEqual({ label: 'working', tone: 'working' })
+  })
+})
+
+describe('statusTone', () => {
+  it('is the shown status', () => {
+    expect(statusTone(session({ status: 'working' }))).toBe('working')
+    expect(statusTone(session({ status: 'idle' }))).toBe('idle')
+    expect(statusTone(session())).toBe('running')
+    expect(statusTone(session({ lastStatus: 'gone' }))).toBe('gone')
+  })
+
+  it('reads a finished agent as finished, not waiting, so the dot stops pulsing', () => {
+    expect(statusTone(session({ status: 'waiting', waitingFor: 'done' }))).toBe('finished')
+    expect(statusTone(session({ status: 'waiting', waitingFor: 'permission' }))).toBe('waiting')
+    expect(statusTone(session({ status: 'waiting', waitingFor: 'question' }))).toBe('waiting')
+  })
+
+  it('still reports gone over a live status', () => {
+    expect(statusTone(session({ lastStatus: 'gone', status: 'waiting', waitingFor: 'done' }))).toBe('gone')
   })
 })
 
@@ -62,23 +81,5 @@ describe('serviceBanners', () => {
   it('does not show a banner for connected OpenCode versions', () => {
     expect(serviceBanners({ state: 'connected', version: '2.0.20' }, [session()])).toEqual([])
     expect(serviceBanners({ state: 'connected', version: '2.1.0' }, [])).toEqual([])
-  })
-})
-
-describe('trackStatus', () => {
-  it('keeps since while the status holds, resets it on change, drops removed sessions', () => {
-    const first = trackStatus({}, [session({ id: 'a', status: 'working' }), session({ id: 'b' })], 100)
-    expect(first).toEqual({ a: { status: 'working', since: 100 }, b: { status: 'running', since: 100 } })
-    expect(trackStatus(first, [session({ id: 'a', status: 'working' }), session({ id: 'b' })], 200)).toBe(first)
-    expect(trackStatus(first, [session({ id: 'a', status: 'idle' })], 300)).toEqual({ a: { status: 'idle', since: 300 } })
-  })
-})
-
-describe('duration', () => {
-  it('rounds down to now, minutes, hours or days', () => {
-    expect(duration(30_000)).toBe('now')
-    expect(duration(5 * 60_000 + 1)).toBe('5m')
-    expect(duration(3 * 3_600_000 + 1)).toBe('3h')
-    expect(duration(2 * 86_400_000 + 1)).toBe('2d')
   })
 })

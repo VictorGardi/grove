@@ -14,6 +14,14 @@ export function statusView(s: Session): { label: string; tone: StatusTone } {
   return { label: shown === 'waiting' && s.waitingFor ? `waiting · ${s.waitingFor}` : shown, tone: shown }
 }
 
+// The colour a live-status dot draws. An agent that finished and nobody has looked reads as
+// finished rather than waiting, so it stops pulsing. The rail tile and the session card both
+// go through this, so the two views can't drift apart.
+export function statusTone(s: Session): StatusTone {
+  const shown = shownStatus(s)
+  return shown === 'waiting' && s.waitingFor === 'done' ? 'finished' : shown
+}
+
 // When the renderer first saw each session waiting (ms). Same object when unchanged.
 export function trackWaiting(prev: Record<string, number>, sessions: Session[], now: number): Record<string, number> {
   const next: Record<string, number> = {}
@@ -21,29 +29,6 @@ export function trackWaiting(prev: Record<string, number>, sessions: Session[], 
   const keys = Object.keys(next)
   const same = keys.length === Object.keys(prev).length && keys.every((k) => prev[k] === next[k])
   return same ? prev : next
-}
-
-export interface StatusSince { status: ShownStatus; since: number }
-
-// When the renderer first saw each session in its current shown status (ms). Same object when unchanged.
-export function trackStatus(prev: Record<string, StatusSince>, sessions: Session[], now: number): Record<string, StatusSince> {
-  const next: Record<string, StatusSince> = {}
-  for (const s of sessions) {
-    const status = shownStatus(s)
-    next[s.id] = prev[s.id]?.status === status ? prev[s.id] : { status, since: now }
-  }
-  const keys = Object.keys(next)
-  const same = keys.length === Object.keys(prev).length && keys.every((k) => prev[k] === next[k])
-  return same ? prev : next
-}
-
-// A short age: "now", "5m", "3h", "2d".
-export function duration(ms: number): string {
-  const m = Math.floor(ms / 60_000)
-  if (m < 1) return 'now'
-  if (m < 60) return `${m}m`
-  const h = Math.floor(m / 60)
-  return h < 24 ? `${h}h` : `${Math.floor(h / 24)}d`
 }
 
 // The waiting session seen waiting first; unknown times sort last, ties keep list order.

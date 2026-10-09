@@ -30,7 +30,7 @@ import { ScratchpadOverlay } from './components/ScratchpadOverlay'
 import s from './App.module.css'
 
 export default function App() {
-  const { projects, sessions, ui, features, opencode, diff, errors, statusSince, hydrate, setFocused, focusFeature, openProject, toggleGrid, addFocusedToGrid, toggleSidebar, clearGrid, go, setBoard,
+  const { projects, sessions, ui, features, opencode, diff, errors, hydrate, setFocused, focusFeature, openProject, toggleGrid, addFocusedToGrid, toggleSidebar, clearGrid, go, setBoard,
     openArtifact, openDiff, backToDiff, openRendered, closeViewer, setViewerWidth, toggleViewerExpanded, reloadViewer } = useSlices()
   const [quickNew, setQuickNew] = useState<{ projectId?: string } | null>(null) // ⌘T: the new-session palette
   const [confirmRemove, setConfirmRemove] = useState<Session | null>(null) // ⌘W asks first
@@ -154,7 +154,7 @@ export default function App() {
                 ) : undefined} />
             {shown.kind === 'project' ? (
               <ProjectPage project={shown.project} projects={projects} board={ui.board} stages={features.stages}
-                features={features.items} sessions={sessions} statusSince={statusSince}
+                features={features.items} sessions={sessions}
                 onOpenFeature={openFeature} onFocusSession={setFocused} />
             ) : shown.kind === 'feature' ? (
               <FeaturePage feature={shown.feature}

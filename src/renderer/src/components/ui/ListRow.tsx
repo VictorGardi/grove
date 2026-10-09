@@ -33,7 +33,7 @@ export function ListRow({ title, corner, cornerPinned, icon, meta, status, tone 
       {corner && <div className={cx(s.corner, cornerPinned && s.cornerPinned)} onClick={(e) => e.stopPropagation()}>{corner}</div>}
       {actions && <div className={s.actions} onClick={(e) => e.stopPropagation()}>{actions}</div>}
       {!compact && meta && <div className={s.meta}>{meta}</div>}
-      {!compact && status && <div className={cx(s.status, s[`s-${status.tone}`])}>{status.label}</div>}
+      {!compact && status && <span className={cx(s.statusDot, s[`s-${status.tone}`])} aria-label={status.label} title={status.label} />}
     </div>
   )
 }

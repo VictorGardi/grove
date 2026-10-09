@@ -1,6 +1,6 @@
 import { GRID_MAX, type Session } from '@shared/types'
 import { gridShown } from '../gridView'
-import { longestWaiting, shownStatus } from '../sessionStatus'
+import { longestWaiting, shownStatus, statusTone } from '../sessionStatus'
 import { listGroups, type ListGroup } from '../sessionList'
 import { useSlices } from '../stores/slices'
 import { colorTags } from '../tags'
@@ -13,13 +13,11 @@ import css from './SidebarRail.module.css'
 // The collapsed sidebar (⌘B): a tile per session, grouped the way the panel says. Same state as the full sidebar.
 function Tile({ s, focused, inGrid, onFocus }: { s: Session; focused: boolean; inGrid: boolean; onFocus: () => void }) {
   const shown = shownStatus(s)
-  const done = shown === 'waiting' && s.waitingFor === 'done'
-  const tone = done ? 'done' : shown
   return (
     <button type="button" className={cx(css.tile, focused && css.focused, shown === 'gone' && css.ended)}
       aria-pressed={focused} aria-label={s.label} title={`${s.label} · ${shown}`} onClick={onFocus}>
       <Icon name={s.kind} size={16} />
-      <span className={cx(css.dot, css[tone])} />
+      <span className={cx(css.dot, css[`t-${statusTone(s)}`])} />
       {inGrid && <span className={css.grid} />}
     </button>
   )

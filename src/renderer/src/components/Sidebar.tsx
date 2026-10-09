@@ -2,7 +2,7 @@ import { useEffect, useId, useRef, useState, type MouseEvent, type ReactNode } f
 import { GRID_MAX, type Feature, type Project, type Session } from '@shared/types'
 import { useSlices } from '../stores/slices'
 import { gridShown } from '../gridView'
-import { longestWaiting, shownStatus, statusView } from '../sessionStatus'
+import { longestWaiting, shownStatus, statusTone, statusView } from '../sessionStatus'
 import { selectRange } from '../selection'
 import { GROUP_BY_OPTIONS, SORT_OPTIONS, listGroups, visibleSessions, type ListGroup } from '../sessionList'
 import { colorTags } from '../tags'
@@ -68,7 +68,7 @@ function SessionCard({ s, feature, focused, picked, compact, inGrid, gridOn, gri
           </div>
         </div>
       )}
-      status={statusView(s)}
+      status={{ ...statusView(s), tone: statusTone(s) }}
       tone={focused ? 'selected' : needsYou ? 'waiting' : s.kind === 'terminal' ? 'muted' : 'default'}
       picked={picked}
       compact={compact}
