@@ -258,6 +258,44 @@ describe('core sessions', () => {
     expect(await a.commands.sessionKill({ id: 'x' })).toEqual(nf)
     expect(await a.commands.sessionRemove({ id: 'x' })).toEqual(nf)
     expect(await a.commands.sessionRename({ id: 'x', label: 'y' })).toEqual(nf)
+    expect(await a.commands.sessionWorkflowStatus({ id: 'x', status: 'done' })).toEqual(nf)
+  })
+
+  it('defaults a new session to in-progress', async () => {
+    const { make } = setup()
+    const a = make()
+    await a.start()
+    expect((await create(a)).workflowStatus).toBe('in-progress')
+  })
+
+  it.each(['backlog', 'in-progress', 'blocked', 'in-review', 'cancelled', 'done', 'pinned'] as const)(
+    'sets the workflow status to %s and keeps it across restarts',
+    async (status) => {
+      const { make } = setup()
+      const a = make()
+      await a.start()
+      const s = await create(a)
+      const res = await a.commands.sessionWorkflowStatus({ id: s.id, status })
+      expect(res.ok && res.data.workflowStatus).toBe(status)
+
+      const b = make()
+      await b.start()
+      expect(b.getSlices().sessions.find((x) => x.id === s.id)?.workflowStatus).toBe(status)
+    }
+  )
+
+  it('leaves live status and grid membership alone when the workflow status changes', async () => {
+    const { make } = setup()
+    const a = make()
+    await a.start()
+    const s = await create(a)
+    await a.commands.uiSet({ grid: { open: true, members: [s.id] } })
+    const before = a.getSlices().sessions.find((x) => x.id === s.id)!
+    await a.commands.sessionWorkflowStatus({ id: s.id, status: 'done' })
+    const after = a.getSlices().sessions.find((x) => x.id === s.id)!
+    expect(after.lastStatus).toBe(before.lastStatus)
+    expect(after.status).toBe(before.status)
+    expect(a.getSlices().ui.grid.members).toEqual([s.id])
   })
 })
 

@@ -1,4 +1,4 @@
-import type { Session, SessionKind } from '@shared/types'
+import type { Session, SessionKind, WorkflowStatus } from '@shared/types'
 
 const KIND_NAMES: Record<SessionKind, string> = { opencode: 'OpenCode', claude: 'Claude', terminal: 'Terminal' }
 const pad = (n: number) => String(n).padStart(2, '0')
@@ -13,6 +13,7 @@ export function newSession(o: { projectId: string; kind: SessionKind; now: Date;
     projectId: o.projectId,
     kind: o.kind,
     label: o.label ?? makeLabel(o.kind, o.now),
+    workflowStatus: 'in-progress',
     labelPinned: o.label !== undefined,
     tmuxName: 'grove-' + o.id,
     cwd: o.cwd ?? null,
@@ -74,4 +75,8 @@ export function link(s: Session, feature: string | null): Session {
 
 export function rename(s: Session, label: string): Session {
   return { ...s, label, labelPinned: true }
+}
+
+export function setWorkflowStatus(s: Session, workflowStatus: WorkflowStatus): Session {
+  return { ...s, workflowStatus }
 }

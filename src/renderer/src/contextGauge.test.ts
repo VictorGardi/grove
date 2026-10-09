@@ -5,7 +5,7 @@ import { contextView, formatPct, formatTokens, formatUsage, gaugeFill } from './
 const session = (over: Partial<Session> = {}): Session => ({
   id: 'a', projectId: 'p', kind: 'claude', label: 'a', labelPinned: false, tmuxName: 'grove-a',
   cwd: null, agentSessionId: 'u', feature: null, linkPinned: false, action: null,
-  startedAt: '2026-10-05T10:00:00.000Z', endedAt: null, lastStatus: 'running', seenAt: null, lastContext: null, ...over,
+  startedAt: '2026-10-05T10:00:00.000Z', endedAt: null, lastStatus: 'running', seenAt: null, lastContext: null, workflowStatus: 'in-progress', ...over,
 })
 
 describe('contextView', () => {

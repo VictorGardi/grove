@@ -33,8 +33,14 @@ const v6ToV7 = (s: { ui?: { viewerWidth?: number | null } }) => ({
   ui: s.ui ? { ...s.ui, viewerWidth: s.ui.viewerWidth == null || s.ui.viewerWidth === 480 ? null : s.ui.viewerWidth } : s.ui,
 })
 
+// v7 → v8 (session workflow status): every session gets a manual label; none set yet.
+const v7ToV8 = (s: { sessions?: Session[] }) => ({
+  ...s,
+  sessions: (s.sessions ?? []).map((x) => ({ ...x, workflowStatus: x.workflowStatus ?? 'in-progress' })),
+})
+
 export function loadState(file: string, onBad?: (msg: string) => void): StateFile {
-  const s = readVersioned<StateFile>(file, 7, { schemaVersion: 7, sessions: [], ui: DEFAULT_UI }, onBad, { 1: v1ToV2, 2: v2ToV3, 3: v3ToV4, 4: v4ToV5, 5: v5ToV6, 6: v6ToV7 })
+  const s = readVersioned<StateFile>(file, 8, { schemaVersion: 8, sessions: [], ui: DEFAULT_UI }, onBad, { 1: v1ToV2, 2: v2ToV3, 3: v3ToV4, 4: v4ToV5, 5: v5ToV6, 6: v6ToV7, 7: v7ToV8 })
   const sessions = (s.sessions ?? []).map((x) => ({ ...x, seenAt: x.seenAt ?? null })) // seenAt: added after v1 shipped
   // v1 files from before ADR 0018 carry `view` and may have the old features tab
   const { view: _view, ...saved } = (s.ui ?? {}) as Partial<UiState> & { view?: unknown }

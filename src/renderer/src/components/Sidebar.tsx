@@ -13,6 +13,7 @@ import { Icon } from './ui/Icon'
 import { LinkPicker } from './LinkPicker'
 import { ListRow } from './ui/ListRow'
 import { tagClass } from './ui/Tag'
+import { WorkflowStatusButton } from './ui/WorkflowStatusPicker'
 import css from './Sidebar.module.css'
 
 function toggle(set: Set<string>, id: string): Set<string> {
@@ -39,7 +40,6 @@ function SessionCard({ s, feature, focused, picked, compact, inGrid, gridOn, gri
   onContextMenu: (e: MouseEvent) => void
 }) {
   const [editing, setEditing] = useState(false)
-  const agent = s.kind !== 'terminal'
   const shown = shownStatus(s)
   const done = shown === 'waiting' && s.waitingFor === 'done' // the agent finished and nobody has looked
   const needsYou = shown === 'waiting' && !done
@@ -55,9 +55,7 @@ function SessionCard({ s, feature, focused, picked, compact, inGrid, gridOn, gri
           onClick={onToggleGrid} />
       }
       cornerPinned={inGrid && gridOn}
-      icon={agent
-        ? <Icon name={done ? 'agent-done' : 'agent'} size={13} className={done ? css.iconDone : shown === 'gone' ? css.iconGone : css.iconAgent} />
-        : <Icon name="terminal" size={13} className={css.iconTerminal} />}
+      icon={<WorkflowStatusButton session={s} />}
       badge={needsYou && <Icon name="agent-alert" size={13} className={css.iconAgent} />}
       meta={s.branch && (
         <div className={css.cardInfo}>
@@ -68,7 +66,7 @@ function SessionCard({ s, feature, focused, picked, compact, inGrid, gridOn, gri
         </div>
       )}
       status={statusView(s)}
-      tone={focused ? 'selected' : needsYou ? 'waiting' : agent ? 'default' : 'muted'}
+      tone={focused ? 'selected' : needsYou ? 'waiting' : s.kind === 'terminal' ? 'muted' : 'default'}
       picked={picked}
       compact={compact}
       onClick={onFocus}

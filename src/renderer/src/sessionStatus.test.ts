@@ -6,7 +6,7 @@ function session(over: Partial<Session> = {}): Session {
   return {
     id: 'a', projectId: 'p', kind: 'opencode', label: 'a', labelPinned: false, tmuxName: 'grove-a',
     cwd: null, agentSessionId: 'ses_a', feature: null, linkPinned: false, action: null,
-    startedAt: '2026-10-05T10:00:00.000Z', endedAt: null, lastStatus: 'running', seenAt: null, lastContext: null, ...over,
+    startedAt: '2026-10-05T10:00:00.000Z', endedAt: null, lastStatus: 'running', seenAt: null, lastContext: null, workflowStatus: 'in-progress', ...over,
   }
 }
 

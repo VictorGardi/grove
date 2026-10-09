@@ -2,7 +2,7 @@
 feature: 2026-10-09-session-workflow-status
 phase: design
 status: draft
-version: 1
+version: 2
 created: 2026-10-09
 updated: 2026-10-09
 approved_at:
@@ -20,7 +20,7 @@ forced: []
 2. Workflow status is separate from `lastStatus`, agent `status`, and `waitingFor`; live status continues to display as it does today.
 3. Clicking the workflow marker opens a picker for Backlog, In Progress, Blocked, In Review, Cancelled, Done, or Pinned.
 4. Choosing a value updates the session through the existing renderer → IPC → core path and survives restart.
-5. The status marker appears in the sidebar cards, Sessions Board cards, and collapsed sidebar tiles. The existing grid-membership action remains independent.
+5. The status marker is the card's top-left `icon` slot, on every session kind: agent cards (where the live-status circle was) and terminal cards (where the terminal glyph was). The Sessions Board card takes the same slot. A collapsed sidebar tile carries it in its top-left corner, beside the centred kind glyph. The grid-membership action remains independent, and the kind glyph does not move.
 6. Status selection has no side effects: it does not archive, clean up, sort, filter, or otherwise alter the session.
 
 ## Status presentation
@@ -43,10 +43,11 @@ Labels are present in the picker and accessible names/tooltips; the card marker 
 
 - No `In Review (Draft)` status.
 - No status filters, sorting, grouping, cleanup rules, auto-transitions, or feature-card rollups.
-- No change to the existing context gauge, agent status dot, or grid membership semantics.
+- No change to the context gauge or grid membership semantics.
+- The card's live-status circle and terminal glyph are replaced by the status button, not kept alongside it. Live status keeps its own home on the bottom status line and the `agent-alert` badge; the collapsed rail tile keeps its own live dot at bottom-right.
 
 ## One-way decisions
 
 - Store the workflow label as a required `Session` field and bump state schema with a migration that sets the default for existing sessions. This keeps status independent of volatile runtime signals and makes all seven labels durable.
 - Use a typed IPC command to change status; the renderer does not mutate session state directly.
-- Preserve the grid control and add a separate always-visible status marker in the card's top-left control cluster; grid membership can remain hover-only when not in the grid.
+- The status button replaces the existing top-left `icon` slot rather than adding a control. Every session kind gets it, so the sidebar card loses its live-status circle and its terminal glyph, and the board card loses its kind glyph; live status is carried by the bottom status line and the `agent-alert` badge. Adding a separate marker beside the icon was rejected: it duplicates what the slot already does and widens every card.

@@ -1,0 +1,83 @@
+/* The card's workflow-status marker: a button in the row's icon slot, and the menu it opens. */
+.root {
+  position: relative;
+  flex-shrink: 0;
+  display: flex;
+}
+
+.button {
+  display: grid;
+  place-items: center;
+  width: 18px;
+  height: 18px;
+  padding: 0;
+  border: 0;
+  border-radius: var(--r-sm, 4px);
+  background: none;
+  cursor: pointer;
+  transition: transform 120ms, color 120ms;
+}
+
+.button:hover {
+  background: var(--raised-bg);
+  transform: scale(1.12);
+}
+
+.button:focus-visible {
+  outline: 1px solid var(--text-3);
+}
+
+.glyph {
+  display: block;
+}
+
+/* positioned from the button rect, set as variables so the tones read the same here as on the button */
+.menu {
+  position: fixed;
+  top: var(--y, 0);
+  left: var(--x, 0);
+  z-index: 40;
+  min-width: 150px;
+  padding: 3px;
+  border: 1px solid var(--card-border);
+  border-radius: var(--r-md);
+  background: var(--raised-bg);
+  box-shadow: 0 6px 20px rgb(0 0 0 / 45%);
+}
+
+.item {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-2);
+  width: 100%;
+  padding: 4px 8px;
+  border: 0;
+  border-radius: var(--r-sm, 4px);
+  background: none;
+  font: inherit;
+  font-size: var(--fs-sm);
+  color: var(--text);
+  text-align: left;
+  cursor: pointer;
+}
+
+.item:hover {
+  background: var(--header-divider);
+}
+
+.check {
+  margin-left: auto;
+  color: var(--text-2);
+}
+
+.glyphOnly {
+  display: inline-flex;
+  flex-shrink: 0;
+}
+
+/* tones: the live-status tokens, so a marker sits in the card's own palette */
+.muted { color: var(--text-3); }
+.waiting { color: var(--status-waiting); }
+.gone { color: var(--status-gone); }
+.working { color: var(--status-working); }
+.finished { color: var(--status-finished); }

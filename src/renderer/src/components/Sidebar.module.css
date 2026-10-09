@@ -106,29 +106,6 @@
   gap: var(--sp-2);
 }
 
-.iconAgent {
-  flex-shrink: 0;
-  color: var(--status-waiting);
-}
-
-
-
-
-.iconDone {
-  flex-shrink: 0;
-  color: var(--status-finished);
-}
-
-.iconGone {
-  flex-shrink: 0;
-  color: var(--status-gone);
-}
-
-.iconTerminal {
-  flex-shrink: 0;
-  color: var(--accent);
-}
-
 .rename {
   flex: 1;
   min-width: 0;

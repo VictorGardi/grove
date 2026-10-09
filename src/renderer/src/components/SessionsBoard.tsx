@@ -3,9 +3,9 @@ import type { Feature, Project, Session } from '@shared/types'
 import { duration, statusView, type StatusSince } from '../sessionStatus'
 import { colorTags } from '../tags'
 import { linkedFeature, sessionColumns } from '../tree'
-import { Icon } from './ui/Icon'
 import { ListRow } from './ui/ListRow'
 import { Tag } from './ui/Tag'
+import { WorkflowStatusButton } from './ui/WorkflowStatusPicker'
 import s from './Board.module.css'
 
 // One project's sessions, one column per status (ADR 0018).
@@ -38,7 +38,7 @@ export function SessionsBoard({ sessions, features, projects, statusSince, onFoc
               <ListRow
                 key={x.id}
                 title={x.label}
-                icon={<Icon name={x.kind} size={14} />}
+                icon={<WorkflowStatusButton session={x} />}
                 meta={f ? (
                   <span className={s.tags}>
                     <Tag index={tags.group(f.projectId, f.group ? f.slug : f.parent)} onClick={() => onOpenFeature(f)}>{f.title}</Tag>

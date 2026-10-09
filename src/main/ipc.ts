@@ -45,6 +45,7 @@ export function registerIpc(core: Core, getWindow: () => BrowserWindow | null, g
   handle('session:resume', (a) => core.commands.sessionResume(a), true)
   handle('session:rename', (a) => core.commands.sessionRename(a), true)
   handle('session:link', (a) => core.commands.sessionLink(a), true)
+  handle('session:workflowStatus', (a) => core.commands.sessionWorkflowStatus(a), true)
   handle('comment:add', (a) => core.commands.commentAdd(a), true)
   handle('comment:update', (a) => core.commands.commentUpdate(a), true)
   handle('comment:delete', (a) => core.commands.commentDelete(a), true)

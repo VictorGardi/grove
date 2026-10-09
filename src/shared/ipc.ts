@@ -1,4 +1,4 @@
-import type { Comment, CommentAnchor, FeaturesSlice, OpenCodeSlice, Project, Session, SessionDiff, SessionKind, Slices, UiState } from './types'
+import type { Comment, CommentAnchor, FeaturesSlice, OpenCodeSlice, Project, Session, SessionDiff, SessionKind, Slices, UiState, WorkflowStatus } from './types'
 
 export type Result<T> = { ok: true; data: T } | { ok: false; error: string }
 export type MenuAction =
@@ -17,6 +17,7 @@ export interface InvokeMap {
   'session:resume': [{ id: string }, Session]
   'session:rename': [{ id: string; label: string }, Session]
   'session:link': [{ id: string; feature: string | null }, Session]
+  'session:workflowStatus': [{ id: string; status: WorkflowStatus }, Session]
   'comment:add': [{ sessionId: string; anchor: CommentAnchor; body: string }, Comment]
   'comment:update': [{ id: string; body: string }, Comment]
   'comment:delete': [{ id: string }, { id: string }]

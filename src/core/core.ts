@@ -2,7 +2,7 @@ import { randomUUID } from 'node:crypto'
 import fs from 'node:fs'
 import os from 'node:os'
 import path from 'node:path'
-import type { Comment, CommentAnchor, Project, Session, SessionDiff, SessionKind, Slices, UiState } from '@shared/types'
+import type { Comment, CommentAnchor, Project, Session, SessionDiff, SessionKind, Slices, UiState, WorkflowStatus } from '@shared/types'
 import { DEFAULT_UI, EMPTY_FEATURES, OPENCODE_CONNECTING } from '@shared/types'
 import type { Result } from '@shared/ipc'
 import { pruneGrid } from '@shared/grid'
@@ -26,7 +26,7 @@ import { sendToSession } from './send'
 import { hasLiveSessions, newProject } from './projects'
 import { readBranch } from './git'
 import type { AgentEvent, AgentKind, AgentSource } from './agents/types'
-import { autoLink, link, markGone, markSeen, newSession, reconcile, rename, resume, withBranches } from './sessions'
+import { autoLink, link, markGone, markSeen, newSession, reconcile, rename, resume, setWorkflowStatus, withBranches } from './sessions'
 import { loadConfig, saveConfig } from './store/configStore'
 import { apply, fromSnapshot, withContext, withStatus, type Tracker } from './status'
 import { loadState, saveState } from './store/stateStore'
@@ -72,6 +72,7 @@ export interface Commands {
   sessionRemove(a: { id: string }): Promise<Result<{ id: string }>>
   sessionResume(a: { id: string }): Promise<Result<Session>> // gone agent sessions only
   sessionRename(a: { id: string; label: string }): Promise<Result<Session>>
+  sessionWorkflowStatus(a: { id: string; status: WorkflowStatus }): Promise<Result<Session>>
   sessionLink(a: { id: string; feature: string | null }): Promise<Result<Session>>
   uiSet(partial: Partial<UiState>): Promise<Result<UiState>>
   sessionFocusLast(): Promise<Result<{ id: string }>> // the latest earlier session still valid; ⌃Tab
@@ -193,7 +194,7 @@ export function createCore(opts: CoreOptions): Core {
       const sessions = slices.sessions.map(
         ({ branch: _branch, status: _status, waitingFor: _waitingFor, contextPct: _p, contextTokens: _t, contextWindow: _w, model: _m, ...s }) => s,
       ) // live-only
-      saveState(opts.statePath, { schemaVersion: 7, sessions, ui: slices.ui })
+      saveState(opts.statePath, { schemaVersion: 8, sessions, ui: slices.ui })
     }
     else if (k === 'comments') saveComments(opts.commentsPath, { schemaVersion: 2, comments: slices.comments })
     if (k === 'sessions') publish() // card state reads linked sessions
@@ -699,6 +700,14 @@ export function createCore(opts: CoreOptions): Core {
       const session = findSession(id)
       if (!session) return { ok: false, error: 'not-found' }
       const next = rename(session, label)
+      replaceSession(next)
+      return { ok: true, data: next }
+    },
+
+    async sessionWorkflowStatus({ id, status }) {
+      const session = findSession(id)
+      if (!session) return { ok: false, error: 'not-found' }
+      const next = setWorkflowStatus(session, status)
       replaceSession(next)
       return { ok: true, data: next }
     },

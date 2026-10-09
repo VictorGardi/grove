@@ -2,11 +2,16 @@ export interface Project { id: string; name: string; path: string }
 export type SessionKind = 'opencode' | 'claude' | 'terminal'
 // The last context reading of an agent session, kept so an ended session shows it dimmed; pct is always known.
 export interface ContextReading { pct: number; tokens: number | null; window: number | null }
+// A manual workflow label, independent of the live agent status. ADR-less: see
+// docs/work/2026-10-09-session-workflow-status.
+export type WorkflowStatus = 'backlog' | 'in-progress' | 'blocked' | 'in-review' | 'cancelled' | 'done' | 'pinned'
+
 export interface Session {
   id: string
   projectId: string
   kind: SessionKind
   label: string
+  workflowStatus: WorkflowStatus
   labelPinned: boolean
   tmuxName: string                 // `grove-${id}`
   cwd: string | null               // folder the session starts in; null: the project's path
@@ -125,7 +130,7 @@ export interface Comment {
 export interface CommentsFile { schemaVersion: 2; comments: Comment[] }
 export type Slices = { projects: Project[]; sessions: Session[]; ui: UiState; features: FeaturesSlice; opencode: OpenCodeSlice; diff: SessionDiff | null; comments: Comment[] } // diff: the one on screen, not persisted
 export interface ConfigFile { schemaVersion: 1; projects: Project[]; workflow?: string }
-export interface StateFile { schemaVersion: 7; sessions: Session[]; ui: UiState }
+export interface StateFile { schemaVersion: 8; sessions: Session[]; ui: UiState }
 export const SIDEBAR_RAIL_WIDTH = 56 // the collapsed sidebar
 export const SIDEBAR_WIDTH = 220 // fixed: the sidebar has no resize handle, so a saved width is ignored
 export const DEFAULT_UI: UiState = { sidebarWidth: SIDEBAR_WIDTH, sidebarCollapsed: false, focusedSessionId: null, focusedFeature: null, focusedProject: null, sidebarTab: 'sessions', board: 'sessions', collapsed: [], hiddenProjects: [], viewer: null, viewerWidth: null, viewerExpanded: false, grid: { open: false, members: [] } }
