@@ -51,6 +51,7 @@ function TrayItem({ comment, onJump }: { comment: Comment; onJump: () => void })
 }
 
 // Comments (n) in the diff and artifact viewers' headers: its tray of drafts, a general note, Send, and the Sent list.
+// SAVE uses the session whose content is being viewed (sessionId prop); SEND uses focusedSessionId.
 export function ReviewMenu({ sessionId }: { sessionId: string }) {
   const comments = useSlices((x) => x.comments).filter((c) => c.sessionId === sessionId)
   const drafts = comments.filter((c) => c.state === 'draft')
@@ -59,11 +60,11 @@ export function ReviewMenu({ sessionId }: { sessionId: string }) {
   const openDiff = useSlices((x) => x.openDiff)
   const openArtifact = useSlices((x) => x.openArtifact)
   const note = drafts.find((c) => c.anchor.kind === 'note')
+  const focusedSessionId = useSlices((x) => x.ui.focusedSessionId)
   const [open, setOpen] = useState(false)
   const [text, setText] = useState(note?.body ?? '')
   const [sending, setSending] = useState(false)
-  const [resuming, setResuming] = useState(false) // the session was gone when Send was pressed
-  const isGone = useSlices((x) => x.sessions.find((v) => v.id === sessionId)?.lastStatus === 'gone')
+  const [resuming, setResuming] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const root = useRef<HTMLDivElement>(null)
 
@@ -101,10 +102,12 @@ export function ReviewMenu({ sessionId }: { sessionId: string }) {
   async function send() {
     setError(null)
     setSending(true)
-    setResuming(isGone)
+    const targetSessionId = focusedSessionId ?? sessionId
+    const targetIsGone = useSlices.getState().sessions.find((v) => v.id === targetSessionId)?.lastStatus === 'gone'
+    setResuming(targetIsGone)
     try {
       if (!(await saveNote())) return
-      const res = await window.api.invoke('review:send', { sessionId })
+      const res = await window.api.invoke('review:send', { sessionId: targetSessionId })
       if (!res.ok) setError(SEND_ERRORS[res.error] ?? res.error)
     } finally {
       setSending(false)

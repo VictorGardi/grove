@@ -114,8 +114,8 @@ export function DiffViewer({ diff, sessionId, label, expanded, onOpenRendered, o
   async function save(f: DiffFile, text: string) {
     const a = writing && d?.root ? rangeAnchor(d.root, f, writing.hunk, writing.side, writing.origin, writing.end) : null
     if (!a) return
-    // filed under whichever session is focused when the comment is sent, not the session whose diff is open
-    const res = await window.api.invoke('comment:add', { sessionId: useSlices.getState().ui.focusedSessionId ?? sessionId, anchor: a, body: text })
+    // SAVE uses the session whose diff is being viewed; SEND (in ReviewMenu) uses focusedSessionId
+    const res = await window.api.invoke('comment:add', { sessionId, anchor: a, body: text })
     if (res.ok) {
       setWriting(null)
       setError(null)
