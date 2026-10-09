@@ -179,3 +179,115 @@
 .waiting {
   color: var(--text);
 }
+
+.visibilityWrapper {
+  margin-left: auto;
+  flex-shrink: 0;
+}
+
+.visibilityActive {
+  color: var(--accent);
+}
+
+/* Same surface as the context menu, so it reads as part of one family. */
+.visibilityPopover {
+  position: fixed;
+  width: 240px;
+  padding: var(--sp-1);
+  display: flex;
+  flex-direction: column;
+  background: var(--card-bg);
+  border: 1px solid var(--text-3);
+  border-radius: var(--r-card);
+  box-shadow: 0 6px 24px rgb(0 0 0 / 0.4);
+  z-index: 1100;
+}
+
+.visibilityList {
+  display: flex;
+  flex-direction: column;
+  max-height: 320px;
+  overflow-y: auto;
+}
+
+.visibilityItem,
+.visibilityItemOff {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-2);
+  padding: 5px var(--sp-2);
+  border: 0;
+  border-radius: var(--r-card);
+  background: transparent;
+  color: var(--text);
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+
+.visibilityItem:hover,
+.visibilityItemOff:hover {
+  background: var(--card-selected-bg);
+}
+
+.visibilityItemOff {
+  color: var(--text-3);
+}
+
+.visibilityItemOff svg {
+  opacity: 0.5;
+}
+
+.visibilityName {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.visibilityCount {
+  flex-shrink: 0;
+  font-size: var(--fs-sm);
+  font-variant-numeric: tabular-nums;
+  color: var(--text-3);
+}
+
+.visibilityCheck {
+  flex-shrink: 0;
+  width: 13px;
+  height: 13px;
+  display: inline-flex;
+  color: var(--accent);
+}
+
+.visibilityFooter {
+  display: flex;
+  gap: var(--sp-1);
+  margin-top: var(--sp-1);
+  padding-top: var(--sp-1);
+  border-top: 1px solid var(--divider);
+}
+
+.visibilityAction {
+  flex: 1;
+  padding: 4px var(--sp-2);
+  border: 0;
+  border-radius: var(--r-card);
+  background: transparent;
+  color: var(--text-2);
+  font: inherit;
+  font-size: var(--fs-sm);
+  white-space: nowrap;
+  cursor: pointer;
+}
+
+.visibilityAction:hover:not(:disabled) {
+  background: var(--card-selected-bg);
+  color: var(--text);
+}
+
+.visibilityAction:disabled {
+  color: var(--text-3);
+  cursor: default;
+}

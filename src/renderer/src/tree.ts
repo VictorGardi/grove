@@ -8,17 +8,20 @@ const byStart = (a: Session, b: Session) => a.startedAt.localeCompare(b.startedA
 export interface SessionGroup { project: Project; key: string; collapsed: boolean; sessions: Session[] }
 
 // Sessions tab: every session under its project, projects in config order, sessions by start time.
-export function sessionGroups(projects: Project[], sessions: Session[], ui: Pick<UiState, 'collapsed'>): SessionGroup[] {
+export function sessionGroups(projects: Project[], sessions: Session[], ui: Pick<UiState, 'collapsed'> & Partial<Pick<UiState, 'hiddenProjects'>>): SessionGroup[] {
   const collapsed = new Set(ui.collapsed)
-  return projects.map((project) => {
-    const key = projectKey(project.id)
-    return {
-      project,
-      key,
-      collapsed: collapsed.has(key),
-      sessions: sessions.filter((s) => s.projectId === project.id).sort(byStart),
-    }
-  })
+  const hidden = new Set(ui.hiddenProjects ?? [])
+  return projects
+    .filter((project) => !hidden.has(project.id))
+    .map((project) => {
+      const key = projectKey(project.id)
+      return {
+        project,
+        key,
+        collapsed: collapsed.has(key),
+        sessions: sessions.filter((s) => s.projectId === project.id).sort(byStart),
+      }
+    })
 }
 
 // Sessions in display order, collapsed groups included. Cmd+1..9 counts in this order.

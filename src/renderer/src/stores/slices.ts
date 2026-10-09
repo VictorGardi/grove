@@ -19,6 +19,7 @@ interface SlicesState {
   hydrate(): Promise<void>
   setFocused(id: string | null): void
   toggleCollapsed(key: string): void
+  toggleProjectVisibility(id: string): void
   focusFeature(ref: { projectId: string; slug: string }): void
   openProject(id: string): void
   go(to: Partial<UiState>): void // a breadcrumb up-link
@@ -128,6 +129,11 @@ export const useSlices = create<SlicesState>((set, get) => {
       const { collapsed } = get().ui
       const next = collapsed.includes(key) ? collapsed.filter((k) => k !== key) : [...collapsed, key]
       void window.api.invoke('ui:set', { collapsed: next })
+    },
+    toggleProjectVisibility(id) {
+      const hidden = get().ui.hiddenProjects ?? []
+      const next = hidden.includes(id) ? hidden.filter((x) => x !== id) : [...hidden, id]
+      void window.api.invoke('ui:set', { hiddenProjects: next })
     },
   }
 })

@@ -1,4 +1,4 @@
-import { useState, type MouseEvent } from 'react'
+import { useEffect, useRef, useState, type MouseEvent } from 'react'
 import { GRID_MAX, type Feature, type Project, type Session } from '@shared/types'
 import { useSlices } from '../stores/slices'
 import { gridShown } from '../gridView'
@@ -177,7 +177,7 @@ function ProjectHeader({ project: p, tag, count, refused, onToggle, onRemove, on
 }
 
 export function Sidebar({ onNew }: { onNew: (projectId?: string) => void }) {
-  const { projects, sessions, ui, features, setFocused, toggleCollapsed, focusFeature, openProject, setSidebarTab, toggleGrid, toggleGridMember, toggleSidebar, waitingSince } = useSlices()
+  const { projects, sessions, ui, features, setFocused, toggleCollapsed, toggleProjectVisibility, focusFeature, openProject, setSidebarTab, toggleGrid, toggleGridMember, toggleSidebar, waitingSince } = useSlices()
   const waitingCount = sessions.filter((x) => shownStatus(x) === 'waiting').length
   const [refused, setRefused] = useState<string | null>(null)
   const [compact, setCompact] = useState<Set<string>>(new Set())
@@ -185,7 +185,21 @@ export function Sidebar({ onNew }: { onNew: (projectId?: string) => void }) {
   const [picked, setPicked] = useState<Set<string>>(new Set()) // shift-click multi-selection
   const [anchor, setAnchor] = useState<string | null>(null) // where a shift-click range starts
   const [menu, setMenu] = useState<{ x: number; y: number; ids: string[] } | null>(null)
+  const hidden = ui.hiddenProjects ?? []
+  const [visibilityOpen, setVisibilityOpen] = useState(false)
+  const [popPos, setPopPos] = useState<{ left: number; bottom: number }>({ left: 0, bottom: 0 })
+  const visibilityRef = useRef<HTMLDivElement>(null)
   const tags = colorTags(projects, features.items)
+
+  // Close visibility popover on outside click
+  useEffect(() => {
+    if (!visibilityOpen) return
+    const onDown = (e: globalThis.MouseEvent) => {
+      if (visibilityRef.current && !visibilityRef.current.contains(e.target as Node)) setVisibilityOpen(false)
+    }
+    document.addEventListener('mousedown', onDown)
+    return () => document.removeEventListener('mousedown', onDown)
+  }, [visibilityOpen])
 
   async function removeProject(id: string) {
     const res = await window.api.invoke('project:remove', { id })
@@ -295,6 +309,49 @@ export function Sidebar({ onNew }: { onNew: (projectId?: string) => void }) {
             {waitingCount} waiting
           </Button>
         )}
+        <div className={css.visibilityWrapper} ref={visibilityRef}>
+          <Button
+            variant="ghost"
+            size="sm"
+            icon={hidden.length > 0 ? 'eye-off' : 'eye'}
+            aria-pressed={hidden.length > 0}
+            aria-expanded={visibilityOpen}
+            aria-haspopup="menu"
+            title={hidden.length > 0 ? `Project visibility (${hidden.length} hidden)` : 'Project visibility'}
+            onClick={(e) => {
+              const r = e.currentTarget.getBoundingClientRect()
+              setPopPos({ left: Math.max(8, r.right - 240), bottom: window.innerHeight - r.top + 6 })
+              setVisibilityOpen(!visibilityOpen)
+            }}
+            className={hidden.length > 0 ? css.visibilityActive : ''} />
+          {visibilityOpen && (
+            <div className={css.visibilityPopover} style={popPos} role="menu" aria-label="Project visibility"
+              onKeyDown={(e) => { if (e.key === 'Escape') { e.stopPropagation(); setVisibilityOpen(false) } }}>
+              <div className={css.visibilityList}>
+                {projects.map((p) => {
+                  const total = sessions.filter((x) => x.projectId === p.id).length
+                  const shown = !hidden.includes(p.id)
+                  return (
+                    <button key={p.id} type="button" role="menuitemcheckbox" aria-checked={shown}
+                      className={shown ? css.visibilityItem : css.visibilityItemOff}
+                      onClick={() => toggleProjectVisibility(p.id)}>
+                      <Icon name="folder" size={13} className={tagClass(tags.project(p.id), 'fg')} />
+                      <span className={css.visibilityName}>{p.name}</span>
+                      {total > 0 && <span className={css.visibilityCount}>{total}</span>}
+                      <span className={css.visibilityCheck}>{shown && <Icon name="check" size={13} />}</span>
+                    </button>
+                  )
+                })}
+              </div>
+              <div className={css.visibilityFooter}>
+                <button type="button" className={css.visibilityAction} disabled={hidden.length === 0}
+                  onClick={() => void window.api.invoke('ui:set', { hiddenProjects: [] })}>Show all</button>
+                <button type="button" className={css.visibilityAction} disabled={hidden.length === projects.length}
+                  onClick={() => void window.api.invoke('ui:set', { hiddenProjects: projects.map((p) => p.id) })}>Hide all</button>
+              </div>
+            </div>
+          )}
+        </div>
       </div>
       {menu && (
         <ContextMenu x={menu.x} y={menu.y} onClose={() => setMenu(null)}
