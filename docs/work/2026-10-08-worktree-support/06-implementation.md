@@ -18,10 +18,15 @@ forced: []
 
 | Slice | Outcome | State |
 |---|---|---|
-| 1 | Tracer: a worktree session, nested under its repo | done, committed (one correction after the human tested it) |
+| 1 | Tracer: a worktree session, nested under its repo | done, reviewed and approved by the human (2026-10-10) |
 | 2 | Lifecycle: conflicts, locking, pruning, removal | not started |
 | 3 | One card per feature, with a divergence chip | not started |
 | 4 | Review comments stay unambiguous across checkouts | not started |
+
+Slice 1's commits: `2d109c6` (the tracer), `ea532dc` and `cf24796` (two corrections the
+human's testing found — the missing rail colour bar, then the broken bar line). Approving a
+slice is the human's conversational checkpoint; `06-implementation.md` itself is approved
+once, at the end, with `grove-approve <slug> implementation`.
 
 ## Slice 1 — Tracer
 
