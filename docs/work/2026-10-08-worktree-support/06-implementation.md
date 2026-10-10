@@ -97,9 +97,23 @@ checkout's slot: a worktree takes no slot of its own and wears its repo's colour
 bar class per block), because the components have no render harness and this was the second
 composition gap in the slice that unit tests on the pieces did not catch.
 
+Then the human tested the rail again and the bar was still wrong, in the opposite way: the
+worktree had become a second block, so `grove` and `grove · probe` drew two bars of the
+*same* colour with a `--sp-3` gap between them — a break in the line, which reads as two
+projects rather than one repo. Nesting is not something the rail can draw: at 56px the bar is
+its only grouping cue, and a bar cannot be both "the same project" and "a different group".
+So the rail stopped trying to nest. Each block is one repo, its worktrees' tiles folded into
+the same run in `orderedSessions` order (`SidebarRail.tsx:38-43`), with one continuous bar.
+⌘N still lines up, because ⌘N was always `orderedSessions(listGroups(...))`. The full
+sidebar keeps the real nesting: heading, indent, collapsed worktree rows.
+
+Trade-off accepted: the rail no longer says which checkout a tile is in. At that width it
+could not do so honestly anyway — the tile's tooltip carries the session's name, and the
+sidebar shows the checkout.
+
 ### Verification
 
-`npm test` (68 files, 713 tests — was 65/673), `npm run typecheck`, `npm run build`: all
+`npm test` (68 files, 714 tests — was 65/673), `npm run typecheck`, `npm run build`: all
 clean. Beyond the unit tests, these are proven against **real git**:
 
 - `gitCommonDir` returns exactly what `git rev-parse --git-common-dir` returns, for a

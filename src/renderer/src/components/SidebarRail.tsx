@@ -1,7 +1,7 @@
 import { GRID_MAX, type Session } from '@shared/types'
 import { gridShown } from '../gridView'
 import { longestWaiting, shownStatus, statusTone } from '../sessionStatus'
-import { listGroups, type ListGroup } from '../sessionList'
+import { listGroups, orderedSessions, type ListGroup } from '../sessionList'
 import { useSlices } from '../stores/slices'
 import { colorTags } from '../tags'
 import { workflowStatusOf } from '../workflowStatus'
@@ -35,10 +35,14 @@ export function SidebarRail() {
   const tags = colorTags(projects, features.items)
   const waiting = sessions.filter((x) => shownStatus(x) === 'waiting').length
   const members = ui.grid.members.length
-  // A repo's tiles in one run, then each worktree's: the same tree the sidebar draws. The
-  // rail has no room for a heading per level and never collapsed a group, so every tile in
-  // the list is on screen here whether its group is expanded or not.
-  const blocks = listGroups(projects, sessions, ui).flatMap((g) => [g, ...g.children]).filter((g) => g.sessions.length > 0)
+  // One run of tiles per group, a repo's worktrees folded into it. The rail has no room for
+  // a heading per level, and the colour bar is the only grouping cue it has: drawing a
+  // worktree as a second block would put a gap between two bars of the same colour, which
+  // reads as two projects rather than one repo (ADR 0037). `orderedSessions` keeps the rail
+  // in the sidebar's order, so ⌘N is the tile the human counts to.
+  const blocks = listGroups(projects, sessions, ui)
+    .map((g) => ({ ...g, sessions: orderedSessions([g]) }))
+    .filter((g) => g.sessions.length > 0)
 
   return (
     <div className={css.rail}>
