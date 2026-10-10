@@ -2,7 +2,7 @@
 feature: 2026-10-08-worktree-support
 phase: structure
 status: approved
-version: 2
+version: 3
 created: 2026-10-10
 updated: 2026-10-10
 approved_at: 2026-10-10
@@ -13,13 +13,22 @@ forced: []
 
 # Worktree support — structure
 
-> **v2, human-directed (2026-10-10).** Slice 3 gains one thing after a review of the whole
-> repo for places that treat a checkout as a repo: the command palette lists every feature
-> once per checkout, so 20 features across 2 checkouts are 40 entries, half of them duplicate
-> labels. `paletteItems.ts` was in no slice. The human approved adding it to slice 3, which
-> is why the structure stays `approved` rather than going back to draft — run
-> `grove-approve 2026-10-08-worktree-support structure` if you want the formal stamp on top.
-> Nothing else changed.
+> **v2 and v3, human-directed (2026-10-10).** Two scope changes after a review of the whole
+> repo for places that treat a checkout as a repo. Neither was in any slice.
+>
+> **v2 — the palette's duplicate features.** It lists every feature once per checkout, so 20
+> features across 2 checkouts of grove are 40 entries, half with duplicate labels.
+> `paletteItems.ts` was in no slice.
+>
+> **v3 — checkouts are not rows in a picker.** The palette's project entries and the grid
+> toolbar's filter tabs each listed a checkout as a peer of a repo, the same conflation the
+> options panel had. The human's decision: group both by repo, and let the repo's page list
+> every checkout's sessions so it matches the sidebar. ⌘T's new-session list deliberately stays
+> per checkout — starting a session in a chosen checkout is a real thing to do.
+>
+> Both revisions were approved by the human before they were made, which is why the structure
+> stays `approved` rather than going back to draft; `grove-approve 2026-10-08-worktree-support
+> structure` will put the formal stamp on it. Nothing else changed.
 
 ## Slices
 
@@ -75,20 +84,23 @@ forced: []
 - **Outcome:** the Features board shows one card per (repo, slug); a worktree copy at
   a different stage gets a chip that opens that copy; a worktree session's agent is a
   linked dot on the repo's card rather than on a duplicate; a worktree project page
-  shows sessions only, and ⌘B from a worktree session opens the parent repo's page;
-  the command palette offers one entry per feature rather than one per checkout.
+  shows sessions only, and ⌘B from a worktree session opens the parent repo's page.
+  A repo then reads as one repo everywhere: the palette offers one entry per
+  feature and one project entry per repo, the repo's page lists every checkout's
+  sessions, and the grid's filter tabs are per repo with all its checkouts counted in.
 - **Files:** `src/renderer/src/featureUnion.ts` (NEW); `Board.tsx`;
   `ProjectPage.tsx`; `SessionsBoard.tsx`; `FeaturePage.tsx`; `navigation.ts`;
-  `src/renderer/src/paletteItems.ts`.
+  `src/renderer/src/paletteItems.ts`; `src/renderer/src/components/GridToolbar.tsx`.
 - **Signatures:** `unionFeatures(features, groups): Feature[]`;
   `divergentCopies(feature): Checkout[]`.
 - **Verify:** `npm test` (`featureUnion.test`, `paletteItems.test`, Board and ProjectPage
-  render tests); `npm run typecheck`; manual: edit a worktree's `02-research.md` frontmatter to a
-  later stage and confirm a chip appears on the repo's card while the card's own
-  stage does not move; click the chip and confirm the worktree's copy opens; confirm
-  the worktree session's dot is on the repo's card and not on a duplicate; open the
-  palette with two checkouts of one repo configured and confirm each feature is listed
-  once.
+  render tests); `npm run typecheck`; manual with two checkouts of one repo configured:
+  edit a worktree's `02-research.md` frontmatter to a later stage and confirm a chip appears on
+  the repo's card while the card's own stage does not move; click the chip and confirm the
+  worktree's copy opens; confirm the worktree session's dot is on the repo's card and not on a
+  duplicate; confirm the palette lists each feature once and one project entry per repo; confirm
+  the repo's Sessions board lists the worktree's session too; confirm the grid shows one filter
+  tab for the repo, counting both checkouts' panes. ⌘T's new-session list stays per checkout.
 - **Depends on:** 1.
 
 ### Slice 4 — Review comments stay unambiguous across checkouts

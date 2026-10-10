@@ -46,11 +46,16 @@ were settled directly:
   checkouts of grove are 40 entries, half with duplicate labels. `paletteItems.ts` was in no
   slice, so the human approved adding it to slice 3 (`04-structure.md` v2).
 
-Still open for the human, not yet in any slice: the palette's project entries, ⌘T's per-checkout
-fan-out and the grid toolbar's filter tabs all present a checkout as a peer of a repo, which is
-the same conflation the options panel had; whether the repo's *Sessions* board should include
-its worktrees' sessions; and whether slice 4's "two checkouts in one message" is reachable at
-all, since `reviewSend` sends one session's drafts and a session has one checkout.
+The three pickers the audit found were then decided by the human, not fixed piecemeal: the
+palette's project entries and the grid toolbar's filter tabs group by repo, and the repo's page
+lists every checkout's sessions so it agrees with the sidebar; ⌘T's new-session list stays per
+checkout, because starting a session in a chosen checkout is a real thing to do. All three went
+into slice 3 (`04-structure.md` v3) rather than being applied here, so the palette, the board and
+the page change in one coherent slice instead of three passes over the same files.
+
+Still open for the human, not yet in any slice: whether slice 4's "two checkouts in one message"
+is reachable at all, since `reviewSend` sends one session's drafts and a session has one
+checkout. The human's answer: rewrite slice 4 to the part that is real.
 
 ## Slice 1 — Tracer
 

@@ -1,7 +1,7 @@
 ---
 phase: research
 status: approved
-version: 1
+version: 2
 based_on: []
 repo_heads: ["feature/xirp"]
 ---
@@ -96,6 +96,47 @@ exists at all today; it's CLI-only (`grove new --cwd`).
    precedent needs to be explicitly revisited for this case, not silently
    overridden.
 
+## What the code already does with a worktree directory
+
+Answering research questions 8 and 12 from the code, because the answer turned
+out to decide the product question rather than follow from it.
+
+`resolveProject()` (`src/core/cliOps.ts:41-55`) matches a folder to a project by
+**path containment only** — `contains(root, dir)` is equality or a `dir + sep`
+prefix (`cliOps.ts:37`). It never reads `.git`. On a miss it asks `gitTop`, which
+is `git rev-parse --show-toplevel` run in the target directory
+(`src/core/core.ts:156-163`). Inside a linked worktree that returns the
+**worktree's own root**, not the main repo's.
+
+With the disk location this feature chose (`~/.grove/worktrees/<repo>/<branch>`,
+`01-questions.md:47`), three things follow:
+
+1. The worktree path is not contained in the main repo's path, so containment misses.
+2. `gitTop` returns the worktree root and `resolveProject` registers a **new
+   `Project`** for it (`cliOps.ts:54`).
+3. In `sessionCreate`, `dir = real === realOrSelf(project.path) ? null : real`
+   (`src/core/core.ts:627-628`) collapses `cwd` to **`null`** — the session's cwd
+   *is* the newly registered project's path.
+
+**Grove already produces one `Project` per worktree.** The "plain `Session.cwd`,
+one Project per repo" answer at `01-questions.md:41` is unreachable while the
+worktree lives outside the repo directory. The two approved answers contradict
+each other, and the code sides with the disk location.
+
+Three further facts:
+
+- `resolveProject` has **no path dedup at all**, so `grove new --cwd <worktree>`
+  registers a *duplicate* project on every call.
+- Discovery is keyed on `projectId` alone (`src/core/core.ts:120-126`, `:293`),
+  which stamps every discovered folder with its entry's key. A worktree project
+  therefore discovers its **own copy of every feature folder** under its own id —
+  a fork of the repository's whole feature set.
+- **RQ12 (autolink) is answered in the model's favour.** `slugFor` resolves the
+  agent's write paths against `project.path` and matches a root derived from that
+  same `project.path` (`src/core/core.ts:341-342`). With the worktree as its own
+  project, both sides agree and the slug resolves. The RQ12 breakage only exists
+  under the plain-`Session.cwd` option, which the disk location rules out.
+
 ## Design implication
 
 Items 2–4 all fail for the same underlying reason: they resolve paths
@@ -169,6 +210,7 @@ creating/managing worktree sessions with branch-conflict handling.
 
 ## Open questions
 
-See `00-ticket.md`'s "Decisions chosen" section — a real questions phase
-(`01-questions.md`) hasn't been run yet, so none of those product questions
-are resolved.
+None. Research questions 1–7 and 9–11 are answered above, 8 and 12 in § *What
+the code already does with a worktree directory*. The product questions in
+`01-questions.md` are resolved except the modeling choice, which the design
+phase revisits.

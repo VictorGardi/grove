@@ -1,7 +1,7 @@
 ---
 phase: questions
-status: approved
-version: 1
+status: draft
+version: 2
 based_on: []
 repo_heads: ["feature/xirp"]
 ---
@@ -38,13 +38,16 @@ Let a grove session run in its own `git worktree` instead of always sharing its 
 ## Product questions for the human
 
 1. **Worktree session modeling**: Should a worktree session be modeled as its own lightweight `Project` (with a `parentProjectId`/`worktreeOf` field so the sidebar nests it under its parent repo), or should it stay a plain `Session.cwd` under the existing project?
-   - **Decision**: Plain `Session.cwd` — keep one Project per repo; fix viewer/discovery/autolink to resolve against `session.cwd`'s repo root instead of `project.path`.
+   - **Decision (reversed 2026-10-10; originally "Plain `Session.cwd`")**: Each worktree is its own lightweight `Project`. Its `path` is the worktree root, so feature discovery, the watcher, the diff viewer and auto-link are correct with no change to any of them. `worktreeOf` marks the parent for **nesting only** — it is not the authority for which repo a checkout belongs to.
+   - **Why it reversed**: three reasons, none available on 2026-10-08. The research already argued for this and the original answer overrode it (`02-research.md` § *Design implication*). Multi-repo sandboxing makes it load-bearing — the sandbox mounts exactly the session's working directory at host-identical paths, an invariant that only holds if that directory *is* a project path. And the disk location at Q4 already forces this outcome in code (`02-research.md` § *What the code already does with a worktree directory*).
+   - **Migrated to the design phase** as a one-way door: this is a persisted-shape change other subsystems will copy, not a two-way product preference. See `03-design.md` W1.
 2. **Auto-create vs. ask**: When starting a session that wants a worktree, should the app auto-create a worktree on a new branch (e.g., `grove/feature-xyz`) or always ask the user first (pick/create branch, confirm path)?
    - **Decision**: CLI flag only for v1 — `grove new --worktree --branch <name>` creates it; GUI just uses the CLI flag; defer GUI flow to later.
 3. **Cleanup policy**: On session end, what should happen to the worktree — auto-remove, keep-until-merged, or manual only? (Ecosystem recommends keep-until-merged/explicit close; agents' work often needs review after the session ends.)
    - **Decision**: Keep until merged/explicit close — worktree persists after session ends; user removes it manually or via a 'clean up merged' action.
 4. **Disk location**: Where do new worktrees live on disk — a sibling directory (e.g., `../repo-worktree-branch`), a hidden cache dir (e.g., `~/.grove/worktrees/repo/branch`), or user-chosen?
    - **Decision**: Hidden cache dir — under `~/.grove/worktrees/<repo>/<branch>` — keeps workspace clean.
+   - **Load-bearing, not cosmetic (noted 2026-10-10)**: this answer decides Q1 in code. A worktree outside the repo directory is not contained in the project's path, so `resolveProject` registers it as its own `Project` and collapses `Session.cwd` to `null` (`02-research.md` § *What the code already does with a worktree directory*). Standing.
 5. **GUI affordance**: Does the GUI need its own "start session in new worktree" flow (pick/create branch, surface branch-in-use conflicts before `git worktree add`), or is a CLI flag (`grove new --worktree`) enough for a first cut?
    - **Decision**: CLI flag only for v1 (per Q2) — `grove new --worktree --branch <name>`; GUI defers to CLI.
 6. **Branch naming**: If auto-creating (or via CLI flag), what branch naming scheme? This applies when the user provides a branch name via `--branch`.
@@ -54,12 +57,13 @@ Let a grove session run in its own `git worktree` instead of always sharing its 
 
 ## Size verdict
 
-**M** — Medium. Reasons:
+**M** — Medium. Reasons (revised 2026-10-10, after Q1 reversed):
 - Net-new git-worktree lifecycle module (create/remove/list/prune/lock) — from scratch
-- Config migration for any new session/worktree fields (same pattern as ADR 0029 `cwd` addition)
-- Three subsystems must be fixed to resolve against `session.cwd`'s repo root instead of `project.path` (artifact viewer `setRendered`, feature discovery `resolveRoot`/watcher, auto-linking `slugFor`)
+- One **optional** `Project.worktreeOf` field — additive, so `ConfigFile.schemaVersion` stays 1 and **no config migration** is needed (`readVersioned` returns unknown keys verbatim, `src/core/store/jsonFile.ts:31`)
+- Repo grouping derived from git at load, not stored as authority
+- Nested project list in the sidebar and Projects tab; features deduped by (repo, slug) in the view
 - CLI flag `grove new --worktree --branch` for v1; GUI flow deferred
-- No rearchitecture: the hard part (sessions decoupled from project path, branch-aware diffing) is already built
+- **No changes to `setRendered`, `resolveRoot`, the watcher wiring or `slugFor`** — with the worktree as its own Project, `project.path` is the worktree root and all four are already correct
 - Roughly comparable in scope to ADR 0021 (session diff) or ADR 0027 (grove CLI)
 
 ## Open questions
