@@ -3,6 +3,12 @@ import { shownStatus, type ShownStatus } from './sessionStatus'
 
 export const projectKey = (id: string) => 'p:' + id
 
+// A worktree's group sits under its repo's, one level deep. Worktree rows start collapsed, so
+// what the human's own choice is remembered is the opposite: `ui.collapsed` holds the key of
+// the group they opened. One list, no new ui field, no state-file change.
+export const worktreeKey = (id: string) => 'w:' + id
+export const openedKey = (key: string) => 'o:' + key
+
 const byStart = (a: Session, b: Session) => a.startedAt.localeCompare(b.startedAt)
 
 export interface BoardCard { feature: Feature; parent: Feature | null }

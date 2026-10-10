@@ -35,11 +35,15 @@ export function SidebarRail() {
   const tags = colorTags(projects, features.items)
   const waiting = sessions.filter((x) => shownStatus(x) === 'waiting').length
   const members = ui.grid.members.length
+  // A repo's tiles in one run, then each worktree's: the same tree the sidebar draws. The
+  // rail has no room for a heading per level and never collapsed a group, so every tile in
+  // the list is on screen here whether its group is expanded or not.
+  const blocks = listGroups(projects, sessions, ui).flatMap((g) => [g, ...g.children]).filter((g) => g.sessions.length > 0)
 
   return (
     <div className={css.rail}>
       <div className={css.list}>
-        {listGroups(projects, sessions, ui).filter((g) => g.sessions.length > 0).map((g) => {
+        {blocks.map((g) => {
           const bar = barClass(g, g.project ? tags.project(g.project.id) : null)
           return (
             <div key={g.key} className={css.group} title={g.label}>

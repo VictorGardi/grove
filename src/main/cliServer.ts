@@ -4,6 +4,7 @@ import { PROTOCOL, type CliReply, type CliSession, type TurnResult } from '@shar
 import type { Session } from '@shared/types'
 import type { Core } from '../core/core'
 import { resolveSessionRef } from '../core/cliOps'
+import * as worktrees from '../core/worktrees'
 
 export interface CliServerOptions {
   socketPath: string
@@ -21,6 +22,8 @@ const MESSAGES: Record<string, string> = {
   'no-status': 'a terminal session has no status to wait on',
   gone: 'the session has ended and cannot be resumed',
   'not-ready': 'the resumed session did not draw its prompt in time',
+  'no-git': 'git was not found, so no worktree could be made',
+  'worktree-failed': 'the worktree could not be created',
 }
 
 const failFrom = (id: string, code: string): CliReply => fail(id, code, MESSAGES[code] ?? code)
@@ -79,8 +82,20 @@ async function dispatch(core: Core, raise: () => void, line: string): Promise<Cl
       if (typeof kind !== 'string' || !KINDS.includes(kind) || typeof cwd !== 'string' || !cwd) {
         return fail(id, 'bad-params', 'kind and cwd are required')
       }
+      const branch = optString(params.branch)
+      if (params.worktree === true && !branch) return fail(id, 'bad-params', '--worktree needs --branch')
+      // A worktree session runs in the new checkout, so the worktree is made first and the
+      // session is created in it; sessionCreate then registers it as its own project, nested
+      // under the repo's checkout (ADR 0037).
+      let dir = cwd
+      if (params.worktree === true) {
+        const repo = (await core.gitTop(cwd)) ?? cwd
+        const made = await worktrees.add({ repo, branch: branch!, path: worktrees.worktreePath(repo, branch!), git: core.git })
+        if (!made.ok) return fail(id, made.error === 'no-git' ? 'no-git' : 'worktree-failed', made.error)
+        dir = made.data.path
+      }
       const res = await core.commands.sessionCreate({
-        kind: kind as Session['kind'], cwd, prompt: optString(params.prompt), label: optString(params.label),
+        kind: kind as Session['kind'], cwd: dir, prompt: optString(params.prompt), label: optString(params.label),
         feature: optString(params.feature), cols: COLS, rows: ROWS,
       })
       if (!res.ok) return failFrom(id, res.error)

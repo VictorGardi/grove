@@ -164,4 +164,18 @@ describe('focusTarget', () => {
   it('counts sidebar order when the grid is on but hidden', () => {
     expect(at({ grid: { open: true, members: ['c', 'a'] }, focusedSessionId: 'b' }, 1)?.id).toBe('b')
   })
+
+  it('counts a worktree\'s sessions under its repo, and only what is on screen', () => {
+    // p's own session, then its worktree's (collapsed by default), then q's.
+    const withWorktrees: Project[] = [
+      project('p'), { id: 'wt', name: 'P · a', path: '/wt', worktreeOf: 'p' }, project('q'),
+    ]
+    const list = [session('main'), session('inWt', { projectId: 'wt', startedAt: '2026-10-05T10:00:00.000Z' }), session('inQ', { projectId: 'q', startedAt: '2026-10-05T09:00:00.000Z' })]
+    const nth = (n: number, collapsed: string[] = []) => focusTarget(ui({ collapsed }), withWorktrees, list, features, n)?.id
+    expect(nth(1)).toBe('main')
+    expect(nth(2)).toBe('inWt') // a collapsed worktree holds its slot, as any collapsed group does
+    expect(nth(3)).toBe('inQ')
+    expect(nth(4)).toBeUndefined()
+    expect(nth(2, ['o:w:wt'])).toBe('inWt') // opening the worktree changes nothing about the order
+  })
 })

@@ -4,7 +4,7 @@ import path from 'node:path'
 import type { TurnResult } from '@shared/cli'
 import type { Result } from '@shared/ipc'
 import type { Project, Session } from '@shared/types'
-import { newProject } from './projects'
+import { newProject, parentCheckout } from './projects'
 
 const MIN_PREFIX = 4
 
@@ -37,6 +37,7 @@ export function realOrSelf(p: string): string {
 const contains = (dir: string, p: string) => p === dir || p.startsWith(dir.endsWith(path.sep) ? dir : dir + path.sep)
 
 // The registered project with the longest path containing `cwd`; none: the folder's git top level, or the folder.
+// A new project records `worktreeOf` when git says it is a worktree of a registered checkout (ADR 0037).
 // The caller registers the project when `added` (C4).
 export async function resolveProject(
   projects: Project[],
@@ -51,7 +52,7 @@ export async function resolveProject(
   }
   if (best) return { project: best, added: false }
   const top = (await gitTop(dir)) ?? dir
-  return { project: newProject(top, randomUUID()), added: true }
+  return { project: newProject(top, randomUUID(), parentCheckout(dir, projects)), added: true }
 }
 
 // True once two captures `intervalMs` apart match (a TUI has finished drawing); false after `timeoutMs`.

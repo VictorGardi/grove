@@ -28,4 +28,19 @@ describe('colorTags', () => {
     for (const g of groups) expect(tags.group('p', g.slug)).not.toBe(tags.project('p'))
     expect(colorTags(Array.from({ length: TAG_COUNT + 1 }, (_, i) => project(`p${i}`)), []).project(`p${TAG_COUNT}`)).toBe(0)
   })
+
+  it('skips worktrees, so adding or removing one never moves a project\'s colour', () => {
+    const wt = (id: string): Project => ({ id, name: id, path: '/' + id, worktreeOf: 'p' })
+    const plain = [project('p'), project('q')]
+    const withWorktrees = [project('p'), wt('wt1'), project('q'), wt('wt2'), project('r')]
+    const before = colorTags(plain, [])
+    const after = colorTags(withWorktrees, [])
+    expect([after.project('p'), after.project('q'), after.project('r')]).toEqual([before.project('p'), before.project('q'), 2])
+    expect(after.project('wt1')).toBeNull() // a worktree is its repo's colour, so it takes none of its own
+  })
+
+  it('leaves a worktree\'s own features uncoloured, so no group feature drifts into another project\'s slot', () => {
+    const tags = colorTags([project('p'), { id: 'wt', name: 'wt', path: '/wt', worktreeOf: 'p' }], [feature('wt', 'e', true)])
+    expect(tags.group('wt', 'e')).toBeNull()
+  })
 })

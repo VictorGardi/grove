@@ -5,7 +5,9 @@ import path from 'node:path'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { request } from '../cli/client'
 import type { CliSession } from '@shared/cli'
+import { gitRepo } from '../core/testing/gitRepo'
 import { createOpenCode, createTerminal, LATER, setupCore } from '../core/testing/setup'
+import * as worktrees from '../core/worktrees'
 import { startCliServer } from './cliServer'
 import { installCommandLineTool, writeLauncher } from './launcher'
 
@@ -49,6 +51,39 @@ describe('cli server', () => {
     expect(bad).toMatchObject({ ok: false, error: { code: 'no-feature' } })
     expect(core.getSlices().sessions).toHaveLength(1)
     expect(await request(socketPath, req('sessions.create', { kind: 'vim', cwd: t.dir }))).toMatchObject({ ok: false, error: { code: 'bad-params' } })
+  })
+
+  it('starts a session in a new worktree of the cwd\'s repo, registered as its own project', async () => {
+    const { core, socketPath } = await start()
+    const repo = gitRepo()
+    repo.write('README.md', 'hi\n')
+    repo.commit()
+    const checkout = await core.commands.projectAdd({ path: repo.dir })
+    if (!checkout.ok) throw new Error(checkout.error)
+
+    const reply = await request(socketPath, req('sessions.create', { kind: 'terminal', cwd: repo.dir, worktree: true, branch: 'probe' }))
+    if (!reply.ok) throw new Error(JSON.stringify(reply.error))
+    const created = reply.data as CliSession
+    expect(created.project).toBe(`${path.basename(repo.dir)} · probe`) // the repo, then the branch
+    const worktree = core.getSlices().projects.find((p) => p.id === created.project || p.name === created.project)!
+    expect(fs.realpathSync(worktree.path)).not.toBe(fs.realpathSync(repo.dir))
+    expect(fs.existsSync(path.join(worktree.path, '.git'))).toBe(true)
+    expect(worktree.worktreeOf).toBe(checkout.data.id)
+    expect(worktree.path).toBe(worktrees.worktreePath(repo.dir, 'probe'))
+    expect(core.getSlices().sessions.find((s) => s.id === created.id)?.cwd).toBeNull() // its folder is the project path
+    expect(t.fake.paths.get(`grove-${created.id}`)).toBe(worktree.path)
+  })
+
+  it('refuses --worktree without --branch and reports git\'s own failure', async () => {
+    const { core, socketPath } = await start()
+    expect(await request(socketPath, req('sessions.create', { kind: 'terminal', cwd: t.dir, worktree: true })))
+      .toMatchObject({ ok: false, error: { code: 'bad-params' } })
+    const repo = gitRepo()
+    repo.commit()
+    const twice = await request(socketPath, req('sessions.create', { kind: 'terminal', cwd: repo.dir, worktree: true, branch: 'main' }))
+    expect(twice.ok).toBe(false)
+    expect(twice.ok === false && twice.error.message).toMatch(/already exists/i)
+    expect(core.getSlices().sessions).toEqual([]) // nothing started
   })
 
   it('sends text to a session by id prefix and reads its pane', async () => {

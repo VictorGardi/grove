@@ -4,7 +4,8 @@ import { useSlices } from '../stores/slices'
 import { gridShown } from '../gridView'
 import { longestWaiting, shownStatus, statusTone, statusView } from '../sessionStatus'
 import { selectRange } from '../selection'
-import { GROUP_BY_OPTIONS, SORT_OPTIONS, listGroups, visibleSessions, type ListGroup } from '../sessionList'
+import { GROUP_BY_OPTIONS, SORT_OPTIONS, collapseKey, listGroups, visibleSessions, type ListGroup } from '../sessionList'
+import { repoGroups } from '../repoGroups'
 import { colorTags } from '../tags'
 import { linkedFeature } from '../tree'
 import { workflowStatusOf } from '../workflowStatus'
@@ -309,15 +310,41 @@ export function Sidebar({ onNew }: { onNew: (projectId?: string) => void }) {
     )
   }
 
-  const projectHeader = (p: Project, key: string, count: number) => (
+  const projectHeader = (p: Project, count: number, g: ListGroup) => (
     <ProjectHeader project={p} tag={tags.project(p.id)} count={count} refused={refused === p.id}
-      onToggle={() => toggleCollapsed(key)} onRemove={() => void removeProject(p.id)} onNew={() => onNew(p.id)} />
+      onToggle={() => toggleCollapsed(collapseKey(g))} onRemove={() => void removeProject(p.id)} onNew={() => onNew(p.id)} />
   )
 
   // a project's heading when there is a project; a status or plain one when there isn't
   const groupHeading = (g: ListGroup) =>
-    g.project ? projectHeader(g.project, g.key, g.sessions.length)
-      : <GroupHeading group={g} onToggle={() => toggleCollapsed(g.key)} />
+    g.project ? projectHeader(g.project, g.sessions.length, g)
+      : <GroupHeading group={g} onToggle={() => toggleCollapsed(collapseKey(g))} />
+
+  // One group: its heading, its rows, then each worktree nested a step in (ADR 0037).
+  const groupBlock = (g: ListGroup) => (
+    <div key={g.key} className={css.project}>
+      {groupHeading(g)}
+      {!g.collapsed && (
+        <>
+          <div className={css.cards}>{g.sessions.map(sessionCard)}</div>
+          {g.children.map((child) => (
+            <div key={child.key} className={css.nested}>
+              {groupHeading(child)}
+              {!child.collapsed && <div className={css.cards}>{child.sessions.map(sessionCard)}</div>}
+            </div>
+          ))}
+        </>
+      )}
+    </div>
+  )
+
+  const projectRow = (p: Project) => (
+    <ProjectRow key={p.id} project={p} tag={tags.project(p.id)}
+      live={sessions.filter((x) => x.projectId === p.id && x.lastStatus === 'running').length}
+      waiting={sessions.filter((x) => x.projectId === p.id && shownStatus(x) === 'waiting').length}
+      focused={ui.focusedProject === p.id} refused={refused === p.id}
+      onOpen={() => openProject(p.id)} onRemove={() => void removeProject(p.id)} onNew={() => onNew(p.id)} />
+  )
 
   const tabs = [
     { id: 'sessions' as const, label: 'Sessions', badge: <Badge>{sessions.length}</Badge> },
@@ -339,19 +366,12 @@ export function Sidebar({ onNew }: { onNew: (projectId?: string) => void }) {
       <div className={css.list}>
         {projects.length === 0 && <div className={css.hint}>Add a project with the folder ＋ above</div>}
         {ui.sidebarTab === 'sessions'
-          ? groups.map((g) => (
-            <div key={g.key} className={css.project}>
-              {groupHeading(g)}
-              {!g.collapsed && <div className={css.cards}>{g.sessions.map(sessionCard)}</div>}
-            </div>
-          ))
-          : projects.map((p) => (
-            <ProjectRow key={p.id} project={p} tag={tags.project(p.id)}
-              live={sessions.filter((x) => x.projectId === p.id && x.lastStatus === 'running').length}
-              waiting={sessions.filter((x) => x.projectId === p.id && shownStatus(x) === 'waiting').length}
-              focused={ui.focusedProject === p.id} refused={refused === p.id}
-              onOpen={() => openProject(p.id)} onRemove={() => void removeProject(p.id)} onNew={() => onNew(p.id)} />
-          ))}
+          ? groups.map(groupBlock)
+          // the Projects tab draws the same tree: a repo, then the worktrees under it
+          : repoGroups(projects).flatMap(({ project, worktrees }) => [
+            projectRow(project),
+            ...worktrees.map((w) => <div key={w.id} className={css.nestedRow}>{projectRow(w)}</div>),
+          ])}
       </div>
       <div className={css.bottomBar}>
         <Button variant="ghost" size="sm" icon="grid" aria-pressed={gridShown(ui)} disabled={ui.grid.members.length === 0}

@@ -1,4 +1,6 @@
-export interface Project { id: string; name: string; path: string }
+// `worktreeOf` names the project this one is a git worktree of, for nesting only; which
+// repository a checkout belongs to is derived from git (gitCommonDir), never from this.
+export interface Project { id: string; name: string; path: string; worktreeOf?: string }
 export type SessionKind = 'opencode' | 'claude' | 'terminal'
 // The last context reading of an agent session, kept so an ended session shows it dimmed; pct is always known.
 export interface ContextReading { pct: number; tokens: number | null; window: number | null }

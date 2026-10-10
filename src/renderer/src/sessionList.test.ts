@@ -1,8 +1,8 @@
 import { describe, expect, it } from 'vitest'
 import type { Project, Session } from '@shared/types'
-import { GROUP_BY_OPTIONS, listGroups, orderedSessions, SORT_OPTIONS, visibleSessions, type ListGroup } from './sessionList'
+import { GROUP_BY_OPTIONS, collapseKey, listGroups, orderedSessions, SORT_OPTIONS, visibleSessions, type ListGroup } from './sessionList'
 
-const project = (id: string, name = id): Project => ({ id, name, path: '/' + id })
+const project = (id: string, name = id, worktreeOf?: string): Project => ({ id, name, path: '/' + id, ...(worktreeOf && { worktreeOf }) })
 
 function session(id: string, over: Partial<Session> = {}): Session {
   return {
@@ -198,6 +198,72 @@ describe('collapsed', () => {
   it('does not let one key shape collapse another', () => {
     const groups = listGroups(PROJECTS, SESSIONS, ui({ collapsed: ['s:p', 'all', 'p:done'] }))
     expect(groups.map((g) => g.collapsed)).toEqual([false, false])
+  })
+})
+
+// One repo: its checkout 'p' and two worktrees of it.
+const REPO_SESSIONS = [
+  session('main', { projectId: 'p' }),
+  session('inWt', { projectId: 'wt1', startedAt: at(5, 10) }),
+  session('inWt2', { projectId: 'wt2', startedAt: at(5, 11) }),
+  session('other', { projectId: 'q', startedAt: at(5, 9) }),
+]
+const REPO_ALL = [project('p', 'Project P'), project('wt1', 'Project P · a', 'p'), project('wt2', 'Project P · b', 'p'), project('q', 'Project Q')]
+
+describe('listGroups for worktrees', () => {
+  const tree = (over = {}) =>
+    shape(listGroups(REPO_ALL, REPO_SESSIONS, ui(over))).concat(
+      listGroups(REPO_ALL, REPO_SESSIONS, ui(over)).flatMap((g) => g.children.map((c) => [c.key, c.label, c.project?.id ?? null, c.status, c.sessions.map((s) => s.id)])),
+    )
+
+  it('nests each worktree under its repo, after the repo\'s own sessions', () => {
+    expect(tree()).toEqual([
+      ['p:p', 'Project P', 'p', null, ['main']],
+      ['p:q', 'Project Q', 'q', null, ['other']],
+      ['w:wt1', 'Project P · a', 'wt1', null, ['inWt']],
+      ['w:wt2', 'Project P · b', 'wt2', null, ['inWt2']],
+    ])
+  })
+
+  it('collapses worktree rows until the ui holds their opened key', () => {
+    const groups = listGroups(REPO_ALL, REPO_SESSIONS, ui())
+    expect(groups.map((g) => [g.key, g.collapsed])).toEqual([['p:p', false], ['p:q', false]])
+    expect(groups[0].children.map((c) => [c.key, c.collapsed])).toEqual([['w:wt1', true], ['w:wt2', true]])
+    const opened = listGroups(REPO_ALL, REPO_SESSIONS, ui({ collapsed: ['o:w:wt1'] }))
+    expect(opened[0].children.map((c) => [c.key, c.collapsed])).toEqual([['w:wt1', false], ['w:wt2', true]])
+  })
+
+  it('collapseKey names the key whose presence is the opposite, so one toggle serves both', () => {
+    const groups = listGroups(REPO_ALL, REPO_SESSIONS, ui())
+    const child = groups[0].children[0]
+    expect(collapseKey(child)).toBe('o:w:wt1') // collapsed by default: clicking it writes the opened key
+    expect(collapseKey(groups[0])).toBe('p:p')
+  })
+
+  it('counts a worktree\'s sessions right under its repo\'s own, whether collapsed or not', () => {
+    const groups = listGroups(REPO_ALL, REPO_SESSIONS, ui())
+    expect(orderedSessions(groups).map((s) => s.id)).toEqual(['main', 'inWt', 'inWt2', 'other'])
+    expect(visibleSessions(groups).map((s) => s.id)).toEqual(['main', 'other'])
+    const opened = listGroups(REPO_ALL, REPO_SESSIONS, ui({ collapsed: ['o:w:wt1', 'p:q'] }))
+    expect(orderedSessions(opened).map((s) => s.id)).toEqual(['main', 'inWt', 'inWt2', 'other'])
+    expect(visibleSessions(opened).map((s) => s.id)).toEqual(['main', 'inWt'])
+  })
+
+  it('nests under the project grouping only: by status or none there is nothing to nest', () => {
+    for (const groupBy of ['status', 'none'] as const) {
+      const groups = listGroups(REPO_ALL, REPO_SESSIONS, ui({ groupBy }))
+      expect(groups.flatMap((g) => g.children)).toEqual([])
+      expect(ids(groups).sort()).toEqual(['inWt', 'inWt2', 'main', 'other'])
+    }
+  })
+
+  it('keeps a hidden repo\'s worktrees hidden with it', () => {
+    const groups = listGroups(REPO_ALL, REPO_SESSIONS, ui({ hiddenProjects: ['p'] }))
+    expect(groups.map((g) => g.project?.id)).toEqual(['q'])
+    expect(ids(groups)).toEqual(['other'])
+    const hiddenWorktree = listGroups(REPO_ALL, REPO_SESSIONS, ui({ hiddenProjects: ['wt1'] }))
+    expect(orderedSessions(hiddenWorktree).map((s) => s.id)).toEqual(['main', 'inWt2', 'other']) // hidden before the tree is built
+    expect(hiddenWorktree[0].children.map((c) => c.project?.id)).toEqual(['wt2']) // its heading goes too
   })
 })
 

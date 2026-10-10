@@ -1,3 +1,6 @@
+import fs from 'node:fs'
+import os from 'node:os'
+import path from 'node:path'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import type { Project, Session } from '@shared/types'
 import { paneStable, resolveProject, resolveSessionRef, waitTurn } from './cliOps'
@@ -54,6 +57,45 @@ describe('resolveProject', () => {
   it('registers the folder itself outside git', async () => {
     const r = await resolveProject([], '/yy/plain', noGit)
     expect(r).toMatchObject({ added: true, project: { name: 'plain', path: '/yy/plain' } })
+  })
+
+  // A linked worktree the way git writes one, of the checkout project `a`.
+  const withWorktree = () => {
+    const root = fs.mkdtempSync(path.join(os.tmpdir(), 'grove-pt-'))
+    const main = path.join(root, 'repo')
+    fs.mkdirSync(path.join(main, '.git', 'worktrees', 'wt'), { recursive: true })
+    fs.writeFileSync(path.join(main, '.git', 'worktrees', 'wt', 'commondir'), '../..\n')
+    const wt = path.join(root, 'wt')
+    fs.mkdirSync(wt)
+    fs.writeFileSync(path.join(wt, '.git'), 'gitdir: ' + path.join(main, '.git', 'worktrees', 'wt') + '\n')
+    return { main, wt }
+  }
+
+  it('registers a worktree with worktreeOf naming the checkout of its repo', async () => {
+    const { main, wt } = withWorktree()
+    const projects = [proj('a', main)]
+    const r = await resolveProject(projects, wt, async () => wt)
+    expect(r).toMatchObject({ added: true, project: { path: wt, worktreeOf: 'a' } })
+  })
+
+  it('leaves worktreeOf off a checkout, and off a worktree whose repo has no registered checkout', async () => {
+    const { main, wt } = withWorktree()
+    expect((await resolveProject([], main, async () => main)).project.worktreeOf).toBeUndefined()
+    expect((await resolveProject([proj('a', main)], wt, async () => wt)).project.worktreeOf).toBe('a')
+    expect((await resolveProject([], wt, async () => wt)).project.worktreeOf).toBeUndefined()
+  })
+
+  it('does not point a second worktree at the first', async () => {
+    const { main, wt } = withWorktree()
+    const other = path.join(path.dirname(wt), 'wt2')
+    fs.mkdirSync(other)
+    fs.mkdirSync(path.join(main, '.git', 'worktrees', 'wt2'), { recursive: true })
+    fs.writeFileSync(path.join(main, '.git', 'worktrees', 'wt2', 'commondir'), '../..\n')
+    fs.writeFileSync(path.join(other, '.git'), 'gitdir: ' + path.join(main, '.git', 'worktrees', 'wt2') + '\n')
+    const projects = [proj('a', main), { id: 'w', name: 'wt', path: wt, worktreeOf: 'a' }]
+    expect((await resolveProject(projects, other, async () => other)).project.worktreeOf).toBe('a')
+    const withoutCheckout = [projects[1]]
+    expect((await resolveProject(withoutCheckout, other, async () => other)).project.worktreeOf).toBeUndefined()
   })
 })
 

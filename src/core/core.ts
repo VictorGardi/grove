@@ -13,7 +13,7 @@ import { listFolders, readFolder, resolveRoot, type FolderSnapshot } from './dis
 import { chokidarWatchers, type Closer, type Watchers } from './discovery/watcher'
 import { loginShellArgv, minimalEnv } from './env'
 import { computeDiff } from './diff/compute'
-import { defaultBranch, gitRunner, listBranches } from './diff/git'
+import { defaultBranch, gitRunner, listBranches, type GitRun } from './diff/git'
 import { createDiffWatch } from './diff/watch'
 import { reanchorDiff, reanchorFile } from './comments/anchor'
 import { slugFor } from './autolink'
@@ -23,7 +23,7 @@ import { loadComments, saveComments } from './comments/store'
 import type { TurnResult } from '@shared/cli'
 import { isDirectory, paneStable, realOrSelf, resolveProject, waitTurn } from './cliOps'
 import { sendToSession } from './send'
-import { hasLiveSessions, newProject } from './projects'
+import { hasLiveSessions, newProject, parentCheckout } from './projects'
 import { readBranch } from './git'
 import type { AgentEvent, AgentKind, AgentSource } from './agents/types'
 import { autoLink, link, markGone, markSeen, newSession, reconcile, rename, resume, setWorkflowStatus, withBranches } from './sessions'
@@ -98,6 +98,8 @@ export interface Core {
   waitTurn(id: string, o: { expectStart: boolean; timeoutMs: number }): Promise<Result<TurnResult>>
   attach(sessionId: string, cols: number, rows: number): AttachHandle
   filePath(projectId: string, rel: string): string | null // a viewable file of the project (ADR 0032); null: refused
+  gitTop(dir: string): Promise<string | null> // the repo containing `dir`; null: not a repo, or git is missing
+  git: GitRun | null // grove's git runner, for the worktree lifecycle; null: git was not found
   dispose(): void
 }
 
@@ -596,7 +598,7 @@ export function createCore(opts: CoreOptions): Core {
 
   const commands: Commands = {
     async projectAdd({ path }) {
-      const project = newProject(path, randomUUID())
+      const project = newProject(path, randomUUID(), parentCheckout(path, slices.projects))
       set('projects', [...slices.projects, project])
       syncProjects(false)
       return { ok: true, data: project }
@@ -908,6 +910,8 @@ export function createCore(opts: CoreOptions): Core {
       return tracked
     },
     filePath: (projectId, rel) => projectFile(projectId, rel),
+    gitTop,
+    git,
     dispose() {
       clearInterval(poll)
       clearTimeout(unreachableTimer)

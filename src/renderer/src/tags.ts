@@ -4,9 +4,12 @@ import type { Feature, Project } from '@shared/types'
 export const TAG_COUNT = 8
 
 // Projects take palette colours by position; each project's group features take the
-// colours after it, by slug, so a group differs from its own project's colour.
+// colours after it, by slug, so a group differs from its own project's colour. Worktrees
+// are skipped: there are eight slots and a repo's checkouts all mean the same repo, so a
+// new worktree must not push the projects after it onto a different colour.
 export function colorTags(projects: Project[], features: Feature[]) {
-  const projectIndex = new Map(projects.map((p, i) => [p.id, i]))
+  const checkouts = projects.filter((p) => !p.worktreeOf)
+  const projectIndex = new Map(checkouts.map((p, i) => [p.id, i]))
   const groups = new Map<string, number>()
   for (const [id, i] of projectIndex) {
     const own = features.filter((f) => f.group && f.projectId === id).sort((a, b) => a.slug.localeCompare(b.slug))

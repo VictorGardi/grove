@@ -1,12 +1,14 @@
 import type { Project, Session, UiState, WorkflowStatus } from '@shared/types'
-import { projectKey } from './tree'
+import { openedKey, projectKey, worktreeKey } from './tree'
+import { repoGroups } from './repoGroups'
 import { WORKFLOW_STATUSES } from './workflowStatus'
 
 export type GroupBy = 'project' | 'status' | 'none'
 export type SessionSort = 'none' | 'viewed-desc' | 'viewed-asc' | 'created-desc' | 'created-asc'
 
 // A run of rows under one heading. Exactly one of project/status is set; `none`
-// grouping sets neither and labels the whole list.
+// grouping sets neither and labels the whole list. A project's group carries its
+// worktrees as `children`, one level deep (ADR 0037).
 export interface ListGroup {
   key: string                      // p:<projectId> by project, s:<status> by status, all when ungrouped
   label: string
@@ -14,6 +16,7 @@ export interface ListGroup {
   status: WorkflowStatus | null
   collapsed: boolean
   sessions: Session[]
+  children: ListGroup[]            // a worktree's own sessions, under the repo's
 }
 
 export const GROUP_BY_OPTIONS: { value: GroupBy; label: string }[] = [
@@ -53,7 +56,7 @@ const COMPARATORS: Record<SessionSort, (a: Session, b: Session) => number> = {
 
 // The Sessions tab as the sidebar draws it: groups under headings, rows in the chosen
 // order inside each. Hidden projects are gone before anything is grouped, so every
-// mode drops them.
+// mode drops them. Grouping by project nests each worktree under its repo's checkout.
 export function listGroups(
   projects: Project[],
   sessions: Session[],
@@ -63,27 +66,44 @@ export function listGroups(
   const hidden = new Set(ui.hiddenProjects ?? [])
   const visible = sessions.filter((s) => !hidden.has(s.projectId))
   const sort = COMPARATORS[ui.sessionSort] ?? COMPARATORS['none']
-  const group = (key: string, label: string, project: Project | null, status: WorkflowStatus | null, members: Session[]): ListGroup => ({
-    key, label, project, status, collapsed: collapsed.has(key), sessions: [...members].sort(sort),
+  const group = (
+    key: string, label: string, project: Project | null, status: WorkflowStatus | null,
+    members: Session[], children: ListGroup[] = [], worktree = false,
+  ): ListGroup => ({
+    key, label, project, status, sessions: [...members].sort(sort), children,
+    collapsed: worktree ? !collapsed.has(openedKey(key)) : collapsed.has(key),
   })
 
   if (ui.groupBy === 'status')
     // every status keeps its heading, empty ones included, so rows don't jump as statuses change
     return WORKFLOW_STATUSES.map(({ value, label }) => group('s:' + value, label, null, value, visible.filter((s) => s.workflowStatus === value)))
   if (ui.groupBy === 'none') return [group('all', 'All sessions', null, null, visible)]
-  return projects
-    .filter((project) => !hidden.has(project.id))
-    .map((project) => group(projectKey(project.id), project.name, project, null, visible.filter((s) => s.projectId === project.id)))
+  // Hidden before the tree is built, so hiding a repo hides its worktrees with it, and hiding
+  // one worktree leaves the repo it hangs under.
+  return repoGroups(projects)
+    .filter(({ project }) => !hidden.has(project.id))
+    .map(({ project, worktrees }) => group(
+      projectKey(project.id), project.name, project, null, visible.filter((s) => s.projectId === project.id),
+      worktrees.filter((w) => !hidden.has(w.id))
+        .map((w) => group(worktreeKey(w.id), w.name, w, null, visible.filter((s) => s.projectId === w.id), [], true)),
+    ))
+}
+
+// The `ui.collapsed` key a group's heading writes when clicked. A worktree row starts
+// collapsed, so its heading writes the key it was *opened* under, and one toggle then serves
+// both directions without a second ui field.
+export function collapseKey(g: ListGroup): string {
+  return g.key.startsWith(worktreeKey('')) ? openedKey(g.key) : g.key
 }
 
 // Every visible session once, in group order, collapsed groups included: what Cmd+1..9 counts
 // through. A shift-click range uses visibleSessions below instead, so a range that spans a
 // collapsed group can't select — and so delete — sessions the human cannot see.
 export function orderedSessions(groups: ListGroup[]): Session[] {
-  return groups.flatMap((g) => g.sessions)
+  return groups.flatMap((g) => [...g.sessions, ...orderedSessions(g.children)])
 }
 
 // The same order, minus sessions inside collapsed groups: what a shift-click range runs over.
 export function visibleSessions(groups: ListGroup[]): Session[] {
-  return groups.filter((g) => !g.collapsed).flatMap((g) => g.sessions)
+  return groups.filter((g) => !g.collapsed).flatMap((g) => [...g.sessions, ...visibleSessions(g.children)])
 }

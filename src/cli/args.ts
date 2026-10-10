@@ -3,7 +3,7 @@ import type { SessionKind } from '@shared/types'
 
 export type Command =
   | { cmd: 'ls'; all: boolean; json: boolean }
-  | { cmd: 'new'; kind: SessionKind; cwd?: string; prompt?: string; label?: string; link?: string; json: boolean; wait: boolean; timeoutS?: number }
+  | { cmd: 'new'; kind: SessionKind; cwd?: string; prompt?: string; label?: string; link?: string; worktree: boolean; branch?: string; json: boolean; wait: boolean; timeoutS?: number }
   | { cmd: 'send'; ref: string; text: string; submit: boolean; wait: boolean; timeoutS?: number }
   | { cmd: 'wait'; ref: string; timeoutS?: number }
   | { cmd: 'focus'; ref: string }
@@ -17,6 +17,7 @@ export const USAGE = `usage: grove <command>
   grove ls [--all] [--json]                      list sessions
   grove new <opencode|claude|terminal> [--cwd DIR] [--prompt TEXT|-] [--label L] [--link SLUG] [--wait] [--timeout S] [--json]
                                                  start a session in the background; prints its id
+  grove new <kind> --worktree --branch NAME        start the session in a new git worktree of the cwd's repo
   grove send <ref> <TEXT|-> [--no-enter] [--wait] [--timeout S]
                                                  type text into a session and submit it
   grove wait <ref> [--timeout S]                 block until the session stops working (exit 0 done, 4 needs you, 5 gone, 124 timeout)
@@ -51,7 +52,8 @@ export function parseCommand(argv: string[]): Command | UsageError {
       const { values, positionals } = parseArgs({
         args: rest,
         options: {
-          cwd: { type: 'string' }, prompt: { type: 'string' }, label: { type: 'string' }, link: { type: 'string' }, json: { type: 'boolean' }, ...TIMEOUT,
+          cwd: { type: 'string' }, prompt: { type: 'string' }, label: { type: 'string' }, link: { type: 'string' },
+          worktree: { type: 'boolean' }, branch: { type: 'string' }, json: { type: 'boolean' }, ...TIMEOUT,
         },
         allowPositionals: true,
       })
@@ -59,9 +61,11 @@ export function parseCommand(argv: string[]): Command | UsageError {
       if (!kind || !KINDS.includes(kind) || extra.length) return new UsageError(`new takes one of: ${KINDS.join(', ')}\n${USAGE}`)
       const timeoutS = timeout(values.timeout)
       if (timeoutS instanceof UsageError) return timeoutS
+      // the pair is one flag: a branch without a worktree, or a worktree with no branch, is a mistake
+      if (!!values.worktree !== !!values.branch) return new UsageError(`--worktree and --branch go together\n${USAGE}`)
       return {
         cmd: 'new', kind: kind as SessionKind, cwd: values.cwd, prompt: values.prompt, label: values.label, link: values.link,
-        json: !!values.json, wait: !!values.wait, timeoutS,
+        worktree: !!values.worktree, branch: values.branch, json: !!values.json, wait: !!values.wait, timeoutS,
       }
     }
     if (cmd === 'send') {
