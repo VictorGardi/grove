@@ -53,9 +53,14 @@ checkout, because starting a session in a chosen checkout is a real thing to do.
 into slice 3 (`04-structure.md` v3) rather than being applied here, so the palette, the board and
 the page change in one coherent slice instead of three passes over the same files.
 
-Still open for the human, not yet in any slice: whether slice 4's "two checkouts in one message"
-is reachable at all, since `reviewSend` sends one session's drafts and a session has one
-checkout. The human's answer: rewrite slice 4 to the part that is real.
+One correction the audit got wrong, kept here because it nearly cost slice 4 half its work: a
+review claimed slice 4's "two checkouts in one message" was unreachable, since `reviewSend`
+sends one session's drafts and a session has one `projectId`. It is reachable —
+`ArtifactViewer.tsx:37` takes the draft's session from the focused session while the anchor
+comes from the global viewer, so one session can hold anchors in two checkouts, and
+`formatReview` keys a file anchor by its repo-relative path with no checkout qualifier. The
+design's risk entry was right and the audit was wrong. Slice 4 now names the mechanism so the
+agent can reproduce it rather than re-derive it.
 
 ## Slice 1 — Tracer
 

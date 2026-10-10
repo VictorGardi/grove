@@ -2,7 +2,7 @@
 feature: 2026-10-08-worktree-support
 phase: structure
 status: approved
-version: 3
+version: 4
 created: 2026-10-10
 updated: 2026-10-10
 approved_at: 2026-10-10
@@ -13,8 +13,8 @@ forced: []
 
 # Worktree support — structure
 
-> **v2 and v3, human-directed (2026-10-10).** Two scope changes after a review of the whole
-> repo for places that treat a checkout as a repo. Neither was in any slice.
+> **v2, v3 and v4, human-directed (2026-10-10).** Three scope changes after a review of the
+> whole repo for places that treat a checkout as a repo. None was in any slice.
 >
 > **v2 — the palette's duplicate features.** It lists every feature once per checkout, so 20
 > features across 2 checkouts of grove are 40 entries, half with duplicate labels.
@@ -26,9 +26,16 @@ forced: []
 > every checkout's sessions so it matches the sidebar. ⌘T's new-session list deliberately stays
 > per checkout — starting a session in a chosen checkout is a real thing to do.
 >
-> Both revisions were approved by the human before they were made, which is why the structure
+> **v4 — slice 4 rewritten, and this time both halves stay.** A review of the whole repo
+> claimed slice 4's premise was unreachable, on the grounds that `reviewSend` sends one
+> session's drafts and a session has one checkout. That was wrong: `ArtifactViewer.tsx:37`
+> takes the draft's session from the focused session while the anchor comes from the global
+> viewer, so one message can hold anchors from two checkouts. The design's risk entry was
+> right. Slice 4 now states the reachable path so the agent can reproduce it.
+>
+> Every revision here was approved by the human before it was made, which is why the structure
 > stays `approved` rather than going back to draft; `grove-approve 2026-10-08-worktree-support
-> structure` will put the formal stamp on it. Nothing else changed.
+> structure` will put the formal stamp on it.
 
 ## Slices
 
@@ -103,18 +110,22 @@ forced: []
   tab for the repo, counting both checkouts' panes. ⌘T's new-session list stays per checkout.
 - **Depends on:** 1.
 
-### Slice 4 — Review comments stay unambiguous across checkouts
+### Slice 4 — A review message names the checkout each path came from
 
-- **Outcome:** two drafts on the same relative path in two checkouts produce two
-  distinctly labelled sections in the review message; a worktree session's review
-  shows worktree-relative paths rather than `../../../..`.
+- **Outcome:** a session's review message shows paths relative to that session's own
+  checkout — a worktree session never shows `../../../..` back to the main checkout —
+  and every `##` heading names the checkout it came from, so two drafts on one relative
+  path in two checkouts produce two distinctly labelled sections instead of one merged
+  one.
 - **Files:** `src/core/comments/format.ts`; `src/core/comments/anchor.ts`;
   `src/core/core.ts` (`reviewSend`).
-- **Signatures:** `shownPath` gains a checkout label.
-- **Verify:** `npm test` (`comments/format.test`, `anchor.test`);
-  `npm run typecheck`; manual: draft on `docs/work/x/03-design.md` in both the main
-  checkout and a worktree, send from each, and confirm two distinctly labelled `##`
-  sections naming their checkout.
+- **Signatures:** `shownPath` gains the checkout's name.
+- **Verify:** `npm test` (`comments/format.test`, `anchor.test`); `npm run typecheck`;
+  manual: focus one session, then draft on `docs/work/x/03-design.md` in the main
+  checkout and again in a worktree — the viewer is global while the draft attaches to
+  the focused session (`ArtifactViewer.tsx:37`), which is how one message comes to hold
+  anchors from two checkouts — send, and confirm the message carries two `##` sections
+  naming their checkouts, with worktree-relative paths.
 - **Depends on:** 3.
 
 ## Deferred
