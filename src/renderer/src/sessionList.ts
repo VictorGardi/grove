@@ -63,8 +63,15 @@ export function listGroups(
   ui: Pick<UiState, 'collapsed' | 'hiddenProjects' | 'groupBy' | 'sessionSort'>,
 ): ListGroup[] {
   const collapsed = new Set(ui.collapsed)
-  const hidden = new Set(ui.hiddenProjects ?? [])
-  const visible = sessions.filter((s) => !hidden.has(s.projectId))
+  // `hiddenProjects` names repos, not checkouts: the repo is what the human shows and hides,
+  // so a hidden repo takes its worktrees with it. An id that is not a checkout head — one
+  // saved before worktrees were projects of their own — is ignored rather than left to hide
+  // a checkout whose repo the sidebar still lists.
+  const groups = repoGroups(projects)
+  const named = new Set(ui.hiddenProjects ?? [])
+  const hidden = new Set(groups.filter((g) => named.has(g.project.id)).map((g) => g.project.id))
+  const repoOf = new Map(groups.flatMap((g) => [g.project, ...g.worktrees].map((p) => [p.id, g.project.id] as const)))
+  const visible = sessions.filter((s) => !hidden.has(repoOf.get(s.projectId) ?? s.projectId))
   const sort = COMPARATORS[ui.sessionSort] ?? COMPARATORS['none']
   const group = (
     key: string, label: string, project: Project | null, status: WorkflowStatus | null,
@@ -78,14 +85,11 @@ export function listGroups(
     // every status keeps its heading, empty ones included, so rows don't jump as statuses change
     return WORKFLOW_STATUSES.map(({ value, label }) => group('s:' + value, label, null, value, visible.filter((s) => s.workflowStatus === value)))
   if (ui.groupBy === 'none') return [group('all', 'All sessions', null, null, visible)]
-  // Hidden before the tree is built, so hiding a repo hides its worktrees with it, and hiding
-  // one worktree leaves the repo it hangs under.
-  return repoGroups(projects)
+  return groups
     .filter(({ project }) => !hidden.has(project.id))
     .map(({ project, worktrees }) => group(
       projectKey(project.id), project.name, project, null, visible.filter((s) => s.projectId === project.id),
-      worktrees.filter((w) => !hidden.has(w.id))
-        .map((w) => group(worktreeKey(w.id), w.name, w, null, visible.filter((s) => s.projectId === w.id), [], true)),
+      worktrees.map((w) => group(worktreeKey(w.id), w.name, w, null, visible.filter((s) => s.projectId === w.id), [], true)),
     ))
 }
 

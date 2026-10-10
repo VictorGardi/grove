@@ -1,4 +1,4 @@
-import type { Project } from '@shared/types'
+import type { Project, Session } from '@shared/types'
 
 // A worktree is a Project of its own (ADR 0037); `worktreeOf` names the checkout it hangs
 // under, which core derived from git when it registered the worktree. So the parent here is
@@ -20,4 +20,14 @@ export function repoGroups(projects: Project[]): RepoGroup[] {
     project,
     worktrees: projects.filter((p) => p.worktreeOf === project.id),
   }))
+}
+
+// The rows of the sidebar's visibility list: one per repo, counting every session in every
+// one of its checkouts. A worktree is not a row of its own — the repo is what the human
+// shows and hides, so a checkout cannot be singled out and quietly take its sessions away.
+export function repoRows(projects: Project[], sessions: Session[]): { project: Project; sessions: number }[] {
+  return repoGroups(projects).map(({ project, worktrees }) => {
+    const inRepo = new Set([project.id, ...worktrees.map((w) => w.id)])
+    return { project, sessions: sessions.filter((s) => inRepo.has(s.projectId)).length }
+  })
 }

@@ -116,6 +116,14 @@ Trade-off accepted: the rail no longer says which checkout a tile is in. At that
 could not do so honestly anyway — the tile's tooltip carries the session's name, and the
 sidebar shows the checkout.
 
+Then the human found the same mistake in the options panel: it listed the worktree as its own
+project, with its own visibility checkbox. Hiding is a choice about a **repo**, not about one
+of its checkouts, so the panel now lists one row per repo (`repoRows`, in `repoGroups.ts`),
+counting every checkout's sessions into it, and `listGroups` reads `hiddenProjects` as repo
+ids only: a hidden repo takes its worktrees with it, and an id that is not a checkout head —
+one saved before worktrees were projects of their own — is ignored, rather than left in
+place to hide a checkout whose repo the sidebar still lists.
+
 ### Verification
 
 `npm test` (68 files, 714 tests — was 65/673), `npm run typecheck`, `npm run build`: all

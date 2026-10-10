@@ -5,7 +5,7 @@ import { gridShown } from '../gridView'
 import { longestWaiting, shownStatus, statusTone, statusView } from '../sessionStatus'
 import { selectRange } from '../selection'
 import { GROUP_BY_OPTIONS, SORT_OPTIONS, collapseKey, listGroups, visibleSessions, type ListGroup } from '../sessionList'
-import { repoGroups } from '../repoGroups'
+import { repoGroups, repoRows } from '../repoGroups'
 import { colorTags } from '../tags'
 import { linkedFeature } from '../tree'
 import { workflowStatusOf } from '../workflowStatus'
@@ -222,6 +222,9 @@ export function Sidebar({ onNew }: { onNew: (projectId?: string) => void }) {
   const [anchor, setAnchor] = useState<string | null>(null) // where a shift-click range starts
   const [menu, setMenu] = useState<{ x: number; y: number; ids: string[] } | null>(null)
   const hidden = ui.hiddenProjects ?? []
+  // what the options panel shows and hides: one row per repo, its worktrees counted in, since
+  // the repo is the unit rather than the checkout
+  const rows = repoRows(projects, sessions)
   const [optionsOpen, setOptionsOpen] = useState(false)
   const optionsRef = useRef<HTMLDivElement>(null) // the button and its panel, for the outside click
   const panelRef = useRef<HTMLDivElement>(null) // the panel itself, which takes the position
@@ -409,15 +412,14 @@ export function Sidebar({ onNew }: { onNew: (projectId?: string) => void }) {
               <div className={css.visibilitySections}>
                 <OptionSection headingId={sidebarId} label="Sidebar options">
                   <div className={css.visibilityList}>
-                    {projects.map((p) => {
-                      const total = sessions.filter((x) => x.projectId === p.id).length
-                      const shown = !hidden.includes(p.id)
+                    {rows.map(({ project, sessions: total }) => {
+                      const shown = !hidden.includes(project.id)
                       return (
-                        <button key={p.id} type="button" role="menuitemcheckbox" aria-checked={shown}
+                        <button key={project.id} type="button" role="menuitemcheckbox" aria-checked={shown}
                           className={shown ? css.visibilityItem : css.visibilityItemOff}
-                          onClick={() => toggleProjectVisibility(p.id)}>
-                          <Icon name="folder" size={13} className={tagClass(tags.project(p.id), 'fg')} />
-                          <span className={css.visibilityName}>{p.name}</span>
+                          onClick={() => toggleProjectVisibility(project.id)}>
+                          <Icon name="folder" size={13} className={tagClass(tags.project(project.id), 'fg')} />
+                          <span className={css.visibilityName}>{project.name}</span>
                           {total > 0 && <span className={css.visibilityCount}>{total}</span>}
                           <span className={css.visibilityCheck}>{shown && <Icon name="check" size={13} />}</span>
                         </button>
@@ -427,8 +429,8 @@ export function Sidebar({ onNew }: { onNew: (projectId?: string) => void }) {
                   <div className={css.visibilityFooter}>
                     <button type="button" className={css.visibilityAction} disabled={hidden.length === 0}
                       onClick={() => void window.api.invoke('ui:set', { hiddenProjects: [] })}>Show all</button>
-                    <button type="button" className={css.visibilityAction} disabled={hidden.length === projects.length}
-                      onClick={() => void window.api.invoke('ui:set', { hiddenProjects: projects.map((p) => p.id) })}>Hide all</button>
+                    <button type="button" className={css.visibilityAction} disabled={rows.every((r) => hidden.includes(r.project.id))}
+                      onClick={() => void window.api.invoke('ui:set', { hiddenProjects: rows.map((r) => r.project.id) })}>Hide all</button>
                   </div>
                 </OptionSection>
                 <OptionSection headingId={groupById} label="Group by">

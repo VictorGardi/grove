@@ -1,8 +1,10 @@
 import { describe, expect, it } from 'vitest'
-import type { Project } from '@shared/types'
-import { repoGroups } from './repoGroups'
+import type { Project, Session } from '@shared/types'
+import { repoGroups, repoRows } from './repoGroups'
 
 const project = (id: string, name = id, worktreeOf?: string): Project => ({ id, name, path: '/src/' + id, ...(worktreeOf && { worktreeOf }) })
+
+const session = (id: string, projectId: string): Session => ({ id, projectId } as Session)
 
 const shape = (projects: Project[]) =>
   repoGroups(projects).map((g) => [g.key, g.project.id, g.worktrees.map((w) => w.id)])
@@ -40,5 +42,18 @@ describe('repoGroups', () => {
 
   it('is empty with no projects', () => {
     expect(repoGroups([])).toEqual([])
+  })
+})
+
+describe('repoRows', () => {
+  it('lists one row per repo, counting the sessions of every one of its checkouts', () => {
+    const projects = [project('p', 'grove'), project('wt1', 'grove · a', 'p'), project('wt2', 'grove · b', 'p'), project('q', 'other')]
+    const sessions = [session('a', 'p'), session('b', 'wt1'), session('c', 'wt2'), session('d', 'wt1'), session('e', 'q')]
+    expect(repoRows(projects, sessions).map((r) => [r.project.id, r.sessions])).toEqual([['p', 4], ['q', 1]]) // a, b, c, d
+  })
+
+  it('counts nothing for a repo with no sessions, and is empty with no projects', () => {
+    expect(repoRows([project('p'), project('wt', 'p · a', 'p')], []).map((r) => [r.project.id, r.sessions])).toEqual([['p', 0]])
+    expect(repoRows([], [])).toEqual([])
   })
 })

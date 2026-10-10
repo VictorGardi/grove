@@ -257,13 +257,15 @@ describe('listGroups for worktrees', () => {
     }
   })
 
-  it('keeps a hidden repo\'s worktrees hidden with it', () => {
+  it('hides a repo and its worktrees together; a worktree is not a hide key of its own', () => {
     const groups = listGroups(REPO_ALL, REPO_SESSIONS, ui({ hiddenProjects: ['p'] }))
     expect(groups.map((g) => g.project?.id)).toEqual(['q'])
     expect(ids(groups)).toEqual(['other'])
-    const hiddenWorktree = listGroups(REPO_ALL, REPO_SESSIONS, ui({ hiddenProjects: ['wt1'] }))
-    expect(orderedSessions(hiddenWorktree).map((s) => s.id)).toEqual(['main', 'inWt2', 'other']) // hidden before the tree is built
-    expect(hiddenWorktree[0].children.map((c) => c.project?.id)).toEqual(['wt2']) // its heading goes too
+    // a worktree id in hiddenProjects is inert rather than a row hidden from under its repo:
+    // the repo is the unit, so nothing can hide a checkout the human cannot see listed
+    const stale = listGroups(REPO_ALL, REPO_SESSIONS, ui({ hiddenProjects: ['wt1'] }))
+    expect(orderedSessions(stale).map((s) => s.id)).toEqual(['main', 'inWt', 'inWt2', 'other'])
+    expect(stale[0].children.map((c) => c.project?.id)).toEqual(['wt1', 'wt2'])
   })
 })
 
