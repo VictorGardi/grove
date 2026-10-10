@@ -6,7 +6,7 @@ import { describe, expect, it } from 'vitest'
 import { gitRunner } from './diff/git'
 import { gitCommonDir } from './git'
 import { gitRepo } from './testing/gitRepo'
-import { add, list, worktreePath } from './worktrees'
+import { add, list, lock, merged, prune, remove, unlock, worktreePath } from './worktrees'
 
 // `protocol.file.allow` is what lets git clone a submodule from a path on this machine; the
 // submodule test needs it, and grove itself never turns it on.
@@ -67,20 +67,200 @@ describe('add', () => {
     expect(fs.existsSync(path.join(at, 'lib', '.git'))).toBe(true)
   })
 
-  it("reports git's own refusal and creates nothing", async () => {
+  it("reports git's own refusal for a directory that is not a worktree, and creates nothing", async () => {
     const repo = gitRepo()
     repo.commit()
-    const at = worktreePath(repo.dir, 'main', home())
-    fs.mkdirSync(at, { recursive: true }) // git refuses an existing path
-    const res = await add({ repo: repo.dir, branch: 'main', path: at, git })
+    const at = worktreePath(repo.dir, 'fix-auth', home())
+    fs.mkdirSync(at, { recursive: true }) // a plain directory: nothing to probe, so git decides
+    fs.writeFileSync(path.join(at, 'mine.txt'), 'x')
+    const res = await add({ repo: repo.dir, branch: 'fix-auth', path: at, git })
     expect(res.ok).toBe(false)
     expect(res.ok === false && res.error).toMatch(/already exists/i)
-    expect(fs.readdirSync(at)).toEqual([])
+    expect(fs.readdirSync(at)).toEqual(['mine.txt'])
     expect(await list(repo.dir, git)).toHaveLength(1) // nothing was added
   })
 
   it('refuses without git', async () => {
     expect(await add({ repo: '/nope', branch: 'b', path: '/tmp/x', git: null })).toEqual({ ok: false, error: 'no-git' })
+  })
+})
+
+// The design probes `git worktree list --porcelain` *before* `add`, so a conflict is our
+// sentence rather than git's raw `fatal`.
+describe('add refuses a conflict before git runs', () => {
+  const created = async (repo: ReturnType<typeof gitRepo>, branch: string) => {
+    const at = worktreePath(repo.dir, branch, home())
+    const res = await add({ repo: repo.dir, branch, path: at, git })
+    if (!res.ok) throw new Error(res.error)
+    return at
+  }
+
+  it('names the worktree already holding the branch, and creates nothing', async () => {
+    const repo = gitRepo()
+    repo.commit()
+    const first = await created(repo, 'fix-auth')
+    const again = await add({ repo: repo.dir, branch: 'fix-auth', path: worktreePath(repo.dir, 'fix-auth', home()), git })
+    expect(again.ok).toBe(false)
+    expect(again.ok === false && again.error).toContain('fix-auth')
+    expect(again.ok === false && again.error).toContain(fs.realpathSync(first)) // where it already is
+    expect(await list(repo.dir, git)).toHaveLength(2) // the repo and the one worktree, unchanged
+  })
+
+  it('refuses a branch that already exists but is checked out nowhere', async () => {
+    const repo = gitRepo()
+    repo.commit()
+    repo.git('branch', 'taken')
+    const res = await add({ repo: repo.dir, branch: 'taken', path: worktreePath(repo.dir, 'taken', home()), git })
+    expect(res.ok).toBe(false)
+    expect(res.ok === false && res.error).toMatch(/taken/)
+    expect(fs.existsSync(worktreePath(repo.dir, 'taken', home()))).toBe(false)
+  })
+
+  it('refuses the main checkout\'s own branch, naming the checkout', async () => {
+    const repo = gitRepo()
+    repo.commit()
+    const res = await add({ repo: repo.dir, branch: 'main', path: worktreePath(repo.dir, 'main', home()), git })
+    expect(res.ok).toBe(false)
+    expect(res.ok === false && res.error).toContain('main')
+    expect(await list(repo.dir, git)).toHaveLength(1)
+  })
+
+  it('refuses a path that is already a worktree of the repo, on any branch', async () => {
+    const repo = gitRepo()
+    repo.commit()
+    const first = await created(repo, 'fix-auth')
+    const res = await add({ repo: repo.dir, branch: 'other', path: first, git })
+    expect(res.ok).toBe(false)
+    expect(res.ok === false && res.error).toContain('fix-auth')
+    expect(await list(repo.dir, git)).toHaveLength(2)
+  })
+})
+
+describe('lock and unlock', () => {
+  it('marks a worktree locked with a reason, and clears it again', async () => {
+    const repo = gitRepo()
+    repo.commit()
+    const at = worktreePath(repo.dir, 'fix-auth', home())
+    expect(await add({ repo: repo.dir, branch: 'fix-auth', path: at, git })).toMatchObject({ ok: true })
+
+    expect(await lock(repo.dir, at, git, 'a grove session is running here')).toBe(true)
+    expect(await list(repo.dir, git)).toMatchObject([{ branch: 'main', locked: false }, { branch: 'fix-auth', locked: true }])
+    expect(out('-C', repo.dir, 'worktree', 'list', '--porcelain')).toContain('locked a grove session is running here')
+
+    expect(await unlock(repo.dir, at, git)).toBe(true)
+    expect(await list(repo.dir, git)).toMatchObject([{ branch: 'main' }, { branch: 'fix-auth', locked: false }])
+  })
+
+  it('keeps a locked worktree through prune even when its directory is gone, and lets go after unlock', async () => {
+    const repo = gitRepo()
+    repo.commit()
+    const at = worktreePath(repo.dir, 'fix-auth', home())
+    expect(await add({ repo: repo.dir, branch: 'fix-auth', path: at, git })).toMatchObject({ ok: true })
+    expect(await lock(repo.dir, at, git)).toBe(true)
+
+    fs.rmSync(at, { recursive: true, force: true })
+    expect(await prune(repo.dir, git)).toBe(true)
+    expect((await list(repo.dir, git)).map((w) => w.branch)).toEqual(['main', 'fix-auth']) // a live agent's checkout survives
+
+    expect(await unlock(repo.dir, at, git)).toBe(true)
+    expect(await prune(repo.dir, git)).toBe(true)
+    expect((await list(repo.dir, git)).map((w) => w.branch)).toEqual(['main'])
+  })
+
+  it('reports false rather than throwing when git refuses', async () => {
+    expect(await lock(worktreePath('/nope', 'x', home()), '/nope/x', git)).toBe(false)
+    expect(await unlock('/nope', '/nope/x', git)).toBe(false)
+    expect(await prune(home(), git)).toBe(false) // not a repo
+  })
+})
+
+describe('remove', () => {
+  it('deletes a clean worktree\'s directory and leaves the branch', async () => {
+    const repo = gitRepo()
+    repo.commit()
+    const at = worktreePath(repo.dir, 'fix-auth', home())
+    expect(await add({ repo: repo.dir, branch: 'fix-auth', path: at, git })).toMatchObject({ ok: true })
+
+    expect(await remove(repo.dir, at, git)).toEqual({ ok: true, data: { path: at } })
+    expect(fs.existsSync(at)).toBe(false)
+    expect(out('-C', repo.dir, 'worktree', 'list', '--porcelain')).not.toContain('fix-auth')
+    expect(out('-C', repo.dir, 'branch', '--list', 'fix-auth').trim()).toBe('fix-auth') // the work is kept
+  })
+
+  it('refuses a worktree with uncommitted work, and leaves it alone', async () => {
+    const repo = gitRepo()
+    repo.commit()
+    const at = worktreePath(repo.dir, 'fix-auth', home())
+    expect(await add({ repo: repo.dir, branch: 'fix-auth', path: at, git })).toMatchObject({ ok: true })
+    fs.writeFileSync(path.join(at, 'wip.txt'), 'agent work\n')
+
+    const res = await remove(repo.dir, at, git)
+    expect(res.ok).toBe(false)
+    expect(res.ok === false && res.error).toMatch(/uncommitted|modified/i)
+    expect(fs.readFileSync(path.join(at, 'wip.txt'), 'utf8')).toBe('agent work\n')
+  })
+
+  it('refuses a locked worktree: a session is still running in it', async () => {
+    const repo = gitRepo()
+    repo.commit()
+    const at = worktreePath(repo.dir, 'fix-auth', home())
+    expect(await add({ repo: repo.dir, branch: 'fix-auth', path: at, git })).toMatchObject({ ok: true })
+    expect(await lock(repo.dir, at, git)).toBe(true)
+
+    const res = await remove(repo.dir, at, git)
+    expect(res.ok).toBe(false)
+    expect(res.ok === false && res.error).toMatch(/locked/i)
+    expect(fs.existsSync(at)).toBe(true)
+  })
+})
+
+describe('merged', () => {
+  it('lists the worktrees whose branch is in the default branch, and only those', async () => {
+    const repo = gitRepo()
+    repo.commit()
+    const done = worktreePath(repo.dir, 'done', home())
+    expect(await add({ repo: repo.dir, branch: 'done', path: done, git })).toMatchObject({ ok: true })
+    const wip = worktreePath(repo.dir, 'wip', home())
+    expect(await add({ repo: repo.dir, branch: 'wip', path: wip, git })).toMatchObject({ ok: true })
+
+    // a fresh worktree's branch is still main, so it is trivially merged: each needs real work
+    // on it before "merged" means anything
+    out('-C', done, 'commit', '-q', '--allow-empty', '-m', 'the work')
+    out('-C', wip, 'commit', '-q', '--allow-empty', '-m', 'more work') // unmerged
+    expect(await merged(repo.dir, git)).toEqual([])
+
+    out('-C', repo.dir, 'merge', '-q', '--ff-only', 'done')
+
+    const all = await merged(repo.dir, git)
+    expect(all.map((w) => w.branch)).toEqual(['done']) // never the checkout itself
+    expect(fs.realpathSync(all[0].path)).toBe(fs.realpathSync(done))
+  })
+
+  it('is empty for a repo with no default branch', async () => {
+    const repo = gitRepo()
+    repo.git('checkout', '-q', '--orphan', 'topic')
+    repo.git('commit', '-q', '--allow-empty', '-m', 'orphan')
+    const at = worktreePath(repo.dir, 'other', home())
+    expect(await add({ repo: repo.dir, branch: 'other', path: at, git })).toMatchObject({ ok: true })
+    expect(await merged(repo.dir, git)).toEqual([])
+  })
+
+  // Asked from inside a worktree — which is what grove does when the repo's checkout is not a
+  // registered project — the answer must still exclude the checkout and include the worktrees.
+  it('works when repo is spelled as one of the worktrees', async () => {
+    const repo = gitRepo()
+    repo.commit()
+    const done = worktreePath(repo.dir, 'done', home())
+    expect(await add({ repo: repo.dir, branch: 'done', path: done, git })).toMatchObject({ ok: true })
+    const other = worktreePath(repo.dir, 'other', home())
+    expect(await add({ repo: repo.dir, branch: 'other', path: other, git })).toMatchObject({ ok: true })
+    out('-C', done, 'commit', '-q', '--allow-empty', '-m', 'the work')
+    out('-C', other, 'commit', '-q', '--allow-empty', '-m', 'unmerged work')
+    out('-C', repo.dir, 'merge', '-q', '--ff-only', 'done')
+
+    const all = await merged(other, git) // asked from an unrelated worktree, not the checkout
+    expect(all.map((w) => w.branch)).toEqual(['done'])
+    expect(fs.realpathSync(all[0].path)).toBe(fs.realpathSync(done))
   })
 })
 

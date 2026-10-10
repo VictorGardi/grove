@@ -39,10 +39,20 @@ export function gitCommonDir(dir: string): string | null {
     } catch {
       // no .git here; keep walking up
     }
-    if (isDir) return real(git)
+    if (isDir) return realPath(git)
     const gitdir = gitFile(git)
-    if (gitdir) return real(readCommonDir(gitdir) ?? gitdir)
+    if (gitdir) return realPath(readCommonDir(gitdir) ?? gitdir)
     if (path.dirname(d) === d) return null
+  }
+}
+
+// Real path so two spellings of one checkout compare equal however git printed them; the resolved
+// path when it does not exist, which is what commondir can name for a pruned worktree.
+export function realPath(p: string): string {
+  try {
+    return fs.realpathSync(p)
+  } catch {
+    return path.resolve(p)
   }
 }
 
@@ -62,15 +72,5 @@ function readCommonDir(gitdir: string): string | null {
     return rel ? path.resolve(gitdir, rel) : null
   } catch {
     return null // no commondir: the gitdir is its own
-  }
-}
-
-// Real path so two checkouts of one repo compare equal however they were spelled; the
-// resolved path when it does not exist, which is what commondir can name for a pruned worktree.
-function real(p: string): string {
-  try {
-    return fs.realpathSync(p)
-  } catch {
-    return path.resolve(p)
   }
 }

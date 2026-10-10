@@ -74,7 +74,7 @@ describe('cli server', () => {
     expect(t.fake.paths.get(`grove-${created.id}`)).toBe(worktree.path)
   })
 
-  it('refuses --worktree without --branch and reports git\'s own failure', async () => {
+  it('refuses --worktree without --branch, and a branch already checked out', async () => {
     const { core, socketPath } = await start()
     expect(await request(socketPath, req('sessions.create', { kind: 'terminal', cwd: t.dir, worktree: true })))
       .toMatchObject({ ok: false, error: { code: 'bad-params' } })
@@ -82,7 +82,9 @@ describe('cli server', () => {
     repo.commit()
     const twice = await request(socketPath, req('sessions.create', { kind: 'terminal', cwd: repo.dir, worktree: true, branch: 'main' }))
     expect(twice.ok).toBe(false)
-    expect(twice.ok === false && twice.error.message).toMatch(/already exists/i)
+    expect(twice.ok === false && twice.error.code).toBe('worktree-failed')
+    // our own sentence, naming where the branch is, rather than git's `fatal: … already exists`
+    expect(twice.ok === false && twice.error.message).toContain(`branch main is already checked out at ${fs.realpathSync(repo.dir)}`)
     expect(core.getSlices().sessions).toEqual([]) // nothing started
   })
 

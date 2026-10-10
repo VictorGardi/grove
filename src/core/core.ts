@@ -25,6 +25,7 @@ import { isDirectory, paneStable, realOrSelf, resolveProject, waitTurn } from '.
 import { sendToSession } from './send'
 import { hasLiveSessions, newProject, parentCheckout } from './projects'
 import { readBranch } from './git'
+import * as worktrees from './worktrees'
 import type { AgentEvent, AgentKind, AgentSource } from './agents/types'
 import { autoLink, link, markGone, markSeen, newSession, reconcile, rename, resume, setWorkflowStatus, withBranches } from './sessions'
 import { loadConfig, saveConfig } from './store/configStore'
@@ -100,6 +101,7 @@ export interface Core {
   filePath(projectId: string, rel: string): string | null // a viewable file of the project (ADR 0032); null: refused
   gitTop(dir: string): Promise<string | null> // the repo containing `dir`; null: not a repo, or git is missing
   git: GitRun | null // grove's git runner, for the worktree lifecycle; null: git was not found
+  cleanupMergedWorktrees(): Promise<Result<{ removed: string[]; failed: { path: string; error: string }[] }>> // 'clean up merged' (Q3)
   dispose(): void
 }
 
@@ -589,9 +591,41 @@ export function createCore(opts: CoreOptions): Core {
     syncDiff()
   }
 
+  // The checkout a worktree project belongs to: its parent's path when that is a registered
+  // project, else the worktree's own path, which is inside the same repo either way.
+  const repoFor = (p: Project): string =>
+    (p.worktreeOf ? slices.projects.find((x) => x.id === p.worktreeOf)?.path : undefined) ?? p.path
+
+  // A worktree is locked while a session runs on it, so a stray `git worktree prune` or `gc`
+  // cannot take the checkout away under a live agent (design: Lifecycle). Best-effort both ways:
+  // git refusing must never fail the session command that asked.
+  const LOCK_REASON = 'a grove session is running here'
+  async function lockWorktree(p: Project | undefined): Promise<void> {
+    if (!p?.worktreeOf || !git) return
+    await worktrees.lock(repoFor(p), p.path, git, LOCK_REASON)
+  }
+
+  async function unlockWorktree(p: Project | undefined): Promise<void> {
+    if (!p?.worktreeOf || !git || hasLiveSessions(p.id, slices.sessions)) return
+    await worktrees.unlock(repoFor(p), p.path, git)
+  }
+
+  const projectOf = (s: Session): Project | undefined => slices.projects.find((p) => p.id === s.projectId)
+
   // Removed agent sessions: each source drops what it keeps for them (Claude: the spool).
   function forgetAgents(gone: Session[]): void {
     for (const s of gone) if (s.kind !== 'terminal' && s.agentSessionId) states.get(s.kind)?.source.forget(s.agentSessionId)
+  }
+
+  // Forget a project and everything that pointed at it. The checkout on disk is never touched:
+  // removing a project from grove is not a delete, for a worktree as much as for anything else.
+  function unregisterProject(id: string): void {
+    set('projects', slices.projects.filter((p) => p.id !== id))
+    const gone = slices.sessions.filter((s) => s.projectId === id)
+    dropSessions((s) => s.projectId !== id)
+    forgetAgents(gone)
+    if (slices.ui.focusedProject === id) set('ui', { ...slices.ui, focusedProject: null })
+    syncProjects(false)
   }
 
   const sendDeps = { find: findSession, backend, resume: (id: string) => commands.sessionResume({ id }) }
@@ -607,12 +641,12 @@ export function createCore(opts: CoreOptions): Core {
     async projectRemove({ id }) {
       if (!slices.projects.some((p) => p.id === id)) return { ok: false, error: 'not-found' }
       if (hasLiveSessions(id, slices.sessions)) return { ok: false, error: 'has-live-sessions' }
-      set('projects', slices.projects.filter((p) => p.id !== id))
-      const gone = slices.sessions.filter((s) => s.projectId === id)
-      dropSessions((s) => s.projectId !== id)
-      forgetAgents(gone)
-      if (slices.ui.focusedProject === id) set('ui', { ...slices.ui, focusedProject: null })
-      syncProjects(false)
+      // A worktree is a project of its own (ADR 0037), so taking its parent away would orphan a
+      // checkout that still has a session running in it. Refuse until every child is idle.
+      if (slices.projects.some((p) => p.worktreeOf === id && hasLiveSessions(p.id, slices.sessions))) {
+        return { ok: false, error: 'has-live-sessions' }
+      }
+      unregisterProject(id)
       return { ok: true, data: { id } }
     },
 
@@ -649,6 +683,7 @@ export function createCore(opts: CoreOptions): Core {
         syncProjects(false)
       }
       set('sessions', [...slices.sessions, session])
+      await lockWorktree(project)
       refreshStatus()
       if (prompt && kind === 'terminal') {
         // no launch argument for a shell: type it once the prompt has drawn (sent even if the pane never settles)
@@ -665,6 +700,7 @@ export function createCore(opts: CoreOptions): Core {
       await backend.kill(session.tmuxName) // already-missing counts as success
       // re-read: a poll may have flipped it while kill was in flight
       replaceSession(markGone(findSession(id) ?? session, now().toISOString()))
+      await unlockWorktree(projectOf(session)) // nothing runs in it now, so nothing may prune it
       return { ok: true, data: { id } }
     },
 
@@ -675,6 +711,7 @@ export function createCore(opts: CoreOptions): Core {
       await backend.kill(session.tmuxName) // already-missing counts as success
       dropSessions((s) => s.id !== id)
       forgetAgents([session])
+      await unlockWorktree(projectOf(session))
       return { ok: true, data: { id } }
     },
 
@@ -839,8 +876,25 @@ export function createCore(opts: CoreOptions): Core {
     async start() {
       const onBad = (m: string) => errors.push(m)
       const config = loadConfig(opts.configPath, onBad)
-      slices.projects = config.projects
       configWorkflow = config.workflow
+      // A worktree project whose directory is gone cannot be classified by git — there is no
+      // `.git` file left to read — so it would sit in the sidebar ungrouped for good. Drop the
+      // row and git's admin entry with it. Only worktrees: an ordinary project's folder may be
+      // on a disk that is not mounted yet (design: Dead worktree projects).
+      const dead = config.projects.filter((p) => p.worktreeOf && !isDirectory(p.path))
+      slices.projects = dead.length ? config.projects.filter((p) => !dead.includes(p)) : config.projects
+      if (dead.length) {
+        set('projects', slices.projects)
+        for (const d of dead) {
+          const repo = slices.projects.find((x) => x.id === d.worktreeOf)?.path
+          if (!repo || !git) continue
+          // The lock outlived its directory: nothing is running in a checkout that is gone, and
+          // git refuses to prune a locked one, so without this the admin entry would be a ghost
+          // that only `git worktree unlock` by hand could ever clear.
+          await worktrees.unlock(repo, d.path, git)
+          await worktrees.prune(repo, git)
+        }
+      }
       const state = loadState(opts.statePath, onBad)
       slices.sessions = state.sessions
       slices.ui = state.ui
@@ -912,6 +966,33 @@ export function createCore(opts: CoreOptions): Core {
     filePath: (projectId, rel) => projectFile(projectId, rel),
     gitTop,
     git,
+    // 'clean up merged' (Q3): a worktree whose branch is already in the repo's checkout holds
+    // nothing that is not kept, so it can go. Anything still being worked in stays, and so does
+    // anything git itself refuses — an uncommitted change is the human's, not ours to discard.
+    async cleanupMergedWorktrees() {
+      if (!git) return { ok: false as const, error: 'no-git' }
+      const byRepo = new Map<string, Project[]>()
+      for (const p of slices.projects) {
+        if (!p.worktreeOf) continue
+        byRepo.set(repoFor(p), [...(byRepo.get(repoFor(p)) ?? []), p])
+      }
+      const removed: string[] = []
+      const failed: { path: string; error: string }[] = []
+      for (const [repo, projects] of byRepo) {
+        const merged = await worktrees.merged(repo, git)
+        for (const p of projects) {
+          if (hasLiveSessions(p.id, slices.sessions)) continue
+          if (!merged.some((w) => realOrSelf(w.path) === realOrSelf(p.path))) continue
+          const res = await worktrees.remove(repo, p.path, git)
+          if (!res.ok) failed.push({ path: p.path, error: res.error })
+          else {
+            unregisterProject(p.id)
+            removed.push(p.path)
+          }
+        }
+      }
+      return { ok: true as const, data: { removed, failed } }
+    },
     dispose() {
       clearInterval(poll)
       clearTimeout(unreachableTimer)
