@@ -1,5 +1,5 @@
+import { openedKey, projectKey, worktreeKey } from '@shared/groups'
 import type { Project, Session, UiState, WorkflowStatus } from '@shared/types'
-import { openedKey, projectKey, worktreeKey } from './tree'
 import { repoGroups } from './repoGroups'
 import { WORKFLOW_STATUSES } from './workflowStatus'
 

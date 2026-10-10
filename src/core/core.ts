@@ -4,6 +4,7 @@ import os from 'node:os'
 import path from 'node:path'
 import type { Comment, CommentAnchor, Project, Session, SessionDiff, SessionKind, Slices, UiState, WorkflowStatus } from '@shared/types'
 import { DEFAULT_UI, EMPTY_FEATURES, OPENCODE_CONNECTING } from '@shared/types'
+import { keyProjectId } from '@shared/groups'
 import type { Result } from '@shared/ipc'
 import { pruneGrid } from '@shared/grid'
 import { safeArtifactPath } from './artifacts/path'
@@ -617,6 +618,25 @@ export function createCore(opts: CoreOptions): Core {
     for (const s of gone) if (s.kind !== 'terminal' && s.agentSessionId) states.get(s.kind)?.source.forget(s.agentSessionId)
   }
 
+  // `ui` remembers a project in three places: the focused page, its collapsed group keys, the
+  // hidden list. None may outlive it — a removed project, a dead worktree pruned at start and a
+  // project dropped from config.json while grove was closed all leave the same stale keys, and
+  // nothing else would ever clear them. Called on removal and once at start.
+  function forgetProjectUi(absent: (id: string) => boolean): void {
+    const ui = slices.ui
+    const focusedProject = ui.focusedProject && absent(ui.focusedProject) ? null : ui.focusedProject
+    const collapsed = ui.collapsed.filter((k) => {
+      const id = keyProjectId(k)
+      return id === '' || !absent(id)
+    })
+    const hiddenProjects = (ui.hiddenProjects ?? []).filter((id) => !absent(id))
+    // The filters only ever remove, so equal lengths mean nothing was there to forget.
+    if (focusedProject === ui.focusedProject
+      && collapsed.length === ui.collapsed.length
+      && hiddenProjects.length === (ui.hiddenProjects ?? []).length) return
+    set('ui', { ...ui, focusedProject, collapsed, hiddenProjects })
+  }
+
   // Forget a project and everything that pointed at it. The checkout on disk is never touched:
   // removing a project from grove is not a delete, for a worktree as much as for anything else.
   function unregisterProject(id: string): void {
@@ -624,7 +644,7 @@ export function createCore(opts: CoreOptions): Core {
     const gone = slices.sessions.filter((s) => s.projectId === id)
     dropSessions((s) => s.projectId !== id)
     forgetAgents(gone)
-    if (slices.ui.focusedProject === id) set('ui', { ...slices.ui, focusedProject: null })
+    forgetProjectUi((x) => x === id)
     syncProjects(false)
   }
 
@@ -898,6 +918,9 @@ export function createCore(opts: CoreOptions): Core {
       const state = loadState(opts.statePath, onBad)
       slices.sessions = state.sessions
       slices.ui = state.ui
+      // Whatever took a project away since the last run — a removal, a pruned dead worktree, a
+      // hand-edited config — its keys are in that ui, and nothing will come back to clear them.
+      forgetProjectUi((id) => !slices.projects.some((p) => p.id === id))
       slices.comments = loadComments(opts.commentsPath, onBad).comments
       const file = workflowFile()
       if (file) {
