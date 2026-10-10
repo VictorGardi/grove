@@ -20,13 +20,37 @@ forced: []
 |---|---|---|
 | 1 | Tracer: a worktree session, nested under its repo | done, reviewed and approved by the human (2026-10-10) |
 | 2 | Lifecycle: conflicts, locking, pruning, removal | implemented (2026-10-10), awaiting the human's review |
-| 3 | One card per feature, with a divergence chip | not started |
+| 3 | One card per feature, with a divergence chip | not started; scope grew, see below |
 | 4 | Review comments stay unambiguous across checkouts | not started |
 
 Slice 1's commits: `2d109c6` (the tracer), `ea532dc` and `cf24796` (two corrections the
 human's testing found — the missing rail colour bar, then the broken bar line). Approving a
 slice is the human's conversational checkpoint; `06-implementation.md` itself is approved
 once, at the end, with `grove-approve <slug> implementation`.
+
+## Between the slices: a repo-wide audit (2026-10-10)
+
+The human asked for every place that treats a checkout as a repo now that worktrees exist.
+Most of what the audit found is already owned by slice 3 (the worktree page's duplicate
+Features board, the repo page's copies, ⌘B from a worktree session). Two things were not, and
+were settled directly:
+
+- **No ui key outlives its project** (`3f70143`, this session). Removing a project cleared
+  only `focusedProject`, so its `p:`/`w:`/`o:w:` group keys and its `hiddenProjects` entry
+  stayed in `state.json` for good — the human's own state file already carried `o:w:<id>` for
+  a worktree project that no longer existed. `forgetProjectUi()` drops all three, and runs on
+  removal and once at start, so it also covers slice 2's prune of a dead worktree and a
+  project deleted from `config.json` by hand. The group-key format moved to
+  `@shared/groups`, because core now has to recognise those keys and the renderer draws them.
+- **The command palette listed every feature once per checkout** — 20 features across 2
+  checkouts of grove are 40 entries, half with duplicate labels. `paletteItems.ts` was in no
+  slice, so the human approved adding it to slice 3 (`04-structure.md` v2).
+
+Still open for the human, not yet in any slice: the palette's project entries, ⌘T's per-checkout
+fan-out and the grid toolbar's filter tabs all present a checkout as a peer of a repo, which is
+the same conflation the options panel had; whether the repo's *Sessions* board should include
+its worktrees' sessions; and whether slice 4's "two checkouts in one message" is reachable at
+all, since `reviewSend` sends one session's drafts and a session has one checkout.
 
 ## Slice 1 — Tracer
 
