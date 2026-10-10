@@ -106,11 +106,13 @@
   background: var(--header-divider);
 }
 
+/* focus reads exactly as it does on the sidebar's focused card: the same orange edge and
+   the same raised tint, so a session keeps one look as it moves between the two views */
 .focused,
 .focused:hover {
   color: var(--text);
-  background: var(--header-divider);
-  border-color: var(--text-3);
+  background: var(--card-selected-bg);
+  border-color: var(--card-selected-border);
 }
 
 .ended {
