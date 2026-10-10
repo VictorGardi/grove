@@ -18,7 +18,7 @@ forced: []
 
 | Slice | Outcome | State |
 |---|---|---|
-| 1 | Tracer: a worktree session, nested under its repo | done, committed |
+| 1 | Tracer: a worktree session, nested under its repo | done, committed (one correction after the human tested it) |
 | 2 | Lifecycle: conflicts, locking, pruning, removal | not started |
 | 3 | One card per feature, with a divergence chip | not started |
 | 4 | Review comments stay unambiguous across checkouts | not started |
@@ -84,9 +84,22 @@ changed: `project.path` *is* the worktree, which is the whole of ADR 0037's clai
     submodule can be cloned. grove never sets it; the production path runs
     `git submodule update --init --recursive` verbatim (Q7).
 
+### Correction after human testing
+
+The first pass made `colorTags` return `null` for a worktree, which is right about palette
+*slots* — a worktree must not push the projects after it onto a different colour — but wrong
+about the colour itself. `tags.project(id)` feeds the rail's bar and all three sidebar folder
+icons, so a worktree's block in the rail was drawn with no bar at all, and its row in the
+sidebar had an uncoloured folder icon. `project(id)` now resolves a worktree to its
+checkout's slot: a worktree takes no slot of its own and wears its repo's colour.
+
+`src/renderer/src/railBars.test.ts` was added to pin the composed result (block order and
+bar class per block), because the components have no render harness and this was the second
+composition gap in the slice that unit tests on the pieces did not catch.
+
 ### Verification
 
-`npm test` (67 files, 710 tests — was 65/673), `npm run typecheck`, `npm run build`: all
+`npm test` (68 files, 713 tests — was 65/673), `npm run typecheck`, `npm run build`: all
 clean. Beyond the unit tests, these are proven against **real git**:
 
 - `gitCommonDir` returns exactly what `git rev-parse --git-common-dir` returns, for a
