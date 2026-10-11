@@ -2,15 +2,16 @@
 feature: 2026-10-08-agent-sandboxing
 phase: design
 status: approved
-version: 7
+version: 8
 created: 2026-10-09
 updated: 2026-10-11
 approved_at: 2026-10-11
 based_on:
   - 01-questions.md@1
-  - 02-research.md@5
+  - 02-research.md@6
 forced:
   - "design exceeds designMaxLines (255 vs 220): v5 was already 222 at its approval, and D7 added the seventh one-way decision with its rationale and rejected options. Forced by the human rather than compressing approved rationale."
+  - "design exceeds designMaxLines again (v8, D8): the human declined to compress approved rationale once already, and D8 must carry its measured evidence and rejected options or the next session re-derives the Keychain question. Approved rationale left intact; new material written as tightly as the subject allows."
 ---
 
 # Agent session sandboxing — design
@@ -29,6 +30,9 @@ forced:
    are pruned at app start.
 5. Isolation is filesystem-only (ADR 0036). A sandboxed OpenCode joins the host's shared
    service rather than starting one (D6). It commits locally; you push.
+6. A sandboxed session **authenticates the way that agent already authenticates on the
+   host** (D8), and grove refuses `no-sandbox` rather than opening a pane that cannot log
+   in.
 
 ## Non-goals
 
@@ -61,13 +65,19 @@ container run --rm -i -t --name <tmuxName> --workdir <cwd>
   --read-only-path <commonDir>/hooks      #   ditto — only when the two differ
   --read-only-path <commonDir>/config
   --volume <claudeHome>:<claudeHome>      # ~/.claude, ~/.claude.json
+  --read-only-path <claudeHome>/settings.json        # D8: an agent that can write hooks
+  --read-only-path <claudeHome>/.credentials.json    # D8: an agent that can rewrite your login
   --volume <opencodeData>:<opencodeData>  # ~/.local/share/opencode, ~/.config/opencode
+  --read-only-path <opencodeShare>/auth.json         # D8: read your provider logins, not edit
   --read-only-path <gitconfig>            # ~/.gitconfig: identity in, never out
   --volume <spoolDir>:<spoolDir>          # <userData>/agents/claude — hooks append here
   --volume <socketPath>:<socketPath>      # <userData>/grove.sock
   --volume <cliBundle>:<cliBundle>        # grove's own CLI (D7): read-only, at its host path
   --read-only-path <opencodeState>        # ~/.local/state/opencode (D6)
   -e GROVE_SESSION_ID -e GROVE_SOCKET -e TERM=xterm-256color
+  -e CLAUDE_CONFIG_DIR=<claudeHome>                              # D8: claude only
+  -e XDG_DATA_HOME=<~/.local/share> -e XDG_CONFIG_HOME=<~/.config>   # D8: opencode only
+  -e CLAUDE_CODE_OAUTH_TOKEN -e ANTHROPIC_API_KEY                 # D8: claude only, bare
   -e GIT_CONFIG_COUNT=1 -e GIT_CONFIG_KEY_0=core.hooksPath
   -e GIT_CONFIG_VALUE_0=<empty dir baked into the image>
   <image> <agentArgv…>
@@ -76,10 +86,45 @@ container run --rm -i -t --name <tmuxName> --workdir <cwd>
 Mounts are **same-path** — the invariant every host subsystem already assumes
 (`research` §9). Read-write except: OpenCode's state dir (D6); `~/.gitconfig`, since an
 agent that can write it can set `core.hooksPath` for **every unsandboxed git run on the
-host** afterwards; and a worktree's `.git/hooks` + `.git/config`. The three
-`GIT_CONFIG_*` variables apply at git's command-line scope, overriding `~/.gitconfig`
-and `.git/config` for **every** git invocation in the pane — which is what turns the
-hook row below into a decision rather than a documented risk.
+host** afterwards; a worktree's `.git/hooks` + `.git/config`; and — new in D8, because D8
+makes the agent config volumes reachable for the first time — the three files that carry
+**authority** rather than state (`settings.json`, `.credentials.json`, `auth.json`). Same
+principle, same reason. The three `GIT_CONFIG_*` variables apply at git's command-line
+scope, overriding `~/.gitconfig` and `.git/config` for **every** git invocation in the
+pane — which is what turns the hook row below into a decision rather than a documented
+risk.
+
+### Authentication (D8)
+
+The container runs `uid=0` with `HOME=/root`, so both agents resolve `~` to `/root` while
+grove mounts the host's config at `/Users/victor/…`. **Measured: those volumes are present
+and never read**, so a sandboxed agent runs with none of the host's settings, plugins,
+skills, commands — or credentials. One env var per agent points each at the paths grove
+*already* mounts, via each agent's own documented mechanism: **no new mount, and ADR 0035's
+same-path invariant untouched.** Credentials then arrive by whichever channel that agent
+already has.
+
+- **OpenCode needs no channel of its own.** With no login at all, the Zen free tier
+  authenticates by the client *being* opencode — measured in the real container, two
+  models, `0 credentials`, no `auth.json` before or after. With a host
+  `opencode auth login` (say GitHub Copilot), the credential sits in
+  `~/.local/share/opencode/auth.json`, inside a directory grove already mounts — measured
+  read from the mount and listed as authenticated. The XDG redirect makes both true.
+- **Claude forwards a token and never reads the Keychain.** `CLAUDE_CODE_OAUTH_TOKEN` and
+  `ANTHROPIC_API_KEY` go in **bare**: `container run -e VAR` with no `=value` takes the
+  value from the calling process's environment, measured working through
+  `$SHELL -l -i -c` — the pane grove already builds. The value comes from the user's own
+  shell profile, never appears in argv or `ps`, and is the channel Anthropic documents for
+  containers. `CLAUDE_CONFIG_DIR` additionally reaches `.credentials.json`, the store
+  Claude Code uses when the Keychain rejects the write.
+- **Grove refuses.** `sandboxed` + `kind: 'claude'` + no credential reachable →
+  `no-sandbox` naming `claude setup-token`. OpenCode cannot reach that state. grove probes
+  the login-shell env rather than attempting a run, because a bare `-e VAR` for an absent
+  variable **does not fail the run** (measured, exit 0).
+
+grove cannot distinguish a one-year `setup-token` from a short-lived one, and Anthropic's
+own container guidance prefers short-lived, repository-scoped tokens. It therefore **names
+the variable it forwards**; the naming is the whole mitigation.
 
 ### Image
 
@@ -109,7 +154,8 @@ bind the service on the LAN. An undiscoverable bridge fails the create `no-sandb
 `Session.sandboxed: boolean` persisted, state file **v9**, `v8ToV9` defaulting it to
 false (v8 shipped for `workflowStatus`). `sandboxed?: boolean` threads through
 `sessionCreate` (agent kinds only) and both create boundaries. `CoreOptions.sessionEnv`
-gains `spoolDir` and `opencodePaths`.
+gains `spoolDir` and `opencodePaths`. `envFor` and `readOnlyPathsFor` both take the agent
+kind now, since D8's config pointers and credential carve-outs are per-agent.
 
 ## Program design
 
@@ -138,7 +184,8 @@ resolved once in main.
 gitCommonDir(dir: string): string | null          // D2; no spawn, src/core/git.ts:18-26
 mountsFor(kind, o: { cwd: string; commonDir: string | null; paths: AgentPaths }): string[]
 readOnlyPathsFor(kind, o: { commonDir: string | null; paths: AgentPaths }): string[]
-envFor(session, o: { socketPath: string }): Record<string, string>   // incl. GIT_CONFIG_*
+envFor(kind, session, o: { paths: AgentPaths }): Record<string, string>  // incl. GIT_CONFIG_*, D8
+loginShellCredential(kind, o: { shell: string }): Promise<string | null>  // D8 probe, or null
 sandboxArgv(o: { name: string; spec: SandboxSpec; agentArgv: string[] }): string[]
 imageRef(dockerfile: string): string;  ensureImage(o: { container; dir; tag }): Promise<void>
 sandboxAvailability(container: string): Promise<{ ok: boolean; error?: 'no-sandbox' }>
@@ -220,29 +267,79 @@ keeps the full `grove` surface — `ls`, `new`, `send`, `wait`, `read`, `focus`,
   minimal Linux client (forks ADR 0027's frozen command surface into a second
   implementation that will drift); baking the bundle in (rebuilds per grove release).
 
+**D8. A sandboxed session authenticates through each agent's own supported channel —
+a config pointer at the paths grove already mounts, plus the env var for a credential
+that exists nowhere on disk — and grove refuses `no-sandbox` rather than opening a pane
+that cannot log in** ([ADR 0040](../../adr/0040-sandboxed-sessions-authenticate-through-the-agents-own-channel.md)).
+- Measured, in the real container, after slice 1 left "Slice 1 settles both" unfulfilled:
+  the Claude TUI reached `Not logged in · Please run /login`, and OpenCode completed two
+  prompts with `0 credentials` and no `auth.json` before or after.
+- The mechanism is not what § Risks assumed. Claude Code keeps its OAuth token in the
+  **macOS Keychain**, which a Linux VM cannot read. OpenCode's Zen free tier is gated on
+  the client being opencode, not on a credential at all — a raw curl to
+  `opencode.ai/zen/v1` gets `403 FreeTierError`, and this Mac has no `auth.json`, no
+  `credential` row in `opencode.db`, no keychain entry and no `OPENCODE_API_KEY`.
+- The cause of *both* is that the container's `HOME` is `/root`: the config volumes grove
+  has always mounted were present and unread. One env var per agent fixes it
+  (`CLAUDE_CONFIG_DIR`; `XDG_DATA_HOME`/`XDG_CONFIG_HOME`), each documented by its own
+  agent, measured working, and reusing mounts that already exist.
+- **Reading the Keychain is rejected on cited grounds, not taste.** It appears in no
+  Anthropic documentation; Claude Code creates the item with no `-T`/`-A`, so any
+  same-user process can read it — reported to Anthropic (Silverfort, HackerOne 2026-06-25)
+  as *"any macOS process can read stored credentials"*, and Anthropic **confirmed they are
+  tightening that ACL**. It is also conditionally unavailable (locked keychain after
+  reboot or under FileVault, keychain password out of sync, no Aqua session, a
+  `CLAUDE_CONFIG_DIR` session reading a different item, a Data Protection keychain entry
+  invisible to `security`). grove's read would break as a silent, remote change.
+- The channel chosen is Anthropic's documented one for containers, which is **stated to
+  take precedence over Keychain-stored credentials** and is expected to live in a shell
+  profile. Forwarded **bare**, so the value comes from the pane's login shell and never
+  enters argv or `ps`.
+- Consequence grove carries: **`.credentials.json`, `settings.json` and `auth.json` become
+  read-only carve-outs.** Each is authority rather than state — a writable one lets a
+  sandboxed agent rewrite the human's login, or install a `settings.json` hook that runs
+  in every later *unsandboxed* session, which is exactly why `~/.gitconfig` is already
+  read-only.
+- Rejected: **grove reads the Keychain** (above); **grove writes a credential file from
+  it** (converts an ephemeral env var into a durable secret at rest, readable by the
+  sandbox — strictly worse than what it replaces); **a token baked into the image** (the
+  image is content-addressed by grove, so the secret would ship in the shared tag);
+  **a one-time interactive login inside the container** (measured dead — it writes to
+  `/root`, destroyed on exit, so *every* session would have to log in again).
+
 ## Two-way decisions
 
 | Decision | Choice |
 |---|---|
 | Default | Off; every existing session launches as today |
 | Entry points | `--sandboxed` (CLI) and **New sandboxed session** (palette → ⌘T kind list) |
-| Refusals | Terminal kind, missing `container`, failed build, undiscoverable bridge → `no-sandbox`; never a silent fallback |
+| Refusals | Terminal kind, missing `container`, failed build, undiscoverable bridge, no reachable Claude credential → `no-sandbox`; never a silent fallback |
+| Credential check | grove probes the login-shell env (`$SHELL -l -i -c`, the interpreter the pane uses) rather than attempting a run, because a bare `-e VAR` for an absent variable does not fail the run |
+| Credential visibility | grove **names the variable it forwards** on the card and in the `no-sandbox` message; it cannot tell a one-year `setup-token` from a short-lived one, so transparency is the mitigation |
 | Marker | A tag on the session card; not part of the label |
-| Mount mode | Read-write, except OpenCode's state dir, `~/.gitconfig`, a worktree's `.git/hooks` + `.git/config`, and grove's own CLI bundle (D7, read-only). `binDir` stays unmounted — the host launcher is macOS-only and has no business inside |
-| Worktrees | Supported by D2 — the worktree **and** its repo's common dir, host-identical, hooks/config read-only. Slice 1 must verify `git rev-parse --show-toplevel` **and a real `git commit`** inside it before a worktree path ships; its verify currently runs no git command at all |
+| Mount mode | Read-write, except OpenCode's state dir, `~/.gitconfig`, a worktree's `.git/hooks` + `.git/config`, grove's own CLI bundle (D7), and — per D8 — `settings.json`, `.credentials.json` and `auth.json`: the files that carry authority rather than state. `binDir` stays unmounted — the host launcher is macOS-only and has no business inside |
+| Agent config | `CLAUDE_CONFIG_DIR` / `XDG_DATA_HOME` + `XDG_CONFIG_HOME` point at the mounts grove already has (D8). **Consequence, accepted:** a sandboxed agent now gets the host's settings, plugins, skills, commands and history, which until now it silently did not |
+| Worktrees | Supported by D2 — the worktree **and** its repo's common dir, host-identical, hooks/config read-only. Slice 1 verified `git rev-parse --show-toplevel`, `core.hooksPath` neutralisation and a real `git commit` landing on the host for a **plain checkout**; the worktree form is still unverified and repeats with `--worktree --branch probe --sandboxed` |
 | Git hooks | Neutralised by env: `GIT_CONFIG_COUNT=1`, `KEY_0=core.hooksPath`, `VALUE_0=<empty dir in the image>`. Command-line scope, beating `~/.gitconfig` and `.git/config` for every git call in the pane. A repo that legitimately uses `core.hooksPath` stops running hooks inside the sandbox — the same class of divergence as shipping no rc files |
 | Shared-service bind | Grove writes the bridge address, **with a consent prompt** the first time |
 | Git push | No SSH agent or credential helper inside: a grove choice, not a container limit. Commit locally, push from the host |
 
 ## Risks
 
-- **Credentials.** Claude's macOS credentials live in the Keychain, the container cannot
-  read it; OpenCode's may not survive the image. Slice 1 settles both.
+- **A token inside the VM is plaintext in the agent's environment.** Inherent to a sandboxed
+  agent that can reach a model at all, and not new host exposure — the pane's login shell
+  already carries it. Anthropic's container guidance prefers short-lived,
+  repository-scoped tokens and grove cannot tell one from a `setup-token`'s one-year token,
+  hence the naming rather than enforcement.
+- **`.claude` and `.config/opencode` become reachable for the first time** (D8): mounted
+  all along, inert. The agent can now read your Claude history and transcripts for every
+  project and write into them. Only the three authority files are carved out.
 - **Rebinding the shared service.** D6 moves it onto the container bridge — private, but
   machine-wide, hence consent.
-- **`--read-only-path` is Experimental**, and its two risky cases are now measured: an
-  **absent** path is tolerated (covering a missing `~/.gitconfig`), and **two nested
-  carve-outs in one read-write volume** work together. Slice 1 asserts both.
+- **`--read-only-path` is Experimental**, and its cases are measured: an **absent** path is
+  tolerated (covering a missing `~/.gitconfig`, and a missing `auth.json` on a machine with
+  no host login), and **two nested carve-outs in one read-write volume** work together.
+  Slice 1 asserts both.
 - **Git hooks run inside the sandbox** unless neutralised. Measured: a host
   `post-checkout` hook ran as `uid=0` even with `hooks/` read-only. grove pins
   `core.hooksPath=/dev/null` via `GIT_CONFIG_COUNT`/`KEY_0`/`VALUE_0`, which stops it

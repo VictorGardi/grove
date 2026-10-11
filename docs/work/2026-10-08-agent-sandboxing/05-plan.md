@@ -2,12 +2,12 @@
 feature: 2026-10-08-agent-sandboxing
 phase: plan
 status: approved
-version: 1
+version: 2
 created: 2026-10-11
 updated: 2026-10-11
 based_on:
-  - 03-design.md@7
-  - 04-structure.md@4
+  - 03-design.md@8
+  - 04-structure.md@5
 forced: []
 ---
 
@@ -199,3 +199,75 @@ a subfolder of a checkout), `null` when it already sits inside the mounted `cwd`
       (the ADR 0038 obligation, repeated driven by the real agent).
 - [x] Remove every container, throwaway worktree and temp path the verification
       created; keep only the `grove-sandbox:*` image, which is the feature's.
+## Slice 2 — A sandboxed session authenticates, or grove refuses (D8)
+
+Re-planned after `03-design.md` v8 / `04-structure.md` v5; slice 1 (58c4e1f) is done and
+untouched. Context a fresh agent needs, inlined: the container runs `uid=0` with
+`HOME=/root`, so both agents resolve `~` to `/root` while grove mounts the host's config at
+`/Users/victor/…` — those volumes are present and unread, which is why a sandboxed Claude
+session stops at "Not logged in". `container run -e VAR` with no `=value` forwards the
+variable from the calling process's environment and still works when the caller is
+`$SHELL -l -i -c` (measured), which is the pane grove already builds. A bare `-e VAR` for a
+variable that is *not* set does **not** fail the run, so absence must be probed, not
+attempted.
+
+- [ ] `src/core/sandbox/spec.test.ts` — `envFor('claude', SESSION, { paths: PATHS })` equals
+      the existing six entries **plus** `CLAUDE_CONFIG_DIR: '/home/u/.claude'` and
+      `passEnv: ['CLAUDE_CODE_OAUTH_TOKEN', 'ANTHROPIC_API_KEY']`; `envFor('opencode', …)`
+      adds `XDG_DATA_HOME: '/home/u/.local/share'` and
+      `XDG_CONFIG_HOME: '/home/u/.config'` and carries **no** `CLAUDE_CONFIG_DIR` and no
+      `passEnv`; `readOnlyPathsFor('claude', …)` gains
+      `/home/u/.claude/settings.json` and `/home/u/.claude/.credentials.json`;
+      `readOnlyPathsFor('opencode', …)` gains `/home/u/.local/share/opencode/auth.json`;
+      each of the two kinds excludes the other's carve-outs; a path that was never resolved
+      contributes no carve-out; `specFor` threads `passEnv` through.
+- [ ] `src/core/sandbox/argv.test.ts` — a `passEnv` entry reaches the argv as exactly
+      `['-e', 'CLAUDE_CODE_OAUTH_TOKEN']`, with no `=` anywhere in it, after the `-e K=V`
+      block and before the image.
+- [ ] Implement `src/core/sandbox/spec.ts`: add `passEnv?: string[]` to `SandboxSpec`;
+      change `envFor(kind, session, o: { paths: MountPaths })` — `kind` first — to return
+      `{ env, passEnv }`; derive `XDG_DATA_HOME`/`XDG_CONFIG_HOME` with
+      `path.dirname(opencodeShare)` / `path.dirname(opencodeConfig)`; append the three
+      carve-outs in `readOnlyPathsFor`; thread both through `specFor`.
+- [ ] Implement `src/core/sandbox/argv.ts`: after the `-e K=V` entries, emit
+      `...(s.passEnv ?? []).map((k) => '-e', )` as `flatMap((k) => ['-e', k])`.
+- [ ] Create `src/core/sandbox/auth.ts` exporting
+      `loginShellCredential(kind, o: { shell: string; claudeHome?: string }): Promise<string | null>`
+      returning a **human label** of the credential the session will use, or null. For
+      `'claude'`: spawn `<shell> -l -i -c 'echo ${VAR:-}'` once per candidate in order
+      `CLAUDE_CODE_OAUTH_TOKEN`, `ANTHROPIC_API_KEY`; the first non-empty wins and its name
+      is the label; otherwise if `<claudeHome>/.credentials.json` exists return
+      `'~/.claude/.credentials.json'`; otherwise null. For `'opencode'` return
+      `"the host's opencode auth.json, or the free tier"` immediately, **without spawning**.
+      A spawn error, timeout or empty output is "not found", never a throw.
+- [ ] Create `src/core/sandbox/auth.test.ts` against a fake `shell` script written to a temp
+      dir and marked executable: set/unset per variable, `.credentials.json` present and
+      absent, first-match-wins ordering, opencode never spawning (assert the fake shell's
+      marker file was not created).
+- [ ] `src/core/sessionCreate.test.ts` — `sessionCreate({ kind: 'claude', sandboxed: true })`
+      returns `{ ok: false, error: 'no-sandbox' }` when `loginShellCredential` resolves null,
+      and creates the session when it resolves a label; an unsandboxed claude create never
+      probes.
+- [ ] `src/core/core.ts` — in the `sandboxKind` branch, after `ensureImage` and before
+      `specFor`, `const credential = await loginShellCredential(sandboxKind, { shell: process.env.SHELL || '/bin/zsh', claudeHome: paths.claudeHome })`;
+      `if (!credential) return { ok: false, error: 'no-sandbox' }`. Store the label on the
+      spec's `credential` field so the card can name it; do not persist it on `Session`.
+- [ ] `src/core/sandbox/spec.ts` — add `credential?: string` to `SandboxSpec` and populate
+      it from the label above; absent means "nothing forwarded".
+- [ ] `src/main/cliServer.ts` — add to `MESSAGES`: `'no-sandbox'` →
+      `'this machine cannot give a sandboxed session what it needs — install and start the `container` CLI, or run `claude setup-token` and export CLAUDE_CODE_OAUTH_TOKEN in your shell profile'`.
+- [ ] `src/renderer/src/components/SessionCard.tsx` (whichever renders the sandbox tag) —
+      when a session's sandbox tag is shown, name the credential the spec carries; render
+      nothing extra when there is none.
+- [ ] `npm test`
+- [ ] `npm run typecheck`
+- [ ] Manual, **under a real controlling TTY** (`container run -i -t` fails with ENODEV
+      without one and looks like a broken mount subsystem). Use a real tmux pane via
+      `npm run dev`, or wrap the run in `script -q /dev/null`. With a **dummy**
+      `CLAUDE_CODE_OAUTH_TOKEN` — never the real one, the Keychain secret must not enter a
+      container: `grove new claude --sandboxed --prompt "print pwd"` renders the TUI past
+      the login screen and answers; the host's `~/.claude/settings.json` demonstrably
+      applies inside; writing to `settings.json` or `.credentials.json` from inside gives
+      `EROFS`; `opencode auth list` inside a sandboxed opencode pane lists the host's
+      provider; and with `CLAUDE_CODE_OAUTH_TOKEN` and `ANTHROPIC_API_KEY` unset, the create
+      fails `no-sandbox` naming `claude setup-token`.

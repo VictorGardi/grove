@@ -1,11 +1,11 @@
 ---
 feature: 2026-10-08-agent-sandboxing
 phase: research
-status: approved
+status: draft
 approved_at: 2026-10-10
-version: 5
+version: 6
 created: 2026-10-08
-updated: 2026-10-10
+updated: 2026-10-11
 based_on: ["01-questions.md@1"]
 repo_heads: ["09cbcdccd6880a4635c5f0f77aa3acf640c7cfb6"]
 ---
@@ -579,6 +579,162 @@ sandbox must never be writable.
 `Dockerfile` (or `-f`); the first build of a two-line image took **28 s**, which
 is the first-sandboxed-session cost the design quotes, not the 14 s of a bare
 `container run`.
+
+### Does an agent authenticate inside the sandbox, and where does it look for config? (2026-10-11)
+
+**Question.** Two spikes above left this open — "Not covered: whether the credentials
+OpenCode needs survive the image, and whether the agent behaves against a different
+filesystem". Slice 1 answered neither, and § Risks claimed it would. Concretely:
+(a) can a real agent complete a prompt inside `grove-sandbox`, with nothing but the
+design's mount set; and (b) **where do the agents look for their own config**, given
+grove mounts host paths at host-identical paths?
+
+**Method.** `container` 1.5.0, image `grove-sandbox:cbcd1e51f27a` (unchanged), macOS
+26.4.1. Every agent run under `script -q /dev/null container run --rm -i -t …`, because
+`-i -t` needs a real controlling TTY and reports a false ENODEV without one. Host
+credential stores enumerated first: `~/.claude`, `~/.claude.json`,
+`~/.local/{share,state}/opencode`, `~/.config/opencode`, the `credential` table of the
+154 MB `~/.local/share/opencode/opencode.db`, `security dump-keychain`, the pane env,
+and `opencode auth list`. **The real Claude token was never read out of the Keychain** —
+the env-var arm uses a deliberately invalid dummy, which is enough to prove the channel.
+
+**Answer — one agent needs no credential at all, the other needs one grove must carry,
+and a third finding hides underneath both.**
+
+- **OpenCode carries no credential, anywhere, on this machine.** No `auth.json` or any
+  `*auth*` file under its three data dirs; `credential` table exists in `opencode.db`
+  with **0 rows**; no keychain entry; no `OPENCODE_API_KEY`; `opencode auth list` →
+  *"No authenticated integrations"*. And yet host sessions run. The mechanism is a
+  **client-identity gate, not a credential**: `https://opencode.ai/zen/v1` answers an
+  unauthenticated curl with `403 FreeTierError: "OpenCode's free tier can only be used
+  from within OpenCode"`. So the token is the *client itself*, which the image already
+  has.
+- **Measured in the container: it completes prompts with nothing mounted.**
+  `env | grep -iE 'OPENCODE|API_KEY|AUTH'` → `(none)`; `opencode auth list` inside →
+  `0 credentials`; `/root/.local/share/opencode/auth.json` absent **before and after** a
+  successful turn. Two different free models both answered: `space-bunny-free` →
+  `SPIKE-OK`, `big-pickle` → `ARM-A-2`. **A sandboxed OpenCode authenticates by
+  existing.** There is nothing for grove to mount and nothing for it to refuse.
+- **Claude is the opposite case, and the env channel is proven.** Its OAuth token is in
+  the macOS Keychain (`svce = "Claude Code-credentials"`), which a Linux VM cannot read,
+  and no `~/.claude/.credentials.json` exists on the host. Inside the container:
+  - no credential → `Not logged in · Please run /login` (the slice-1 finding,
+    reproduced headless under `-p`, not only in the TUI);
+  - `-e CLAUDE_CODE_OAUTH_TOKEN=sk-ant-oat01-dummy-not-a-real-token` → the login gate
+    **clears** and the failure moves to `API Error: 401 OAuth access token is invalid.`
+    Claude Code accepts the variable, reads it, and sends it to the API. **The env
+    channel works; only the token value was wrong.** `ANTHROPIC_API_KEY` and
+    `ANTHROPIC_AUTH_TOKEN` are the other two the 2.1.285 binary reads.
+- **The finding underneath both: the agent's own config mounts are inert.** The
+  container's `HOME=/root` and `uid=0`, so the agents resolve `~` to `/root`, while grove
+  mounts `~/.claude`, `~/.claude.json` and `~/.config/opencode` at **`/Users/victor/…`**.
+  A run inside the container created `/root/.claude/`, `/root/.claude.json`,
+  `/root/.config/opencode/opencode.jsonc` and a fresh `/root/.local/share/opencode/opencode.db`
+  — all its own — while the host's `~/.claude` (0 entries modified) and `~/.claude.json`
+  (mtime unchanged) were not touched at all. **A sandboxed agent currently runs with no
+  host agent configuration whatsoever**: no `settings.json`, history, plugins, skills,
+  commands or statusline. That also explains the credential result — there was never a
+  credential file on that side of the mount to be missing.
+- **And the fix for that is one env var per agent, using each agent's own documented
+  mechanism.** OpenCode's CLI docs state that `opencode auth login` stores provider
+  credentials in **`~/.local/share/opencode/auth.json`** — a path grove *already mounts*
+  as `opencodeShare`. It is unreachable only because `XDG_DATA_HOME` still points at
+  `/root`. Measured, with a scratch file holding a fake key so no real credential moved:
+  `-e XDG_DATA_HOME=<the mounted path>` made the containerized agent report
+  `Credentials <mounted>/auth.json` and list `● GitHub Copilot  api — 1 credentials`, and
+  a `--read-only-path` on that file held (`Read-only file system`). `CLAUDE_CONFIG_DIR`
+  is the equivalent lever for Claude and exists in the 2.1.285 binary. **So "log in to
+  GitHub Copilot on the host and use it in the sandbox" is satisfiable without a single
+  new mount** — it needs the config pointer, not a new volume.
+- **Bare `-e VAR` forwards, and is invisible in argv.** `container run -e VAR` with no
+  `=value` takes the value from the calling process's environment: measured
+  `value=[forwarded-ok-12345]`, and still correct when the caller is
+  `/bin/zsh -l -i -c` — exactly the pane grove builds, so a `.zshrc` export reaches the
+  container. A bare `-e VAR` for a variable that **does not exist does not fail the run**
+  (exit 0, `unset var ok`), so absence cannot be detected by attempting the run.
+
+**Evidence.** `HOME=/root`, `whoami=root uid=0`; `/Users/victor/.config/opencode`
+visible and populated while `$HOME` holds only the image's own `.bashrc`/`.profile`;
+`opencode auth list` inside → `Credentials ~/.local/share/opencode/auth.json / 0
+credentials`; `SPIKE-OK` and `ARM-A-2`; `Not logged in · Please run /login` against
+`401 OAuth access token is invalid.`; `/root/.claude.json` (49 941 bytes) and
+`/root/.config/opencode/opencode.jsonc` created while the host counterparts were
+byte-for-byte untouched (0 entries modified in `~/.claude`, `~/.claude.json` mtime
+unchanged); `XDG_DATA_HOME` redirect → `● GitHub Copilot  api — 1 credentials` read from
+the mount, with `Read-only file system` on write.
+
+**Recommendation.** The two agents are different problems and must not be given the same
+answer. **OpenCode needs no credential channel of its own** — the free tier authenticates
+by the client being opencode, and a host-side `opencode auth login` (the GitHub Copilot
+case) reaches the sandbox through a config pointer, because grove already mounts the path
+that holds it. **Claude forwards its token on the env channel**, which is the documented
+container path and the only one measured to work. § Risks' claim that "slice 1 settles
+both" was wrong about the mechanism, not merely unfinished.
+
+### Can grove read Claude Code's token from the Keychain? (2026-10-11, research)
+
+**Question.** The container measurement says the Claude token is Keychain-only. Before
+grove ever considers reading it: **is that read reliable, supported, and safe?**
+
+**Answer — no on all three counts, and the third is the one that decides it.**
+
+- **It is not reliable.** Measured on this Mac: `security find-generic-password
+  -s "Claude Code-credentials" -w` succeeds silently, exit 0, 828 bytes, no prompt. But
+  that success is conditional on: the login keychain being unlocked (locked after
+  reboot, under FileVault, or with "Lock after N minutes" enabled → `User interaction is
+  not allowed`, OSStatus `-25308`); the keychain password being in sync with the account
+  password or it does not auto-unlock; a GUI/Aqua session being available (SSH and
+  headless have none); and `CLAUDE_CONFIG_DIR` matching — that variable keys the
+  Keychain item too, so a session using it reads a **different** entry. An enterprise
+  item pushed to the Data Protection keychain is invisible to `security` outright.
+- **It is not supported.** Reading `Claude Code-credentials` from a third-party app
+  appears in no Anthropic documentation. Claude Code creates the item via
+  `/usr/bin/security add-generic-password` with no `-T` and no `-A`, so the only ACL is
+  `/usr/bin/security`, which any same-user process can satisfy — this was reported to
+  Anthropic (Silverfort, HackerOne 2026-06-25, CWE-732) as *"any macOS process can read
+  stored credentials"*, and Anthropic **confirmed they are tracking a tightening of that
+  ACL as a hardening improvement**. The silent read grove depends on today is an accident
+  someone has publicly committed to removing. When it lands, grove's read starts
+  prompting for the login password — or failing outright in a GUI-launched Electron app
+  that cannot answer a prompt it never expected. Claude Desktop does this correctly via
+  Electron `safeStorage`; the CLI does not.
+- **It is not the supported container path, and the supported one is documented.**
+  Anthropic's own devcontainer and CI docs specify `CLAUDE_CODE_OAUTH_TOKEN` from
+  `claude setup-token`, and state it **takes precedence over Keychain-stored
+  credentials**, explicitly anticipating it being kept in a shell profile. The same
+  devcontainer page warns — in terms that match grove's threat model — that a container
+  "do[es] not prevent a malicious project from exfiltrating anything accessible inside
+  the container", and advises preferring repository-scoped or short-lived tokens.
+- **A file fallback exists and it matters.** Claude Code's docs: when the Keychain
+  rejects the write (locked, SSH), it stores the login in `~/.claude/.credentials.json` at
+  mode `0600` — the same store Linux uses. So on some machines the credential *is* on the
+  filesystem, inside the path grove already mounts.
+
+**Evidence.** `security find-generic-password -s "Claude Code-credentials" -w` → exit 0,
+828 bytes, empty stderr, no prompt; `security show-keychain-info login.keychain-db` →
+`no-timeout`; not-found → exit **44**. `man security add-generic-password`: *"By default
+the application which creates an item is trusted to access its data without warning. You
+can remove this default access by explicitly specifying an empty app pathname: `-T ""`."*
+Silverfort disclosure and Anthropic's confirmation:
+https://www.silverfort.com/blog/skipping-the-lock-a-claude-code-cli-weakness-lets-any-macos-process-read-stored-credentials
+Precedence and `setup-token`: https://code.claude.com/docs/en/authentication#authentication-precedence
+and https://code.claude.com/docs/en/authentication#generate-a-long-lived-token
+Container guidance: https://code.claude.com/docs/en/devcontainer
+File fallback: https://code.claude.com/docs/en/authentication#credential-management
+
+**Recommendation.** Do not read the Keychain. The supported channel is the env var, and
+it is what grove should forward. Two consequences the design must carry: a sandbox must
+**carve `~/.claude/.credentials.json` out read-only**, exactly as it already does for
+`~/.gitconfig`, because a writable credentials file lets a sandboxed agent rewrite or
+delete the human's login; and grove must **treat a missing forwarded credential as
+`no-sandbox`, not as a fallback to reading the Keychain**, so that the day Anthropic's
+ACL hardening lands grove fails with a message rather than a login-password prompt
+nobody is there to answer.
+
+**Unverified.** Whether the ACL hardening has since shipped; whether a GUI-launched
+Electron app can perform the read today (not tested); the exact exit code for a locked
+keychain (not testable without mutating keychain state).
+
 
 ## Open questions
 
