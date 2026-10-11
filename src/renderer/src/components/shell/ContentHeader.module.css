@@ -7,7 +7,9 @@
   border-bottom: 1px solid var(--header-divider);
 }
 
-.crumbs {
+/* carries the breadcrumb when there is no session, and the session's own row when there is */
+.left {
+  flex: 1;
   min-width: 0;
   overflow: hidden;
   text-overflow: ellipsis;

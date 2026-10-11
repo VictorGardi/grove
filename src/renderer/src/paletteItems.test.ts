@@ -34,9 +34,21 @@ describe('paletteItems', () => {
   it('lists the app commands, which run through runAction', () => {
     const a = actions()
     const cmds = paletteItems({ projects, sessions, features }, a).filter((i) => i.kind === 'command')
-    expect(cmds.map((c) => c.label)).toEqual(['New session', 'New terminal', 'Remove session', 'Session diff', 'Project board', 'Toggle sidebar', 'Last session', 'Show grid', 'Add session to grid and show', 'Clear grid', 'Scratchpad'])
-    cmds[1].run()
+    expect(cmds.map((c) => c.label)).toEqual(['New session', 'New session with options…', 'New terminal', 'Remove session', 'Session diff', 'Project board', 'Toggle sidebar', 'Last session', 'Show grid', 'Add session to grid and show', 'Clear grid', 'Scratchpad'])
+    cmds.find((c) => c.label === 'New terminal')!.run()
     expect(a.runAction).toHaveBeenCalledWith({ type: 'newTerminal' })
+  })
+
+  // ⌘T and ⌘⇧T are different surfaces, not two spellings: ⌘T picks a checkout and a kind in one
+  // keystroke, ⌘⇧T configures prompt, worktree and sandbox.
+  it('keeps the quick picker and the configured launch as separate commands', () => {
+    const a = actions()
+    const cmds = paletteItems({ projects, sessions, features }, a).filter((i) => i.kind === 'command')
+    cmds[0].run()
+    expect(a.runAction).toHaveBeenCalledWith({ type: 'newSession' })
+    cmds[1].run()
+    expect(a.runAction).toHaveBeenCalledWith({ type: 'newSessionOptions' })
+    expect(cmds[1].hint).toBe('⌘⇧T')
   })
 
   it('shows grid membership and flips Show grid to Hide grid', () => {

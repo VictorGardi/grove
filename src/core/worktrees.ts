@@ -9,11 +9,23 @@ import { realPath } from './git'
 // object store with every other. `branch` is null when the worktree is on a detached HEAD.
 export interface Worktree { path: string; branch: string | null; head: string | null; locked: boolean }
 
+// One path segment per branch, so anything that is not safe in a name is folded to `-`.
+const branchSegment = (branch: string) => branch.replace(/[^A-Za-z0-9._-]+/g, '-')
+
 // Where a new worktree lives: ~/.grove/worktrees/<repo>/<branch>, outside the repo so the
-// agent never shares the main checkout's working tree. The branch becomes one path segment,
-// so anything that is not safe in a name is folded to `-`.
+// agent never shares the main checkout's working tree. `home` is a home directory, as it always
+// has been; see `worktreePathIn` for rooting the layout somewhere else.
 export function worktreePath(repo: string, branch: string, home: string = os.homedir()): string {
-  return path.join(home, '.grove', 'worktrees', path.basename(repo), branch.replace(/[^A-Za-z0-9._-]+/g, '-'))
+  return path.join(home, '.grove', 'worktrees', path.basename(repo), branchSegment(branch))
+}
+
+// The same <repo>/<branch> layout, but rooted at `root` instead of inside a home. Separate from
+// `worktreePath` rather than a different meaning for its third argument: both are strings, so
+// re-purposing one would let a caller that means "a home" get a layout it never asked for, with
+// nothing to fail loudly. `worktreeCreate` uses this so a test can keep new checkouts out of the
+// real ~/.grove.
+export function worktreePathIn(root: string, repo: string, branch: string): string {
+  return path.join(root, path.basename(repo), branchSegment(branch))
 }
 
 // A worktree of `repo` on a new `branch`, at `path`, submodules initialised. git itself

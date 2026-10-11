@@ -37,3 +37,30 @@ a persisted per-session field plus one step in the state migration chain.
   fields nothing reads yet — `image` and `network` are not per-session choices);
   not persisting it (resume silently unconfines); making sandboxing the default
   (the feature is explicitly opt-in per the questions phase).
+
+## Addendum: what resume does when the sandbox cannot be built
+
+Date: 2026-10-11
+
+The flag was persisted and then read by nothing: `sessionResume` rebuilt its argv
+from the agent source alone, so a confined session came back on the host. The
+flag's reason for existing is only realised once the resume path reads it.
+
+Resume now goes through the same argv builder as creation, so a sandboxed
+session resumes inside its container, with the same mount set, and re-probes for
+a credential (a resume can happen after the human logged out).
+
+**Where the sandbox cannot be built — a pruned image, no `container` binary, no
+reachable credential — the resume downgrades rather than refusing.** The session
+comes back on the host, `sandboxed` goes false, and the renderer reports it once
+in a banner. Two reasons, in order:
+
+- A convenience failure must not lock the human out of their own session. The
+  session is otherwise recoverable and still resumable; a refusal over a missing
+  image is not.
+- The flag's job is to never claim containment the pane does not have. Clearing
+  it and saying so preserves that; a silent downgrade would destroy it.
+
+So the consequence above holds whenever the sandbox is available, and the
+exception is loud. Creation still refuses `no-sandbox`: there, nothing is being
+recovered and a refusal costs nothing.

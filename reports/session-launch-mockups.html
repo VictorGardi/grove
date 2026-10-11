@@ -1,0 +1,890 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<title>grove — New session launch: three GUI options</title>
+<style>
+  :root {
+    /* surfaces */
+    --chrome-bg: #0a0a0b;
+    --panel-bg: #121212;
+    --card-bg: #1f1f1f;
+    --raised-bg: #232324;
+    --muted-badge-bg: #16161a;
+    --terminal-bg: #1e1e2e;
+    --terminal-fg: #cdd6f4;
+    --backdrop: rgba(0, 0, 0, 0.5);
+    --shadow-modal: 0 16px 48px rgba(0, 0, 0, 0.5);
+
+    /* borders */
+    --card-border: #292929;
+    --divider: #212123;
+    --header-divider: #303035;
+    --scrollbar-thumb: #38383c;
+
+    /* text */
+    --text: #ffffff;
+    --text-2: #b3b3b3;
+    --text-3: #5e5e66;
+
+    /* accent */
+    --accent: #fb923c;
+    --accent-strong: #f66032;
+    --accent-badge: #ffa42c;
+
+    /* status */
+    --status-running: #fb923c;
+    --status-working: #5ee0a0;
+    --status-waiting: #fbc024;
+    --status-finished: #24d3ef;
+    --status-idle: #5e5e66;
+    --status-gone: #5e5e66;
+
+    --tag-1: #60a5fa;
+    --tag-2: #f472b6;
+    --tag-3: #4ade80;
+    --tag-4: #a78bfa;
+
+    --card-selected-bg: #342519;
+    --card-selected-border: #fb923c;
+    --card-waiting-bg: #1d1b15;
+    --card-waiting-border: #604c1d;
+
+    --danger: #f87171;
+    --danger-bg: #2a1517;
+    --danger-border: #5c2427;
+
+    --font-ui: -apple-system, system-ui, sans-serif;
+    --font-mono: Menlo, monospace;
+    --fs-xs: 10px;
+    --fs-sm: 11px;
+    --fs-card: 12px;
+    --fs-md: 13px;
+    --fs-lg: 14px;
+    --fs-xl: 15px;
+
+    --sp-1: 4px; --sp-2: 8px; --sp-3: 12px; --sp-4: 16px; --sp-5: 20px; --sp-6: 24px;
+    --r-card: 5px; --r-md: 8px; --r-panel: 10px; --r-pill: 999px;
+    --header-h: 47px;
+    --sidebar-w: 220px;
+  }
+
+  * { box-sizing: border-box; }
+  body {
+    margin: 0;
+    background: var(--chrome-bg);
+    color: var(--text);
+    font-family: var(--font-ui);
+    font-size: var(--fs-lg);
+    -webkit-font-smoothing: antialiased;
+  }
+  code, .mono { font-family: var(--font-mono); }
+
+  /* ---------- page chrome ---------- */
+  .page { max-width: 1180px; margin: 0 auto; padding: 0 var(--sp-6) 120px; }
+  .pagehead { padding: 64px 0 32px; border-bottom: 1px solid var(--divider); margin-bottom: 8px; }
+  .pagehead h1 { font-size: 26px; font-weight: 700; margin: 0 0 12px; letter-spacing: -0.3px; }
+  .pagehead p { margin: 0 0 8px; color: var(--text-2); font-size: var(--fs-lg); line-height: 1.6; max-width: 74ch; }
+  .eyebrow { font-size: var(--fs-xs); text-transform: uppercase; letter-spacing: 0.12em; color: var(--accent); font-weight: 600; margin-bottom: 12px; }
+
+  .nav {
+    position: sticky; top: 0; z-index: 50;
+    background: color-mix(in srgb, var(--chrome-bg) 88%, transparent);
+    backdrop-filter: blur(20px);
+    border-bottom: 1px solid var(--divider);
+    display: flex; gap: var(--sp-1); padding: var(--sp-2) var(--sp-6);
+    margin: 0 calc(-1 * var(--sp-6)) 40px;
+  }
+  .nav a {
+    color: var(--text-2); text-decoration: none; font-size: var(--fs-card);
+    padding: 6px 12px; border-radius: var(--r-md); font-weight: 500;
+  }
+  .nav a:hover { background: var(--raised-bg); color: var(--text); }
+  .nav a.on { background: var(--card-selected-bg); color: var(--accent); }
+
+  section.opt { margin-bottom: 96px; scroll-margin-top: 70px; }
+  .opthead { margin-bottom: 24px; }
+  .optno { font-size: var(--fs-xs); letter-spacing: 0.12em; text-transform: uppercase; color: var(--text-3); font-weight: 600; }
+  .opthead h2 { font-size: 21px; font-weight: 700; margin: 6px 0 10px; letter-spacing: -0.2px; }
+  .opthead p { color: var(--text-2); font-size: var(--fs-lg); line-height: 1.6; margin: 0; max-width: 78ch; }
+
+  /* ---------- the app frame mock ---------- */
+  .frame {
+    border: 1px solid var(--card-border); border-radius: var(--r-panel);
+    background: var(--panel-bg); overflow: hidden; margin-bottom: var(--sp-5);
+    box-shadow: 0 24px 64px rgba(0,0,0,.4);
+  }
+  .titlebar {
+    height: 38px; background: var(--raised-bg); border-bottom: 1px solid var(--divider);
+    display: flex; align-items: center; padding: 0 14px; gap: 8px; flex: none;
+  }
+  .tl { width: 12px; height: 12px; border-radius: 50%; background: #3a3a3c; }
+  .tl.r { background: #e0605f; } .tl.y { background: #e8b23d; } .tl.g { background: #5ac35a; }
+  .titlebar .t { color: var(--text-3); font-size: var(--fs-sm); margin-left: 8px; }
+
+  .body { display: flex; height: 520px; }
+  .side {
+    width: var(--sidebar-w); flex: none; background: var(--panel-bg);
+    border-right: 1px solid var(--divider); display: flex; flex-direction: column;
+  }
+  .tabs { display: flex; border-bottom: 1px solid var(--divider); flex: none; }
+  .tab { flex: 1; text-align: center; padding: 9px 0; font-size: var(--fs-sm); color: var(--text-3); border-bottom: 2px solid transparent; }
+  .tab.on { color: var(--text); border-bottom-color: var(--accent); }
+  .side-scroll { flex: 1; overflow: hidden; padding: var(--sp-2) 0; }
+  .pfolder { display: flex; align-items: center; gap: 6px; padding: 5px 12px; font-size: var(--fs-sm); color: var(--text-2); font-weight: 600; }
+  .pfolder .cnt { margin-left: auto; color: var(--text-3); font-weight: 400; }
+  .pfolder.nested { padding-left: 26px; font-weight: 500; }
+  .srow {
+    margin: 2px 8px; padding: 6px 8px; border: 1px solid var(--card-border);
+    border-radius: var(--r-card); background: var(--card-bg); position: relative;
+  }
+  .srow .nm { font-size: var(--fs-card); display: flex; align-items: center; gap: 6px; }
+  .srow .st { font-size: var(--fs-xs); color: var(--text-3); margin-top: 3px; display: flex; align-items: center; gap: 5px; }
+  .srow.wait { background: var(--card-waiting-bg); border-color: var(--card-waiting-border); }
+  .srow.sel { background: var(--card-selected-bg); border-color: var(--card-selected-border); }
+  .srow .corner { position: absolute; top: 5px; right: 5px; width: 16px; height: 16px; border-radius: 4px;
+    background: var(--raised-bg); color: var(--text-3); font-size: 11px; line-height: 14px; text-align: center; }
+  .dot { width: 7px; height: 7px; border-radius: 50%; flex: none; }
+  .ico { width: 13px; height: 13px; flex: none; opacity: .85; }
+
+  .content { flex: 1; display: flex; min-width: 0; }
+  .main { flex: 1; display: flex; flex-direction: column; min-width: 0; }
+  .cheader {
+    height: var(--header-h); flex: none; border-bottom: 1px solid var(--divider);
+    display: flex; align-items: center; padding: 0 var(--sp-4); gap: 8px; background: var(--panel-bg);
+  }
+  .crumb { font-size: var(--fs-card); color: var(--text-2); }
+  .crumb.last { color: var(--text); font-weight: 600; }
+  .csepc { color: var(--text-3); }
+  .term { flex: 1; background: var(--terminal-bg); color: var(--terminal-fg); font-family: var(--font-mono);
+    font-size: var(--fs-sm); padding: var(--sp-3) var(--sp-4); line-height: 1.65; overflow: hidden; }
+
+  /* ---------- shared atoms ---------- */
+  .seg { display: inline-flex; background: var(--muted-badge-bg); border: 1px solid var(--card-border); border-radius: var(--r-md); padding: 2px; gap: 2px; }
+  .seg > button {
+    background: transparent; border: 0; color: var(--text-2); font: inherit;
+    font-size: var(--fs-sm); padding: 5px 11px; border-radius: 6px; cursor: pointer; display: flex; align-items: center; gap: 5px;
+  }
+  .seg > button.on { background: var(--raised-bg); color: var(--text); box-shadow: 0 1px 2px rgba(0,0,0,.4); }
+  .seg.accent > button.on { background: var(--card-selected-bg); color: var(--accent); }
+
+  .chip {
+    display: inline-flex; align-items: center; gap: 6px; height: 26px; padding: 0 9px;
+    background: var(--muted-badge-bg); border: 1px solid var(--card-border);
+    border-radius: var(--r-md); color: var(--text-2); font-size: var(--fs-sm); cursor: pointer; white-space: nowrap;
+  }
+  .chip:hover { border-color: var(--header-divider); color: var(--text); }
+  .chip.on { background: var(--card-selected-bg); border-color: var(--accent); color: var(--accent); }
+  .chip .k { color: var(--text-3); font-size: var(--fs-xs); }
+  .chip.on .k { color: color-mix(in srgb, var(--accent) 70%, transparent); }
+
+  .field { margin-bottom: var(--sp-4); }
+  .flabel { font-size: var(--fs-xs); text-transform: uppercase; letter-spacing: 0.08em; color: var(--text-3);
+    font-weight: 600; margin-bottom: 6px; display: flex; align-items: center; gap: 6px; }
+  .flabel .hintk { margin-left: auto; text-transform: none; letter-spacing: 0; color: var(--text-3); font-weight: 400; font-family: var(--font-mono); }
+
+  .box {
+    background: var(--card-bg); border: 1px solid var(--card-border);
+    border-radius: var(--r-md); padding: 10px 12px;
+  }
+  .box.warn { background: var(--card-waiting-bg); border-color: var(--card-waiting-border); }
+  .box.danger { background: var(--danger-bg); border-color: var(--danger-border); }
+  .boxt { font-size: var(--fs-card); color: var(--text); margin-bottom: 3px; display: flex; align-items: center; gap: 6px; }
+  .boxb { font-size: var(--fs-sm); color: var(--text-2); line-height: 1.5; }
+  .boxb.dim { color: var(--text-3); }
+
+  .btn {
+    height: 30px; padding: 0 14px; border-radius: var(--r-md); border: 1px solid var(--card-border);
+    background: var(--raised-bg); color: var(--text); font: inherit; font-size: var(--fs-card);
+    cursor: pointer; display: inline-flex; align-items: center; gap: 6px; font-weight: 500;
+  }
+  .btn.primary { background: var(--accent); border-color: var(--accent); color: #1a0f05; font-weight: 600; }
+  .btn.ghost { background: transparent; color: var(--text-2); }
+  .btn:hover { filter: brightness(1.1); }
+
+  textarea.prompt {
+    width: 100%; background: var(--chrome-bg); color: var(--text); border: 1px solid var(--card-border);
+    border-radius: var(--r-md); padding: 10px 12px; font-family: var(--font-mono); font-size: var(--fs-sm);
+    line-height: 1.6; resize: none; outline: none;
+  }
+  textarea.prompt:focus, input.txt:focus { border-color: var(--focus-border, #6b5a48); }
+  input.txt {
+    width: 100%; background: var(--chrome-bg); color: var(--text); border: 1px solid var(--card-border);
+    border-radius: var(--r-md); padding: 7px 10px; font-family: var(--font-mono); font-size: var(--fs-sm); outline: none; height: 30px;
+  }
+
+  .kbd { font-family: var(--font-mono); font-size: var(--fs-xs); background: var(--raised-bg);
+    border: 1px solid var(--card-border); border-bottom-width: 2px; border-radius: 4px; padding: 1px 5px; color: var(--text-2); }
+  .kbd.on { color: var(--accent); border-color: var(--accent); background: var(--card-selected-bg); }
+
+  .more { font-size: var(--fs-sm); color: var(--text-2); cursor: pointer; display: flex; align-items: center; gap: 6px;
+    padding: 7px 0; user-select: none; }
+  .more:hover { color: var(--text); }
+  .caret { transition: transform .12s ease; display: inline-block; }
+  .more.open .caret { transform: rotate(90deg); }
+
+  /* ---------- option A: palette ---------- */
+  .palette {
+    position: absolute; top: 64px; left: 50%; transform: translateX(-50%);
+    width: 620px; background: var(--panel-bg); border: 1px solid var(--header-divider);
+    border-radius: var(--r-panel); box-shadow: var(--shadow-modal); overflow: hidden;
+  }
+  .pal-input { display: flex; align-items: center; gap: 9px; padding: 12px 14px; border-bottom: 1px solid var(--divider); }
+  .pal-input input { flex: 1; background: transparent; border: 0; outline: none; color: var(--text); font: inherit; font-size: var(--fs-lg); }
+  .pal-input input::placeholder { color: var(--text-3); }
+  .pal-list { max-height: 210px; overflow: hidden; padding: var(--sp-1) 0; }
+  .pal-row { display: flex; align-items: center; gap: 9px; padding: 7px 14px; margin: 0 6px; border-radius: var(--r-card); }
+  .pal-row .l { font-size: var(--fs-card); }
+  .pal-row .d { font-size: var(--fs-xs); color: var(--text-3); margin-left: auto; font-family: var(--font-mono); }
+  .pal-row.on { background: var(--card-selected-bg); }
+  .pal-row.on .l { color: var(--accent); font-weight: 600; }
+  .pal-group { font-size: var(--fs-xs); text-transform: uppercase; letter-spacing: 0.08em; color: var(--text-3);
+    padding: 9px 14px 4px; font-weight: 600; }
+  .pal-cfg {
+    display: flex; align-items: center; gap: 6px; padding: 9px 12px; border-top: 1px solid var(--divider);
+    background: var(--chrome-bg); flex-wrap: wrap;
+  }
+  .pal-cfg .lead { font-size: var(--fs-xs); text-transform: uppercase; letter-spacing: 0.08em; color: var(--text-3); font-weight: 600; margin-right: 2px; }
+  .pal-foot { display: flex; align-items: center; gap: 8px; padding: 9px 12px; border-top: 1px solid var(--divider); }
+  .pal-foot .hint { font-size: var(--fs-sm); color: var(--text-3); margin-right: auto; }
+
+  .flyout {
+    position: absolute; bottom: 44px; left: 12px; width: 400px; background: var(--raised-bg);
+    border: 1px solid var(--header-divider); border-radius: var(--r-md); box-shadow: var(--shadow-modal);
+    padding: var(--sp-2); z-index: 20;
+  }
+  .flyout h5 { font-size: var(--fs-xs); text-transform: uppercase; letter-spacing: 0.08em; color: var(--text-3);
+    margin: 6px 8px 4px; font-weight: 600; }
+  .frow { display: flex; align-items: center; gap: 9px; padding: 6px 8px; border-radius: var(--r-card); font-size: var(--fs-card); cursor: pointer; }
+  .frow:hover { background: var(--raised-bg); background: color-mix(in srgb, var(--card-border) 45%, transparent); }
+  .frow.on { color: var(--accent); }
+  .frow .tick { width: 13px; margin-left: auto; opacity: 0; }
+  .frow.on .tick { opacity: 1; }
+  .frow .sub { font-size: var(--fs-xs); color: var(--text-3); margin-left: auto; }
+
+  /* ---------- option B: modal dialog ---------- */
+  .backdrop { position: absolute; inset: 0; background: var(--backdrop); z-index: 10; }
+  .dialog {
+    position: absolute; top: 56px; left: 50%; transform: translateX(-50%); width: 560px;
+    background: var(--panel-bg); border: 1px solid var(--card-border); border-radius: var(--r-panel);
+    box-shadow: var(--shadow-modal); z-index: 11; display: flex; flex-direction: column;
+  }
+  .dlg-head { padding: 14px var(--sp-4) 10px; border-bottom: 1px solid var(--divider); }
+  .dlg-head h3 { font-size: var(--fs-lg); font-weight: 600; margin: 0 0 8px; }
+  .dlg-body { padding: var(--sp-4); }
+  .dlg-foot { display: flex; align-items: center; gap: var(--sp-2); padding: 12px var(--sp-4); border-top: 1px solid var(--divider); }
+  .dlg-foot .spacer { margin-left: auto; }
+
+  .listpick { background: var(--card-bg); border: 1px solid var(--card-border); border-radius: var(--r-md); overflow: hidden; }
+  .lrow { display: flex; align-items: center; gap: 9px; padding: 7px 10px; border-bottom: 1px solid var(--divider); cursor: pointer; }
+  .lrow:last-child { border-bottom: 0; }
+  .lrow:hover { background: var(--raised-bg); }
+  .lrow.on { background: var(--card-selected-bg); }
+  .lrow .nm { font-size: var(--fs-card); }
+  .lrow.on .nm { color: var(--accent); font-weight: 600; }
+  .lrow .path { font-size: var(--fs-xs); color: var(--text-3); margin-left: auto; font-family: var(--font-mono); }
+
+  .switch { width: 32px; height: 18px; border-radius: var(--r-pill); background: var(--card-border); position: relative;
+    flex: none; cursor: pointer; transition: background .14s ease; }
+  .switch::after { content: ''; position: absolute; top: 2px; left: 2px; width: 14px; height: 14px; border-radius: 50%;
+    background: var(--text-3); transition: transform .14s ease, background .14s ease; }
+  .switch.on { background: color-mix(in srgb, var(--accent) 35%, transparent); }
+  .switch.on::after { transform: translateX(14px); background: var(--accent); }
+  .switchrow { display: flex; align-items: flex-start; gap: 10px; padding: 10px 12px; cursor: pointer; border-radius: var(--r-md); }
+  .switchrow:hover { background: var(--muted-badge-bg); }
+
+  /* ---------- option C: side rail ---------- */
+  .rail {
+    width: 330px; flex: none; border-left: 1px solid var(--header-divider); background: var(--panel-bg);
+    display: flex; flex-direction: column; min-width: 0;
+  }
+  .rail-head { padding: 14px var(--sp-4) 10px; border-bottom: 1px solid var(--divider); display: flex; align-items: center; gap: 8px; }
+  .rail-head h3 { font-size: var(--fs-lg); font-weight: 600; margin: 0; }
+  .rail-body { flex: 1; overflow: hidden; padding: var(--sp-3) var(--sp-4); }
+  .rail-foot { padding: var(--sp-3) var(--sp-4); border-top: 1px solid var(--divider); display: flex; gap: var(--sp-2); align-items: center; }
+
+  .preset {
+    border: 1px solid var(--card-border); border-radius: var(--r-md); padding: 9px 11px;
+    background: var(--card-bg); cursor: pointer; margin-bottom: 6px;
+  }
+  .preset:hover { border-color: var(--header-divider); }
+  .preset.on { background: var(--card-selected-bg); border-color: var(--accent); }
+  .preset .pn { font-size: var(--fs-card); font-weight: 600; display: flex; align-items: center; gap: 7px; }
+  .preset.on .pn { color: var(--accent); }
+  .preset .pd { font-size: var(--fs-xs); color: var(--text-3); margin-top: 3px; line-height: 1.45; }
+  .preset .tags { display: flex; gap: 4px; margin-top: 6px; flex-wrap: wrap; }
+  .tag { font-size: var(--fs-xs); background: var(--muted-badge-bg); border: 1px solid var(--card-border);
+    border-radius: var(--r-pill); padding: 1px 7px; color: var(--text-3); font-family: var(--font-mono); }
+  .tag.a { color: var(--accent); border-color: color-mix(in srgb, var(--accent) 35%, transparent); }
+
+  /* ---------- explanation blocks ---------- */
+  .notes { display: grid; grid-template-columns: 1fr 1fr; gap: var(--sp-4); margin-top: var(--sp-5); }
+  .note { background: var(--panel-bg); border: 1px solid var(--card-border); border-radius: var(--r-md); padding: 14px 16px; }
+  .note h4 { font-size: var(--fs-sm); text-transform: uppercase; letter-spacing: 0.08em; color: var(--text-3);
+    margin: 0 0 10px; font-weight: 600; }
+  .note ul { margin: 0; padding-left: 16px; }
+  .note li { font-size: var(--fs-card); color: var(--text-2); line-height: 1.65; margin-bottom: 6px; }
+  .note li b, .note p b { color: var(--text); font-weight: 600; }
+  .note p { font-size: var(--fs-card); color: var(--text-2); line-height: 1.6; margin: 0; }
+  .note.good h4 { color: var(--status-working); }
+  .note.bad h4 { color: var(--danger); }
+
+  /* payload readout */
+  .payload {
+    background: var(--chrome-bg); border: 1px solid var(--card-border); border-radius: var(--r-md);
+    padding: 12px 14px; font-family: var(--font-mono); font-size: var(--fs-sm); color: var(--text-2);
+    line-height: 1.7; overflow-x: auto;
+  }
+  .payload .k { color: var(--accent); }
+  .payload .s { color: var(--status-working); }
+  .payload .n { color: var(--tag-1); }
+  .payload .c { color: var(--text-3); }
+  .payloadhead { font-size: var(--fs-xs); text-transform: uppercase; letter-spacing: 0.08em; color: var(--text-3);
+    font-weight: 600; margin: 0 0 8px; display: flex; align-items: center; gap: 8px; }
+
+  table.cmp { width: 100%; border-collapse: collapse; font-size: var(--fs-card); margin-top: var(--sp-3); }
+  table.cmp th, table.cmp td { text-align: left; padding: 9px 10px; border-bottom: 1px solid var(--divider); vertical-align: top; }
+  table.cmp th { color: var(--text-3); font-size: var(--fs-xs); text-transform: uppercase; letter-spacing: 0.08em; font-weight: 600; }
+  table.cmp td { color: var(--text-2); line-height: 1.55; }
+  table.cmp td:first-child { color: var(--text); font-weight: 500; width: 22%; }
+  table.cmp tr:last-child td { border-bottom: 0; }
+  .win { color: var(--status-working); font-weight: 600; }
+  .lose { color: var(--text-3); }
+
+  .cap { font-size: var(--fs-sm); color: var(--text-3); margin: -8px 0 var(--sp-3); font-style: italic; }
+  .refs { font-size: var(--fs-sm); color: var(--text-3); line-height: 1.7; }
+  .refs a { color: var(--text-2); }
+  .stack { position: relative; }
+</style>
+</head>
+<body>
+<div class="page">
+
+  <div class="pagehead">
+    <div class="eyebrow">grove · design exploration</div>
+    <h1>A way to trigger a session and choose its settings</h1>
+    <p>Today the GUI can only start a session with <code>{ projectId, kind }</code>. The command palette lists
+      project × kind rows; there's no form, no sandbox toggle, and no way to make a worktree from the app.
+      Everything else you want — <code>prompt</code>, <code>label</code>, <code>feature</code>,
+      <code>sandboxed</code> — already works in core and is reachable from the <code>grove new</code> CLI,
+      but the IPC channel type is narrower than the core command, so the renderer literally cannot send it.</p>
+    <p>Three shapes below. All three cover the same settings, because all three write the same
+      <code>session:create</code> payload — <b>they differ in where the settings live and how much ceremony
+      the happy path costs.</b></p>
+  </div>
+
+  <nav class="nav">
+    <a href="#a">A · Command strip</a>
+    <a href="#b">B · Launch dialog</a>
+    <a href="#c">C · Side rail</a>
+    <a href="#compare">Comparison</a>
+    <a href="#wiring">Wiring</a>
+  </nav>
+
+
+  <!-- ══════════════════════════════ OPTION A ══════════════════════════════ -->
+  <section class="opt" id="a">
+    <div class="opthead">
+      <div class="optno">Option A</div>
+      <h2>Command strip — settings live in a bar under the prompt</h2>
+      <p>⌘T opens one overlay with a prompt on top, results in the middle, and a persistent row of setting chips
+        pinned to the bottom. Each chip opens a flyout; nothing is modal. <kbd>Tab</kbd> moves through the chips,
+        <kbd>1</kbd>–<kbd>9</kbd> picks inside an open flyout. <kbd>↵</kbd> always launches — you never leave the strip.</p>
+    </div>
+
+    <div class="frame">
+      <div class="titlebar"><div class="tl r"></div><div class="tl y"></div><div class="tl g"></div><span class="t">grove</span></div>
+      <div class="body stack">
+        <div class="side">
+          <div class="tabs"><div class="tab on">Projects</div><div class="tab">Sessions</div></div>
+          <div class="side-scroll">
+            <div class="pfolder">▾ grove<span class="cnt">4</span></div>
+            <div class="srow sel"><div class="nm">⌁ Grove</div><div class="st"><span class="dot" style="background:var(--status-working)"></span>working · 4m</div></div>
+            <div class="srow wait"><div class="nm">⌁ Grove</div><div class="st"><span class="dot" style="background:var(--status-waiting)"></span>waiting · 1m</div></div>
+            <div class="srow"><div class="nm">⌁ Grove</div><div class="st"><span class="dot" style="background:var(--status-running)"></span>idle · 12m</div></div>
+            <div class="pfolder nested">▾ ├ worktree/grove</div>
+            <div class="srow"><div class="nm">⌁ Grove</div><div class="st"><span class="dot" style="background:var(--status-working)"></span>working · 2m</div></div>
+            <div class="pfolder">▾ payments<span class="cnt">1</span></div>
+            <div class="srow"><div class="nm">⌁ Payments</div><div class="st"><span class="dot" style="background:var(--status-running)"></span>working · 30m</div></div>
+          </div>
+        </div>
+
+        <div class="main">
+          <div class="cheader"><span class="crumb">grove</span><span class="csepc">›</span><span class="crumb">Grove</span><span class="csepc">›</span><span class="crumb last">working</span></div>
+          <div class="term">
+            <div style="color:#a6adc8">· grove · </div>
+            <div>planning the launch surface…</div>
+            <div style="color:#585b70">▌</div>
+          </div>
+
+          <div class="backdrop"></div>
+          <div class="palette">
+            <div class="pal-input">
+              <svg class="ico" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="color:var(--text-3)"><circle cx="11" cy="11" r="7"/><path d="M20 20l-3.5-3.5"/></svg>
+              <input placeholder="What should this session do?" value="implement slice 3 of session launch" />
+              <span class="kbd">↵</span>
+            </div>
+
+            <div class="pal-list">
+              <div class="pal-group">Start in</div>
+              <div class="pal-row on"><span class="ico">◆</span><span class="l">grove — this checkout</span><span class="d">~/git/grove</span></div>
+              <div class="pal-row"><span class="ico">⑂</span><span class="l">grove — new worktree from origin/main</span><span class="d">grove/session-launch</span></div>
+              <div class="pal-row"><span class="ico">⑂</span><span class="l">grove — existing worktree</span><span class="d">grove/fix-grid-tiling</span></div>
+              <div class="pal-row"><span class="ico">◆</span><span class="l">payments — this checkout</span><span class="d">~/git/payments</span></div>
+            </div>
+
+            <div class="flyout">
+              <h5>Agent</h5>
+              <div class="frow on">Claude Code<span class="tick">✓</span></div>
+              <div class="frow">OpenCode</div>
+              <div class="frow">Terminal</div>
+              <h5>Link to feature</h5>
+              <div class="frow on">2026-10-11-session-launch<span class="tick">✓</span></div>
+              <div class="frow">No feature<span class="sub">⌘⇧⌫</span></div>
+            </div>
+
+            <div class="pal-cfg">
+              <span class="lead">Session</span>
+              <span class="chip on">◆ this checkout</span>
+              <span class="chip">⑂ new worktree</span>
+              <span class="chip on">Claude Code <span class="k">⌃1</span></span>
+              <span class="chip">⌬ sandboxed <span class="k">⌃3</span></span>
+              <span class="chip">◈ link feature <span class="k">⌃4</span></span>
+              <span class="chip">⚙︎ more <span class="k">⌃5</span></span>
+            </div>
+            <div class="pal-foot">
+              <span class="hint">Runs on your host · full filesystem access</span>
+              <button class="btn ghost">Esc</button>
+              <button class="btn primary">Start session <span class="kbd on">↵</span></button>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+    <p class="cap">The sandbox chip is on, so the footer states the consequence rather than hiding it. Flip it off and the same line reads "Runs on your host".</p>
+
+    <div class="notes">
+      <div class="note good">
+        <h4>Why it works</h4>
+        <ul>
+          <li><b>Zero ceremony on the happy path.</b> ⌘T → type → ↵. Settings that already match are invisible.</li>
+          <li><b>Fast for the settings you change often</b> — worktree toggle and sandbox are one chord away.</li>
+          <li><b>Reuses the palette you already have.</b> One fuzzy surface for sessions, features, projects and now config.</li>
+          <li><b>⌘J stays a fast path</b> — a terminal launch never needs to touch this.</li>
+        </ul>
+      </div>
+      <div class="note bad">
+        <h4>Where it hurts</h4>
+        <ul>
+          <li><b>Discovery problem.</b> New users never find the chips; the whole value is invisible until you know it exists.</li>
+          <li><b>Chip soup.</b> Six chips is the ceiling before it wraps into two rows and becomes a form again.</li>
+          <li><b>Flyouts hide the consequence.</b> Choosing "sandboxed" in a dropdown tells you less than a live sentence does.</li>
+          <li><b>No room for presets</b> without turning the chip row into a second list.</li>
+        </ul>
+      </div>
+    </div>
+  </section>
+
+
+  <!-- ══════════════════════════════ OPTION B ══════════════════════════════ -->
+  <section class="opt" id="b">
+    <div class="opthead">
+      <div class="optno">Option B</div>
+      <h2>Launch dialog — one form, four visible fields, one disclosure</h2>
+      <p>⌘T opens a centred dialog. Everything 90% of sessions need is visible; label, cols/rows and grid-add sit
+        behind one <b>Advanced…</b> disclosure. The sandbox toggle carries a live one-line consequence that flips
+        with the switch. It's built almost verbatim from <code>Modal</code> + <code>ConfirmDialog</code> +
+        <code>LinkPicker</code> + <code>CommentEditor</code> — four components grove already has.</p>
+    </div>
+
+    <div class="frame">
+      <div class="titlebar"><div class="tl r"></div><div class="tl y"></div><div class="tl g"></div><span class="t">grove</span></div>
+      <div class="body stack">
+        <div class="side">
+          <div class="tabs"><div class="tab on">Projects</div><div class="tab">Sessions</div></div>
+          <div class="side-scroll">
+            <div class="pfolder">▾ grove<span class="cnt">4</span></div>
+            <div class="srow sel"><div class="nm">⌁ Grove</div><div class="st"><span class="dot" style="background:var(--status-working)"></span>working · 4m</div></div>
+            <div class="srow wait"><div class="nm">⌁ Grove</div><div class="st"><span class="dot" style="background:var(--status-waiting)"></span>waiting · 1m</div></div>
+            <div class="srow"><div class="nm">⌁ Grove</div><div class="st"><span class="dot" style="background:var(--status-running)"></span>idle · 12m</div></div>
+            <div class="pfolder nested">▾ ├ worktree/grove</div>
+            <div class="srow"><div class="nm">⌁ Grove</div><div class="st"><span class="dot" style="background:var(--status-working)"></span>working · 2m</div></div>
+            <div class="pfolder">▾ payments<span class="cnt">1</span></div>
+            <div class="srow"><div class="nm">⌁ Payments</div><div class="st"><span class="dot" style="background:var(--status-running)"></span>working · 30m</div></div>
+          </div>
+        </div>
+
+        <div class="main">
+          <div class="cheader"><span class="crumb">grove</span><span class="csepc">›</span><span class="crumb">Grove</span><span class="csepc">›</span><span class="crumb last">working</span></div>
+          <div class="term">
+            <div style="color:#a6adc8">· grove · </div>
+            <div>planning the launch surface…</div>
+            <div style="color:#585b70">▌</div>
+          </div>
+
+          <div class="backdrop"></div>
+          <div class="dialog">
+            <div class="dlg-head">
+              <h3>New session</h3>
+              <div class="seg accent">
+                <button class="on">◆ Claude Code</button>
+                <button>◆ OpenCode</button>
+                <button>▮ Terminal</button>
+              </div>
+            </div>
+
+            <div class="dlg-body">
+              <div class="field">
+                <div class="flabel">Where</div>
+                <div class="listpick">
+                  <div class="lrow on"><span class="ico">⑂</span><span class="nm">New worktree from <b>origin/main</b></span><span class="path">grove/session-launch</span></div>
+                  <div class="lrow"><span class="ico">◆</span><span class="nm">This checkout</span><span class="path">~/git/grove</span></div>
+                  <div class="lrow"><span class="ico">⑂</span><span class="nm">Existing worktree</span><span class="path">grove/fix-grid-tiling</span></div>
+                  <div class="lrow"><span class="ico">◆</span><span class="nm">payments</span><span class="path">~/git/payments</span></div>
+                </div>
+                <input class="txt" style="margin-top:6px" value="grove/session-launch" />
+              </div>
+
+              <div class="field">
+                <div class="flabel">Prompt <span class="hintk">optional — you can type it after it starts</span></div>
+                <textarea class="prompt" rows="3">implement slice 3 of session launch</textarea>
+              </div>
+
+              <div class="field">
+                <div class="flabel">Isolation</div>
+                <div class="box" style="padding:0">
+                  <div class="switchrow">
+                    <div class="switch on"></div>
+                    <div>
+                      <div class="boxt">Run in a sandbox</div>
+                      <div class="boxb">The agent runs inside a Linux VM. Its worktree appears at the same path it has on
+                        your Mac; the rest of your machine is not visible.</div>
+                      <div class="boxb dim" style="margin-top:5px">Network access is <b>not</b> restricted — this isolates
+                        files only. Stays sandboxed on resume.</div>
+                    </div>
+                  </div>
+                </div>
+              </div>
+
+              <div class="field" style="margin-bottom:0">
+                <div class="flabel">Link to feature</div>
+                <div class="listpick">
+                  <div class="lrow on"><span class="nm">2026-10-11-session-launch</span><span class="path">next: structure</span></div>
+                  <div class="lrow"><span class="nm dim">No feature — unlinked</span></div>
+                </div>
+              </div>
+
+              <div class="more" style="margin-top:12px"><span class="caret">›</span> Advanced — label, size, add to grid</div>
+            </div>
+
+            <div class="dlg-foot">
+              <span style="font-size:var(--fs-sm);color:var(--text-3)" class="mono">~/git/grove · grove/session-launch · sandboxed</span>
+              <span class="spacer"></span>
+              <button class="btn ghost">Cancel</button>
+              <button class="btn primary">Start <span class="kbd on">↵</span></button>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+    <p class="cap">Only Claude is sandboxable today, so the OpenCode and Terminal tabs grey out the Isolation row rather than hiding it.</p>
+
+    <div class="notes">
+      <div class="note good">
+        <h4>Why it works</h4>
+        <ul>
+          <li><b>Self-documenting.</b> Someone who has never seen grove can start a correct session in one look.</li>
+          <li><b>Isolation is first-class</b>, right where the choice is made, with its consequence written out in full.</li>
+          <li><b>Almost free to build.</b> Modal, ListRow, the LinkPicker list, the CommentEditor textarea and the error line all exist.</li>
+          <li><b>Progressive disclosure, two levels max</b> — the rest is one collapsed row.</li>
+        </ul>
+      </div>
+      <div class="note bad">
+        <h4>Where it hurts</h4>
+        <ul>
+          <li><b>Punishes the repeat case.</b> The 10th session this hour pays for a dialog it doesn't need.</li>
+          <li><b>Focus theft.</b> Every launch costs a modal; the terminal loses focus.</li>
+          <li><b>No home for defaults.</b> "Remember this" wants a settings pane this shape can't reach.</li>
+          <li><b>⌘J is now ambiguous</b> — does the fast path still exist, or does everything go through here?</li>
+        </ul>
+      </div>
+    </div>
+  </section>
+
+
+  <!-- ══════════════════════════════ OPTION C ══════════════════════════════ -->
+  <section class="opt" id="c">
+    <div class="opthead">
+      <div class="optno">Option C</div>
+      <h2>Side rail — presets on top, compact form below</h2>
+      <p>A persistent right-hand rail that docks alongside the content area instead of covering it. Named presets sit
+        at the top: pick one and every field below fills in and stays editable. This is the only shape that answers
+        "what settings do I <i>usually</i> want?" — and the only one with room to grow into a real defaults pane.</p>
+    </div>
+
+    <div class="frame">
+      <div class="titlebar"><div class="tl r"></div><div class="tl y"></div><div class="tl g"></div><span class="t">grove</span></div>
+      <div class="body stack">
+        <div class="side">
+          <div class="tabs"><div class="tab on">Projects</div><div class="tab">Sessions</div></div>
+          <div class="side-scroll">
+            <div class="pfolder">▾ grove<span class="cnt">4</span></div>
+            <div class="srow sel"><div class="nm">⌁ Grove</div><div class="st"><span class="dot" style="background:var(--status-working)"></span>working · 4m</div></div>
+            <div class="srow wait"><div class="nm">⌁ Grove</div><div class="st"><span class="dot" style="background:var(--status-waiting)"></span>waiting · 1m</div></div>
+            <div class="srow"><div class="nm">⌁ Grove</div><div class="st"><span class="dot" style="background:var(--status-running)"></span>idle · 12m</div></div>
+            <div class="pfolder nested">▾ ├ worktree/grove</div>
+            <div class="srow"><div class="nm">⌁ Grove</div><div class="st"><span class="dot" style="background:var(--status-working)"></span>working · 2m</div></div>
+            <div class="pfolder">▾ payments<span class="cnt">1</span></div>
+            <div class="srow"><div class="nm">⌁ Payments</div><div class="st"><span class="dot" style="background:var(--status-running)"></span>working · 30m</div></div>
+          </div>
+        </div>
+
+        <div class="main">
+          <div class="content" style="height:100%">
+            <div class="main">
+              <div class="cheader"><span class="crumb">grove</span><span class="csepc">›</span><span class="crumb">Grove</span><span class="csepc">›</span><span class="crumb last">working</span></div>
+              <div class="term">
+                <div style="color:#a6adc8">· grove · </div>
+                <div>planning the launch surface…</div>
+                <div style="color:#585b70">▌</div>
+                <div style="margin-top:18px;color:#6c7086">▸ the session grid is up to date<br/>▸ 4 sessions, 1 waiting</div>
+              </div>
+            </div>
+
+            <div class="rail">
+              <div class="rail-head"><h3>New session</h3><span style="margin-left:auto"><span class="kbd">esc</span></span></div>
+              <div class="rail-body">
+                <div class="flabel">Presets</div>
+                <div class="preset on">
+                  <div class="pn">◎ Implement slice</div>
+                  <div class="pd">New worktree, Claude, sandboxed. The default for grove work.</div>
+                  <div class="tags"><span class="tag a">worktree</span><span class="tag">claude</span><span class="tag a">sandboxed</span></div>
+                </div>
+                <div class="preset">
+                  <div class="pn">◎ Review only</div>
+                  <div class="pd">This checkout, read-only plan mode. No sandbox — it needs your git credentials.</div>
+                  <div class="tags"><span class="tag">checkout</span><span class="tag">claude</span><span class="tag">plan</span></div>
+                </div>
+                <div class="preset">
+                  <div class="pn">◎ Scratch terminal</div>
+                  <div class="pd">Plain shell in the current checkout.</div>
+                  <div class="tags"><span class="tag">terminal</span></div>
+                </div>
+                <div class="preset" style="border-style:dashed;background:transparent">
+                  <div class="pn" style="color:var(--text-3)">＋ Save current as preset</div>
+                </div>
+
+                <div style="height:1px;background:var(--divider);margin:14px 0"></div>
+
+                <div class="field">
+                  <div class="flabel">Agent</div>
+                  <div class="seg" style="width:100%">
+                    <button class="on" style="flex:1">Claude</button>
+                    <button style="flex:1">OpenCode</button>
+                    <button style="flex:1">Terminal</button>
+                  </div>
+                </div>
+
+                <div class="field">
+                  <div class="flabel">Where</div>
+                  <div class="listpick">
+                    <div class="lrow on"><span class="ico">⑂</span><span class="nm">New worktree</span><span class="path">origin/main</span></div>
+                    <div class="lrow"><span class="ico">◆</span><span class="nm">This checkout</span></div>
+                    <div class="lrow"><span class="ico">⑂</span><span class="nm">fix-grid-tiling</span></div>
+                  </div>
+                </div>
+
+                <div class="field">
+                  <div class="flabel">Prompt</div>
+                  <textarea class="prompt" rows="2">implement slice 3…</textarea>
+                </div>
+
+                <div class="field" style="margin-bottom:0">
+                  <div class="box" style="padding:0">
+                    <div class="switchrow">
+                      <div class="switch on"></div>
+                      <div style="min-width:0">
+                        <div class="boxt">Sandboxed</div>
+                        <div class="boxb dim">Filesystem isolation only. Network is unrestricted.</div>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+              </div>
+              <div class="rail-foot">
+                <button class="btn primary" style="flex:1;justify-content:center">Start session</button>
+                <button class="btn ghost" title="Add to grid after starting">▦</button>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+    <p class="cap">Because the rail docks rather than overlays, you keep sight of the running session you're steering — the thing a modal takes away.</p>
+
+    <div class="notes">
+      <div class="note good">
+        <h4>Why it works</h4>
+        <ul>
+          <li><b>Presets are the real answer to "choose settings".</b> One click replaces six decisions, and every one stays editable after.</li>
+          <li><b>Never blocks.</b> Sessions keep running behind it; you can read a diff and launch the next agent in the same glance.</li>
+          <li><b>Scales.</b> A fifth setting costs a row, not a redraw. Model, effort and defaults can land here later.</li>
+          <li><b>Presets are shareable</b> — a named profile that captures kind + worktree + sandbox, per project.</li>
+        </ul>
+      </div>
+      <div class="note bad">
+        <h4>Where it hurts</h4>
+        <ul>
+          <li><b>Most expensive of the three.</b> A third docked region, a new shell slot, collapse state, responsive widths.</li>
+          <li><b>Steals width from the terminal</b>, which is the one thing people came to grove to watch.</li>
+          <li><b>Presets need a storage story</b> — per project? per user? committed to the repo? That's a real decision, not just UI.</li>
+          <li><b>Still modal in spirit</b>: it interrupts the same way a dialog does, just prettier.</li>
+        </ul>
+      </div>
+    </div>
+  </section>
+
+
+  <!-- ══════════════════════════════ COMPARISON ══════════════════════════════ -->
+  <section class="opt" id="compare">
+    <div class="opthead">
+      <div class="optno">Comparison</div>
+      <h2>Side by side</h2>
+    </div>
+    <table class="cmp">
+      <thead>
+        <tr><th></th><th>A · Command strip</th><th>B · Launch dialog</th><th>C · Side rail</th></tr>
+      </thead>
+      <tbody>
+        <tr>
+          <td>Keeps your focus</td>
+          <td class="win">Yes — one overlay, then gone</td>
+          <td>No — modal over the terminal</td>
+          <td class="win">Partly — docks, but eats width</td>
+        </tr>
+        <tr>
+          <td>First-time comprehension</td>
+          <td class="lose">Low — you must find the chips</td>
+          <td class="win">High — everything is on screen</td>
+          <td class="win">High — presets are self-describing</td>
+        </tr>
+        <tr>
+          <td>Repeat-launch speed</td>
+          <td class="win">Best — type, ↵</td>
+          <td class="lose">Slowest — full dialog each time</td>
+          <td>Good — preset then Start</td>
+        </tr>
+        <tr>
+          <td>Explains sandbox consequences</td>
+          <td>Partly — one footer line</td>
+          <td class="win">Yes — a full paragraph, always</td>
+          <td>Yes — two lines under the toggle</td>
+        </tr>
+        <tr>
+          <td>Room for presets</td>
+          <td class="lose">None without a second list</td>
+          <td class="lose">None — too small</td>
+          <td class="win">First-class, top of the rail</td>
+        </tr>
+        <tr>
+          <td>Room for new settings later</td>
+          <td class="lose">Chips wrap after ~6</td>
+          <td>Two disclosure levels, then crowded</td>
+          <td class="win">A row each</td>
+        </tr>
+        <tr>
+          <td>Uses existing components</td>
+          <td class="win">Palette + ContextMenu</td>
+          <td class="win">Modal + ConfirmDialog + LinkPicker + CommentEditor</td>
+          <td>Needs a new shell slot + splitter</td>
+        </tr>
+        <tr>
+          <td>Build cost</td>
+          <td class="win">Lowest</td>
+          <td>Low</td>
+          <td class="lose">Highest</td>
+        </tr>
+        <tr>
+          <td>Matches grove's keyboard-first habit</td>
+          <td class="win">Yes — ⌘T, ⌃1..5, ↵</td>
+          <td>Partly — ⌘T, ↵, Tab</td>
+          <td class="lose">Mostly mouse</td>
+        </tr>
+      </tbody>
+    </table>
+  </section>
+
+
+  <!-- ══════════════════════════════ WIRING ══════════════════════════════ -->
+  <section class="opt" id="wiring">
+    <div class="opthead">
+      <div class="optno">Wiring</div>
+      <h2>What every option has to touch</h2>
+      <p>Independent of which shape you pick, this is the shared work — and it's smaller than it looks, because
+        core already accepts every field.</p>
+    </div>
+
+    <div class="notes" style="grid-template-columns:1fr">
+      <div class="note">
+        <h4>The blocker</h4>
+        <p><code>src/shared/ipc.ts:15</code> declares
+          <code>'session:create': [{ projectId, kind, cols, rows }, Session]</code> — narrower than
+          <code>Commands.sessionCreate</code> at <code>src/core/core.ts:75</code>, which already takes
+          <code>cwd, prompt, label, feature, sandboxed</code>. Everything the CLI can do today is unreachable
+          from the renderer purely because of this one type. <b>Widening the tuple is step one and it's mechanical.</b></p>
+      </div>
+      <div class="note">
+        <h4>Worktrees need a new IPC surface</h4>
+        <p>There is no <code>worktree:add</code> channel. Today only <code>cliServer.ts:91</code> calls
+          <code>worktrees.add()</code>, then registers the checkout and lets <code>sessionCreate</code> resolve
+          it as a project (ADR 0037). The GUI needs that promoted to a command, so it can make the worktree
+          <i>before</i> the session exists and surface <code>worktree-failed</code> / <code>conflict</code> inline.</p>
+      </div>
+      <div class="note">
+        <h4>Decide what "remember this" means</h4>
+        <p>Every serious tool resolves defaults in a visible order — Cursor does user → team → system, and its
+          copy states the point: "Default repository — <i>supplying a repo here lets users skip that step</i>".
+          For grove the question is whether defaults live in <code>grove.config.json</code>, in app config, or
+          nowhere. If nowhere, presets (Option C) are the only place the answer can live.</p>
+      </div>
+      <div class="note bad">
+        <h4>One bug to fix before promising anything</h4>
+        <p><code>sessionResume</code> (<code>core.ts:774</code>) builds its argv with
+          <code>st.source.argv(id, 'resume')</code> and <b>no sandbox wrapper</b> — so a resumed
+          <code>sandboxed: true</code> session comes back unsandboxed. ADR 0033 says it should stay sandboxed.
+          A UI that says "stays sandboxed on resume" is making a promise the code doesn't keep yet.</p>
+      </div>
+    </div>
+
+    <div style="margin-top:var(--sp-6)">
+      <div class="payloadhead">Payload every mockup sends — <code>session:create</code></div>
+      <div class="payload">
+{
+  <span class="k">"projectId"</span>: <span class="s">"9f3c"</span>,          <span class="c">// grove/session-launch, registered as its own project (ADR 0037)</span>
+  <span class="k">"kind"</span>:      <span class="s">"claude"</span>,
+  <span class="k">"sandboxed"</span>: <span class="n">true</span>,            <span class="c">// persisted, so a resume never widens (ADR 0033)</span>
+  <span class="k">"feature"</span>:   <span class="s">"2026-10-11-session-launch"</span>,
+  <span class="k">"label"</span>:     <span class="s">"Session launch"</span>,
+  <span class="k">"prompt"</span>:    <span class="s">"implement slice 3 of session launch"</span>,
+  <span class="k">"cols"</span>: <span class="n">120</span>, <span class="k">"rows"</span>: <span class="n">40</span>
+}
+      </div>
+      <p class="refs" style="margin-top:14px">
+        <b>Sources:</b>
+        <a href="https://code.claude.com/docs/en/desktop.md">Claude Code Desktop</a> ·
+        <a href="https://code.claude.com/docs/en/permission-modes.md">Claude permission modes</a> ·
+        <a href="https://cursor.com/docs/cloud-agent/api/endpoints">Cursor cloud agent API</a> ·
+        <a href="https://cursor.com/docs/cloud-agent/settings">Cursor default settings</a> ·
+        <a href="https://docs.github.com/en/copilot/how-tos/copilot-on-github/use-copilot-agents/kick-off-a-task">GitHub Copilot agents</a> ·
+        <a href="https://learn.chatgpt.com/docs/environments/git-worktrees.md">Codex worktrees</a> ·
+        <a href="https://zed.dev/docs/ai/agent-profiles.html">Zed agent profiles</a> ·
+        <a href="https://docs.devin.ai/product-guides/creating-playbooks">Devin playbooks</a> ·
+        <a href="https://www.nngroup.com/articles/progressive-disclosure">NN/g progressive disclosure</a> ·
+        <a href="https://www.nngroup.com/articles/drop-down-menus">NN/g dropdowns</a>
+      </p>
+    </div>
+  </section>
+
+</div>
+</body>
+</html>

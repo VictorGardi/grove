@@ -26,6 +26,7 @@ export interface PaletteActions {
 // App commands (design D3): static, run through the same `runAction` as the menu.
 export const PALETTE_COMMANDS: { id: string; label: string; hint?: string; action: MenuAction }[] = [
   { id: 'newSession', label: 'New session', hint: '⌘T', action: { type: 'newSession' } },
+  { id: 'newSessionOptions', label: 'New session with options…', hint: '⌘⇧T', action: { type: 'newSessionOptions' } },
   { id: 'newTerminal', label: 'New terminal', hint: '⌘J', action: { type: 'newTerminal' } },
   { id: 'closeSession', label: 'Remove session', hint: '⌘W', action: { type: 'closeSession' } },
   { id: 'sessionDiff', label: 'Session diff', hint: '⌥⌘B', action: { type: 'sessionDiff' } },

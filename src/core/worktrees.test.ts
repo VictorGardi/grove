@@ -6,7 +6,7 @@ import { describe, expect, it } from 'vitest'
 import { gitRunner } from './diff/git'
 import { gitCommonDir } from './git'
 import { gitRepo } from './testing/gitRepo'
-import { add, list, lock, merged, prune, remove, unlock, worktreePath } from './worktrees'
+import { add, list, lock, merged, prune, remove, unlock, worktreePath, worktreePathIn } from './worktrees'
 
 // `protocol.file.allow` is what lets git clone a submodule from a path on this machine; the
 // submodule test needs it, and grove itself never turns it on.
@@ -26,6 +26,23 @@ describe('worktreePath', () => {
 
   it('defaults to the real home directory', () => {
     expect(worktreePath('/src/grove', 'x')).toBe(path.join(os.homedir(), '.grove', 'worktrees', 'grove', 'x'))
+  })
+})
+
+// The same layout rooted elsewhere. Its own function, not a third argument: a caller that means
+// "a home" would get a different tree with no way to notice, since both are strings.
+describe('worktreePathIn', () => {
+  it('is <root>/<repo>/<branch>, sanitising the branch exactly as worktreePath does', () => {
+    expect(worktreePathIn('/wt', '/src/grove', 'fix-auth')).toBe('/wt/grove/fix-auth')
+    expect(worktreePathIn('/wt', '/src/grove', 'feat/auth/login')).toBe('/wt/grove/feat-auth-login')
+    expect(worktreePathIn('/wt', '/src/grove', 'a..b~c')).toBe('/wt/grove/a..b-c')
+  })
+
+  // The two differ only by the `.grove/worktrees` prefix, which is the whole contract: a
+  // checkout grove makes at a custom root is laid out like one it makes by default.
+  it('agrees with worktreePath once its root stands in for a home', () => {
+    expect(worktreePathIn('/home/me/.grove/worktrees', '/src/grove', 'fix-auth'))
+      .toBe(worktreePath('/src/grove', 'fix-auth', '/home/me'))
   })
 })
 

@@ -29,10 +29,8 @@ import { readBranch } from './git'
 import { gitCommonDir } from './git'
 import * as worktrees from './worktrees'
 import type { AgentEvent, AgentKind, AgentSource } from './agents/types'
-import { sandboxArgv } from './sandbox/argv'
-import { loginShellCredential } from './sandbox/auth'
-import { ensureImage, imageRef } from './sandbox/image'
-import { specFor, type AgentPaths, type SandboxSpec } from './sandbox/spec'
+import { sandboxArgvFor, type SandboxDeps } from './sandbox/launch'
+import type { AgentPaths } from './sandbox/spec'
 import { autoLink, link, markGone, markSeen, newSession, reconcile, rename, resume, setWorkflowStatus, withBranches } from './sessions'
 import { loadConfig, saveConfig } from './store/configStore'
 import { apply, fromSnapshot, withContext, withStatus, type Tracker } from './status'
@@ -52,6 +50,7 @@ export interface CoreOptions {
   git?: string | null // path to git; undefined: 'git' from PATH, null: not found
   sessionEnv?: { socketPath: string; binDir: string } & Partial<AgentPaths> // the grove CLI's socket and launcher dir, plus every path a sandboxed session mounts; none: sessions get no CLI env and cannot be sandboxed
   sandbox?: { container: string; dockerfile: string } // where the Apple `container` binary and the sandbox image live; none: `--sandboxed` fails `no-sandbox`
+  worktreeRoot?: string // where `worktreeCreate` puts new checkouts; none: ~/.grove. Tests point it elsewhere, so a test never writes into the real home.
 }
 
 type Change = Exclude<AgentEvent, { type: 'connected' | 'disconnected' | 'wrote' }>
@@ -73,6 +72,9 @@ type SliceListener = <K extends keyof Slices>(k: K, v: Slices[K]) => void
 export interface Commands {
   projectAdd(a: { path: string }): Promise<Result<Project>>
   projectRemove(a: { id: string }): Promise<Result<{ id: string }>>
+  // A new worktree of the repo `projectId` belongs to, on `branch`, registered as a project of
+  // its own (ADR 0037) so a session can be created in it like any other checkout.
+  worktreeCreate(a: { projectId: string; branch: string }): Promise<Result<Project>>
   sessionCreate(a: {
     projectId?: string; cwd?: string; kind: SessionKind; prompt?: string; label?: string; feature?: string; sandboxed?: boolean; cols: number; rows: number
   }): Promise<Result<Session>> // exactly one of projectId, cwd
@@ -190,6 +192,8 @@ export function createCore(opts: CoreOptions): Core {
     }
   }
   const shellOpts = () => ({ pathPrefix: opts.sessionEnv?.binDir })
+  // The sandbox's view of this host, for the one argv builder both launch paths call.
+  const sandboxDeps = (): SandboxDeps => ({ sandbox: opts.sandbox, sessionEnv: opts.sessionEnv, gitCommonDir })
 
   function set<K extends keyof Slices>(k: K, v: Slices[K]): void {
     slices[k] = v
@@ -676,6 +680,30 @@ export function createCore(opts: CoreOptions): Core {
       return { ok: true, data: { id } }
     },
 
+    // The same `worktrees.add` the CLI drives (ADR 0037), promoted to a command so the app can
+    // make one. The CLI passes the resulting `cwd` to `sessionCreate`, which resolves and registers
+    // it there; a dialog needs the checkout to exist and be registrable *before* the session does,
+    // so a conflict or a missing git is reported against the form the human is still looking at.
+    // Made from the parent checkout, so a worktree of a worktree still forks the checkout.
+    async worktreeCreate({ projectId, branch }) {
+      const project = slices.projects.find((p) => p.id === projectId)
+      if (!project) return { ok: false, error: 'not-found' }
+      const name = branch.trim()
+      if (!name) return { ok: false, error: 'no-branch' }
+      const repo = repoFor(project)
+      const at = opts.worktreeRoot
+        ? worktrees.worktreePathIn(opts.worktreeRoot, repo, name)
+        : worktrees.worktreePath(repo, name)
+      const made = await worktrees.add({ repo, branch: name, path: at, git })
+      if (!made.ok) return made
+      // resolveProject reads the parent from git (parentCheckout), so a new worktree nests under
+      // its checkout exactly as one added by hand does
+      const { project: wt } = await resolveProject(slices.projects, made.data.path, gitTop)
+      set('projects', [...slices.projects, wt])
+      syncProjects(false)
+      return { ok: true, data: wt }
+    },
+
     // `projectId` (the app) or `cwd` (the CLI, ADR 0029): a folder resolves to its project, registered when new.
     async sessionCreate({ projectId, cwd, kind, prompt, label, feature, cols, rows, sandboxed }) {
       const source = kind === 'terminal' ? undefined : states.get(kind)?.source
@@ -708,34 +736,9 @@ export function createCore(opts: CoreOptions): Core {
       const agentArgv = source ? source.argv(agentSessionId!, 'start', { prompt, name: label }) : []
       let argv: string[] | undefined
       if (sandboxKind) {
-        const sandbox = opts.sandbox
-        const paths = opts.sessionEnv
-        if (!paths || !sandbox) return { ok: false, error: 'no-sandbox' } // never configured to sandbox at all
-        let spec: SandboxSpec
-        try {
-          const tag = imageRef(sandbox.dockerfile) // the image is content-addressed on the Dockerfile
-          await ensureImage({ container: sandbox.container, dir: path.dirname(sandbox.dockerfile), tag })
-          // D8: no credential reachable means a pane that stops at a login screen it cannot pass.
-          // The probe runs the same login shell the pane is built on, and never throws.
-          const credential = await loginShellCredential(sandboxKind, {
-            shell: process.env.SHELL || '/bin/zsh',
-            claudeHome: paths.claudeHome,
-          })
-          if (!credential) return { ok: false, error: 'no-sandbox' }
-          spec = specFor({
-            kind: sandboxKind,
-            cwd: workdir,
-            commonDir: gitCommonDir(workdir),
-            paths,
-            session,
-            container: sandbox.container,
-            image: tag,
-            credential,
-          })
-        } catch {
-          return { ok: false, error: 'no-sandbox' } // no binary, no system, no build, no Dockerfile: never an unsandboxed pane
-        }
-        argv = loginShellArgv(sandboxArgv({ name: session.tmuxName, spec, agentArgv }), shellOpts())
+        const built = await sandboxArgvFor({ kind: sandboxKind, session, cwd: workdir, agentArgv, deps: sandboxDeps() })
+        if (!built) return { ok: false, error: 'no-sandbox' } // never an unsandboxed pane
+        argv = built
       } else if (source) {
         argv = loginShellArgv(agentArgv, shellOpts())
       }
@@ -779,7 +782,10 @@ export function createCore(opts: CoreOptions): Core {
     },
 
     // E-D3: a new tmux session of the same name runs the agent's resume argv (`opencode -s <id>`,
-    // `claude --resume <id>`), picking up its history.
+    // `claude --resume <id>`), picking up its history. A session that was sandboxed is sandboxed
+    // again (ADR 0033), and when this host cannot build the sandbox the resume downgrades: it goes
+    // back unsandboxed, `sandboxed` goes false so nothing claims otherwise, and the renderer says
+    // so once. Refusing instead would trap the human out of a session over a pruned image.
     async sessionResume({ id }) {
       const session = findSession(id)
       const project = session && slices.projects.find((p) => p.id === session.projectId)
@@ -788,11 +794,17 @@ export function createCore(opts: CoreOptions): Core {
       if (session.lastStatus !== 'gone') return { ok: false, error: 'not-gone' }
       const st = states.get(session.kind)
       if (!st) return { ok: false, error: 'no-source' }
+      const workdir = session.cwd ?? project.path
+      const agentArgv = st.source.argv(session.agentSessionId, 'resume')
+      const built = session.sandboxed
+        ? await sandboxArgvFor({ kind: session.kind, session, cwd: workdir, agentArgv, deps: sandboxDeps() })
+        : null
+      // built first: a sandbox that cannot be built must not cost the pane it was replacing
+      const argv = built ?? loginShellArgv(agentArgv, shellOpts())
       await backend.kill(session.tmuxName) // a leftover dead pane
-      const argv = loginShellArgv(st.source.argv(session.agentSessionId, 'resume'), shellOpts())
-      await backend.create({ name: session.tmuxName, cwd: session.cwd ?? project.path, cols: 80, rows: 24, argv, env: cliEnv(session) }) // attaching resizes it
+      await backend.create({ name: session.tmuxName, cwd: workdir, cols: 80, rows: 24, argv, env: cliEnv(session) }) // attaching resizes it
       await backend.setColors(session.tmuxName, terminalTheme.foreground, terminalTheme.background)
-      replaceSession(resume(findSession(id) ?? session))
+      replaceSession(resume(built ? session : { ...session, sandboxed: false }))
       if (st.connected) void resync(st)
       refreshStatus()
       return { ok: true, data: findSession(id)! }

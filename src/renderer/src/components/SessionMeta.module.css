@@ -1,0 +1,44 @@
+/* The grid pane header's row, moved here so the session header and a pane are one thing. */
+.row {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-2);
+  min-width: 0;
+  font-size: var(--fs-sm);
+}
+
+.lead {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.branch,
+.feature,
+.status {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-1);
+  min-width: 0;
+  flex: none;
+}
+
+.branch {
+  flex: 0 1 auto;
+  color: var(--text-2);
+}
+
+.truncate {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.secondary {
+  color: var(--text-2);
+}
+
+.spacer {
+  flex: 1;
+}

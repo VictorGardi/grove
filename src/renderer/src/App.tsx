@@ -8,15 +8,17 @@ import { DiffViewer } from './components/DiffViewer'
 import { FeaturePage } from './components/FeaturePage'
 import { ProjectPage } from './components/ProjectPage'
 import { SessionGrid } from './components/SessionGrid'
+import { SessionMeta } from './components/SessionMeta'
 import { Sidebar } from './components/Sidebar'
 import { SidebarRail } from './components/SidebarRail'
 import { TerminalView } from './components/TerminalView'
 import { AppShell } from './components/shell/AppShell'
 import { BoardSwitch } from './components/shell/BoardSwitch'
 import { ContextPopover } from './components/ContextGauge'
-import { ContentHeader } from './components/shell/ContentHeader'
+import { ContentHeader, Crumbs } from './components/shell/ContentHeader'
 import { Banner } from './components/ui/Banner'
 import { ConfirmDialog } from './components/ConfirmDialog'
+import { NewSessionDialog, type Launch } from './components/NewSessionDialog'
 import { Button } from './components/ui/Button'
 import { newSessionItems, paletteItems } from './paletteItems'
 import { DEFAULT_GRID_VIEW, gridShown, visibleMembers, type GridView } from './gridView'
@@ -25,6 +27,7 @@ import { boardKey, childrenOf, content, crumbs, currentProjectId, focusTarget } 
 import { serviceBanners } from './sessionStatus'
 import { sessionDiffShortcut, type HiddenRenderedViewer } from './sessionDiffShortcut'
 import { useSlices } from './stores/slices'
+import { colorTags } from './tags'
 import { featureDir, featureOfFile, viewableFiles } from './viewerFiles'
 import { ScratchpadOverlay } from './components/ScratchpadOverlay'
 import s from './App.module.css'
@@ -33,11 +36,27 @@ export default function App() {
   const { projects, sessions, ui, features, opencode, diff, errors, hydrate, setFocused, focusFeature, openProject, toggleGrid, addFocusedToGrid, toggleSidebar, clearGrid, go, setBoard,
     openArtifact, openDiff, backToDiff, openRendered, closeViewer, setViewerWidth, toggleViewerExpanded, reloadViewer } = useSlices()
   const [quickNew, setQuickNew] = useState<{ projectId?: string } | null>(null) // ⌘T: the new-session palette
+  const [launchNew, setLaunchNew] = useState<{ projectId?: string } | null>(null) // ⌘⇧T: the launch dialog
   const [confirmRemove, setConfirmRemove] = useState<Session | null>(null) // ⌘W asks first
   const [paletteOpen, setPaletteOpen] = useState(false)
   const [gridView, setGridView] = useState<GridView>(DEFAULT_GRID_VIEW) // toolbar settings, view-only
   const [scratchpadOpen, setScratchpadOpen] = useState(false) // ⌘N: global notes, not persisted
+  const [downgraded, setDowngraded] = useState<string | null>(null) // a resume that lost its sandbox, once
   const hiddenRendered = useRef<HiddenRenderedViewer | null>(null)
+  const tags = colorTags(projects, features.items)
+
+  // A sandboxed session that resumes without a sandbox comes back on the host (ADR 0033). Core
+  // clears the flag rather than claiming containment it doesn't have; this is the half of the
+  // bargain that tells the human, once, instead of leaving them to notice the mark is gone.
+  // Read before the call: a session that was never sandboxed resumes unsandboxed too, and that
+  // is not a downgrade.
+  const resume = useCallback((id: string) => {
+    const wasSandboxed = useSlices.getState().sessions.find((s) => s.id === id)?.sandboxed === true
+    void window.api.invoke('session:resume', { id }).then((res) => {
+      if (!res.ok || !wasSandboxed || res.data.sandboxed) return
+      setDowngraded(res.data.label)
+    })
+  }, [])
 
   useEffect(() => {
     void hydrate()
@@ -73,6 +92,7 @@ export default function App() {
     else if (a.type === 'toggleSidebar') toggleSidebar()
     else if (a.type === 'clearGrid') clearGrid()
     else if (a.type === 'newSession') setQuickNew({ projectId: currentProjectId(content(ui, projects, sessions, features.items)) ?? undefined })
+    else if (a.type === 'newSessionOptions') setLaunchNew({ projectId: currentProjectId(content(ui, projects, sessions, features.items)) ?? undefined })
     else if (a.type === 'newTerminal') {
       const projectId = currentProjectId(content(ui, projects, sessions, features.items))
       if (projectId) {
@@ -115,6 +135,33 @@ export default function App() {
       if (res.ok) setFocused(res.data.id)
     })
   }
+
+  // The configured launch. A worktree is made first and registered as a project of its own
+  // (ADR 0037), so a conflict is reported against the form the human is still looking at rather
+  // than failing a session that was never created. Returns the error, or null once it started.
+  const startLaunch = useCallback(async (l: Launch): Promise<string | null> => {
+    let projectId = l.where.type === 'existing' ? l.where.project.id : ''
+    if (l.where.type === 'new') {
+      const made = await window.api.invoke('worktree:create', { projectId: l.where.from.id, branch: l.branch })
+      if (!made.ok) return made.error
+      projectId = made.data.id
+    }
+    const trimmed = l.label.trim()
+    const res = await window.api.invoke('session:create', {
+      projectId,
+      kind: l.kind,
+      ...(l.prompt.trim() && { prompt: l.prompt.trim() }),
+      ...(trimmed && { label: trimmed }),
+      ...(l.feature && { feature: l.feature }),
+      sandboxed: l.kind === 'claude' && l.sandboxed,
+      cols: 120,
+      rows: 40,
+    })
+    if (!res.ok) return res.error
+    setFocused(res.data.id)
+    setLaunchNew(null)
+    return null
+  }, [setFocused])
   const shown = content(ui, projects, sessions, features.items)
   // a filter or the eye can hide the focused pane: focus the first one still visible
   const changeGridView = (next: GridView) => {
@@ -125,6 +172,11 @@ export default function App() {
   }
   const header = crumbs(shown, projects, features.items).map((c) => ({ label: c.label, onClick: c.to && (() => go(c.to!)) }))
   const context = shown.kind === 'session' ? contextView(shown.session) : null
+  // the same tag colour a grid pane gives this session's feature: one rule, two places
+  const linked = shown.kind === 'session'
+    ? features.items.find((f) => f.projectId === shown.session.projectId && f.slug === shown.session.feature) ?? null
+    : null
+  const linkedIndex = linked ? tags.group(linked.projectId, linked.group ? linked.slug : linked.parent) : null
   const openFeature = (f: Feature) => focusFeature({ projectId: f.projectId, slug: f.slug })
   const v = ui.viewer
   const viewerHit = v?.kind === 'file' ? featureOfFile(v, features.items, projects) : undefined
@@ -138,13 +190,22 @@ export default function App() {
         banners={[
           ...errors.map((e, i) => <Banner key={i}>{e}</Banner>),
           ...(features.workflowError ? [<Banner key="workflow">Workflow: {features.workflowError}</Banner>] : []),
+          ...(downgraded
+            ? [<Banner key="downgraded" tone="error">{downgraded} resumed on your host — the sandbox could not
+                start, so this session no longer has its filesystem isolated. Start a new sandboxed session to
+                get containment back.</Banner>]
+            : []),
           ...serviceBanners(opencode, sessions).map((b) => <Banner key={b.text} tone={b.tone}>{b.text}</Banner>),
         ]}
         sidebar={ui.sidebarCollapsed ? <SidebarRail /> : <Sidebar onNew={(projectId) => setQuickNew({ projectId })} />}
         content={
           <>
             <ContentHeader crumbs={header}
-              after={context ? <ContextPopover view={context} /> : undefined}
+              meta={shown.kind === 'session'
+                ? <SessionMeta lead={<Crumbs crumbs={header} />} session={shown.session}
+                    feature={linked} tagIndex={linkedIndex}
+                    context={context ? <ContextPopover view={context} /> : undefined} />
+                : undefined}
               right={shown.kind === 'project' && !shown.project.worktreeOf ? <BoardSwitch board={ui.board} onChange={setBoard} />
                 : shown.kind === 'session' ? (
                   <div className={s.headerActions}>
@@ -166,7 +227,7 @@ export default function App() {
                   if (dir !== null) openArtifact({ kind: 'file', projectId: shown.feature.projectId, path: dir + name, hash: null, fromDiff: null })
                 }} />
             ) : shown.kind === 'grid' ? (
-              <SessionGrid sessions={shown.sessions} focusedId={shown.focused.id} view={gridView} onViewChange={changeGridView} onFocusPane={setFocused} overlayOpen={paletteOpen || !!quickNew || !!confirmRemove} />
+              <SessionGrid sessions={shown.sessions} focusedId={shown.focused.id} view={gridView} onViewChange={changeGridView} onFocusPane={setFocused} onResume={resume} overlayOpen={paletteOpen || !!quickNew || !!confirmRemove} />
             ) : shown.kind === 'session' && shown.session.lastStatus === 'running' ? (
               <TerminalView key={shown.session.id} sessionId={shown.session.id} active={!paletteOpen && !quickNew && !confirmRemove} />
             ) : shown.kind === 'session' ? (
@@ -174,7 +235,7 @@ export default function App() {
                 <div className={s.endedTitle}>Session ended</div>
                 <div className={s.endedActions}>
                   {shown.session.kind !== 'terminal' && (
-                    <Button icon="resume" variant="primary" onClick={() => void window.api.invoke('session:resume', { id: shown.session.id })}>Resume</Button>
+                    <Button icon="resume" variant="primary" onClick={() => resume(shown.session.id)}>Resume</Button>
                   )}
                   <Button icon="trash" onClick={() => void window.api.invoke('session:remove', { id: shown.session.id })}>Remove</Button>
                 </div>
@@ -219,6 +280,9 @@ export default function App() {
       {quickNew && (
         <CommandPalette onClose={() => setQuickNew(null)} placeholder="New session — pick a kind…"
           items={newSessionItems(projects, quickNew.projectId, createSession)} />
+      )}
+      {launchNew && (
+        <NewSessionDialog projectId={launchNew.projectId} onClose={() => setLaunchNew(null)} onStart={startLaunch} />
       )}
       {scratchpadOpen && <ScratchpadOverlay onClose={() => setScratchpadOpen(false)} />}
     </>

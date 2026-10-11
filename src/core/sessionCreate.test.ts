@@ -287,6 +287,93 @@ describe('sessionCreate --sandboxed', () => {
   })
 })
 
+// ADR 0033: a resumed sandboxed session stays sandboxed. Where this host cannot build the
+// sandbox the resume downgrades rather than refusing — a pruned image must never lock the human
+// out of their own session — but `sandboxed` goes false, so the record never claims containment
+// the pane does not have, and the renderer reports the change once.
+describe('sessionResume --sandboxed', () => {
+  let t: ReturnType<typeof setupCore>
+  beforeEach(() => { t = setupCore() })
+  afterEach(() => t.disposeAll())
+
+  const home = () => path.join(t.dir, 'home')
+  const paths = () => ({
+    claudeHome: path.join(home(), '.claude'),
+    claudeJson: path.join(home(), '.claude.json'),
+    gitconfig: path.join(home(), '.gitconfig'),
+    spoolDir: path.join(t.dir, 'agents', 'claude'),
+    socketPath: path.join(t.dir, 'grove.sock'),
+    cliBundle: path.join(t.dir, 'out', 'main', 'cli.js'),
+  })
+  const dockerfile = () => path.join(t.dir, 'sandbox', 'Dockerfile')
+  const container = () => path.join(t.dir, 'bin', 'container')
+
+  async function start() {
+    fs.mkdirSync(path.dirname(container()), { recursive: true })
+    fs.writeFileSync(container(), '#!/bin/sh\nexit 0\n', { mode: 0o755 })
+    fs.mkdirSync(path.dirname(dockerfile()), { recursive: true })
+    fs.writeFileSync(dockerfile(), 'FROM node:22-slim\n')
+    fs.mkdirSync(paths().claudeHome, { recursive: true })
+    fs.writeFileSync(path.join(paths().claudeHome, '.credentials.json'), '{}')
+    const core = t.make(undefined, {
+      sessionEnv: { binDir: '/bin', ...paths() },
+      sandbox: { container: container(), dockerfile: dockerfile() },
+    })
+    await core.start()
+    return core
+  }
+
+  // A sandboxed session, ended, ready to resume.
+  async function ended(core: Awaited<ReturnType<typeof start>>) {
+    const res = await core.commands.sessionCreate({ kind: 'claude', sandboxed: true, cwd: t.dir, cols: 120, rows: 40 })
+    if (!res.ok) throw new Error(res.error)
+    await core.commands.sessionKill({ id: res.data.id })
+    return res.data.id
+  }
+
+  it('resumes inside its container, with the same mount set and the resume argv', async () => {
+    const core = await start()
+    const id = await ended(core)
+    expect((await core.commands.sessionResume({ id })).ok).toBe(true)
+    const argv = created(t.fake).at(-1)!.argv![4]
+    expect(argv).toContain(`run --rm -i -t --name grove-${id}`)
+    expect(argv).toContain(`--volume ${t.dir}:${t.dir}`)
+    expect(argv).toContain(`--read-only-path ${paths().gitconfig}`)
+    expect(argv).toMatch(new RegExp(`${imageRef(dockerfile())} claude -s \\S+$`))
+    expect(core.getSlices().sessions.find((s) => s.id === id)?.sandboxed).toBe(true)
+  })
+
+  it('leaves an unsandboxed session on the host, exactly as it was', async () => {
+    const core = await start()
+    const res = await core.commands.sessionCreate({ kind: 'claude', cwd: t.dir, cols: 120, rows: 40 })
+    if (!res.ok) throw new Error(res.error)
+    await core.commands.sessionKill({ id: res.data.id })
+    await core.commands.sessionResume({ id: res.data.id })
+    expect(created(t.fake).at(-1)!.argv![4]).toMatch(/^export PATH=\/bin:"\$PATH"; exec claude -s \S+$/)
+  })
+
+  it('downgrades and clears the flag when no sandbox can be built, rather than refusing', async () => {
+    const core = await start()
+    const id = await ended(core)
+    fs.rmSync(dockerfile()) // the image recipe is gone: nothing can be built from it
+    const res = await core.commands.sessionResume({ id })
+    expect(res.ok).toBe(true)
+    if (!res.ok) throw new Error(res.error)
+    expect(created(t.fake).at(-1)!.argv![4]).toMatch(/^export PATH=\/bin:"\$PATH"; exec claude -s \S+$/)
+    expect(res.data.sandboxed).toBe(false) // the flag is how the renderer learns to report it
+  })
+
+  it('costs no pane when it downgrades: the same conversation comes back running', async () => {
+    const core = await start()
+    const id = await ended(core)
+    fs.rmSync(dockerfile())
+    await core.commands.sessionResume({ id })
+    const session = core.getSlices().sessions.find((s) => s.id === id)
+    expect(session?.lastStatus).toBe('running')
+    expect(session?.agentSessionId).not.toBeNull()
+  })
+})
+
 // D8: grove probes the login-shell env rather than attempting a run, because a bare `-e VAR` for an
 // absent variable does not fail the run (measured, exit 0) — so absence has to be seen from the
 // host, or a sandboxed pane opens onto a login screen it cannot pass.

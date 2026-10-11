@@ -11,8 +11,10 @@ specific meaning, so humans and agents stay consistent.
   in the Projects tab. May host sessions without any features.
 - **Worktree project**: a project whose path is a `git worktree` root, carrying
   `worktreeOf` for its parent. Files, diffs and viewer targets are per-checkout, so
-  a session in one resolves everything against that worktree (ADR 0037). A
-  *sandboxed* worktree session is refused (ADR 0038).
+  a session in one resolves everything against that worktree (ADR 0037). Made by
+  `worktreeCreate` from the app and by `--worktree` from the CLI, both forking the
+  parent *checkout*; new checkouts go under `~/.grove/worktrees/<repo>/<branch>`,
+  outside the repo so an agent never shares the main working tree.
 - **Repo group**: the projects sharing one git common dir, derived at load by
   `gitCommonDir` and never stored as authority, so it cannot dangle. Worktree
   projects nest under their group's parent checkout.
@@ -35,7 +37,13 @@ specific meaning, so humans and agents stay consistent.
   `running`, `waiting`, `needs-review`, `ready`, `done`).
 - **Session**: an app-started process in a tmux session on the `grove` socket;
   an **OpenCode session** or a **Claude session** (both **agent sessions**,
-  running the agent's TUI) or a **terminal session** (a shell).
+  running the agent's TUI) or a **terminal session** (a shell). Started either
+  from ⌘T, which picks a checkout and a kind in one keystroke, or from the
+  **launch dialog** (⌘⇧T), which also configures prompt, worktree and sandbox.
+- **Launch dialog**: the ⌘⇧T form: agent kind, where (a checkout, one of its
+  worktrees, or a new worktree on a branch), prompt, sandbox, feature link and
+  label. It makes a worktree *before* the session, so a conflict is reported
+  against the form rather than failing a session that was never created.
 - **Agent session id**: `agentSessionId`, the agent's own id for a session
   (`ses_…` for OpenCode, a UUID for Claude), minted by grove before launch.
 - **Agent source**: the per-kind adapter that reports agent events (turn
@@ -43,13 +51,15 @@ specific meaning, so humans and agents stay consistent.
   kind, each with its own connect and re-sync state (ADR 0019).
 - **Sandboxed session**: an agent session whose process runs inside an Apple
   `container` Linux VM rather than on the host. Chosen per session at creation
-  and persisted, so resuming it stays sandboxed (ADR 0033). Its working
-  directory and a fixed mount set appear inside at their host-identical paths;
-  nothing else of the host does (ADR 0035). A sandboxed **OpenCode** session
-  joins the host's shared service over the container gateway — that service is
-  bound to a routable address, and the container's copy of its `service.json` is
-  read-only so the sandbox can never evict the host's (ADR 0034). Filesystem
-  isolation only — no egress restriction (ADR 0036).
+  and persisted, so resuming it stays sandboxed (ADR 0033) — unless this host
+  cannot build the sandbox, where a resume downgrades to the host and the app
+  says so once. Its working directory and a fixed mount set appear inside at
+  their host-identical paths; nothing else of the host does (ADR 0035). A
+  sandboxed **OpenCode** session joins the host's shared service over the
+  container gateway — that service is bound to a routable address, and the
+  container's copy of its `service.json` is read-only so the sandbox can never
+  evict the host's (ADR 0034). Filesystem isolation only — no egress
+  restriction (ADR 0036). Marked in the session header and on its grid pane.
 - **Sandbox spec**: the image, mounts, env and workdir that `src/core/sandbox/`
   derives from a session and turns into the pane's `container run …` argv. The
   container is named after the tmux session, so a leftover is traceable

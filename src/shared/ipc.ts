@@ -2,7 +2,7 @@ import type { Comment, CommentAnchor, FeaturesSlice, OpenCodeSlice, Project, Ses
 
 export type Result<T> = { ok: true; data: T } | { ok: false; error: string }
 export type MenuAction =
-  | { type: 'newSession' } | { type: 'closeSession' } | { type: 'focusIndex'; n: number } | { type: 'projectBoard' }
+  | { type: 'newSession' } | { type: 'newSessionOptions' } | { type: 'closeSession' } | { type: 'focusIndex'; n: number } | { type: 'projectBoard' }
   | { type: 'sessionDiff' } | { type: 'toggleSidebar' } | { type: 'addToGrid' }
   | { type: 'newTerminal' } | { type: 'lastSession' } | { type: 'palette' } | { type: 'toggleGrid' } | { type: 'clearGrid' }
   | { type: 'scratchpad' }
@@ -12,7 +12,10 @@ export interface InvokeMap {
   'app:errors': [void, string[]]
   'project:add': [void, Project | null]
   'project:remove': [{ id: string }, { id: string }]
-  'session:create': [{ projectId: string; kind: SessionKind; cols: number; rows: number }, Session]
+  'worktree:create': [{ projectId: string; branch: string }, Project]
+  // what the core command already accepts: until the launch dialog existed the renderer could send
+  // only projectId and kind, so the GUI could not reach the fields the CLI always could
+  'session:create': [{ projectId: string; kind: SessionKind; prompt?: string; label?: string; feature?: string; sandboxed?: boolean; cols: number; rows: number }, Session]
   'session:remove': [{ id: string }, { id: string }]
   'session:resume': [{ id: string }, Session]
   'session:rename': [{ id: string; label: string }, Session]
