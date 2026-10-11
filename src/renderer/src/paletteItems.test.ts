@@ -6,9 +6,12 @@ const projects = [{ id: 'p1', name: 'grove', path: '/g' }, { id: 'p2', name: 'ot
 const session = (id: string, label: string, extra: Partial<Session> = {}) =>
   ({ id, projectId: 'p1', kind: 'claude', label, lastStatus: 'running', ...extra }) as Session
 const sessions = [session('s1', 'fix sidebar'), session('s2', 'write docs', { status: 'waiting' }), session('s3', 'terminal', { kind: 'terminal' })]
-const features = [
-  { projectId: 'p1', slug: 'grid', title: 'Session grid', stages: [], currentStage: null, cardState: 'done', progress: null },
-] as unknown as Feature[]
+// A complete Feature: unionFeatures reads the whole record, as core sends it.
+const feature = (projectId: string, slug: string, over: Partial<Feature> = {}): Feature => ({
+  projectId, slug, path: '/g/' + slug, title: 'Session grid', kind: 'feature', group: false, parent: null,
+  flow: null, stages: [], currentStage: null, cardState: 'done', progress: null, flags: [], warnings: [], artifacts: [], ...over,
+})
+const features = [feature('p1', 'grid')]
 
 const actions = () => ({ focusSession: vi.fn(), focusFeature: vi.fn(), openProject: vi.fn(), runAction: vi.fn() })
 const items = (a = actions()) => paletteItems({ projects, sessions, features }, a)
@@ -42,6 +45,24 @@ describe('paletteItems', () => {
     expect(on.find((i) => i.id === 'session:s1')?.detail).not.toContain('in grid')
     expect(on.some((i) => i.label === 'Hide grid')).toBe(true)
     expect(items().some((i) => i.label === 'Show grid')).toBe(true)
+  })
+
+  it('lists a feature once per repo, not once per checkout, and opens the checkout\'s copy', () => {
+    const wt = { id: 'p1b', name: 'grove · fix-auth', path: '/g/fix-auth', worktreeOf: 'p1' }
+    const withWorktree = [...projects, wt] as Project[]
+    const copies = [feature('p1', 'grid'), feature('p1b', 'grid', { currentStage: 'design', cardState: 'active' })]
+    const a = actions()
+    const list = paletteItems({ projects: withWorktree, sessions, features: copies }, a)
+    const feats = list.filter((i) => i.kind === 'feature')
+    expect(feats.map((i) => [i.label, i.detail])).toEqual([['Session grid', 'grove · Done']]) // the checkout's copy, not the worktree's
+    feats[0].run()
+    expect(a.focusFeature).toHaveBeenCalledWith({ projectId: 'p1', slug: 'grid' })
+  })
+
+  it('keeps one project entry per repo, naming the checkout', () => {
+    const wt = { id: 'p1b', name: 'grove · fix-auth', path: '/g/fix-auth', worktreeOf: 'p1' }
+    const list = paletteItems({ projects: [...projects, wt] as Project[], sessions, features }, actions())
+    expect(list.filter((i) => i.kind === 'project').map((i) => i.id)).toEqual(['project:p1', 'project:p2'])
   })
 
   it('runs the matching action for each kind', () => {
@@ -112,5 +133,15 @@ describe('newSessionItems', () => {
 
   it('keeps plain labels with a single project', () => {
     expect(newSessionItems([projects[0]], 'p1', vi.fn()).map((i) => i.label)).toEqual(['OpenCode', 'Claude Code', 'Terminal'])
+  })
+
+  it('stays per checkout: starting a session in a chosen checkout is the point of ⌘T', () => {
+    const wt = { id: 'p1b', name: 'grove · fix-auth', path: '/g/fix-auth', worktreeOf: 'p1' }
+    const create = vi.fn()
+    const list = newSessionItems([...projects, wt] as Project[], 'p1b', create)
+    expect(list).toHaveLength(9) // three kinds per checkout, worktrees included
+    expect(list.slice(0, 3).map((i) => i.label)).toEqual(['OpenCode · grove · fix-auth', 'Claude Code · grove · fix-auth', 'Terminal · grove · fix-auth'])
+    rank(list, 'claude grove fix')[0].item.run()
+    expect(create).toHaveBeenCalledWith('p1b', 'claude')
   })
 })

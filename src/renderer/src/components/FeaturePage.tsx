@@ -1,6 +1,7 @@
 import { isViewable } from '@shared/artifactUrl'
-import type { Feature, Session } from '@shared/types'
+import type { Feature, Project, Session } from '@shared/types'
 import { CARD_STATE_LABELS, featureStage, progressLabel } from '../featureLabels'
+import { repoHead, repoProjectIds } from '../repoGroups'
 import { statusView } from '../sessionStatus'
 import { reviewTarget } from '../viewerFiles'
 import { Badge } from './ui/Badge'
@@ -9,16 +10,19 @@ import { cx } from './ui/cx'
 import { ListRow } from './ui/ListRow'
 import s from './FeaturePage.module.css'
 
-export function FeaturePage({ feature: f, parent, children, sessions, onFocusSession, onOpenFeature, onOpenArtifact }: {
+export function FeaturePage({ feature: f, parent, children, sessions, projects, onFocusSession, onOpenFeature, onOpenArtifact }: {
   feature: Feature
   parent: Feature | null
   children: Feature[] // features whose parent is this one (navigation.childrenOf)
   sessions: Session[]
+  projects: Project[] // the feature is the repo's, so a worktree's session is one of its sessions
   onFocusSession: (id: string) => void
   onOpenFeature: (f: Feature) => void
   onOpenArtifact: (name: string) => void
 }) {
-  const linked = sessions.filter((x) => x.projectId === f.projectId && x.feature === f.slug)
+  // One card per (repo, slug), so the page behind it counts the whole repo's linked sessions.
+  const scope = repoProjectIds(projects, repoHead(projects, f.projectId))
+  const linked = sessions.filter((x) => scope.has(x.projectId) && x.feature === f.slug)
   const review = reviewTarget(f)
 
   return (

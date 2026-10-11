@@ -1,6 +1,7 @@
 import type { Feature, Project, Session, UiState } from '@shared/types'
 import { DEFAULT_GRID_VIEW, gridShown, visibleMembers, type GridView } from './gridView'
 import { listGroups, orderedSessions } from './sessionList'
+import { repoHead } from './repoGroups'
 
 // What the content area shows (ADR 0018): one of three exclusive focuses, else the first project's page.
 // The session grid (ADR 0031) takes over while it shows; its focused pane is the focused session.
@@ -58,13 +59,14 @@ export function crumbs(c: Content, projects: Project[], features: Feature[]): Cr
   return [projectCrumb(projects, s.projectId), ...(linked ? [featureCrumb(linked)] : []), { label: s.label }]
 }
 
-// The project page ⌘B opens: the current context's project, else the first project.
+// The project page ⌘B opens: the current context's project, else the first project. A worktree
+// resolves to the checkout it hangs under, because the features board is the repo's (design D3).
 export function boardProject(ui: UiState, projects: Project[], sessions: Session[], features: Feature[]): string | null {
   const c = content(ui, projects, sessions, features)
-  if (c.kind === 'session') return c.session.projectId
-  if (c.kind === 'grid') return c.focused.projectId
-  if (c.kind === 'feature') return c.feature.projectId
-  if (c.kind === 'project') return c.project.id
+  if (c.kind === 'session') return repoHead(projects, c.session.projectId)
+  if (c.kind === 'grid') return repoHead(projects, c.focused.projectId)
+  if (c.kind === 'feature') return repoHead(projects, c.feature.projectId)
+  if (c.kind === 'project') return repoHead(projects, c.project.id)
   return null
 }
 
@@ -76,9 +78,11 @@ export function childrenOf(feature: Feature, features: Feature[]): Feature[] {
   return features.filter((f) => f.projectId === feature.projectId && f.parent === feature.slug).sort(bySlugDoneLast)
 }
 
-// ⌘B: on a project page switch its board, elsewhere open the context project's page.
+// ⌘B: on a checkout's page switch its board, elsewhere open the context project's page. A
+// worktree's page has only the sessions board, so ⌘B there goes to the repo's page instead.
 export function boardKey(ui: UiState, projects: Project[], sessions: Session[], features: Feature[]): Partial<UiState> | null {
-  if (content(ui, projects, sessions, features).kind === 'project') return { board: ui.board === 'features' ? 'sessions' : 'features' }
+  const c = content(ui, projects, sessions, features)
+  if (c.kind === 'project' && repoHead(projects, c.project.id) === c.project.id) return { board: ui.board === 'features' ? 'sessions' : 'features' }
   const id = boardProject(ui, projects, sessions, features)
   return id ? openBoard(id) : null
 }
@@ -86,5 +90,5 @@ export function boardKey(ui: UiState, projects: Project[], sessions: Session[], 
 // Cmd+1..9: visible pane n while the grid shows, else the nth session in sidebar order.
 export function focusTarget(ui: UiState, projects: Project[], sessions: Session[], features: Feature[], n: number, view: GridView = DEFAULT_GRID_VIEW): Session | undefined {
   const c = content(ui, projects, sessions, features)
-  return c.kind === 'grid' ? visibleMembers(c.sessions, view)[n - 1] : orderedSessions(listGroups(projects, sessions, ui))[n - 1]
+  return c.kind === 'grid' ? visibleMembers(c.sessions, view, projects)[n - 1] : orderedSessions(listGroups(projects, sessions, ui))[n - 1]
 }

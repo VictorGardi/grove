@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from 'react'
 import type { Project, Session } from '@shared/types'
 import { DIM_RANGE, LAYOUT_MAX, gridShape, layoutLabel, type GridLayout, type GridView } from '../gridView'
+import { repoGroups } from '../repoGroups'
 import { Button } from './ui/Button'
 import { cx } from './ui/cx'
 import s from './GridToolbar.module.css'
@@ -54,9 +55,11 @@ export function GridToolbar({ members, projects, view, visibleCount, onChange, o
   onChange: (view: GridView) => void
   onEmpty: () => void
 }) {
-  const tabs = projects.flatMap((p) => {
-    const count = members.filter((m) => m.projectId === p.id).length
-    return count > 0 ? [{ id: p.id, name: p.name, count }] : []
+  // One tab per repo, not per checkout (v3): a checkout is not a peer of a repo in a picker, and
+  // a repo's count is every pane in every one of its checkouts.
+  const tabs = repoGroups(projects).flatMap(({ project, worktrees }) => {
+    const count = members.filter((m) => m.projectId === project.id || worktrees.some((w) => w.id === m.projectId)).length
+    return count > 0 ? [{ id: project.id, name: project.name, count }] : []
   })
   const filter = tabs.some((t) => t.id === view.filter) ? view.filter : null // a stale filter reads as ALL
   const tab = (id: string | null, label: string, count: number) => (

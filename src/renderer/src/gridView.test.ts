@@ -2,6 +2,8 @@ import { describe, expect, it } from 'vitest'
 import type { Project, Session } from '@shared/types'
 import { DEFAULT_GRID_VIEW, focusAfterRemove, gridCols, gridShown, layoutLabel, paneTitle, visibleMembers, withMember } from './gridView'
 
+const projects = [{ id: 'p', name: 'grove', path: '/src/p' }, { id: 'q', name: 'other', path: '/src/q' }] as Project[]
+
 describe('gridCols', () => {
   it('picks 1, 2 or 3 columns by count', () => {
     expect([0, 1, 2, 4, 5, 9].map((n) => gridCols(n))).toEqual([1, 1, 2, 2, 3, 3])
@@ -51,7 +53,8 @@ describe('paneTitle', () => {
 describe('visibleMembers', () => {
   const m = (id: string, projectId: string, lastStatus: Session['lastStatus'] = 'running') => ({ id, projectId, lastStatus }) as Session
   const members = [m('a', 'p'), m('b', 'q', 'gone'), m('c', 'p', 'gone'), m('d', 'q')]
-  const ids = (v: Partial<typeof DEFAULT_GRID_VIEW>) => visibleMembers(members, { ...DEFAULT_GRID_VIEW, ...v }).map((x) => x.id)
+  const ids = (v: Partial<typeof DEFAULT_GRID_VIEW>, over: Project[] = projects) =>
+    visibleMembers(members, { ...DEFAULT_GRID_VIEW, ...v }, over).map((x) => x.id)
   it('shows everything by default, in order', () => {
     expect(ids({})).toEqual(['a', 'b', 'c', 'd'])
   })
@@ -67,12 +70,33 @@ describe('visibleMembers', () => {
   it('combines the filter and hide ended', () => {
     expect(ids({ filter: 'p', hideEnded: true })).toEqual(['a'])
   })
+
+  // A filter names a repo (one tab per checkout), so it keeps every pane in its checkouts.
+  const withWorktree = [
+    { id: 'p', name: 'grove', path: '/src/p' },
+    { id: 'wt', name: 'grove · fix-auth', path: '/src/wt', worktreeOf: 'p' },
+    { id: 'q', name: 'other', path: '/src/q' },
+  ] as Project[]
+
+  it('keeps the panes of a repo\'s worktrees when the filter names its checkout', () => {
+    const many = [m('a', 'p'), m('b', 'wt'), m('c', 'q')]
+    expect(visibleMembers(many, { ...DEFAULT_GRID_VIEW, filter: 'p' }, withWorktree).map((x) => x.id)).toEqual(['a', 'b'])
+  })
+
+  it('keeps the same panes when the filter names the worktree', () => {
+    const many = [m('a', 'p'), m('b', 'wt'), m('c', 'q')]
+    expect(visibleMembers(many, { ...DEFAULT_GRID_VIEW, filter: 'wt' }, withWorktree).map((x) => x.id)).toEqual(['a', 'b'])
+  })
+
+  it('ignores a filter for a project that is not configured at all', () => {
+    expect(visibleMembers(members, { ...DEFAULT_GRID_VIEW, filter: 'zzz' }, withWorktree).map((x) => x.id)).toEqual(['a', 'b', 'c', 'd'])
+  })
 })
 
 describe('visibleMembers with a layout', () => {
   it('keeps only as many panes as the layout has cells', () => {
     const many = ['a', 'b', 'c', 'd', 'e'].map((id) => ({ id, projectId: 'p', lastStatus: 'running' }) as Session)
-    expect(visibleMembers(many, { ...DEFAULT_GRID_VIEW, layout: { cols: 2, rows: 2 } }).map((x) => x.id)).toEqual(['a', 'b', 'c', 'd'])
+    expect(visibleMembers(many, { ...DEFAULT_GRID_VIEW, layout: { cols: 2, rows: 2 } }, projects).map((x) => x.id)).toEqual(['a', 'b', 'c', 'd'])
   })
 })
 

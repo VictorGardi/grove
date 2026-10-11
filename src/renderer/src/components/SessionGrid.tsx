@@ -27,7 +27,7 @@ export function SessionGrid({ sessions, focusedId, view, onViewChange, onFocusPa
   overlayOpen: boolean // a modal or the palette is open: no terminal takes the keyboard
 }) {
   const { projects, features, toggleGridMember, openAlone, clearGrid } = useSlices()
-  const visible = visibleMembers(sessions, view)
+  const visible = visibleMembers(sessions, view, projects)
   const root = useRef<HTMLDivElement>(null)
   // the dimming slider sets the unfocused panes' opacity for this grid only
   useEffect(() => { root.current?.style.setProperty('--pane-dim', String(view.dim)) }, [view.dim])

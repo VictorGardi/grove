@@ -26,8 +26,24 @@ export function repoGroups(projects: Project[]): RepoGroup[] {
 // one of its checkouts. A worktree is not a row of its own — the repo is what the human
 // shows and hides, so a checkout cannot be singled out and quietly take its sessions away.
 export function repoRows(projects: Project[], sessions: Session[]): { project: Project; sessions: number }[] {
-  return repoGroups(projects).map(({ project, worktrees }) => {
-    const inRepo = new Set([project.id, ...worktrees.map((w) => w.id)])
-    return { project, sessions: sessions.filter((s) => inRepo.has(s.projectId)).length }
-  })
+  return repoGroups(projects).map(({ project }) => ({
+    project,
+    sessions: sessions.filter((s) => repoProjectIds(projects, project.id).has(s.projectId)).length,
+  }))
+}
+
+// The checkout a project belongs to: a worktree's parent, or the project itself. A parent that is
+// not registered, and an id no project has, both come back unchanged — which is what repoGroups
+// already does with such a worktree, so the two never disagree about where it sits.
+export function repoHead(projects: Project[], id: string): string {
+  const parent = projects.find((p) => p.id === id)?.worktreeOf
+  return parent && projects.some((p) => p.id === parent) ? parent : id
+}
+
+// Every checkout of one repo — the checkout and its worktrees — from any one of them. A repo is
+// what a board card, a palette entry and a grid tab count, so all three read the same set.
+export function repoProjectIds(projects: Project[], id: string): Set<string> {
+  const head = repoHead(projects, id)
+  const group = repoGroups(projects).find((g) => g.project.id === head)
+  return new Set(group ? [group.project.id, ...group.worktrees.map((w) => w.id)] : [id])
 }

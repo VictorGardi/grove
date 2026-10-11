@@ -6,13 +6,20 @@ import { shownStatus, type ShownStatus } from './sessionStatus'
 
 const byStart = (a: Session, b: Session) => a.startedAt.localeCompare(b.startedAt)
 
-export interface BoardCard { feature: Feature; parent: Feature | null }
+// Generic in the feature type so a caller handing over a subtype (featureUnion's UnionFeature)
+// gets its own type back, not the Feature it extends.
+export interface BoardCard<T extends Feature = Feature> { feature: T; parent: T | null }
 
 // One column per workflow stage; non-group features by current stage, done ones in the last column.
-export function boardColumns(stages: { id: string; label: string }[], features: Feature[]): { stage: { id: string; label: string }; cards: BoardCard[] }[] {
+// `repoIds` widens the parent lookup to a repo's checkouts: one card per (repo, slug) means a
+// feature only a worktree has is that checkout's, while its parent — a tracked folder, so the
+// checkout has it too — is the checkout's. Without it a parent is looked up in its own project only.
+export function boardColumns<T extends Feature>(stages: { id: string; label: string }[], features: T[], repoIds?: ReadonlySet<string>): { stage: { id: string; label: string }; cards: BoardCard<T>[] }[] {
   const last = stages[stages.length - 1]?.id
-  const parentOf = (f: Feature) =>
-    features.find((e) => e.projectId === f.projectId && e.slug === f.parent) ?? null
+  const parentOf = (f: T) =>
+    features.find((e) => e.projectId === f.projectId && e.slug === f.parent)
+      ?? features.find((e) => repoIds !== undefined && repoIds.has(e.projectId) && e.slug === f.parent)
+      ?? null
   return stages.map((stage) => ({
     stage,
     cards: features
@@ -21,9 +28,11 @@ export function boardColumns(stages: { id: string; label: string }[], features: 
   }))
 }
 
-// A feature's linked sessions, in its own project, by start time.
-export function linkedSessions(feature: Feature, sessions: Session[]): Session[] {
-  return sessions.filter((s) => s.projectId === feature.projectId && s.feature === feature.slug).sort(byStart)
+// A feature's linked sessions, in its own project, by start time. `projectIds` widens that to a
+// whole repo's checkouts, which is what the board wants: one card per repo, one dot per agent.
+export function linkedSessions(feature: Feature, sessions: Session[], projectIds?: ReadonlySet<string>): Session[] {
+  const inScope = (id: string) => (projectIds ? projectIds.has(id) : id === feature.projectId)
+  return sessions.filter((s) => inScope(s.projectId) && s.feature === feature.slug).sort(byStart)
 }
 
 // The feature a session is linked to, in the session's own project; null when unlinked or missing.

@@ -123,6 +123,33 @@ describe('boardKey', () => {
   })
 })
 
+describe('boardProject, boardKey, a repo\'s checkouts', () => {
+  // A checkout and a worktree of one repo: ⌘B is about the repo, which owns the features board.
+  const withWorktree = [project('p'), { ...project('wt'), name: 'P · fix-auth', worktreeOf: 'p' }]
+  const inWorktree = [...sessions, session('w', { projectId: 'wt' })]
+  const of = (u: Partial<UiState>, over = withWorktree, ss = inWorktree, ff = features) => boardProject(ui(u), over, ss, ff)
+  const key = (u: Partial<UiState>, over = withWorktree) => boardKey(ui(u), over, inWorktree, features)
+
+  it("opens the repo's checkout, not the worktree, from a session, a feature or a pane", () => {
+    expect(of({ focusedSessionId: 'w' })).toBe('p')
+    expect(of({ focusedFeature: { projectId: 'wt', slug: 'e' } }, withWorktree, inWorktree, [...features, feature('e', { projectId: 'wt' })])).toBe('p')
+    expect(of({ grid: { open: true, members: ['w'] }, focusedSessionId: 'w' })).toBe('p')
+  })
+
+  it('leaves a checkout alone', () => {
+    expect(of({ focusedSessionId: 's' })).toBe('p')
+  })
+
+  it('sends a worktree page to the repo\'s page rather than switching a board it has not got', () => {
+    expect(key({ focusedProject: 'wt', board: 'sessions' })).toEqual({ focusedProject: 'p', board: 'sessions' })
+    expect(key({ focusedProject: 'wt', board: 'features' })).toEqual({ focusedProject: 'p', board: 'sessions' })
+  })
+
+  it('still switches the board on a checkout\'s own page', () => {
+    expect(key({ focusedProject: 'p', board: 'features' })).toEqual({ board: 'sessions' })
+  })
+})
+
 describe('currentProjectId', () => {
   it('is the project of whatever is shown, or null', () => {
     expect(currentProjectId({ kind: 'none' })).toBeNull()

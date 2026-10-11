@@ -2,13 +2,13 @@
 feature: 2026-10-08-worktree-support
 phase: implementation
 status: draft
-version: 2
+version: 3
 created: 2026-10-10
-updated: 2026-10-10
+updated: 2026-10-11
 based_on:
   - 03-design.md@1
-  - 04-structure.md@1
-  - 05-plan.md@1
+  - 04-structure.md@4
+  - 05-plan.md@3
 forced: []
 ---
 
@@ -19,14 +19,19 @@ forced: []
 | Slice | Outcome | State |
 |---|---|---|
 | 1 | Tracer: a worktree session, nested under its repo | done, reviewed and approved by the human (2026-10-10) |
-| 2 | Lifecycle: conflicts, locking, pruning, removal | implemented (2026-10-10), awaiting the human's review |
-| 3 | One card per feature, with a divergence chip | not started; scope grew, see below |
-| 4 | Review comments stay unambiguous across checkouts | not started |
+| 2 | Lifecycle: conflicts, locking, pruning, removal | implemented (2026-10-10), reviewed by the human |
+| 3 | One card per feature, with a divergence chip | implemented (2026-10-11), awaiting the human's review |
+| 4 | A review message names the checkout each path came from | implemented (2026-10-11), awaiting the human's review |
 
 Slice 1's commits: `2d109c6` (the tracer), `ea532dc` and `cf24796` (two corrections the
 human's testing found — the missing rail colour bar, then the broken bar line). Approving a
 slice is the human's conversational checkpoint; `06-implementation.md` itself is approved
 once, at the end, with `grove-approve <slug> implementation`.
+
+Slices 3 and 4 were planned against `04-structure.md@4` rather than `@1`: three
+human-directed revisions landed after slice 2, and the human approved re-planning rather than
+implementing against the older reading. `05-plan.md` is v3, and its slice 3 section was written
+fresh against the code slice 2 left.
 
 ## Between the slices: a repo-wide audit (2026-10-10)
 
@@ -379,3 +384,138 @@ fix:**
 
 Only the pixels remain unverified: the confirm dialog's wording, the Projects tab's row, and the
 menu accelerator that reaches `session:remove`. Nothing left to do there but look.
+
+## Slice 3 — One card per feature, with a divergence chip
+
+### What landed
+
+The board, the palette and the grid now count a **repo**, not a checkout. One card per (repo,
+slug) with the checkout's copy canonical; a worktree copy at another stage is a chip on that card
+rather than a card of its own, and a worktree session's agent is one of the card's dots. A
+checkout's page lists every checkout's sessions and holds the repo's features board; a worktree's
+page shows its own sessions and nothing else. ⌘B from a worktree — a session, a feature, a pane or
+the page itself — lands on the repo's page, because that is where the features board lives. The
+palette lists a feature once and a project once, while ⌘T's new-session list stays per checkout.
+
+Core is untouched again: every feature record is still one per (checkout, slug), stamped with the
+checkout that discovered it, and the renderer collapses them. `ConfigFile.schemaVersion` stays 1
+and `StateFile` stays 8, so this slice still migrates nothing.
+
+### Decisions and deviations
+
+1. **`UnionFeature extends Feature`**, so `unionFeatures(features, groups): Feature[]` is the
+   structure's signature *and* the copies come back attached. The first draft returned a wrapper
+   `{ feature, copies, headId }`; that contradicts the structure, which types the return as
+   `Feature[]` and types `divergentCopies` as taking one argument. Widening `Feature` instead means
+   `boardColumns`, `linkedSessions` and `focusFeature` all take the unioned value unchanged — and
+   `Feature.projectId` is still the canonical copy's own checkout, so "artifacts open from the
+   canonical checkout" and "a worktree-only feature opens where its files are" both hold.
+   `boardColumns` became generic (`<T extends Feature>`) so a subtype survives the round trip.
+2. **`tree.ts` is changed, against the design's "untouched" list — read this one.** The design says
+   "`Feature.projectId` stays the discovering checkout's id, so `sessionLink`, `LinkPicker.tsx:12`,
+   `tree.ts:25,30` and `viewerFiles.ts:24-42` are untouched". Both functions keep their existing
+   behaviour *exactly* — `linkedSessions(f, sessions)` still matches `f.projectId` only, and
+   `linkedFeature` is untouched — and each gains an optional argument that widens the scope when a
+   caller asks for it. The alternative, rewriting `projectId` to the repo's head, would have
+   satisfied the letter and broken the substance: a feature only a worktree has would then open a
+   folder the checkout does not have. The design's claim is about identity not being rewritten,
+   and it is not rewritten.
+3. **`boardColumns`' parent lookup is opt-in, not a fallback.** A slug match alone was tried first
+   and broke an existing assertion (`tree.test.ts`: a feature whose parent lives in *another
+   project* must show no parent). So the cross-checkout match applies only when the caller passes
+   the repo's ids. It is needed because one card per (repo, slug) means a worktree-only feature is
+   that checkout's, while its parent — a tracked folder, so the checkout has it too — is the
+   checkout's. Both behaviours are asserted.
+4. **`repoHead` and `repoProjectIds` live in `repoGroups.ts`**, not in the new `featureUnion.ts`:
+   "which projects are in this repo" is the same question the sidebar, the rail, the options panel
+   and now the board, the palette and the grid all ask, and there is one answer. `unionFeatures`
+   takes `RepoGroup[]` as the structure specifies.
+5. **`repoHead` returns the id for an unregistered parent**, matching what `repoGroups` already
+   does with such a worktree (it stands as its own group). My first version returned the dangling
+   `worktreeOf` string, so the two disagreed about where an orphan worktree sits; a test caught it.
+6. **The chip is its own button, not a `Tag`.** `Tag` takes a palette index; a divergence chip is
+   not a colour slot, and passing `null` would have drawn a dot in an inherited colour. `.chip` is
+   added to `Board.module.css` (muted, underlined on hover) with no inline styles.
+   *Cosmetic, and the human's to overrule:* the chip reads `also edited in grove · fix-auth`, using
+   the checkout's display name from the design's two-way naming rule. The design's example text is
+   "also edited in `fix-auth`" — the branch alone. The full name is longer but says which repo, so
+   two `fix-auth` worktrees in two repos cannot be confused.
+7. **The board keys cards by `headId + '/' + slug`**, where slice 2 keyed by
+   `projectId + '/' + slug`. One card per repo means the slug alone would do today, but the key
+   should not start colliding the day the board is handed more than one repo.
+8. **`Board` is handed already-unioned features** (`ProjectPage` unions them), so the component
+   stays a drawer and its render test reads like the board it draws. `Board.onOpen` takes a plain
+   `Feature`, because a chip and a parent tag both open a specific copy rather than the card.
+9. **`ProjectPage` unions inside itself**, so the repo scoping and the union cannot drift apart.
+   The repo's ids select the features first and the union runs over those, which also means a
+   group with no features of its own contributes nothing.
+10. **`FeaturePage` gained a `projects` prop** to widen its linked sessions to the repo's — the
+    feature page is behind one card per (repo, slug), so a worktree's agent must appear on it. It
+    is widened via `repoHead` first, so a worktree-only feature still shows the whole repo's
+    sessions rather than just its own checkout's.
+11. **`GridView.filter` still holds a project id**, now always a repo's *checkout*. `visibleMembers`
+    grew a required `projects` argument rather than a default, so no call site can silently keep
+    the old single-checkout behaviour. `GridToolbar` builds one tab per `RepoGroup`, counting every
+    checkout's panes. `SessionGrid` already had `projects` from the store, so its change is one
+    argument.
+12. **Two files the structure does not list are touched, both one line each**: `gridView.ts` (the
+    filter has to widen, and that is the only place it is applied) and `App.tsx` (three call sites
+    plus `projects` into `FeaturePage`, and `BoardSwitch` hidden on a worktree page — the page has
+    one board, so offering a switch that does nothing would be a lie).
+13. **`SessionsBoard.tsx` needed no change**, though the structure lists it: a worktree session's
+    linked feature is found in its own project already, and `colorTags` already resolves a
+    worktree to its repo's colour (slice 1's correction). It is in the structure's list because
+    the repo's Sessions board now lists more rows, not because its code changes.
+14. **Render tests use `react-dom/server`.** The structure's verify line asks for "Board and
+    ProjectPage render tests" and slice 1's log recorded that the harness did not exist — there is
+    no jsdom and no testing-library, and `vitest.config.ts` runs in `node`. Adding jsdom would have
+    been a new dependency and a new decision. `react-dom` is *already* a dependency, and
+    `renderToStaticMarkup` needs no DOM: a board is a pure function of its props, so its markup is
+    the whole of what it draws. The leaf components are hook-free, so the test also walks the
+    tree to reach the chip's `onClick` and drives it — which is how "click the chip and confirm the
+    worktree's copy opens" is asserted without a browser.
+15. **Three test files, two of them new**: `featureUnion.test.ts` (NEW), `boardRender.test.ts`
+    (NEW) and `projectPageRender.test.ts` (NEW), plus additions to `repoGroups.test.ts`,
+    `tree.test.ts`, `navigation.test.ts`, `gridView.test.ts` and `paletteItems.test.ts`. One
+    existing fixture was completed: `paletteItems.test.ts` cast a partial object to `Feature`, and
+    `unionFeatures` reads the whole record. It was the fixture that was wrong, not the source.
+
+### Verification
+
+`npm test` (73 files, 794 tests — was 69/740), `npm run typecheck`, `npm run build`: all clean.
+Beyond the pure selectors, these are rendered and asserted:
+
+- A checkout and a worktree holding the same slug draw **one** card, not two; the card keeps the
+  checkout's stage while the worktree copy sits at another (Questions holds it with a count of 1,
+  Design holds none), and the worktree copy's agent is a dot on that one card
+  (`boardRender.test.ts`).
+- The chip reads `also edited in grove · fix-auth`; clicking it calls `onOpen` with the worktree's
+  copy (`projectId: 'wt'`), while clicking the card itself calls it with the checkout's. No chip
+  when the copies agree, and none for a feature only a worktree has (`boardRender.test.ts`).
+- A checkout's page renders one card for a feature both checkouts hold and lists both checkouts'
+  sessions; a worktree's page renders no card and no stage headings whatever `board` says, and
+  shows its own session and not the checkout's (`projectPageRender.test.ts`).
+- ⌘B resolves a worktree session, feature, pane and page to the repo's checkout; a checkout's own
+  page still switches boards (`navigation.test.ts`).
+- The palette lists a feature once with the checkout's copy in its detail, one project entry per
+  repo, and ⌘T still lists three kinds per checkout including the worktree's, creating there
+  (`paletteItems.test.ts`).
+- The grid's filter keeps a repo's worktree panes whether it names the checkout or the worktree,
+  and an unknown filter still reads as ALL (`gridView.test.ts`).
+
+**Not run here — the manual half of slice 3's verification**, which needs the app. With two
+checkouts of one repo configured:
+
+1. Edit a worktree's `02-research.md` frontmatter to a later stage: a chip appears on the repo's
+   card and the card's own stage does not move. Click the chip: the worktree's copy opens.
+2. The worktree session's dot is on the repo's card, not on a duplicate card.
+3. The palette lists each feature once and one project entry per repo.
+4. The repo's Sessions board lists the worktree's session too.
+5. The grid shows one filter tab for the repo, counting both checkouts' panes.
+6. ⌘T's new-session list stays per checkout.
+7. A worktree's project page shows sessions only and no board switch; ⌘B from it opens the repo's
+   page.
+
+## Open questions
+
+None.

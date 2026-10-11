@@ -120,7 +120,7 @@ export default function App() {
   const changeGridView = (next: GridView) => {
     setGridView(next)
     if (shown.kind !== 'grid') return
-    const visible = visibleMembers(shown.sessions, next)
+    const visible = visibleMembers(shown.sessions, next, projects)
     if (visible.length > 0 && !visible.some((x) => x.id === shown.focused.id)) setFocused(visible[0].id)
   }
   const header = crumbs(shown, projects, features.items).map((c) => ({ label: c.label, onClick: c.to && (() => go(c.to!)) }))
@@ -145,7 +145,7 @@ export default function App() {
           <>
             <ContentHeader crumbs={header}
               after={context ? <ContextPopover view={context} /> : undefined}
-              right={shown.kind === 'project' ? <BoardSwitch board={ui.board} onChange={setBoard} />
+              right={shown.kind === 'project' && !shown.project.worktreeOf ? <BoardSwitch board={ui.board} onChange={setBoard} />
                 : shown.kind === 'session' ? (
                   <div className={s.headerActions}>
                     <Button variant="ghost" size="sm" aria-pressed={diffOpen(shown.session.id)}
@@ -159,7 +159,7 @@ export default function App() {
             ) : shown.kind === 'feature' ? (
               <FeaturePage feature={shown.feature}
                 parent={features.items.find((f) => f.projectId === shown.feature.projectId && f.slug === shown.feature.parent) ?? null}
-                children={childrenOf(shown.feature, features.items)} sessions={sessions}
+                children={childrenOf(shown.feature, features.items)} sessions={sessions} projects={projects}
                 onFocusSession={setFocused} onOpenFeature={openFeature}
                 onOpenArtifact={(name) => {
                   const dir = featureDir(shown.feature, projects)

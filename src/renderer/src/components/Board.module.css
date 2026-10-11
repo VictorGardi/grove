@@ -82,3 +82,18 @@
   display: flex;
   gap: var(--sp-1);
 }
+
+.chip {
+  padding: 0;
+  border: 0;
+  background: none;
+  font: inherit;
+  font-size: var(--fs-xs);
+  color: var(--text-3);
+  text-align: left;
+  cursor: pointer;
+}
+
+.chip:hover {
+  text-decoration: underline;
+}

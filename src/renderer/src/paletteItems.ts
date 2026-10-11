@@ -1,7 +1,9 @@
 import type { MenuAction } from '@shared/ipc'
 import type { Feature, GridState, Project, Session, SessionKind } from '@shared/types'
 import { fuzzy } from './fuzzy'
+import { unionFeatures } from './featureUnion'
 import { featureStage } from './featureLabels'
+import { repoGroups } from './repoGroups'
 import { shownStatus } from './sessionStatus'
 
 export interface PaletteItem {
@@ -77,19 +79,22 @@ export function paletteItems(
       run: () => actions.focusSession(s.id),
     }
   })
-  const features: PaletteItem[] = data.features.map((f) => ({
+  // One entry per feature per repo, and one per repo (v3/v4): 20 features across two checkouts
+  // of one repo are 20 entries, not 40 with half the labels duplicated.
+  const groups = repoGroups(data.projects)
+  const features: PaletteItem[] = unionFeatures(data.features, groups).map((f) => ({
     id: `feature:${f.projectId}/${f.slug}`,
     kind: 'feature',
     label: f.title,
     detail: `${projectName(f.projectId)} · ${featureStage(f)}`,
     run: () => actions.focusFeature({ projectId: f.projectId, slug: f.slug }),
   }))
-  const projects: PaletteItem[] = data.projects.map((p) => ({
-    id: `project:${p.id}`,
+  const projects: PaletteItem[] = groups.map((g) => ({
+    id: `project:${g.project.id}`,
     kind: 'project',
-    label: p.name,
-    detail: p.path,
-    run: () => actions.openProject(p.id),
+    label: g.project.name,
+    detail: g.project.path,
+    run: () => actions.openProject(g.project.id),
   }))
   const commands: PaletteItem[] = PALETTE_COMMANDS.map((c) => ({
     id: `command:${c.id}`,

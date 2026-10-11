@@ -1,4 +1,5 @@
 import { GRID_MAX, type GridState, type Project, type Session, type UiState } from '@shared/types'
+import { repoProjectIds } from './repoGroups'
 
 // The grid takes over the content area: it is on, has members, and the focused session is one of them.
 export function gridShown(ui: Pick<UiState, 'grid' | 'focusedSessionId'>): boolean {
@@ -41,11 +42,14 @@ export interface GridView { filter: string | null; layout: GridLayout | null; hi
 export const DEFAULT_GRID_VIEW: GridView = { filter: null, layout: null, hideEnded: false, dim: 0.65 }
 export const DIM_RANGE = { min: 0.3, max: 1 }
 
-// The panes the grid lays out: the project filter (ignored when no member is in that project), then hide-ended,
-// then as many as a chosen layout has cells.
-export function visibleMembers(members: Session[], view: GridView): Session[] {
-  const filter = view.filter !== null && members.some((m) => m.projectId === view.filter) ? view.filter : null
-  const shown = members.filter((m) => (filter === null || m.projectId === filter) && !(view.hideEnded && m.lastStatus === 'gone'))
+// The panes the grid lays out: the project filter (ignored when no member is in that project or
+// any of its worktrees), then hide-ended, then as many as a chosen layout has cells. The toolbar
+// offers one tab per repo, so the filter is a repo's checkout and keeps every checkout's panes.
+export function visibleMembers(members: Session[], view: GridView, projects: Project[]): Session[] {
+  // A filter naming a repo with no member in any of its checkouts shows everything, as before.
+  const scope = view.filter !== null && members.some((m) => repoProjectIds(projects, view.filter!).has(m.projectId))
+    ? repoProjectIds(projects, view.filter) : null
+  const shown = members.filter((m) => (scope === null || scope.has(m.projectId)) && !(view.hideEnded && m.lastStatus === 'gone'))
   return view.layout ? shown.slice(0, view.layout.cols * view.layout.rows) : shown
 }
 

@@ -50,6 +50,18 @@ describe('boardColumns', () => {
     ])
     expect(cols[0].cards.map((k) => [k.feature.slug, k.parent?.title ?? null])).toEqual([['a', 'Parent E'], ['b', null], ['c', null]])
   })
+
+  it('still attaches a parent whose copy sits in another checkout of the same repo', () => {
+    // One card per repo and slug: a worktree-only feature is its own project's, so its parent —
+    // which the checkout does hold — would otherwise lose its tag.
+    const features = [
+      feature('e', { title: 'Parent E', group: true }),
+      feature('a', { parent: 'e', projectId: 'wt' }),
+    ]
+    const titles = (cols: ReturnType<typeof boardColumns>) => cols[0].cards.map((k) => k.parent?.title ?? null)
+    expect(titles(boardColumns(stages, features, new Set(['p', 'wt'])))).toEqual(['Parent E'])
+    expect(titles(boardColumns(stages, features))).toEqual([null]) // without the repo, 'wt' has no parent 'e'
+  })
 })
 
 describe('sessionColumns', () => {
@@ -79,5 +91,21 @@ describe('linkedSessions', () => {
       session('e', { feature: 'a' }),
     ]
     expect(linkedSessions(feature('a'), list).map((s) => s.id)).toEqual(['e', 'b'])
+  })
+
+  it('counts a whole repo\'s checkouts when the caller says which', () => {
+    // The board shows one card per repo, so a worktree session is a dot on the repo's card.
+    const list = [
+      session('e', { feature: 'a' }),
+      session('w', { feature: 'a', projectId: 'wt' }),
+      session('c', { feature: 'a', projectId: 'q' }),
+    ]
+    expect(linkedSessions(feature('a'), list, new Set(['p', 'wt'])).map((s) => s.id)).toEqual(['e', 'w'])
+  })
+
+  it('still matches the feature\'s own project when the caller names none', () => {
+    const list = [session('e', { feature: 'a' }), session('w', { feature: 'a', projectId: 'wt' })]
+    expect(linkedSessions(feature('a'), list).map((s) => s.id)).toEqual(['e'])
+    expect(linkedSessions(feature('a', { projectId: 'wt' }), list).map((s) => s.id)).toEqual(['w'])
   })
 })

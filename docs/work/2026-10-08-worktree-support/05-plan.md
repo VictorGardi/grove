@@ -2,12 +2,12 @@
 feature: 2026-10-08-worktree-support
 phase: plan
 status: approved
-version: 2
+version: 3
 created: 2026-10-10
-updated: 2026-10-10
+updated: 2026-10-11
 based_on:
   - 03-design.md@1
-  - 04-structure.md@1
+  - 04-structure.md@4
 forced: []
 ---
 
@@ -15,6 +15,12 @@ forced: []
 
 Self-approved per slice by grove-implement: mechanical checks passed, not
 human-reviewed.
+
+> **Re-planned 2026-10-11.** Slices 1 and 2 were planned against `04-structure.md@1`.
+> The human approved re-planning the remaining slices against `04-structure.md@4`, which
+> grew slice 3 (the palette's features, the palette's and the grid's project entries) and
+> rewrote slice 4. The slice 3 section below is written fresh against the code as slice 2
+> left it.
 
 ## Slice 1 — Tracer: a worktree session, nested under its repo
 
@@ -82,6 +88,89 @@ git — see `06-implementation.md`. Both are pinned by a test that fails without
 - `start` unlocks a dead worktree before pruning it. `git worktree prune` skips locked
   worktrees, and a worktree deleted while a session was live in it is locked, so its admin entry
   survived as a ghost that only `git worktree unlock` by hand could clear.
+
+## Slice 3 — One card per feature, with a divergence chip
+
+Planned against structure v4 (slice 3 as it now reads, including `paletteItems.ts` and
+`GridToolbar.tsx`) and the code as slice 2 left it. `repoGroups.ts` already exists from slice 1
+and is what every step below builds grouping on.
+
+- [x] Failing test in `src/renderer/src/repoGroups.test.ts` for `repoHead(projects, id)` (the
+  checkout id of the repo holding `id`; `id` itself for a checkout, for a worktree whose parent
+  is not registered, and for an unknown id) and `repoProjectIds(projects, id)` (that checkout plus
+  its worktrees; `{id}` alone for an unknown id).
+- [x] `src/renderer/src/repoGroups.ts`: `repoHead` and `repoProjectIds`, both derived from
+  `repoGroups` so there is one definition of "this repo's checkouts".
+- [x] Failing test in `src/renderer/src/featureUnion.test.ts` (NEW) for `unionFeatures(features,
+  groups)`: one entry per (repo group, slug) — the same slug in two checkouts of one repo gives
+  one entry, and the same slug in two different repos gives two; `feature` is the checkout's copy
+  when it has one (its `projectId` stays that checkout's, so its artifacts open there) and the
+  first copy in config order when it has none; `headId` is the group's checkout; `copies` carries
+  every checkout's copy with that checkout's id and name; `flags` are unioned by id across copies.
+- [x] `src/renderer/src/featureUnion.ts` (NEW): `Checkout`, `UnionFeature`,
+  `unionFeatures(features, groups): UnionFeature[]` and `divergentCopies(feature): Checkout[]`
+  (the copies other than the canonical whose `currentStage` differs from it; `[]` when every copy
+  agrees or there is one copy).
+- [x] Failing test in `src/renderer/src/tree.test.ts`: `linkedSessions(feature, sessions, ids)`
+  takes the project ids the linked sessions may live in and keeps the two-argument call equal to
+  matching the feature's own project only; `boardColumns` still finds a parent by `projectId`
+  first and falls back to the same slug elsewhere in the list, so a feature whose copy and whose
+  parent's copy sit in different checkouts of one repo still shows its parent tag.
+- [x] `src/renderer/src/tree.ts`: the third `linkedSessions` argument and the `boardColumns`
+  parent fallback described above.
+- [x] Failing test in `src/renderer/src/boardRender.test.ts` (NEW): rendering `Board` with
+  `renderToStaticMarkup` (`react-dom/server`, already a dependency — no DOM, no jsdom) over a
+  checkout and a worktree of one repo holding the same slug — the markup holds one card title for
+  that slug, not two; the card's own stage is the checkout's; a worktree copy at a later stage
+  renders a chip naming that checkout and the card does not; a worktree copy at the same stage
+  renders no chip; a session linked to the worktree's copy renders one dot on the one card.
+- [x] `src/renderer/src/components/Board.tsx`: `unionFeatures(features, repoGroups(projects))` over
+  the features it is handed, one card per entry, `linkedSessions` across the entry's `headId`
+  repo, and a chip per divergent copy that calls `onOpen(copy.feature)` and stops the click
+  reaching the card.
+- [x] `src/renderer/src/components/Board.module.css`: one `.chip` class beside `.tags`; no inline
+  styles (`noInlineStyles.test.ts` checks every `.tsx`).
+- [x] Failing test in `src/renderer/src/projectPageRender.test.ts` (NEW): rendering `ProjectPage`
+  with `board: 'features'` — the checkout's page renders one card per (repo, slug) and its
+  Sessions board lists the worktree's session; the same component with `project` set to the
+  worktree renders no card for the slug and no stage headings whatever `board` says.
+- [x] `src/renderer/src/components/ProjectPage.tsx`: features and sessions scoped by
+  `repoProjectIds(projects, project.id)` — except on a worktree page, which is that one checkout's
+  sessions only — and `board` read as `'sessions'` when `project.worktreeOf` is set.
+- [x] Failing test in `src/renderer/src/tree.test.ts` and `src/renderer/src/navigation.test.ts`
+  for ⌘B from a worktree: `boardProject` returns the repo's checkout, not the worktree, for a
+  session, a feature and a grid pane in a worktree; `boardKey` on a worktree project page returns
+  `openBoard(<repo id>)` rather than a board switch; on a checkout's page it still switches.
+- [x] `src/renderer/src/navigation.ts`: `boardProject` maps through `repoHead`, `boardKey`
+  sends a worktree page to its repo's page, and `focusTarget` passes `projects` to
+  `visibleMembers`.
+- [x] Failing test in `src/renderer/src/paletteItems.test.ts`: with a checkout and a worktree of
+  one repo both holding one feature, `paletteItems` lists that feature once and one project entry
+  (the checkout's); with two repos it lists two project entries; `newSessionItems` still lists one
+  entry per project including every worktree.
+- [x] `src/renderer/src/paletteItems.ts`: features from `unionFeatures` (running the same
+  `focusFeature` on the canonical copy), project entries from `repoGroups` heads only,
+  `newSessionItems` untouched.
+- [x] Failing test in `src/renderer/src/gridView.test.ts`: `visibleMembers(members, view,
+  projects)` with a filter naming a checkout keeps the panes of that checkout's worktrees, a
+  filter naming a worktree keeps that repo's panes, and an unknown filter still reads as ALL;
+  update the existing calls for the third argument.
+- [x] `src/renderer/src/gridView.ts`: `visibleMembers` takes `projects` and filters by
+  `repoProjectIds` when `view.filter` is set.
+- [x] `src/renderer/src/components/SessionGrid.tsx` and `src/renderer/src/App.tsx`: pass
+  `projects` to `visibleMembers`.
+- [x] `src/renderer/src/components/GridToolbar.tsx`: tabs from `repoGroups`, one per checkout
+  with the name of the checkout, counting its worktrees' panes.
+- [x] `src/renderer/src/components/FeaturePage.tsx`: the linked sessions are the feature's repo's
+  (via `repoHead` then `repoProjectIds`), from a new `projects` prop.
+- [x] `src/renderer/src/App.tsx`: pass `projects` to `FeaturePage`, and show `BoardSwitch` only
+  when the shown project is not a worktree.
+- [x] Run `npm test` (covers `featureUnion.test`, `repoGroups.test`, `tree.test`,
+  `boardRender.test`, `projectPageRender.test`, `navigation.test`, `paletteItems.test`,
+  `gridView.test`, `noInlineStyles.test`).
+- [x] Run `npm run typecheck`.
+- [x] Run `npm run build`.
+- [x] Log the slice in `docs/work/2026-10-08-worktree-support/06-implementation.md`.
 
 ## Open questions
 
