@@ -1,8 +1,11 @@
 ---
+feature: 2026-10-08-agent-sandboxing
 phase: research
 status: approved
-approved_at: 2026-10-08
-version: 2
+approved_at: 2026-10-10
+version: 5
+created: 2026-10-08
+updated: 2026-10-10
 based_on: ["01-questions.md@1"]
 repo_heads: ["09cbcdccd6880a4635c5f0f77aa3acf640c7cfb6"]
 ---
@@ -363,6 +366,219 @@ flowchart LR
 - Third-party mechanism capabilities (startup latency, network policy surface, mount
   semantics of any specific tool) are outside this codebase and were not verified in this
   pass.
+
+## Spikes
+
+### OpenCode's shared service, outside a container (2026-10-10)
+
+**Question.** Two of D6's claims were reasoned, not observed: that a second
+service evicts the incumbent registered in `service.json`, and that the service
+is unreachable from a container. The first is pure OpenCode behaviour and needs
+no container runtime; this spike settles it.
+
+**Method.** `opencode serve --service` (2.0.20) run under a scratch
+`XDG_STATE_HOME` and `XDG_CONFIG_HOME`, with the port pinned in
+`<scratch>/config/opencode/service.json` so the live service was never contended.
+The real `~/.local/state/opencode/service.json` mtime was unchanged
+(`Oct 8 20:47:52`) and live pid 1075 was alive before and after.
+
+**Answer — all four confirmed, one of them the opposite of expected.**
+
+- `XDG_STATE_HOME` **is** honoured: the registration went to the scratch path
+  and the real file was never written. This is what made the spike safe.
+- The service binds `127.0.0.1` only: `TCP 127.0.0.1:49559 (LISTEN)`. A
+  container's `127.0.0.1` is its own, so the default is unreachable from inside.
+- The bind address **is configurable**: `{"port":N,"hostname":"0.0.0.0"}` in
+  `<XDG_CONFIG_HOME>/opencode/service.json` gave
+  `server listening on http://0.0.0.0:49558`, socket `*:49558`, and a
+  registration of `url=http://0.0.0.0:49558`. The port is configurable the same
+  way, and the service writes a generated `password` back into that config file.
+- **A second registration evicts the incumbent.** A (pid 2677, port 49561) and
+  B (pid 2703, port 49562) shared one `XDG_STATE_HOME`. Within 3 s A was dead
+  with no listening socket, and the registration read
+  `pid=2703 id=567b034c url=http://127.0.0.1:49562`. A's log held no shutdown
+  line — a silent takeover.
+
+**Evidence.** Registration fields are `{id, version, url, pid, password}`,
+163 bytes, mode 0600. Config written by the spike, after the service started:
+`{"port": 49557, "password": "…"}` — the service adds its own password there.
+A's log: `server listening on http://127.0.0.1:49561` and nothing more.
+
+**Recommendation.** D6's reasoning was right and is now measured: a sandboxed
+OpenCode that starts its own service would evict the host's, taking status,
+waiting, notifications and write-driven linking down for every OpenCode session
+on the host. Two things this changes for the design:
+
+- The eviction risk is **configurable away** rather than inherent. A host
+  service bound to a routable address, plus a container pointed at it, removes
+  the whole failure mode — no second service, no eviction. That is the path to
+  OpenCode support later, and it needs `container`'s host-routing behaviour
+  verified first (still unknown).
+- grove must not let a sandboxed OpenCode reach `~/.local/state/opencode`
+  read-write while D6 stands.
+
+**Not covered.** Whether the credentials OpenCode needs survive the image, and
+whether the agent behaves against a different filesystem. Those are covered by
+the next spike.
+
+### Apple's `container`: routing to a host, and cost (2026-10-10)
+
+**Question.** D6's unblock needed a host service on a routable address. Three
+things decide whether that is real: can a container reach a host port at all,
+does authentication work across that boundary, and what does the runtime cost.
+
+**Method.** `container` CLI 1.5.0, system service already running. A scratch
+`opencode serve --service` pinned to `0.0.0.0:49558/9` under a scratch
+`XDG_STATE_HOME`; an `alpine` container alongside. Live service (pid 1075) and
+the real `service.json` (mtime `Oct 8 20:47:52`) verified untouched before and
+after; no scratch container or service left running.
+
+**Answer — the escape hatch is real, and it is cheap.**
+
+- `container system status` → `running`, version 1.5.0. Subcommands are
+  `run/create/exec/start/stop/rm`, `image`, `machine`, `network`, `volume`,
+  `builder` — not Docker's `images`/`runtime`.
+- **Cold start 14.4 s**, which included fetching a 66 MB init image. **Warm
+  start 0.68 s** (`container run --rm alpine true`). The sub-second figure in
+  the questions phase holds once the init image is local.
+- **Default egress works, with DNS.** `wget https://api.anthropic.com/v1/models`
+  returned `HTTP/1.1 401 Unauthorized` — the correct answer for an
+  unauthenticated probe. `nslookup` resolved. So D5's "no egress restriction"
+  is accurate, and the network is not the fragile part.
+- **A container cannot reach a host's loopback.** Container gateway is
+  `192.168.64.1`; `nc` to the live service on `49374` through it returned
+  unreachable, as expected for a `127.0.0.1`-bound service.
+- **A container CAN reach a host service bound to `0.0.0.0`.** With the scratch
+  service on `0.0.0.0:49559`, from inside the container:
+  `nc` to `192.168.64.1:49559` → **REACHED**; unauthenticated `GET /api/info` →
+  `401`; with `Authorization: Basic opencode:<password>` → **`200 OK`** and the
+  real body:
+  `{"version":"2.0.20","pid":4799,"urls":["http://192.168.0.145:49559","http://192.168.64.1:49559"],…}`
+
+**Evidence.** The service advertises every URL it can be reached on, and the
+container's own gateway `192.168.64.1` is one of them. The `401`→`200` pair
+isolates authentication as the only barrier, and grove already speaks exactly
+that (`src/core/opencode/client.ts:152-153` reads `url`/`password`, Basic
+`opencode:<password>`).
+
+**Recommendation.** D6's exclusion no longer holds, and should be dropped in
+favour of **OpenCode supported in the same slice as Claude**. The chain is
+now measured end to end: `service.json` says the service is reachable at
+`192.168.64.1`; a container can reach that address; the service answers with
+`200` under the credentials grove already has. A sandboxed TUI can join the
+host's shared service instead of starting its own, which is what removes the
+eviction hazard. The requirement becomes: **bind the host's shared service to a
+routable address**, and make the container's `service.json` read-only so it can
+never register over the host's. Both are grove-side changes, neither needs the
+agent to change.
+
+**Still open.** Whether `container` supports deny-all egress plus a host proxy —
+the D5 allow-list — which is the same "do we have an enforcement primitive"
+question, now against a measured runtime rather than an assumed one. And
+whether the agent's credentials survive the image, which is slice 1's job.
+
+### Binding to the container bridge instead of `0.0.0.0` (2026-10-10)
+
+**Question.** D6 as first written had grove write `{"hostname":"0.0.0.0"}`,
+which binds the host's shared OpenCode service on **every** interface —
+including the LAN. Is there a narrower address that still serves containers?
+
+**Method.** The same scratch-service technique, with `hostname` set to the
+container bridge address instead of `0.0.0.0`; an `alpine` container alongside;
+the live service (pid 1075) and real `service.json` mtime verified untouched
+before and after.
+
+**Answer — yes, and it is strictly better.** The container's gateway (the host
+side of the bridge) is `192.168.64.1`; the host's LAN address is `192.168.0.145`.
+With `{"hostname":"192.168.64.1"}`:
+
+- the service bound `TCP 192.168.64.1:49561 (LISTEN)` — one interface, not `*`;
+- the container **reached** it at that address (`REACHED`);
+- the host could **not** reach it via the LAN address
+  (`192.168.0.145:49561` → `unreachable`);
+- authenticated `GET /api/info` from the container returned
+  `{"version":"2.0.20","pid":7477,"urls":["http://192.168.64.1:49561"],…}`.
+
+**Evidence.** The earlier `0.0.0.0` run advertised `urls` containing **both**
+`192.168.0.145` and `192.168.64.1` — the service itself listed a LAN-reachable
+address. The bridge-scoped run advertised only `192.168.64.1`.
+
+**Recommendation.** Bind the bridge address, never `0.0.0.0`. The container
+subnet is a private VM interface that is not routable from the LAN, so the
+service's exposure stops at "containers on this Mac" instead of "everyone on
+this Wi-Fi network, subject to a password". The bridge address is discovered, not
+hardcoded, and the port is the service's own. If discovery fails, grove must
+refuse (`no-sandbox`) rather than fall back to `0.0.0.0`.
+
+### A sandboxed agent working in a git worktree (2026-10-10)
+
+**Question.** The hardest realistic case: a feature needing changes in two
+repos, each worked in a worktree, both inside one sandbox. What breaks that the
+worktree-only case does not?
+
+**Method.** A throwaway worktree of this repo (`git worktree add --detach`), an
+`alpine` + `git` image built locally, and containers with explicit mounts at
+host-identical paths. All teardown verified: one worktree, no spike branches, no
+containers, live service (pid 1075) untouched.
+
+**Answer — three findings, one of them a security problem.**
+
+- **A worktree's `.git` is a *file*, not a directory.** Here it read
+  `gitdir: /Users/victor/git/grove/.git/worktrees/wt-probe`. Mounting the
+  worktree alone gives `fatal: not a git repository: (null)` — the pointer names
+  a path outside the mount. Mounting the worktree **and** the main repo's
+  common dir, both at host-identical paths, works completely: `rev-parse
+  --show-toplevel`, `--git-common-dir`, and a real `git commit` that the **host
+  then sees** (`PROBE.txt` present, worktree HEAD advanced). So a worktree
+  sandbox needs two mounts per repo, not one.
+- **`--read-only-path` works nested inside a read-write mount.** With
+  `--volume <common>:<common>` plus `--read-only-path <common>/hooks` and
+  `/config`: writes to `refs/` succeeded, `git commit` succeeded, writes to
+  `hooks/` and `config/` failed. The mechanism grove wants for the D6 carve-out
+  is available.
+- **Three follow-ups to that, measured the same day** — the two behaviours
+  ADR 0038 listed as unmeasured, plus the fix it proposed:
+  - **An absent carve-out path is tolerated.** `--read-only-path <nonexistent>`
+    does not fail the run (exit 0, the container started and wrote), and a real
+    carve-out in the same run still applied. This matters because
+    `~/.gitconfig` may not exist on a given machine.
+  - **Two nested carve-outs in one read-write volume work together.** With both
+    `hooks/` and `config/` read-only, `refs/` stayed writable, `hooks/`
+    rejected with `Read-only file system`, and `git checkout` + `git commit`
+    inside a worktree still succeeded (`--show-toplevel` correct, commit landed).
+  - **`core.hooksPath` neutralisation via `GIT_CONFIG_COUNT` works.** Control
+    first: a `post-checkout` hook reached through `core.hooksPath` did run in the
+    container, writing `ran uid=0`. With `GIT_CONFIG_COUNT=1`,
+    `GIT_CONFIG_KEY_0=core.hooksPath`, `GIT_CONFIG_VALUE_0=/dev/null` the same
+    checkout did **not** run it. The three `GIT_CONFIG_*` variables are visible
+    in the container's `env`, so the agent can read them but not use them to
+    re-enable hooks — they only add config. This converts the measured
+    hook-execution property into a decision, as ADR 0038 proposed.
+- **That carve-out does not stop hook execution.** A `post-checkout` hook
+  already on the host **ran inside the sandbox** — with `hooks/` mounted
+  read-only, `uid=0` — and wrote into the mounted worktree. Read-only stops the
+  agent *editing* hooks; it cannot stop git *executing* one that is already
+  there. This is the same finding Claude Code reaches, and it fixes it the same
+  way: allow writes to the shared `.git` for refs and index, deny `hooks/` and
+  `config` writes, and **know that an existing hostile hook still runs**.
+
+**Evidence.** `git checkout -b` inside the container ran a host-authored
+`post-checkout` that wrote a marker file into the worktree; the marker appeared
+on the host. The control (no carve-out) behaved identically, so the carve-out is
+what one would expect — and what is *not* sufficient.
+
+**Recommendation.** A worktree sandbox is buildable: mount `<worktree>` and
+`<main>/.git` at identical paths, mark `.git/hooks` and `.git/config` read-only,
+and treat "host hooks execute inside the sandbox" as a **known property of this
+feature** rather than a solved problem. This does not block the current
+single-root design; it constrains any future multi-root or worktree scope, and it
+is one more reason grove's own `gitconfig` is mounted but git *config* inside a
+sandbox must never be writable.
+
+**Also measured, incidentally.** `container build` needs the file named
+`Dockerfile` (or `-f`); the first build of a two-line image took **28 s**, which
+is the first-sandboxed-session cost the design quotes, not the 14 s of a bare
+`container run`.
 
 ## Open questions
 

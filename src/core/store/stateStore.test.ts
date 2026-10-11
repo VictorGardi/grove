@@ -10,16 +10,16 @@ const tmpFile = () => path.join(fs.mkdtempSync(path.join(os.tmpdir(), 'grove-'))
 
 describe('stateStore', () => {
   it('returns an empty state for a missing file', () => {
-    expect(loadState(tmpFile())).toEqual({ schemaVersion: 8, sessions: [], ui: DEFAULT_UI })
+    expect(loadState(tmpFile())).toEqual({ schemaVersion: 9, sessions: [], ui: DEFAULT_UI })
   })
 
-  it.each([['bad JSON', '{'], ['unknown schemaVersion', '{"schemaVersion":9}']])(
+  it.each([['bad JSON', '{'], ['unknown schemaVersion', '{"schemaVersion":10}']])(
     'moves a file with %s aside',
     (_, content) => {
       const file = tmpFile()
       fs.writeFileSync(file, content)
       const onBad = vi.fn()
-      expect(loadState(file, onBad)).toEqual({ schemaVersion: 8, sessions: [], ui: DEFAULT_UI })
+      expect(loadState(file, onBad)).toEqual({ schemaVersion: 9, sessions: [], ui: DEFAULT_UI })
       expect(onBad).toHaveBeenCalledTimes(1)
       expect(fs.readdirSync(path.dirname(file))).toEqual([expect.stringMatching(/^state\.json\.bad-\d+$/)])
     }
@@ -28,7 +28,7 @@ describe('stateStore', () => {
   it('round-trips', () => {
     const file = tmpFile()
     const s: StateFile = {
-      schemaVersion: 8,
+      schemaVersion: 9,
       sessions: [newSession({ projectId: 'p', kind: 'terminal', now: new Date(), id: 'a', agentSessionId: null })],
       ui: { sidebarWidth: 300, sidebarCollapsed: true, focusedSessionId: null, focusedFeature: null, focusedProject: 'p', sidebarTab: 'projects', board: 'sessions', collapsed: ['p:x'],
         viewer: { kind: 'file', projectId: 'p', path: 'docs/work/f/03-design.html', hash: 'q1', fromDiff: 'a' }, viewerWidth: 600, viewerExpanded: true, grid: { open: true, members: ['a'] }, hiddenProjects: [], groupBy: 'project', sessionSort: 'none' },
@@ -40,9 +40,9 @@ describe('stateStore', () => {
   it('drops grid members of unknown sessions, and closes an emptied grid', () => {
     const file = tmpFile()
     const known = newSession({ projectId: 'p', kind: 'terminal', now: new Date(), id: 'a', agentSessionId: null })
-    saveState(file, { schemaVersion: 8, sessions: [known], ui: { ...DEFAULT_UI, grid: { open: true, members: ['a', 'gone'] } } })
+    saveState(file, { schemaVersion: 9, sessions: [known], ui: { ...DEFAULT_UI, grid: { open: true, members: ['a', 'gone'] } } })
     expect(loadState(file).ui.grid).toEqual({ open: true, members: ['a'] })
-    saveState(file, { schemaVersion: 8, sessions: [], ui: { ...DEFAULT_UI, grid: { open: true, members: ['gone'] } } })
+    saveState(file, { schemaVersion: 9, sessions: [], ui: { ...DEFAULT_UI, grid: { open: true, members: ['gone'] } } })
     expect(loadState(file).ui.grid).toEqual({ open: false, members: [] })
   })
 
@@ -53,7 +53,7 @@ describe('stateStore', () => {
     expect(loadState(file).ui.grid).toEqual({ open: false, members: [] })
   })
 
-  it('migrates a v1 file: opencodeSessionId becomes agentSessionId, and it saves as v8', () => {
+  it('migrates a v1 file: opencodeSessionId becomes agentSessionId, and it saves as v9', () => {
     const file = tmpFile()
     const v1 = (id: string, kind: string, opencodeSessionId: string | null) => {
       const { agentSessionId: _a, ...rest } = newSession({ projectId: 'p', kind: 'terminal', now: new Date(), id, agentSessionId: null })
@@ -61,11 +61,11 @@ describe('stateStore', () => {
     }
     fs.writeFileSync(file, JSON.stringify({ schemaVersion: 1, sessions: [v1('a', 'opencode', 'ses_x'), v1('b', 'terminal', null)], ui: DEFAULT_UI }))
     const s = loadState(file)
-    expect(s.schemaVersion).toBe(8)
+    expect(s.schemaVersion).toBe(9)
     expect(s.sessions.map((x) => x.agentSessionId)).toEqual(['ses_x', null])
     expect(s.sessions.every((x) => !('opencodeSessionId' in x))).toBe(true)
     saveState(file, s)
-    expect(JSON.parse(fs.readFileSync(file, 'utf8')).schemaVersion).toBe(8)
+    expect(JSON.parse(fs.readFileSync(file, 'utf8')).schemaVersion).toBe(9)
   })
 
   it('migrates a v3 file: every session gets cwd null', () => {
@@ -73,7 +73,7 @@ describe('stateStore', () => {
     const { cwd: _c, ...old } = newSession({ projectId: 'p', kind: 'terminal', now: new Date(), id: 'a', agentSessionId: null })
     fs.writeFileSync(file, JSON.stringify({ schemaVersion: 3, sessions: [old], ui: DEFAULT_UI }))
     const s = loadState(file)
-    expect(s.schemaVersion).toBe(8)
+    expect(s.schemaVersion).toBe(9)
     expect(s.sessions[0].cwd).toBeNull()
   })
 
@@ -82,7 +82,7 @@ describe('stateStore', () => {
     const { lastContext: _l, ...old } = newSession({ projectId: 'p', kind: 'claude', now: new Date(), id: 'a', agentSessionId: 'u' })
     fs.writeFileSync(file, JSON.stringify({ schemaVersion: 4, sessions: [old], ui: DEFAULT_UI }))
     const s = loadState(file)
-    expect(s.schemaVersion).toBe(8)
+    expect(s.schemaVersion).toBe(9)
     expect(s.sessions[0].lastContext).toBeNull()
   })
 
@@ -91,7 +91,7 @@ describe('stateStore', () => {
     const viewer = { projectId: 'p', slug: 'f', path: '03-design.html', hash: null }
     fs.writeFileSync(file, JSON.stringify({ schemaVersion: 2, sessions: [], ui: { ...DEFAULT_UI, viewer } }))
     const s = loadState(file)
-    expect(s.schemaVersion).toBe(8)
+    expect(s.schemaVersion).toBe(9)
     expect(s.ui.viewer).toBeNull()
     fs.writeFileSync(file, JSON.stringify({ schemaVersion: 5, sessions: [], ui: { ...DEFAULT_UI, viewer: { kind: 'artifact', ...viewer, fromDiff: null } } }))
     expect(loadState(file).ui.viewer).toBeNull()
@@ -180,14 +180,30 @@ describe('stateStore', () => {
     const { workflowStatus: _w, ...old } = newSession({ projectId: 'p', kind: 'claude', now: new Date(), id: 'a', agentSessionId: 'u' })
     fs.writeFileSync(file, JSON.stringify({ schemaVersion: 7, sessions: [old], ui: DEFAULT_UI }))
     const s = loadState(file)
-    expect(s.schemaVersion).toBe(8)
+    expect(s.schemaVersion).toBe(9)
     expect(s.sessions[0].workflowStatus).toBe('in-progress')
   })
 
   it('keeps a workflowStatus that is already saved', () => {
     const file = tmpFile()
     const s = newSession({ projectId: 'p', kind: 'terminal', now: new Date(), id: 'a', agentSessionId: null })
-    saveState(file, { schemaVersion: 8, sessions: [{ ...s, workflowStatus: 'blocked' }], ui: DEFAULT_UI })
+    saveState(file, { schemaVersion: 9, sessions: [{ ...s, workflowStatus: 'blocked' }], ui: DEFAULT_UI })
     expect(loadState(file).sessions[0].workflowStatus).toBe('blocked')
+  })
+
+  it('migrates a v8 file: every session is unsandboxed', () => {
+    const file = tmpFile()
+    const { sandboxed: _s, ...old } = newSession({ projectId: 'p', kind: 'claude', now: new Date(), id: 'a', agentSessionId: 'u' })
+    fs.writeFileSync(file, JSON.stringify({ schemaVersion: 8, sessions: [old], ui: DEFAULT_UI }))
+    const s = loadState(file)
+    expect(s.schemaVersion).toBe(9)
+    expect(s.sessions[0].sandboxed).toBe(false)
+  })
+
+  it('keeps a sandboxed session sandboxed, so a resume never widens its blast radius', () => {
+    const file = tmpFile()
+    const s = newSession({ projectId: 'p', kind: 'claude', now: new Date(), id: 'a', agentSessionId: 'u', sandboxed: true })
+    saveState(file, { schemaVersion: 9, sessions: [s], ui: DEFAULT_UI })
+    expect(loadState(file).sessions[0].sandboxed).toBe(true)
   })
 })

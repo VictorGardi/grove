@@ -26,8 +26,12 @@ import { isDirectory, paneStable, realOrSelf, resolveProject, waitTurn } from '.
 import { sendToSession } from './send'
 import { hasLiveSessions, newProject, parentCheckout } from './projects'
 import { readBranch } from './git'
+import { gitCommonDir } from './git'
 import * as worktrees from './worktrees'
 import type { AgentEvent, AgentKind, AgentSource } from './agents/types'
+import { sandboxArgv } from './sandbox/argv'
+import { ensureImage, imageRef } from './sandbox/image'
+import { specFor, type AgentPaths, type SandboxSpec } from './sandbox/spec'
 import { autoLink, link, markGone, markSeen, newSession, reconcile, rename, resume, setWorkflowStatus, withBranches } from './sessions'
 import { loadConfig, saveConfig } from './store/configStore'
 import { apply, fromSnapshot, withContext, withStatus, type Tracker } from './status'
@@ -45,7 +49,8 @@ export interface CoreOptions {
   sources?: AgentSource[] // one per agent kind; none: tmux-only
   now?: () => Date // tests inject this
   git?: string | null // path to git; undefined: 'git' from PATH, null: not found
-  sessionEnv?: { socketPath: string; binDir: string } // the grove CLI's socket and launcher dir; none: sessions get no CLI env
+  sessionEnv?: { socketPath: string; binDir: string } & Partial<AgentPaths> // the grove CLI's socket and launcher dir, plus every path a sandboxed session mounts; none: sessions get no CLI env and cannot be sandboxed
+  sandbox?: { container: string; dockerfile: string } // where the Apple `container` binary and the sandbox image live; none: `--sandboxed` fails `no-sandbox`
 }
 
 type Change = Exclude<AgentEvent, { type: 'connected' | 'disconnected' | 'wrote' }>
@@ -68,7 +73,7 @@ export interface Commands {
   projectAdd(a: { path: string }): Promise<Result<Project>>
   projectRemove(a: { id: string }): Promise<Result<{ id: string }>>
   sessionCreate(a: {
-    projectId?: string; cwd?: string; kind: SessionKind; prompt?: string; label?: string; feature?: string; cols: number; rows: number
+    projectId?: string; cwd?: string; kind: SessionKind; prompt?: string; label?: string; feature?: string; sandboxed?: boolean; cols: number; rows: number
   }): Promise<Result<Session>> // exactly one of projectId, cwd
   sessionKill(a: { id: string }): Promise<Result<{ id: string }>>
   sessionRemove(a: { id: string }): Promise<Result<{ id: string }>>
@@ -199,7 +204,7 @@ export function createCore(opts: CoreOptions): Core {
       const sessions = slices.sessions.map(
         ({ branch: _branch, status: _status, waitingFor: _waitingFor, contextPct: _p, contextTokens: _t, contextWindow: _w, model: _m, ...s }) => s,
       ) // live-only
-      saveState(opts.statePath, { schemaVersion: 8, sessions, ui: slices.ui })
+      saveState(opts.statePath, { schemaVersion: 9, sessions, ui: slices.ui })
     }
     else if (k === 'comments') saveComments(opts.commentsPath, { schemaVersion: 2, comments: slices.comments })
     if (k === 'sessions') publish() // card state reads linked sessions
@@ -671,7 +676,7 @@ export function createCore(opts: CoreOptions): Core {
     },
 
     // `projectId` (the app) or `cwd` (the CLI, ADR 0029): a folder resolves to its project, registered when new.
-    async sessionCreate({ projectId, cwd, kind, prompt, label, feature, cols, rows }) {
+    async sessionCreate({ projectId, cwd, kind, prompt, label, feature, cols, rows, sandboxed }) {
       const source = kind === 'terminal' ? undefined : states.get(kind)?.source
       if (kind !== 'terminal' && !source) return { ok: false, error: 'no-source' }
       let project = slices.projects.find((p) => p.id === projectId)
@@ -688,15 +693,44 @@ export function createCore(opts: CoreOptions): Core {
       if (feature !== undefined && (added || !slices.features.items.some((f) => f.projectId === chosen.id && f.slug === feature))) {
         return { ok: false, error: 'no-feature' } // checked before anything is created
       }
+      // A terminal has no agent argv to wrap, and a sandboxed OpenCode would register its own
+      // service and evict the host's (D6) — so slice 1 sandboxes Claude alone, and refuses loudly
+      // rather than quietly starting an unsandboxed pane.
+      const sandboxKind: AgentKind | null = sandboxed && kind === 'claude' ? 'claude' : null
+      if (sandboxed && !sandboxKind) return { ok: false, error: 'no-sandbox' }
+      const workdir = dir ?? project.path
       const agentSessionId = source ? source.mintId(now()) : null
       const session = {
-        ...newSession({ projectId: project.id, kind, now: now(), id: randomUUID(), agentSessionId, cwd: dir, label }),
+        ...newSession({ projectId: project.id, kind, now: now(), id: randomUUID(), agentSessionId, cwd: dir, label, sandboxed: !!sandboxKind }),
         ...(feature !== undefined && { feature, linkPinned: true }),
       }
-      const argv = source
-        ? loginShellArgv(source.argv(agentSessionId!, 'start', { prompt, name: label }), shellOpts())
-        : undefined
-      await backend.create({ name: session.tmuxName, cwd: dir ?? project.path, cols, rows, argv, env: cliEnv(session) })
+      const agentArgv = source ? source.argv(agentSessionId!, 'start', { prompt, name: label }) : []
+      let argv: string[] | undefined
+      if (sandboxKind) {
+        const sandbox = opts.sandbox
+        const paths = opts.sessionEnv
+        if (!paths || !sandbox) return { ok: false, error: 'no-sandbox' } // never configured to sandbox at all
+        let spec: SandboxSpec
+        try {
+          const tag = imageRef(sandbox.dockerfile) // the image is content-addressed on the Dockerfile
+          await ensureImage({ container: sandbox.container, dir: path.dirname(sandbox.dockerfile), tag })
+          spec = specFor({
+            kind: sandboxKind,
+            cwd: workdir,
+            commonDir: gitCommonDir(workdir),
+            paths,
+            session,
+            container: sandbox.container,
+            image: tag,
+          })
+        } catch {
+          return { ok: false, error: 'no-sandbox' } // no binary, no system, no build, no Dockerfile: never an unsandboxed pane
+        }
+        argv = loginShellArgv(sandboxArgv({ name: session.tmuxName, spec, agentArgv }), shellOpts())
+      } else if (source) {
+        argv = loginShellArgv(agentArgv, shellOpts())
+      }
+      await backend.create({ name: session.tmuxName, cwd: workdir, cols, rows, argv, env: cliEnv(session) })
       await backend.setColors(session.tmuxName, terminalTheme.foreground, terminalTheme.background)
       if (added) {
         set('projects', [...slices.projects, project])

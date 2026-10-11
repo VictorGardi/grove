@@ -96,7 +96,7 @@ async function dispatch(core: Core, raise: () => void, line: string): Promise<Cl
       }
       const res = await core.commands.sessionCreate({
         kind: kind as Session['kind'], cwd: dir, prompt: optString(params.prompt), label: optString(params.label),
-        feature: optString(params.feature), cols: COLS, rows: ROWS,
+        feature: optString(params.feature), sandboxed: params.sandboxed === true, cols: COLS, rows: ROWS,
       })
       if (!res.ok) return failFrom(id, res.error)
       const created = toCli(core, res.data)

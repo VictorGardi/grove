@@ -10,9 +10,17 @@ describe('parseCommand', () => {
   it('parses new with its flags', () => {
     expect(parseCommand(['new', 'claude', '--cwd', '/x', '--prompt', '-', '--label', 'h', '--link', 'f-1', '--json'])).toEqual({
       cmd: 'new', kind: 'claude', cwd: '/x', prompt: '-', label: 'h', link: 'f-1', json: true, wait: false, timeoutS: undefined,
-      worktree: false, branch: undefined,
+      worktree: false, branch: undefined, sandboxed: false,
     })
     expect(parseCommand(['new', 'terminal'])).toMatchObject({ cmd: 'new', kind: 'terminal', json: false })
+  })
+
+  it('parses --sandboxed, only on new', () => {
+    expect(parseCommand(['new', 'claude', '--sandboxed'])).toMatchObject({ cmd: 'new', kind: 'claude', sandboxed: true })
+    expect(parseCommand(['new', 'claude'])).toMatchObject({ cmd: 'new', sandboxed: false })
+    for (const argv of [['ls', '--sandboxed'], ['send', 'a', 'b', '--sandboxed'], ['kill', 'a', '--sandboxed']]) {
+      expect(parseCommand(argv)).toBeInstanceOf(UsageError)
+    }
   })
 
   it('parses the worktree pair, and takes no branch without one', () => {

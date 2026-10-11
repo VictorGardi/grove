@@ -7,6 +7,7 @@ import { SpoolClaude } from './claude/source'
 import { claudeArgv } from './claude/hooks'
 import { gitRunner } from './diff/git'
 import { minimalEnv } from './env'
+import { imageRef } from './sandbox/image'
 import { gitRepo } from './testing/gitRepo'
 import { setupCore } from './testing/setup'
 import { add as addWorktree, worktreePath } from './worktrees'
@@ -175,5 +176,109 @@ describe('sessionCreate for the CLI', () => {
     await core.commands.sessionKill({ id: res.data.id })
     await core.commands.sessionResume({ id: res.data.id })
     expect(created(t.fake).at(-1)!.cwd).toBe(fs.realpathSync(path.join(t.dir, 'sub')))
+  })
+})
+
+describe('sessionCreate --sandboxed', () => {
+  let t: ReturnType<typeof setupCore>
+  beforeEach(() => { t = setupCore() })
+  afterEach(() => t.disposeAll())
+
+  const home = () => path.join(t.dir, 'home')
+  const paths = () => ({
+    claudeHome: path.join(home(), '.claude'),
+    claudeJson: path.join(home(), '.claude.json'),
+    gitconfig: path.join(home(), '.gitconfig'),
+    spoolDir: path.join(t.dir, 'agents', 'claude'),
+    socketPath: path.join(t.dir, 'grove.sock'),
+    cliBundle: path.join(t.dir, 'out', 'main', 'cli.js'),
+  })
+  const dockerfile = () => path.join(t.dir, 'sandbox', 'Dockerfile')
+  const container = () => path.join(t.dir, 'bin', 'container')
+
+  // A `container` that finds no image, so the create takes the build path against a binary that
+  // always succeeds — the real one is never touched by a test.
+  async function start() {
+    fs.mkdirSync(path.dirname(container()), { recursive: true })
+    fs.writeFileSync(container(), '#!/bin/sh\nexit 0\n', { mode: 0o755 })
+    fs.mkdirSync(path.dirname(dockerfile()), { recursive: true })
+    fs.writeFileSync(dockerfile(), 'FROM node:22-slim\n')
+    const core = t.make(undefined, {
+      sessionEnv: { binDir: '/bin', ...paths() },
+      sandbox: { container: container(), dockerfile: dockerfile() },
+    })
+    await core.start()
+    return core
+  }
+  const sandboxed = (core: Awaited<ReturnType<typeof start>>, a: Record<string, unknown> = {}) =>
+    core.commands.sessionCreate({ kind: 'claude', sandboxed: true, cwd: t.dir, cols: 120, rows: 40, ...a })
+
+  it('runs the agent in a named container, with the working directory and the mount set, and the agent last', async () => {
+    const core = await start()
+    const res = await sandboxed(core)
+    if (!res.ok) throw new Error(res.error)
+    const argv = created(t.fake)[0].argv![4]
+    expect(argv).toMatch(
+      new RegExp(`^export PATH=/bin:"\\$PATH"; exec ${container()} run --rm -i -t --name grove-[0-9a-f-]+ --workdir `),
+    )
+    expect(argv).toContain(`--volume ${t.dir}:${t.dir}`)
+    expect(argv).toContain(`--volume ${paths().claudeHome}:${paths().claudeHome}`)
+    expect(argv).toContain(`--volume ${paths().spoolDir}:${paths().spoolDir}`)
+    expect(argv).toContain(`--volume ${paths().socketPath}:${paths().socketPath}`)
+    expect(argv).toContain(`--read-only-path ${paths().gitconfig}`)
+    expect(argv).toContain(`--read-only-path ${paths().cliBundle}`)
+    expect(argv).toContain('-e GIT_CONFIG_VALUE_0=/etc/grove/no-hooks')
+    expect(argv).toContain(`-e GROVE_CLI_BUNDLE=${paths().cliBundle}`)
+    expect(argv).toMatch(new RegExp(`${imageRef(dockerfile())} claude -s \\S+$`))
+    expect(res.data.sandboxed).toBe(true)
+  })
+
+  it('leaves an unsandboxed agent exactly as it was', async () => {
+    const core = await start()
+    await core.commands.sessionCreate({ kind: 'claude', cwd: t.dir, cols: 120, rows: 40 })
+    expect(created(t.fake)[0].argv![4]).toMatch(/^export PATH=\/bin:"\$PATH"; exec claude -s \S+$/)
+  })
+
+  it('refuses a kind it cannot sandbox, and creates nothing', async () => {
+    const core = await start()
+    expect(await sandboxed(core, { kind: 'terminal' })).toEqual({ ok: false, error: 'no-sandbox' })
+    expect(await sandboxed(core, { kind: 'opencode' })).toEqual({ ok: false, error: 'no-sandbox' })
+    expect(created(t.fake)).toEqual([])
+  })
+
+  it('refuses no-sandbox when the image cannot be built, rather than launching unguarded', async () => {
+    fs.mkdirSync(path.dirname(container()), { recursive: true })
+    fs.writeFileSync(container(), '#!/bin/sh\nexit 1\n', { mode: 0o755 })
+    fs.mkdirSync(path.dirname(dockerfile()), { recursive: true })
+    fs.writeFileSync(dockerfile(), 'FROM node:22-slim\n')
+    const core = t.make(undefined, {
+      sessionEnv: { binDir: '/bin', ...paths() },
+      sandbox: { container: container(), dockerfile: dockerfile() },
+    })
+    await core.start()
+    expect(await sandboxed(core)).toEqual({ ok: false, error: 'no-sandbox' })
+    expect(created(t.fake)).toEqual([])
+  })
+
+  it('sandbox needs sessionEnv and an image; without either it refuses rather than guessing', async () => {
+    const bare = t.make()
+    await bare.start()
+    expect(await bare.commands.sessionCreate({ kind: 'claude', sandboxed: true, cwd: t.dir, cols: 120, rows: 40 })).toEqual({
+      ok: false,
+      error: 'no-sandbox',
+    })
+    expect(created(t.fake)).toEqual([])
+  })
+
+  it('refuses no-sandbox when the Dockerfile itself is missing, rather than throwing', async () => {
+    fs.mkdirSync(path.dirname(container()), { recursive: true })
+    fs.writeFileSync(container(), '#!/bin/sh\nexit 0\n', { mode: 0o755 })
+    const core = t.make(undefined, {
+      sessionEnv: { binDir: '/bin', ...paths() },
+      sandbox: { container: container(), dockerfile: dockerfile() },
+    })
+    await core.start()
+    expect(await sandboxed(core)).toEqual({ ok: false, error: 'no-sandbox' })
+    expect(created(t.fake)).toEqual([])
   })
 })

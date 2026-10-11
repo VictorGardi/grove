@@ -21,6 +21,7 @@ export interface Session {
   feature: string | null           // linked feature slug in this project
   linkPinned: boolean              // true once set by hand; auto-linking (child 3) leaves it alone
   action: { stage: string; actionId: string } | null // always null
+  sandboxed: boolean          // runs its agent inside an Apple `container` VM (ADR 0034); persisted, so a resume never widens
   startedAt: string                // ISO
   endedAt: string | null           // ISO, set when first seen gone
   lastStatus: 'running' | 'gone'
@@ -134,7 +135,7 @@ export interface Comment {
 export interface CommentsFile { schemaVersion: 2; comments: Comment[] }
 export type Slices = { projects: Project[]; sessions: Session[]; ui: UiState; features: FeaturesSlice; opencode: OpenCodeSlice; diff: SessionDiff | null; comments: Comment[] } // diff: the one on screen, not persisted
 export interface ConfigFile { schemaVersion: 1; projects: Project[]; workflow?: string }
-export interface StateFile { schemaVersion: 8; sessions: Session[]; ui: UiState }
+export interface StateFile { schemaVersion: 9; sessions: Session[]; ui: UiState }
 export const SIDEBAR_RAIL_WIDTH = 56 // the collapsed sidebar
 export const SIDEBAR_WIDTH = 220 // fixed: the sidebar has no resize handle, so a saved width is ignored
 export const DEFAULT_UI: UiState = { sidebarWidth: SIDEBAR_WIDTH, sidebarCollapsed: false, focusedSessionId: null, focusedFeature: null, focusedProject: null, sidebarTab: 'sessions', board: 'sessions', collapsed: [], hiddenProjects: [], groupBy: 'project', sessionSort: 'none', viewer: null, viewerWidth: null, viewerExpanded: false, grid: { open: false, members: [] } }

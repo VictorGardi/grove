@@ -3,7 +3,7 @@ import type { SessionKind } from '@shared/types'
 
 export type Command =
   | { cmd: 'ls'; all: boolean; json: boolean }
-  | { cmd: 'new'; kind: SessionKind; cwd?: string; prompt?: string; label?: string; link?: string; worktree: boolean; branch?: string; json: boolean; wait: boolean; timeoutS?: number }
+  | { cmd: 'new'; kind: SessionKind; cwd?: string; prompt?: string; label?: string; link?: string; worktree: boolean; branch?: string; sandboxed: boolean; json: boolean; wait: boolean; timeoutS?: number }
   | { cmd: 'send'; ref: string; text: string; submit: boolean; wait: boolean; timeoutS?: number }
   | { cmd: 'wait'; ref: string; timeoutS?: number }
   | { cmd: 'focus'; ref: string }
@@ -18,6 +18,7 @@ export const USAGE = `usage: grove <command>
   grove new <opencode|claude|terminal> [--cwd DIR] [--prompt TEXT|-] [--label L] [--link SLUG] [--wait] [--timeout S] [--json]
                                                  start a session in the background; prints its id
   grove new <kind> --worktree --branch NAME        start the session in a new git worktree of the cwd's repo
+  grove new <kind> --sandboxed                   run the agent inside a container that cannot see the rest of this Mac
   grove send <ref> <TEXT|-> [--no-enter] [--wait] [--timeout S]
                                                  type text into a session and submit it
   grove wait <ref> [--timeout S]                 block until the session stops working (exit 0 done, 4 needs you, 5 gone, 124 timeout)
@@ -53,7 +54,7 @@ export function parseCommand(argv: string[]): Command | UsageError {
         args: rest,
         options: {
           cwd: { type: 'string' }, prompt: { type: 'string' }, label: { type: 'string' }, link: { type: 'string' },
-          worktree: { type: 'boolean' }, branch: { type: 'string' }, json: { type: 'boolean' }, ...TIMEOUT,
+          worktree: { type: 'boolean' }, branch: { type: 'string' }, sandboxed: { type: 'boolean' }, json: { type: 'boolean' }, ...TIMEOUT,
         },
         allowPositionals: true,
       })
@@ -65,7 +66,7 @@ export function parseCommand(argv: string[]): Command | UsageError {
       if (!!values.worktree !== !!values.branch) return new UsageError(`--worktree and --branch go together\n${USAGE}`)
       return {
         cmd: 'new', kind: kind as SessionKind, cwd: values.cwd, prompt: values.prompt, label: values.label, link: values.link,
-        worktree: !!values.worktree, branch: values.branch, json: !!values.json, wait: !!values.wait, timeoutS,
+        worktree: !!values.worktree, branch: values.branch, sandboxed: !!values.sandboxed, json: !!values.json, wait: !!values.wait, timeoutS,
       }
     }
     if (cmd === 'send') {

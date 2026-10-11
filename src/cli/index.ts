@@ -40,7 +40,7 @@ async function run(cmd: Exclude<Command, { cmd: 'skill' }>, socket: string): Pro
   }
   const reply = await call(socket, 'sessions.create', {
     kind: cmd.kind, cwd: path.resolve(cmd.cwd ?? process.cwd()), prompt: text(cmd.prompt), label: cmd.label, feature: cmd.link,
-    worktree: cmd.worktree, branch: cmd.branch, wait: cmd.wait, timeoutS: cmd.timeoutS,
+    worktree: cmd.worktree, branch: cmd.branch, sandboxed: cmd.sandboxed, wait: cmd.wait, timeoutS: cmd.timeoutS,
   })
   return reply.ok ? { ...reply, print: formatNew(reply.data as CliMethods['sessions.create']['data'], cmd.json), exit: turnOf(reply) } : reply
 }

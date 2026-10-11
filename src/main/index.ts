@@ -5,6 +5,7 @@ import { app, BrowserWindow, dialog, Notification } from 'electron'
 import { chromeBackground } from '@shared/theme'
 import { TmuxBackend } from '../core/backend/tmux'
 import { createCore } from '../core/core'
+import type { AgentPaths } from '../core/sandbox/spec'
 import { findBin, findTmux, minimalEnv } from '../core/env'
 import { SpoolClaude } from '../core/claude/source'
 import { HttpOpenCode, serviceFilePath } from '../core/opencode/client'
@@ -57,11 +58,29 @@ app.whenReady().then(async () => {
 
   const socketPath = path.join(app.getPath('userData'), 'grove.sock')
   const binDir = path.join(app.getPath('userData'), 'bin')
-  const launcher = writeLauncher({ binDir, execPath: process.execPath, cliPath: path.join(app.getAppPath(), 'out', 'main', 'cli.js'), socketPath })
+  const cliBundle = path.join(app.getAppPath(), 'out', 'main', 'cli.js')
+  const launcher = writeLauncher({ binDir, execPath: process.execPath, cliPath: cliBundle, socketPath })
+  const spoolDir = path.join(app.getPath('userData'), 'agents', 'claude')
+  const home = os.homedir()
+  // Everything a sandboxed session's container binds, each at the identical path inside
+  // (ADR 0035). Resolved once, here, because only the app knows the Electron paths.
+  const agentPaths: AgentPaths = {
+    claudeHome: process.env.CLAUDE_CONFIG_DIR || path.join(home, '.claude'), // what Claude's own hooks script resolves
+    claudeJson: path.join(home, '.claude.json'),
+    opencodeShare: path.join(process.env.XDG_DATA_HOME || path.join(home, '.local', 'share'), 'opencode'),
+    opencodeConfig: path.join(process.env.XDG_CONFIG_HOME || path.join(home, '.config'), 'opencode'),
+    opencodeState: path.join(process.env.XDG_STATE_HOME || path.join(home, '.local', 'state'), 'opencode'),
+    opencodeServiceConfig: serviceFilePath(process.env, home),
+    gitconfig: path.join(home, '.gitconfig'),
+    spoolDir,
+    socketPath,
+    cliBundle,
+  }
 
   const core = createCore({
-    sessionEnv: { socketPath, binDir },
-    configPath: path.join(os.homedir(), '.config', 'grove', 'config.json'),
+    sessionEnv: { binDir, ...agentPaths },
+    sandbox: { container: 'container', dockerfile: path.join(app.getAppPath(), 'resources', 'sandbox', 'Dockerfile') },
+    configPath: path.join(home, '.config', 'grove', 'config.json'),
     statePath: path.join(app.getPath('userData'), 'state.json'),
     commentsPath: path.join(app.getPath('userData'), 'comments.json'),
     bundledWorkflowPath: path.join(app.getAppPath(), 'resources', 'workflow.yaml'),
@@ -71,10 +90,7 @@ app.whenReady().then(async () => {
       confPath: path.join(app.getAppPath(), 'resources', 'tmux.conf'),
       env: minimalEnv(process.env),
     }),
-    sources: [
-      new HttpOpenCode({ serviceFile: serviceFilePath(process.env, os.homedir()) }),
-      new SpoolClaude({ dir: path.join(app.getPath('userData'), 'agents', 'claude') }),
-    ],
+    sources: [new HttpOpenCode({ serviceFile: agentPaths.opencodeServiceConfig }), new SpoolClaude({ dir: spoolDir })],
     git: gitPath,
   })
   await core.start()

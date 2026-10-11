@@ -15,7 +15,7 @@ const project = (id: string, name: string, worktreeOf?: string): Project => ({ i
 const session = (id: string, projectId: string): Session => ({
   id, projectId, kind: 'terminal', label: id, labelPinned: false, tmuxName: 'grove-' + id, cwd: null,
   agentSessionId: null, feature: null, linkPinned: false, action: null, startedAt: '2026-10-05T10:00:00.000Z',
-  endedAt: null, lastStatus: 'running', seenAt: null, lastContext: null, workflowStatus: 'in-progress',
+  endedAt: null, lastStatus: 'running', seenAt: null, lastContext: null, workflowStatus: 'in-progress', sandboxed: false,
 })
 
 const PROJECTS = [project('p', 'grove'), project('wt', 'grove · probe', 'p'), project('q', 'other')]

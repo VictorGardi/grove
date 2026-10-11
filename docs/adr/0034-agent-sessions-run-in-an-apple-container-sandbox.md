@@ -4,7 +4,7 @@ Date: 2026-10-09
 
 ## Status
 
-Proposed
+Accepted
 
 ## Context
 
@@ -36,8 +36,14 @@ started, torn down and named so a crash leaves something identifiable.
   `container rm -f <tmuxName>` after `backend.kill`; `core.start()` prunes
   `grove-*` containers with no live tmux session. The container is named after
   the tmux name, so an orphan is traceable to its session.
-- **Scope:** Claude only this round. The mount table is per agent kind, so
-  another agent is one entry, not a redesign.
+- **Scope:** both agent kinds. The mount table is per agent kind, so an agent is
+  one entry, not a redesign.
+- **OpenCode's shared service (D6):** before the first sandboxed OpenCode
+  session, grove writes `{"hostname":"<bridge>"}` once into the service config,
+  binding the host's shared service to the **container bridge address only**,
+  and the container's `~/.local/state/opencode` is mounted **read-only**
+  (`--read-only-path`). Never `0.0.0.0`; if the bridge address cannot be
+  discovered, the create fails rather than widening the bind.
 
 ## Consequences
 
@@ -46,7 +52,7 @@ started, torn down and named so a crash leaves something identifiable.
   user's PATH and rc-file noise is unchanged — but the sandboxed agent gets the
   image's environment, not the user's shell environment.
 - The first sandboxed session pays an image build; later ones pay ~a second of
-  VM start.
+  VM start (measured 14 s cold, 0.7 s warm, 2026-10-10).
 - Grove depends on a third-party CLI that is young and macOS-26-oriented. Its
   availability is checked per create and fails loudly — never a silent
   unsandboxed fallback, which would be the worst possible failure mode here.
@@ -56,14 +62,25 @@ started, torn down and named so a crash leaves something identifiable.
   bind-mount throughput tax); Seatbelt/bubblewrap (kernel policy only — weaker,
   and the human chose Apple's CLI); pulling a published image (a registry grove
   would have to run and version).
-- OpenCode is excluded, not forgotten. Its TUI always talks to a server, by
-  default a **shared** one on `:49374` whose `url` and password are registered in
-  `~/.local/state/opencode/service.json` (ADR 0005; grove reads that file at
-  `src/core/opencode/client.ts:8-10,152`). Inside a container `127.0.0.1` is the
-  container itself, so the TUI would start a service of its own and register it
-  there. That service evicts the host's — the host service watches the file and
-  exits when it stops matching — which drops status, waiting, notifications and
-  write-driven linking for **every** OpenCode session on the host, not just the
-  sandboxed one. Mounting the file read-only instead leaves the TUI unable to
-  register at all. A per-session service with a published port is its own
-  design; the per-kind mount table leaves room for it.
+- **OpenCode is supported, and that needed measuring first.** Two spikes on
+  2026-10-10 (`02-research.md` § Spikes). First: the service binds `127.0.0.1`
+  only, and a second registration into the same `service.json` **evicts the
+  incumbent silently** — within 3 s of a second service sharing one
+  `XDG_STATE_HOME`, the first was gone with no listening socket and no log line.
+  A containerized TUI cannot reach a loopback service, so it would start its own
+  and evict the host's, dropping status, waiting, notifications and write-driven
+  linking for every OpenCode session on the host. Second: the bind address is
+  configurable, a container's gateway (`192.168.64.1`) answers on it, and the
+  `Basic opencode:<password>` grove already holds turns `401` into `200`. So the
+  host service is bound routably and the container's copy is read-only: the
+  sandbox joins the host's service and can never register over it.
+- The cost is that the shared OpenCode service listens beyond loopback for
+  anyone who can reach the container bridge — a private VM subnet, not the LAN.
+  It stays password-authenticated, and grove writes the change once, at the
+  first sandboxed OpenCode session. A third spike measured that the first draft
+  of this decision (`0.0.0.0`) also exposed the service on the host's LAN
+  address, advertising it in the service's own `urls`; the bridge-scoped bind
+  does not, and the LAN address refuses connections. Rejected instead: leaving
+  OpenCode unsandboxed (measured false — it *is* reachable), a per-session
+  service with a published port (a second service is exactly what evicts), and
+  `0.0.0.0` (measured to reach the LAN).

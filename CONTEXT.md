@@ -5,13 +5,24 @@ specific meaning, so humans and agents stay consistent.
 
 ## Terms
 
-- **Project**: a repo folder registered in the app (`{id, name, path}` in app
-  config). Groups the Sessions tab and lists in the Projects tab. May host
-  sessions without any features.
+- **Project**: a folder registered in the app (`{id, name, path}` in app
+  config). One path ↔ one id: a project's path is always a working directory,
+  whether a checkout or a **worktree project**. Groups the Sessions tab and lists
+  in the Projects tab. May host sessions without any features.
+- **Worktree project**: a project whose path is a `git worktree` root, carrying
+  `worktreeOf` for its parent. Files, diffs and viewer targets are per-checkout, so
+  a session in one resolves everything against that worktree (ADR 0037). A
+  *sandboxed* worktree session is refused (ADR 0038).
+- **Repo group**: the projects sharing one git common dir, derived at load by
+  `gitCommonDir` and never stored as authority, so it cannot dangle. Worktree
+  projects nest under their group's parent checkout.
 - **Workflow**: the single `workflow.yaml` that holds all stage, kind, action
   and discovery rules. The app's code knows no workflow's phase names.
 - **Feature**: a folder found by the workflow's `discovery` rule, identified by
-  `projectId + slug`. Its **artifacts** are the files in that folder.
+  `projectId + slug`. Its **artifacts** are the files in that folder. The board
+  shows **one card per (repo group, slug)**: the parent checkout's copy is
+  canonical, and a worktree copy at a different stage gets a chip rather than a
+  second card (ADR 0037).
 - **Group feature**: a feature whose kind has `group: true` (grove's epic);
   its children are found via `parent_field`. Never a board card: reached from
   a child's **parent tag** or breadcrumb, and its feature page lists its
@@ -34,12 +45,19 @@ specific meaning, so humans and agents stay consistent.
   `container` Linux VM rather than on the host. Chosen per session at creation
   and persisted, so resuming it stays sandboxed (ADR 0033). Its working
   directory and a fixed mount set appear inside at their host-identical paths;
-  nothing else of the host does (ADR 0035). Filesystem isolation only — no
-  egress restriction (ADR 0036).
+  nothing else of the host does (ADR 0035). A sandboxed **OpenCode** session
+  joins the host's shared service over the container gateway — that service is
+  bound to a routable address, and the container's copy of its `service.json` is
+  read-only so the sandbox can never evict the host's (ADR 0034). Filesystem
+  isolation only — no egress restriction (ADR 0036).
 - **Sandbox spec**: the image, mounts, env and workdir that `src/core/sandbox/`
   derives from a session and turns into the pane's `container run …` argv. The
   container is named after the tmux session, so a leftover is traceable
   (ADR 0034).
+- **Container bridge**: the host side of the private subnet Apple's `container`
+  gives a VM (measured `192.168.64.1`), reachable from inside a container and
+  **not** from the LAN. The one address a sandboxed OpenCode session's service
+  may bind to (ADR 0034).
 - **Hook spool**: the app-owned file `<userData>/agents/claude/<id>.jsonl` that
   a Claude session's per-launch hooks append to, and the Claude source tails
   (ADR 0016).

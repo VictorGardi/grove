@@ -53,6 +53,18 @@ describe('cli server', () => {
     expect(await request(socketPath, req('sessions.create', { kind: 'vim', cwd: t.dir }))).toMatchObject({ ok: false, error: { code: 'bad-params' } })
   })
 
+  it('carries --sandboxed through to the session, and refuses it when no sandbox can be had', async () => {
+    const { core, socketPath } = await start()
+    const sandboxed = await request(socketPath, req('sessions.create', { kind: 'claude', cwd: t.dir, sandboxed: true }))
+    // the test core has no sandbox configured, so the refusal is the wiring under test
+    expect(sandboxed).toMatchObject({ ok: false, error: { code: 'no-sandbox' } })
+    expect(core.getSlices().sessions).toEqual([])
+
+    const bare = await request(socketPath, req('sessions.create', { kind: 'claude', cwd: t.dir }))
+    expect(bare.ok).toBe(true)
+    expect(core.getSlices().sessions.map((s) => s.sandboxed)).toEqual([false])
+  })
+
   it('starts a session in a new worktree of the cwd\'s repo, registered as its own project', async () => {
     const { core, socketPath } = await start()
     const repo = gitRepo()

@@ -39,8 +39,14 @@ const v7ToV8 = (s: { sessions?: Session[] }) => ({
   sessions: (s.sessions ?? []).map((x) => ({ ...x, workflowStatus: x.workflowStatus ?? 'in-progress' })),
 })
 
+// v8 → v9 (ADR 0033): every session says whether it runs in a sandbox; none do yet.
+const v8ToV9 = (s: { sessions?: Session[] }) => ({
+  ...s,
+  sessions: (s.sessions ?? []).map((x) => ({ ...x, sandboxed: x.sandboxed ?? false })),
+})
+
 export function loadState(file: string, onBad?: (msg: string) => void): StateFile {
-  const s = readVersioned<StateFile>(file, 8, { schemaVersion: 8, sessions: [], ui: DEFAULT_UI }, onBad, { 1: v1ToV2, 2: v2ToV3, 3: v3ToV4, 4: v4ToV5, 5: v5ToV6, 6: v6ToV7, 7: v7ToV8 })
+  const s = readVersioned<StateFile>(file, 9, { schemaVersion: 9, sessions: [], ui: DEFAULT_UI }, onBad, { 1: v1ToV2, 2: v2ToV3, 3: v3ToV4, 4: v4ToV5, 5: v5ToV6, 6: v6ToV7, 7: v7ToV8, 8: v8ToV9 })
   const sessions = (s.sessions ?? []).map((x) => ({ ...x, seenAt: x.seenAt ?? null })) // seenAt: added after v1 shipped
   // v1 files from before ADR 0018 carry `view` and may have the old features tab
   const { view: _view, ...saved } = (s.ui ?? {}) as Partial<UiState> & { view?: unknown }

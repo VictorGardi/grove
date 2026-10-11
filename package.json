@@ -18,6 +18,7 @@
   "build": {
     "asarUnpack": [
       "node_modules/node-pty/**",
+      "out/main/cli.js",
       "resources/**"
     ]
   },

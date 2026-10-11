@@ -4,7 +4,7 @@ Date: 2026-10-09
 
 ## Status
 
-Proposed
+Accepted
 
 ## Context
 
@@ -27,7 +27,9 @@ that does the confining.
 ## Decision
 
 - **This round:** a sandboxed session runs with Apple's default container
-  networking. No egress restriction is attempted.
+  networking. No egress restriction is attempted. Measured 2026-10-10: DNS
+  resolves and `api.anthropic.com` is reachable from a default container
+  (`02-research.md` § Spikes).
 - **Deferred:** an `sbx`-style allow-list, as its own feature, once the
   filesystem jail has proven itself in use.
 - **Named honestly:** the UI tag on a sandboxed session says it isolates the
