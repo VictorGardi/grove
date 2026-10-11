@@ -618,11 +618,84 @@ checkouts of one repo configured:
 
 ### Seen, not done — the tray still merges by path
 
-`reviewView.ts`'s `groupForTray` keys the **draft tray** by `c.anchor.path` alone, so before sending,
-the tray still groups one relative path's drafts from two checkouts under one row. The structure's
-outcome is about the review *message*, and `reviewView.ts` is in no slice's file list, so it was left
-alone rather than widened silently. The message itself is correct and unambiguous once sent; only the
-pre-send grouping repeats the old key. Worth a follow-up slice if the tray bothers you.
+*(Closed by slice 5 below, at the human's request, after this was approved.)* `reviewView.ts`'s
+`groupForTray` keyed the **draft tray** by `c.anchor.path` alone, so before sending, the tray grouped
+one relative path's drafts from two checkouts under one row. The structure's outcome was about the
+review *message*, and `reviewView.ts` was in no slice's file list, so it was left alone rather than
+widened silently. The message itself was correct and unambiguous once sent; only the pre-send
+grouping repeated the old key.
+
+## Slice 5 — The draft tray names its checkout too (post-approval follow-up)
+
+**This slice is not in `04-structure.md`, and that is deliberate.** The human asked for it *after*
+approving the implementation. The approved structure is the record of what the human signed off on,
+so rewriting it now would erase the line between what was approved and what was added later. It is
+recorded here and in `05-plan.md` instead, and the structure needs a human decision before this is
+a "slice 5" of anything — see *Bookkeeping left open* below.
+
+### What landed
+
+The Comments tray groups drafts by checkout as well as by path, and labels each group with that
+checkout, so two checkouts' drafts on one relative path are two rows headed
+`docs/work/x/03-design.md (grove)` and `docs/work/x/03-design.md (grove · fix-auth)`. This is the
+same grouping slice 4 applied to the sent message, applied to the pre-send review of it.
+
+Nothing else changed: the draft's own `projectId`, path and line numbers are untouched, and clicking
+a draft still opens that draft's own checkout — the label was ambiguous, not the navigation. No core
+change, no schema change, nothing sent differently.
+
+### Decisions and deviations
+
+1. **`checkoutOf` is exported from `reviewView.ts`, not shared with core.** `comments/format.ts` has
+   its own copy, in `src/core`, and the renderer never imports core. One shared helper would mean a
+   new module in `@shared` for two lines of lookup; the duplication is deliberate and small, and
+   each side's tests pin it.
+2. **`TrayGroup` gains `id`, and the section is keyed by it rather than by the label.** The label
+   *was* the key, so it was unique by construction. Now that the label carries a checkout's name,
+   two projects configured under one name would collide as React keys — so the grouping key is
+   exposed. Same reasoning as slice 4's decision 4, applied to the same hazard.
+3. **A draft whose checkout is not configured keeps the bare path**, for the same reason as slice 4's
+   decision 5: naming it with some other checkout would be worse than naming none.
+4. **No render test, and the reason is worth recording.** `boardRender.test.ts` and
+   `projectPageRender.test.ts` work because those components render their whole content from props.
+   The tray does not: its groups exist only once the panel is open, which is click-driven
+   `useState`, and `ReviewMenu` reads zustand, whose hooks return the *initial* state under
+   `renderToStaticMarkup`. Reaching the headings would mean mocking the store, at which point the
+   test asserts the mock. The pure selector is tested instead — it is where the grouping and the
+   label live — and the component change is two lines that typecheck covers. Same shape as slice 1's
+   note about `Sidebar.tsx`.
+5. **One more pre-existing relative, left alone for the same reason as slice 4's:** `groupForTray`
+   also merged a *diff* anchor and a *file* anchor whose path strings match. They are measured from
+   different bases — a diff root and a project path — so they only disagree when `project.path` is
+   not the repo root, which is not a worktree case. Not fixed here.
+
+### Verification
+
+`npm run typecheck`, `npm run build`, and `npm test` **78 files / 882 tests**: green. The counts are
+not comparable with slice 4's 73/801 — another grove session is working in this same checkout and its
+files are in the tree and in the run. Nothing of its work is staged or committed here.
+
+`reviewView.test.ts` proves the grouping and the labels: one relative path in a checkout and its
+worktree gives two groups, each holding only its own draft; the same holds for diff anchors rooted in
+two checkouts; one checkout's two drafts of one path still share a group; two checkouts under one
+name give two groups with different `id`s; an unconfigured checkout or an unknown root keeps the bare
+path; notes and sent drafts are still left out; order is still by each group's first draft.
+
+**Not run here — the manual half**, which needs the app: draft on one relative path in a checkout
+and in a worktree with the same session focused, open the Comments popover, and confirm two rows,
+each naming its checkout, each jumping to its own file.
+
+### Bookkeeping left open
+
+`04-structure.md` still has four slices, and `06-implementation.md` was approved before this one
+existed. The human's call, and no automatic action was taken on either:
+
+- add slice 5 to `04-structure.md` (v5) and re-approve the structure, treating it as part of this
+  feature; or
+- leave this as its own small feature, which would give it its own folder and its own approval.
+
+Both are defensible. The second keeps this feature's approval meaning exactly what it meant when
+given.
 
 ## PR description
 
@@ -648,6 +721,9 @@ hand-edited config. `ConfigFile.schemaVersion` stays 1 and `StateFile` stays 8: 
 feature migrates anything.**
 
 ### The four slices
+
+(Fifth slice below, added after approval — the draft tray's grouping, not part of the approved
+structure.)
 
 1. **Tracer.** `--worktree --branch`, `gitCommonDir`, `worktrees.add`, the nested sidebar and
    Projects tab, and the proof that the four subsystems above are already correct.
@@ -687,5 +763,7 @@ session — the last of which belongs to `2026-10-08-agent-sandboxing`, which mu
 git claims inside its mount before shipping that path (design W4).
 
 ## Open questions
+
+None.## Open questions
 
 None.

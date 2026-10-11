@@ -2,7 +2,7 @@
 feature: 2026-10-08-worktree-support
 phase: plan
 status: approved
-version: 4
+version: 5
 created: 2026-10-10
 updated: 2026-10-11
 based_on:
@@ -206,6 +206,32 @@ worktree of the same repo — on the same relative path, which today merges into
   each naming its checkout — the wiring the structure's manual step depends on.
 - [x] `src/core/core.ts`: `reviewSend` passes `checkouts: slices.projects` in the `FormatContext`.
 - [x] Run `npm test` (covers `comments/format.test`, `comments/anchor.test`, `comments/core.test`).
+- [x] Run `npm run typecheck`.
+- [x] Run `npm run build`.
+- [x] Log the slice in `docs/work/2026-10-08-worktree-support/06-implementation.md`.
+
+## Slice 5 — The draft tray names its checkout too (post-approval follow-up)
+
+Not in `04-structure.md`. The human asked for this after approving the implementation, and the
+approved structure is left alone rather than quietly rewritten — see the note at the end of
+`06-implementation.md`. It closes the one gap slice 4 logged: `groupForTray` still keyed the tray
+by `anchor.path` alone, so two checkouts' drafts on one relative path shared a row.
+
+- [x] Failing test in `src/renderer/src/reviewView.test.ts`: `groupForTray(drafts, projects)` gives
+  two groups for the same relative path in a checkout and its worktree, each labelled
+  `path (checkout)` and holding only its own drafts; two checkouts configured under one name still
+  give two groups, distinguished by `id`; a draft whose project is not configured keeps the bare
+  path as its label.
+- [x] `src/renderer/src/reviewView.ts`: `groupForTray` takes `projects`, keys each group by the
+  draft's checkout identity (`projectId/path`, or `root/path` for a diff anchor) and labels it with
+  that checkout's name; `TrayGroup` gains the `id` the key is, so two same-named checkouts cannot
+  collide as React keys.
+- [x] `src/renderer/src/components/ReviewTray.tsx`: read `projects` from the store and pass them to
+  `groupForTray`; key each group section by `g.id`. No render test: the tray's groups exist only
+  once the panel is open, which is click-driven `useState`, and a zustand hook reads its initial
+  state under `renderToStaticMarkup`, so the headings are unreachable in static markup without
+  mocking the store — which would only prove the mock.
+- [x] Run `npm test` (covers `reviewView.test`).
 - [x] Run `npm run typecheck`.
 - [x] Run `npm run build`.
 - [x] Log the slice in `docs/work/2026-10-08-worktree-support/06-implementation.md`.

@@ -54,9 +54,10 @@ function TrayItem({ comment, onJump }: { comment: Comment; onJump: () => void })
 // SAVE uses the session whose content is being viewed (sessionId prop); SEND uses focusedSessionId.
 export function ReviewMenu({ sessionId }: { sessionId: string }) {
   const comments = useSlices((x) => x.comments).filter((c) => c.sessionId === sessionId)
+  const projects = useSlices((x) => x.projects)
   const drafts = comments.filter((c) => c.state === 'draft')
   const sent = comments.filter((c) => c.state === 'sent').sort((a, b) => (b.sentAt ?? '').localeCompare(a.sentAt ?? ''))
-  const groups = groupForTray(drafts)
+  const groups = groupForTray(drafts, projects)
   const openDiff = useSlices((x) => x.openDiff)
   const openArtifact = useSlices((x) => x.openArtifact)
   const note = drafts.find((c) => c.anchor.kind === 'note')
@@ -122,7 +123,7 @@ export function ReviewMenu({ sessionId }: { sessionId: string }) {
       {open && (
         <div className={s.panel} role="dialog" aria-label="Comments">
           {groups.map((g) => (
-            <section key={g.label} className={s.group}>
+            <section key={g.id} className={s.group}>
               <div className={s.groupLabel}>{g.label}</div>
               <ul className={s.items}>
                 {g.comments.map((c) => <TrayItem key={c.id} comment={c} onJump={() => (c.anchor.kind === 'file'
