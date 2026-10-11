@@ -1,10 +1,11 @@
 ---
 feature: 2026-10-08-worktree-support
 phase: implementation
-status: draft
+status: approved
 version: 4
 created: 2026-10-10
 updated: 2026-10-11
+approved_at: 2026-10-11
 based_on:
   - 03-design.md@1
   - 04-structure.md@4
