@@ -97,10 +97,15 @@ clean.
     to `null` deliberately (see its own comment), so the core cannot know whether it was a missing
     binary, a failed build or a missing credential, and inventing a reason string would be a lie.
     `LOST_SANDBOX` names the consequence, which is what the human can act on.
-13. **`App.tsx`'s ad-hoc downgrade banner was left in place.** It still covers its own Resume
-    button, and removing it is a UI decision beyond "never widens silently". Worth the human's eye:
-    with `sandboxNote` on the card, the banner is now partly redundant, and it is the one piece of
-    this that still snapshots state before the call.
+13. **The ad-hoc downgrade banner was removed** on the human's word at slice 3's review. It was
+    `App.tsx`'s `downgraded` state: it snapshotted `sandboxed` before its own Resume call and
+    raised a banner if the session came back false. With `sandboxNote` on the session the banner
+    was redundant *and* wrong twice over — it covered one of three resume entry points (the
+    Sidebar's Resume at `Sidebar.tsx:103` and the CLI's through `core/send.ts:46` bypassed it
+    entirely), and it inferred the downgrade instead of being told it. Removing it also removed
+    `SessionGrid`'s `onResume` prop, which existed only to route through it; the grid pane invokes
+    `session:resume` directly again, as the sidebar always did. Every resume path now learns about
+    a downgrade the same way — from the session slice core pushes — so none of them can miss it.
 14. **The downgraded mark uses `--danger` tokens, not `--accent`.** The accent is what a working
     sandbox wears; reusing it for a lost one would make the two states look like one.
 

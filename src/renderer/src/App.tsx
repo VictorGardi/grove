@@ -41,22 +41,8 @@ export default function App() {
   const [paletteOpen, setPaletteOpen] = useState(false)
   const [gridView, setGridView] = useState<GridView>(DEFAULT_GRID_VIEW) // toolbar settings, view-only
   const [scratchpadOpen, setScratchpadOpen] = useState(false) // ⌘N: global notes, not persisted
-  const [downgraded, setDowngraded] = useState<string | null>(null) // a resume that lost its sandbox, once
   const hiddenRendered = useRef<HiddenRenderedViewer | null>(null)
   const tags = colorTags(projects, features.items)
-
-  // A sandboxed session that resumes without a sandbox comes back on the host (ADR 0033). Core
-  // clears the flag rather than claiming containment it doesn't have; this is the half of the
-  // bargain that tells the human, once, instead of leaving them to notice the mark is gone.
-  // Read before the call: a session that was never sandboxed resumes unsandboxed too, and that
-  // is not a downgrade.
-  const resume = useCallback((id: string) => {
-    const wasSandboxed = useSlices.getState().sessions.find((s) => s.id === id)?.sandboxed === true
-    void window.api.invoke('session:resume', { id }).then((res) => {
-      if (!res.ok || !wasSandboxed || res.data.sandboxed) return
-      setDowngraded(res.data.label)
-    })
-  }, [])
 
   useEffect(() => {
     void hydrate()
@@ -190,11 +176,6 @@ export default function App() {
         banners={[
           ...errors.map((e, i) => <Banner key={i}>{e}</Banner>),
           ...(features.workflowError ? [<Banner key="workflow">Workflow: {features.workflowError}</Banner>] : []),
-          ...(downgraded
-            ? [<Banner key="downgraded" tone="error">{downgraded} resumed on your host — the sandbox could not
-                start, so this session no longer has its filesystem isolated. Start a new sandboxed session to
-                get containment back.</Banner>]
-            : []),
           ...serviceBanners(opencode, sessions).map((b) => <Banner key={b.text} tone={b.tone}>{b.text}</Banner>),
         ]}
         sidebar={ui.sidebarCollapsed ? <SidebarRail /> : <Sidebar onNew={(projectId) => setQuickNew({ projectId })} />}
@@ -227,7 +208,7 @@ export default function App() {
                   if (dir !== null) openArtifact({ kind: 'file', projectId: shown.feature.projectId, path: dir + name, hash: null, fromDiff: null })
                 }} />
             ) : shown.kind === 'grid' ? (
-              <SessionGrid sessions={shown.sessions} focusedId={shown.focused.id} view={gridView} onViewChange={changeGridView} onFocusPane={setFocused} onResume={resume} overlayOpen={paletteOpen || !!quickNew || !!confirmRemove} />
+              <SessionGrid sessions={shown.sessions} focusedId={shown.focused.id} view={gridView} onViewChange={changeGridView} onFocusPane={setFocused} overlayOpen={paletteOpen || !!quickNew || !!confirmRemove} />
             ) : shown.kind === 'session' && shown.session.lastStatus === 'running' ? (
               <TerminalView key={shown.session.id} sessionId={shown.session.id} active={!paletteOpen && !quickNew && !confirmRemove} />
             ) : shown.kind === 'session' ? (
@@ -235,7 +216,7 @@ export default function App() {
                 <div className={s.endedTitle}>Session ended</div>
                 <div className={s.endedActions}>
                   {shown.session.kind !== 'terminal' && (
-                    <Button icon="resume" variant="primary" onClick={() => resume(shown.session.id)}>Resume</Button>
+                    <Button icon="resume" variant="primary" onClick={() => void window.api.invoke('session:resume', { id: shown.session.id })}>Resume</Button>
                   )}
                   <Button icon="trash" onClick={() => void window.api.invoke('session:remove', { id: shown.session.id })}>Remove</Button>
                 </div>

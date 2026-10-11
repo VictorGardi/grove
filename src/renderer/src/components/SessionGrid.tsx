@@ -14,13 +14,12 @@ import { TerminalView } from './TerminalView'
 import s from './SessionGrid.module.css'
 
 // The members side by side. Panes are keyed by session id, so reflow never remounts or re-attaches a terminal.
-export function SessionGrid({ sessions, focusedId, view, onViewChange, onFocusPane, onResume, overlayOpen }: {
+export function SessionGrid({ sessions, focusedId, view, onViewChange, onFocusPane, overlayOpen }: {
   sessions: Session[] // every member, in grid order; the view narrows them
   view: GridView
   onViewChange: (view: GridView) => void
   focusedId: string
   onFocusPane: (id: string) => void // a click or terminal focus inside a pane
-  onResume(id: string): void // a pane that ended; the app owns the downgrade notice
   overlayOpen: boolean // a modal or the palette is open: no terminal takes the keyboard
 }) {
   const { projects, features, toggleGridMember, openAlone, clearGrid } = useSlices()
@@ -62,7 +61,7 @@ export function SessionGrid({ sessions, focusedId, view, onViewChange, onFocusPa
                     <div>Session ended</div>
                     <div className={s.endedActions}>
                       {x.kind !== 'terminal' && (
-                        <Button variant="primary" size="sm" icon="resume" onClick={() => onResume(x.id)}>Resume</Button>
+                        <Button variant="primary" size="sm" icon="resume" onClick={() => void window.api.invoke('session:resume', { id: x.id })}>Resume</Button>
                       )}
                       <Button size="sm" icon="trash" onClick={() => toggleGridMember(x.id)}>Remove</Button>
                     </div>
