@@ -218,6 +218,18 @@ describe('sessionCreate --sandboxed', () => {
   const sandboxed = (core: Awaited<ReturnType<typeof start>>, a: Record<string, unknown> = {}) =>
     core.commands.sessionCreate({ kind: 'claude', sandboxed: true, cwd: t.dir, cols: 120, rows: 40, ...a })
 
+  // The design's "Default off", asserted where the default takes effect rather than only where it
+  // is written down. A Claude session created without the flag is a host session, on a machine
+  // configured to sandbox — the sandbox being available must not make it the default.
+  it('defaults a claude session to the host when the flag is absent', async () => {
+    const core = await start()
+    const res = await core.commands.sessionCreate({ kind: 'claude', cwd: t.dir, cols: 120, rows: 40 })
+    if (!res.ok) throw new Error(res.error)
+    expect(res.data.sandboxed).toBe(false)
+    expect(created(t.fake)[0].argv![4]).toMatch(/^export PATH=\/bin:"\$PATH"; exec claude -s \S+$/)
+    expect(created(t.fake)[0].argv![4]).not.toContain('container run')
+  })
+
   it('runs the agent in a named container, with the working directory and the mount set, and the agent last', async () => {
     const core = await start()
     const res = await sandboxed(core)

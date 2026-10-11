@@ -1,5 +1,6 @@
 import { useMemo, useState } from 'react'
 import type { Feature, Project, SessionKind } from '@shared/types'
+import { SANDBOX_DEFAULT, sandboxable, wantsSandbox } from '../sandboxOptIn'
 import { useSlices } from '../stores/slices'
 import { repoProjectIds } from '../repoGroups'
 import { Button } from './ui/Button'
@@ -7,11 +8,6 @@ import { Icon } from './ui/Icon'
 import { ListRow } from './ui/ListRow'
 import { Modal } from './ui/Modal'
 import s from './NewSessionDialog.module.css'
-
-// Only Claude is sandboxable: a terminal has no agent argv to wrap, and a sandboxed OpenCode
-// would evict the host's shared service (ADR 0034, D6). The row is shown greyed rather than
-// hidden — a row that disappears when you switch kind reads as a bug, not a constraint.
-const sandboxable = (kind: SessionKind) => kind === 'claude'
 
 const KINDS: { kind: SessionKind; label: string; icon: 'opencode' | 'claude' | 'terminal' }[] = [
   { kind: 'claude', label: 'Claude Code', icon: 'claude' },
@@ -43,7 +39,7 @@ export function NewSessionDialog({ projectId, onClose, onStart }: {
 }) {
   const { projects, features } = useSlices()
   const [kind, setKind] = useState<SessionKind>('claude')
-  const [sandboxed, setSandboxed] = useState(true)
+  const [sandboxed, setSandboxed] = useState(SANDBOX_DEFAULT)
   const [prompt, setPrompt] = useState('')
   const [label, setLabel] = useState('')
   const [advanced, setAdvanced] = useState(false)
@@ -137,8 +133,8 @@ export function NewSessionDialog({ projectId, onClose, onStart }: {
 
         <div className={s.label}>Isolation</div>
         <div className={`${s.isolation} ${sandboxable(kind) ? '' : s.off}`}>
-          <button type="button" className={`${s.switch} ${sandboxed && sandboxable(kind) ? s.switchOn : ''}`}
-            role="switch" aria-checked={sandboxed && sandboxable(kind)} aria-label="Run in a sandbox"
+          <button type="button" className={`${s.switch} ${wantsSandbox(kind, sandboxed) ? s.switchOn : ''}`}
+            role="switch" aria-checked={wantsSandbox(kind, sandboxed)} aria-label="Run in a sandbox"
             disabled={!sandboxable(kind)} onClick={() => setSandboxed(!sandboxed)} />
           <div className={s.isolationText}>
             <div className={s.isolationTitle}>Run in a sandbox</div>
@@ -176,7 +172,7 @@ export function NewSessionDialog({ projectId, onClose, onStart }: {
       <div className={s.foot}>
         <span className={s.summary}>
           {choice && (choice.type === 'new' ? `new worktree · ${branch.trim() || suggested}` : choice.project.path)}
-          {sandboxable(kind) && sandboxed ? ' · sandboxed' : ' · on your host'}
+          {wantsSandbox(kind, sandboxed) ? ' · sandboxed' : ' · on your host'}
         </span>
         <Button variant="ghost" onClick={onClose}>Cancel</Button>
         <Button variant="primary" disabled={!ready || busy} onClick={() => void submit()}>

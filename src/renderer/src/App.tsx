@@ -23,6 +23,7 @@ import { Button } from './components/ui/Button'
 import { newSessionItems, paletteItems } from './paletteItems'
 import { DEFAULT_GRID_VIEW, gridShown, visibleMembers, type GridView } from './gridView'
 import { contextView } from './contextGauge'
+import { wantsSandbox } from './sandboxOptIn'
 import { boardKey, childrenOf, content, crumbs, currentProjectId, focusTarget } from './navigation'
 import { serviceBanners } from './sessionStatus'
 import { sessionDiffShortcut, type HiddenRenderedViewer } from './sessionDiffShortcut'
@@ -139,7 +140,7 @@ export default function App() {
       ...(l.prompt.trim() && { prompt: l.prompt.trim() }),
       ...(trimmed && { label: trimmed }),
       ...(l.feature && { feature: l.feature }),
-      sandboxed: l.kind === 'claude' && l.sandboxed,
+      sandboxed: wantsSandbox(l.kind, l.sandboxed),
       cols: 120,
       rows: 40,
     })

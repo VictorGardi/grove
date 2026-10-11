@@ -2,7 +2,7 @@
 feature: 2026-10-08-agent-sandboxing
 phase: plan
 status: approved
-version: 3
+version: 4
 created: 2026-10-11
 updated: 2026-10-11
 based_on:
@@ -375,3 +375,79 @@ Logged as a deviation.
       confirm the mark appears there too.
 - [x] Manual, clean-up: confirm `git status` shows `reports/` and `research_notes/` still
       untracked and nothing from them staged, and that no `sandboxNote` appears in `state.json`.
+
+## Slice 4 — Opting in from the launch dialog, and seeing it on the card
+
+**Re-planned against the code as it is after slice 3, under the human's 2026-10-11 decision that
+the launch dialog is the opt-in.** `04-structure.md` slice 4 describes a ⌘K palette command
+(`MenuAction 'newSandboxedSession'`, `newSessionItems(projects, projectId, sandboxed, create)`) and
+its `Deferred` list rules out "A new-session dialog with a checkbox, instead of a second palette
+command". The human kept the dialog and dropped the palette command. **So this slice does not touch
+`paletteItems.ts` at all, and the structure's file list and verify line no longer describe it** —
+`paletteItems.test.ts` is not the test here. `04-structure.md` needs a design revise to match; it is
+not this skill's to edit.
+
+State on entry: the plumbing is already complete and correct. `InvokeMap['session:create']` carries
+`sandboxed?: boolean` (`src/shared/ipc.ts:18`), `main/ipc.ts:44` forwards the whole argument to
+`core.commands.sessionCreate`, and `App.tsx:142` sends the flag. `SandboxMark` already names the
+filesystem on the card and header. **Two defects are what is left**, both in the dialog.
+
+The first is a design violation, and it is the important one:
+
+> `03-design.md:27` — "Opt-in is per session … **Default off**." `01-questions.md:18` — "not a
+> default for every session"; `:76` — "explicit per-session decision". ADR 0033 rejects "making
+> sandboxing the default" as its third rejected option.
+
+`NewSessionDialog.tsx:47` is `useState(true)`. Every Claude session launched from ⌘⇧T is therefore
+sandboxed whether or not the human asked — the opposite of the one thing all three artifacts agree
+on, and the most consequential possible default for a feature whose whole point is opt-in
+containment.
+
+The second is duplication: the rule "only Claude is sandboxable" is written twice, once as
+`sandboxable` in the dialog and again inline as `l.kind === 'claude' && l.sandboxed` in
+`App.tsx`. They answer different questions — what the form *offers* versus what it *sends* — and
+nothing keeps them equal. When OpenCode becomes sandboxable in slice 6, one would move and the
+other would not.
+
+### Tests first
+
+- [x] Create `src/renderer/src/sandboxOptIn.test.ts` for the module below:
+      `sandboxable('claude')` is true and `sandboxable('opencode')` and `sandboxable('terminal')`
+      are false; `wantsSandbox('claude', true)` is true; `wantsSandbox('claude', false)` is false;
+      and **`wantsSandbox` is false for `opencode` and `terminal` even when the flag is true** —
+      the guard that keeps an unsandboxable kind from reaching core and being refused `no-sandbox`;
+      `SANDBOX_DEFAULT` is `false`.
+- [x] Add to `src/core/sessionCreate.test.ts` (extend the existing `sessionCreate --sandboxed`
+      block, do not add a new file): with `sandboxed` absent the created session is `sandboxed:
+      false` and the pane argv carries no `container run` — the "default off" half, asserted where
+      the default actually takes effect rather than only where it is written down.
+
+### Implement
+
+- [x] Create `src/renderer/src/sandboxOptIn.ts` with three exports and the reasons in comments:
+      `sandboxable(kind: SessionKind): boolean` — only Claude, citing ADR 0034 / D6 exactly as the
+      dialog's existing comment does; `wantsSandbox(kind: SessionKind, sandboxed: boolean):
+      boolean` — `sandboxable(kind) && sandboxed`; `SANDBOX_DEFAULT = false`, citing the design's
+      "Default off" and ADR 0033's rejected "making sandboxing the default".
+- [x] `src/renderer/src/components/NewSessionDialog.tsx`: delete the local `sandboxable` and import
+      it from `sandboxOptIn`; change `useState(true)` to `useState(SANDBOX_DEFAULT)`; use
+      `wantsSandbox(kind, sandboxed)` for the summary line at the foot so the wording and the
+      toggle's own `aria-checked` cannot disagree. Change nothing else in the file — another
+      agent has uncommitted work in it, so stage hunks, never the whole file.
+- [x] `src/renderer/src/App.tsx`: replace `sandboxed: l.kind === 'claude' && l.sandboxed` with
+      `sandboxed: wantsSandbox(l.kind, l.sandboxed)`, importing from `sandboxOptIn`.
+
+### Verify
+
+- [x] `npm test` — 876 passing plus the new assertions. `src/renderer/src/sandboxOptIn.test.ts` is
+      new; `src/core/sessionCreate.test.ts` gains one case.
+- [x] `npm run typecheck`
+- [x] `npm run build`
+- [x] Manual, in `npm run dev`: ⌘⇧T, leave the kind on Claude Code — **the Isolation switch must
+      start off**, and the summary line must read "· on your host". Turn it on; the summary must
+      read "· sandboxed". Start; the session must come up inside its container and its card must
+      carry the "Sandboxed" mark. Open ⌘⇧T again, switch the kind to OpenCode and to Terminal —
+      the switch must go grey and the summary must read "· on your host" even though the toggle
+      was left on for Claude. Confirm ⌘T still starts a plain, unsandboxed session.
+- [x] Clean-up: `git status` shows nothing from `reports/` or `research_notes/`, and the other
+      agent's uncommitted files are still present and unstaged.

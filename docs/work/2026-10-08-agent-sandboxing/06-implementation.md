@@ -2,7 +2,7 @@
 feature: 2026-10-08-agent-sandboxing
 phase: implementation
 status: draft
-version: 7
+version: 8
 created: 2026-10-10
 updated: 2026-10-11
 based_on:
@@ -12,6 +12,105 @@ forced: []
 ---
 
 # Agent session sandboxing — implementation
+---
+
+# Slice 4 — Opting in from the launch dialog, and seeing it on the card
+
+## Staleness noted mid-slice (2026-10-11)
+
+A `grove-design` revise ran in parallel (session `cbd3230b`, label
+`grove-design-agent-sandboxing-d6-d8`) while this slice was in flight and bumps `03-design.md` /
+`04-structure.md` versions, which marks `05-plan.md` stale by version. **This slice was not
+re-planned from scratch**; its section was executed as written, per the orchestrating session's
+instruction. The plan's `based_on` still reads `03-design.md@8` / `04-structure.md@5` — what this
+slice was planned and executed against.
+
+The revise covers D6 and slice 4's opt-in surface, and **confirms the direction taken here**: the
+human chose the launch dialog over the ⌘K palette command, so `NewSessionDialog.tsx` is the
+direction, not a deviation to undo. The one thing this slice changed that the revise must not lose
+is the **default-off** rule below, which three artifacts state and the dialog contradicted.
+
+## What this slice found
+
+The opt-in plumbing was already complete and correct before this slice: `InvokeMap['session:create']`
+carries `sandboxed?: boolean` (`src/shared/ipc.ts:18`), `main/ipc.ts` forwards the whole argument to
+`core.commands.sessionCreate`, and `App.tsx` sent the flag. `SandboxMark` already named the
+filesystem on the card and header. **Two defects were what remained, both in the dialog.**
+
+### 1. The toggle defaulted to on — a direct contradiction of the design
+
+`NewSessionDialog.tsx:47` was `useState(true)`. Every Claude session launched from ⌘⇧T was
+therefore sandboxed whether or not the human asked. Against:
+
+- `03-design.md:27` — "Opt-in is per session … **Default off**."
+- `01-questions.md:18` — "not a default for every session"; `:76` — "explicit per-session decision".
+- ADR 0033 — "Opt-in: `sessionCreate` takes `sandboxed?: boolean`. Absent means `false`", and it
+  lists "making sandboxing the default" among its **rejected** options.
+
+This is the most consequential default a containment feature can get wrong: it changes a session's
+blast radius without the human asking for it, on the one surface where they were configuring
+something else. Fixed to `SANDBOX_DEFAULT` (false).
+
+The core already defaulted off — the new test asserts that where the default takes effect, not
+only where it was written down.
+
+### 2. The "only Claude is sandboxable" rule was written twice
+
+`NewSessionDialog.tsx` had a local `sandboxable`, and `App.tsx` had the same rule inline as
+`l.kind === 'claude' && l.sandboxed`. They answer different questions — what the form *offers*
+versus what it *sends* — and nothing kept them equal. When OpenCode becomes eligible in slice 6 it
+would have moved in one file and not the other: the dialog would offer a toggle whose session came
+back refused `no-sandbox`, or vice versa.
+
+Both now come from one module, and the switch's `aria-checked`, its `switchOn` class and the
+summary line all call the same `wantsSandbox`, so the wording cannot disagree with the toggle.
+
+## What landed
+
+- **`src/renderer/src/sandboxOptIn.ts`** (NEW): `sandboxable(kind)`, `wantsSandbox(kind, sandboxed)`,
+  `SANDBOX_DEFAULT`. Each carries the reason it holds — ADR 0034 / D6 for Claude-only, the design's
+  "Default off" and ADR 0033's rejected option for the default.
+- **`src/renderer/src/components/NewSessionDialog.tsx`**: local `sandboxable` deleted in favour of
+  the import; `useState(true)` → `useState(SANDBOX_DEFAULT)`; the switch's `aria-checked`, its
+  `switchOn` class and the summary line all use `wantsSandbox(kind, sandboxed)`.
+- **`src/renderer/src/App.tsx`**: `sandboxed: wantsSandbox(l.kind, l.sandboxed)`.
+- **Tests**: `src/renderer/src/sandboxOptIn.test.ts` (NEW, 7 cases) and one case added to
+  `src/core/sessionCreate.test.ts`.
+
+`npm test`: **887 passed / 79 files** (was 876 / 78; +11). `npm run typecheck`: clean.
+`npm run build`: clean.
+
+**Not run — the manual pass.** The ⌘⇧T visual check (switch starts off, greys for OpenCode and
+Terminal, summary line agrees, ⌘T still plain) needs a restarted app on this build, and the grove
+instance running here is a **stale build** whose sessions carry no `sandboxed` field, with live
+sessions attached. Restarting it is the human's call. The unit tests cover the logic; what remains
+unverified by hand is that the switch *renders* off.
+
+## Deviations and decisions taken inside the slice
+
+15. **This slice touches none of the structure's slice-4 file list except `App.tsx`.** The human
+    replaced the ⌘K palette command with the launch dialog on 2026-10-11, so `paletteItems.ts` is
+    untouched and `paletteItems.test.ts` — the structure's named verify — is not this slice's test.
+    A `grove-design` revise is running to bring `04-structure.md` in line.
+16. **Option C (Zed-style where-picker) is explicitly *not* in this slice.** It is a where-list /
+    branch-display change, and `2026-10-08-worktree-support` — already approved and complete —
+    lists "A GUI worktree flow (palette or dialog)" in its `Deferred`. It belongs to that feature,
+    not to sandboxing, and folding it in here would couple this feature to a core question it does
+    not need. Recorded for the human; not built.
+17. **`sandboxOptIn.ts` is a new module rather than a helper inside `sessionStatus.ts`.** The
+    existing live-only strip list in `core.ts` and `types.ts` stay untouched by it — it is a
+    renderer-side policy about *asking*, not a fact about a running session.
+
+## Residue
+
+- Nothing left running or on disk from this slice. `reports/` and `research_notes/` remain
+  untracked and ignored; nothing from either is staged.
+- Another agent has uncommitted work in `NewSessionDialog.tsx`, `ListRow.*`, `worktreeCreate.test.ts`,
+  `main/ipc.ts` and `shared/ipc.ts`. Only this slice's hunks were staged; the rest is left as found.
+
+## Open questions
+
+None.
 
 # Slice 3 — Resume stays sandboxed, and a downgrade says so
 
