@@ -354,7 +354,133 @@ finding above (B, by the human). One item is owed but is not a question for this
 `03-design.md`'s D8 and `04-structure.md`'s slice-2 outcome state the carve-outs
 unconditionally, and correcting approved design text belongs to `grove-design` in revise mode.
 
+## OpenCode in the sandbox: what slice 6 actually needs (researched 2026-10-11)
+
+Four spikes ran before slice 6 could be planned. Everything below is measured on this machine
+unless marked otherwise. **Nothing here is in `03-design.md` yet — D6 still describes the
+original, partly-wrong plan, and revising it is `grove-design`'s to do.**
+
+### Decision (the human's, on this recommendation)
+
+**Keep D6's bridge bind.** Use Apple's pf-redirect DNS as the *documented fallback* if the
+bridge ever stops working. Rationale: no `sudo`, no host mutation beyond writing one config
+value, LAN isolation measured from both directions, and the one real weakness — Apple never
+documented it — is precisely what the fallback covers.
+
+### The bridge bind works; the earlier `Errno 49` was a startup race
+
+**A correction to an earlier entry in this file.** The 2026-10-11 spike reported that binding
+`192.168.64.1` failed and attributed it, in a later reading, to this Mac having changed network
+(`192.168.0.145` → `172.20.10.9`). **That attribution was wrong — the network change is a red
+herring.** The real cause is that `bridge100` is created by `container system start`, not at
+boot: measured, the container services started 2m24s after boot, and for roughly the first two
+and a half minutes the interface does not exist. Bind to a non-existent local address gives
+`Errno 49` and `route -n get` falls through to `en0` — exactly the signature recorded. Both the
+2026-10-10 success and the 2026-10-11 failure are consistent with this one explanation.
+
+Measured:
+
+- `bridge100: inet 192.168.64.1/24`, member `vmenet1`, `status: active`. Only `.1` is bindable
+  (`.2` and `.250` correctly fail) — a real interface, not a catch-all.
+- A container reaches it, verified from a fresh container **and** from a live grove sandbox.
+- **LAN isolation holds**: the listener is `192.168.64.1:PORT` only; the host's LAN address
+  refuses on that port; `192.168.64/24` exists only as a link-scope route on `bridge100`.
+  Confirmed independently by two spikes.
+- **Discovery is not hardcodeable.** `container network ls --format json` →
+  `.status.ipv4Gateway` of network `default`. Proven derived: a network created with
+  `--subnet 10.99.0.0/24` yields gateway `10.99.0.1`. grove must read it, never assume `.1`.
+
+**What D6 must add** (mechanical, not a decision): run `container system start` (idempotent),
+poll `container network ls` for the gateway, and treat `Errno 49` / `EADDRNOTAVAIL` as *not
+ready yet* — retry with backoff. Only a persistent failure past the retry budget becomes
+`no-sandbox`. Today D6 says an undiscoverable bridge fails outright, which would reject for
+seconds after login on every boot.
+
+### The image's OpenCode is the wrong major version — and the fix is one line
+
+`opencode-ai@2.x` does not exist on npm (`dist-tags.latest` is `1.19.0`; the host's 2.0.20 came
+from Homebrew). **But that is not "no npm route"** — an earlier note in this session drew that
+conclusion and it was wrong. The package was **renamed and rescoped to `@opencode/cli`**
+(official, 27 stable 2.x releases, npm-signature verified, published by OpenCode's author).
+
+```dockerfile
+RUN npm install -g @anthropic-ai/claude-code@2.1.296 @opencode/cli@2.0.26 \
+ && npm cache clean --force
+```
+
+It ships a **self-contained Bun binary**. `ldd` shows **glibc only** — no ICU, no libstdc++, no
+loader bottle — so it costs no new apt packages on bookworm. The earlier spike's ~400 MB of
+Homebrew-bottle dependencies was the price of the wrong route, not of v2 itself. GitHub Releases
+is a 1.x-only channel; building from source is not practical in a Dockerfile.
+
+**Version skew is safe, and grove should not pin the host's version.** Read from the bundled
+source: on the `--server` path there is no major-version gate and no feature negotiation — it
+warns and proceeds (`Warning: Server ... has version 2.0.20; this client is 2.0.26. Continuing
+anyway.`). The *background service* path can hard-fail, and grove does not use it. grove can read
+the host's version from the registration file but must **not** bake it into the Dockerfile:
+the image is content-addressed on that file alone, and pinning per-host would rebuild it on every
+host upgrade.
+
+### Other corrections D6 needs
+
+- **The client seam changed.** v1's `opencode attach <url>` is gone in v2; it is the global
+  `--server <url>` flag, which precedes any subcommand. A 1.19.0 client against a 2.x server
+  fails with `Request is not supported by this version of OpenCode Server`.
+- **Authentication crosses the bridge.** The service requires Basic auth; the container needs
+  `OPENCODE_SERVER_PASSWORD` from the registration file's `password`, or it gets 401. Worth
+  stating plainly: that secret now crosses a link-scope virtual interface rather than a `0600`
+  unix socket. Bounded — `bridge100` has no route from `en0` and grove's existing auth still
+  applies — but a weaker boundary than grove's own CLI transport (ADR 0035).
+- **Two `service.json` files, easy to confuse.** `~/.config/opencode/service.json` is the
+  *config* grove writes (`hostname`, `port`, `password`, `disabled`, `cors`, `env` — the schema
+  is closed and rejects anything else); `~/.local/state/opencode/service.json` is the
+  *registration* grove reads (`url`, `pid`, `password`, `version`, `id`). grove's
+  `serviceFilePath` is correct and needs no change.
+
+### Ruled out, with evidence — do not re-litigate
+
+- **Unix socket transport: impossible.** Both ends closed. The server config rejects every
+  socket-shaped key at validation (`Unknown service config key: socket`), `serve --hostname
+  /path.sock` dies with `baseURI must have a hostname`, and the client rejects `unix://` at URL
+  dispatch — `protocol must be http:, https: or s3:` — with *zero* connection attempts reaching a
+  live AF_UNIX listener. The capability exists one layer down in the bundled `effect/http`
+  (`UnixAddress`, forwarded to `node:http`'s `server.listen({path})`) but OpenCode never
+  constructs it. Worth remembering if upstream ever surfaces it.
+- **`socat` on the bridge IP: already reported broken.** In apple/container#346, before Apple
+  shipped the pf feature — the same approach grove measured working, failing for someone else.
+- **No container→host DNS name exists.** `host.containers.internal`, `host.docker.internal`,
+  `gateway` — all NXDOMAIN. `/etc/resolv.conf` in the container is just `nameserver 192.168.64.1`.
+- ** grove's own unix-socket fallback remains valid** for grove's CLI (ADR 0035, re-measured
+  working this session). It simply does not help OpenCode.
+
+### The documented fallback, and what it would cost
+
+`sudo container system dns create <domain> --localhost <ip>` — Apple PR #1078, merged
+2026-01-24, in the installed 1.5.0, documented in the `apple/container` repo's
+`docs/host-integration.md`. A pf rule redirects traffic for a fake container-side IP to the
+host's `127.0.0.1`, so the service **never leaves loopback**. Apple's stated rationale: *"all pf
+redirects target 127.0.0.1"*.
+
+Costs, all documented by Apple: requires `sudo`; **disables iCloud Private Relay**; the pf rule
+is **removed on macOS restart**; and the redirect is **whole-IP, all-ports**, so the container
+would reach *every* loopback-bound host service, not only OpenCode's port. That last one is why
+the bridge bind stays the default despite being undocumented.
+
+Note this retires the `Errno 49` question entirely — Apple never supported a host-side bridge
+bind, so its failure is expected behaviour rather than a mystery, and `bridge100` is not
+guaranteed stable. If it disappears, the fallback is one command away.
+
 ## Carried to the next slice
+
+- **D6 and slice 6's structure entry are stale and must be revised** — see the OpenCode section
+  above for the measured recipe. The human chose the bridge bind with Apple's pf redirect as the
+  documented fallback. Changes D6 needs: the readiness wait (system start + poll + retry), the
+  `@opencode/cli` image line, the `--server` client seam, `OPENCODE_SERVER_PASSWORD`, and the
+  corrected statement about the secret crossing a link-scope interface. `grove-design` in revise
+  mode owns all of it; this file is not the place.
+- **D8's carve-out wording also needs the same revise**: `03-design.md` and `04-structure.md`
+  both state the carve-outs unconditionally ("never rewrite it"). They are conditional on the file
+  existing. The human chose to keep the mechanism and document the limitation.
 
 - **The human's own macOS hooks now load inside the sandbox and the unguarded ones fail.** See
   the verified-end-to-end section above. Expected, non-blocking, and documented — but if the
