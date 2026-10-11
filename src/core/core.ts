@@ -30,6 +30,7 @@ import { gitCommonDir } from './git'
 import * as worktrees from './worktrees'
 import type { AgentEvent, AgentKind, AgentSource } from './agents/types'
 import { LOST_SANDBOX, sandboxArgvFor, type SandboxDeps } from './sandbox/launch'
+import { pruneContainers, removeContainer } from './sandbox/container'
 import type { AgentPaths } from './sandbox/spec'
 import { autoLink, link, markGone, markSeen, newSession, reconcile, rename, resume, setWorkflowStatus, withBranches } from './sessions'
 import { loadConfig, saveConfig } from './store/configStore'
@@ -199,6 +200,10 @@ export function createCore(opts: CoreOptions): Core {
   const shellOpts = () => ({ pathPrefix: opts.sessionEnv?.binDir })
   // The sandbox's view of this host, for the one argv builder both launch paths call.
   const sandboxDeps = (): SandboxDeps => ({ sandbox: opts.sandbox, sessionEnv: opts.sessionEnv, gitCommonDir })
+  // Takes a session's VM with it when the session ends. Only for a session that had one: a host
+  // session has no container, and a machine that cannot sandbox has no binary to ask.
+  const dropContainer = (session: Session): Promise<void> =>
+    session.sandboxed && opts.sandbox ? removeContainer(opts.sandbox.container, session.tmuxName) : Promise.resolve()
 
   function set<K extends keyof Slices>(k: K, v: Slices[K]): void {
     slices[k] = v
@@ -788,6 +793,7 @@ export function createCore(opts: CoreOptions): Core {
       const session = findSession(id)
       if (!session) return { ok: false, error: 'not-found' }
       await backend.kill(session.tmuxName) // already-missing counts as success
+      await dropContainer(session) // --rm never fired, so the VM outlived the pane
       // re-read: a poll may have flipped it while kill was in flight
       replaceSession(markGone(findSession(id) ?? session, now().toISOString()))
       await unlockWorktree(projectOf(session)) // nothing runs in it now, so nothing may prune it
@@ -799,6 +805,7 @@ export function createCore(opts: CoreOptions): Core {
       const session = findSession(id)
       if (!session) return { ok: false, error: 'not-found' }
       await backend.kill(session.tmuxName) // already-missing counts as success
+      await dropContainer(session)
       dropSessions((s) => s.id !== id)
       forgetAgents([session])
       await unlockWorktree(projectOf(session))
@@ -1017,8 +1024,13 @@ export function createCore(opts: CoreOptions): Core {
       syncProjects(true)
       try {
         await backend.ensureConfig()
-        const next = reconcile(slices.sessions, await backend.list(), now().toISOString())
+        const live = await backend.list()
+        const next = reconcile(slices.sessions, live, now().toISOString())
         if (next !== slices.sessions) set('sessions', next)
+        // A crash SIGKILLs `container run`, which never gets to honour its own `--rm`, so a VM can
+        // outlive its pane. Anything grove named that no live tmux session accounts for is an
+        // orphan. `live` comes from tmux, so this sits inside the try: without tmux, no pruning.
+        if (opts.sandbox) await pruneContainers(opts.sandbox.container, live)
         await refreshBranches()
       } catch (e) {
         errors.push(`tmux: ${(e as Error).message}`)

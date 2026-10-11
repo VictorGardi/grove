@@ -1,13 +1,13 @@
 ---
 feature: 2026-10-08-agent-sandboxing
 phase: plan
-status: stale
-version: 4
+status: approved
+version: 5
 created: 2026-10-11
 updated: 2026-10-11
 based_on:
-  - 03-design.md@8
-  - 04-structure.md@5
+  - 03-design.md@9
+  - 04-structure.md@6
 forced: []
 ---
 
@@ -451,3 +451,89 @@ other would not.
       was left on for Claude. Confirm ⌘T still starts a plain, unsandboxed session.
 - [x] Clean-up: `git status` shows nothing from `reports/` or `research_notes/`, and the other
       agent's uncommitted files are still present and unstaged.
+
+## Slice 5 — Teardown, and pruning what a crash left behind
+
+Re-planned fresh against design v9 / structure v6. Slices 1–4 are done and untouched. Context a
+fresh agent needs, inlined:
+
+- **The seam.** A session's container is named after its tmux session: `sandboxArgv` emits
+  `container run --name <session.tmuxName>` (`src/core/sandbox/argv.ts:14-15`) and
+  `Session.tmuxName` is `grove-${session.id}` (`src/shared/types.ts:18`). So the name to remove is
+  a field core already has.
+- **Why `container rm -f` is needed at all.** `--rm` takes the VM with a *clean* agent exit. A
+  SIGKILLed `container run` never fires it, so the container outlives the pane. `backend.kill`
+  SIGKILLs the pane, so every ⌘W needs the explicit removal.
+- **`container` 1.5.0's real surface**, measured on this machine with read-only commands only:
+  `container list [--all] [--format json] [--quiet]` — plain `list` prints **running** containers
+  only, `-q` prints one name per line, `--all` includes stopped ones; `container rm` is the
+  `delete` subcommand and takes `-f`; `container network ls --format json` is slice 6's.
+- **A crash's two leftovers.** A pane whose `container run` was SIGKILLed leaves a **stopped**
+  container, which plain `list` omits, and a pane still alive under tmux keeps a running one.
+  Prune must therefore list `--all`, and must skip anything a live tmux session still owns.
+- `backend.list(): Promise<Set<string>>` — the live tmux names (`src/core/backend/types.ts:13`).
+
+### Tests first
+
+- [x] Create `src/core/sandbox/container.test.ts` against a fake `container` shell script written
+      to a temp dir and marked executable, recording every invocation's argv in a log (the shape
+      `src/core/sandbox/image.test.ts` already uses): `removeContainer(file, 'grove-abc')` runs
+      exactly `rm -f grove-abc`; a script that exits 1 with `Error: no such container` on stderr
+      still **resolves** (never rejects), as does a path to a binary that is not there at all.
+- [x] In the same file: `pruneContainers(file, ['grove-live'])` against a `container list --all
+      --quiet` that prints `grove-live`, `grove-dead`, `grove-orphan` and `someone-elses-box` calls
+      `list --all --quiet` once and then `rm -f grove-dead` and `rm -f grove-orphan` and nothing
+      else — never `grove-live`, never the container that is not grove's.
+- [x] In the same file: a `list` that exits non-zero (the system is not running) prunes nothing and
+      resolves; an empty `list` prunes nothing.
+- [x] Add to `src/core/sessionCreate.test.ts`'s existing `describe('sessionCreate --sandboxed')`
+      block, beside the block's `start()` a `startWithLog(listOutput)` helper whose fake `container`
+      appends `"$@"` to a log file and exits 0 — `start()` itself must keep working unchanged:
+      killing a sandboxed session runs `rm -f <its tmuxName>`; removing one does the same; and
+      killing an **unsandboxed** session runs no `container` command at all.
+- [x] In the same block: `start()` against a fake whose `list --all --quiet` prints a `grove-*`
+      name with no live tmux session records `rm -f <that name>`; a `grove-*` name that **is** a
+      live tmux session name (`t.fake.live.add(name)` before `core.start()`) is left alone.
+
+### Implement
+
+- [x] Create `src/core/sandbox/container.ts`:
+      `export function removeContainer(container: string, name: string): Promise<void>` running
+      `container rm -f <name>` through `execFile` and resolving whatever the exit status, with a
+      comment saying why it cannot reject (a container that will not be removed must not fail the
+      ⌘W that came with it, and `start` prunes whatever is left);
+      `export async function pruneContainers(container: string, live: Iterable<string>): Promise<void>`
+      running `container list --all --quiet`, reading the names one per line, and calling
+      `removeContainer` for every name matching `/^grove-/` that is not in `live` — a failing
+      `list` yielding no names, never a rejection. That prefix is what keeps grove from deleting a
+      container it did not start.
+- [x] `src/core/core.ts`: import `pruneContainers, removeContainer` from `./sandbox/container`, and
+      add one helper beside `sandboxDeps()` (core.ts:201):
+      `const dropContainer = (session: Session) => session.sandboxed && opts.sandbox ? removeContainer(opts.sandbox.container, session.tmuxName) : Promise.resolve()`.
+- [x] `src/core/core.ts` `sessionKill` (core.ts:787): `await dropContainer(session)` immediately
+      after `await backend.kill(session.tmuxName)` and before the `markGone` re-read.
+- [x] `src/core/core.ts` `sessionRemove` (core.ts:798): the same `await dropContainer(session)`
+      immediately after its `await backend.kill(session.tmuxName)`.
+- [x] `src/core/core.ts` `start()` (core.ts:980): inside the existing `try` around
+      `backend.ensureConfig()`, capture the live names once — `const live = await backend.list()` —
+      and pass them to `reconcile`; then, after the `set('sessions', next)` line,
+      `if (opts.sandbox) await pruneContainers(opts.sandbox.container, live)`. Inside the `try` on
+      purpose: `live` comes from tmux, and without tmux grove cannot tell an orphan from a running
+      session, so nothing is pruned. `pruneContainers` cannot reject, so a prune failure is never
+      reported as a tmux failure.
+
+### Verify
+
+- [x] `npm test` — 911 passed / 81 files (was 900 / 80; +11).
+- [ ] `npm run typecheck` — **`typecheck:node` clean; `typecheck:web` fails on
+      `src/renderer/src/components/NewSessionDialog.tsx` (TS1005 at :308/:313), which another
+      agent is editing uncommitted right now.** Verified as not this slice's: a detached worktree
+      at HEAD `25e228d` typechecks `tsconfig.web.json` clean. Re-run once their file lands.
+- [ ] `npm run build` — **main and preload bundles built clean** (`out/main/index.js` 157.52 kB,
+      `out/main/cli.js` 10.48 kB — every file this slice touches is in that bundle); the renderer
+      **client** build fails on the same foreign `NewSessionDialog.tsx`. Re-run once it lands.
+- [ ] **NOT RUN HERE — manual, and it needs a live app on this build** (the grove instance on this
+      machine is a stale build with live sessions attached; restarting it is the human's call): in
+      `npm run dev`, start a sandboxed session, ⌘W it, and `container list` shows nothing; then
+      `container run -d --name grove-orphan sleep 600`, restart the app, and it is gone. Left
+      unticked on purpose.

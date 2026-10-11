@@ -2,18 +2,109 @@
 feature: 2026-10-08-agent-sandboxing
 phase: implementation
 status: stale
-version: 8
+version: 9
 created: 2026-10-10
 updated: 2026-10-11
 based_on:
-  - 03-design.md@8
-  - 04-structure.md@5
+  - 03-design.md@9
+  - 04-structure.md@6
 forced: []
 ---
 
 # Agent session sandboxing — implementation
 ---
 
+# Slice 5 — Teardown, and pruning what a crash left behind
+
+## Staleness: expected, and the version jump is logged here
+
+`05-plan.md` was written against `03-design.md@8` / `04-structure.md@5`. The `grove-design` revise of
+2026-10-11 moved both to **v9 / v6** (D6 and D8 corrected against the four spikes, slice 4's opt-in
+surface) and marked the plan stale by version. Slices 1–4 are done and untouched — their sections,
+their verification and their commits stand. **Slice 5's section was written fresh against v9 / v6,
+and `05-plan.md`'s `based_on` now reads `03-design.md@9` / `04-structure.md@6`.** Nothing slice 5
+does depends on what the revise changed: slice 5 is teardown and pruning, and neither the D6 nor the
+D8 correction touches it. This file's `based_on` moved to match, for the same reason.
+
+## What landed
+
+- **`src/core/sandbox/container.ts`** (NEW): `removeContainer(container, name)` runs
+  `container rm -f <name>`; `pruneContainers(container, live)` runs `container list --all --quiet`
+  and removes every name matching `/^grove-/` that is not in `live`.
+- **`src/core/core.ts`**: a `dropContainer(session)` helper beside `sandboxDeps()`; awaited after
+  `backend.kill` in both `sessionKill` and `sessionRemove`; `start()` captures
+  `const live = await backend.list()` once, passes it to `reconcile`, and prunes with it.
+- **Tests**: `src/core/sandbox/container.test.ts` (NEW, 7 cases) and 4 cases added to
+  `src/core/sessionCreate.test.ts`'s `sessionCreate --sandboxed` block.
+
+`npm test`: **911 passed / 81 files** (was 900 / 80; +11). `typecheck:node`: clean.
+
+## Measured, to write this slice at all
+
+`container` 1.5.0 on this machine, **read-only commands only** — no container was started, stopped
+or removed, and the live grove sandbox session was left exactly as found:
+
+- `container list --help`: plain `list` prints **running** containers only, `--all` includes the
+  rest, `-q` prints one id per line. A container started with `--name X` has **X as its id**, which
+  is why `list -q` yields exactly the `session.tmuxName`s that `--name` was given. `--all` is
+  load-bearing rather than belt-and-braces: the orphan a SIGKILL leaves is a **stopped** container,
+  and plain `list` does not print stopped containers at all.
+- `container rm --help`: the subcommand is `delete`, aliased `rm`, and takes `-f`.
+- `container --help`: subcommands are `run/create/exec/start/stop/rm`, `image`, `machine`,
+  `network`, `volume`, `builder` — Docker's `images`/`runtime` do not exist here.
+
+## Deviations and decisions taken inside the slice
+
+18. **`removeContainer` resolves on *any* failure, not only "no such container."** The design says
+    `sessionKill`/`sessionRemove` run `container rm -f <tmuxName>` "ignoring 'no such container'",
+    and that is what it does; the broader swallow is because neither command has an error channel
+    for this call, and a teardown failure must not fail the ⌘W that came with it. The alternative —
+    resolve only on "no such", rethrow otherwise — turns a missing `container` binary into a failed
+    kill. `start` prunes whatever is left on the next launch either way.
+19. **`dropContainer` is gated on `session.sandboxed && opts.sandbox`.** The design's sentence reads
+    "sessionKill/sessionRemove *also* run `container rm -f <tmuxName>`", in the lifecycle of the
+    sandbox. Ungated, every ⌘W of every terminal session would spawn a `container` process. A
+    session that was never sandboxed has no container; a machine that cannot sandbox has no binary
+    to ask. Both directions are asserted.
+20. **Prune sits inside the existing `try` around `backend.ensureConfig()`.** `live` comes from
+    tmux, so without tmux grove cannot tell an orphan from a running session and the honest move is
+    to prune nothing. `pruneContainers` cannot reject, so a prune failure is never mislabelled
+    `tmux: …` in the error strip.
+21. **`container list --all --quiet` rather than `--format json`.** One name per line is exactly the
+    shape grove needs and needs no parser; the JSON form answers a different question (slice 6's
+    `network ls`).
+22. **The fake `container` is passed by path, not discovered on `PATH`.** The structure's verify
+    says "a fake `container` script on PATH"; `sandbox/image.test.ts` and `sandbox/auth.test.ts`
+    both take a file path, and `opts.sandbox.container` is already a path grove is handed. Same
+    shape, one less global state.
+
+## Not run — the manual pass, and two partly-blocked commands
+
+`container list` after ⌘W, and the `grove-orphan` prune at restart, both need a live app on this
+build. The grove instance on this machine is a **stale build** whose sessions carry no `sandboxed`
+field, with live sessions attached; restarting it is the human's call and was not done. Those
+checkboxes are left unticked in `05-plan.md`.
+
+`npm run typecheck` and `npm run build` are **left unticked for a reason of ownership, not of
+doubt.** `typecheck:node` and the main/preload bundles — every file this slice touches lives in the
+main bundle — are clean. The only failures are syntax errors in
+`src/renderer/src/components/NewSessionDialog.tsx`, which another agent is editing uncommitted at
+the moment of writing. Verified not this slice's: a detached worktree at HEAD `25e228d` typechecks
+`tsconfig.web.json` clean. Both commands should be re-run once that file lands.
+
+## Residue
+
+- Nothing left running or on disk from this slice. The live sandbox container
+  `grove-941adcfb-f145-4256-8b3e-fb6d61bc2009` is exactly as it was found, and no container was
+  started, stopped or removed.
+- `reports/` and `research_notes/` remain untracked and ignored; nothing from either is staged.
+- Another agent's uncommitted work in `NewSessionDialog.tsx` is left intact and unstaged.
+
+## Open questions
+
+None. Slice 5 changes nothing the D6/D8 revise describes, and nothing in that revise changes slice 5.
+
+---
 # Slice 4 — Opting in from the launch dialog, and seeing it on the card
 
 ## Staleness noted mid-slice (2026-10-11)

@@ -298,6 +298,68 @@ describe('sessionCreate --sandboxed', () => {
     expect(await sandboxed(core)).toEqual({ ok: false, error: 'no-sandbox' })
     expect(created(t.fake)).toEqual([])
   })
+
+  // The same core over a `container` that records every invocation, so the teardown commands are
+  // assertable. Beside start(), not instead of it: the silent fake above is what the argv tests need.
+  const containerLog = () => container() + '.log'
+  const containerCalls = () => (fs.existsSync(containerLog()) ? fs.readFileSync(containerLog(), 'utf8').trim().split('\n').filter(Boolean) : [])
+  const removals = () => containerCalls().filter((c) => c.startsWith('rm '))
+  // What startWithLog writes: record every invocation, and answer `list --all --quiet` with
+  // `listed`, one name per line, running and stopped alike — as the real CLI prints them.
+  const fakeListingScript = (listed: string[]): string =>
+    [
+      '#!/bin/sh',
+      'echo "$@" >> ' + containerLog(),
+      'if [ "$*" = "list --all --quiet" ]; then printf ' + "'%s\\n'" + ' ' + listed.map((n) => "'" + n + "'").join(' ') + '; fi',
+      'exit 0',
+      '',
+    ].join('\n')
+  async function startWithLog(listed: string[] = []) {
+    fs.mkdirSync(path.dirname(container()), { recursive: true })
+    fs.writeFileSync(container(), fakeListingScript(listed), { mode: 0o755 })
+    fs.mkdirSync(path.dirname(dockerfile()), { recursive: true })
+    fs.writeFileSync(dockerfile(), 'FROM node:22-slim\n')
+    fs.mkdirSync(paths().claudeHome, { recursive: true })
+    fs.writeFileSync(path.join(paths().claudeHome, '.credentials.json'), '{}')
+    const core = t.make(undefined, {
+      sessionEnv: { binDir: '/bin', ...paths() },
+      sandbox: { container: container(), dockerfile: dockerfile() },
+    })
+    await core.start()
+    return core
+  }
+
+  it('kills the container with the pane', async () => {
+    const core = await startWithLog()
+    const res = await sandboxed(core)
+    if (!res.ok) throw new Error(res.error)
+    await core.commands.sessionKill({ id: res.data.id })
+    expect(removals()).toEqual(['rm -f ' + res.data.tmuxName])
+  })
+
+  it('removes the container with the session', async () => {
+    const core = await startWithLog()
+    const res = await sandboxed(core)
+    if (!res.ok) throw new Error(res.error)
+    await core.commands.sessionRemove({ id: res.data.id })
+    expect(removals()).toEqual(['rm -f ' + res.data.tmuxName])
+  })
+
+  it('runs no container command at all for a session that was never sandboxed', async () => {
+    const core = await startWithLog()
+    const res = await core.commands.sessionCreate({ kind: 'claude', cwd: t.dir, cols: 120, rows: 40 })
+    if (!res.ok) throw new Error(res.error)
+    await core.commands.sessionKill({ id: res.data.id })
+    expect(removals()).toEqual([])
+  })
+
+  it('prunes at start the grove containers no live session owns, and no others', async () => {
+    t.fake.live.add('grove-live') // a tmux session still running, so its VM is not an orphan
+    const core = await startWithLog(['grove-live', 'grove-orphan', 'someone-elses-box'])
+    expect(core.getSlices().sessions).toEqual([])
+    expect(containerCalls()).toContain('list --all --quiet')
+    expect(removals()).toEqual(['rm -f grove-orphan'])
+  })
 })
 
 // ADR 0033: a resumed sandboxed session stays sandboxed. Where this host cannot build the
