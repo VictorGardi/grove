@@ -2,13 +2,13 @@
 feature: 2026-10-08-worktree-support
 phase: implementation
 status: draft
-version: 3
+version: 4
 created: 2026-10-10
 updated: 2026-10-11
 based_on:
   - 03-design.md@1
   - 04-structure.md@4
-  - 05-plan.md@3
+  - 05-plan.md@4
 forced: []
 ---
 
@@ -515,6 +515,113 @@ checkouts of one repo configured:
 6. ⌘T's new-session list stays per checkout.
 7. A worktree's project page shows sessions only and no board switch; ⌘B from it opens the repo's
    page.
+
+## Slice 4 — A review message names the checkout each path came from
+
+### What landed
+
+Every `##` heading in a review message names the checkout its path came from, and each path is
+resolved against that same checkout, so it is never a path walking out with `..`. Two drafts on one
+relative path in a checkout and a worktree are two sections, each holding only its own comment
+blocks, instead of one merged section whose two blocks contradict each other's file.
+
+The reachable path is the one structure v4 names: `ArtifactViewer.tsx:37` takes the draft's session
+from the focused session (`target.fromDiff ?? focusedSessionId`) while the anchor comes from the one
+global viewer, so a session's tray can hold a file anchor in one checkout and another in a worktree
+of the same repo. That is now proven against a real core with a real checkout and worktree project
+registered, not just against the formatter.
+
+`anchor.ts` is unchanged; `core.ts` changed in `reviewSend` only. No schemaVersion moves, and
+nothing in `diff/`, `discovery/`, `autolink.ts` or `artifacts/` was touched.
+
+### Decisions and deviations
+
+1. **`anchor.ts` needed no change, and that is now a tested property rather than an assumption.**
+   The structure lists it, and its verify line names `anchor.test`. Both anchoring functions were
+   already checkout-qualified before this slice: `reanchorFile` matches on `anchor.projectId` *and*
+   `anchor.path` (`anchor.ts:83-84`), and `reanchorDiff` on `anchor.root` (`:46`), and core keys the
+   re-anchor sweep by `projectId/path` (`core.ts:313`). Two new tests pin it — re-anchoring one
+   checkout's file leaves the same relative path's draft in another checkout the *same object*, and a
+   diff draft rooted elsewhere is untouched. These are characterisation tests: they pass against the
+   unchanged source, which is the point. Logging "no change needed" rather than silently skipping a
+   file the structure named.
+2. **The heading is `path (checkout)`, with the path first.** `shownPath` gained the name as the
+   structure's signature says; putting the path first keeps today's heading a prefix of the new one
+   and leaves the path where an agent reads it first, with the directory qualifier in parentheses.
+   The design names the change ("gains the checkout name") but not the punctuation — cosmetic, and
+   the human's to overrule.
+3. **Every heading is named, not only an ambiguous one.** The structure's outcome says "*every* `##`
+   heading names the checkout it came from", so there is no single-checkout special case and no way
+   for a message to read correctly until a second checkout happens to appear.
+4. **Sections are keyed by the anchor's checkout identity, not by the shown string.** The headings
+   would already separate two checkouts under different names, but two projects configured under one
+   name would have merged again — a real possibility, since `Project.name` is a human-set label. The
+   key is the anchor's own (`projectId/path`, or `root/path` for a diff); the name is only ever a
+   label. A test covers exactly that.
+5. **An anchor whose checkout is not configured is left unnamed rather than mislabelled.** A file
+   anchor on an unregistered project, or a diff whose root is not any configured path, gets today's
+   output — for a diff, the absolute path, since the base stays `ctx.projectPath`. Labelling such an
+   anchor with the *session's* checkout would be worse than silence: it would name a directory the
+   file is not in.
+6. **The base is the checkout the heading names, which is what makes "no `..`" true by
+   construction.** A diff anchored in one checkout and sent from a session in another is shown
+   relative to *its own* root and named — not relative to the session's project, which is what would
+   produce the `../../../..` the structure rules out. Where both are the same checkout (every
+   ordinary case) the output is byte-identical apart from gaining the name. `ctx.projectPath`
+   survives as the fallback base for the unconfigured-root case, so nothing regresses there.
+7. **`FormatContext` gains `checkouts`, and `Project` already satisfies the new `Checkout` type**, so
+   `reviewSend` passes `slices.projects` unchanged and core is not asked for a shape it lacks.
+8. **A diff's checkout is resolved by exact path equality** with a configured project, not by
+   containment. Containment would be a new rule the design does not state, and the case it would
+   serve (a project that is a subtree of its repo) already behaves correctly today: no match, so the
+   session's own `projectPath` is the base, exactly as before.
+9. **Slice 2's prune rule caught the new core test, which is worth recording.** The first version
+   registered a worktree project whose directory did not exist, and `start` dropped it as a dead
+   worktree before the test ran — the row simply was not there. The test now creates the directory.
+   Two slices' rules meeting in one test, and the prune being the one that was right.
+10. **The send path is covered end to end, not only at the formatter.** `comments/core.test.ts`
+    builds a real core over a real config holding a checkout and its worktree, adds one draft per
+    checkout on the same relative path, and asserts the exact message that reaches the paste. That
+    is the scenario structure v4 tells the human to reproduce by hand, so the hand-run is checking
+    something the test has already checked.
+
+### Verification
+
+`npm test` (73 files, 801 tests — was 73/794), `npm run typecheck`, `npm run build`: all clean.
+
+- Two file anchors on `docs/work/f/03-design.md` in a checkout and its worktree produce two `##`
+  sections, `## docs/work/f/03-design.md (grove)` and
+  `## docs/work/f/03-design.md (grove · fix-auth)`, each holding only its own block, in draft order,
+  with no `..` anywhere in the message (`format.test.ts`).
+- Two checkouts configured under the *same* name still produce two sections (`format.test.ts`).
+- A diff rooted in the checkout is relative and named; a diff rooted in a worktree is relative to
+  *that* worktree and named; a diff rooted at a path matching no checkout keeps the absolute,
+  unnamed form (`format.test.ts`).
+- Re-anchoring one checkout's file leaves the same relative path's draft in another checkout the
+  identical object, and a diff draft with a different root is untouched (`anchor.test.ts`).
+- Against a real core with both projects registered, `reviewSend` pastes the two-section,
+  two-checkout message above (`comments/core.test.ts`).
+
+**Not run here — the manual half of slice 4's verification**, which needs the app. With two
+checkouts of one repo configured:
+
+1. Focus one session.
+2. Draft a comment on `docs/work/x/03-design.md` in the main checkout's copy.
+3. With the viewer still open, open the worktree's copy of the same file and draft there too. (The
+   viewer is global while the draft attaches to the focused session, which is what lets one message
+   hold both — `ArtifactViewer.tsx:37`.)
+4. Send. The message must carry two `##` sections, each naming its checkout, both paths
+   checkout-relative, and each section holding only its own comment.
+5. Diff comments on a worktree session's own diff still show plain worktree-relative paths, now with
+   the worktree's name.
+
+### Seen, not done — the tray still merges by path
+
+`reviewView.ts`'s `groupForTray` keys the **draft tray** by `c.anchor.path` alone, so before sending,
+the tray still groups one relative path's drafts from two checkouts under one row. The structure's
+outcome is about the review *message*, and `reviewView.ts` is in no slice's file list, so it was left
+alone rather than widened silently. The message itself is correct and unambiguous once sent; only the
+pre-send grouping repeats the old key. Worth a follow-up slice if the tray bothers you.
 
 ## Open questions
 

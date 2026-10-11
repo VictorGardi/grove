@@ -871,6 +871,9 @@ export function createCore(opts: CoreOptions): Core {
       if (drafts.length === 0) return { ok: false, error: 'empty' }
       const text = formatReview(drafts, {
         projectPath: project.path,
+        // A session's drafts can span checkouts, so every configured one is offered: each heading
+        // names the checkout its path came from (design: Comment headings).
+        checkouts: slices.projects,
       })
       sending.add(sessionId)
       try {

@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest'
 import type { Comment, CommentAnchor } from '@shared/types'
 import { formatReview } from './format'
 
-const ctx = { projectPath: '/p' }
+const ctx = { projectPath: '/p', checkouts: [{ id: 'p', name: 'grove', path: '/p' }] }
 const note = (body: string): Comment => ({
   id: 'n', sessionId: 's', anchor: { kind: 'note' }, body, state: 'draft', orphaned: false,
   createdAt: '', updatedAt: '', sentAt: null,
@@ -33,7 +33,7 @@ describe('formatReview', () => {
       '',
       'Overall: tidy up',
       '',
-      '## src/a.ts',
+      '## src/a.ts (grove)',
       'L120-122 (new):',
       '> const x = 1',
       '> const y = 2',
@@ -61,11 +61,62 @@ describe('formatReview', () => {
     expect(out).toContain('> z\nCheck z (The lines have changed since this comment was written.)')
   })
 
+  it('names the checkout a diff belongs to, wherever its root is', () => {
+    const both = { ...ctx, checkouts: [...ctx.checkouts, { id: 'wt', name: 'grove · fix-auth', path: '/wt' }] }
+    const out = formatReview([
+      diff({}, 'In the checkout'),
+      diff({ root: '/wt', path: 'src/b.ts' }, 'In the worktree'),
+      diff({ root: '/elsewhere', path: 'lib/c.ts' }, 'No such checkout'),
+    ], both)
+    // the session's own diff is named, a diff rooted in another checkout is named *and* relative to
+    // that checkout, and a root matching no configured checkout keeps today's absolute, unnamed path
+    expect(out).toContain('## src/a.ts (grove)')
+    expect(out).toContain('## src/b.ts (grove · fix-auth)')
+    expect(out).toContain('## /elsewhere/lib/c.ts')
+    expect(out).not.toContain('..')
+  })
+
   const art = (over: Partial<Extract<CommentAnchor, { kind: 'file' }>>, body: string, orphaned = false): Comment => ({
     ...note(body), orphaned,
     anchor: { kind: 'file', projectId: 'p', path: 'docs/work/f/03-design.md', exact: 'the quoted text', prefix: '', suffix: '', start: 40, end: 41, ...over },
   })
-  const actx = { projectPath: '/p' }
+
+  it('gives the same relative path in two checkouts two sections, each naming its own', () => {
+    // ArtifactViewer.tsx:37 attaches a draft to the focused session while the anchor comes from the
+    // global viewer, so one message can hold one relative path from two checkouts of one repo.
+    const both = { ...ctx, checkouts: [
+      { id: 'p', name: 'grove', path: '/p' },
+      { id: 'wt', name: 'grove · fix-auth', path: '/wt' },
+    ] }
+    const out = formatReview([
+      art({}, 'in the checkout'),
+      art({ projectId: 'wt' }, 'in the worktree'),
+    ], both)
+    expect(out).toBe([
+      'Review comments from Grove (2). Please address each one.',
+      '',
+      '## docs/work/f/03-design.md (grove)',
+      'L40-41, on "the quoted text":',
+      'in the checkout',
+      '',
+      '## docs/work/f/03-design.md (grove · fix-auth)',
+      'L40-41, on "the quoted text":',
+      'in the worktree',
+    ].join('\n'))
+    expect(out).not.toContain('..')
+  })
+
+  it('keeps two sections when two checkouts are configured under one name', () => {
+    const same = { projectPath: '/p', checkouts: [{ id: 'p', name: 'grove', path: '/p' }, { id: 'q', name: 'grove', path: '/q' }] }
+    const out = formatReview([art({}, 'one'), art({ projectId: 'q' }, 'two')], same)
+    expect(out.match(/^## docs\/work\/f\/03-design\.md/gm)).toHaveLength(2)
+    expect(out).toContain('one\n\n## docs/work/f/03-design.md (grove)\nL40-41, on "the quoted text":\ntwo')
+  })
+
+  it('names no checkout for a file anchor whose project is not configured', () => {
+    expect(formatReview([art({ projectId: 'gone' }, 'x')], ctx)).toContain('## docs/work/f/03-design.md\n')
+  })
+  const actx = ctx
 
   it('file quote', () => {
     const long = 'x'.repeat(250)
@@ -75,14 +126,14 @@ describe('formatReview', () => {
     expect(out).toBe([
       'Review comments from Grove (3). Please address each one.',
       '',
-      '## docs/work/f/03-design.md',
+      '## docs/work/f/03-design.md (grove)',
       'L40-41, on "the quoted text":',
       'Too vague',
       '',
       `L5, on "${'x'.repeat(200)}…":`,
       'Cut (The text has changed since this comment was written.)',
       '',
-      '## a.md',
+      '## a.md (grove)',
       'L40-41, on "the quoted text":',
       'Other file',
     ].join('\n'))

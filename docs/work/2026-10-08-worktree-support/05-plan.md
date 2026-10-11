@@ -2,7 +2,7 @@
 feature: 2026-10-08-worktree-support
 phase: plan
 status: approved
-version: 3
+version: 4
 created: 2026-10-10
 updated: 2026-10-11
 based_on:
@@ -168,6 +168,44 @@ and is what every step below builds grouping on.
 - [x] Run `npm test` (covers `featureUnion.test`, `repoGroups.test`, `tree.test`,
   `boardRender.test`, `projectPageRender.test`, `navigation.test`, `paletteItems.test`,
   `gridView.test`, `noInlineStyles.test`).
+- [x] Run `npm run typecheck`.
+- [x] Run `npm run build`.
+- [x] Log the slice in `docs/work/2026-10-08-worktree-support/06-implementation.md`.
+
+## Slice 4 — A review message names the checkout each path came from
+
+Planned against structure v4, which rewrote this slice so both halves stay, against `03-design.md`'s
+two-way row ("Comment headings | `comments/format.ts:44-46` gains the checkout name") and its risk
+entry ("Comment headings fork… keys the review message by `anchor.path` with no checkout
+qualifier"), and against the code as slice 3 left it.
+
+The reachable path, as the structure states it: `ArtifactViewer.tsx:37` takes the draft's session
+from the focused session (`target.fromDiff ?? focusedSessionId`) while the anchor comes from the
+global viewer, so one session's tray can hold a file anchor in one checkout and another in a
+worktree of the same repo — on the same relative path, which today merges into one `##` heading.
+
+- [x] Failing test in `src/core/comments/format.test.ts`: two file anchors with the same relative
+  path in two checkouts of one repo produce two `##` sections, each naming its checkout, each
+  holding only its own block; the worktree's path is `docs/work/x/03-design.md`, not a path walking
+  out of the checkout with `..`.
+- [x] Failing test in `src/core/comments/format.test.ts`: a diff anchor whose `root` is another
+  checkout of the session's repo is shown relative to *that* checkout and under its name; one whose
+  `root` matches no configured checkout keeps today's behaviour (absolute, unnamed); the session's
+  own diff is unchanged apart from gaining its checkout's name.
+- [x] Failing test in `src/core/comments/format.test.ts`: two checkouts configured with the same
+  `name` still produce two sections, so the name is a label and not the identity.
+- [x] `src/core/comments/format.ts`: `FormatContext` gains `checkouts: { id; name; path }[]`;
+  `shownPath(file, basePath, name)` gains the checkout's name, as the structure's signature says;
+  the sections map is keyed by the anchor's checkout id and path rather than by the shown string,
+  so two checkouts can never merge into one section whatever they are called.
+- [x] Failing test in `src/core/comments/anchor.test.ts`: reanchoring a draft on one relative path
+  in one checkout leaves a draft on the same relative path in another checkout exactly as it was —
+  the property that lets `anchor.ts` stay as it is.
+- [x] Failing test in `src/core/comments/core.test.ts`: `reviewSend` for a session with file drafts
+  on one relative path in two configured checkouts produces one message carrying two `##` sections,
+  each naming its checkout — the wiring the structure's manual step depends on.
+- [x] `src/core/core.ts`: `reviewSend` passes `checkouts: slices.projects` in the `FormatContext`.
+- [x] Run `npm test` (covers `comments/format.test`, `comments/anchor.test`, `comments/core.test`).
 - [x] Run `npm run typecheck`.
 - [x] Run `npm run build`.
 - [x] Log the slice in `docs/work/2026-10-08-worktree-support/06-implementation.md`.

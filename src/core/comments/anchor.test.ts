@@ -163,4 +163,26 @@ describe('reanchorFile', () => {
     ]
     expect(reanchorFile(cs, FILE, 'nothing\n')).toBe(cs)
   })
+
+  // One relative path in a checkout and in a worktree is two files, and re-anchoring is keyed on
+  // the checkout as well as the path — which is why slice 4 could leave anchor.ts unchanged.
+  it('never touches a draft on the same relative path in another checkout', () => {
+    const inWorktree = art('the target', { start: 3, end: 3 }, {
+      id: 'wt', anchor: { kind: 'file', projectId: 'wt', path: FILE.path, exact: 'the target', prefix: '', suffix: '', start: 3, end: 3 },
+    })
+    const cs = [art('the target', { start: 3, end: 3 }), inWorktree]
+    const out = reanchorFile(cs, FILE, src('new one', 'new two', 'old', 'the target'))
+    expect(lines(out[0])).toEqual([7, 7])      // the checkout's draft followed its own file
+    expect(out[1]).toBe(inWorktree)            // the worktree's draft is the same object, untouched
+  })
+
+  it('leaves a diff draft rooted in another checkout alone', () => {
+    const elsewhere = draft({ start: 2, end: 3, lines: ['b', 'c'] }, {
+      id: 'other', anchor: { kind: 'diff', root: '/other-root', path: 'a.ts', side: 'new', start: 2, end: 3, lines: ['b', 'c'] },
+    })
+    const cs = [draft({ start: 2, end: 3, lines: ['b', 'c'] }), elsewhere]
+    const out = reanchorDiff(cs, diff([file([[ctxLine(1, 'a'), add(2, 'x'), add(3, 'c')]])]))
+    expect(anchorOf(out[0])).toMatchObject({ start: 2, end: 3 })
+    expect(out[1]).toBe(elsewhere)
+  })
 })
