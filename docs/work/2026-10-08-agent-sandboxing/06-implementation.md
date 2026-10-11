@@ -1,17 +1,206 @@
 ---
 feature: 2026-10-08-agent-sandboxing
 phase: implementation
-status: stale
-version: 3
+status: draft
+version: 5
 created: 2026-10-10
 updated: 2026-10-11
 based_on:
-  - 03-design.md@7
-  - 04-structure.md@4
+  - 03-design.md@8
+  - 04-structure.md@5
 forced: []
 ---
 
 # Agent session sandboxing — implementation
+
+## Finding: `--read-only-path` does not enforce an absent target, and D8's carve-outs are absent by default
+
+**Resolved 2026-10-11: the human chose option B (below). The slice is complete; the carve-outs
+stay `--read-only-path` and the limitation is documented here.** Kept in full because the
+measurement is what justifies the decision, and because the design text still needs correcting.
+
+D8 says the three authority-carrying files become read-only carve-outs, so "the agent can read
+the human's authority but never rewrite it". grove implements that literally — one
+`--read-only-path` per file. Measured 2026-10-11 on this Mac, with grove's exact argv:
+
+| Target | On the host | Write from inside the container |
+| --- | --- | --- |
+| `~/.claude/settings.json` | present | **refused** (EROFS) — the carve-out holds |
+| `~/.claude/.credentials.json` | **absent** | **succeeded** — the carve-out does not exist |
+| an ordinary file in the same dir | absent | succeeded (expected — the dir is rw) |
+
+`--read-only-path` on a path that does not exist is silently a no-op: the run succeeds, the
+flag is accepted, and the write lands on the host. Confirmed by re-creating the file and
+re-running: once it exists, the very same argv refuses. So it is presence, not spelling, order
+or path form. Rejected as explanations, each measured: `--read-only-path` **before** `--volume`
+(writes through), `--mount type=bind,...,readonly` on a file (`Error: path ... is not a
+directory`), `--masked-path` (does not mask, and the write still lands), `--volume file:file,ro`
+(silently absent). `,readonly` as a volume suffix does not work at all — every such run failed
+to mount. The only syntax that works is `:ro`.
+
+**Why this lands exactly where D8 needs it.** `.credentials.json` is absent on precisely the
+machines D8 exists for: on macOS Claude Code keeps its login in the Keychain, and
+`~/.claude/.credentials.json` is only the **fallback** store (the docs: "when the Keychain
+rejects the write, such as when it's locked in an SSH session"), so a normal Mac has no such
+file — verified on this machine, where the Keychain item exists and no `.credentials.json`
+does. So the carve-out grove emits for the file that motivated D8 is inert on the target
+configuration. `auth.json` is in the same position (absent here, no host OpenCode login).
+`settings.json` is the lucky one: it exists, so it is enforced.
+
+**Severity, corrected 2026-10-11 against Anthropic's published authentication precedence.**
+An earlier version of this paragraph quoted D8's own wording — "a writable one lets a
+sandboxed agent rewrite the human's login" — and implied that consequence follows here. It
+largely does not, and the reason is the documented precedence order:
+
+1. cloud provider creds → 2. `ANTHROPIC_AUTH_TOKEN` → 3. `ANTHROPIC_API_KEY` → 4. `apiKeyHelper`
+→ 5. `CLAUDE_CODE_OAUTH_TOKEN` → 6. profile / federation creds → **7. subscription OAuth
+credentials from `/login`** — and that last rank is what the Keychain and `.credentials.json`
+hold.
+
+Both variables grove forwards (`CLAUDE_CODE_OAUTH_TOKEN` at 5, `ANTHROPIC_API_KEY` at 3)
+outrank the file. So in any session grove actually opens with a forwarded token, a planted
+`.credentials.json` is simply not the credential that gets used. The exposure is confined to
+the one case grove permits with no env token — the `.credentials.json` channel alone — where
+nothing stops the agent dropping a file a later tokenless session could pick up. Real, and
+grove does not close it, but far narrower than "rewrite your login".
+
+What survives the correction, and is the part that matters: **the carve-out grove emits does
+not do what the design says it does**, silently, on the configuration D8 was written for.
+
+This is D8's stated consequence failing, so grove-implement stops rather than pick a mechanism.
+Nothing in `03-design.md` or `04-structure.md` was edited, and no workaround was written.
+
+### The two ways out, both measured
+
+**A. Read-only parent, writable nested re-binds.** `--volume <claudeHome>:<claudeHome>:ro`,
+plus a `--volume` per subdirectory the agent legitimately writes (`projects`,
+`shell-snapshots`, `history.jsonl`, `todos`, `cache`, …). Measured: the carve-out is refused
+(EROFS), `settings.json` stays readable, and the nested subdirectories stay writable. It holds
+for **absent** targets, because the whole directory is read-only. Cost: the list of writable
+subdirectories is Claude Code's own layout, so it must be maintained against a third party's
+directory structure, and it fails **closed and loud** — a subdirectory grove has not heard of
+gets EROFS. It also buys a broader guarantee than D8 asked for (nothing in `~/.claude` is
+writable but the allow-list: `plugins/`, `commands/`, `settings.local.json`, and so on), which
+is why it is a feature of its own rather than a detail of D8.
+
+**B. Keep `--read-only-path` and accept the hole.** **Chosen by the human, 2026-10-11.**
+
+### Why B, given the reachability analysis
+
+Cross-referencing grove's own refusal with Anthropic's published precedence, every reachable
+case is already closed:
+
+| Env token set? | `.credentials.json` on host | grove | File writable inside? | Consequential? |
+| --- | --- | --- | --- | --- |
+| yes | absent | starts | yes | No — the env token outranks the file, so a planted one is not used |
+| yes | present | starts | no (EROFS) | No |
+| no | present | starts | no (EROFS) | No |
+| no | absent | **`no-sandbox`**, nothing starts | — | No session exists |
+
+There is no row where the gap bites. grove refuses before it can, and where it proceeds the
+forwarded token outranks anything the agent could plant. B is therefore not "accept a security
+hole" — it is "document a limitation grove's existing logic already makes unreachable", and it
+costs one line of code that is already written.
+
+A third path exists and is rejected here for the same reason D8 rejected reading the Keychain:
+**grove pre-creates** an empty `.credentials.json` / `auth.json` on the host so the carve-out
+binds. That is grove writing into the human's credential store, which D8's "grove writes a
+credential file" rejection already covers.
+
+**Still owed, and deliberately not done here:** `03-design.md`'s D8 and `04-structure.md`'s
+slice-2 outcome both state the carve-outs unconditionally. They are conditional on the file
+existing. Correcting approved design text is `grove-design`'s to do, not this skill's.
+
+## What slice 2 did land
+
+The D8 channel works. Measured, under a real controlling TTY (`script -q /dev/null`), with
+grove's exact composed argv and a **dummy** token — the Keychain secret never entered a
+container:
+
+- **`CLAUDE_CONFIG_DIR` reaches the host config.** The container prints
+  `CLAUDE_CONFIG_DIR=/Users/victor/.claude` and reads the host's `settings.json` contents
+  inside. This is the fix for the "Select login method" dead end: the config volumes were
+  mounted and unread because `~` is `/root` in the VM; the pointer makes them live.
+- **The token is forwarded bare.** `-e CLAUDE_CODE_OAUTH_TOKEN` with no `=value` arrives with
+  the value set inside, and `ANTHROPIC_API_KEY` unset stays unset. The value never enters argv
+  or ps.
+- **The login gate is cleared in the real TUI** — Claude Code renders its TUI past
+  "Select login method" and answers `--prompt "print pwd"`. With the dummy token the request
+  fails at the API with a 401 on the token itself, which is the proof that the *channel* works:
+  the failure moved from "Not logged in" to "your token is wrong".
+- **OpenCode's pointer works too**, same run shape: `opencode auth list` inside the container
+  resolves to the **host** path `/Users/victor/.local/share/opencode/auth.json`, not `/root/…`.
+- **An absent `-e VAR` does not fail the run** (re-measured, exit 0) — which is why the
+  refusal probes the login shell instead of attempting a run.
+- **Writing to `settings.json` from inside gives EROFS** — the carve-out that *is* present is
+  enforced. `.credentials.json` is absent here and therefore not; see the finding above.
+- The refusal itself is covered by tests only: this Mac has no credential in any login shell,
+  so `grove new claude --sandboxed` cannot reach the point of showing a real pane. The
+  `no-sandbox` message naming `claude setup-token` is asserted in `cliServer.test.ts`.
+
+Not run: the *populated* OpenCode case (`opencode auth list` listing a real provider) — this
+machine has no host OpenCode login, so there is nothing to list. Slice 6 owns that check.
+
+`npm test`: 853 passed / 77 files (was 832). `npm run typecheck`: clean.
+
+## Deviations and decisions taken inside the slice
+
+1. **The card step was skipped, not done narrowly.** The plan named
+   `src/renderer/src/components/SessionCard.tsx`; no such file exists, and no component renders
+   a sandbox tag — slice 4 owns the tag. Independently, the credential label lives on the
+   transient `SandboxSpec`, which the renderer never sees, and the plan forbids persisting it
+   on `Session`. So there was nothing to attach the label to and no route to deliver it. Left
+   for slice 4, where the tag it names will exist.
+2. **`credential` on `SandboxSpec` is currently write-only.** It is populated from the probe
+   and tested, but no consumer reads it yet — the card step that would is the one above. Kept
+   because slice 4 needs it and it costs one field; it is not dead code so much as code
+   awaiting its reader. Worth a human's eye at review.
+3. **`envFor` gained `kind` as its first parameter**, per the design's own signature list
+   (`envFor(kind, session, o: { paths })`), which is a breaking change to slice 1's function.
+   Callers: `specFor` only.
+4. **`readOnlyPathsFor` places the carve-outs before `gitconfig`**, keeping git concerns
+   adjacent; ordering is cosmetic and asserted only within this slice.
+5. **`loginShellCredential` spawns the shell twice when no variable is set** (once per
+   candidate), then checks the file. Sequential, ~2× the latency of one spawn, in exchange for
+   stopping at the first hit. Measured cost is negligible against the container start.
+6. **`process.env.SHELL || '/bin/zsh'` in `core.ts`** rather than passing the shell through
+   `opts`, matching `loginShellArgv`'s own fallback in `src/core/env.ts:43`.
+
+## Deviations carried from slice 1
+
+7. **The two refusals slice 1 pulled forward stand** (opencode, terminal): untouched.
+   ADR 0039 / D7 and `gitCommonDir` untouched, as instructed.
+
+## Residue
+
+- Nothing left on the host: every probe file written into `~/.claude` during this slice
+  (`.credentials.json`, `.absent-probe.json`, `.plain-probe.txt`) was removed, and
+  `settings.json` is byte-identical (`grep -c tampered` → 0). The probe script
+  (`resources/sandbox/probe-inside.sh`) and the argv-dumping test were deleted; they were
+  scaffolding, not deliverables.
+- No containers left running; `container list` is empty. The image `grove-sandbox:cbcd1e51f27a`
+  remains, as in slice 1.
+
+## Open questions
+
+None. The one that was open here — A or B for the absent-target carve-out — is answered in the
+finding above (B, by the human). One item is owed but is not a question for this phase:
+`03-design.md`'s D8 and `04-structure.md`'s slice-2 outcome state the carve-outs
+unconditionally, and correcting approved design text belongs to `grove-design` in revise mode.
+
+## Carried to the next slice
+
+- **OpenCode runs v2.0.20 on this host; the sandbox image pins `opencode-ai@1.19.0`.** Measured
+  2026-10-11. The version skew is slice 6's problem and it is not small: D6's whole plan is a
+  sandboxed TUI joining the host's shared service, and the two versions may not agree on the
+  wire protocol or on where credentials live. Worth resolving before slice 6 is planned, not
+  during it.
+- **The credential label has no reader yet.** `SandboxSpec.credential` is populated and tested;
+  nothing renders it until slice 4 builds the sandbox tag.
+
+---
+
+# Slice 1 (58c4e1f), kept for the record
 
 ## Finding: a sandboxed Claude session cannot authenticate on macOS as designed
 
@@ -125,11 +314,14 @@ one-way decision.
 
 ## Notes for the next slices
 
+*(Superseded by slice 2 where marked.)*
+
 - `sessionResume` is deliberately untouched: slice 1 sandboxes the create path only. A session
-  with `sandboxed: true` that is resumed today resumes **unsandboxed** — slice 2's job, and the
-  reason that ordering exists.
-- `MESSAGES` in `src/main/cliServer.ts` has no `no-sandbox` entry yet, so the CLI prints the bare
-  code (`grove: no-sandbox: no-sandbox`) until slice 6.
+  with `sandboxed: true` that is resumed today resumes **unsandboxed**. Still true after slice 2;
+  slice 3 owns it.
+- ~~`MESSAGES` in `src/main/cliServer.ts` has no `no-sandbox` entry yet, so the CLI prints the bare
+  code (`grove: no-sandbox: no-sandbox`) until slice 6.~~ **Done in slice 2**: `no-sandbox` now maps
+  to a message naming `claude setup-token`.
 - The app had to be restarted during the manual verify: the `npm run dev` already running was
   not rebuilding. Worth knowing before a manual run that appears to test stale code.
 

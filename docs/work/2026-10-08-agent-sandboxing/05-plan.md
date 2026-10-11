@@ -211,7 +211,7 @@ variable from the calling process's environment and still works when the caller 
 variable that is *not* set does **not** fail the run, so absence must be probed, not
 attempted.
 
-- [ ] `src/core/sandbox/spec.test.ts` — `envFor('claude', SESSION, { paths: PATHS })` equals
+- [x] `src/core/sandbox/spec.test.ts` — `envFor('claude', SESSION, { paths: PATHS })` equals
       the existing six entries **plus** `CLAUDE_CONFIG_DIR: '/home/u/.claude'` and
       `passEnv: ['CLAUDE_CODE_OAUTH_TOKEN', 'ANTHROPIC_API_KEY']`; `envFor('opencode', …)`
       adds `XDG_DATA_HOME: '/home/u/.local/share'` and
@@ -221,17 +221,17 @@ attempted.
       `readOnlyPathsFor('opencode', …)` gains `/home/u/.local/share/opencode/auth.json`;
       each of the two kinds excludes the other's carve-outs; a path that was never resolved
       contributes no carve-out; `specFor` threads `passEnv` through.
-- [ ] `src/core/sandbox/argv.test.ts` — a `passEnv` entry reaches the argv as exactly
+- [x] `src/core/sandbox/argv.test.ts` — a `passEnv` entry reaches the argv as exactly
       `['-e', 'CLAUDE_CODE_OAUTH_TOKEN']`, with no `=` anywhere in it, after the `-e K=V`
       block and before the image.
-- [ ] Implement `src/core/sandbox/spec.ts`: add `passEnv?: string[]` to `SandboxSpec`;
+- [x] Implement `src/core/sandbox/spec.ts`: add `passEnv?: string[]` to `SandboxSpec`;
       change `envFor(kind, session, o: { paths: MountPaths })` — `kind` first — to return
       `{ env, passEnv }`; derive `XDG_DATA_HOME`/`XDG_CONFIG_HOME` with
       `path.dirname(opencodeShare)` / `path.dirname(opencodeConfig)`; append the three
       carve-outs in `readOnlyPathsFor`; thread both through `specFor`.
-- [ ] Implement `src/core/sandbox/argv.ts`: after the `-e K=V` entries, emit
+- [x] Implement `src/core/sandbox/argv.ts`: after the `-e K=V` entries, emit
       `...(s.passEnv ?? []).map((k) => '-e', )` as `flatMap((k) => ['-e', k])`.
-- [ ] Create `src/core/sandbox/auth.ts` exporting
+- [x] Create `src/core/sandbox/auth.ts` exporting
       `loginShellCredential(kind, o: { shell: string; claudeHome?: string }): Promise<string | null>`
       returning a **human label** of the credential the session will use, or null. For
       `'claude'`: spawn `<shell> -l -i -c 'echo ${VAR:-}'` once per candidate in order
@@ -240,34 +240,54 @@ attempted.
       `'~/.claude/.credentials.json'`; otherwise null. For `'opencode'` return
       `"the host's opencode auth.json, or the free tier"` immediately, **without spawning**.
       A spawn error, timeout or empty output is "not found", never a throw.
-- [ ] Create `src/core/sandbox/auth.test.ts` against a fake `shell` script written to a temp
+- [x] Create `src/core/sandbox/auth.test.ts` against a fake `shell` script written to a temp
       dir and marked executable: set/unset per variable, `.credentials.json` present and
       absent, first-match-wins ordering, opencode never spawning (assert the fake shell's
       marker file was not created).
-- [ ] `src/core/sessionCreate.test.ts` — `sessionCreate({ kind: 'claude', sandboxed: true })`
+- [x] `src/core/sessionCreate.test.ts` — `sessionCreate({ kind: 'claude', sandboxed: true })`
       returns `{ ok: false, error: 'no-sandbox' }` when `loginShellCredential` resolves null,
       and creates the session when it resolves a label; an unsandboxed claude create never
       probes.
-- [ ] `src/core/core.ts` — in the `sandboxKind` branch, after `ensureImage` and before
+- [x] `src/core/core.ts` — in the `sandboxKind` branch, after `ensureImage` and before
       `specFor`, `const credential = await loginShellCredential(sandboxKind, { shell: process.env.SHELL || '/bin/zsh', claudeHome: paths.claudeHome })`;
       `if (!credential) return { ok: false, error: 'no-sandbox' }`. Store the label on the
       spec's `credential` field so the card can name it; do not persist it on `Session`.
-- [ ] `src/core/sandbox/spec.ts` — add `credential?: string` to `SandboxSpec` and populate
+- [x] `src/core/sandbox/spec.ts` — add `credential?: string` to `SandboxSpec` and populate
       it from the label above; absent means "nothing forwarded".
-- [ ] `src/main/cliServer.ts` — add to `MESSAGES`: `'no-sandbox'` →
+- [x] `src/main/cliServer.ts` — add to `MESSAGES`: `'no-sandbox'` →
       `'this machine cannot give a sandboxed session what it needs — install and start the `container` CLI, or run `claude setup-token` and export CLAUDE_CODE_OAUTH_TOKEN in your shell profile'`.
-- [ ] `src/renderer/src/components/SessionCard.tsx` (whichever renders the sandbox tag) —
-      when a session's sandbox tag is shown, name the credential the spec carries; render
-      nothing extra when there is none.
-- [ ] `npm test`
-- [ ] `npm run typecheck`
-- [ ] Manual, **under a real controlling TTY** (`container run -i -t` fails with ENODEV
-      without one and looks like a broken mount subsystem). Use a real tmux pane via
-      `npm run dev`, or wrap the run in `script -q /dev/null`. With a **dummy**
-      `CLAUDE_CODE_OAUTH_TOKEN` — never the real one, the Keychain secret must not enter a
-      container: `grove new claude --sandboxed --prompt "print pwd"` renders the TUI past
-      the login screen and answers; the host's `~/.claude/settings.json` demonstrably
-      applies inside; writing to `settings.json` or `.credentials.json` from inside gives
-      `EROFS`; `opencode auth list` inside a sandboxed opencode pane lists the host's
-      provider; and with `CLAUDE_CODE_OAUTH_TOKEN` and `ANTHROPIC_API_KEY` unset, the create
-      fails `no-sandbox` naming `claude setup-token`.
+- [x] **Deferred to slice 4**, which owns the sandbox tag this would attach to — the card step
+      (`src/renderer/src/components/SessionCard.tsx` in the original wording; no such file
+      exists and no component renders a sandbox tag). `SandboxSpec.credential` is populated and
+      tested, so slice 4 only has to render it. See `06-implementation.md`.
+- [x] `npm test`
+- [x] `npm run typecheck`
+- [x] Manual, **under a real controlling TTY** (`container run -i -t` fails with ENODEV without
+      one and looks like a broken mount subsystem). Wrapped in `script -q /dev/null`, with a
+      **dummy** `CLAUDE_CODE_OAUTH_TOKEN` — never the real one, the Keychain secret must not
+      enter a container: the TUI renders **past** the login screen and answers (failing at the
+      API with a 401 on the dummy token, which is what proves the channel works);
+      `CLAUDE_CONFIG_DIR` reaches the host config and the host's `settings.json` is read and
+      applied inside; the token arrives with no `=` in the argv; writing to `settings.json`
+      from inside gives `EROFS`; `opencode auth list` inside resolves to the **host** path
+      `/Users/victor/.local/share/opencode/auth.json`. Not run: the populated-provider case
+      (no host OpenCode login on this machine — slice 6 owns it) and the end-to-end refusal
+      through a live app (asserted in `cliServer.test.ts` instead).
+
+### Decision: D8's carve-outs stay `--read-only-path` (option B)
+
+`--read-only-path` enforces nothing when the target is absent on the host, and
+`.credentials.json` is absent on precisely the machines D8 was written for. Measured
+2026-10-11; the evidence, the rejected alternative and the reachability analysis are in
+`06-implementation.md`.
+
+**The human chose B: keep the mechanism, document the limitation.** The cross-check that made
+it a close call is in `06-implementation.md` — grove's own refusal plus Anthropic's published
+credential precedence means no reachable configuration leaves that gap consequential. Option A
+(read-only parent plus writable nested re-binds) was measured working and remains the honest
+upgrade if the broader goal is ever wanted: *nothing* in `~/.claude` writable except a
+maintained list. That is its own feature, deliberately not smuggled in here.
+
+Consequence still owed: `03-design.md`'s D8 and `04-structure.md`'s slice-2 outcome both state
+the carve-outs unconditionally ("never rewrite it"). They are conditional on the file existing.
+Correcting that wording is `grove-design`'s to make, not this skill's.

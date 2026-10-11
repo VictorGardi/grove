@@ -30,6 +30,7 @@ import { gitCommonDir } from './git'
 import * as worktrees from './worktrees'
 import type { AgentEvent, AgentKind, AgentSource } from './agents/types'
 import { sandboxArgv } from './sandbox/argv'
+import { loginShellCredential } from './sandbox/auth'
 import { ensureImage, imageRef } from './sandbox/image'
 import { specFor, type AgentPaths, type SandboxSpec } from './sandbox/spec'
 import { autoLink, link, markGone, markSeen, newSession, reconcile, rename, resume, setWorkflowStatus, withBranches } from './sessions'
@@ -714,6 +715,13 @@ export function createCore(opts: CoreOptions): Core {
         try {
           const tag = imageRef(sandbox.dockerfile) // the image is content-addressed on the Dockerfile
           await ensureImage({ container: sandbox.container, dir: path.dirname(sandbox.dockerfile), tag })
+          // D8: no credential reachable means a pane that stops at a login screen it cannot pass.
+          // The probe runs the same login shell the pane is built on, and never throws.
+          const credential = await loginShellCredential(sandboxKind, {
+            shell: process.env.SHELL || '/bin/zsh',
+            claudeHome: paths.claudeHome,
+          })
+          if (!credential) return { ok: false, error: 'no-sandbox' }
           spec = specFor({
             kind: sandboxKind,
             cwd: workdir,
@@ -722,6 +730,7 @@ export function createCore(opts: CoreOptions): Core {
             session,
             container: sandbox.container,
             image: tag,
+            credential,
           })
         } catch {
           return { ok: false, error: 'no-sandbox' } // no binary, no system, no build, no Dockerfile: never an unsandboxed pane

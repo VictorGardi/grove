@@ -58,6 +58,8 @@ describe('cli server', () => {
     const sandboxed = await request(socketPath, req('sessions.create', { kind: 'claude', cwd: t.dir, sandboxed: true }))
     // the test core has no sandbox configured, so the refusal is the wiring under test
     expect(sandboxed).toMatchObject({ ok: false, error: { code: 'no-sandbox' } })
+    // D8: the refusal says what to do, rather than printing a bare code at the human
+    expect(sandboxed.ok === false && sandboxed.error.message).toContain('claude setup-token')
     expect(core.getSlices().sessions).toEqual([])
 
     const bare = await request(socketPath, req('sessions.create', { kind: 'claude', cwd: t.dir }))

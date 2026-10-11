@@ -24,6 +24,11 @@ const MESSAGES: Record<string, string> = {
   'not-ready': 'the resumed session did not draw its prompt in time',
   'no-git': 'git was not found, so no worktree could be made',
   'worktree-failed': 'the worktree could not be created',
+  // One message for every way a sandbox cannot be had, because the CLI has one line to spend on
+  // it (D8): it says what to run rather than printing a code. Naming the command is the whole
+  // mitigation — grove cannot tell a one-year `setup-token` from a short-lived one.
+  'no-sandbox':
+    'this machine cannot give a sandboxed session what it needs — install and start the `container` CLI, or run `claude setup-token` and export CLAUDE_CODE_OAUTH_TOKEN in your shell profile',
 }
 
 const failFrom = (id: string, code: string): CliReply => fail(id, code, MESSAGES[code] ?? code)

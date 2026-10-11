@@ -20,6 +20,10 @@ export function sandboxArgv(o: { name: string; spec: SandboxSpec; agentArgv: str
     ...Object.entries(s.env).flatMap(([k, v]) => ['-e', `${k}=${v}`]),
     // The CLI bundle is mounted rather than baked, so its per-install path cannot be either (D7).
     ...(s.cliBundle ? ['-e', `GROVE_CLI_BUNDLE=${s.cliBundle}`] : []),
+    // Bare, with no `=value` (D8): `container run -e VAR` takes the value from the calling
+    // process, so the credential comes from the pane's own login shell and never appears in argv
+    // or ps. Still an `-e`, so it lands before the image like every other one.
+    ...(s.passEnv ?? []).flatMap((k) => ['-e', k]),
     s.image,
     ...o.agentArgv,
   ]

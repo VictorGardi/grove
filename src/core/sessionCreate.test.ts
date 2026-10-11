@@ -8,6 +8,7 @@ import { claudeArgv } from './claude/hooks'
 import { gitRunner } from './diff/git'
 import { minimalEnv } from './env'
 import { imageRef } from './sandbox/image'
+import type { Core } from './core'
 import { gitRepo } from './testing/gitRepo'
 import { setupCore } from './testing/setup'
 import { add as addWorktree, worktreePath } from './worktrees'
@@ -198,11 +199,14 @@ describe('sessionCreate --sandboxed', () => {
 
   // A `container` that finds no image, so the create takes the build path against a binary that
   // always succeeds — the real one is never touched by a test.
+  // A credential grove can see, so the argv under test is the sandbox's and not a refusal (D8).
   async function start() {
     fs.mkdirSync(path.dirname(container()), { recursive: true })
     fs.writeFileSync(container(), '#!/bin/sh\nexit 0\n', { mode: 0o755 })
     fs.mkdirSync(path.dirname(dockerfile()), { recursive: true })
     fs.writeFileSync(dockerfile(), 'FROM node:22-slim\n')
+    fs.mkdirSync(paths().claudeHome, { recursive: true })
+    fs.writeFileSync(path.join(paths().claudeHome, '.credentials.json'), '{}')
     const core = t.make(undefined, {
       sessionEnv: { binDir: '/bin', ...paths() },
       sandbox: { container: container(), dockerfile: dockerfile() },
@@ -280,5 +284,101 @@ describe('sessionCreate --sandboxed', () => {
     await core.start()
     expect(await sandboxed(core)).toEqual({ ok: false, error: 'no-sandbox' })
     expect(created(t.fake)).toEqual([])
+  })
+})
+
+// D8: grove probes the login-shell env rather than attempting a run, because a bare `-e VAR` for an
+// absent variable does not fail the run (measured, exit 0) — so absence has to be seen from the
+// host, or a sandboxed pane opens onto a login screen it cannot pass.
+describe('sessionCreate --sandboxed probes the login shell for a credential', () => {
+  let t: ReturnType<typeof setupCore>
+  beforeEach(() => { t = setupCore() })
+  afterEach(() => t.disposeAll())
+
+  const home = () => path.join(t.dir, 'home')
+  const paths = () => ({
+    claudeHome: path.join(home(), '.claude'),
+    claudeJson: path.join(home(), '.claude.json'),
+    gitconfig: path.join(home(), '.gitconfig'),
+    spoolDir: path.join(t.dir, 'agents', 'claude'),
+    socketPath: path.join(t.dir, 'grove.sock'),
+    cliBundle: path.join(t.dir, 'out', 'main', 'cli.js'),
+  })
+
+  // A login shell that carries exactly the named variable, and records that it was asked.
+  function loginShell(set: string) {
+    const dir = path.join(t.dir, 'shell')
+    fs.mkdirSync(dir, { recursive: true })
+    const asked = path.join(dir, 'asked')
+    const script = path.join(dir, 'login-shell')
+    fs.writeFileSync(
+      script,
+      `#!/bin/sh
+name=\${4#'echo \${'}
+name=\${name%':-}'}
+echo "$name" >> ${JSON.stringify(asked)}
+[ "$name" = ${JSON.stringify(set)} ] && printf 'set'
+exit 0
+`,
+      { mode: 0o755 },
+    )
+    return { shell: script, asked: () => (fs.existsSync(asked) ? fs.readFileSync(asked, 'utf8').trim().split('\n').filter(Boolean) : []) }
+  }
+
+  async function start(shell: string) {
+    fs.mkdirSync(path.dirname(container()), { recursive: true })
+    fs.writeFileSync(container(), '#!/bin/sh\nexit 0\n', { mode: 0o755 })
+    fs.mkdirSync(path.dirname(dockerfile()), { recursive: true })
+    fs.writeFileSync(dockerfile(), 'FROM node:22-slim\n')
+    vi.stubEnv('SHELL', shell)
+    const core = t.make(undefined, {
+      sessionEnv: { binDir: '/bin', ...paths() },
+      sandbox: { container: container(), dockerfile: dockerfile() },
+    })
+    await core.start()
+    return core
+  }
+  const container = () => path.join(t.dir, 'bin', 'container')
+  const dockerfile = () => path.join(t.dir, 'sandbox', 'Dockerfile')
+  const sandboxed = (core: Core) => core.commands.sessionCreate({ kind: 'claude', sandboxed: true, cwd: t.dir, cols: 120, rows: 40 })
+
+  afterEach(() => { vi.unstubAllEnvs() })
+
+  it('creates the session and names the variable it forwards when one is set', async () => {
+    const { shell, asked } = loginShell('CLAUDE_CODE_OAUTH_TOKEN')
+    const core = await start(shell)
+    const res = await sandboxed(core)
+    expect(res.ok).toBe(true)
+    expect(asked()).toEqual(['CLAUDE_CODE_OAUTH_TOKEN'])
+    // the pointer at the config grove already mounts, and the token forwarded bare
+    const argv = created(t.fake)[0].argv![4]
+    expect(argv).toContain(`-e CLAUDE_CONFIG_DIR=${paths().claudeHome}`)
+    expect(argv).toMatch(/-e CLAUDE_CODE_OAUTH_TOKEN -e ANTHROPIC_API_KEY grove-sandbox:/)
+    expect(argv).not.toContain('CLAUDE_CODE_OAUTH_TOKEN=')
+    expect(argv).toContain(`--read-only-path ${paths().claudeHome}/settings.json`)
+    expect(argv).toContain(`--read-only-path ${paths().claudeHome}/.credentials.json`)
+  })
+
+  it('refuses no-sandbox and creates nothing when the login shell carries none', async () => {
+    const { shell, asked } = loginShell('NEITHER')
+    const core = await start(shell)
+    expect(await sandboxed(core)).toEqual({ ok: false, error: 'no-sandbox' })
+    expect(created(t.fake)).toEqual([])
+    expect(asked()).toEqual(['CLAUDE_CODE_OAUTH_TOKEN', 'ANTHROPIC_API_KEY']) // both probed, neither set
+  })
+
+  it('accepts a host ~/.claude/.credentials.json, which CLAUDE_CONFIG_DIR already reaches', async () => {
+    fs.mkdirSync(paths().claudeHome, { recursive: true })
+    fs.writeFileSync(path.join(paths().claudeHome, '.credentials.json'), '{}')
+    const { shell } = loginShell('NEITHER')
+    const core = await start(shell)
+    expect((await sandboxed(core)).ok).toBe(true)
+  })
+
+  it('never probes for an unsandboxed claude session', async () => {
+    const { shell, asked } = loginShell('NEITHER')
+    const core = await start(shell)
+    await core.commands.sessionCreate({ kind: 'claude', cwd: t.dir, cols: 120, rows: 40 })
+    expect(asked()).toEqual([])
   })
 })
