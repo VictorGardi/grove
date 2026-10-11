@@ -44,6 +44,30 @@ same-path invariant untouched — forward `CLAUDE_CODE_OAUTH_TOKEN` / `ANTHROPIC
 
 **grove never reads the macOS Keychain.**
 
+## Correction, 2026-10-11
+
+The three carve-outs are **conditional on the file existing**. Measured: `--read-only-path`
+enforces nothing when the target is absent from the host — the flag is accepted, the run
+succeeds, the write lands. `settings.json` exists and is enforced (EROFS);
+`~/.claude/.credentials.json` does **not** exist on a Mac that keeps its login in the
+Keychain, which is precisely the configuration this decision exists for (that file is the
+*fallback* store, used when the Keychain rejects the write). `auth.json` is in the same
+position.
+
+The human was shown the options and **chose to keep the mechanism and document the
+limitation**. The strict alternative — a read-only `~/.claude` parent plus writable
+re-binds per subdirectory — holds for absent targets, but must be maintained against a
+third party's directory layout and fails closed and loud; it buys a broader guarantee
+(nothing in `~/.claude` writable but an allow-list), so it is its own feature.
+
+The gap is not reachable, and this is the reasoning that keeps it from being re-litigated.
+Anthropic's published authentication precedence ranks both variables grove forwards above
+the stored `/login` credentials the Keychain and `.credentials.json` hold —
+`ANTHROPIC_API_KEY` at 3, `CLAUDE_CODE_OAUTH_TOKEN` at 5, subscription OAuth at 7 — so
+wherever grove forwards a token, a planted file is not the credential that gets used. And
+grove refuses `no-sandbox` when no credential is reachable at all, which is the only case
+where that file alone would be the channel; nothing starts there.
+
 ## Consequences
 
 Easier: no new volume, no new dependency, no schema change, and roughly four entries in

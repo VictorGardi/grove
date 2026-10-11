@@ -1,7 +1,7 @@
 ---
 feature: 2026-10-08-agent-sandboxing
 phase: implementation
-status: draft
+status: stale
 version: 8
 created: 2026-10-10
 updated: 2026-10-11

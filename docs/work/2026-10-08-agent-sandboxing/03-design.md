@@ -2,7 +2,7 @@
 feature: 2026-10-08-agent-sandboxing
 phase: design
 status: approved
-version: 8
+version: 9
 created: 2026-10-09
 updated: 2026-10-11
 approved_at: 2026-10-11
@@ -11,7 +11,8 @@ based_on:
   - 02-research.md@6
 forced:
   - "design exceeds designMaxLines (255 vs 220): v5 was already 222 at its approval, and D7 added the seventh one-way decision with its rationale and rejected options. Forced by the human rather than compressing approved rationale."
-  - "design exceeds designMaxLines again (v8, D8): the human declined to compress approved rationale once already, and D8 must carry its measured evidence and rejected options or the next session re-derives the Keychain question. Approved rationale left intact; new material written as tightly as the subject allows."
+  - "design exceeds designMaxLines again (v8, D8): the human declined to compress approved rationale once already, and D8 must carry its measured evidence or the next session re-derives the Keychain question. Approved rationale left intact; new material written as tightly as the subject allows."
+  - "design exceeds designMaxLines again (v9, 452 vs 220): v9 adds no decision — it replaces four statements the spikes measured to be wrong with the measured facts and the human's recorded decisions, and the standing instruction is that those dead ends not be re-derived. Compressing them would re-open questions the evidence already closed."
 ---
 
 # Agent session sandboxing — design
@@ -23,11 +24,12 @@ forced:
 2. Inside, it sees its working directory at **the same absolute path**, its own config
    dirs, the hook spool, the Grove socket and grove's own CLI (D7). Nothing else: no
    `~/.ssh`, no other project.
-3. Opt-in is per session: `grove new claude --sandboxed`, or **New sandboxed session**
-   in the palette, reusing the existing ⌘T kind list. Default off.
-4. It remembers `Session.sandboxed`, so a resume launches it sandboxed again — a session
-   never silently changes blast radius. Kill/remove drops its container; crash orphans
-   are pruned at app start.
+3. Opt-in is per session: `grove new claude --sandboxed`, or the **checkbox on the
+   new-session dialog**. Default off.
+4. It remembers `Session.sandboxed`, so a resume launches it sandboxed again — and a
+   resume that *cannot* sandbox **says so** (`Session.sandboxNote`) rather than quietly
+   widening the blast radius. Kill/remove drops its container; crash orphans are pruned
+   at app start.
 5. Isolation is filesystem-only (ADR 0036). A sandboxed OpenCode joins the host's shared
    service rather than starting one (D6). It commits locally; you push.
 6. A sandboxed session **authenticates the way that agent already authenticates on the
@@ -65,10 +67,10 @@ container run --rm -i -t --name <tmuxName> --workdir <cwd>
   --read-only-path <commonDir>/hooks      #   ditto — only when the two differ
   --read-only-path <commonDir>/config
   --volume <claudeHome>:<claudeHome>      # ~/.claude, ~/.claude.json
-  --read-only-path <claudeHome>/settings.json        # D8: an agent that can write hooks
-  --read-only-path <claudeHome>/.credentials.json    # D8: an agent that can rewrite your login
+  --read-only-path <claudeHome>/settings.json        # D8: hooks for later unsandboxed sessions
+  --read-only-path <claudeHome>/.credentials.json    # D8: a credential store — *if the host has one*
   --volume <opencodeData>:<opencodeData>  # ~/.local/share/opencode, ~/.config/opencode
-  --read-only-path <opencodeShare>/auth.json         # D8: read your provider logins, not edit
+  --read-only-path <opencodeShare>/auth.json         # D8: provider logins, if the host has one
   --read-only-path <gitconfig>            # ~/.gitconfig: identity in, never out
   --volume <spoolDir>:<spoolDir>          # <userData>/agents/claude — hooks append here
   --volume <socketPath>:<socketPath>      # <userData>/grove.sock
@@ -78,6 +80,7 @@ container run --rm -i -t --name <tmuxName> --workdir <cwd>
   -e CLAUDE_CONFIG_DIR=<claudeHome>                              # D8: claude only
   -e XDG_DATA_HOME=<~/.local/share> -e XDG_CONFIG_HOME=<~/.config>   # D8: opencode only
   -e CLAUDE_CODE_OAUTH_TOKEN -e ANTHROPIC_API_KEY                 # D8: claude only, bare
+  -e OPENCODE_SERVER_PASSWORD                       # D6: opencode only, from the registration file
   -e GIT_CONFIG_COUNT=1 -e GIT_CONFIG_KEY_0=core.hooksPath
   -e GIT_CONFIG_VALUE_0=<empty dir baked into the image>
   <image> <agentArgv…>
@@ -88,11 +91,11 @@ Mounts are **same-path** — the invariant every host subsystem already assumes
 agent that can write it can set `core.hooksPath` for **every unsandboxed git run on the
 host** afterwards; a worktree's `.git/hooks` + `.git/config`; and — new in D8, because D8
 makes the agent config volumes reachable for the first time — the three files that carry
-**authority** rather than state (`settings.json`, `.credentials.json`, `auth.json`). Same
-principle, same reason. The three `GIT_CONFIG_*` variables apply at git's command-line
-scope, overriding `~/.gitconfig` and `.git/config` for **every** git invocation in the
-pane — which is what turns the hook row below into a decision rather than a documented
-risk.
+**authority** rather than state (`settings.json`, `.credentials.json`, `auth.json`), each
+**enforced only if it exists on the host** (measured, D8). Same principle, same reason. The
+three `GIT_CONFIG_*` variables apply at git's command-line scope, overriding
+`~/.gitconfig` and `.git/config` for **every** git invocation in the pane — which is what
+turns the hook row below into a decision rather than a documented risk.
 
 ### Authentication (D8)
 
@@ -131,39 +134,70 @@ the variable it forwards**; the naming is the whole mitigation.
 `resources/sandbox/Dockerfile` builds `grove-sandbox:<hash>`, `<hash>` a truncated
 `sha256(Dockerfile)`. Content: a Linux base with `git`, `ripgrep`, `jq` (the ADR 0032
 statusline hook needs it), `ca-certificates`, an **empty directory** for
-`core.hooksPath` to point at, and pinned `opencode-ai` + `@anthropic-ai/claude-code`
-globals. The npm globals mean the image already carries a Node runtime, which is what
-makes D7 cheap. The Dockerfile also installs a three-line `/usr/local/bin/grove` shim
-that `exec node <cliBundle> "$@"` — the same "a CLI the agent needs lives in the image"
-pattern as `jq`, with the bundle itself mounted at run time so a grove upgrade never
-invalidates the tag. Built once on first use; a missing `container` or failed build fails
-`no-sandbox`, never an unsandboxed pane.
+`core.hooksPath` to point at, and pinned `@anthropic-ai/claude-code` + `@opencode/cli`
+globals — `opencode-ai@2.x` does not exist on npm; the package was renamed and rescoped,
+and `@opencode/cli` ships a **self-contained Bun binary** needing glibc only, so it costs
+no new apt packages. The pin is **not** the host's version (D6). The npm globals mean the
+image already carries a Node runtime, which is what makes D7 cheap. The Dockerfile also
+installs a three-line `/usr/local/bin/grove` shim that `exec node <cliBundle> "$@"` — the
+same "a CLI the agent needs lives in the image" pattern as `jq`, with the bundle itself
+mounted at run time so a grove upgrade never invalidates the tag. Built once on first use;
+a missing `container` or failed build fails `no-sandbox`, never an unsandboxed pane.
 
 ### Lifecycle, and the shared service (D6)
 
 `--rm` covers a clean agent exit. `sessionKill`/`sessionRemove` also run
 `container rm -f <tmuxName>` after `backend.kill` (SIGKILLing `container run` does not
 fire `--rm`), ignoring "no such container". `core.start()` prunes `grove-*` containers
-with no live tmux session. Before the first sandboxed **OpenCode** session, grove writes
-`{"hostname":"<bridge>"}` once into the service config, `<bridge>` the discovered
-container-gateway address (measured `192.168.64.1`) — **never `0.0.0.0`**, measured to
-bind the service on the LAN. An undiscoverable bridge fails the create `no-sandbox`.
+with no live tmux session.
+
+Before the first sandboxed **OpenCode** session grove writes `{"hostname":"<bridge>"}`
+once into the service config — **never `0.0.0.0`**, measured to bind the service on the
+LAN. Four facts the spikes settled, none of which the first draft of this section knew:
+
+- **`<bridge>` is discovered, never assumed.** `container network ls --format json` →
+  `.status.ipv4Gateway` of network `default` (measured `192.168.64.1`). Proven derived: a
+  network created with `--subnet 10.99.0.0/24` yields `10.99.0.1`, so `.1` is a
+  coincidence of this host's subnet, not a rule.
+- **The bridge is not there at boot.** `bridge100` is created by `container system
+  start`, measured **2m24s after login**. grove runs that command (idempotent), then polls
+  with backoff, treating `Errno 49` / `EADDRNOTAVAIL` as *not ready yet*. Only a failure
+  **past the retry budget** is `no-sandbox` — refusing on the first error would reject
+  every session for the first minutes after login. This is also what the earlier
+  `Errno 49` spike really was: a startup race, not a network change.
+- **The client seam is the global `--server <url>` flag.** v2 removed
+  `opencode attach <url>`; `--server` precedes any subcommand, and a 1.x client against a
+  2.x server is rejected outright.
+- **`OPENCODE_SERVER_PASSWORD` comes from the registration file's `password`,** or the
+  container gets 401. See D6 for the cost this honest boundary carries.
+
+Apple never documented a host-side bridge bind, so its failure is expected behaviour
+rather than a mystery, and `bridge100` is not guaranteed stable. The recorded fallback is
+Apple's `container system dns create <domain> --localhost <ip>` (a pf redirect, PR #1078,
+merged 2026-01-24), which keeps the service on loopback. It is the fallback and not the
+default because it costs `sudo`, **disables iCloud Private Relay**, is **removed on macOS
+restart**, and redirects **whole-IP and all-ports** — the container would reach every
+loopback-bound host service, not only OpenCode's.
 
 ### Contracts
 
 `Session.sandboxed: boolean` persisted, state file **v9**, `v8ToV9` defaulting it to
 false (v8 shipped for `workflowStatus`). `sandboxed?: boolean` threads through
-`sessionCreate` (agent kinds only) and both create boundaries. `CoreOptions.sessionEnv`
+`sessionCreate` (agent kinds only) and both create boundaries. `Session.sandboxNote?:
+string` is **live-only** — set by `sessionResume` when a resume downgrades, stripped in
+`set()` with the other live fields so it never reaches `state.json`. It is the half of
+D3's bargain that is not the argv: "never widens *silently*". `CoreOptions.sessionEnv`
 gains `spoolDir` and `opencodePaths`. `envFor` and `readOnlyPathsFor` both take the agent
 kind now, since D8's config pointers and credential carve-outs are per-agent.
 
 ## Program design
 
-Create (CLI or palette) → `sessionCreate` → `sandboxArgv` → `loginShellArgv` →
-`backend.create`; resume repeats that seam from `session.sandboxed`; kill/remove adds
-`container rm -f`; start prunes orphans; the first sandboxed OpenCode binds the shared
-service (D6). Tests assert argv, mount and env strings against a fake `container`; slice
-1 runs the real thing.
+Create (CLI flag or dialog checkbox) → `sessionCreate` → `sandboxArgv` →
+`loginShellArgv` → `backend.create`; resume repeats that seam from `session.sandboxed`;
+kill/remove adds `container rm -f`; start prunes orphans; the first sandboxed OpenCode
+starts the container system, waits for the bridge, and binds the shared service (D6).
+Tests assert argv, mount and env strings against a fake `container`; slice 1 runs the real
+thing.
 
 ```
 src/core/sandbox/{spec,image,argv,container,service}.ts (+ tests)  NEW  the sandbox module
@@ -171,7 +205,7 @@ src/core/git.ts                                            MODIFIED  gitCommonDi
 src/core/core.ts, src/main/index.ts                       MODIFIED  seam, teardown, start prune, AgentPaths
 src/core/sessions.ts, src/shared/types.ts, src/core/store/stateStore.ts  MODIFIED  Session.sandboxed, v8ToV9
 src/shared/{cli,ipc}.ts, src/main/{ipc,cliServer}.ts, src/cli/{args,index}.ts  MODIFIED  --sandboxed
-src/renderer/src/{App.tsx,paletteItems.ts} + components/{ListRow,SessionCard}.tsx  MODIFIED  palette item, card tag
+src/renderer/src/components/NewSessionDialog.tsx + {App,paletteItems}.tsx + components/{ListRow,SessionCard}.tsx  MODIFIED  opt-in checkbox, card tag
 resources/sandbox/Dockerfile                               NEW       the sandbox image + the grove shim (D7)
 package.json                                               MODIFIED  asarUnpack gains out/main/cli.js (D7)
 ```
@@ -184,13 +218,13 @@ resolved once in main.
 gitCommonDir(dir: string): string | null          // D2; no spawn, src/core/git.ts:18-26
 mountsFor(kind, o: { cwd: string; commonDir: string | null; paths: AgentPaths }): string[]
 readOnlyPathsFor(kind, o: { commonDir: string | null; paths: AgentPaths }): string[]
-envFor(kind, session, o: { paths: AgentPaths }): Record<string, string>  // incl. GIT_CONFIG_*, D8
+envFor(kind, session, o: { paths: AgentPaths; serverPassword?: string }): Record<string, string>
 loginShellCredential(kind, o: { shell: string }): Promise<string | null>  // D8 probe, or null
 sandboxArgv(o: { name: string; spec: SandboxSpec; agentArgv: string[] }): string[]
 imageRef(dockerfile: string): string;  ensureImage(o: { container; dir; tag }): Promise<void>
 sandboxAvailability(container: string): Promise<{ ok: boolean; error?: 'no-sandbox' }>
 removeContainer(container, name): Promise<void>;  pruneContainers(container, live): Promise<void>
-ensureServiceReachable(o: { configFile: string }): Promise<void>   // D6
+ensureServiceReachable(o: { configFile: string; container: string }): Promise<void>  // D6
 ```
 
 Packaging consequence of D7: `out/main/cli.js` must exist as a real file for
@@ -248,6 +282,47 @@ its own**, bound to the **container bridge address only**
   expose the service on the LAN).
 - Costs: the shared service must leave loopback, and the container's `service.json` must
   be read-only. Both grove-side.
+- **Corrected 2026-10-11 after four spikes.** The mechanism survives; five facts it did
+  not know are corrected in § Lifecycle. Summarised so the next session does not re-derive
+  them: the gateway is **discovered** from `container network ls --format json`
+  (`.status.ipv4Gateway`), never hardcoded — a network on `10.99.0.0/24` yields
+  `10.99.0.1`; the bridge **is not present at boot** (`bridge100` appears **2m24s** after
+  login, created by `container system start`), so grove starts it and retries with backoff,
+  treating `Errno 49`/`EADDRNOTAVAIL` as not-ready-yet and refusing only past the budget;
+  the image pinned the **wrong major version** — `opencode-ai@2.x` does not exist and the
+  package is `@opencode/cli` (official, npm-signature verified, a self-contained Bun
+  binary, glibc only, no new apt packages); v2 **removed `attach`**, so the seam is the
+  global `--server <url>` flag and a 1.x client against a 2.x server fails; and the
+  container needs `OPENCODE_SERVER_PASSWORD` from the registration file or it gets 401.
+- **Do not pin the host's OpenCode version into the image.** Minor version skew is
+  *tolerated* on the `--server` path — it warns and proceeds, read from the bundled source,
+  and grove does not use the background-service path, which can hard-fail. The image is
+  content-addressed on the Dockerfile alone, so a host-pinned version would rebuild it on
+  every host upgrade.
+- **The cost, stated plainly:** the service password now crosses a link-scope virtual
+  interface instead of a `0600` unix socket. Bounded — `bridge100` has no route from the
+  LAN, and LAN isolation was measured from both directions by two independent spikes — but
+  a weaker boundary than grove's own CLI transport (ADR 0035), and the human chose to
+  carry it.
+- **Ruled out, with evidence, so it is not re-derived:** a **unix-socket transport is
+  impossible** — both ends refuse it. The server config rejects every socket-shaped key at
+  validation (`Unknown service config key: socket`), `serve --hostname /path.sock` dies
+  with `baseURI must have a hostname`, and the client rejects `unix://` at URL dispatch
+  (`protocol must be http:, https: or s3:`) with *zero* connection attempts reaching a live
+  AF_UNIX listener. **`socat` on the bridge IP** was already reported broken upstream in
+  apple/container#346 — the same approach grove measured working, failing for someone else.
+  **No container→host DNS name exists:** `host.containers.internal`,
+  `host.docker.internal`, `gateway` all NXDOMAIN. grove's own unix-socket fallback remains
+  valid for grove's CLI (ADR 0035, re-measured working); it simply does not help OpenCode.
+- **Recorded fallback:** Apple's `container system dns create <domain> --localhost <ip>`
+  (pf redirect, PR #1078, merged 2026-01-24, in the installed 1.5.0, documented in
+  `apple/container`'s `docs/host-integration.md`). A pf rule redirects a fake
+  container-side IP to the host's `127.0.0.1`, so the service **never leaves loopback**.
+  It is the fallback and not the default because it requires `sudo`, **disables iCloud
+  Private Relay**, the pf rule is **removed on macOS restart**, and the redirect is
+  **whole-IP and all-ports** — the container would reach *every* loopback-bound host
+  service, not only OpenCode's. That last cost is the whole reason the undocumented
+  bridge bind stays the default.
 
 **D7. The sandbox also mounts grove's own CLI, read-only, at its host path**
 ([ADR 0039](../../adr/0039-the-sandbox-mounts-groves-own-cli.md)). A sandboxed agent
@@ -296,10 +371,31 @@ that cannot log in** ([ADR 0040](../../adr/0040-sandboxed-sessions-authenticate-
   profile. Forwarded **bare**, so the value comes from the pane's login shell and never
   enters argv or `ps`.
 - Consequence grove carries: **`.credentials.json`, `settings.json` and `auth.json` become
-  read-only carve-outs.** Each is authority rather than state — a writable one lets a
-  sandboxed agent rewrite the human's login, or install a `settings.json` hook that runs
-  in every later *unsandboxed* session, which is exactly why `~/.gitconfig` is already
-  read-only.
+  read-only carve-outs.** Each is authority rather than state — a writable
+  `settings.json` installs a hook that runs in every later *unsandboxed* session, which is
+  exactly why `~/.gitconfig` is already read-only.
+- **The carve-outs are conditional, and the first draft of this decision did not say so.
+  Measured 2026-10-11: `--read-only-path` enforces nothing when the target does not exist
+  on the host** — the flag is accepted, the run succeeds, the write lands. `settings.json`
+  exists and is enforced (EROFS). `.credentials.json` does **not** exist on a Mac that
+  keeps its login in the Keychain, which is precisely the configuration D8 exists for
+  (`.credentials.json` is only the *fallback* store, used when the Keychain rejects the
+  write), so the carve-out grove emits for the file that motivated D8 is inert there;
+  `auth.json` is in the same position. **The human was shown the options and chose to keep
+  the mechanism and document the limitation** — the carve-outs stay as they are. The strict
+  alternative (a read-only `~/.claude` parent plus writable re-binds per subdirectory)
+  holds for absent targets but must track a third party's directory layout and fails closed
+  and loud, so it is deferred, not taken.
+- **Why the gap is not reachable, so this is not re-litigated.** Anthropic's published
+  authentication precedence ranks both variables grove forwards above the stored `/login`
+  credentials the Keychain and `.credentials.json` hold — `ANTHROPIC_API_KEY` at 3,
+  `CLAUDE_CODE_OAUTH_TOKEN` at 5, subscription OAuth at 7 — so wherever grove forwards a
+  token, a planted file is simply not the credential that gets used. And grove refuses
+  `no-sandbox` when no credential is reachable at all, which is the only case where that
+  file alone would be the channel; nothing starts there. Every reachable configuration is
+  already closed, so B is a documented limitation rather than an open hole. What survives
+  the correction, and is what matters: **the carve-out grove emits does not do what this
+  design used to say it does**, silently, on the configuration it was written for.
 - Rejected: **grove reads the Keychain** (above); **grove writes a credential file from
   it** (converts an ephemeral env var into a durable secret at rest, readable by the
   sandbox — strictly worse than what it replaces); **a token baked into the image** (the
@@ -312,16 +408,16 @@ that cannot log in** ([ADR 0040](../../adr/0040-sandboxed-sessions-authenticate-
 | Decision | Choice |
 |---|---|
 | Default | Off; every existing session launches as today |
-| Entry points | `--sandboxed` (CLI) and **New sandboxed session** (palette → ⌘T kind list) |
-| Refusals | Terminal kind, missing `container`, failed build, undiscoverable bridge, no reachable Claude credential → `no-sandbox`; never a silent fallback |
+| Entry points | `--sandboxed` (CLI) and a **sandboxed checkbox on the new-session dialog** — a human decision, 2026-10-11, taken after reviewing the palette-command form this table originally named; ⌘K gains no second command |
+| Refusals | Terminal kind, missing `container`, failed build, a bridge still undiscoverable **after the retry budget**, no reachable Claude credential → `no-sandbox`; never a silent fallback |
 | Credential check | grove probes the login-shell env (`$SHELL -l -i -c`, the interpreter the pane uses) rather than attempting a run, because a bare `-e VAR` for an absent variable does not fail the run |
 | Credential visibility | grove **names the variable it forwards** on the card and in the `no-sandbox` message; it cannot tell a one-year `setup-token` from a short-lived one, so transparency is the mitigation |
 | Marker | A tag on the session card; not part of the label |
-| Mount mode | Read-write, except OpenCode's state dir, `~/.gitconfig`, a worktree's `.git/hooks` + `.git/config`, grove's own CLI bundle (D7), and — per D8 — `settings.json`, `.credentials.json` and `auth.json`: the files that carry authority rather than state. `binDir` stays unmounted — the host launcher is macOS-only and has no business inside |
+| Mount mode | Read-write, except OpenCode's state dir, `~/.gitconfig`, a worktree's `.git/hooks` + `.git/config`, grove's own CLI bundle (D7), and — per D8 — `settings.json`, `.credentials.json` and `auth.json`: the files that carry authority rather than state. **Each carve-out binds only if the file exists on the host** (measured; D8). `binDir` stays unmounted — the host launcher is macOS-only and has no business inside |
 | Agent config | `CLAUDE_CONFIG_DIR` / `XDG_DATA_HOME` + `XDG_CONFIG_HOME` point at the mounts grove already has (D8). **Consequence, accepted:** a sandboxed agent now gets the host's settings, plugins, skills, commands and history, which until now it silently did not |
 | Worktrees | Supported by D2 — the worktree **and** its repo's common dir, host-identical, hooks/config read-only. Slice 1 verified `git rev-parse --show-toplevel`, `core.hooksPath` neutralisation and a real `git commit` landing on the host for a **plain checkout**; the worktree form is still unverified and repeats with `--worktree --branch probe --sandboxed` |
 | Git hooks | Neutralised by env: `GIT_CONFIG_COUNT=1`, `KEY_0=core.hooksPath`, `VALUE_0=<empty dir in the image>`. Command-line scope, beating `~/.gitconfig` and `.git/config` for every git call in the pane. A repo that legitimately uses `core.hooksPath` stops running hooks inside the sandbox — the same class of divergence as shipping no rc files |
-| Shared-service bind | Grove writes the bridge address, **with a consent prompt** the first time |
+| Shared-service bind | Grove writes the bridge address, **with a consent prompt** the first time, and hands the container `OPENCODE_SERVER_PASSWORD` (D6) |
 | Git push | No SSH agent or credential helper inside: a grove choice, not a container limit. Commit locally, push from the host |
 
 ## Risks
@@ -333,13 +429,15 @@ that cannot log in** ([ADR 0040](../../adr/0040-sandboxed-sessions-authenticate-
   hence the naming rather than enforcement.
 - **`.claude` and `.config/opencode` become reachable for the first time** (D8): mounted
   all along, inert. The agent can now read your Claude history and transcripts for every
-  project and write into them. Only the three authority files are carved out.
-- **Rebinding the shared service.** D6 moves it onto the container bridge — private, but
-  machine-wide, hence consent.
-- **`--read-only-path` is Experimental**, and its cases are measured: an **absent** path is
-  tolerated (covering a missing `~/.gitconfig`, and a missing `auth.json` on a machine with
-  no host login), and **two nested carve-outs in one read-write volume** work together.
-  Slice 1 asserts both.
+  project and write into them. Only the three authority files are carved out, and only
+  where the host has them.
+- **Rebinding the shared service.** D6 moves it onto the container bridge and hands the
+  container its password. Private, but machine-wide, hence consent; and the boundary is
+  weaker than grove's own unix-socket transport (ADR 0035).
+- **`--read-only-path` is Experimental**, and its cases are measured: **two nested
+  carve-outs in one read-write volume** work together, and slice 1 asserts that — but an
+  **absent** target is *unenforced*, not merely tolerated. Harmless for `~/.gitconfig`;
+  not harmless for D8's carve-outs, which is why D8 is worded conditionally.
 - **Git hooks run inside the sandbox** unless neutralised. Measured: a host
   `post-checkout` hook ran as `uid=0` even with `hooks/` read-only. grove pins
   `core.hooksPath=/dev/null` via `GIT_CONFIG_COUNT`/`KEY_0`/`VALUE_0`, which stops it

@@ -42,8 +42,12 @@ started, torn down and named so a crash leaves something identifiable.
   session, grove writes `{"hostname":"<bridge>"}` once into the service config,
   binding the host's shared service to the **container bridge address only**,
   and the container's `~/.local/state/opencode` is mounted **read-only**
-  (`--read-only-path`). Never `0.0.0.0`; if the bridge address cannot be
-  discovered, the create fails rather than widening the bind.
+  (`--read-only-path`). Never `0.0.0.0`. The address is **discovered**, not
+  assumed (`container network ls --format json` → `.status.ipv4Gateway` of
+  network `default`), and grove starts the container system and **waits with
+  backoff** for the bridge, which does not exist for the first ~2½ minutes after
+  login — `Errno 49`/`EADDRNOTAVAIL` is not-ready-yet, and only a failure past the
+  retry budget refuses. See "Corrections" below.
 
 ## Consequences
 
@@ -75,12 +79,44 @@ started, torn down and named so a crash leaves something identifiable.
   host service is bound routably and the container's copy is read-only: the
   sandbox joins the host's service and can never register over it.
 - The cost is that the shared OpenCode service listens beyond loopback for
-  anyone who can reach the container bridge — a private VM subnet, not the LAN.
-  It stays password-authenticated, and grove writes the change once, at the
-  first sandboxed OpenCode session. A third spike measured that the first draft
-  of this decision (`0.0.0.0`) also exposed the service on the host's LAN
-  address, advertising it in the service's own `urls`; the bridge-scoped bind
-  does not, and the LAN address refuses connections. Rejected instead: leaving
-  OpenCode unsandboxed (measured false — it *is* reachable), a per-session
-  service with a published port (a second service is exactly what evicts), and
-  `0.0.0.0` (measured to reach the LAN).
+  anyone who can reach the container bridge — a private VM subnet, not the LAN —
+  and the container is handed `OPENCODE_SERVER_PASSWORD` from the registration
+  file. That moves the secret from a `0600` unix socket onto a link-scope
+  virtual interface: bounded, since `bridge100` has no route from the LAN and LAN
+  isolation was measured from both directions, but a weaker boundary than
+  grove's own CLI transport (ADR 0035). It stays password-authenticated, and
+  grove writes the change once, at the first sandboxed OpenCode session. A third
+  spike measured that the first draft of this decision (`0.0.0.0`) also exposed
+  the service on the host's LAN address, advertising it in the service's own
+  `urls`; the bridge-scoped bind does not, and the LAN address refuses
+  connections. Rejected instead: leaving OpenCode unsandboxed (measured false —
+  it *is* reachable), a per-session service with a published port (a second
+  service is exactly what evicts), and `0.0.0.0` (measured to reach the LAN).
+
+## Corrections, 2026-10-11
+
+Four spikes corrected five facts in the D6 decision above. The mechanism — bind the host
+service to the container bridge, never `0.0.0.0` — survived; the human re-confirmed it,
+with Apple's pf-redirect DNS recorded as the documented fallback.
+
+- **The gateway is derived, not hardcoded.** `container network ls --format json` →
+  `.status.ipv4Gateway`. A network created with `--subnet 10.99.0.0/24` yields
+  `10.99.0.1`, so `192.168.64.1` is this host's coincidence.
+- **The earlier `Errno 49` was a startup race, not a network change.** `bridge100` is
+  created by `container system start`, measured 2m24s after boot. A host-side bridge bind
+  is undocumented by Apple, so its failure is expected behaviour.
+- **The image pinned the wrong major version.** `opencode-ai@2.x` does not exist on npm;
+  the package was renamed and rescoped to `@opencode/cli` (signature-verified, a
+  self-contained Bun binary, glibc only). v2 also **removed `opencode attach`** — the seam
+  is the global `--server <url>` flag, and a 1.x client against a 2.x server is rejected.
+  Minor version skew is *tolerated* on that path (it warns and proceeds), so grove must
+  not bake the host's version into a content-addressed image.
+
+Ruled out with evidence, not to be re-derived: a **unix-socket transport** (the server
+config rejects every socket-shaped key, and the client rejects `unix://` at dispatch with
+zero connection attempts reaching a live listener); **`socat` on the bridge** (already
+reported broken in apple/container#346); and **a container→host DNS name** (all the usual
+candidates NXDOMAIN). The fallback, Apple's `container system dns create <domain>
+--localhost <ip>`, keeps the service on loopback but costs `sudo`, disables iCloud
+Private Relay, is removed on macOS restart, and redirects whole-IP and all-ports — which
+is why it is the fallback and not the default.

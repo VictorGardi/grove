@@ -1,7 +1,7 @@
 ---
 feature: 2026-10-08-agent-sandboxing
 phase: plan
-status: approved
+status: stale
 version: 4
 created: 2026-10-11
 updated: 2026-10-11
