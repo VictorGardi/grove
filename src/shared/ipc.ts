@@ -13,6 +13,7 @@ export interface InvokeMap {
   'project:add': [void, Project | null]
   'project:remove': [{ id: string }, { id: string }]
   'worktree:create': [{ projectId: string; branch: string }, Project]
+  'repo:refs': [{ projectId: string }, { branch: string | null; default: string | null }]
   // what the core command already accepts: until the launch dialog existed the renderer could send
   // only projectId and kind, so the GUI could not reach the fields the CLI always could
   'session:create': [{ projectId: string; kind: SessionKind; prompt?: string; label?: string; feature?: string; sandboxed?: boolean; cols: number; rows: number }, Session]

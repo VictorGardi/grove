@@ -1,8 +1,8 @@
-import { useMemo, useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 import type { Feature, Project, SessionKind } from '@shared/types'
+import { score } from '../launchRank'
 import { SANDBOX_DEFAULT, sandboxable, wantsSandbox } from '../sandboxOptIn'
 import { useSlices } from '../stores/slices'
-import { repoProjectIds } from '../repoGroups'
 import { Button } from './ui/Button'
 import { Icon } from './ui/Icon'
 import { ListRow } from './ui/ListRow'
@@ -15,14 +15,16 @@ const KINDS: { kind: SessionKind; label: string; icon: 'opencode' | 'claude' | '
   { kind: 'terminal', label: 'Terminal', icon: 'terminal' },
 ]
 
-// Where the session runs: a new worktree of the current repo, the checkout itself, one of its
-// existing worktrees, or another project's checkout. `new` is the only one that needs a branch.
-type Where = { type: 'new'; from: Project } | { type: 'existing'; project: Project }
+// A row in the picker. Creating and opening are the same kind of thing here, which is the whole
+// point: `create` carries the repo to fork and the base it forks from, so the button can name
+// what pressing it will actually do.
+type Row =
+  | { type: 'create'; key: string; repo: Project; base: string | null; branch: string | null; label: string }
+  | { type: 'existing'; key: string; project: Project }
 
 export interface Launch {
   kind: SessionKind
-  where: Where
-  branch: string
+  where: { type: 'new'; from: Project; branch: string } | { type: 'existing'; project: Project }
   prompt: string
   sandboxed: boolean
   feature: string | null
@@ -46,50 +48,122 @@ export function NewSessionDialog({ projectId, onClose, onStart }: {
   const [feature, setFeature] = useState<string | null>(null)
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState<string | null>(null)
+  const [query, setQuery] = useState('')
+  const [refs, setRefs] = useState<Record<string, { branch: string | null; default: string | null }>>({})
+  // the highlighted row, as an index into `rows` — the same shape CommandPalette uses, so ↑/↓,
+  // wrap and scroll-into-view behave identically in the two places
+  const [at, setAt] = useState(0)
+  const rowRef = useRef<HTMLDivElement>(null)
 
-  // the current project first, then the rest — the same order the ⌘T palette uses
-  const ordered = useMemo(
-    () => [...projects.filter((p) => p.id === projectId), ...projects.filter((p) => p.id !== projectId)],
-    [projects, projectId],
-  )
-  const current = ordered[0]
-  const [where, setWhere] = useState<Where | null>(null)
-  const choice = where ?? (current ? { type: 'existing', project: current } : null)
-
-  // A branch we can propose but not guess: the repo's own name and the lowest free number. The
-  // human edits it, and a name grove invented would be a name it then owns.
-  const [branch, setBranch] = useState('')
-  const suggested = useMemo(() => {
-    if (!current) return ''
-    const repo = (current.name.split(' · ')[0] || current.name).replace(/[^A-Za-z0-9._-]+/g, '-').toLowerCase()
-    const taken = new Set(projects.map((p) => p.name.split(' · ').pop() ?? ''))
-    for (let n = 1; ; n++) {
-      const candidate = `${repo}/${repo}-${n}`
-      if (![...taken].some((t) => t === candidate.split('/').pop())) return candidate
+  // Each repo's current and default branch, so a create row can name its base and a checkout row
+  // can say what it is on. Read per group head; a worktree's branch is on its own HEAD.
+  useEffect(() => {
+    let live = true
+    const heads = new Set(projects.map((p) => p.worktreeOf ?? p.id))
+    for (const p of projects) {
+      const id = p.worktreeOf ?? p.id
+      if (!heads.has(id) || refs[id]) continue
+      void window.api.invoke('repo:refs', { projectId: id }).then((res) => {
+        if (live && res.ok) setRefs((r) => ({ ...r, [id]: res.data }))
+      })
     }
-  }, [current, projects])
+    return () => { live = false }
+  }, [projects, refs])
 
-  // A brand-new worktree has no features of its own until discovery runs there, and the core
-  // refuses a link it cannot resolve — so the picker offers the checkout we are forking from and
-  // says plainly that the link waits. The session auto-links as soon as it writes to a folder.
-  const linkable: Feature[] = choice
-    ? features.items.filter((f) => f.projectId === (choice.type === 'new' ? choice.from.id : choice.project.id))
+  // The repo the dialog was opened from, first — so ⌘⇧T lands where ⌘T would have.
+  const ordered = useMemo(() => {
+    const head = (id: string | undefined) => projects.find((p) => p.id === id)?.worktreeOf ?? id
+    const first = head(projectId)
+    return [...projects.filter((p) => (p.worktreeOf ?? p.id) === first), ...projects.filter((p) => (p.worktreeOf ?? p.id) !== first)]
+  }, [projects, projectId])
+
+  // The rows: create-first while the query is empty, everything after. Zed's arrangement — the
+  // creation rows are the answer to an empty query, and filtering moves them below the matches.
+  const rows = useMemo(() => {
+    const all: Row[] = []
+    for (const p of ordered) {
+      const ref = refs[p.worktreeOf ?? p.id]
+      const base = ref?.default ?? ref?.branch ?? null
+      all.push({
+        type: 'create', key: `new:${p.worktreeOf ?? p.id}`, repo: p, base,
+        branch: null,
+        label: base ? `New worktree from ${base}` : 'New worktree',
+      })
+      all.push({ type: 'existing', key: `use:${p.id}`, project: p })
+    }
+    const textOf = (r: Row) => (r.type === 'create'
+      ? `${r.label} ${r.repo.name}`
+      : `${r.project.name} ${refs[r.project.worktreeOf ?? r.project.id]?.branch ?? ''}`)
+    const ranked = all
+      .map((r) => ({ r, text: textOf(r) }))
+      .map(({ r, text }) => ({ r, s: score(query, text) }))
+      .filter((x) => x.s !== null)
+      .sort((a, b) => (b.s ?? 0) - (a.s ?? 0))
+      .map((x) => x.r)
+    if (!query) return ranked
+    // typing a name nobody has used yet is how you create one: Zed synthesises the row rather
+    // than making you find a "create" entry first
+    const named = ranked.find((r) => r.type === 'create' && r.branch === query)
+    if (named || ranked.some((r) => r.type === 'existing' && refs[r.project.id]?.branch === query)) return ranked
+    const repo = ordered.find((p) => score(query, p.name) !== null) ?? ordered[0]
+    if (!repo) return ranked
+    const ref = refs[repo.worktreeOf ?? repo.id]
+    const synthesized: Row = { type: 'create', key: `new:${repo.worktreeOf ?? repo.id}:${query}`, repo, base: ref?.default ?? null, branch: query, label: `New worktree from ${ref?.default ?? 'HEAD'}: ${query}` }
+    return [synthesized, ...ranked]
+  }, [ordered, refs, query])
+
+  // a stale index when the list shrinks under it (the query narrowed) falls back to the top row,
+  // so the summary and the button always describe something real
+  const current = Math.min(at, Math.max(rows.length - 1, 0))
+  const row = rows[current] ?? null
+
+  useEffect(() => { rowRef.current?.scrollIntoView({ block: 'nearest' }) }, [current, rows])
+
+  const onKeyDown = (e: React.KeyboardEvent) => {
+    // ⌘↵ commits from anywhere in the form, so you can click a row, go fix the sandbox toggle or
+    // write a prompt, and still commit without reaching for the mouse. Modal owns bare ↵.
+    if (e.key === 'Enter' && (e.metaKey || e.ctrlKey)) {
+      e.preventDefault()
+      e.stopPropagation()
+      void submit()
+      return
+    }
+    if (e.key !== 'ArrowDown' && e.key !== 'ArrowUp') return
+    e.preventDefault()
+    e.stopPropagation()
+    const n = rows.length
+    if (n) setAt((current + (e.key === 'ArrowDown' ? 1 : n - 1)) % n)
+  }
+  // With nothing chosen and a name typed, the typed name is what would be created — so the
+  // button says what it is about to do rather than leaving the choice implicit.
+  const creating = row?.type === 'create'
+  const creatingBranch = creating && row.branch ? row.branch : creating ? suggestionFor(row.repo, projects) : null
+
+  const linkable: Feature[] = row?.type === 'existing'
+    ? features.items.filter((f) => f.projectId === row.project.id)
     : []
 
-  const needsBranch = choice?.type === 'new'
-  const ready = !!choice && (!needsBranch || branch.trim().length > 0)
-
+  // Committing is deliberate: a click only moves the highlight, so the rest of the form stays
+  // editable after choosing where. Enter (Modal's own confirm) and the button are the two doors.
   const submit = async () => {
-    if (!ready || !choice || busy) return
+    if (!row || busy) return
     setBusy(true)
     setError(null)
-    const failed = await onStart({ kind, where: choice, branch: branch.trim() || suggested, prompt, sandboxed, feature, label })
+    const failed = await onStart({
+      kind,
+      where: row.type === 'create'
+        ? { type: 'new', from: row.repo, branch: row.branch ?? suggestionFor(row.repo, projects) }
+        : { type: 'existing', project: row.project },
+      prompt, sandboxed, feature, label,
+    })
     setBusy(false)
     if (failed) setError(failed)
   }
 
+  // Enter is Modal's own: it commits whatever the highlighted row is, so ↵ and the button below
+  // always agree on what pressing them does.
   return (
-    <Modal onClose={onClose} onConfirm={submit} width="md">
+    <Modal onClose={onClose} onConfirm={() => void submit()} width="md">
       <div className={s.head}>
         <div className={s.title}>New session</div>
         <div className={s.kinds}>
@@ -102,34 +176,60 @@ export function NewSessionDialog({ projectId, onClose, onStart }: {
         </div>
       </div>
 
-      <div className={s.body}>
-        <div className={s.label}>Where</div>
-        <div className={s.list}>
-          {current && (
-            <ListRow tone={choice?.type === 'new' ? 'selected' : 'default'}
-              title={`New worktree of ${current.name.split(' · ')[0]}`}
-              icon={<Icon name="branch" size={13} />}
-              meta={branch.trim() || suggested}
-              onClick={() => setWhere({ type: 'new', from: current })} />
-          )}
-          {ordered.map((p) => {
-            const sameRepo = !!choice && repoProjectIds(projects, p.id).has(choice.type === 'new' ? choice.from.id : choice.project.id)
-            return (
-              <ListRow key={p.id} tone={choice?.type === 'existing' && choice.project.id === p.id ? 'selected' : 'default'}
-                title={p.name} icon={<Icon name={p.worktreeOf ? 'branch' : 'folder'} size={13} />}
-                meta={sameRepo ? 'same repo' : undefined}
-                onClick={() => { setWhere({ type: 'existing', project: p }); setFeature(null) }} />
-            )
-          })}
-        </div>
-        {needsBranch && (
-          <input className={s.branch} value={branch} placeholder={suggested} aria-label="Branch name"
-            onChange={(e) => setBranch(e.target.value)} />
-        )}
+      {/* one search over every checkout and every repo's fork, so neither has to be found first */}
+      <div className={s.search}>
+        <Icon name="search" size={14} />
+        <input autoFocus value={query} placeholder="Select or type to create a worktree…" aria-label="Where"
+          onChange={(e) => { setQuery(e.target.value); setAt(0) }} onKeyDown={onKeyDown} />
+      </div>
 
+      <div className={s.rows} role="listbox" aria-label="Checkouts">
+        {rows.map((r, i) => {
+          const on = i === current
+          const shared = {
+            key: r.key, ref: on ? rowRef : undefined, role: 'option' as const, 'aria-selected': on,
+            className: `${s.row} ${on ? s.on : ''}`,
+            // hovering moves the highlight, so the keyboard and the mouse never disagree about
+            // what Enter would pick — the same rule CommandPalette follows
+            // a click selects, it does not commit: the point of this form is choosing where and
+            // then still being able to change the kind, the sandbox and the prompt before anything
+            // is created. Enter and the button are the two ways to commit.
+            onMouseMove: () => setAt(i),
+            onClick: () => setAt(i),
+          }
+          if (r.type === 'existing') {
+            const ref = refs[r.project.worktreeOf ?? r.project.id]
+            return (
+              <div {...shared}>
+                <Icon name={r.project.worktreeOf ? 'branch' : 'folder'} size={13} />
+                <span className={s.rowName}>{r.project.name}</span>
+                <span className={s.rowSub}>{ref?.branch ?? '—'}</span>
+              </div>
+            )
+          }
+          return (
+            <div {...shared}>
+              <span className={s.plus}>＋</span>
+              <span className={s.rowName}>{r.label}</span>
+              <span className={s.rowSub}>in {r.repo.name}</span>
+            </div>
+          )
+        })}
+        {rows.length === 0 && <div className={s.note}>Nothing matches “{query}”.</div>}
+      </div>
+
+      <div className={s.body}>
         <div className={s.label}>Prompt <span className={s.optional}>optional — the agent can wait for it</span></div>
         <textarea className={s.prompt} rows={2} value={prompt} placeholder="What should this session do?" aria-label="Prompt"
-          onChange={(e) => setPrompt(e.target.value)} />
+          onChange={(e) => setPrompt(e.target.value)}
+          // ⇧↩ or ⌘↩ commits, matching CommentEditor: a newline is ↵ here, as it is everywhere
+          onKeyDown={(e) => {
+            if (e.key === 'Enter' && (e.metaKey || e.ctrlKey || e.shiftKey)) {
+              e.preventDefault()
+              e.stopPropagation()
+              void submit()
+            }
+          }} />
 
         <div className={s.label}>Isolation</div>
         <div className={`${s.isolation} ${sandboxable(kind) ? '' : s.off}`}>
@@ -145,7 +245,7 @@ export function NewSessionDialog({ projectId, onClose, onStart }: {
         </div>
 
         <div className={s.label}>Link to feature</div>
-        {needsBranch ? (
+        {creating ? (
           <div className={s.note}>A new worktree has no features of its own until discovery runs there.
             The session links itself as soon as it writes to a feature folder.</div>
         ) : (
@@ -154,7 +254,7 @@ export function NewSessionDialog({ projectId, onClose, onStart }: {
               <ListRow key={f.slug} title={f.title} tone={feature === f.slug ? 'selected' : 'default'}
                 meta={f.slug} onClick={() => setFeature(feature === f.slug ? null : f.slug)} />
             ))}
-            {linkable.length === 0 && <div className={s.note}>No features in this project.</div>}
+            {linkable.length === 0 && <div className={s.note}>No features in this checkout.</div>}
           </div>
         )}
 
@@ -170,15 +270,29 @@ export function NewSessionDialog({ projectId, onClose, onStart }: {
       {error && <div className={s.error}>{error}</div>}
 
       <div className={s.foot}>
+        {/* the summary is the whole point of the create/open split: it names the outcome */}
+        {/* the outcome is stated here because a row click no longer reveals it by acting */}
         <span className={s.summary}>
-          {choice && (choice.type === 'new' ? `new worktree · ${branch.trim() || suggested}` : choice.project.path)}
-          {wantsSandbox(kind, sandboxed) ? ' · sandboxed' : ' · on your host'}
+          {row && (creating
+            ? `creates ${creatingBranch} in ${row.repo.name} · ${wantsSandbox(kind, sandboxed) ? 'sandboxed' : 'on your host'}`
+            : `runs in ${row?.type === 'existing' ? row.project.name : ''} · ${wantsSandbox(kind, sandboxed) ? 'sandboxed' : 'on your host'}`)}
         </span>
         <Button variant="ghost" onClick={onClose}>Cancel</Button>
-        <Button variant="primary" disabled={!ready || busy} onClick={() => void submit()}>
-          {busy ? 'Starting…' : 'Start'}
+        {/* Create vs Start: the button names the action, which is the cheapest way to keep
+            creation legible without another control */}
+        <Button variant="primary" disabled={busy} onClick={() => void submit()}>
+          {busy ? 'Working…' : creating ? 'Create' : 'Start'}
         </Button>
       </div>
     </Modal>
   )
+}
+
+// A branch we can propose but not guess: the repo's own name and the lowest free number. The
+// human edits it, and a name grove invented would be a name it then owns.
+function suggestionFor(repo: Project, projects: Project[]): string {
+  const slug = repo.name.replace(/[^A-Za-z0-9._-]+/g, '-').toLowerCase()
+  const taken = new Set(projects.map((p) => p.name.split(' · ').pop() ?? ''))
+  for (let n = 1; ; n++) if (!taken.has(`${slug}-${n}`)) return `${slug}/${slug}-${n}`
+  return `${slug}/${slug}`
 }

@@ -13,6 +13,7 @@ interface Props {
   picked?: boolean // part of a multi-selection
   tone?: 'default' | 'selected' | 'waiting' | 'finished'
   compact?: boolean
+  nested?: boolean // indented under a parent row, for a child of it (a worktree under its checkout)
   actions?: ReactNode // floating buttons on the card's top-right corner, shown on hover
   badge?: ReactNode // right of the title
   onClick?: (e: MouseEvent) => void
@@ -21,9 +22,9 @@ interface Props {
   editor?: ReactNode // replaces the title while renaming
 }
 
-export function ListRow({ title, corner, cornerPinned, icon, meta, status, tone = 'default', picked, compact, actions, badge, onClick, onContextMenu, onTitleDoubleClick, editor }: Props) {
+export function ListRow({ title, corner, cornerPinned, icon, meta, status, tone = 'default', picked, compact, nested, actions, badge, onClick, onContextMenu, onTitleDoubleClick, editor }: Props) {
   return (
-    <div className={cx(s.row, s[tone], compact && s.compact, picked && s.picked)} onClick={onClick} onContextMenu={onContextMenu}>
+    <div className={cx(s.row, s[tone], compact && s.compact, nested && s.nested, picked && s.picked)} onClick={onClick} onContextMenu={onContextMenu}>
       <div className={s.head}>
         {icon}
         {editor ?? <span className={s.title} onDoubleClick={onTitleDoubleClick}>{title}</span>}

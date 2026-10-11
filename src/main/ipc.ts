@@ -41,6 +41,7 @@ export function registerIpc(core: Core, getWindow: () => BrowserWindow | null, g
   }, true)
   handle('project:remove', (a) => core.commands.projectRemove(a), true)
   handle('worktree:create', (a) => core.commands.worktreeCreate(a), true)
+  handle('repo:refs', (a) => core.commands.repoRefs(a), true)
   handle('session:create', (a) => core.commands.sessionCreate(a), true)
   handle('session:remove', (a) => core.commands.sessionRemove(a), true)
   handle('session:resume', (a) => core.commands.sessionResume(a), true)

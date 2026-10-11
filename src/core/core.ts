@@ -75,6 +75,11 @@ export interface Commands {
   // A new worktree of the repo `projectId` belongs to, on `branch`, registered as a project of
   // its own (ADR 0037) so a session can be created in it like any other checkout.
   worktreeCreate(a: { projectId: string; branch: string }): Promise<Result<Project>>
+  // What a checkout is on, and what a new worktree off it would branch from. Read without
+  // spawning git for the current branch (readBranch) and with two git calls for the default,
+  // because the launch dialog has to name a base before anyone has picked anything (ADR 0037's
+  // worktree is a project, so this is per project and not per session).
+  repoRefs(a: { projectId: string }): Promise<Result<{ branch: string | null; default: string | null }>>
   sessionCreate(a: {
     projectId?: string; cwd?: string; kind: SessionKind; prompt?: string; label?: string; feature?: string; sandboxed?: boolean; cols: number; rows: number
   }): Promise<Result<Session>> // exactly one of projectId, cwd
@@ -691,6 +696,10 @@ export function createCore(opts: CoreOptions): Core {
       const name = branch.trim()
       if (!name) return { ok: false, error: 'no-branch' }
       const repo = repoFor(project)
+      // a project can be any folder, so say so before git does — the launch dialog offers a
+      // worktree for every repo, and "is not a git repository" is the answer rather than a
+      // git `fatal` the human has to interpret
+      if (!(await gitTop(repo))) return { ok: false, error: 'no-repo' }
       const at = opts.worktreeRoot
         ? worktrees.worktreePathIn(opts.worktreeRoot, repo, name)
         : worktrees.worktreePath(repo, name)
@@ -702,6 +711,21 @@ export function createCore(opts: CoreOptions): Core {
       set('projects', [...slices.projects, wt])
       syncProjects(false)
       return { ok: true, data: wt }
+    },
+
+    // `readBranch` walks up from the checkout reading HEAD, so it costs no process; the default
+    // branch needs `origin/HEAD` and is what a new worktree branches from. Both null when the
+    // folder is not a repo, which is the same `no-repo` case worktreeCreate refuses.
+    async repoRefs({ projectId }) {
+      const project = slices.projects.find((p) => p.id === projectId)
+      if (!project) return { ok: false, error: 'not-found' }
+      // this project's own path, not repoFor's: a worktree's row must name the branch that
+      // worktree has checked out, which is not the one its parent checkout has
+      const branch = readBranch(project.path)
+      if (!git) return { ok: true, data: { branch, default: null } }
+      const root = await gitTop(project.path)
+      if (!root) return { ok: true, data: { branch, default: null } }
+      return { ok: true, data: { branch, default: await defaultBranch(git, root) } }
     },
 
     // `projectId` (the app) or `cwd` (the CLI, ADR 0029): a folder resolves to its project, registered when new.

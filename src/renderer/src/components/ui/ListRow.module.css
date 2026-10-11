@@ -18,6 +18,11 @@
   padding: 3px 10px;
 }
 
+/* a child of the row above it, indented by a branch glyph's width so the icon still lines up */
+.nested {
+  margin-left: 16px;
+}
+
 .selected,
 .selected:hover {
   background: var(--card-selected-bg);

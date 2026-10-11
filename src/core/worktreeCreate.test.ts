@@ -3,6 +3,7 @@ import os from 'node:os'
 import path from 'node:path'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { worktreePathIn } from './worktrees'
+import type { Core } from './core'
 import { gitRepo } from './testing/gitRepo'
 import { setupCore } from './testing/setup'
 
@@ -122,16 +123,98 @@ describe('worktreeCreate', () => {
     expect(await core.commands.worktreeCreate({ projectId: 'nope', branch: 'fix-auth' })).toEqual({ ok: false, error: 'not-found' })
   })
 
-  // Nothing is registered when git could not make the checkout, so a failure leaves no project
+  // Nothing is registered when the checkout cannot be made, so a failure leaves no project
   // pointing at a directory that does not exist.
   it('registers nothing when the checkout cannot be made', async () => {
+    // setupCore's config.json already carries a project, so a second core would reload it and the
+    // id in the assertion would be wrong. Started on a cleared config instead.
     t.disposeAll()
     fs.rmSync(t.configPath)
     const blind = t.make(undefined, { worktreeRoot: root, git: null })
     await blind.start()
     const added = await blind.commands.projectAdd({ path: repo.dir })
     if (!added.ok) throw new Error(added.error)
-    expect(await blind.commands.worktreeCreate({ projectId: added.data.id, branch: 'fix-auth' })).toEqual({ ok: false, error: 'no-git' })
+    expect(await blind.commands.worktreeCreate({ projectId: added.data.id, branch: 'fix-auth' })).toEqual({ ok: false, error: 'no-repo' })
     expect(blind.getSlices().projects.map((p) => p.id)).toEqual([added.data.id])
+  })
+
+  // A project can be any folder, so "not a repository" is the answer rather than git's `fatal` —
+  // the dialog offers a worktree for every group, and a plain folder is in one of them.
+  it('says no-repo for a folder that is not a repository, before asking git to fail', async () => {
+    const plain = fs.mkdtempSync(path.join(os.tmpdir(), 'grove-notrepo-'))
+    try {
+      const added = await core.commands.projectAdd({ path: plain })
+      if (!added.ok) throw new Error(added.error)
+      expect(await core.commands.worktreeCreate({ projectId: added.data.id, branch: 'fix-auth' })).toEqual({ ok: false, error: 'no-repo' })
+    } finally {
+      fs.rmSync(plain, { recursive: true, force: true })
+    }
+  })
+})
+
+// What the launch picker shows on each row: a checkout's current branch, and the default a new
+// worktree would branch from. `readBranch` needs no process; the default needs origin/HEAD.
+describe('repoRefs', () => {
+  let t: ReturnType<typeof setupCore>
+  let core: Core
+  let repo: ReturnType<typeof gitRepo>
+  let checkoutId: string
+  let root: string
+
+  beforeEach(async () => {
+    t = setupCore()
+    root = fs.mkdtempSync(path.join(os.tmpdir(), 'grove-refs-wt-'))
+    repo = gitRepo()
+    repo.write('README.md', 'hi\n')
+    repo.commit()
+    core = t.make(undefined, { worktreeRoot: root })
+    await core.start()
+    const added = await core.commands.projectAdd({ path: repo.dir })
+    if (!added.ok) throw new Error(added.error)
+    checkoutId = added.data.id
+  })
+
+  afterEach(() => {
+    t.disposeAll()
+    fs.rmSync(root, { recursive: true, force: true })
+  })
+
+  it('names the branch the checkout is on and the default one', async () => {
+    const res = await core.commands.repoRefs({ projectId: checkoutId })
+    if (!res.ok) throw new Error(res.error)
+    expect(res.data.branch).toBe('main') // gitRepo() initialises -b main
+    expect(res.data.default).toBe('main')
+  })
+
+  it('follows the checkout to a branch it switched to', async () => {
+    repo.git('checkout', '-q', '-b', 'feature')
+    const res = await core.commands.repoRefs({ projectId: checkoutId })
+    if (!res.ok) throw new Error(res.error)
+    expect(res.data.branch).toBe('feature')
+    expect(res.data.default).toBe('main') // the default does not move with the checkout
+  })
+
+  // A worktree's own HEAD, not its parent's: the row says what that checkout is on.
+  it('reports a worktree as the branch it checked out', async () => {
+    const made = await core.commands.worktreeCreate({ projectId: checkoutId, branch: 'fix-auth' })
+    if (!made.ok) throw new Error(made.error)
+    const wt = await core.commands.repoRefs({ projectId: made.data.id })
+    if (!wt.ok) throw new Error(wt.error)
+    expect(wt.data.branch).toBe('fix-auth')
+  })
+
+  it('reports nulls for a folder that is not a repository, rather than failing', async () => {
+    const plain = fs.mkdtempSync(path.join(os.tmpdir(), 'grove-notrepo-'))
+    try {
+      const added = await core.commands.projectAdd({ path: plain })
+      if (!added.ok) throw new Error(added.error)
+      expect(await core.commands.repoRefs({ projectId: added.data.id })).toEqual({ ok: true, data: { branch: null, default: null } })
+    } finally {
+      fs.rmSync(plain, { recursive: true, force: true })
+    }
+  })
+
+  it('refuses an id no project has', async () => {
+    expect(await core.commands.repoRefs({ projectId: 'nope' })).toEqual({ ok: false, error: 'not-found' })
   })
 })

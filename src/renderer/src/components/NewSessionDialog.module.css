@@ -45,6 +45,84 @@
   color: var(--text);
 }
 
+/* one search over checkouts and forks alike, where the create rows are answers to an empty query */
+.search {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-2);
+  padding: 10px var(--sp-4);
+  border-bottom: 1px solid var(--divider);
+  color: var(--text-3);
+}
+
+.search input {
+  flex: 1;
+  min-width: 0;
+  background: transparent;
+  border: 0;
+  outline: none;
+  color: var(--text);
+  font: inherit;
+  font-size: var(--fs-md);
+}
+
+.rows {
+  max-height: 188px;
+  overflow-y: auto;
+  padding: var(--sp-1) 0;
+  border-bottom: 1px solid var(--divider);
+}
+
+.row {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-2);
+  padding: 6px var(--sp-4);
+  cursor: pointer;
+  font-size: var(--fs-card);
+  color: var(--text-2);
+}
+
+.row:hover {
+  background: var(--raised-bg);
+}
+
+.row.on {
+  background: var(--card-selected-bg);
+  color: var(--accent);
+}
+
+.rowName {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.row.on .rowName {
+  font-weight: var(--fw-semibold);
+}
+
+/* the base, or the branch a checkout is on: the thing the name cannot tell you */
+.rowSub {
+  margin-left: auto;
+  flex: none;
+  font-family: var(--font-mono);
+  font-size: var(--fs-xs);
+  color: var(--text-3);
+}
+
+.row.on .rowSub {
+  color: color-mix(in srgb, var(--accent) 70%, transparent);
+}
+
+.plus {
+  width: 13px;
+  flex: none;
+  color: var(--status-working);
+  font-weight: var(--fw-bold);
+}
+
 .body {
   display: flex;
   flex-direction: column;
@@ -70,8 +148,24 @@
   background: var(--card-bg);
   border: 1px solid var(--card-border);
   border-radius: var(--r-md);
-  max-height: 168px;
+  max-height: 230px;
   overflow-y: auto;
+}
+
+/* the repo group heading, kept for the feature list's sake; the picker itself is flat */
+.group {
+  padding: 9px 10px 4px;
+  font-size: var(--fs-xs);
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  font-weight: var(--fw-semibold);
+  color: var(--text-3);
+}
+
+.groupCount {
+  text-transform: none;
+  letter-spacing: 0;
+  font-weight: var(--fw-regular);
 }
 
 .branch {

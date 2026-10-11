@@ -129,7 +129,7 @@ export default function App() {
   const startLaunch = useCallback(async (l: Launch): Promise<string | null> => {
     let projectId = l.where.type === 'existing' ? l.where.project.id : ''
     if (l.where.type === 'new') {
-      const made = await window.api.invoke('worktree:create', { projectId: l.where.from.id, branch: l.branch })
+      const made = await window.api.invoke('worktree:create', { projectId: l.where.from.id, branch: l.where.branch })
       if (!made.ok) return made.error
       projectId = made.data.id
     }
