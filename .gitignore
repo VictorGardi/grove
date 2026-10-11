@@ -9,3 +9,7 @@ build/
 # Grove
 .grove/context/
 docs/work/**/*.html
+
+# Agent scratch: working notes and mockups, per feature. Committed by accident once (3192da7).
+reports/
+research_notes/
