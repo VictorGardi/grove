@@ -26,9 +26,12 @@ const MESSAGES: Record<string, string> = {
   'worktree-failed': 'the worktree could not be created',
   // One message for every way a sandbox cannot be had, because the CLI has one line to spend on
   // it (D8): it says what to run rather than printing a code. Naming the command is the whole
-  // mitigation — grove cannot tell a one-year `setup-token` from a short-lived one.
+  // mitigation — grove cannot tell a one-year `setup-token` from a short-lived one. The
+  // "shell profile, not this terminal" clause is not decoration: grove probes by spawning
+  // `$SHELL -l -i -c`, so an export typed into one terminal is invisible to it, and the app
+  // that owns the session never sees the invoking shell's environment either.
   'no-sandbox':
-    'this machine cannot give a sandboxed session what it needs — install and start the `container` CLI, or run `claude setup-token` and export CLAUDE_CODE_OAUTH_TOKEN in your shell profile',
+    'this machine cannot give a sandboxed session what it needs — install and start the `container` CLI, or run `claude setup-token` and put `export CLAUDE_CODE_OAUTH_TOKEN=…` in your shell profile (~/.zshrc): grove reads it from a login shell, so exporting it in one terminal will not do',
 }
 
 const failFrom = (id: string, code: string): CliReply => fail(id, code, MESSAGES[code] ?? code)

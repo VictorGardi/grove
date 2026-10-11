@@ -60,6 +60,10 @@ describe('cli server', () => {
     expect(sandboxed).toMatchObject({ ok: false, error: { code: 'no-sandbox' } })
     // D8: the refusal says what to do, rather than printing a bare code at the human
     expect(sandboxed.ok === false && sandboxed.error.message).toContain('claude setup-token')
+    // and it must say *where*: grove probes by spawning a login shell, so an export typed into
+    // one terminal is invisible to it. Measured — a sandboxed session was refused with the
+    // variable plainly set in the very terminal that ran `grove new`.
+    expect(sandboxed.ok === false && sandboxed.error.message).toContain('~/.zshrc')
     expect(core.getSlices().sessions).toEqual([])
 
     const bare = await request(socketPath, req('sessions.create', { kind: 'claude', cwd: t.dir }))

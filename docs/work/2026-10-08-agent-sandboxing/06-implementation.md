@@ -2,7 +2,7 @@
 feature: 2026-10-08-agent-sandboxing
 phase: implementation
 status: draft
-version: 5
+version: 6
 created: 2026-10-10
 updated: 2026-10-11
 based_on:
@@ -12,6 +12,42 @@ forced: []
 ---
 
 # Agent session sandboxing — implementation
+
+## Verified end to end by the human, 2026-10-11
+
+The human ran `grove new claude --sandboxed --prompt "print pwd"` against a real credential and
+**it works** — the session authenticates. That closes the last item slice 2's manual
+verification could not reach from this session's environment.
+
+It also produced the first finding from a real run, and it is the one D8 predicted: with
+`CLAUDE_CONFIG_DIR` now reaching the host's `settings.json`, the sandboxed agent inherits the
+host's hooks, and the ones that shell out to **macOS** binaries cannot work in a Linux VM.
+Reproduced with grove's mounts and a dummy token:
+
+```
+⎿  SessionStart:startup hook error
+⎿  Failed with non-blocking status code:
+   /bin/sh: 1: /Applications/Xirp.app/Contents/Resources/node-runtime/node: not found
+```
+
+The host's `settings.json` carries hooks on 19 events from three families. Two are guarded and
+harmless — the orca hook prints `{}` when its script is missing, and the Superset hook is behind
+`$SUPERSET_HOME_DIR … || true`. The five Xirp hooks (`SessionStart`, `Stop`, `PostToolUse`,
+`PermissionRequest`, `Notification`) hardcode `/Applications/Xirp.app/…` with no guard, so they
+fail on every event they are bound to.
+
+**This is the accepted consequence, not a regression**: D8's own decision table says a sandboxed
+agent "now gets the host's settings, plugins, skills, commands and history, which until now it
+silently did not". A hook that drives a host application cannot work in the VM, and Claude Code
+classifies the failure as non-blocking, so the session continues. grove should not paper over it:
+the hook is visible, the failure is accurate, and a silent success would be worse.
+
+**Worth a later decision, not this slice:** the container runs `uid=0`, so every inherited hook
+executes as root inside the VM. Two guarded families make that harmless today. It stops being
+harmless the moment an unguarded hook touches something. Apple's `container` can run a
+non-root uid (`--user`), and Anthropic's own sandbox guidance refuses to run
+`--dangerously-skip-permissions` as root — grove does not pass that flag, which is why the
+session starts today. Noted, not decided.
 
 ## Finding: `--read-only-path` does not enforce an absent target, and D8's carve-outs are absent by default
 
@@ -190,6 +226,11 @@ unconditionally, and correcting approved design text belongs to `grove-design` i
 
 ## Carried to the next slice
 
+- **The human's own macOS hooks now load inside the sandbox and the unguarded ones fail.** See
+  the verified-end-to-end section above. Expected, non-blocking, and documented — but if the
+  host's `settings.json` ever gains an unguarded hook that touches the filesystem, it will run
+  as `uid=0` in the VM. Running the container as a non-root uid is the eventual fix and belongs
+  to a slice of its own.
 - **OpenCode runs v2.0.20 on this host; the sandbox image pins `opencode-ai@1.19.0`.** Measured
   2026-10-11. The version skew is slice 6's problem and it is not small: D6's whole plan is a
   sandboxed TUI joining the host's shared service, and the two versions may not agree on the
