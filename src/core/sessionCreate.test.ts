@@ -8,6 +8,7 @@ import { claudeArgv } from './claude/hooks'
 import { gitRunner } from './diff/git'
 import { minimalEnv } from './env'
 import { imageRef } from './sandbox/image'
+import { loadState } from './store/stateStore'
 import type { Core } from './core'
 import { gitRepo } from './testing/gitRepo'
 import { setupCore } from './testing/setup'
@@ -341,6 +342,55 @@ describe('sessionResume --sandboxed', () => {
     expect(argv).toContain(`--read-only-path ${paths().gitconfig}`)
     expect(argv).toMatch(new RegExp(`${imageRef(dockerfile())} claude -s \\S+$`))
     expect(core.getSlices().sessions.find((s) => s.id === id)?.sandboxed).toBe(true)
+  })
+
+  // ADR 0033's other half: a session that was sandboxed and no longer is must say so, because
+  // `sandboxed: false` alone is indistinguishable from one that never had a sandbox. The note is
+  // what makes the difference visible on the card and in the header.
+  it('records what a downgrade lost, so the renderer can say the session is unguarded', async () => {
+    const core = await start()
+    const id = await ended(core)
+    fs.rmSync(dockerfile()) // the image recipe is gone: nothing can be built from it
+    const res = await core.commands.sessionResume({ id })
+    if (!res.ok) throw new Error(res.error)
+    expect(res.data.sandboxed).toBe(false)
+    expect(res.data.sandboxNote).toBeTruthy()
+    expect(core.getSlices().sessions.find((s) => s.id === id)?.sandboxNote).toBe(res.data.sandboxNote)
+  })
+
+  // A note that appeared for any other reason would misreport: it is the only signal that this
+  // session lost containment rather than never having had it.
+  it('leaves the note unset when nothing was lost', async () => {
+    const core = await start()
+    const sandboxed = await ended(core)
+    expect((await core.commands.sessionResume({ id: sandboxed })).ok).toBe(true)
+    expect(core.getSlices().sessions.find((s) => s.id === sandboxed)).not.toHaveProperty('sandboxNote')
+
+    const plain = await core.commands.sessionCreate({ kind: 'claude', cwd: t.dir, cols: 120, rows: 40 })
+    if (!plain.ok) throw new Error(plain.error)
+    await core.commands.sessionKill({ id: plain.data.id })
+    expect((await core.commands.sessionResume({ id: plain.data.id })).ok).toBe(true)
+    expect(core.getSlices().sessions.find((s) => s.id === plain.data.id)).not.toHaveProperty('sandboxNote')
+  })
+
+  // The note is a fact about this pane, not a property of the session. A restart drops it, and
+  // what survives is the flag: the session stays unsandboxed, which is the part that must not lie.
+  it('never saves the note, and the flag it qualifies stays false across a restart', async () => {
+    const core = await start()
+    const id = await ended(core)
+    fs.rmSync(dockerfile())
+    await core.commands.sessionResume({ id })
+    const saved = loadState(t.statePath).sessions.find((s) => s.id === id)
+    expect(saved).not.toHaveProperty('sandboxNote')
+    expect(saved?.sandboxed).toBe(false)
+
+    core.dispose()
+    const restarted = t.make(undefined, {
+      sessionEnv: { binDir: '/bin', ...paths() },
+      sandbox: { container: container(), dockerfile: dockerfile() },
+    })
+    await restarted.start()
+    expect(restarted.getSlices().sessions.find((s) => s.id === id)).toMatchObject({ sandboxed: false })
   })
 
   it('leaves an unsandboxed session on the host, exactly as it was', async () => {

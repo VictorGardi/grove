@@ -2,7 +2,7 @@
 feature: 2026-10-08-agent-sandboxing
 phase: implementation
 status: draft
-version: 6
+version: 7
 created: 2026-10-10
 updated: 2026-10-11
 based_on:
@@ -12,6 +12,131 @@ forced: []
 ---
 
 # Agent session sandboxing — implementation
+
+# Slice 3 — Resume stays sandboxed, and a downgrade says so
+
+## What was actually missing
+
+The resume half had landed in 3192da7: `sessionResume` re-enters the sandbox and downgrades when
+it cannot, clearing `sandboxed`. **The other half of ADR 0033's bargain — "and the renderer
+reports it once in a banner" — was not there.** `sandboxed: false` is the same value a
+never-sandboxed session carries, so `SandboxMark` returned `null` and a downgraded session looked
+completely ordinary. The one thing on the path that must not be silent was the one thing that
+rendered nothing.
+
+`App.tsx:53-59` had a partial answer: it snapshotted `sandboxed` before its own Resume call and
+raised a banner if it came back false. That covers one of three resume entry points. The Sidebar's
+Resume (`Sidebar.tsx:103`) invokes `session:resume` directly, and the CLI's goes through
+`core/send.ts:46`; a downgrade through either showed nothing at all.
+
+The human's decision (2026-10-11) replaced the guessing with a fact the core publishes: a
+live-only optional field on `Session`, never saved, alongside `branch`/`status`/`model`, set at
+downgrade, rendered by `SessionMeta` next to `SandboxMark`. `sandboxNote` is the name.
+
+## What landed
+
+- **`Session.sandboxNote?: string`** (`src/shared/types.ts`), live-only, and stripped in `set()`
+  alongside the other live-only fields so it never reaches `state.json`. A note rather than a
+  boolean, because it carries *what happened* rather than only that something did.
+- **`sessionResume`** sets it, and only when `session.sandboxed` was actually true — so a session
+  that was never sandboxed and is resumed picks up nothing. The value is a fixed sentence from
+  `LOST_SANDBOX` in `src/core/sandbox/launch.ts`.
+- **`sandboxView(session)`** in `src/renderer/src/sessionStatus.ts`: the one place that decides
+  what the mark shows, so the card and the header cannot drift. `sandboxed` | `lost` | `none`,
+  with a live sandbox winning over a stale note.
+- **`SandboxMark`** takes the session rather than a bare boolean, and renders three shapes: nothing
+  for an ordinary unsandboxed session, the existing shield for a sandboxed one, and a new
+  **danger-toned shield-off with the word "Not sandboxed"** for a downgraded one. Its tooltip says
+  what was lost without pretending to know why.
+
+## Measured, 2026-10-11
+
+Against the **real** `container` 1.5.0 binary, the **real** `resources/sandbox/Dockerfile` and the
+**real** login shell (the tmux backend stays fake — there is no pane from this session). Temporary
+harness, deleted after the run:
+
+| Step | Result |
+| --- | --- |
+| create a sandboxed Claude session | ok; real image ref `grove-sandbox:cbcd1e51f27a`; credential probe found `CLAUDE_CODE_OAUTH_TOKEN` in the login shell |
+| resume with the image buildable | `sandboxed: true`, **no** `sandboxNote` |
+| resume with the Dockerfile moved aside | `sandboxed: false`, `sandboxNote` set, pane argv `export PATH=…:"$PATH"; exec claude -s 8b0ffe7e-…` — on the host |
+| `state.json` afterwards | carries `sandboxed` only; **no** `sandboxNote` |
+
+Renderer, rendered to static markup (the renderer has no DOM test environment, so the mark's actual
+output was checked rather than assumed):
+
+| Session | Markup |
+| --- | --- |
+| never sandboxed | `""` — no element at all |
+| downgraded | `_mark_ _lost_` classes, shield-off glyph, `Not sandboxed`, `title="Not sandboxed — the sandbox could not start when this session resumed, so its filesystem is not isolated."` |
+| sandboxed | `_mark_`, shield glyph, `Sandboxed`, original tooltip **verbatim** |
+| either, dense (grid pane) | glyph only, `title` preserved — the tooltip is the only place the reason fits |
+
+`npm test`: **876 passed / 78 files** (was 869; +7). `npm run typecheck`: clean. `npm run build`:
+clean.
+
+## Deviations and decisions taken inside the slice
+
+8. **Files beyond the structure's slice-3 list.** `04-structure.md` names `src/core/core.ts` and
+   `src/core/sessions.ts`. The slice also touches `src/shared/types.ts` (the field),
+   `src/renderer/src/sessionStatus.ts`, `SessionMeta.tsx`, `SandboxMark.tsx`,
+   `SandboxMark.module.css` and `ui/Icon.tsx`. Forced by the field being a *rendered* fact, which
+   the structure's own outcome line ("Never widens silently") requires and its file list did not
+   reach. **`src/core/sessions.ts` needed no change** — `sandboxNote` is set on the spread in
+   `sessionResume`, never in `newSession`.
+9. **`sandboxView` lives in `sessionStatus.ts`**, not in a new file. It is one small pure function
+   beside `statusView`/`statusTone`, which are the same kind of thing, and `SessionMeta` already
+   imports from there.
+10. **`SandboxMark`'s prop went from `sandboxed: boolean` to `session: Session`.** It needs both
+    fields to decide, and passing one boolean in would mean the caller re-deriving the view. Only
+    one caller (`SessionMeta.tsx:40`).
+11. **A new `shield-off` icon** (the existing shield plus the slash `eye-off` already uses). Not a
+    new shape vocabulary — a distinct glyph for the lost state, because reusing the plain shield in
+    danger colours reads as "sandboxed and alarming" rather than "not sandboxed".
+12. **The note is one fixed sentence, never a diagnosis.** `sandboxArgvFor` collapses every failure
+    to `null` deliberately (see its own comment), so the core cannot know whether it was a missing
+    binary, a failed build or a missing credential, and inventing a reason string would be a lie.
+    `LOST_SANDBOX` names the consequence, which is what the human can act on.
+13. **`App.tsx`'s ad-hoc downgrade banner was left in place.** It still covers its own Resume
+    button, and removing it is a UI decision beyond "never widens silently". Worth the human's eye:
+    with `sandboxNote` on the card, the banner is now partly redundant, and it is the one piece of
+    this that still snapshots state before the call.
+14. **The downgraded mark uses `--danger` tokens, not `--accent`.** The accent is what a working
+    sandbox wears; reusing it for a lost one would make the two states look like one.
+
+## Carried into slice 4 (human decisions, 2026-10-11)
+
+- **The new-session dialog stays, and the ⌘K palette command is not implemented.** This departs from
+  `04-structure.md` slice 4, whose outcome is "⌘K lists **New sandboxed session** … reusing the
+  existing ⌘T kind list", and from its `Deferred` list, which explicitly does not want "A
+  new-session dialog with a checkbox, instead of a second palette command". `NewSessionDialog.tsx`
+  (already in the tree from 3192da7) is the human-approved opt-in instead; the palette command and
+  `MenuAction 'newSandboxedSession'` are not to be built. **The artifacts still describe the palette
+  command and need a design revise to match** — `grove-design 2026-10-08-agent-sandboxing` in
+  revise mode, which should restate slice 4's outcome and drop that line from `Deferred`. Recorded
+  here because this file cannot edit `04-structure.md`.
+- **`reports/` and `research_notes/` are gitignored and untracked** (`.gitignore:14-15`, commits
+  `11971bf` / `7e50b44`). Nothing from either directory is committed by this slice.
+- **Slice 6 stays out of scope** while the spike on the opencode v2.0.20 vs image-pinned 1.19.0
+  skew runs; D6 may need revising before that slice is planned.
+- ADR 0039 / D7 and `gitCommonDir` untouched, as instructed. Slice 1's opencode and terminal
+  no-sandbox refusals untouched.
+
+## Residue
+
+- Both temporary verification harnesses (`src/core/zzSlice3Manual.test.ts`,
+  `src/renderer/src/zzSlice3Manual.test.ts`) deleted; they were scaffolding, not deliverables.
+- `resources/sandbox/Dockerfile` was renamed aside during the manual run and restored in a
+  `finally`; `git diff resources/` is empty and the file is 1245 bytes, unmodified.
+- No containers were started (the tmux backend was faked), so `container list` is untouched by this
+  slice. The image `grove-sandbox:cbcd1e51f27a` remains.
+- `reports/` and `research_notes/` remain untracked; `git status --short` shows nothing from them.
+
+## Open questions
+
+None.
+
+---
 
 ## Verified end to end by the human, 2026-10-11
 

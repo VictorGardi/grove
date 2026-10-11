@@ -19,3 +19,12 @@
   padding: 0;
   justify-content: center;
 }
+
+/* The sandbox this session had and no longer has. Danger tones, not accent: a downgraded session
+   is a loss of containment, and it must not read as another instance of the good case. The same
+   tokens Banner's error state uses, so "this went wrong" looks the same everywhere. */
+.lost {
+  border-color: var(--danger-border);
+  background: var(--danger-bg);
+  color: var(--danger);
+}

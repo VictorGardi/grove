@@ -34,6 +34,7 @@ export interface Session {
   contextTokens?: number | null    // tokens in context (input incl. cache); never saved
   contextWindow?: number | null    // size of the context window in tokens; never saved
   model?: string | null            // the model in use; never saved
+  sandboxNote?: string             // a resume that could not re-enter its sandbox (ADR 0033): the session is on the host with no filesystem isolation, and this says so; never saved
   lastContext: ContextReading | null // the last known reading (pct known); persisted
 }
 // a viewable file in the project folder (ADR 0032); path relative to the project, POSIX

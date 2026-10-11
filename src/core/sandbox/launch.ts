@@ -15,6 +15,12 @@ export interface SandboxDeps {
   gitCommonDir(cwd: string): string | null
 }
 
+// What a resumed session lost when its sandbox could not be built. Fixed, and deliberately not a
+// diagnosis: `sandboxArgvFor` collapses every failure to `null` because none of them may fall back
+// to an unguarded pane, so core does not know which one it was and must not guess at one. What it
+// does know is the consequence, and that is what the human has to be told.
+export const LOST_SANDBOX = 'Its sandbox could not start, so it is running on your host with no filesystem isolation.'
+
 // The pane's argv for a sandboxed agent session, or null when this host cannot build one.
 // Every reason collapses to null because none of them may fall back to an unguarded pane
 // (ADR 0036): creation refuses with `no-sandbox`, and a resume downgrades and says so

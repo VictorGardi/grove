@@ -29,7 +29,7 @@ import { readBranch } from './git'
 import { gitCommonDir } from './git'
 import * as worktrees from './worktrees'
 import type { AgentEvent, AgentKind, AgentSource } from './agents/types'
-import { sandboxArgvFor, type SandboxDeps } from './sandbox/launch'
+import { LOST_SANDBOX, sandboxArgvFor, type SandboxDeps } from './sandbox/launch'
 import type { AgentPaths } from './sandbox/spec'
 import { autoLink, link, markGone, markSeen, newSession, reconcile, rename, resume, setWorkflowStatus, withBranches } from './sessions'
 import { loadConfig, saveConfig } from './store/configStore'
@@ -207,7 +207,7 @@ export function createCore(opts: CoreOptions): Core {
     }
     else if (k === 'sessions' || k === 'ui') {
       const sessions = slices.sessions.map(
-        ({ branch: _branch, status: _status, waitingFor: _waitingFor, contextPct: _p, contextTokens: _t, contextWindow: _w, model: _m, ...s }) => s,
+        ({ branch: _branch, status: _status, waitingFor: _waitingFor, contextPct: _p, contextTokens: _t, contextWindow: _w, model: _m, sandboxNote: _sn, ...s }) => s,
       ) // live-only
       saveState(opts.statePath, { schemaVersion: 9, sessions, ui: slices.ui })
     }
@@ -784,8 +784,10 @@ export function createCore(opts: CoreOptions): Core {
     // E-D3: a new tmux session of the same name runs the agent's resume argv (`opencode -s <id>`,
     // `claude --resume <id>`), picking up its history. A session that was sandboxed is sandboxed
     // again (ADR 0033), and when this host cannot build the sandbox the resume downgrades: it goes
-    // back unsandboxed, `sandboxed` goes false so nothing claims otherwise, and the renderer says
-    // so once. Refusing instead would trap the human out of a session over a pruned image.
+    // back unsandboxed, `sandboxed` goes false so nothing claims otherwise, and `sandboxNote`
+    // records that a sandbox was *lost* — the half the flag alone cannot say, since `false` is
+    // also what a never-sandboxed session looks like. Refusing instead would trap the human out of
+    // a session over a pruned image.
     async sessionResume({ id }) {
       const session = findSession(id)
       const project = session && slices.projects.find((p) => p.id === session.projectId)
@@ -804,7 +806,7 @@ export function createCore(opts: CoreOptions): Core {
       await backend.kill(session.tmuxName) // a leftover dead pane
       await backend.create({ name: session.tmuxName, cwd: workdir, cols: 80, rows: 24, argv, env: cliEnv(session) }) // attaching resizes it
       await backend.setColors(session.tmuxName, terminalTheme.foreground, terminalTheme.background)
-      replaceSession(resume(built ? session : { ...session, sandboxed: false }))
+      replaceSession(resume(built ? session : { ...session, ...(session.sandboxed && { sandboxed: false, sandboxNote: LOST_SANDBOX }) }))
       if (st.connected) void resync(st)
       refreshStatus()
       return { ok: true, data: findSession(id)! }

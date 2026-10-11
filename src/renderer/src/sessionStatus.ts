@@ -41,6 +41,17 @@ export function longestWaiting(sessions: Session[], since: Record<string, number
   return best
 }
 
+// What the sandbox mark says about a session, in one place so the card and the header cannot
+// drift. `lost` is the case a bare `sandboxed` flag cannot express (ADR 0033): the session was
+// confined and its resume came back without the sandbox, so the mark must not go dark — `false`
+// alone is also what a session that was never sandboxed looks like. A live sandbox wins over a
+// note: if one is running, nothing was lost, whatever a stale note claims.
+export function sandboxView(s: Session): { state: 'sandboxed' | 'lost' | 'none'; label?: string } {
+  if (s.sandboxed) return { state: 'sandboxed', label: 'Sandboxed' }
+  if (s.sandboxNote) return { state: 'lost', label: 'Not sandboxed' }
+  return { state: 'none' }
+}
+
 // Show an error only when a live OpenCode session loses its service connection.
 export function serviceBanners(oc: OpenCodeSlice, sessions: Session[]): { tone: 'error'; text: string }[] {
   if (oc.state === 'unreachable' && sessions.some((s) => s.kind === 'opencode' && s.lastStatus === 'running')) {

@@ -37,7 +37,7 @@ export function SessionMeta({ lead, session, feature, tagIndex, context, dense, 
       <span className={s.status}><StatusDot tone={status.tone} /><span className={s.secondary}>{status.label}</span></span>
       <span className={s.spacer} />
       {context}
-      <SandboxMark sandboxed={session.sandboxed} compact={dense} />
+      <SandboxMark session={session} compact={dense} />
       {actions}
     </div>
   )

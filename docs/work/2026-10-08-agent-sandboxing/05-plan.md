@@ -2,7 +2,7 @@
 feature: 2026-10-08-agent-sandboxing
 phase: plan
 status: approved
-version: 2
+version: 3
 created: 2026-10-11
 updated: 2026-10-11
 based_on:
@@ -291,3 +291,87 @@ maintained list. That is its own feature, deliberately not smuggled in here.
 Consequence still owed: `03-design.md`'s D8 and `04-structure.md`'s slice-2 outcome both state
 the carve-outs unconditionally ("never rewrite it"). They are conditional on the file existing.
 Correcting that wording is `grove-design`'s to make, not this skill's.
+
+## Slice 3 — Resume stays sandboxed, and a downgrade says so
+
+State on entry: `sessionResume` already re-enters the sandbox (slice 1's `sandboxArgvFor` seam,
+`core.ts:799-807`) and downgrades when it cannot, clearing `sandboxed`. **What is missing is the
+second half of ADR 0033's bargain — the "and says so".** Nothing records *that* a downgrade
+happened; `sandboxed: false` is indistinguishable from a session that was never sandboxed, so
+`SandboxMark` returns null and the session looks ordinary on the one path that must not be
+silent. `App.tsx:53-59` papers over this for its own Resume button only, by snapshotting
+`sandboxed` before the call — and misses the Sidebar's Resume, which invokes `session:resume`
+directly (`Sidebar.tsx:103`), and the CLI's, which goes through `core/send.ts:46`.
+
+The live-only field below replaces that guessing with a fact the core publishes. Name: the human
+chose this shape on 2026-10-11 — a live-only optional field on `Session`, never saved, alongside
+`branch`/`status`/`model`, set at downgrade, rendered by `SessionMeta` next to `SandboxMark`.
+`sandboxNote` is the name; it is a note, not a boolean, because it carries *what happened* rather
+than only that something did.
+
+Files beyond the structure's list (`src/core/core.ts`, `src/core/sessions.ts`): `src/shared/types.ts`
+for the field, and the renderer's `SessionMeta.tsx` / `SandboxMark.tsx` / `SandboxMark.module.css`.
+Logged as a deviation.
+
+### Tests first
+
+- [x] Add to `src/core/sessionCreate.test.ts`'s `sessionResume --sandboxed` block: after the
+      existing downgrade test removes the Dockerfile, `res.data.sandboxNote` is a non-empty
+      string and `res.data.sandboxed` is `false`.
+- [x] In the same file: a sandboxed resume that **succeeds** leaves `sandboxNote` unset, and a
+      session that was never sandboxed and is resumed has no `sandboxNote` either — the note is
+      only ever set by a downgrade.
+- [x] In the same file: `sandboxNote` is **never saved**. Resume a sandboxed session with the
+      Dockerfile gone, then assert `loadState(statePath).sessions[0]` has no `sandboxNote`
+      property (mirrors the `branch` assertion at `src/core/sessions.test.ts:87`).
+- [x] Add a `describe('sandboxView')` to `src/renderer/src/sessionStatus.test.ts` covering the new
+      pure function in `src/renderer/src/sessionStatus.ts`:
+      `sandboxView({ sandboxed: true })` → `{ state: 'sandboxed', label: 'Sandboxed' }`;
+      `sandboxView({ sandboxed: false })` → `{ state: 'none' }` (no label);
+      `sandboxView({ sandboxed: false, sandboxNote: 'x' })` → `{ state: 'lost', label: <the lost
+      label> }`; and `sandboxView({ sandboxed: true, sandboxNote: 'x' })` → still `sandboxed`
+      (a live sandbox wins over a stale note).
+
+### Implement
+
+- [x] `src/shared/types.ts`: add `sandboxNote?: string` to `Session`, after `model`, commented as
+      live-only and never saved — the same shape and comment as `branch`/`status`/`model`.
+- [x] `src/core/core.ts`: add `sandboxNote: _n` to the live-only strip list in `set()` (the
+      `sessions.map(({ branch: _branch, … })` destructure at core.ts:209-211), so it is never
+      written to `state.json`.
+- [x] `src/core/core.ts`: in `sessionResume`, when `built` is null **and** `session.sandboxed` was
+      true, replace the session with `{ ...session, sandboxed: false, sandboxNote: <note> }`
+      instead of `{ ...session, sandboxed: false }`. The note is a fixed, honest sentence naming
+      what the human must know: the sandbox could not start, so this session is on the host with
+      no filesystem isolation. Never invent a reason string here — `sandboxArgvFor` collapses every
+      failure to `null` on purpose (see its own comment), so core cannot name which one it was.
+- [x] `src/renderer/src/sessionStatus.ts`: add `sandboxView(s: Session): { state: 'sandboxed' |
+      'lost' | 'none'; label?: string }` — the one place that decides what the mark shows, so
+      `SessionMeta` and `SandboxMark` cannot drift. Move `SandboxMark`'s existing `HINT` constant
+      and its `sandboxed` prop's behaviour behind it.
+- [x] `src/renderer/src/components/ui/SandboxMark.tsx`: take the view from `sandboxView` instead of
+      a bare `sandboxed` boolean; render nothing for `none`, the existing shield for `sandboxed`,
+      and a **distinct, danger-toned** mark for `lost` (shield with a slash, the word `Not
+      sandboxed`) whose `title` says the sandbox could not start. Keep the existing tooltip on the
+      sandboxed case verbatim. Use the existing `--danger` / `--danger-bg` / `--danger-border`
+      tokens, not new colours.
+- [x] `src/renderer/src/components/ui/SandboxMark.module.css`: add the `.lost` variant alongside
+      `.mark`/`.compact` in the same danger tokens `Banner.module.css` uses. No new token.
+- [x] `src/renderer/src/components/SessionMeta.tsx`: pass `session` to `SandboxMark` instead of
+      `sandboxed={session.sandboxed}`, keeping it in the same place in the row (after the spacer,
+      before `actions`) so the content header and the grid pane both get it.
+
+### Verify
+
+- [x] `npm test` — expect 869 passing plus the new assertions; `src/core/sessionCreate.test.ts`
+      and `src/renderer/src/sessionStatus.test.ts` are the two that must change.
+- [x] `npm run typecheck`
+- [x] `npm run build`
+- [x] Manual, in `npm run dev`: resume a sandboxed Claude session (⌘T → Claude Code with the
+      sandbox on, or `grove new claude --sandboxed`), stop it, then **rename the Dockerfile on the
+      host** so `imageRef`/`ensureImage` fails and the resume downgrades. The session must come back
+      running, unsandboxed, with the danger mark and the note visible in the content header and in
+      its grid pane. Do the same from the Sidebar's Resume — the path the old banner missed — and
+      confirm the mark appears there too.
+- [x] Manual, clean-up: confirm `git status` shows `reports/` and `research_notes/` still
+      untracked and nothing from them staged, and that no `sandboxNote` appears in `state.json`.
