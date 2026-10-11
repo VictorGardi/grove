@@ -623,6 +623,68 @@ outcome is about the review *message*, and `reviewView.ts` is in no slice's file
 alone rather than widened silently. The message itself is correct and unambiguous once sent; only the
 pre-send grouping repeats the old key. Worth a follow-up slice if the tray bothers you.
 
+## PR description
+
+### What this is
+
+Let a session run in its own `git worktree` instead of always sharing its project's single
+checkout, so concurrent agent sessions on one repo stop colliding on a working directory and a
+branch. `grove new claude --worktree --branch fix-auth` makes the worktree under
+`~/.grove/worktrees/<repo>/<branch>`, registers it as a project of its own, and starts the session
+there. ADR 0037.
+
+The load-bearing claim is what did **not** change: a worktree is a `Project` whose `path` *is* the
+worktree root, so the diff, the branch, feature discovery, auto-linking and the artifact viewer are
+correct with no change to any of them. `src/core/diff/`, `src/core/discovery/`,
+`src/core/autolink.ts` and `src/core/artifacts/` are untouched across all four slices.
+
+### The model
+
+`Project` gains one **optional** field, `worktreeOf?: string`, naming the parent for **nesting
+only**. The authority for which repository a checkout belongs to is `gitCommonDir(dir)`, derived
+from git at load — so grouping cannot dangle, cannot be absent, and self-corrects against a
+hand-edited config. `ConfigFile.schemaVersion` stays 1 and `StateFile` stays 8: **no slice in this
+feature migrates anything.**
+
+### The four slices
+
+1. **Tracer.** `--worktree --branch`, `gitCommonDir`, `worktrees.add`, the nested sidebar and
+   Projects tab, and the proof that the four subsystems above are already correct.
+2. **Lifecycle.** Branch conflicts refused before `git worktree add` in grove's own words; a
+   worktree locked while a session runs in it; dead worktree projects pruned at start; a parent
+   whose worktree is busy refuses removal; "clean up merged".
+3. **One card per feature, with a divergence chip.** A repo reads as one repo everywhere: one card
+   per (repo, slug) with the checkout's copy canonical, a divergent worktree copy behind a chip,
+   the palette listing a feature once and a project once, the grid offering one tab per repo, and
+   a worktree's page showing sessions only.
+4. **A review message names the checkout.** Every `##` heading names the checkout its path came from
+   and every path is relative to it, so two drafts on one relative path in two checkouts are two
+   labelled sections rather than one merged section.
+
+### How to verify
+
+Automated: `npm test` (73 files, 801 tests), `npm run typecheck`, `npm run build`. The worktree
+behaviour is proven against real git in `worktrees.test.ts`, `git.test.ts`, `worktreeLifecycle.test.ts`
+and `sessionCreate.test.ts`, not mocks.
+
+By hand, in `npm run dev`, with two checkouts of one repo configured:
+
+- `grove new claude --worktree --branch probe` → the pane's `pwd` is
+  `~/.grove/worktrees/grove/probe`; the agent's writes show in grove's diff; the checkout's
+  `git status` stays clean.
+- The Features board shows one card per feature with a chip when a worktree copy has moved stage;
+  clicking the chip opens that copy.
+- The palette lists each feature once and one project per repo; ⌘T still offers every checkout.
+- ⌘B from a worktree session opens the repo's page.
+- Two drafts on one relative path in two checkouts send as two `##` sections, each naming its
+  checkout.
+
+### Not decided here
+
+A GUI worktree flow, adopting hand-made worktrees, multi-repo sessions, and a sandboxed worktree
+session — the last of which belongs to `2026-10-08-agent-sandboxing`, which must verify slice 1's
+git claims inside its mount before shipping that path (design W4).
+
 ## Open questions
 
 None.
