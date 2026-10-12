@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import type { Project, Session } from '@shared/types'
-import { GROUP_BY_OPTIONS, collapseKey, listGroups, orderedSessions, SORT_OPTIONS, visibleSessions, type ListGroup } from './sessionList'
+import { GROUP_BY_OPTIONS, canDrop, collapseKey, dropSession, listGroups, orderedSessions, SORT_OPTIONS, visibleSessions, type ListGroup } from './sessionList'
 
 const project = (id: string, name = id, worktreeOf?: string): Project => ({ id, name, path: '/' + id, ...(worktreeOf && { worktreeOf }) })
 
@@ -26,7 +26,7 @@ const SESSIONS = [
 ]
 
 const ui = (over: Partial<Parameters<typeof listGroups>[2]> = {}) => ({
-  collapsed: [] as string[], hiddenProjects: [] as string[], groupBy: 'project' as const, sessionSort: 'none' as const, ...over,
+  collapsed: [] as string[], hiddenProjects: [] as string[], groupBy: 'project' as const, sessionSort: 'manual' as const, sessionOrder: [] as string[], ...over,
 })
 
 const shape = (groups: ListGroup[]) =>
@@ -43,9 +43,9 @@ describe('options', () => {
     ])
   })
 
-  it('offers the five sorts, default first', () => {
+  it('offers the five sorts, manual first', () => {
     expect(SORT_OPTIONS).toEqual([
-      { value: 'none', label: 'Default' },
+      { value: 'manual', label: 'Manual' },
       { value: 'viewed-desc', label: 'Last viewed ↓' },
       { value: 'viewed-asc', label: 'Last viewed ↑' },
       { value: 'created-desc', label: 'Created ↓' },
@@ -125,8 +125,8 @@ describe('sessionSort', () => {
   const bySort = (sessionSort: Parameters<typeof listGroups>[2]['sessionSort'], list = VIEWED) =>
     ids(listGroups(PROJECTS, list, ui({ groupBy: 'none', sessionSort })))
 
-  it('sorts by start time under none and created-asc', () => {
-    expect(bySort('none')).toEqual(['n2', 'a', 'c', 'b', 'n1'])
+  it('sorts by start time under created-asc, and under manual with nothing placed', () => {
+    expect(bySort('manual')).toEqual(['n2', 'a', 'c', 'b', 'n1'])
     expect(bySort('created-asc')).toEqual(['n2', 'a', 'c', 'b', 'n1'])
   })
 
@@ -309,5 +309,74 @@ describe('visibleSessions', () => {
   it('is orderedSessions when nothing is collapsed', () => {
     const groups = listGroups(PROJECTS, SESSIONS, ui({ groupBy: 'project' }))
     expect(visibleSessions(groups)).toEqual(orderedSessions(groups))
+  })
+})
+describe('manual order', () => {
+  const manual = (sessionOrder: string[], over: Partial<Parameters<typeof listGroups>[2]> = {}, list = SESSIONS) =>
+    listGroups(PROJECTS, list, ui({ groupBy: 'none', sessionSort: 'manual', sessionOrder, ...over }))
+
+  it('reads in the saved order', () => {
+    expect(ids(manual(['b', 'a', 'z', 'c']))).toEqual(['b', 'a', 'z', 'c'])
+  })
+
+  it('sinks sessions missing from the order below the placed ones, in creation order', () => {
+    expect(ids(manual(['b']))).toEqual(['b', 'z', 'a', 'c'])
+    expect(ids(manual(['a', 'gone']))).toEqual(['a', 'z', 'c', 'b'])
+  })
+
+  it('shares one order across every grouping', () => {
+    const order = ['b', 'c', 'a', 'z']
+    expect(ids(manual(order, { groupBy: 'project' }))).toEqual(['c', 'b', 'a', 'z'])
+    expect(ids(manual(order, { groupBy: 'status' }))).toEqual(['b', 'c', 'a', 'z'])
+  })
+
+  it('feeds orderedSessions, which the rail and Cmd+1..9 read', () => {
+    expect(orderedSessions(manual(['c', 'a', 'b', 'z'])).map((s) => s.id)).toEqual(['c', 'a', 'b', 'z'])
+  })
+})
+
+describe('dropSession', () => {
+  const group = (over: Partial<Parameters<typeof listGroups>[2]> = {}) =>
+    listGroups(PROJECTS, SESSIONS, ui({ sessionOrder: ['z', 'a', 'b', 'c'], ...over }))
+  const byId = (id: string) => SESSIONS.find((s) => s.id === id)!
+  const ORDER = ['z', 'a', 'b', 'c']
+
+  it('moves a card before and after a neighbour in its group', () => {
+    const [, p] = group()
+    expect(dropSession('project', SESSIONS, ORDER, byId('b'), p, p, { target: 'z', after: false })?.order).toEqual(['b', 'z', 'a', 'c'])
+    expect(dropSession('project', SESSIONS, ORDER, byId('z'), p, p, { target: 'b', after: true })?.order).toEqual(['a', 'b', 'z', 'c'])
+  })
+
+  it('does nothing for a drop that leaves the order as it was', () => {
+    const [, p] = group()
+    expect(dropSession('project', SESSIONS, ORDER, byId('a'), p, p, { target: 'a', after: false })).toBeNull()
+    expect(dropSession('project', SESSIONS, ORDER, byId('z'), p, p, { target: 'a', after: false })).toBeNull()
+  })
+
+  it('refuses another project and a repo/worktree boundary', () => {
+    const [q, p] = group()
+    expect(dropSession('project', SESSIONS, ORDER, byId('a'), p, q, { target: 'c', after: false })).toBeNull()
+    const [repo] = listGroups(REPO_ALL, REPO_SESSIONS, ui())
+    expect(canDrop('project', repo, repo.children[0])).toBe(false)
+    expect(canDrop('project', repo.children[0], repo)).toBe(false)
+    expect(canDrop('status', repo, repo.children[0])).toBe(true)
+  })
+
+  it('sets the status of a card dropped into another status group, at the drop position', () => {
+    const groups = group({ groupBy: 'status' })
+    const inProgress = groups.find((g) => g.status === 'in-progress')!
+    const done = groups.find((g) => g.status === 'done')!
+    const sessions = SESSIONS.map((s) => (s.id === 'c' ? { ...s, workflowStatus: 'done' as const } : s))
+    const doneGroup = listGroups(PROJECTS, sessions, ui({ groupBy: 'status', sessionOrder: ORDER })).find((g) => g.status === 'done')!
+    const r = dropSession('status', sessions, ORDER, sessions.find((s) => s.id === 'z')!, inProgress, doneGroup, { target: 'c', after: false })
+    expect(r).toEqual({ order: ['a', 'b', 'z', 'c'], status: 'done' })
+    // an empty group has no neighbour: only the status changes
+    expect(done.sessions).toEqual([])
+    expect(dropSession('status', SESSIONS, ORDER, byId('a'), inProgress, done, null)).toEqual({ order: ORDER, status: 'done' })
+  })
+
+  it('does not set a status outside status grouping', () => {
+    const [p] = group({ groupBy: 'none' })
+    expect(dropSession('none', SESSIONS, ORDER, byId('b'), p, p, { target: 'z', after: false })?.status).toBeNull()
   })
 })

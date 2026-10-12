@@ -203,6 +203,16 @@ describe('core sessions', () => {
     expect(a.getSlices().sessions).toEqual([])
   })
 
+  it('prunes a removed session from the manual order', async () => {
+    const { make } = setup()
+    const a = make()
+    await a.start()
+    const s = await create(a)
+    await a.commands.uiSet({ sessionOrder: ['gone', s.id] })
+    await a.commands.sessionRemove({ id: s.id })
+    expect(a.getSlices().ui.sessionOrder).toEqual([])
+  })
+
   it('moves focus to the project page when the focused session is removed', async () => {
     const { make } = setup()
     const a = make()

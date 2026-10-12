@@ -4,7 +4,7 @@ import { repoGroups } from './repoGroups'
 import { WORKFLOW_STATUSES } from './workflowStatus'
 
 export type GroupBy = 'project' | 'status' | 'none'
-export type SessionSort = 'none' | 'viewed-desc' | 'viewed-asc' | 'created-desc' | 'created-asc'
+export type SessionSort = 'manual' | 'viewed-desc' | 'viewed-asc' | 'created-desc' | 'created-asc'
 
 // A run of rows under one heading. Exactly one of project/status is set; `none`
 // grouping sets neither and labels the whole list. A project's group carries its
@@ -26,7 +26,7 @@ export const GROUP_BY_OPTIONS: { value: GroupBy; label: string }[] = [
 ]
 
 export const SORT_OPTIONS: { value: SessionSort; label: string }[] = [
-  { value: 'none', label: 'Default' },
+  { value: 'manual', label: 'Manual' },
   { value: 'viewed-desc', label: 'Last viewed ↓' },
   { value: 'viewed-asc', label: 'Last viewed ↑' },
   { value: 'created-desc', label: 'Created ↓' },
@@ -46,8 +46,20 @@ const byViewed = (newestFirst: boolean) => (a: Session, b: Session) => {
   return (newestFirst ? bv.localeCompare(av) : av.localeCompare(bv)) || byStarted(a, b)
 }
 
-const COMPARATORS: Record<SessionSort, (a: Session, b: Session) => number> = {
-  'none': byStarted,
+// The dragged order (ADR 0041). A session the human has never placed sorts below every placed
+// one, in creation order, so a list nobody has dragged yet reads exactly as created-asc does.
+const byManual = (order: string[]) => {
+  const rank = new Map(order.map((id, i) => [id, i] as const))
+  return (a: Session, b: Session) => {
+    const ar = rank.get(a.id)
+    const br = rank.get(b.id)
+    if (ar === undefined) return br === undefined ? byStarted(a, b) : 1
+    if (br === undefined) return -1
+    return ar - br
+  }
+}
+
+const COMPARATORS: Record<Exclude<SessionSort, 'manual'>, (a: Session, b: Session) => number> = {
   'viewed-desc': byViewed(true),
   'viewed-asc': byViewed(false),
   'created-desc': (a, b) => byStarted(b, a),
@@ -60,7 +72,7 @@ const COMPARATORS: Record<SessionSort, (a: Session, b: Session) => number> = {
 export function listGroups(
   projects: Project[],
   sessions: Session[],
-  ui: Pick<UiState, 'collapsed' | 'hiddenProjects' | 'groupBy' | 'sessionSort'>,
+  ui: Pick<UiState, 'collapsed' | 'hiddenProjects' | 'groupBy' | 'sessionSort' | 'sessionOrder'>,
 ): ListGroup[] {
   const collapsed = new Set(ui.collapsed)
   // `hiddenProjects` names repos, not checkouts: the repo is what the human shows and hides,
@@ -72,7 +84,7 @@ export function listGroups(
   const hidden = new Set(groups.filter((g) => named.has(g.project.id)).map((g) => g.project.id))
   const repoOf = new Map(groups.flatMap((g) => [g.project, ...g.worktrees].map((p) => [p.id, g.project.id] as const)))
   const visible = sessions.filter((s) => !hidden.has(repoOf.get(s.projectId) ?? s.projectId))
-  const sort = COMPARATORS[ui.sessionSort] ?? COMPARATORS['none']
+  const sort = ui.sessionSort === 'manual' ? byManual(ui.sessionOrder ?? []) : COMPARATORS[ui.sessionSort] ?? byStarted
   const group = (
     key: string, label: string, project: Project | null, status: WorkflowStatus | null,
     members: Session[], children: ListGroup[] = [], worktree = false,
@@ -110,4 +122,38 @@ export function orderedSessions(groups: ListGroup[]): Session[] {
 // The same order, minus sessions inside collapsed groups: what a shift-click range runs over.
 export function visibleSessions(groups: ListGroup[]): Session[] {
   return groups.filter((g) => !g.collapsed).flatMap((g) => [...g.sessions, ...visibleSessions(g.children)])
+}
+
+// Where a dragged card lands: beside `target` in `to`, before or after it.
+export interface DropAt { target: string; after: boolean }
+
+// What a drop changes: the new global order, and the workflow status the card takes when it
+// crossed into another status group (null leaves it alone).
+export interface DropResult { order: string[]; status: WorkflowStatus | null }
+
+// Whether a card may be dropped from one group into another. A project group is its own
+// bounded list, and a repo and its worktree are two groups of it, so only the same group
+// accepts there. Status and ungrouped lists take any group.
+export function canDrop(groupBy: GroupBy, from: ListGroup, to: ListGroup): boolean {
+  return groupBy !== 'project' || from.key === to.key
+}
+
+// The order and status after dropping `moved` into `to`, or null when the drop is refused or
+// changes nothing. The order is the whole list of sessions, not just the group's: the card is
+// cut out and put back beside its neighbour in the group, so every group still reads in one
+// shared order. An empty group has no neighbour, and the card keeps its place in the order.
+export function dropSession(
+  groupBy: GroupBy, sessions: Session[], order: string[],
+  moved: Session, from: ListGroup, to: ListGroup, at: DropAt | null,
+): DropResult | null {
+  if (!canDrop(groupBy, from, to) || at?.target === moved.id) return null
+  const status = groupBy === 'status' && to.status && to.status !== moved.workflowStatus ? to.status : null
+  const all = [...sessions].sort(byManual(order)).map((s) => s.id)
+  const rest = to.sessions.filter((s) => s.id !== moved.id)
+  const next = all.filter((id) => id !== moved.id)
+  const pos = at ? rest.findIndex((s) => s.id === at.target) + (at.after ? 1 : 0) : rest.length
+  const anchor = rest.length === 0 ? -1 : pos < rest.length ? next.indexOf(rest[pos].id) : next.indexOf(rest[rest.length - 1].id) + 1
+  next.splice(anchor < 0 ? all.indexOf(moved.id) : anchor, 0, moved.id)
+  if (status === null && next.every((id, i) => id === all[i])) return null
+  return { order: next, status }
 }

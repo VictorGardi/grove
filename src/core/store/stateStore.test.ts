@@ -31,7 +31,7 @@ describe('stateStore', () => {
       schemaVersion: 9,
       sessions: [newSession({ projectId: 'p', kind: 'terminal', now: new Date(), id: 'a', agentSessionId: null })],
       ui: { sidebarWidth: 300, sidebarCollapsed: true, focusedSessionId: null, focusedFeature: null, focusedProject: 'p', sidebarTab: 'projects', board: 'sessions', collapsed: ['p:x'],
-        viewer: { kind: 'file', projectId: 'p', path: 'docs/work/f/03-design.html', hash: 'q1', fromDiff: 'a' }, viewerWidth: 600, viewerExpanded: true, grid: { open: true, members: ['a'] }, hiddenProjects: [], groupBy: 'project', sessionSort: 'none' },
+        viewer: { kind: 'file', projectId: 'p', path: 'docs/work/f/03-design.html', hash: 'q1', fromDiff: 'a' }, viewerWidth: 600, viewerExpanded: true, grid: { open: true, members: ['a'] }, hiddenProjects: [], groupBy: 'project', sessionSort: 'manual', sessionOrder: ['a'] },
     }
     saveState(file, s)
     expect(loadState(file)).toEqual(s)
@@ -44,6 +44,15 @@ describe('stateStore', () => {
     expect(loadState(file).ui.grid).toEqual({ open: true, members: ['a'] })
     saveState(file, { schemaVersion: 9, sessions: [], ui: { ...DEFAULT_UI, grid: { open: true, members: ['gone'] } } })
     expect(loadState(file).ui.grid).toEqual({ open: false, members: [] })
+  })
+
+  it('migrates a saved sort of none to manual, and gives an older file an empty order', () => {
+    const file = tmpFile()
+    const { sessionOrder: _o, ...old } = DEFAULT_UI
+    fs.writeFileSync(file, JSON.stringify({ schemaVersion: 9, sessions: [], ui: { ...old, sessionSort: 'none' } }))
+    expect(loadState(file).ui).toMatchObject({ sessionSort: 'manual', sessionOrder: [] })
+    fs.writeFileSync(file, JSON.stringify({ schemaVersion: 9, sessions: [], ui: { ...old, sessionSort: 'created-desc' } }))
+    expect(loadState(file).ui.sessionSort).toBe('created-desc')
   })
 
   it('loads a file saved before the grid with the default grid', () => {

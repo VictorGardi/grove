@@ -1,10 +1,10 @@
-import { useEffect, useId, useRef, useState, type MouseEvent, type ReactNode } from 'react'
+import { useEffect, useId, useRef, useState, type DragEvent, type MouseEvent, type ReactNode } from 'react'
 import { GRID_MAX, type Feature, type Project, type Session } from '@shared/types'
 import { useSlices } from '../stores/slices'
 import { gridShown } from '../gridView'
 import { longestWaiting, shownStatus, statusTone, statusView } from '../sessionStatus'
 import { selectRange } from '../selection'
-import { GROUP_BY_OPTIONS, SORT_OPTIONS, collapseKey, listGroups, visibleSessions, type ListGroup } from '../sessionList'
+import { GROUP_BY_OPTIONS, SORT_OPTIONS, canDrop, collapseKey, dropSession, listGroups, visibleSessions, type DropAt, type ListGroup } from '../sessionList'
 import { repoGroups, repoRows } from '../repoGroups'
 import { colorTags } from '../tags'
 import { linkedFeature } from '../tree'
@@ -289,6 +289,63 @@ export function Sidebar({ onNew }: { onNew: (projectId?: string) => void }) {
     for (const id of ids) void window.api.invoke('session:remove', { id })
   }
 
+  // Drag to reorder (ADR 0041), on only while the sort is manual. Only the grabbed card moves: the
+  // shift-click selection is not part of a drag. `over` is where the indicator line is drawn.
+  const draggable = ui.sessionSort === 'manual'
+  const [drag, setDrag] = useState<{ id: string; from: ListGroup } | null>(null)
+  const [over, setOver] = useState<{ group: ListGroup; at: DropAt | null } | null>(null)
+  const endDrag = () => { setDrag(null); setOver(null) }
+
+  // where in `g` the pointer is: beside the card under it, or at the end of the group
+  function aimAt(g: ListGroup, e: DragEvent, target?: Session) {
+    if (!drag || !canDrop(ui.groupBy, drag.from, g)) return
+    e.preventDefault()
+    e.stopPropagation()
+    e.dataTransfer.dropEffect = 'move'
+    if (target) {
+      const r = e.currentTarget.getBoundingClientRect()
+      setOver({ group: g, at: { target: target.id, after: e.clientY > r.top + r.height / 2 } })
+    } else {
+      const last = g.sessions[g.sessions.length - 1]
+      setOver({ group: g, at: last ? { target: last.id, after: true } : null })
+    }
+  }
+
+  function dropHere(e: DragEvent) {
+    e.preventDefault()
+    e.stopPropagation()
+    const moved = drag && sessions.find((x) => x.id === drag.id)
+    const result = drag && over && moved ? dropSession(ui.groupBy, sessions, ui.sessionOrder, moved, drag.from, over.group, over.at) : null
+    endDrag()
+    if (!result || !moved) return
+    if (result.status) void window.api.invoke('session:workflowStatus', { id: moved.id, status: result.status })
+    void window.api.invoke('ui:set', { sessionOrder: result.order })
+  }
+
+  const cardList = (g: ListGroup) => (
+    <div className={cx(css.cards, drag && css.cardsDragging)}
+      onDragOver={draggable ? (e) => aimAt(g, e) : undefined} onDrop={draggable ? dropHere : undefined}>
+      {g.sessions.map((s) => {
+        const line = over?.group.key === g.key && over.at?.target === s.id && drag?.id !== s.id
+          ? over.at.after ? css.dropAfter : css.dropBefore : undefined
+        return (
+          <div key={s.id} className={cx(css.slot, drag?.id === s.id && css.slotDragging, line)}
+            draggable={draggable}
+            onDragStart={draggable ? (e) => {
+              e.dataTransfer.effectAllowed = 'move'
+              e.dataTransfer.setData('text/plain', s.id)
+              setDrag({ id: s.id, from: g })
+            } : undefined}
+            onDragEnd={draggable ? endDrag : undefined}
+            onDragOver={draggable ? (e) => aimAt(g, e, s) : undefined}
+            onDrop={draggable ? dropHere : undefined}>
+            {sessionCard(s)}
+          </div>
+        )
+      })}
+    </div>
+  )
+
   const sessionCard = (s: Session) => {
     const f = linkedFeature(s, features.items)
     return (
@@ -329,11 +386,11 @@ export function Sidebar({ onNew }: { onNew: (projectId?: string) => void }) {
       {groupHeading(g)}
       {!g.collapsed && (
         <>
-          <div className={css.cards}>{g.sessions.map(sessionCard)}</div>
+          {cardList(g)}
           {g.children.map((child) => (
             <div key={child.key} className={css.nested}>
               {groupHeading(child)}
-              {!child.collapsed && <div className={css.cards}>{child.sessions.map(sessionCard)}</div>}
+              {!child.collapsed && cardList(child)}
             </div>
           ))}
         </>

@@ -52,6 +52,8 @@ export function loadState(file: string, onBad?: (msg: string) => void): StateFil
   const { view: _view, ...saved } = (s.ui ?? {}) as Partial<UiState> & { view?: unknown }
   const ui = { ...DEFAULT_UI, ...saved }
   if ((ui.sidebarTab as string) === 'features') ui.sidebarTab = 'projects'
+  // the old "Default" sort was created-asc under another name; manual order reads the same until a card is dragged (ADR 0041)
+  if ((ui.sessionSort as string) === 'none') ui.sessionSort = 'manual'
   // a diff, or "← Diff", of a session that's no longer listed
   const v = ui.viewer
   const known = (id: string) => sessions.some((x) => x.id === id)

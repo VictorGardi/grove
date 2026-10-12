@@ -131,6 +131,35 @@
   gap: var(--sp-2);
 }
 
+.slot {
+  position: relative;
+}
+
+.slotDragging {
+  opacity: 0.45;
+}
+
+/* the drop indicator: a line in the gap between two cards */
+.dropBefore::before,
+.dropAfter::after {
+  content: '';
+  position: absolute;
+  left: 0;
+  right: 0;
+  height: 2px;
+  border-radius: 1px;
+  background: var(--accent);
+  pointer-events: none;
+}
+
+.dropBefore::before { top: calc(var(--sp-2) / -2 - 1px); }
+.dropAfter::after { bottom: calc(var(--sp-2) / -2 - 1px); }
+
+/* an empty group still takes a drop while a card is in the air */
+.cardsDragging {
+  min-height: var(--sp-3);
+}
+
 .rename {
   flex: 1;
   min-width: 0;
