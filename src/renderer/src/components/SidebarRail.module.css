@@ -66,11 +66,10 @@
   gap: 6px;
 }
 
-/* the run itself, in a row: an optional colour bar, then the tiles */
+/* the run itself: the tiles, centred like everything else in the rail. The colour bar hangs
+   off its left edge rather than sitting in the flow, so it doesn't push the tiles off-centre */
 .run {
-  display: flex;
-  align-items: stretch;
-  gap: 6px;
+  position: relative;
 }
 
 /* the project's two letters, in its colour (a tag class sets `color`) */
@@ -109,6 +108,10 @@
 
 /* the group's colour, as a bar running down the left of its tiles */
 .bar {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  left: -9px;
   width: 3px;
   border-radius: var(--r-pill);
   background: currentColor;
