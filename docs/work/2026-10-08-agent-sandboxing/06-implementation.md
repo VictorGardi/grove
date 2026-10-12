@@ -2,7 +2,7 @@
 feature: 2026-10-08-agent-sandboxing
 phase: implementation
 status: stale
-version: 11
+version: 12
 created: 2026-10-10
 updated: 2026-10-11
 based_on:
@@ -16,7 +16,88 @@ forced: []
 
 # Slice 6 — OpenCode in the sandbox, joining the host's service (D6)
 
-## What landed
+## Finding, 2026-10-12: a sandboxed OpenCode tries to **bind** the address grove wrote for the **host**
+
+The human ran a sandboxed OpenCode session against this build. It came up "Session ended", and
+resuming printed:
+
+```
+Starting background server...
+Error: Server process exited with code 1
+ServeError: … [cause]: Error: EADDRNOTAVAIL: address not available, listen
+    at service.ensure … at cli.server-connection.resolve
+```
+
+**This is slice 6's, and it is not the `Errno 49` the spikes recorded — it is the same signature
+with a different cause, and slice 6 causes it.** Measured on this machine while it was happening:
+
+```
+~/.config/opencode/service.json   {"password": …, "hostname": "192.168.64.1"}   ← grove wrote it
+~/.local/state/opencode/service.json  {"url": "http://127.0.0.1:49374", "pid": 1133, …}  ← untouched
+```
+
+What the container did, in order:
+
+1. `XDG_STATE_HOME` points at the host's state dir, so the client read the registration and tried
+   `http://127.0.0.1:49374`. Inside the VM, `127.0.0.1` is the container itself — unreachable.
+2. Failing that, the client fell back to `service.ensure` and **started a background server of its
+   own**. `Starting background server...` in the transcript is that fallback, not a grove message.
+3. That server read the **config**, which grove mounts read-write into the container under
+   `XDG_CONFIG_HOME` — and grove had just written `hostname: 192.168.64.1` into it.
+4. `192.168.64.1` is the **host** side of the bridge. The container's own address is
+   `192.168.64.140`. Binding to an address no local interface holds is `EADDRNOTAVAIL`.
+
+So grove handed the container an address it may only ever **connect to**, through a file whose
+whole meaning is **bind here**. The write itself is correct and proved itself: the service's own
+`password` survived the read-modify-write, exactly as `service.test.ts` asserts.
+
+**What held.** D6's backstop did its job: the container could not register over the host's service,
+because `~/.local/state/opencode` is mounted read-only. The host's service (pid 1133) is still the
+incumbent, and the host's registration is byte-unchanged. Nothing was evicted.
+
+**The fix is already in the approved artifacts, and this slice under-read it.**
+`04-structure.md`'s slice-6 verification says: *"the image's `@opencode/cli` client against the
+host's v2 service **over `--server`**"*, and `03-design.md` D6 says *"the client seam is the global
+`--server <url>` flag"*. Slice 6 read those as description of the seam and assumed instead that the
+container would take its URL from the registration file it can read. That assumption is what failed:
+the registration says `127.0.0.1`, which is correct on the host and meaningless in the VM.
+
+With `--server` the client is told where to go and never calls `service.ensure`, so it never binds
+anything and the `hostname` in the config is never consulted. The URL is grove's to compose: the
+**discovered gateway** plus the **port from the registration**. `OPENCODE_SERVER_PASSWORD` is
+unchanged and still needed.
+
+**This changes D6, so it is `grove-design`'s to approve and not this slice's to implement.** It is
+recorded here, and the fix is proposed, not built.
+
+### The human's decision, 2026-10-12
+
+**A sandboxed OpenCode with no host service registration is refused `no-sandbox`.** This settles the
+open item this slice logged: no registration means no port, so grove cannot name a server to point
+`--server` at — and there is nothing to join either, since the read-only state dir stops the
+container starting one. Refusing is consistent with the rest of the feature (ADR 0036, ADR 0033):
+never a pane that cannot work, never a silent fallback.
+
+Note the shape this gives the no-registration case: it is no longer reachable through a container
+that half-starts, and it is decided **before** the bind is written.
+
+## The consent prompt still says no surface — and no decision has been taken
+
+The human was asked whether the prompt is asked in the CLI, the GUI, or both, and explicitly
+**deferred** ("no decisions now"). Nothing about it has changed and nothing was built for it.
+Recorded here so the question is not lost and so no later session reads its absence as an oversight:
+
+- `03-design.md:420` names the prompt — "Grove writes the bridge address, **with a consent prompt**
+  the first time" — and names no surface. `04-structure.md` v6 omits it entirely. Later artifacts
+  take precedence (`contract.md` rule 1), which is why slice 6 wrote the bind without one.
+- grove has two front-ends into the same `sessionCreate`: the renderer via `main/ipc.ts`, and
+  `src/cli/index.ts` via `cliServer`. So it is one core-side decision and up to two of them.
+- It is not a one-liner: `sessionCreate` returns `Result<T>` synchronously, so a prompt cannot
+  block inside it. It needs a result the caller resolves and a retry carrying the answer, plus a
+  non-interactive path for the CLI.
+- **Open, undecided.** For whoever picks it up.
+
+---## What landed
 
 - **`src/core/sandbox/service.ts`** (NEW): `ensureServiceReachable({ configFile, container, … })` and
   `servicePassword(registrationFile)`.
