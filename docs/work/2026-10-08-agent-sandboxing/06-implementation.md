@@ -2,7 +2,7 @@
 feature: 2026-10-08-agent-sandboxing
 phase: implementation
 status: stale
-version: 10
+version: 11
 created: 2026-10-10
 updated: 2026-10-11
 based_on:
@@ -127,6 +127,34 @@ install a kernel and there is a live grove sandbox session on this machine.
 - **No registration file means no password.** A machine with no host OpenCode service running gets a
   sandboxed OpenCode with no `OPENCODE_SERVER_PASSWORD`, which cannot authenticate. Refusing
   `no-sandbox` there would be a new decision, so it was not taken.
+  - **What this is about, and what it is not** (clarified 2026-10-12, after the human asked):
+    this is **service** authentication — whether the container may speak to the host's HTTP service
+    at all. It has nothing to do with **which models the agent may use**, which is D8's separate
+    channel and which works either way:
+    - *Zen free tier* needs no credential at all — the tier is gated on the client being opencode
+      (measured: two models completed in the real container with `0 credentials`).
+    - *A host `opencode auth login`, including GitHub Copilot*, reaches the sandbox through
+      `XDG_DATA_HOME` → the `auth.json` grove already mounts (measured: `● GitHub Copilot  api — 1
+      credentials` read from the mount, `Read-only file system` on write).
+    So a human who is on free models today and moves to Copilot later is unaffected by this item in
+    both states. It bites on exactly one machine shape: **no host OpenCode service registered right
+    now**, where there is no password *and* nothing to join — the read-only state dir stops the
+    container starting a service of its own. The open question is what grove should do there.
+  - **One honest gap in the reasoning.** grove passes `OPENCODE_SERVER_PASSWORD` because the
+    measured 401→200 pair was a raw `curl` with and without an `Authorization` header. Nobody has
+    run an actual opencode **client** against the host service *without* that variable to see
+    whether it self-authenticates from the registration it can already read. If it does, grove's
+    env entry is belt-and-braces rather than load-bearing; either way supplying it is correct, and
+    the manual pass settles which.
+- **The consent prompt says no surface.** `03-design.md:420` names the prompt but not whether it is
+  asked in the CLI, the GUI, or both, and the structure omits it entirely. grove has two front-ends
+  into the same `sessionCreate` — the renderer's `main/ipc.ts` and `src/cli/index.ts` via
+  `cliServer` — so it is one core-side decision and up to two of them. It is not a one-liner:
+  `sessionCreate` returns `Result<T>` synchronously, so consent cannot block inside it and needs a
+  result the caller resolves (`no-sandbox`'s sibling, say) plus a retry carrying the answer; a
+  non-interactive CLI invocation would then need a `--yes`-style flag or an error telling the human
+  to run it from the app. **Owed to `grove-design`**, and it is the shape, not just the presence, that
+  needs deciding.
 - **The cross-version check the spikes could not settle**: `@opencode/cli@2.0.26` in the image
   against this host's `2.0.20` service over `--server`, and `opencode auth list` inside a sandboxed
   pane listing the host's provider. The bundled source says minor skew warns and proceeds on that
