@@ -8,18 +8,18 @@ export interface HeaderCrumb { label: string; onClick?: () => void } // onClick:
 export function Crumbs({ crumbs }: { crumbs: HeaderCrumb[] }) {
   const last = crumbs.length - 1
   return (
-    <>
+    <span className={s.trail}>
       {crumbs.map((c, i) => (i < last
         ? (
           <Fragment key={i}>
             {c.onClick
-              ? <button type="button" className={s.link} onClick={c.onClick}>{c.label}</button>
-              : <span className={s.parent}>{c.label}</span>}
-            <span className={s.parent}> › </span>
+              ? <button type="button" className={`${s.link} ${s.part}`} onClick={c.onClick}>{c.label}</button>
+              : <span className={`${s.parent} ${s.part}`}>{c.label}</span>}
+            <span className={`${s.parent} ${s.sep}`}>›</span>
           </Fragment>
         )
         : <span key={i} className={s.current}>{c.label}</span>))}
-    </>
+    </span>
   )
 }
 

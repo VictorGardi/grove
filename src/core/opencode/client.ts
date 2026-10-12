@@ -1,7 +1,7 @@
 import fs from 'node:fs'
 import path from 'node:path'
-import { childIds, lastWritesOf, normalise, snapshotOf, toolWrites, unwrap } from './normalise'
-import type { AgentEvent, AgentSource, SessionSnapshot } from '../agents/types'
+import { childIds, contextOfMessages, contextTracker, lastWritesOf, modelWindows, normalise, snapshotOf, toolWrites, unwrap, type TokenReading } from './normalise'
+import type { AgentEvent, AgentSource, ContextUsage, SessionSnapshot } from '../agents/types'
 import { mintSessionId } from '../opencodeId'
 
 // The shared OpenCode service's registration file. Holds a password: never log or push it.
@@ -36,6 +36,8 @@ export class HttpOpenCode implements AgentSource {
   private wake: (() => void) | null = null
   private svc: { url: string; headers: Record<string, string> } | null = null // while connected
   private stopped = false
+  private windows = new Map<string, number>() // model → context window, from /api/model; per connection
+  private windowsAt = 0 // when it was last fetched, so an unlisted model doesn't refetch on every step
   private kicked = false // service.json changed: reconnect without waiting
   private readonly kick = () => {
     this.kicked = true
@@ -76,6 +78,20 @@ export class HttpOpenCode implements AgentSource {
     return res.json()
   }
 
+  // A reading with its percentage, once the model's window is known (null pct until then).
+  private async usage(r: TokenReading): Promise<ContextUsage> {
+    if (r.model && !this.windows.has(r.model) && Date.now() - this.windowsAt > 30000) {
+      this.windowsAt = Date.now()
+      try {
+        this.windows = modelWindows(unwrap(await this.get('/api/model')))
+      } catch {
+        // no window yet: the percentage stays unknown
+      }
+    }
+    const window = (r.model && this.windows.get(r.model)) || null
+    return { pct: window && r.tokens !== null ? (r.tokens / window) * 100 : null, tokens: r.tokens, window, model: r.model }
+  }
+
   async snapshot(ids: string[]): Promise<Map<string, SessionSnapshot>> {
     const get = async (p: string) => unwrap(await this.get(p))
     const active = await get('/api/session/active')
@@ -83,7 +99,16 @@ export class HttpOpenCode implements AgentSource {
     const one = async (id: string): Promise<SessionSnapshot | null> => {
       const base = `/api/session/${encodeURIComponent(id)}`
       const info = await get(base)
-      return info === null ? null : snapshotOf(info, active, (await get(`${base}/permission`)) ?? [], (await get(`${base}/form`)) ?? [])
+      if (info === null) return null
+      const snap = snapshotOf(info, active, (await get(`${base}/permission`)) ?? [], (await get(`${base}/form`)) ?? [])
+      try {
+        const messages = await get(`${base}/message?limit=20`) // newest first
+        const reading = Array.isArray(messages) ? contextOfMessages(messages) : null
+        if (reading) snap.context = await this.usage(reading)
+      } catch {
+        // no reading: the next step's event brings one
+      }
+      return snap
     }
     const blank = () => snapshotOf(null, null, null, null)
     const out = new Map<string, SessionSnapshot>()
@@ -162,7 +187,10 @@ export class HttpOpenCode implements AgentSource {
     })
     if (!res.ok || !res.body) throw new Error(`event ${res.status}`)
     this.svc = { url, headers }
+    this.windows = new Map()
+    this.windowsAt = 0
     const tools = toolWrites()
+    const contexts = contextTracker()
     let silence = setTimeout(() => abort.abort(), this.o.silenceMs ?? 45000)
     const decoder = new TextDecoder()
     let buffer = ''
@@ -181,6 +209,8 @@ export class HttpOpenCode implements AgentSource {
           }
           const e = normalise(raw, version) ?? tools(raw)
           if (e) onEvent(e)
+          const r = contexts(raw)
+          if (r) void this.usage(r).then((context) => { if (!this.stopped) onEvent({ type: 'context', sessionId: r.sessionId, context }) })
         }
       }
     } finally {

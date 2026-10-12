@@ -79,8 +79,9 @@
   gap: var(--sp-2);
   height: 26px;
   padding: 0 var(--sp-2);
-  color: var(--text-2);
+  color: var(--text);
   font-size: var(--fs-card);
+  font-weight: var(--fw-semibold);
   cursor: pointer;
 }
 
@@ -92,17 +93,33 @@
   white-space: nowrap;
 }
 
-.folderActions {
-  display: flex;
-  gap: 2px;
+.folderEnd {
+  position: relative;
+  display: grid;
+  place-items: center;
+  flex-shrink: 0;
+  min-width: 22px;
+  height: 22px;
 }
 
-.hoverOnly {
+/* the count and the options button share the far-right cell: the count at rest, the button on hover */
+.folderCount,
+.folderMore {
+  grid-area: 1 / 1;
+}
+
+.folderMore {
   opacity: 0;
 }
 
-.folder:hover .hoverOnly,
-.hoverOnly:focus-visible {
+.folder:hover .folderCount,
+.folderMenuOpen .folderCount {
+  opacity: 0;
+}
+
+.folder:hover .folderMore,
+.folderMenuOpen .folderMore,
+.folderMore:focus-visible {
   opacity: 1;
 }
 
@@ -128,7 +145,7 @@
 .cards {
   display: flex;
   flex-direction: column;
-  gap: var(--sp-2);
+  gap: 6px;
 }
 
 .slot {

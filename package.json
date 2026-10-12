@@ -26,6 +26,7 @@
     "@codemirror/lang-markdown": "6.3.2",
     "@codemirror/state": "6.5.2",
     "@codemirror/view": "6.36.3",
+    "@fontsource-variable/jetbrains-mono": "^5.3.0",
     "@xterm/addon-fit": "0.11.0",
     "@xterm/addon-webgl": "0.19.0",
     "@xterm/xterm": "6.0.0",

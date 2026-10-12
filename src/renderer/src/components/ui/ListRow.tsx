@@ -1,6 +1,7 @@
 import type { MouseEvent, ReactNode } from 'react'
 import { cx } from './cx'
 import { StatusDot, type StatusTone } from './StatusDot'
+import { splitTitleLead } from './titleLead'
 import s from './ListRow.module.css'
 
 interface Props {
@@ -22,18 +23,23 @@ interface Props {
   editor?: ReactNode // replaces the title while renaming
 }
 
+function Title({ title }: { title: string }) {
+  const { lead, rest } = splitTitleLead(title)
+  return lead ? <><span className={s.lead}>{lead}</span>{rest}</> : <>{title}</>
+}
+
 export function ListRow({ title, corner, cornerPinned, icon, meta, status, tone = 'default', picked, compact, nested, actions, badge, onClick, onContextMenu, onTitleDoubleClick, editor }: Props) {
   return (
-    <div className={cx(s.row, s[tone], compact && s.compact, nested && s.nested, picked && s.picked)} onClick={onClick} onContextMenu={onContextMenu}>
+    <div className={cx(s.row, s[tone], compact && s.compact, !compact && status && !meta && s.hasDot, nested && s.nested, picked && s.picked)} onClick={onClick} onContextMenu={onContextMenu}>
       <div className={s.head}>
-        {icon}
-        {editor ?? <span className={s.title} onDoubleClick={onTitleDoubleClick}>{title}</span>}
+        {icon && <span className={s.icon}>{icon}</span>}
+        {editor ?? <span className={s.title} onDoubleClick={onTitleDoubleClick}><Title title={title} /></span>}
         {compact && status && <StatusDot tone={status.tone} />}
         {badge}
       </div>
       {corner && <div className={cx(s.corner, cornerPinned && s.cornerPinned)} onClick={(e) => e.stopPropagation()}>{corner}</div>}
       {actions && <div className={s.actions} onClick={(e) => e.stopPropagation()}>{actions}</div>}
-      {!compact && meta && <div className={s.meta}>{meta}</div>}
+      {!compact && meta && <div className={cx(s.meta, status && s.metaClearOfDot)}>{meta}</div>}
       {!compact && status && <span className={cx(s.statusDot, s[`s-${status.tone}`])} aria-label={status.label} title={status.label} />}
     </div>
   )

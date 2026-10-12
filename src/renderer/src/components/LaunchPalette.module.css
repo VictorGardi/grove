@@ -1,0 +1,214 @@
+/* The key handler lives on this wrapper, so it must not be a box of its own. */
+.root {
+  display: contents;
+}
+
+.box {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-2);
+  padding: 0 var(--sp-3);
+  height: 40px;
+  background: var(--raised-bg);
+  border: 1px solid var(--card-border);
+  border-radius: var(--r-md);
+  color: var(--text-3);
+}
+
+.box:focus-within {
+  border-color: var(--card-selected-border);
+}
+
+.input {
+  flex: 1;
+  min-width: 0;
+  background: none;
+  border: 0;
+  outline: none;
+  color: var(--text);
+  font: inherit;
+  font-size: var(--fs-lg);
+}
+
+.list {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  max-height: 340px;
+  overflow-y: auto;
+}
+
+.row {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-2);
+  padding: 7px var(--sp-3);
+  border-radius: var(--r-md);
+  color: var(--text-2);
+  cursor: default;
+}
+
+.on {
+  background: var(--card-selected-bg);
+  color: var(--text);
+}
+
+/* A repo starts a group: air above it is what makes the worktrees below read as its own. */
+.gap {
+  margin-top: var(--sp-2);
+}
+
+.nested {
+  padding-left: calc(var(--sp-3) + 18px);
+}
+
+.name {
+  flex: none;
+  max-width: 55%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: var(--text);
+  font-size: var(--fs-md);
+}
+
+.name b {
+  font-weight: var(--fw-semibold);
+  color: var(--accent);
+}
+
+.muted {
+  flex: none;
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  font-size: var(--fs-sm);
+  color: var(--text-3);
+}
+
+/* The folder a row lives in, pushed to the end and cut from the left of its text by tidyPath, so the
+   part that tells two checkouts apart is the part that stays. */
+.where {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  text-align: right;
+  font-size: var(--fs-sm);
+  color: var(--text-3);
+}
+
+.empty {
+  padding: var(--sp-3);
+  color: var(--text-2);
+  font-size: var(--fs-md);
+}
+
+.error {
+  font-size: var(--fs-sm);
+  color: var(--danger);
+  background: var(--danger-bg);
+  border: 1px solid var(--danger-border);
+  border-radius: var(--r-md);
+  padding: 7px 10px;
+}
+
+.controls {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-3);
+  padding-top: var(--sp-3);
+  border-top: 1px solid var(--divider);
+}
+
+.kinds {
+  display: flex;
+  gap: 2px;
+  flex: none;
+  background: var(--muted-badge-bg);
+  border: 1px solid var(--card-border);
+  border-radius: var(--r-md);
+  padding: 2px;
+}
+
+.kind {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  background: transparent;
+  border: 0;
+  border-radius: 6px;
+  color: var(--text-2);
+  font: inherit;
+  font-size: var(--fs-sm);
+  padding: 4px 8px;
+  cursor: pointer;
+}
+
+.kind:hover {
+  color: var(--text);
+}
+
+/* A ring and an accent glyph on a raised track, as the launch form's kind switch has it: the row
+   highlight above means "where", and this must not look like it. */
+.kindOn {
+  background: var(--raised-bg);
+  color: var(--text);
+  box-shadow: inset 0 0 0 1px var(--card-selected-border);
+}
+
+.kindOn svg {
+  color: var(--accent);
+}
+
+.sandbox {
+  flex: none;
+  display: flex;
+  align-items: center;
+  gap: var(--sp-2);
+}
+
+.label {
+  width: 100%;
+  height: 28px;
+  padding: 0 9px;
+  background: var(--chrome-bg);
+  border: 1px solid var(--card-border);
+  border-radius: var(--r-md);
+  color: var(--text);
+  font: inherit;
+  font-size: var(--fs-sm);
+  outline: none;
+}
+
+.label:focus {
+  border-color: var(--card-selected-border);
+}
+
+.summary {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-3);
+  font-size: var(--fs-xs);
+  color: var(--text-3);
+}
+
+.what {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-family: var(--font-mono);
+}
+
+.summary > span:not(.what) {
+  flex: none;
+}
+
+kbd {
+  font-family: var(--font-mono);
+  font-size: var(--fs-xs);
+  color: var(--text-3);
+}

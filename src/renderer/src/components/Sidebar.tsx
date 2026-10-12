@@ -159,19 +159,26 @@ function ProjectHeader({ project: p, tag, count, refused, onToggle, onRemove, on
   onRemove: () => void
   onNew: () => void
 }) {
+  const [menuAt, setMenuAt] = useState<{ x: number; y: number } | null>(null)
   return (
     <>
-      <div className={css.folder} title={p.path} onClick={onToggle}>
+      <div className={cx(css.folder, menuAt && css.folderMenuOpen)} title={p.path} onClick={onToggle}>
         <Icon name="folder" size={16} className={tagClass(tag, 'fg')} />
         <span className={css.folderName}>{p.name}</span>
-        {count > 0 && <Badge tone="muted">{count}</Badge>}
-        <div className={css.folderActions} onClick={(e) => e.stopPropagation()}>
-          <Button variant="ghost" size="sm" round icon="trash" aria-label="Remove project" title="Remove project"
-            className={css.hoverOnly} onClick={onRemove} />
-          <Button variant="ghost" size="sm" round icon="plus" aria-label="New session in project" title="New session"
-            onClick={onNew} />
+        <div className={css.folderEnd} onClick={(e) => e.stopPropagation()}>
+          {count > 0 && <span className={css.folderCount}><Badge tone="muted">{count}</Badge></span>}
+          <Button variant="ghost" size="sm" round icon="more-vertical" aria-label="Project options" aria-haspopup="menu"
+            className={css.folderMore}
+            onClick={(e) => { const r = e.currentTarget.getBoundingClientRect(); setMenuAt({ x: r.right, y: r.bottom + 4 }) }} />
         </div>
       </div>
+      {menuAt && (
+        <ContextMenu x={menuAt.x - 150} y={menuAt.y} onClose={() => setMenuAt(null)}
+          items={[
+            { label: 'Add session', icon: 'plus', onSelect: onNew },
+            { label: 'Remove project', icon: 'trash', danger: true, onSelect: onRemove },
+          ]} />
+      )}
       {refused && <div className={css.refused}>Can't remove: project has running sessions</div>}
     </>
   )

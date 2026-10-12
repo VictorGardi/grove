@@ -26,9 +26,10 @@ describe('contextView', () => {
     expect(contextView(session({ lastStatus: 'gone' }))).toBeNull()
   })
 
-  it('never shows a gauge for terminals or OpenCode', () => {
+  it('shows a gauge for OpenCode, never for terminals', () => {
     expect(contextView(session({ kind: 'terminal' }))).toBeNull()
-    expect(contextView(session({ kind: 'opencode' }))).toBeNull()
+    expect(contextView(session({ kind: 'opencode', lastStatus: 'running', contextPct: 25, contextTokens: 262144, contextWindow: 1048576 })))
+      .toEqual({ pct: 25, tokens: 262144, window: 1048576, dim: false })
   })
 })
 

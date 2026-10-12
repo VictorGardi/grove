@@ -45,3 +45,33 @@
 .right {
   margin-left: auto;
 }
+
+/* the trail truncates its parts, not the whole string: the ancestors give way first and the
+   current page's name keeps its room */
+.trail {
+  display: flex;
+  align-items: baseline;
+  gap: var(--sp-1);
+  min-width: 0;
+}
+
+.part {
+  flex: 0 4 auto;
+  min-width: 2ch;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  text-align: left;
+}
+
+.sep {
+  flex: none;
+}
+
+.current {
+  flex: 0 1 auto;
+  min-width: 8ch;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}

@@ -29,6 +29,10 @@
   flex-direction: column;
 }
 
+.sidebarDragging {
+  transition: none;
+}
+
 .content {
   flex: 1;
   min-width: 320px;

@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
-import type { Feature, Session, SessionKind, ViewerTarget } from '@shared/types'
+import type { Feature, Session, ViewerTarget } from '@shared/types'
 import type { MenuAction } from '@shared/ipc'
 import { errorMessage } from '@shared/sandboxErrors'
 import { SIDEBAR_RAIL_WIDTH, SIDEBAR_WIDTH } from '@shared/types'
@@ -13,18 +13,20 @@ import { SessionMeta } from './components/SessionMeta'
 import { Sidebar } from './components/Sidebar'
 import { SidebarRail } from './components/SidebarRail'
 import { TerminalView } from './components/TerminalView'
-import { AppShell } from './components/shell/AppShell'
+import { AppShell, SIDEBAR_MAX, SIDEBAR_MIN } from './components/shell/AppShell'
 import { BoardSwitch } from './components/shell/BoardSwitch'
 import { ContextPopover } from './components/ContextGauge'
 import { ContentHeader, Crumbs } from './components/shell/ContentHeader'
 import { Banner } from './components/ui/Banner'
 import { ConfirmDialog } from './components/ConfirmDialog'
 import { NewSessionDialog, type Launch } from './components/NewSessionDialog'
+import { LaunchPalette } from './components/LaunchPalette'
 import { Button } from './components/ui/Button'
-import { newSessionItems, paletteItems } from './paletteItems'
+import { paletteItems } from './paletteItems'
+import { useRepoRefs } from './useRepoRefs'
 import { DEFAULT_GRID_VIEW, gridShown, visibleMembers, type GridView } from './gridView'
 import { contextView } from './contextGauge'
-import { wantsSandbox } from './sandboxOptIn'
+import { wantsSandbox, SANDBOX_DEFAULT } from './sandboxOptIn'
 import { boardKey, childrenOf, content, crumbs, currentProjectId, focusTarget } from './navigation'
 import { serviceBanners } from './sessionStatus'
 import { sessionDiffShortcut, type HiddenRenderedViewer } from './sessionDiffShortcut'
@@ -38,6 +40,11 @@ export default function App() {
   const { projects, sessions, ui, features, opencode, diff, errors, hydrate, setFocused, focusFeature, openProject, toggleGrid, addFocusedToGrid, toggleSidebar, clearGrid, go, setBoard,
     openArtifact, openDiff, backToDiff, openRendered, closeViewer, setViewerWidth, toggleViewerExpanded, reloadViewer } = useSlices()
   const [quickNew, setQuickNew] = useState<{ projectId?: string } | null>(null) // ⌘T: the new-session palette
+  // ⌘T's sandbox choice, remembered for as long as the app runs. A remembered preference rather than
+  // a persisted default: it starts off on every launch and nothing reaches the state file, so
+  // ADR 0033's "an explicit per-session decision" survives it.
+  const [quickSandbox, setQuickSandbox] = useState(SANDBOX_DEFAULT)
+  const repoRefs = useRepoRefs(projects)
   const [launchNew, setLaunchNew] = useState<{ projectId?: string } | null>(null) // ⌘⇧T: the launch dialog
   const [confirmRemove, setConfirmRemove] = useState<Session | null>(null) // ⌘W asks first
   const [paletteOpen, setPaletteOpen] = useState(false)
@@ -118,12 +125,6 @@ export default function App() {
 
   useEffect(() => window.api.on('menu:action', runAction), [runAction])
 
-  const createSession = (projectId: string, kind: SessionKind) => {
-    void window.api.invoke('session:create', { projectId, kind, cols: 120, rows: 40 }).then((res) => {
-      if (res.ok) setFocused(res.data.id)
-    })
-  }
-
   // The configured launch. A worktree is made first and registered as a project of its own
   // (ADR 0037), so a conflict is reported against the form the human is still looking at rather
   // than failing a session that was never created. Returns the error, or null once it started.
@@ -150,6 +151,7 @@ export default function App() {
     if (!res.ok) return errorMessage(res.error)
     setFocused(res.data.id)
     setLaunchNew(null)
+    setQuickNew(null)
     return null
   }, [setFocused])
   const shown = content(ui, projects, sessions, features.items)
@@ -173,6 +175,11 @@ export default function App() {
   const viewerFeature = viewerHit?.feature
   const viewerDir = viewerHit?.dir ?? ''
   const diffOpen = (id: string) => v?.kind === 'diff' && v.sessionId === id
+  // Every modal over the content has to take the keyboard from it, or a focused terminal keeps the
+  // keys the human is typing into a form. This was two lists — the grid's `overlayOpen` and the
+  // terminal's `active` — and they had already drifted, each missing an overlay the other had. One
+  // value now, with `active` as its negation, so there is nothing left to keep in step.
+  const overlayOpen = paletteOpen || !!quickNew || !!launchNew || !!confirmRemove || scratchpadOpen
 
   return (
     <>
@@ -188,7 +195,7 @@ export default function App() {
             <ContentHeader crumbs={header}
               meta={shown.kind === 'session'
                 ? <SessionMeta lead={<Crumbs crumbs={header} />} session={shown.session}
-                    feature={linked} tagIndex={linkedIndex}
+                    feature={linked} featureInLead tagIndex={linkedIndex}
                     context={context ? <ContextPopover view={context} /> : undefined} />
                 : undefined}
               right={shown.kind === 'project' && !shown.project.worktreeOf ? <BoardSwitch board={ui.board} onChange={setBoard} />
@@ -212,9 +219,9 @@ export default function App() {
                   if (dir !== null) openArtifact({ kind: 'file', projectId: shown.feature.projectId, path: dir + name, hash: null, fromDiff: null })
                 }} />
             ) : shown.kind === 'grid' ? (
-              <SessionGrid sessions={shown.sessions} focusedId={shown.focused.id} view={gridView} onViewChange={changeGridView} onFocusPane={setFocused} overlayOpen={paletteOpen || !!quickNew || !!confirmRemove} />
+              <SessionGrid sessions={shown.sessions} focusedId={shown.focused.id} view={gridView} onViewChange={changeGridView} onFocusPane={setFocused} overlayOpen={overlayOpen} />
             ) : shown.kind === 'session' && shown.session.lastStatus === 'running' ? (
-              <TerminalView key={shown.session.id} sessionId={shown.session.id} active={!paletteOpen && !quickNew && !confirmRemove} />
+              <TerminalView key={shown.session.id} sessionId={shown.session.id} active={!overlayOpen} />
             ) : shown.kind === 'session' ? (
               <div className={s.ended}>
                 <div className={s.endedTitle}>Session ended</div>
@@ -241,7 +248,8 @@ export default function App() {
             onOpen={(path) => openArtifact({ ...v, path, hash: null })}
             onBack={v.fromDiff ? () => backToDiff(v.fromDiff!) : undefined} onClose={closeViewer} />
         ) : undefined}
-        sidebarWidth={ui.sidebarCollapsed ? SIDEBAR_RAIL_WIDTH : SIDEBAR_WIDTH}
+        sidebarWidth={ui.sidebarCollapsed ? SIDEBAR_RAIL_WIDTH : Math.min(Math.max(ui.sidebarWidth, SIDEBAR_MIN), SIDEBAR_MAX)}
+        onSidebarWidth={ui.sidebarCollapsed ? undefined : (px) => void window.api.invoke('ui:set', { sidebarWidth: px === null ? SIDEBAR_WIDTH : Math.round(px) })}
         viewerWidth={ui.viewerWidth}
         viewerExpanded={ui.viewerExpanded}
         onViewerWidth={setViewerWidth}
@@ -263,8 +271,8 @@ export default function App() {
         />
       )}
       {quickNew && (
-        <CommandPalette onClose={() => setQuickNew(null)} placeholder="New session — pick a kind…"
-          items={newSessionItems(projects, quickNew.projectId, createSession)} />
+        <LaunchPalette projects={projects} sessions={sessions} openedFrom={quickNew.projectId} refs={repoRefs}
+          sandboxed={quickSandbox} onSandbox={setQuickSandbox} onClose={() => setQuickNew(null)} onStart={startLaunch} />
       )}
       {launchNew && (
         <NewSessionDialog projectId={launchNew.projectId} onClose={() => setLaunchNew(null)} onStart={startLaunch} />

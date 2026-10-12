@@ -20,3 +20,29 @@
   color: var(--text-2);
   border-color: var(--card-border);
 }
+
+.banner > span {
+  min-width: 0;
+}
+
+.dismiss {
+  flex: none;
+  display: flex;
+  margin-left: auto;
+  padding: 2px;
+  background: none;
+  border: 0;
+  border-radius: 4px;
+  color: inherit;
+  cursor: pointer;
+  opacity: 0.55;
+}
+
+.dismiss:hover {
+  opacity: 1;
+}
+
+.dismiss:focus-visible {
+  outline: 2px solid currentColor;
+  outline-offset: 1px;
+}

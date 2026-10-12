@@ -34,9 +34,9 @@
 }
 
 .popover {
-  position: absolute;
-  top: calc(100% + var(--sp-2));
-  left: 0;
+  position: fixed; /* portalled to <body>, placed from the trigger: the header clips overflow */
+  top: var(--top);
+  left: var(--left);
   z-index: 20;
   width: 240px;
   display: flex;

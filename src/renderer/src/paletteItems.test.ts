@@ -1,6 +1,6 @@
 import { describe, expect, it, vi } from 'vitest'
 import type { Feature, Project, Session } from '@shared/types'
-import { newSessionItems, PALETTE_COMMANDS, paletteItems, rank } from './paletteItems'
+import { PALETTE_COMMANDS, paletteItems, rank } from './paletteItems'
 
 const projects = [{ id: 'p1', name: 'grove', path: '/g' }, { id: 'p2', name: 'other', path: '/o' }] as Project[]
 const session = (id: string, label: string, extra: Partial<Session> = {}) =>
@@ -124,36 +124,5 @@ describe('rank', () => {
 
   it('returns nothing when nothing matches', () => {
     expect(rank(items(), 'zzz')).toEqual([])
-  })
-})
-
-describe('newSessionItems', () => {
-  it('lists the current project first, and "c" picks Claude Code there', () => {
-    const create = vi.fn()
-    const list = newSessionItems(projects, 'p2', create)
-    expect(list.map((i) => i.label).slice(0, 4)).toEqual(['OpenCode · other', 'Claude Code · other', 'Terminal · other', 'OpenCode · grove'])
-    expect(list).toHaveLength(6)
-    rank(list, 'c')[0].item.run()
-    expect(create).toHaveBeenCalledWith('p2', 'claude')
-  })
-
-  it('reaches another project by typing its name', () => {
-    const create = vi.fn()
-    rank(newSessionItems(projects, 'p2', create), 'claude gro')[0].item.run()
-    expect(create).toHaveBeenCalledWith('p1', 'claude')
-  })
-
-  it('keeps plain labels with a single project', () => {
-    expect(newSessionItems([projects[0]], 'p1', vi.fn()).map((i) => i.label)).toEqual(['OpenCode', 'Claude Code', 'Terminal'])
-  })
-
-  it('stays per checkout: starting a session in a chosen checkout is the point of ⌘T', () => {
-    const wt = { id: 'p1b', name: 'grove · fix-auth', path: '/g/fix-auth', worktreeOf: 'p1' }
-    const create = vi.fn()
-    const list = newSessionItems([...projects, wt] as Project[], 'p1b', create)
-    expect(list).toHaveLength(9) // three kinds per checkout, worktrees included
-    expect(list.slice(0, 3).map((i) => i.label)).toEqual(['OpenCode · grove · fix-auth', 'Claude Code · grove · fix-auth', 'Terminal · grove · fix-auth'])
-    rank(list, 'claude grove fix')[0].item.run()
-    expect(create).toHaveBeenCalledWith('p1b', 'claude')
   })
 })

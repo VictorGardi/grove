@@ -8,6 +8,7 @@
 }
 
 .lead {
+  flex: 0 1 auto;
   min-width: 0;
   overflow: hidden;
   text-overflow: ellipsis;
@@ -25,8 +26,24 @@
 }
 
 .branch {
-  flex: 0 1 auto;
+  flex: 0 2 auto;
+  max-width: 28ch;
   color: var(--text-2);
+}
+
+/* the feature's title is the one fact here that may give way; its stage and the status stay whole */
+.feature {
+  flex: 0 3 auto;
+  max-width: 32ch;
+}
+
+.feature > :first-child {
+  min-width: 0;
+}
+
+.feature .secondary,
+.status {
+  white-space: nowrap;
 }
 
 .truncate {
@@ -41,4 +58,4 @@
 
 .spacer {
   flex: 1;
-}
+}.dense {}

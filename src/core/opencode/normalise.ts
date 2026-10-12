@@ -1,4 +1,4 @@
-import type { AgentEvent, SessionSnapshot } from '../agents/types'
+import type { AgentEvent, ContextUsage, SessionSnapshot } from '../agents/types'
 
 // Every OpenCode 2.0.20 event shape grove reads lives here (design risk: Experimental API).
 // Envelope: { id, type, created, data, location? }.
@@ -129,4 +129,66 @@ export function lastWritesOf(messages: unknown[]): string[] | null {
     }
   }
   return null
+}
+
+// Context readings (OpenCode 2.0.20). A step's `tokens` is { input, output, reasoning, cache: { read, write } } with
+// input and cache apart; the context is what the model was sent: input + cache, output excluded (as Claude's is).
+// A session's own `tokens` is cumulative over every step, so it says nothing about the window.
+export function contextTokens(tokens: unknown): number | null {
+  const t = obj(tokens)
+  const cache = obj(t?.cache)
+  const parts = [t?.input, cache?.read, cache?.write].filter((n): n is number => typeof n === 'number' && Number.isFinite(n))
+  const sum = parts.reduce((a, n) => a + n, 0)
+  return sum > 0 ? sum : null // an unfinished step reports zeros
+}
+
+// A model as `providerID/id`, the key both the readings and the window table use.
+export function modelKey(model: unknown): string | null {
+  const m = obj(model)
+  return typeof m?.providerID === 'string' && typeof m.id === 'string' ? `${m.providerID}/${m.id}` : null
+}
+
+export type TokenReading = Pick<ContextUsage, 'tokens' | 'model'>
+
+// session.step.started names the model, session.step.ended carries the tokens; both are keyed by the assistant
+// message, so the model is held until the step ends. One per stream.
+export function contextTracker(): (raw: unknown) => (TokenReading & { sessionId: string }) | null {
+  const models = new Map<string, string | null>()
+  return (raw) => {
+    const e = obj(raw)
+    const data = obj(e?.data)
+    const message = data?.assistantMessageID
+    if (typeof message !== 'string') return null
+    if (e?.type === 'session.step.started') models.set(message, modelKey(data?.model))
+    else if (e?.type === 'session.step.ended') {
+      const model = models.get(message) ?? null
+      models.delete(message)
+      const tokens = contextTokens(data?.tokens)
+      if (tokens !== null && typeof data?.sessionID === 'string') return { sessionId: data.sessionID, tokens, model }
+    } else if (e?.type === 'session.step.failed') models.delete(message)
+    return null
+  }
+}
+
+// GET /api/session/:id/message items, newest first → the latest finished assistant message's reading.
+export function contextOfMessages(messages: unknown[]): TokenReading | null {
+  for (const m of messages) {
+    const msg = obj(m)
+    if (msg?.type !== 'assistant') continue
+    const tokens = contextTokens(msg.tokens)
+    if (tokens !== null) return { tokens, model: modelKey(msg.model) }
+  }
+  return null
+}
+
+// GET /api/model (unwrapped) → each model's context window, by modelKey. The full window, not `limit.input`.
+export function modelWindows(body: unknown): Map<string, number> {
+  const out = new Map<string, number>()
+  if (!Array.isArray(body)) return out
+  for (const m of body) {
+    const o = obj(m)
+    const window = obj(o?.limit)?.context
+    if (typeof o?.providerID === 'string' && typeof o.modelID === 'string' && typeof window === 'number' && window > 0) out.set(`${o.providerID}/${o.modelID}`, window)
+  }
+  return out
 }

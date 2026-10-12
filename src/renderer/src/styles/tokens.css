@@ -17,6 +17,7 @@
   --divider: #212123;
   --header-divider: #303035;
   --scrollbar-thumb: #38383c;
+  --switch-track: #3a3a3c; /* the off state of ui/Switch: card-border alone disappears into the card */
 
   /* text */
   --text: #ffffff;
@@ -70,14 +71,14 @@
   --diff-hunk-bg: #16161a;
 
   /* type */
-  --font-ui: -apple-system, system-ui, sans-serif;
-  --font-mono: Menlo, monospace;
-  --fs-xs: 10px;
-  --fs-sm: 11px;
-  --fs-card: 12px;
-  --fs-md: 13px;
-  --fs-lg: 14px;
-  --fs-xl: 15px;
+  --font-ui: 'JetBrains Mono Variable', Menlo, -apple-system, system-ui, sans-serif;
+  --font-mono: 'JetBrains Mono Variable', Menlo, monospace;
+  --fs-xs: 9.5px;
+  --fs-sm: 10px;
+  --fs-card: 11px;
+  --fs-md: 12px;
+  --fs-lg: 13px;
+  --fs-xl: 14px;
   --fw-regular: 400;
   --fw-semibold: 600;
   --fw-bold: 700;

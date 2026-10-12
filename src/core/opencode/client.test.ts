@@ -210,6 +210,58 @@ describe('HttpOpenCode', () => {
     expect(c.events.filter((e) => e.type === 'wrote')).toEqual([{ type: 'wrote', sessionId: 'ses_a', paths: ['docs/work/a/x.md'] }])
   })
 
+  it("emits context when a step ends, with the model's window", async () => {
+    const step = (type: string, extra: object) => frame(`session.step.${type}`, { sessionID: 'ses_a', assistantMessageID: 'msg_1', ...extra })
+    const model = { id: 'big', providerID: 'p' }
+    const { client, c } = await setup('pw', {
+      onEvent: (res) => {
+        res.write(frame('server.connected'))
+        res.write(step('started', { model }) + step('ended', { tokens: { input: 100, output: 5, cache: { read: 150, write: 0 } } }))
+      },
+      extra: (req, res) => {
+        if (req.url !== '/api/model') return false
+        res.writeHead(200, { 'content-type': 'application/json' }).end(JSON.stringify({ data: [{ providerID: 'p', modelID: 'big', limit: { context: 1000 } }] }))
+        return true
+      },
+    })
+    client.start(c.onEvent)
+    await c.until((es) => c.count('context')(es) >= 1)
+    expect(c.events.filter((e) => e.type === 'context')).toEqual([
+      { type: 'context', sessionId: 'ses_a', context: { pct: 25, tokens: 250, window: 1000, model: 'p/big' } },
+    ])
+  })
+
+  it('leaves the percentage unknown when the window is', async () => {
+    const { client, c } = await setup('pw', {
+      onEvent: (res) => {
+        res.write(frame('server.connected'))
+        res.write(frame('session.step.ended', { sessionID: 'ses_a', assistantMessageID: 'msg_1', tokens: { input: 40 } }))
+      },
+    })
+    client.start(c.onEvent)
+    await c.until((es) => c.count('context')(es) >= 1)
+    expect(c.events.filter((e) => e.type === 'context')).toEqual([
+      { type: 'context', sessionId: 'ses_a', context: { pct: null, tokens: 40, window: null, model: null } },
+    ])
+  })
+
+  it('snapshots the latest reading from the messages', async () => {
+    const json = (res: http.ServerResponse, body: unknown) => res.writeHead(200, { 'content-type': 'application/json' }).end(JSON.stringify(body))
+    const routes: Record<string, unknown> = {
+      '/api/session/active': { data: {} },
+      '/api/session/ses_a': { data: { id: 'ses_a', time: { created: 1 } } },
+      '/api/session/ses_a/permission': { data: [] },
+      '/api/session/ses_a/form': { data: [] },
+      '/api/session?parentID=ses_a': { data: [] },
+      '/api/session/ses_a/message?limit=20': { data: [{ type: 'assistant', model: { id: 'big', providerID: 'p' }, tokens: { input: 50, cache: { read: 50 } } }] },
+      '/api/model': { data: [{ providerID: 'p', modelID: 'big', limit: { context: 400 } }] },
+    }
+    const { client, c } = await setup('pw', { extra: (req, res) => (req.url! in routes ? (json(res, routes[req.url!]), true) : false) })
+    client.start(c.onEvent)
+    await c.until((es) => c.count('connected')(es) >= 1)
+    expect((await client.snapshot(['ses_a'])).get('ses_a')?.context).toEqual({ pct: 25, tokens: 100, window: 400, model: 'p/big' })
+  })
+
   it('reads the latest write from the session\'s messages, page by page', async () => {
     const tool = (name: string, path: string) => ({ type: 'tool', id: `call_${name}`, name, state: { input: { path }, content: [] } })
     const pages: Record<string, unknown> = {

@@ -1,5 +1,5 @@
 import type { MenuAction } from '@shared/ipc'
-import type { Feature, GridState, Project, Session, SessionKind } from '@shared/types'
+import type { Feature, GridState, Project, Session } from '@shared/types'
 import { fuzzy } from './fuzzy'
 import { unionFeatures } from './featureUnion'
 import { featureStage } from './featureLabels'
@@ -38,25 +38,6 @@ export const PALETTE_COMMANDS: { id: string; label: string; hint?: string; actio
   { id: 'clearGrid', label: 'Clear grid', action: { type: 'clearGrid' } },
   { id: 'scratchpad', label: 'Scratchpad', hint: '⌘N', action: { type: 'scratchpad' } },
 ]
-
-// ⌘T: one entry per session kind and project, the current project's first. With several projects the name is in
-// the label, so typing "claude oth" reaches another project while a bare "c" still picks the current one.
-const NEW_SESSION_KINDS: { kind: SessionKind; label: string }[] = [
-  { kind: 'opencode', label: 'OpenCode' },
-  { kind: 'claude', label: 'Claude Code' },
-  { kind: 'terminal', label: 'Terminal' },
-]
-
-export function newSessionItems(projects: Project[], projectId: string | undefined, create: (projectId: string, kind: SessionKind) => void): PaletteItem[] {
-  const ordered = [...projects.filter((p) => p.id === projectId), ...projects.filter((p) => p.id !== projectId)]
-  return ordered.flatMap((p) => NEW_SESSION_KINDS.map((k) => ({
-    id: `new:${p.id}:${k.kind}`,
-    kind: 'command' as const,
-    label: projects.length > 1 ? `${k.label} · ${p.name}` : k.label,
-    detail: p.path,
-    run: () => create(p.id, k.kind),
-  })))
-}
 
 const KIND_ORDER: Record<PaletteItem['kind'], number> = { session: 0, feature: 1, project: 2, command: 3 }
 const DETAIL_PENALTY = 10 // a detail-only match ranks below any label match of similar quality

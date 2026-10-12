@@ -3,9 +3,9 @@ import type { Session } from '@shared/types'
 // What the gauge shows for a session; pct null: running without a reading ("—").
 export interface ContextView { pct: number | null; tokens: number | null; window: number | null; dim: boolean }
 
-// Claude sessions only (OpenCode follows). Running: the live reading, or none yet. Ended: the last known one, dimmed.
+// Every agent session; a terminal has no window. Running: the live reading, or none yet. Ended: the last known one, dimmed.
 export function contextView(s: Session): ContextView | null {
-  if (s.kind !== 'claude') return null
+  if (s.kind === 'terminal') return null
   if (s.lastStatus === 'running') {
     return { pct: s.contextPct ?? null, tokens: s.contextTokens ?? null, window: s.contextWindow ?? null, dim: false }
   }

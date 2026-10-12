@@ -1,4 +1,5 @@
 import '@xterm/xterm/css/xterm.css'
+import '@fontsource-variable/jetbrains-mono'
 import './styles/tokens.css'
 import './styles/base.css'
 import { createRoot } from 'react-dom/client'

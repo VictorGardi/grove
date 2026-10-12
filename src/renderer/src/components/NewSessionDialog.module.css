@@ -22,6 +22,9 @@
   padding: 2px;
 }
 
+/* The kind is read off the repo's own history rather than fixed, so the control's one job is to say
+   plainly which kind the launch will use — and it must not look like the row highlight below it,
+   which means something else entirely (what ↵ would act on). */
 .kind {
   display: flex;
   align-items: center;
@@ -34,15 +37,36 @@
   font-size: var(--fs-sm);
   padding: 4px 9px;
   cursor: pointer;
+  transition: color 0.12s ease, background 0.12s ease, box-shadow 0.12s ease;
 }
 
 .kind:hover {
   color: var(--text);
 }
 
-.on {
+/* An accent ring and an accent glyph, on a raised track: three signals that survive a dim panel and
+   a glance, where the old raised-on-muted fill was a shade of grey nobody could catch. The ring is
+   inset so changing the kind moves nothing. */
+.kindOn {
   background: var(--raised-bg);
   color: var(--text);
+  box-shadow: inset 0 0 0 1px var(--card-selected-border);
+}
+
+.kindOn svg {
+  color: var(--accent);
+}
+
+/* The ring Switch uses, so keyboard focus reads the same everywhere it is offered. */
+.kind:focus-visible {
+  outline: none;
+  box-shadow: 0 0 0 2px var(--panel-bg), 0 0 0 4px var(--accent);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .kind {
+    transition: none;
+  }
 }
 
 /* one search over checkouts and forks alike, where the create rows are answers to an empty query */
@@ -144,28 +168,41 @@
   font-weight: var(--fw-regular);
 }
 
-.list {
-  background: var(--card-bg);
+/* The feature link: one line for a question that is usually answered with "none". */
+.select {
+  width: 100%;
+  height: 28px;
+  padding: 0 var(--sp-2);
+  background: var(--chrome-bg);
   border: 1px solid var(--card-border);
   border-radius: var(--r-md);
-  max-height: 230px;
-  overflow-y: auto;
+  color: var(--text);
+  font: inherit;
+  font-size: var(--fs-sm);
+  outline: none;
 }
 
-/* the repo group heading, kept for the feature list's sake; the picker itself is flat */
-.group {
-  padding: 9px 10px 4px;
-  font-size: var(--fs-xs);
-  text-transform: uppercase;
-  letter-spacing: 0.08em;
-  font-weight: var(--fw-semibold);
-  color: var(--text-3);
+.select:focus {
+  border-color: var(--focus-border);
 }
 
-.groupCount {
-  text-transform: none;
-  letter-spacing: 0;
-  font-weight: var(--fw-regular);
+/* A label is prose the human writes, not a ref the machine reads, so it takes the UI font where
+   the branch above it takes the mono one. */
+.text {
+  width: 100%;
+  height: 28px;
+  padding: 0 9px;
+  background: var(--chrome-bg);
+  border: 1px solid var(--card-border);
+  border-radius: var(--r-md);
+  color: var(--text);
+  font: inherit;
+  font-size: var(--fs-sm);
+  outline: none;
+}
+
+.text:focus {
+  border-color: var(--focus-border);
 }
 
 .branch {
@@ -219,44 +256,6 @@
   opacity: 0.5;
 }
 
-.switch {
-  position: relative;
-  width: 30px;
-  height: 17px;
-  flex: none;
-  margin-top: 1px;
-  padding: 0;
-  border: 0;
-  border-radius: var(--r-pill);
-  background: var(--card-border);
-  cursor: pointer;
-}
-
-.switch:disabled {
-  cursor: default;
-}
-
-.switch::after {
-  content: '';
-  position: absolute;
-  top: 2px;
-  left: 2px;
-  width: 13px;
-  height: 13px;
-  border-radius: 50%;
-  background: var(--text-3);
-  transition: transform 0.14s ease, background 0.14s ease;
-}
-
-.switchOn {
-  background: color-mix(in srgb, var(--accent) 35%, transparent);
-}
-
-.switchOn::after {
-  transform: translateX(13px);
-  background: var(--accent);
-}
-
 .isolationText {
   min-width: 0;
 }
@@ -266,13 +265,14 @@
   margin-bottom: 2px;
 }
 
-.body2 {
+/* what the switch actually buys, in the app's own words */
+.hint {
   font-size: var(--fs-sm);
   color: var(--text-2);
   line-height: 1.5;
 }
 
-.body2 b {
+.hint b {
   color: var(--text);
   font-weight: var(--fw-semibold);
 }
@@ -285,24 +285,6 @@
   background: var(--card-bg);
   border: 1px solid var(--card-border);
   border-radius: var(--r-md);
-}
-
-.more {
-  display: flex;
-  align-items: center;
-  gap: 5px;
-  align-self: flex-start;
-  background: none;
-  border: 0;
-  padding: 4px 0;
-  color: var(--text-2);
-  font: inherit;
-  font-size: var(--fs-sm);
-  cursor: pointer;
-}
-
-.more:hover {
-  color: var(--text);
 }
 
 .error {

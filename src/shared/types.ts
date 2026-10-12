@@ -139,7 +139,7 @@ export type Slices = { projects: Project[]; sessions: Session[]; ui: UiState; fe
 export interface ConfigFile { schemaVersion: 1; projects: Project[]; workflow?: string }
 export interface StateFile { schemaVersion: 9; sessions: Session[]; ui: UiState }
 export const SIDEBAR_RAIL_WIDTH = 56 // the collapsed sidebar
-export const SIDEBAR_WIDTH = 220 // fixed: the sidebar has no resize handle, so a saved width is ignored
+export const SIDEBAR_WIDTH = 220 // the default; drag the sidebar's edge to resize, double-click it to come back here
 export const DEFAULT_UI: UiState = { sidebarWidth: SIDEBAR_WIDTH, sidebarCollapsed: false, focusedSessionId: null, focusedFeature: null, focusedProject: null, sidebarTab: 'sessions', board: 'sessions', collapsed: [], hiddenProjects: [], groupBy: 'project', sessionSort: 'custom', sessionOrder: [], viewer: null, viewerWidth: null, viewerExpanded: false, grid: { open: false, members: [] } }
 export const EMPTY_FEATURES: FeaturesSlice = { workflowError: null, stages: [], items: [] }
 export const OPENCODE_CONNECTING: OpenCodeSlice = { state: 'connecting', version: null }

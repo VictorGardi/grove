@@ -12,10 +12,11 @@ import s from './SessionMeta.module.css'
 // cannot drift: same facts, same order, same type. `lead` is whatever identifies it — the
 // breadcrumb when the session is focused, "project / label" in a pane — and everything after it
 // is the same in both, down to the density of the sandbox mark.
-export function SessionMeta({ lead, session, feature, tagIndex, context, dense, actions }: {
+export function SessionMeta({ lead, session, feature, featureInLead, tagIndex, context, dense, actions }: {
   lead: ReactNode
   session: Session
   feature?: Feature | null
+  featureInLead?: boolean // the lead already names the feature, so only its colour and stage are repeated
   tagIndex?: number | null
   context?: ReactNode // ContextPopover in a header, ContextGauge in a pane: a density, not a difference
   dense?: boolean
@@ -30,7 +31,7 @@ export function SessionMeta({ lead, session, feature, tagIndex, context, dense, 
       )}
       {feature && (
         <span className={s.feature}>
-          <Tag index={tagIndex ?? null}>{feature.title}</Tag>
+          <Tag index={tagIndex ?? null}>{featureInLead ? null : <span className={s.truncate}>{feature.title}</span>}</Tag>
           <span className={s.secondary}>{featureStage(feature)}</span>
         </span>
       )}

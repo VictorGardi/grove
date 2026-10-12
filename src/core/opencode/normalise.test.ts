@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { childIds, lastWritesOf, normalise, patchPaths, snapshotOf, toolWrites, unwrap } from './normalise'
+import { childIds, contextOfMessages, contextTokens, contextTracker, lastWritesOf, modelWindows, normalise, patchPaths, snapshotOf, toolWrites, unwrap } from './normalise'
 
 // Envelopes as OpenCode 2.0.20 sends them on /api/event.
 const env = (type: string, data: unknown, created: unknown = 1791194400000) => ({ id: 'evt_1', type, created, data })
@@ -176,5 +176,63 @@ describe('lastWritesOf', () => {
     expect(lastWritesOf([msg(item('write', { path: 'a' }, { status: 'completed' }))])).toEqual(['a'])
     expect(lastWritesOf([msg(item('patch', { patchText: PATCH }))])).toEqual(patchPaths(PATCH))
     expect(lastWritesOf([{ type: 'user', content: 'hi' }, null])).toBe(null)
+  })
+})
+
+describe('contextTokens', () => {
+  it('sums input and cache, leaving output out', () => {
+    expect(contextTokens({ input: 185, output: 487, reasoning: 9, cache: { read: 244653, write: 12 } })).toBe(244850)
+    expect(contextTokens({ input: 10 })).toBe(10)
+  })
+
+  it('is null for zeros or no tokens', () => {
+    expect(contextTokens({ input: 0, output: 0, cache: { read: 0, write: 0 } })).toBeNull()
+    expect(contextTokens(undefined)).toBeNull()
+  })
+})
+
+describe('contextTracker', () => {
+  const model = { id: 'space-bunny-free', providerID: 'opencode', variant: 'max' }
+  const ev = (type: string, data: object) => ({ type, data: { sessionID: 'ses_a', assistantMessageID: 'msg_1', ...data } })
+
+  it("pairs a step's tokens with the model its start named", () => {
+    const t = contextTracker()
+    expect(t(ev('session.step.started', { model }))).toBeNull()
+    expect(t(ev('session.step.ended', { tokens: { input: 5, output: 1, cache: { read: 95, write: 0 } } })))
+      .toEqual({ sessionId: 'ses_a', tokens: 100, model: 'opencode/space-bunny-free' })
+  })
+
+  it('reads a step with no known start as modelless, and ignores empty or failed steps', () => {
+    const t = contextTracker()
+    expect(t(ev('session.step.ended', { tokens: { input: 7 } }))).toEqual({ sessionId: 'ses_a', tokens: 7, model: null })
+    expect(t(ev('session.step.ended', { tokens: { input: 0 } }))).toBeNull()
+    expect(t(ev('session.step.failed', {}))).toBeNull()
+    expect(t({ type: 'session.execution.started', data: { sessionID: 'ses_a' } })).toBeNull()
+  })
+})
+
+describe('contextOfMessages', () => {
+  it('takes the newest assistant message that has tokens', () => {
+    const model = { id: 'm', providerID: 'p' }
+    expect(contextOfMessages([
+      { type: 'idle' },
+      { type: 'assistant', model, tokens: { input: 0, output: 0, cache: { read: 0, write: 0 } } },
+      { type: 'assistant', model, tokens: { input: 185, output: 487, cache: { read: 244653, write: 0 } } },
+      { type: 'assistant', model, tokens: { input: 1, cache: { read: 1 } } },
+    ])).toEqual({ tokens: 244838, model: 'p/m' })
+  })
+
+  it('is null without one', () => {
+    expect(contextOfMessages([{ type: 'user' }, { type: 'synthetic' }])).toBeNull()
+  })
+})
+
+describe('modelWindows', () => {
+  it('keys the full context window by provider/model', () => {
+    expect(modelWindows([
+      { providerID: 'opencode', modelID: 'space-bunny-free', limit: { context: 1048576, input: 524288, output: 524288 } },
+      { providerID: 'opencode', modelID: 'nolimit' },
+    ])).toEqual(new Map([['opencode/space-bunny-free', 1048576]]))
+    expect(modelWindows(null).size).toBe(0)
   })
 })
