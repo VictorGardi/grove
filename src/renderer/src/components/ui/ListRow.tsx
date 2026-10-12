@@ -17,6 +17,7 @@ interface Props {
   mark?: { icon: ReactNode; label: string } // a small mark in the bottom-right corner, left of the status dot
   actions?: ReactNode // floating buttons on the card's top-right corner, shown on hover
   badge?: ReactNode // right of the title
+  tab?: ReactNode // a handle hanging off the card's bottom edge, centred
   onClick?: (e: MouseEvent) => void
   onContextMenu?: (e: MouseEvent) => void
   onTitleDoubleClick?: () => void
@@ -28,9 +29,9 @@ function Title({ title }: { title: string }) {
   return lead ? <><span className={s.lead}>{lead}</span>{rest}</> : <>{title}</>
 }
 
-export function ListRow({ title, corner, cornerPinned, icon, meta, status, tone = 'default', picked, compact, mark, actions, badge, onClick, onContextMenu, onTitleDoubleClick, editor }: Props) {
+export function ListRow({ title, corner, cornerPinned, icon, meta, status, tone = 'default', picked, compact, mark, actions, badge, tab, onClick, onContextMenu, onTitleDoubleClick, editor }: Props) {
   return (
-    <div className={cx(s.row, s[tone], compact && s.compact, !compact && status && !meta && s.hasDot, mark && s.hasMark, picked && s.picked)} onClick={onClick} onContextMenu={onContextMenu}>
+    <div className={cx(s.row, s[tone], compact && s.compact, !compact && status && !meta && s.hasDot, mark && s.hasMark, tab && s.hasTab, picked && s.picked)} onClick={onClick} onContextMenu={onContextMenu}>
       <div className={s.head}>
         {icon && <span className={s.icon}>{icon}</span>}
         {editor ?? <span className={s.title} onDoubleClick={onTitleDoubleClick}><Title title={title} /></span>}
@@ -39,6 +40,7 @@ export function ListRow({ title, corner, cornerPinned, icon, meta, status, tone 
       </div>
       {corner && <div className={cx(s.corner, cornerPinned && s.cornerPinned)} onClick={(e) => e.stopPropagation()}>{corner}</div>}
       {actions && <div className={s.actions} onClick={(e) => e.stopPropagation()}>{actions}</div>}
+      {tab && <div className={s.tab} onClick={(e) => e.stopPropagation()}>{tab}</div>}
       {!compact && meta && <div className={cx(s.meta, status && s.metaClearOfDot)}>{meta}</div>}
       {!compact && mark && <span className={cx(s.mark, status && s.markBesideDot)} title={mark.label} aria-label={mark.label}>{mark.icon}</span>}
       {!compact && status && <span className={cx(s.statusDot, s[`s-${status.tone}`])} aria-label={status.label} title={status.label} />}

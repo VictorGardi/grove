@@ -360,23 +360,24 @@
   margin-left: var(--sp-4);
 }
 
-/* the count (and, collapsed, the most urgent child's dot) on a parent's title row */
+/* the handle on a parent's bottom edge: the count and, collapsed, the most urgent child's dot */
 .kidsToggle {
   display: inline-flex;
   align-items: center;
-  gap: 4px;
-  margin-left: auto;
-  padding: 0 6px;
-  height: 18px;
-  border: 0;
-  border-radius: 4px;
-  background: transparent;
+  gap: 3px;
+  padding: 0 6px 0 4px;
+  height: 14px;
+  line-height: 1;
+  border: 1px solid var(--card-border);
+  border-radius: var(--r-pill);
+  background: var(--chrome-bg);
   color: var(--text-2);
   font: inherit;
-  font-size: var(--fs-sm);
+  font-size: 10px;
   cursor: pointer;
 }
 
 .kidsToggle:hover {
-  background: var(--card-selected-bg);
+  color: var(--text);
+  border-color: var(--text-2);
 }

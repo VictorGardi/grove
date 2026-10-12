@@ -65,13 +65,13 @@ function SessionCard({ s, feature, worktree, focused, picked, compact, inGrid, g
           onClick={onToggleGrid} />
       }
       cornerPinned={inGrid && gridOn}
-      badge={kids && kids.list.length > 0 && (
+      tab={kids && kids.list.length > 0 && (
         <button type="button" className={css.kidsToggle} aria-expanded={!kids.collapsed}
           title={kids.collapsed ? 'Show children' : 'Hide children'}
           onClick={(e) => { e.stopPropagation(); kids.onToggle() }}>
           {/* collapsed, the most urgent child shows through: a waiting child is never hidden */}
           {kids.collapsed && (() => { const u = mostUrgent(kids.list); return u && <StatusDot tone={statusTone(u)} /> })()}
-          <Icon name={kids.collapsed ? 'chevron-right' : 'chevron-down'} size={12} />
+          <Icon name={kids.collapsed ? 'chevron-right' : 'chevron-down'} size={10} />
           {kids.list.length}
         </button>
       )}

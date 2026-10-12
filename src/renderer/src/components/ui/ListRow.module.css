@@ -21,6 +21,20 @@
   padding-right: 24px;
 }
 
+.hasTab {
+  margin-bottom: 5px; /* the tab hangs half its height below the card; leave room for it */
+}
+
+/* a handle straddling the bottom border, clear of the hover actions (top) and the dot and mark (bottom-right) */
+.tab {
+  position: absolute;
+  left: 50%;
+  bottom: -7px;
+  z-index: 1;
+  display: flex;
+  transform: translateX(-50%);
+}
+
 .compact {
   padding: 3px 10px 3px 6px;
 }
