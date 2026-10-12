@@ -3,6 +3,7 @@ import fs from 'node:fs'
 import os from 'node:os'
 import path from 'node:path'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
+import { opencodeCliConfig } from '@shared/opencodeSession'
 import { SpoolClaude } from './claude/source'
 import { claudeArgv } from './claude/hooks'
 import { gitRunner } from './diff/git'
@@ -15,7 +16,7 @@ import { setupCore } from './testing/setup'
 import { add as addWorktree, worktreePath } from './worktrees'
 
 const created = (fake: { calls: { method: string; args: unknown[] }[] }) =>
-  fake.calls.filter((c) => c.method === 'create').map((c) => c.args[0] as { cwd: string; argv?: string[] })
+  fake.calls.filter((c) => c.method === 'create').map((c) => c.args[0] as { cwd: string; argv?: string[]; env?: Record<string, string> })
 
 // `container network ls --format json`, in the shape the real CLI prints: the network's name under
 // `configuration`, the address grove binds the host service to under `status`.
@@ -317,6 +318,36 @@ describe('sessionCreate --sandboxed', () => {
     const argv = created(t.fake)[0].argv![4]
     expect(argv).not.toContain('--server')
     expect(argv).not.toContain('OPENCODE_SERVER_PASSWORD')
+  })
+
+  // The container only ever sees what grove passes explicitly, so grove's own session chrome has
+  // to be passed explicitly too — otherwise a sandboxed OpenCode comes up with the user's tabs and
+  // theme (measured 2026-10-12).
+  it('carries grove’s opencode chrome into the sandbox, and not into claude’s', async () => {
+    const core = await startWithLog()
+    register()
+    const oc = await sandboxed(core, { kind: 'opencode' })
+    if (!oc.ok) throw new Error(oc.error)
+    expect(created(t.fake)[0].argv![4]).toContain(`-e 'OPENCODE_CLI_CONFIG_CONTENT=${opencodeCliConfig()}'`)
+
+    const cl = await sandboxed(core, { kind: 'claude' })
+    if (!cl.ok) throw new Error(cl.error)
+    expect(created(t.fake)[1].argv![4]).not.toContain('OPENCODE_CLI_CONFIG_CONTENT')
+  })
+
+  // The guarantee behind having a function rather than two literals: a sandboxed session and a host
+  // session get byte-identical chrome, because both ask the same function. If they ever stop
+  // agreeing, this fails rather than the UI quietly diverging.
+  it('gives a sandboxed opencode the same chrome a host one gets', async () => {
+    const core = await startWithLog()
+    register()
+    expect((await sandboxed(core, { kind: 'opencode' })).ok).toBe(true)
+    const sandboxedEnv = created(t.fake)[0].env!
+    expect(sandboxedEnv?.OPENCODE_CLI_CONFIG_CONTENT).toBe(opencodeCliConfig())
+
+    const host = await core.commands.sessionCreate({ kind: 'opencode', cwd: t.dir, cols: 120, rows: 40 })
+    if (!host.ok) throw new Error(host.error)
+    expect(created(t.fake)[1].env?.OPENCODE_CLI_CONFIG_CONTENT).toBe(sandboxedEnv?.OPENCODE_CLI_CONFIG_CONTENT)
   })
 
   it('refuses no-sandbox when the image cannot be built, rather than launching unguarded', async () => {

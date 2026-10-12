@@ -5,6 +5,7 @@ import path from 'node:path'
 import type { Comment, CommentAnchor, Project, Session, SessionDiff, SessionKind, Slices, UiState, WorkflowStatus } from '@shared/types'
 import { DEFAULT_UI, EMPTY_FEATURES, OPENCODE_CONNECTING } from '@shared/types'
 import { keyProjectId } from '@shared/groups'
+import { opencodeCliConfig } from '@shared/opencodeSession'
 import type { Result } from '@shared/ipc'
 import { pruneGrid } from '@shared/grid'
 import { safeArtifactPath } from './artifacts/path'
@@ -191,10 +192,9 @@ export function createCore(opts: CoreOptions): Core {
       GROVE_SOCKET: e.socketPath,
       ...(session.kind === 'terminal' && { PATH: `${e.binDir}:${minimalEnv(process.env).PATH}` }),
       // OpenCode's TUI tabs and theme are overridden inside grove's own session UI;
-      // the inline cli settings merge over the user's global cli.json.
-      ...(session.kind === 'opencode' && {
-        OPENCODE_CLI_CONFIG_CONTENT: JSON.stringify({ tabs: { mode: 'off' }, theme: { name: 'tokyonight', mode: 'dark' } }),
-      }),
+      // the inline cli settings merge over the user's global cli.json. Shared with the sandbox path,
+      // which has to pass it into the VM explicitly — see `shared/opencodeSession.ts`.
+      ...(session.kind === 'opencode' && { OPENCODE_CLI_CONFIG_CONTENT: opencodeCliConfig() }),
     }
   }
   const shellOpts = () => ({ pathPrefix: opts.sessionEnv?.binDir })

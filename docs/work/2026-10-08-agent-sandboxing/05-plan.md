@@ -752,11 +752,34 @@ Context a fresh agent needs, inlined:
       create is refused `no-sandbox` and a resume downgrades with its note; and the agent argv
       becomes `[argv[0], '--server', endpoint.url, ...argv.slice(1)]` for opencode only.
 
+### Second correction, same day: grove's own OpenCode chrome did not cross into the VM
+
+Found by hand, once the first correction had loaded and the session ran: tabs visible and the wrong
+theme, which are one cause. `cliEnv` puts `OPENCODE_CLI_CONFIG_CONTENT` on the **pane**, and for a
+sandboxed session the pane is `container run` — which forwards **only** what is explicitly `-e`'d.
+Measured on the running container: its env held `OPENCODE_SERVER_PASSWORD`, the three `XDG_*`,
+`GROVE_*`, and the image's own `NODE_VERSION`/`YARN_VERSION` — and nothing else. The override never
+arrived, so OpenCode fell back to the user's `opencode.json`.
+
+- [x] `src/shared/opencodeSession.ts` (NEW): `OPENCODE_CLI_CONFIG_CONTENT`, the one value both
+      consumers read, with the reason it is shared — `cliEnv` and `envFor` writing it separately is
+      exactly the drift `sandboxOptIn.ts` was built to prevent.
+- [x] `src/core/core.ts`: `cliEnv` imports that constant; the literal and its `JSON.stringify` are
+      gone. **The value is unchanged**, so `cliEnv.test.ts`'s exact-string assertion is the proof.
+- [x] `src/core/sandbox/spec.ts`: `envFor` sets `OPENCODE_CLI_CONFIG_CONTENT` for
+      `kind === 'opencode'` only — after `XDG_STATE_HOME`, so the XDG pointers stay adjacent.
+- [x] Tests: `spec.test.ts` asserts it is present for opencode, absent for claude, and still says
+      `tabs.mode: 'off'`; `sessionCreate.test.ts` asserts the `-e 'OPENCODE_CLI_CONFIG_CONTENT=…'`
+      in the composed argv for opencode and its absence for claude.
+
 ### Verify
 
-- [x] `npm test` — 938 passed / 83 files (was 935; +3).
+- [x] `npm test` — 940 passed / 83 files (was 938; +2).
 - [x] `npm run typecheck`
 - [x] `npm run build`
-- [ ] **STILL NOT RUN HERE — manual.** It additionally needs the **host service restarted** so the
-      bind it was told about actually takes effect, which is the human's call; until then a
-      sandboxed OpenCode gets connection-refused rather than `EADDRNOTAVAIL`. Unticked on purpose.
+- [ ] **STILL NOT RUN HERE — manual.** The **host service restart is done** (human, 2026-10-12): the
+      registration reads `http://192.168.64.1:49374` and `lsof` shows
+      `TCP 192.168.64.1:49374 (LISTEN)` — the bridge address only, not `*`. A throwaway container
+      confirmed it reachable over the bridge, answering `401`: reachable, and correctly demanding
+      auth. What is still unverified by hand is the **rendered session itself** — that it comes up
+      in grove's theme with no tabs, and answers a prompt. Unticked on purpose.

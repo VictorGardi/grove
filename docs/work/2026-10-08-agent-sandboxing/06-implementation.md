@@ -2,7 +2,7 @@
 feature: 2026-10-08-agent-sandboxing
 phase: implementation
 status: stale
-version: 13
+version: 14
 created: 2026-10-10
 updated: 2026-10-11
 based_on:
@@ -17,6 +17,71 @@ forced: []
 # Slice 6 — OpenCode in the sandbox, joining the host's service (D6)
 
 ## Slice 6, correction — grove tells the sandboxed OpenCode where the host service is
+
+## Second correction, 2026-10-12: grove's own OpenCode chrome never crossed into the VM
+
+Found by hand, right after the first correction loaded and a sandboxed session actually ran. The
+human reported two symptoms — **tabs visible**, and **the wrong theme** — which turned out to be one
+cause.
+
+### What happened, and why it was invisible until now
+
+`cliEnv` puts `OPENCODE_CLI_CONFIG_CONTENT` on the **pane**. For a host session the pane is the
+agent, so it inherits the variable and comes up in grove's chrome. For a sandboxed session the pane
+is `container run`, and `container run` forwards **only what is explicitly `-e`'d**. Measured on the
+running container: its environment held `OPENCODE_SERVER_PASSWORD`, the three `XDG_*`, the `GROVE_*`
+set, and the image's own `NODE_VERSION`/`YARN_VERSION` — and nothing else. grove's chrome was not
+among them, so OpenCode fell back to the user's `opencode.json` and rendered as itself rather than
+as a grove session.
+
+This could not have been caught earlier: **a sandboxed OpenCode had never run before slice 6.** The
+override is long-standing grove behaviour, applied unconditionally by kind, and the sandbox path was
+simply a new place it had to reach.
+
+### The fix, and the shape the human pushed for
+
+The first version of this fix exported a frozen constant. The human asked the right question —
+*"now we need to change in two places if we change theme or want tabs, right?"* — and the honest
+answer was "no, not today, one import". But the instinct behind it was right: a frozen constant
+cannot compose, so the first time the two callers wanted different answers they would have had to
+edit it for everyone. **`src/shared/opencodeSession.ts` exports a function instead**, taking the
+chrome as an argument and defaulting to grove's choice, so a future difference is a parameter rather
+than a second copy. Both callers ask the same function for the same thing, today and after any
+change to the theme.
+
+The value is **byte-identical** to what the pane has always sent — `cliEnv.test.ts`'s existing
+exact-string assertion was left untouched and still passes, which is the proof that this is a move,
+not a redesign.
+
+### What landed
+
+- **`src/shared/opencodeSession.ts`** (NEW): `opencodeCliConfig(o?: OpencodeChrome)` and its
+  `OpencodeChrome` type.
+- **`src/core/core.ts`**: `cliEnv` calls it; the inline literal and its `JSON.stringify` are gone.
+- **`src/core/sandbox/spec.ts`**: `envFor` sets `OPENCODE_CLI_CONFIG_CONTENT` for
+  `kind === 'opencode'` only, after `XDG_STATE_HOME` so the XDG pointers stay adjacent.
+- **Tests**: `spec.test.ts` (present for opencode, absent for claude, still `tabs.mode: 'off'`),
+  `sessionCreate.test.ts` (the `-e 'OPENCODE_CLI_CONFIG_CONTENT=…'` in the composed argv for
+  opencode, absent for claude, **and that a sandboxed and a host OpenCode session get byte-identical
+  chrome**), and `cliEnv.test.ts` untouched.
+
+`npm test`: **941 passed / 83 files**. `npm run typecheck`: clean. `npm run build`: clean.
+
+### Deviation
+
+32. **`opencodeCliConfig` is a function, not a constant**, at the human's prompting. Recorded
+    because the constant would have passed every test — this is a shape decision made on
+    composability grounds, not a fix.
+33. **The chrome is set on both the pane and inside the VM for a sandboxed session.** The pane copy
+    is inert (`container run` does not forward it) but costs nothing, and keeping `cliEnv` on the
+    simple "every opencode session gets this" rule avoided a second condition that would have to
+    agree with the sandbox one forever.
+
+### Still not run by hand
+
+The **rendered** session: that it comes up in grove's theme with no tabs and answers a prompt. That
+is the one thing the automated tests cannot see, and the human is the only one who can look at it.
+---
 
 The fix for the `EADDRNOTAVAIL` above, taken straight after it: `03-design.md` v10 and
 `04-structure.md` v7 (approved 2026-10-12), then implemented.

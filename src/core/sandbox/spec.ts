@@ -1,5 +1,6 @@
 import path from 'node:path'
 import type { Session } from '@shared/types'
+import { opencodeCliConfig } from '@shared/opencodeSession'
 import type { AgentKind } from '../agents/types'
 
 // Every host path a sandboxed session's container binds, each at the identical path inside
@@ -110,6 +111,11 @@ export function envFor(
     // finds nothing, registers its own service — and a second registration evicts the host's, taking
     // down status, waiting and linking for every OpenCode session on this machine.
     if (p.opencodeState) env.XDG_STATE_HOME = path.dirname(p.opencodeState)
+    // grove's own session chrome — tabs off, one theme — for every OpenCode session it starts.
+    // The pane's environment carries it via `cliEnv`, but `container run` forwards only what is
+    // explicitly passed, so without this a sandboxed session falls back to the user's
+    // `opencode.json` and comes up looking like a different application. Measured 2026-10-12.
+    env.OPENCODE_CLI_CONFIG_CONTENT = opencodeCliConfig()
     // The address comes from the registration the client reads; the credential does not, so grove
     // hands it over. Without it the service answers 401.
     if (o.serverPassword) env.OPENCODE_SERVER_PASSWORD = o.serverPassword

@@ -1,5 +1,6 @@
 import path from 'node:path'
 import { describe, expect, it } from 'vitest'
+import { opencodeCliConfig } from '@shared/opencodeSession'
 import { newSession } from '../sessions'
 import { envFor, mountsFor, readOnlyPathsFor, specFor, type MountPaths } from './spec'
 
@@ -133,6 +134,16 @@ describe('envFor', () => {
   // D6. The registration is where the host service says it can be reached, and it lives under
   // XDG_STATE_HOME — without that pointer the client finds nothing, registers a service of its own,
   // and evicts the host's. The password is the half the client does not read for itself.
+  it('gives a sandboxed opencode grove’s own session chrome, and claude none', () => {
+    // The pane's env carries this for a host session, but `container run` forwards only what is
+    // explicitly passed — so a sandboxed one that did not would fall back to the user's
+    // opencode.json: tabs on, the wrong theme. Measured 2026-10-12.
+    const opencode = envFor('opencode', SESSION, { paths: PATHS }).env
+    expect(opencode.OPENCODE_CLI_CONFIG_CONTENT).toBe(opencodeCliConfig())
+    expect(JSON.parse(opencodeCliConfig())).toEqual({ tabs: { mode: 'off' }, theme: { name: 'tokyonight', mode: 'dark' } })
+    expect(envFor('claude', SESSION, { paths: PATHS }).env.OPENCODE_CLI_CONFIG_CONTENT).toBeUndefined()
+  })
+
   it('hands a sandboxed opencode the host service’s password, and claude neither that nor the pointer', () => {
     expect(envFor('opencode', SESSION, { paths: PATHS, serverPassword: 's3cret' }).env.OPENCODE_SERVER_PASSWORD).toBe('s3cret')
     expect(envFor('claude', SESSION, { paths: PATHS, serverPassword: 's3cret' }).env.OPENCODE_SERVER_PASSWORD).toBeUndefined()

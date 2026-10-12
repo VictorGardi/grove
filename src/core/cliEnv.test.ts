@@ -29,7 +29,7 @@ describe('GROVE_* session env', () => {
     expect(created().env).toEqual({
       GROVE_SESSION_ID: s.id,
       GROVE_SOCKET: '/s.sock',
-      OPENCODE_CLI_CONFIG_CONTENT: '{"tabs":{"mode":"off"},"theme":{"name":"tokyonight","mode":"dark"}}',
+      OPENCODE_CLI_CONFIG_CONTENT: '{"tabs":{"mode":"off"},"theme":{"name":"tokyonight","mode":"dark"}}', // unchanged by the move into shared/opencodeSession: this exact string is what the pane has always got
     })
     expect(created().argv![4]).toMatch(/^export PATH=\/bin:"\$PATH"; exec /)
     await createClaude(core)
