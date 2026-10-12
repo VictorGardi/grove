@@ -5,7 +5,7 @@ import { loginShellArgv } from '../env'
 import { sandboxArgv } from './argv'
 import { loginShellCredential } from './auth'
 import { ensureImage, imageRef } from './image'
-import { ensureServiceReachable, servicePassword } from './service'
+import { ensureServiceReachable, serviceEndpoint } from './service'
 import { specFor, type AgentPaths } from './spec'
 
 // What a sandbox needs from the host, all of it from CoreOptions: the binary, the image recipe,
@@ -22,17 +22,24 @@ export interface SandboxDeps {
 // does know is the consequence, and that is what the human has to be told.
 export const LOST_SANDBOX = 'Its sandbox could not start, so it is running on your host with no filesystem isolation.'
 
-// D6: what a sandboxed OpenCode needs that a sandboxed Claude does not — the host's shared
-// service bound to an address the container can reach, and that service's password. Both are
-// host-side facts about a service grove does not run, so both are read here and nowhere else.
-async function reachHostService(paths: Partial<AgentPaths>, container: string): Promise<string | undefined> {
-  if (!paths.opencodeServiceConfig) return undefined
+// D6: what a sandboxed OpenCode needs that a sandboxed Claude does not — the host's shared service
+// bound to an address the container can reach, that address named on the command line, and the
+// service's password. Null means there is nothing to join, which is `no-sandbox` rather than a pane
+// that cannot work.
+async function reachHostService(paths: Partial<AgentPaths>, container: string): Promise<{ url: string; password: string } | null> {
+  if (!paths.opencodeServiceConfig || !paths.opencodeRegistration) return null
   // Idempotent, and a no-op once the bind is there. Inside the try, so a bridge that never appears
   // is `no-sandbox` on create and a downgraded resume — never an OpenCode that quietly starts a
   // service of its own and evicts the host's.
-  await ensureServiceReachable({ configFile: paths.opencodeServiceConfig, container })
-  return paths.opencodeRegistration ? servicePassword(paths.opencodeRegistration) : undefined
+  const gateway = await ensureServiceReachable({ configFile: paths.opencodeServiceConfig, container })
+  return serviceEndpoint({ registrationFile: paths.opencodeRegistration, gateway })
 }
+
+// `--server` precedes any subcommand, so it goes in immediately after the binary. Without it the
+// client falls back to starting a service of its own: measured 2026-10-12, it read the host's
+// registration, tried the host's loopback, then died with `EADDRNOTAVAIL` binding the bridge
+// address grove wrote into the config. Told where the service is, it binds nothing.
+const withServer = (agentArgv: string[], url: string): string[] => [agentArgv[0], '--server', url, ...agentArgv.slice(1)]
 
 // The pane's argv for a sandboxed agent session, or null when this host cannot build one.
 // Every reason collapses to null because none of them may fall back to an unguarded pane
@@ -58,7 +65,9 @@ export async function sandboxArgvFor(o: {
       claudeHome: paths.claudeHome,
     })
     if (!credential) return null
-    const serverPassword = o.kind === 'opencode' ? await reachHostService(paths, sandbox.container) : undefined
+    const endpoint = o.kind === 'opencode' ? await reachHostService(paths, sandbox.container) : null
+    // D6: no host service registered means no port to compose a URL from, and nothing to join.
+    if (o.kind === 'opencode' && !endpoint) return null
     const spec = specFor({
       kind: o.kind,
       cwd: o.cwd,
@@ -68,9 +77,9 @@ export async function sandboxArgvFor(o: {
       container: sandbox.container,
       image,
       credential,
-      serverPassword,
+      serverPassword: endpoint?.password,
     })
-    return loginShellArgv(sandboxArgv({ name: o.session.tmuxName, spec, agentArgv: o.agentArgv }), { pathPrefix: paths.binDir })
+    return loginShellArgv(sandboxArgv({ name: o.session.tmuxName, spec, agentArgv: endpoint ? withServer(o.agentArgv, endpoint.url) : o.agentArgv }), { pathPrefix: paths.binDir })
   } catch {
     return null // no binary, no system, no build, no Dockerfile, no bridge
   }

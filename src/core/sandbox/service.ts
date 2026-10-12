@@ -25,15 +25,20 @@ function usable(gateway: unknown): gateway is string {
 // Makes the host's shared OpenCode service reachable from inside a container, once (D6).
 //
 // Writes `{"hostname": "<container bridge>"}` into the service **config**
-// (`$XDG_CONFIG_HOME/opencode/service.json`), never `0.0.0.0`. The service reads that file when it
-// starts and binds the address there, and registers the resulting `url` in its own state file — so
-// this changes where the service *will* listen, and what grove hands the container is the password
-// it must authenticate with.
+// (`$XDG_CONFIG_HOME/opencode/service.json`), never `0.0.0.0`, and returns the gateway — so the
+// caller can compose the container's `--server` URL. The service reads that file when it starts and
+// binds the address there, and registers the resulting `url` in its own state file.
+//
+// **The registration's `url` is not the URL the container may use.** It names the host's loopback,
+// which inside the VM is the container itself. So grove composes the container's address from the
+// gateway and the registration's *port*, and passes it as `--server`; told where to go, the client
+// never falls back to `service.ensure` and never binds anything itself. Measured 2026-10-12: left
+// to find the service itself, it starts a background server, reads the config written above, and
+// dies with `EADDRNOTAVAIL` binding an address it may only connect to.
 //
 // Idempotent in the way the design asks: a config that already names a usable address spawns
 // nothing at all. The registration file is never written — a second registration evicts the
-// incumbent service, which is the failure D6 exists to prevent — and never read either; it is the
-// host's, and grove only takes the password out of it elsewhere.
+// incumbent service, which is the failure D6 exists to prevent — and never read here either.
 //
 // Throws when the budget is spent, which the caller turns into `no-sandbox`. There is no fallback
 // to a wildcard address: a service on the LAN is worse than no sandboxed session at all.
@@ -43,8 +48,9 @@ export async function ensureServiceReachable(o: {
   attempts?: number // tests; the real budget is ATTEMPTS
   firstDelayMs?: number
   maxDelayMs?: number
-}): Promise<void> {
-  if (usable(readConfig(o.configFile).hostname)) return // already bound; nothing to decide
+}): Promise<string> {
+  const bound = readConfig(o.configFile).hostname
+  if (usable(bound)) return bound // already bound; nothing to decide
   // Idempotent, and on a system already up it can still exit non-zero — so its status is not the
   // answer. Whether a gateway can be discovered is.
   await run(o.container, ['system', 'start'], 30_000)
@@ -54,7 +60,7 @@ export async function ensureServiceReachable(o: {
     const gateway = await gatewayOf(o.container)
     if (usable(gateway)) {
       writeConfig(o.configFile, gateway)
-      return
+      return gateway
     }
     if (attempt < attempts - 1) {
       await sleep(delay)
@@ -64,15 +70,19 @@ export async function ensureServiceReachable(o: {
   throw new Error('no container bridge: `container network ls` never named a gateway')
 }
 
-// The host service's password, which the container needs or gets 401. Its registration is the one
-// file grove reads and never writes. Undefined rather than a throw: a missing registration is not
-// this function's failure to report.
-export function servicePassword(registrationFile: string): string | undefined {
+// Where the host service can be reached **from inside the container**, and the password it wants
+// (or it answers 401). Null when the registration cannot supply both, which the caller turns into
+// `no-sandbox` — there is no port to compose a URL from, and nothing to join in the first place,
+// since the read-only state dir stops the container starting a service of its own.
+export function serviceEndpoint(o: { registrationFile: string; gateway: string }): { url: string; password: string } | null {
   try {
-    const password = (JSON.parse(fs.readFileSync(registrationFile, 'utf8')) as { password?: unknown }).password
-    return typeof password === 'string' && password !== '' ? password : undefined
+    const reg = JSON.parse(fs.readFileSync(o.registrationFile, 'utf8')) as { url?: unknown; password?: unknown }
+    if (typeof reg.password !== 'string' || reg.password === '') return null
+    const { port } = new URL(String(reg.url))
+    if (!port) return null
+    return { url: `http://${o.gateway}:${port}`, password: reg.password }
   } catch {
-    return undefined
+    return null // absent, unparseable, or a url with no port: nothing to guess
   }
 }
 

@@ -2,7 +2,7 @@ import fs from 'node:fs'
 import os from 'node:os'
 import path from 'node:path'
 import { afterEach, describe, expect, it } from 'vitest'
-import { ensureServiceReachable, servicePassword } from './service'
+import { ensureServiceReachable, serviceEndpoint } from './service'
 
 const temps: string[] = []
 const tmp = () => {
@@ -66,18 +66,19 @@ describe('ensureServiceReachable', () => {
   it('starts the container system and writes the gateway it discovers', async () => {
     const file = configFile('{}')
     const { file: bin, log } = fakeContainer([NETWORKS('192.168.64.1')])
-    await ensureServiceReachable({ configFile: file, container: bin, ...FAST })
+    await expect(ensureServiceReachable({ configFile: file, container: bin, ...FAST })).resolves.toBe('192.168.64.1')
     expect(log()).toEqual(['system start', 'network ls --format json'])
     expect(read(file)).toEqual({ hostname: '192.168.64.1' })
   })
 
   // The design: "writes the bind address **once**". Every sandboxed session afterwards spawns
-  // nothing at all — not even to re-read a value it already knows.
+  // nothing at all — not even to re-read a value it already knows. The gateway still comes back:
+  // the caller needs it to compose the container's URL.
   it('spawns nothing when the bind is already there, and leaves the file byte-identical', async () => {
     const file = configFile('{"hostname":"192.168.64.1"}')
     const before = fs.readFileSync(file, 'utf8')
-    const { file: bin, log } = fakeContainer([NETWORKS('192.168.64.1')])
-    await ensureServiceReachable({ configFile: file, container: bin, ...FAST })
+    const { file: bin, log } = fakeContainer([NETWORKS('10.99.0.1')])
+    await expect(ensureServiceReachable({ configFile: file, container: bin, ...FAST })).resolves.toBe('192.168.64.1')
     expect(log()).toEqual([])
     expect(fs.readFileSync(file, 'utf8')).toBe(before)
   })
@@ -168,23 +169,31 @@ describe('ensureServiceReachable', () => {
   })
 })
 
-describe('servicePassword', () => {
-  // The container gets 401 without it: the agent reads the address from the registration but takes
-  // the credential from the environment, so grove has to hand it over.
-  it('is the registration file’s password', () => {
+describe('serviceEndpoint', () => {
+  const registration = (contents?: string): string => {
     const file = path.join(tmp(), 'service.json')
-    fs.writeFileSync(file, '{"url":"http://192.168.64.1:49374","pid":1075,"password":"s3cret"}')
-    expect(servicePassword(file)).toBe('s3cret')
+    if (contents !== undefined) fs.writeFileSync(file, contents)
+    return file
+  }
+
+  // The registration's own `url` names the host's loopback. Only the host part is wrong; the port
+  // is the one the service is listening on, and it is the only place grove can learn it.
+  it('is the host service on the bridge, keeping the port it is listening on', () => {
+    expect(serviceEndpoint({ registrationFile: registration('{"url":"http://127.0.0.1:49374","pid":1075,"password":"s3cret"}'), gateway: '192.168.64.1' })).toEqual({
+      url: 'http://192.168.64.1:49374',
+      password: 's3cret',
+    })
   })
 
-  it('is undefined, never a throw, for a file that is not there or is not one', () => {
-    const dir = tmp()
-    expect(servicePassword(path.join(dir, 'absent.json'))).toBeUndefined()
-    const broken = path.join(dir, 'broken.json')
-    fs.writeFileSync(broken, 'not json')
-    expect(servicePassword(broken)).toBeUndefined()
-    const nokey = path.join(dir, 'nokey.json')
-    fs.writeFileSync(nokey, '{"url":"http://127.0.0.1:49374"}')
-    expect(servicePassword(nokey)).toBeUndefined()
+  // Every one of these leaves grove with no URL to hand `--server`, so every one of them is
+  // `no-sandbox` rather than a pane that cannot connect. Null, never a guess.
+  it('is null when there is no registration, no url, no port or no password', () => {
+    const g = '192.168.64.1'
+    expect(serviceEndpoint({ registrationFile: registration(), gateway: g })).toBeNull()
+    expect(serviceEndpoint({ registrationFile: registration('not json'), gateway: g })).toBeNull()
+    expect(serviceEndpoint({ registrationFile: registration('{"password":"s3cret"}'), gateway: g })).toBeNull()
+    expect(serviceEndpoint({ registrationFile: registration('{"url":"http://127.0.0.1","password":"s3cret"}'), gateway: g })).toBeNull()
+    expect(serviceEndpoint({ registrationFile: registration('{"url":"http://127.0.0.1:49374"}'), gateway: g })).toBeNull()
+    expect(serviceEndpoint({ registrationFile: registration('{"url":"http://127.0.0.1:49374","password":""}'), gateway: g })).toBeNull()
   })
 })

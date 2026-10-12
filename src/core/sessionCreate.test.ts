@@ -272,6 +272,7 @@ describe('sessionCreate --sandboxed', () => {
   // D6: both agents are sandboxable. A terminal has no agent argv to wrap, and nothing else changed.
   it('sandboxes an opencode session, pointing it at the host service rather than its own', async () => {
     const core = await startWithLog()
+    register()
     const res = await sandboxed(core, { kind: 'opencode' })
     if (!res.ok) throw new Error(res.error)
     expect(res.data.sandboxed).toBe(true)
@@ -285,8 +286,37 @@ describe('sessionCreate --sandboxed', () => {
 
   it('writes the bridge bind once, into the host service config', async () => {
     const core = await startWithLog()
+    register()
     expect(await sandboxed(core, { kind: 'opencode' })).toMatchObject({ ok: true })
     expect(JSON.parse(fs.readFileSync(paths().opencodeServiceConfig, 'utf8'))).toEqual({ hostname: '192.168.64.1' })
+  })
+
+  // The thing that was missing: told where the service is, the client connects instead of starting
+  // one of its own — and one of its own is what died with EADDRNOTAVAIL, binding the bridge address
+  // grove had written into the config it can read.
+  it('tells a sandboxed opencode which host service to join', async () => {
+    const core = await startWithLog()
+    register()
+    const res = await sandboxed(core, { kind: 'opencode' })
+    if (!res.ok) throw new Error(res.error)
+    const argv = created(t.fake)[0].argv![4]
+    expect(argv).toMatch(/opencode --server http:\/\/192\.168\.64\.1:49374 -s ses_\S+$/)
+    expect(argv).toContain('-e OPENCODE_SERVER_PASSWORD=s3cret')
+  })
+
+  it('refuses no-sandbox when there is no host service registration to join', async () => {
+    const core = await startWithLog()
+    expect(await sandboxed(core, { kind: 'opencode' })).toEqual({ ok: false, error: 'no-sandbox' })
+    expect(created(t.fake)).toEqual([])
+  })
+
+  it('leaves a sandboxed claude with no --server, and no service', async () => {
+    const core = await startWithLog()
+    const res = await sandboxed(core)
+    if (!res.ok) throw new Error(res.error)
+    const argv = created(t.fake)[0].argv![4]
+    expect(argv).not.toContain('--server')
+    expect(argv).not.toContain('OPENCODE_SERVER_PASSWORD')
   })
 
   it('refuses no-sandbox when the image cannot be built, rather than launching unguarded', async () => {
@@ -330,6 +360,12 @@ describe('sessionCreate --sandboxed', () => {
   const containerLog = () => container() + '.log'
   const containerCalls = () => (fs.existsSync(containerLog()) ? fs.readFileSync(containerLog(), 'utf8').trim().split('\n').filter(Boolean) : [])
   const removals = () => containerCalls().filter((c) => c.startsWith('rm '))
+  // The host service's own registration. Without it a sandboxed opencode has no port to point
+  // `--server` at, which is `no-sandbox` (D6, human 2026-10-12).
+  const register = () => {
+    fs.mkdirSync(path.dirname(paths().opencodeRegistration), { recursive: true })
+    fs.writeFileSync(paths().opencodeRegistration, '{"url":"http://127.0.0.1:49374","pid":1075,"password":"s3cret"}')
+  }
   // What startWithLog writes: record every invocation, and answer the two read-only questions grove
   // asks — which containers exist, and what the `default` network's gateway is.
   const fakeListingScript = (listed: string[]): string =>

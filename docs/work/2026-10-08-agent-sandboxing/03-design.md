@@ -2,10 +2,10 @@
 feature: 2026-10-08-agent-sandboxing
 phase: design
 status: approved
-version: 9
+version: 10
 created: 2026-10-09
-updated: 2026-10-11
-approved_at: 2026-10-11
+updated: 2026-10-12
+approved_at: 2026-10-12
 based_on:
   - 01-questions.md@1
   - 02-research.md@6
@@ -13,6 +13,7 @@ forced:
   - "design exceeds designMaxLines (255 vs 220): v5 was already 222 at its approval, and D7 added the seventh one-way decision with its rationale and rejected options. Forced by the human rather than compressing approved rationale."
   - "design exceeds designMaxLines again (v8, D8): the human declined to compress approved rationale once already, and D8 must carry its measured evidence or the next session re-derives the Keychain question. Approved rationale left intact; new material written as tightly as the subject allows."
   - "design exceeds designMaxLines again (v9, 452 vs 220): v9 adds no decision — it replaces four statements the spikes measured to be wrong with the measured facts and the human's recorded decisions, and the standing instruction is that those dead ends not be re-derived. Compressing them would re-open questions the evidence already closed."
+  - "design exceeds designMaxLines again (v10, 494 vs 220): v10 adds no decision either — it records the EADDRNOTAVAIL the first slice-6 attempt produced, the human's no-sandbox and host-restart decisions, and the risk the bind moves grove's own client onto the bridge. Same standing instruction: the measured failure is what stops the next session re-deriving the --server fix, and compressing it would re-open the question the evidence just closed."
 ---
 
 # Agent session sandboxing — design
@@ -83,6 +84,7 @@ container run --rm -i -t --name <tmuxName> --workdir <cwd>
   -e OPENCODE_SERVER_PASSWORD                       # D6: opencode only, from the registration file
   -e GIT_CONFIG_COUNT=1 -e GIT_CONFIG_KEY_0=core.hooksPath
   -e GIT_CONFIG_VALUE_0=<empty dir baked into the image>
+  <image> opencode --server http://<bridge>:<port> <…>   # D6: grove composes the URL itself
   <image> <agentArgv…>
 ```
 
@@ -151,25 +153,41 @@ a missing `container` or failed build fails `no-sandbox`, never an unsandboxed p
 fire `--rm`), ignoring "no such container". `core.start()` prunes `grove-*` containers
 with no live tmux session.
 
-Before the first sandboxed **OpenCode** session grove writes `{"hostname":"<bridge>"}`
-once into the service config — **never `0.0.0.0`**, measured to bind the service on the
-LAN. Four facts the spikes settled, none of which the first draft of this section knew:
+Before the first sandboxed **OpenCode** session grove writes `{"hostname":"<bridge>"}` once
+into the service config — **never `0.0.0.0`**, measured to bind the service on the LAN. It then
+hands the container `--server http://<bridge>:<port>`, the port taken from the registration file,
+with `OPENCODE_SERVER_PASSWORD`. Seven facts the spikes settled, none of which the first draft
+of this section knew:
 
-- **`<bridge>` is discovered, never assumed.** `container network ls --format json` →
-  `.status.ipv4Gateway` of network `default` (measured `192.168.64.1`). Proven derived: a
-  network created with `--subnet 10.99.0.0/24` yields `10.99.0.1`, so `.1` is a
+- **The URL is grove's to compose, never the container's to find.** `container network ls
+  --format json` → `.status.ipv4Gateway` of network `default` (measured `192.168.64.1`). Proven
+  derived: a network created with `--subnet 10.99.0.0/24` yields `10.99.0.1`, so `.1` is a
   coincidence of this host's subnet, not a rule.
-- **The bridge is not there at boot.** `bridge100` is created by `container system
-  start`, measured **2m24s after login**. grove runs that command (idempotent), then polls
-  with backoff, treating `Errno 49` / `EADDRNOTAVAIL` as *not ready yet*. Only a failure
-  **past the retry budget** is `no-sandbox` — refusing on the first error would reject
-  every session for the first minutes after login. This is also what the earlier
-  `Errno 49` spike really was: a startup race, not a network change.
-- **The client seam is the global `--server <url>` flag.** v2 removed
-  `opencode attach <url>`; `--server` precedes any subcommand, and a 1.x client against a
-  2.x server is rejected outright.
-- **`OPENCODE_SERVER_PASSWORD` comes from the registration file's `password`,** or the
-  container gets 401. See D6 for the cost this honest boundary carries.
+- **The registration's own `url` is wrong inside the container, and reading it is what broke
+  the first attempt.** It names the host's loopback (`http://127.0.0.1:49374`), which inside the
+  VM is the container itself. Measured 2026-10-12: the client tried it, fell back to
+  `service.ensure`, started a background server of its own, read the config grove had just
+  written, and died with **`EADDRNOTAVAIL`** trying to *bind* `192.168.64.1` — an address the
+  container may connect to and never bind. `--server` is what stops that: told where the service
+  is, the client never calls `service.ensure` and never consults the config's `hostname`. The
+  config write stays, because it is what makes the *host* service listen there at all.
+- **The host service must restart before the bind takes effect.** It reads its config when it
+  starts, so a service already running keeps its old bind until it next starts. grove does not
+  restart it — that is the human's call — and says so rather than pretending otherwise.
+- **The bind is not there at boot.** `bridge100` is created by `container system start`,
+  measured **2m24s after login**. grove runs that command (idempotent), then polls with
+  backoff, treating a missing gateway as *not ready yet*. Only a failure **past the retry
+  budget** is `no-sandbox` — refusing on the first miss would reject every session for the
+  first minutes after login. This is also what the earlier `Errno 49` spike really was: a
+  startup race, not a network change.
+- **The client seam is the global `--server <url>` flag.** v2 removed `opencode attach <url>`;
+  `--server` precedes any subcommand, and a 1.x client against a 2.x server is rejected
+  outright.
+- **`OPENCODE_SERVER_PASSWORD` comes from the registration file's `password`,** or the container
+  gets 401. See D6 for the cost this honest boundary carries.
+- **No registration means no port, and so no URL to compose** — and nothing to join either, since
+  the read-only state dir stops the container starting a service of its own. That is
+  `no-sandbox`, decided by the human on 2026-10-12 rather than left as a pane that cannot work.
 
 Apple never documented a host-side bridge bind, so its failure is expected behaviour
 rather than a mystery, and `bridge100` is not guaranteed stable. The recorded fallback is
@@ -211,8 +229,10 @@ package.json                                               MODIFIED  asarUnpack 
 ```
 
 `AgentPaths` (`{ claudeHome, claudeJson, opencodeShare, opencodeConfig,
-opencodeState, opencodeServiceConfig, gitconfig, spoolDir, socketPath, cliBundle }`) is
-resolved once in main.
+opencodeState, opencodeRegistration, opencodeServiceConfig, gitconfig, spoolDir, socketPath,
+cliBundle }`) is resolved once in main. The two OpenCode `service.json` fields are different
+files: the **registration** is the service's own and grove only reads it (D6); the **config** is
+the one grove writes the bind into.
 
 ```ts
 gitCommonDir(dir: string): string | null          // D2; no spawn, src/core/git.ts:18-26
@@ -224,7 +244,8 @@ sandboxArgv(o: { name: string; spec: SandboxSpec; agentArgv: string[] }): string
 imageRef(dockerfile: string): string;  ensureImage(o: { container; dir; tag }): Promise<void>
 sandboxAvailability(container: string): Promise<{ ok: boolean; error?: 'no-sandbox' }>
 removeContainer(container, name): Promise<void>;  pruneContainers(container, live): Promise<void>
-ensureServiceReachable(o: { configFile: string; container: string }): Promise<void>  // D6
+ensureServiceReachable(o: { configFile: string; container: string }): Promise<string>  // D6; the gateway, discovered
+serviceEndpoint(o: { registrationFile: string; gateway: string }): { url: string; password: string } | null  // D6
 ```
 
 Packaging consequence of D7: `out/main/cli.js` must exist as a real file for
@@ -282,13 +303,25 @@ its own**, bound to the **container bridge address only**
   expose the service on the LAN).
 - Costs: the shared service must leave loopback, and the container's `service.json` must
   be read-only. Both grove-side.
+- **Corrected again 2026-10-12, after the first attempt at this was run and failed.** grove
+  composes the container's `--server` URL itself — the discovered gateway plus the registration's
+  port — because the registration's own `url` names the host's loopback, which is the container
+  itself from in there. A client left to find the service falls back to `service.ensure`, starts a
+  background server, reads the config grove wrote, and dies with `EADDRNOTAVAIL` binding an
+  address it may only connect to. Measured, quoted in `06-implementation.md`. `--server` was in
+  this decision and in `04-structure.md`'s slice-6 verification all along; the first implementation
+  read it as description and assumed the registration would supply the URL.
+- **The host service must restart before the bind exists**, and grove does not restart it. That is
+  a consequence of the mechanism, not an oversight: the service reads its config when it starts.
+- **No host service registered ⇒ `no-sandbox`**, decided by the human 2026-10-12: there is no port
+  to compose a URL from and nothing to join.
 - **Corrected 2026-10-11 after four spikes.** The mechanism survives; five facts it did
   not know are corrected in § Lifecycle. Summarised so the next session does not re-derive
   them: the gateway is **discovered** from `container network ls --format json`
   (`.status.ipv4Gateway`), never hardcoded — a network on `10.99.0.0/24` yields
   `10.99.0.1`; the bridge **is not present at boot** (`bridge100` appears **2m24s** after
   login, created by `container system start`), so grove starts it and retries with backoff,
-  treating `Errno 49`/`EADDRNOTAVAIL` as not-ready-yet and refusing only past the budget;
+  treating a missing gateway as not-ready-yet and refusing only past the budget;
   the image pinned the **wrong major version** — `opencode-ai@2.x` does not exist and the
   package is `@opencode/cli` (official, npm-signature verified, a self-contained Bun
   binary, glibc only, no new apt packages); v2 **removed `attach`**, so the seam is the
@@ -417,7 +450,9 @@ that cannot log in** ([ADR 0040](../../adr/0040-sandboxed-sessions-authenticate-
 | Agent config | `CLAUDE_CONFIG_DIR` / `XDG_DATA_HOME` + `XDG_CONFIG_HOME` point at the mounts grove already has (D8). **Consequence, accepted:** a sandboxed agent now gets the host's settings, plugins, skills, commands and history, which until now it silently did not |
 | Worktrees | Supported by D2 — the worktree **and** its repo's common dir, host-identical, hooks/config read-only. Slice 1 verified `git rev-parse --show-toplevel`, `core.hooksPath` neutralisation and a real `git commit` landing on the host for a **plain checkout**; the worktree form is still unverified and repeats with `--worktree --branch probe --sandboxed` |
 | Git hooks | Neutralised by env: `GIT_CONFIG_COUNT=1`, `KEY_0=core.hooksPath`, `VALUE_0=<empty dir in the image>`. Command-line scope, beating `~/.gitconfig` and `.git/config` for every git call in the pane. A repo that legitimately uses `core.hooksPath` stops running hooks inside the sandbox — the same class of divergence as shipping no rc files |
-| Shared-service bind | Grove writes the bridge address, **with a consent prompt** the first time, and hands the container `OPENCODE_SERVER_PASSWORD` (D6) |
+| Shared-service bind | Grove writes the bridge address and hands the container `--server http://<bridge>:<port>` plus `OPENCODE_SERVER_PASSWORD` (D6). The design also asks for **a consent prompt the first time**; that is **open and deliberately undecided** — the human deferred it on 2026-10-12, no surface is named, and nothing is built for it |
+| Host service restart | **The human's**, not grove's: the service reads its config when it starts, so the bind exists after its next restart. grove never restarts it and says so rather than pretending |
+| No host service registered | `no-sandbox` (human, 2026-10-12): no port to compose a URL from, and nothing to join |
 | Git push | No SSH agent or credential helper inside: a grove choice, not a container limit. Commit locally, push from the host |
 
 ## Risks
@@ -432,8 +467,13 @@ that cannot log in** ([ADR 0040](../../adr/0040-sandboxed-sessions-authenticate-
   project and write into them. Only the three authority files are carved out, and only
   where the host has them.
 - **Rebinding the shared service.** D6 moves it onto the container bridge and hands the
-  container its password. Private, but machine-wide, hence consent; and the boundary is
-  weaker than grove's own unix-socket transport (ADR 0035).
+  container its password. Private, but machine-wide, hence the undecided consent question; and
+  the boundary is weaker than grove's own unix-socket transport (ADR 0035).
+- **The host registration follows the bind, so grove's own client does too.** Once the service
+  restarts bound to `<bridge>`, the `url` it registers is the bridge address, and grove's
+  `HttpOpenCode` connects to whatever that file says. So `bridge100` disappearing takes OpenCode
+  status down for **the host's own sessions**, not only for sandboxes. Measured to be the trade
+  for keeping the service off the LAN; worth knowing before restarting the service.
 - **`--read-only-path` is Experimental**, and its cases are measured: **two nested
   carve-outs in one read-write volume** work together, and slice 1 asserts that — but an
   **absent** target is *unenforced*, not merely tolerated. Harmless for `~/.gitconfig`;

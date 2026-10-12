@@ -2,7 +2,7 @@
 feature: 2026-10-08-agent-sandboxing
 phase: implementation
 status: stale
-version: 12
+version: 13
 created: 2026-10-10
 updated: 2026-10-11
 based_on:
@@ -16,6 +16,82 @@ forced: []
 
 # Slice 6 — OpenCode in the sandbox, joining the host's service (D6)
 
+## Slice 6, correction — grove tells the sandboxed OpenCode where the host service is
+
+The fix for the `EADDRNOTAVAIL` above, taken straight after it: `03-design.md` v10 and
+`04-structure.md` v7 (approved 2026-10-12), then implemented.
+
+### What changed in the artifacts
+
+**`03-design.md` v10** — D6 gained the rule the first implementation missed, stated three times over
+so it cannot be read as description again: **the container's URL is grove's to compose, never its own
+to find.** The spec block now shows `opencode --server http://<bridge>:<port>` on the agent argv;
+§ Lifecycle carries the measured failure; `ensureServiceReachable` returns the gateway and
+`serviceEndpoint` composes the URL; `AgentPaths` documents the two `service.json` fields; the
+two-way table records the human's two decisions and the **undecided** consent prompt; and a new risk
+covers the one nobody had written down — **the bind moves grove's own client onto the bridge too**,
+because grove's `HttpOpenCode` connects to whatever `url` the registration names, so `bridge100`
+disappearing takes OpenCode status down for the host's own sessions.
+
+**`04-structure.md` v7** — slice 6's outcome says grove composes the `--server` URL and that no
+registration is `no-sandbox`; its signatures and verification follow; and the refusal now also
+belongs in slice 7's list, which is where refusals live.
+
+**Approved by the human's explicit instruction** ("rewrite, approve, then fix right away"), after
+running the content gates by hand: no `TODO`/`TBD` in either file, `## Open questions` empty in
+substance, all eight one-way decisions present with their chosen options, all seven slices carrying a
+verification step. `approved_at: 2026-10-12` on both.
+
+### What landed
+
+- **`src/core/sandbox/service.ts`**: `ensureServiceReachable` now resolves to the **gateway** —
+  the one it discovered, or the one already in the config on the idempotent path — because the
+  caller needs it to compose a URL. `servicePassword` is replaced by
+  `serviceEndpoint({ registrationFile, gateway })`, which reads the registration once, keeps its
+  **port**, swaps the host for the bridge, and returns `null` rather than guessing.
+- **`src/core/sandbox/launch.ts`**: `reachHostService` returns that endpoint; the agent argv becomes
+  `[argv[0], '--server', url, …]` for opencode only; and an opencode session with no endpoint is
+  `null` at the seam, so a create is refused `no-sandbox` and a resume downgrades with its note.
+- **Tests**: 3 cases in `service.test.ts` (endpoint composition and all five null cases, plus the
+  two gateway returns), 4 in `sessionCreate.test.ts` (the `--server` argv, the password, the refusal,
+  and that a sandboxed Claude is untouched).
+
+`npm test`: **938 passed / 83 files**. `npm run typecheck`: clean. `npm run build`: clean.
+
+### Deviations
+
+30. **`servicePassword` became `serviceEndpoint`** rather than gaining a sibling. It reads the same
+    file for the same reason, and the URL and the password have to agree about which registration
+    they came from; one function returning both cannot return half of one and all of the other.
+31. **The refusal is in `launch.ts`, not `core.ts`.** It has to be, for the reason recorded for the
+    whole slice: the seam's try is what turns every sandbox failure into `no-sandbox` or a
+    downgraded resume. It lands before the bind is written, as the human's decision specifies.
+
+## Still not run — and it needs two humans, not one
+
+The manual pass additionally needs the **host OpenCode service restarted**, so that the bind grove
+wrote at 04:46 actually takes effect. Until that happens a sandboxed OpenCode gets
+**connection-refused** to `192.168.64.1:49374` rather than `EADDRNOTAVAIL` — a different failure, and
+the one this fix is meant to clear, but it will not clear itself.
+
+The service is `opencode serve --service`, pid 1133, **ppid 1** — detached, so nothing restarts it
+automatically. Sessions are safe: `~/.local/share/opencode/opencode.db` is 175 MB on disk and the
+service is a stateless server over it. A `kill` costs a reconnect flicker, not history.
+
+The `.html` companions for `03-design` and `04-structure` are **stale** — they were rendered at v9/v6.
+`grove.config.json` has `commitHtml: false`, so they are untracked working files, not part of the
+commit. Re-render with `grove-render 2026-10-08-agent-sandboxing` when convenient.
+
+## Open items still standing
+
+- **The host restart**, above. Blocking the manual pass.
+- **The consent prompt** — recorded as undecided in the two-way table, deliberately built for
+  nothing.
+- **The cross-version check** the spikes could not settle: `@opencode/cli@2.0.26` against the host's
+  `2.0.20` over `--server`.
+- **Slice 5's manual pass**, still unticked.
+
+---
 ## Finding, 2026-10-12: a sandboxed OpenCode tries to **bind** the address grove wrote for the **host**
 
 The human ran a sandboxed OpenCode session against this build. It came up "Session ended", and

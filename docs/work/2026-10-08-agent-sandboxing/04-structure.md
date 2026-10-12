@@ -2,12 +2,12 @@
 feature: 2026-10-08-agent-sandboxing
 phase: structure
 status: approved
-version: 6
+version: 7
 created: 2026-10-09
-updated: 2026-10-11
-approved_at: 2026-10-11
+updated: 2026-10-12
+approved_at: 2026-10-12
 based_on:
-  - 03-design.md@9
+  - 03-design.md@10
 forced: []
 ---
 
@@ -156,7 +156,14 @@ forced: []
   the gateway from `container network ls --format json` (`.status.ipv4Gateway` of network
   `default`, never hardcoded — a network on another subnet yields another gateway), then
   writes the bind address once into the service config — **never `0.0.0.0`** — and hands
-  the container `OPENCODE_SERVER_PASSWORD` taken from the registration file. The
+  the container `OPENCODE_SERVER_PASSWORD` taken from the registration file, **and composes
+  the container's `--server http://<bridge>:<port>` itself — the discovered gateway plus the
+  registration's port.** The registration's own `url` names the host's loopback, so a client
+  left to find the service falls back to `service.ensure` and dies with `EADDRNOTAVAIL`
+  binding an address it may only connect to (measured 2026-10-12; `06-implementation.md`).
+  **A machine with no host service registration is refused `no-sandbox`** — there is no port
+  to compose a URL from, and nothing to join, since the read-only state dir stops the
+  container starting its own (human, 2026-10-12). The
   container's `~/.local/state/opencode` stays read-only, so the sandbox can never evict
   the host's service. grove's status, waiting and linking for every other OpenCode
   session keep working. Authentication is slice 2's, not this slice's.
@@ -165,12 +172,15 @@ forced: []
   `OPENCODE_SERVER_PASSWORD`), `src/main/index.ts` (`AgentPaths`), `src/core/core.ts`
   (bind on the first sandboxed OpenCode), `resources/sandbox/Dockerfile`
   (`@opencode/cli` in place of `opencode-ai`, pinned independently of the host's version).
-- **Signatures:** `ensureServiceReachable({ configFile, container })`,
+- **Signatures:** `ensureServiceReachable({ configFile, container })` returning the gateway,
+  `serviceEndpoint({ registrationFile, gateway }): { url; password } | null`,
   `readOnlyPathsFor(kind, paths)`.
 - **Verify:** `npm test` — `sandbox/service.test.ts` against a fake `container` script on
   PATH: runs `system start`, polls `network ls` until a gateway appears, writes **that**
   address, is idempotent, retries then refuses once the budget is spent, never writes
-  `0.0.0.0`, never touches the registration file; `sandbox/spec.test.ts` —
+  `0.0.0.0`, never touches the registration file; **and composes `http://<bridge>:<port>`
+  from that gateway and the registration's `url`, with its `password`, or `null` when there
+  is no registration**; `sandbox/spec.test.ts` —
   `--read-only-path` for the state dir and not for the rest, `OPENCODE_SERVER_PASSWORD`
   present for opencode and absent for claude; `npm run typecheck`. Manual in
   `npm run dev`: start an unsandboxed OpenCode session and note its status; start a
@@ -188,6 +198,8 @@ forced: []
   and a message saying what to do — a terminal kind; `container` not installed;
   the image build failing; a bridge still undiscoverable **after the retry budget**
   (D6 — grove starts the system itself, so "not started" is no longer a refusal);
+  **no host OpenCode service registered, for a sandboxed OpenCode (D6, human 2026-10-12 —
+  no port to compose a URL from and nothing to join)**; and
   no credential reachable for a Claude session. No path silently starts an
   unsandboxed pane, and no path opens a pane that cannot log in.
 - **Files:** `src/core/sandbox/image.ts`, `src/core/core.ts` (`sessionCreate`

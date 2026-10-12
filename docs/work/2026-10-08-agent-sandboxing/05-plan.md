@@ -2,12 +2,12 @@
 feature: 2026-10-08-agent-sandboxing
 phase: plan
 status: approved
-version: 6
+version: 7
 created: 2026-10-11
-updated: 2026-10-11
+updated: 2026-10-12
 based_on:
-  - 03-design.md@9
-  - 04-structure.md@6
+  - 03-design.md@10
+  - 04-structure.md@7
 forced: []
 ---
 
@@ -699,3 +699,64 @@ Re-planned fresh against design v9 / structure v6, and against the four spikes r
       unchanged. Then **the cross-version check the spikes could not settle**: the image's
       `@opencode/cli@2.0.26` client against the host's v2 service over `--server`, and `opencode
       auth list` inside a sandboxed pane listing the host's provider. Left unticked on purpose.
+
+## Slice 6, correction — grove tells the sandboxed OpenCode where the host service is
+
+Planned after `03-design.md` v10 / `04-structure.md` v7 (approved 2026-10-12), against the
+measured failure recorded in `06-implementation.md` on the same day. **This is slice 6's own
+outcome, not a new one**: `04-structure.md` slice 6's verification has said "over `--server`"
+since v6, and D6 has said "the client seam is the global `--server <url>` flag" since v9. The
+first implementation read both as description and assumed the container would take its URL from
+the registration file it can already read. That is the bug, and this section is the correction.
+
+Context a fresh agent needs, inlined:
+
+- **What actually happens in the container** (measured, transcript in `06-implementation.md`): the
+  client reads the registration at `$XDG_STATE_HOME/opencode/service.json`, tries its `url`
+  (`http://127.0.0.1:49374` — the container's own loopback), fails, calls `service.ensure`, starts
+  a background server, reads the config grove mounts under `XDG_CONFIG_HOME` — the file grove just
+  wrote `hostname: 192.168.64.1` into — and dies with `EADDRNOTAVAIL` **binding** an address it may
+  only connect to. `Starting background server...` in the transcript is that fallback.
+- **`--server` precedes any subcommand**, so it goes in immediately after the binary: grove's agent
+  argv is `['opencode', '-s', <id>, …]`, and the sandboxed one is
+  `['opencode', '--server', <url>, '-s', <id>, …]`.
+- **The port comes from the registration's `url`**, not from the config — the config holds no port
+  unless the human set one. Only the host part is replaced.
+- `ensureServiceReachable` currently returns nothing; it has to return the gateway it wrote (or
+  found) so the URL can be composed. That is `04-structure.md` v7's new signature.
+- **No registration ⇒ `no-sandbox`** (human, 2026-10-12): no port to compose a URL from, and
+  nothing to join. Refusing happens **before** the bind is written.
+
+### Tests first
+
+- [x] `src/core/sandbox/service.test.ts`: `ensureServiceReachable` resolves to the gateway it wrote,
+      and to the one already in the config on the idempotent path.
+- [x] In the same file: `serviceEndpoint({ registrationFile, gateway })` is
+      `{ url: 'http://192.168.64.1:49374', password: 's3cret' }` for a registration whose `url` is
+      `http://127.0.0.1:49374` — the host replaced, the port kept — and is `null` for a missing
+      file, unparseable JSON, a `url` without a port, or one with no `password`.
+- [x] `src/core/sessionCreate.test.ts`: a sandboxed **opencode** session's argv contains
+      `opencode --server http://192.168.64.1:<port> -s <id>`, and does **not** contain
+      `Starting background server` or a bare `opencode -s`; a sandboxed **claude** session's argv is
+      unchanged and carries no `--server`.
+
+### Implement
+
+- [x] `src/core/sandbox/service.ts`: `ensureServiceReachable` returns `Promise<string>` — the
+      gateway it discovered, whether it wrote it or found it already there; `servicePassword` is
+      replaced by
+      `serviceEndpoint(o: { registrationFile: string; gateway: string }): { url: string; password: string } | null`,
+      which reads the registration once, keeps its port, and returns `null` rather than guessing.
+- [x] `src/core/sandbox/launch.ts`: `reachHostService` returns that endpoint or `null`;
+      `sandboxArgvFor` returns `null` when the kind is opencode and the endpoint is `null`, so a
+      create is refused `no-sandbox` and a resume downgrades with its note; and the agent argv
+      becomes `[argv[0], '--server', endpoint.url, ...argv.slice(1)]` for opencode only.
+
+### Verify
+
+- [x] `npm test` — 938 passed / 83 files (was 935; +3).
+- [x] `npm run typecheck`
+- [x] `npm run build`
+- [ ] **STILL NOT RUN HERE — manual.** It additionally needs the **host service restarted** so the
+      bind it was told about actually takes effect, which is the human's call; until then a
+      sandboxed OpenCode gets connection-refused rather than `EADDRNOTAVAIL`. Unticked on purpose.
