@@ -266,7 +266,7 @@ describe('sessionCreate --sandboxed', () => {
 
   it('refuses a kind it cannot sandbox, and creates nothing', async () => {
     const core = await start()
-    expect(await sandboxed(core, { kind: 'terminal' })).toEqual({ ok: false, error: 'no-sandbox' })
+    expect(await sandboxed(core, { kind: 'terminal' })).toEqual({ ok: false, error: 'no-sandbox-kind' })
     expect(created(t.fake)).toEqual([])
   })
 
@@ -307,7 +307,7 @@ describe('sessionCreate --sandboxed', () => {
 
   it('refuses no-sandbox when there is no host service registration to join', async () => {
     const core = await startWithLog()
-    expect(await sandboxed(core, { kind: 'opencode' })).toEqual({ ok: false, error: 'no-sandbox' })
+    expect(await sandboxed(core, { kind: 'opencode' })).toEqual({ ok: false, error: 'no-sandbox-no-service' })
     expect(created(t.fake)).toEqual([])
   })
 
@@ -351,8 +351,9 @@ describe('sessionCreate --sandboxed', () => {
   })
 
   it('refuses no-sandbox when the image cannot be built, rather than launching unguarded', async () => {
+    // answers `--version` and fails only the build, so this is the build and not the binary
     fs.mkdirSync(path.dirname(container()), { recursive: true })
-    fs.writeFileSync(container(), '#!/bin/sh\nexit 1\n', { mode: 0o755 })
+    fs.writeFileSync(container(), '#!/bin/sh\n[ "$1" = "--version" ] && exit 0\nexit 1\n', { mode: 0o755 })
     fs.mkdirSync(path.dirname(dockerfile()), { recursive: true })
     fs.writeFileSync(dockerfile(), 'FROM node:22-slim\n')
     const core = t.make(undefined, {
@@ -360,7 +361,22 @@ describe('sessionCreate --sandboxed', () => {
       sandbox: { container: container(), dockerfile: dockerfile() },
     })
     await core.start()
-    expect(await sandboxed(core)).toEqual({ ok: false, error: 'no-sandbox' })
+    expect(await sandboxed(core)).toEqual({ ok: false, error: 'no-sandbox-no-image' })
+    expect(created(t.fake)).toEqual([])
+  })
+
+  it('names a missing container binary as itself, before spending anything on a build', async () => {
+    fs.mkdirSync(path.dirname(dockerfile()), { recursive: true })
+    fs.writeFileSync(dockerfile(), 'FROM node:22-slim\n')
+    fs.mkdirSync(paths().claudeHome, { recursive: true })
+    fs.writeFileSync(path.join(paths().claudeHome, '.credentials.json'), '{}')
+    const absent = path.join(t.dir, 'bin', 'not-installed')
+    const core = t.make(undefined, {
+      sessionEnv: { binDir: '/bin', ...paths() },
+      sandbox: { container: absent, dockerfile: dockerfile() },
+    })
+    await core.start()
+    expect(await sandboxed(core)).toEqual({ ok: false, error: 'no-sandbox-no-container' })
     expect(created(t.fake)).toEqual([])
   })
 
@@ -369,7 +385,7 @@ describe('sessionCreate --sandboxed', () => {
     await bare.start()
     expect(await bare.commands.sessionCreate({ kind: 'claude', sandboxed: true, cwd: t.dir, cols: 120, rows: 40 })).toEqual({
       ok: false,
-      error: 'no-sandbox',
+      error: 'no-sandbox-unconfigured',
     })
     expect(created(t.fake)).toEqual([])
   })
@@ -382,7 +398,7 @@ describe('sessionCreate --sandboxed', () => {
       sandbox: { container: container(), dockerfile: dockerfile() },
     })
     await core.start()
-    expect(await sandboxed(core)).toEqual({ ok: false, error: 'no-sandbox' })
+    expect(await sandboxed(core)).toEqual({ ok: false, error: 'no-sandbox-no-image' })
     expect(created(t.fake)).toEqual([])
   })
 
@@ -671,7 +687,7 @@ exit 0
   it('refuses no-sandbox and creates nothing when the login shell carries none', async () => {
     const { shell, asked } = loginShell('NEITHER')
     const core = await start(shell)
-    expect(await sandboxed(core)).toEqual({ ok: false, error: 'no-sandbox' })
+    expect(await sandboxed(core)).toEqual({ ok: false, error: 'no-sandbox-no-credential' })
     expect(created(t.fake)).toEqual([])
     expect(asked()).toEqual(['CLAUDE_CODE_OAUTH_TOKEN', 'ANTHROPIC_API_KEY']) // both probed, neither set
   })

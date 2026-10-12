@@ -2,7 +2,7 @@ import fs from 'node:fs'
 import os from 'node:os'
 import path from 'node:path'
 import { describe, expect, it } from 'vitest'
-import { ensureImage, imageRef } from './image'
+import { ensureImage, imageRef, sandboxAvailability } from './image'
 
 const tmp = () => fs.mkdtempSync(path.join(os.tmpdir(), 'grove-image-'))
 
@@ -29,6 +29,19 @@ describe('imageRef', () => {
     // the tag changes with the bytes, and only with the bytes
     expect(imageRef(dockerfile(tmp(), 'FROM node:22-slim\nRUN true\n'))).not.toBe(imageRef(file))
     expect(imageRef(file)).toBe(imageRef(file))
+  })
+})
+
+describe('sandboxAvailability', () => {
+  // Checked before anything expensive: the bridge retry is three and a half minutes, and a machine
+  // with no `container` should be told that in milliseconds, not after a build attempt.
+  it('is ok when the binary answers', async () => {
+    const { file } = fakeContainer(tmp(), '')
+    expect(await sandboxAvailability(file)).toEqual({ ok: true })
+  })
+
+  it('names the missing binary rather than the image, which is the fix', async () => {
+    expect(await sandboxAvailability(path.join(tmp(), 'absent'))).toEqual({ ok: false, refusal: 'no-container' })
   })
 })
 

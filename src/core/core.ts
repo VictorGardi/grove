@@ -755,7 +755,7 @@ export function createCore(opts: CoreOptions): Core {
       // sandboxed OpenCode joins the host's shared service instead of registering its own, which
       // would evict the incumbent and take down every other OpenCode session on this machine (D6).
       const sandboxKind: AgentKind | null = sandboxed && (kind === 'claude' || kind === 'opencode') ? kind : null
-      if (sandboxed && !sandboxKind) return { ok: false, error: 'no-sandbox' }
+      if (sandboxed && !sandboxKind) return { ok: false, error: 'no-sandbox-kind' }
       const workdir = dir ?? project.path
       const agentSessionId = source ? source.mintId(now()) : null
       const session = {
@@ -766,8 +766,10 @@ export function createCore(opts: CoreOptions): Core {
       let argv: string[] | undefined
       if (sandboxKind) {
         const built = await sandboxArgvFor({ kind: sandboxKind, session, cwd: workdir, agentArgv, deps: sandboxDeps() })
-        if (!built) return { ok: false, error: 'no-sandbox' } // never an unsandboxed pane
-        argv = built
+        // never an unsandboxed pane, and never a refusal nobody can act on: the reason travels with
+        // the code, so the message names the thing to run rather than "something is wrong"
+        if ('refusal' in built) return { ok: false, error: `no-sandbox-${built.refusal}` }
+        argv = built.argv
       } else if (source) {
         argv = loginShellArgv(agentArgv, shellOpts())
       }
@@ -832,12 +834,15 @@ export function createCore(opts: CoreOptions): Core {
       const built = session.sandboxed
         ? await sandboxArgvFor({ kind: session.kind, session, cwd: workdir, agentArgv, deps: sandboxDeps() })
         : null
+      // `'argv' in built`, not `built`: a refusal is truthy, so a truthiness check would read one as
+      // success and resume the session believing it was still sandboxed.
+      const sandboxed = built !== null && 'argv' in built
       // built first: a sandbox that cannot be built must not cost the pane it was replacing
-      const argv = built ?? loginShellArgv(agentArgv, shellOpts())
+      const argv = sandboxed ? (built as { argv: string[] }).argv : loginShellArgv(agentArgv, shellOpts())
       await backend.kill(session.tmuxName) // a leftover dead pane
       await backend.create({ name: session.tmuxName, cwd: workdir, cols: 80, rows: 24, argv, env: cliEnv(session) }) // attaching resizes it
       await backend.setColors(session.tmuxName, terminalTheme.foreground, terminalTheme.background)
-      replaceSession(resume(built ? session : { ...session, ...(session.sandboxed && { sandboxed: false, sandboxNote: LOST_SANDBOX }) }))
+      replaceSession(resume(sandboxed ? session : { ...session, ...(session.sandboxed && { sandboxed: false, sandboxNote: LOST_SANDBOX }) }))
       if (st.connected) void resync(st)
       refreshStatus()
       return { ok: true, data: findSession(id)! }

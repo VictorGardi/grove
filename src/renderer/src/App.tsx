@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
 import type { Feature, Session, SessionKind, ViewerTarget } from '@shared/types'
 import type { MenuAction } from '@shared/ipc'
+import { errorMessage } from '@shared/sandboxErrors'
 import { SIDEBAR_RAIL_WIDTH, SIDEBAR_WIDTH } from '@shared/types'
 import { ArtifactViewer } from './components/ArtifactViewer'
 import { CommandPalette } from './components/CommandPalette'
@@ -130,7 +131,7 @@ export default function App() {
     let projectId = l.where.type === 'existing' ? l.where.project.id : ''
     if (l.where.type === 'new') {
       const made = await window.api.invoke('worktree:create', { projectId: l.where.from.id, branch: l.where.branch })
-      if (!made.ok) return made.error
+      if (!made.ok) return errorMessage(made.error)
       projectId = made.data.id
     }
     const trimmed = l.label.trim()
@@ -144,7 +145,9 @@ export default function App() {
       cols: 120,
       rows: 40,
     })
-    if (!res.ok) return res.error
+    // the same sentence the CLI would print: a refusal the human cannot act on is a refusal that
+    // was not worth having (the GUI used to show the bare code — `no-sandbox`, or worse)
+    if (!res.ok) return errorMessage(res.error)
     setFocused(res.data.id)
     setLaunchNew(null)
     return null

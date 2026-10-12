@@ -1,13 +1,13 @@
 ---
 feature: 2026-10-08-agent-sandboxing
 phase: implementation
-status: stale
-version: 14
+status: draft
+version: 15
 created: 2026-10-10
-updated: 2026-10-11
+updated: 2026-10-12
 based_on:
-  - 03-design.md@9
-  - 04-structure.md@6
+  - 03-design.md@10
+  - 04-structure.md@7
 forced: []
 ---
 
@@ -20,6 +20,98 @@ forced: []
 
 ## Second correction, 2026-10-12: grove's own OpenCode chrome never crossed into the VM
 
+# Slice 7 — Failing loudly, and saying *which* thing failed
+
+The last slice. What it fixed was smaller than the slice's name suggests and larger than its
+signatures: **every refusal already returned `no-sandbox` and started nothing** — slices 1, 2, 5 and
+6 built that, and the tests asserted it. What was missing was the other half of the outcome,
+*"a message saying what to do"*, and there were two separate defects behind it.
+
+### 1. One code for six failures
+
+`sandboxArgvFor` returned `string[] | null` and every reason collapsed into that `null`, so
+`sessionCreate` handed back the single string `no-sandbox`. A missing container bridge therefore
+told the human to install Apple's `container` CLI, and a missing OpenCode service told them to run
+`claude setup-token`. Both are true sentences about a **different** failure, which is worse than a
+bare code: it is confident and wrong.
+
+`SandboxRefusal` names the six (`unconfigured`, `no-container`, `no-image`, `no-credential`,
+`no-bridge`, `no-service`) and `sessionCreate` returns `` `no-sandbox-${refusal}` ``. `Result<T>`'s
+error was already a free `string` (`src/shared/ipc.ts:3`), so no type changed anywhere.
+
+### 2. Only the CLI had messages at all
+
+`MESSAGES` lived in `src/main/cliServer.ts`. The renderer took `res.error` straight into the launch
+dialog (`src/renderer/src/App.tsx:147`), so **from the GUI a failed sandbox read `no-sandbox`** —
+the code, in a dialog, at the moment somebody is stuck. The table now lives in
+`src/shared/sandboxErrors.ts` and both surfaces read it; `src/main` and `src/renderer` both already
+import from `@shared`, which is what made this one module rather than a second copy.
+
+### The check that catches the bug this slice is about
+
+`sandboxErrors.test.ts` asserts that **only** `no-sandbox-no-credential` mentions
+`claude setup-token`, and that every sandbox code maps to a distinct non-trivial sentence. A test
+that can fail when a message points at the wrong fix is worth more than one that counts entries.
+
+### The one that was easy to get wrong
+
+`sessionResume` reads the same value and downgrades on it. A refusal object is **truthy**, so the
+existing `built ?? …` / `built ? session : …` would have read every refusal as success — resuming a
+session believing it was still sandboxed, with no note and no downgrade. It now tests
+`'argv' in built`, and `sessionResume.test.ts`'s downgrade cases cover it.
+
+### What landed
+
+- **`src/core/sandbox/image.ts`**: `sandboxAvailability(container)` — the structure's named
+  signature, widened to say *which* thing is missing. Asked **before** `ensureImage`, because the
+  bridge retry is 3½ minutes and a machine with no `container` should learn that in milliseconds.
+- **`src/core/sandbox/launch.ts`**: `SandboxRefusal`; `sandboxArgvFor` returns
+  `{ argv } | { refusal }` with each reason separated instead of collapsed.
+- **`src/core/core.ts`**: the code carries the reason; a terminal is `no-sandbox-kind`; the resume
+  checks for `argv`.
+- **`src/shared/sandboxErrors.ts`** (NEW) + `src/main/cliServer.ts` + `src/renderer/src/App.tsx`:
+  one table, both surfaces.
+- **Tests**: `image.test.ts` (availability), `sessionCreate.test.ts` (each refusal names itself, and
+  a new case for a missing binary), `cliServer.test.ts` (each refusal leaves as its own sentence,
+  not as its code), `sandboxErrors.test.ts` (NEW).
+
+`npm test`: **949 passed / 84 files** (was 941 / 83; +8). `npm run typecheck:node`: clean.
+`npm run build`: clean.
+
+### Deviations
+
+34. **The structure's `sandboxAvailability(...): Promise<{ ok; error?: 'no-sandbox' }>` was widened
+    to carry a reason.** As written it returns one code for every failure and therefore **cannot
+    deliver its own slice's outcome** — "a message saying what to do" needs the message to be about
+    a specific thing. `04-structure.md` v7's signature is `grove-design`'s to restate; logged here so
+    the gap is not mistaken for the structure being wrong about the outcome (it is not — it named
+    the outcome correctly and under-specified the mechanism).
+35. **The whole of `cliServer`'s `MESSAGES` moved, not just the sandbox rows.** A shared table that
+    held only the sandbox codes would have left the GUI showing bare codes for `no-feature`,
+    `worktree-failed` and the rest — the same defect, smaller. The entries are unchanged.
+36. **`src/renderer/src/App.tsx` was staged hunk by hunk.** Another agent had `quickSandbox`,
+    `setNotice`, `SandboxToggle` and `SANDBOX_DEFAULT` edits uncommitted in the same file at the
+    same moment. Three hunks are this slice's; three are theirs, left unstaged and intact.
+    `git diff --cached` on that file was checked before committing.
+
+### Still not run by hand
+
+`grove new terminal --sandboxed` naming the terminal and creating nothing; with `container` absent,
+the same naming the CLI; with no credential in the shell, the Claude case naming `claude setup-token`;
+and **from the GUI**, a refused sandboxed launch reading as a sentence in the dialog rather than a
+code. That last one is the defect this slice exists to remove, and only a human can see it.
+
+### Open items, carried to the human and `grove-design`
+
+- **The consent prompt** — recorded as undecided in the two-way table; nothing built for it.
+- **`04-structure.md`'s `sandboxAvailability` signature** (deviation 34).
+- **The host service restart** is done; the bind holds. grove's own client follows the registration
+  onto the bridge, which is the new risk the design records.
+- **The cross-version check passed in practice**: a `@opencode/cli@2.0.26` client inside the
+  sandbox talked to this host's `2.0.20` service over `--server` and rendered. That was the one
+  thing the spikes left open.
+
+---
 Found by hand, right after the first correction loaded and a sandboxed session actually ran. The
 human reported two symptoms — **tabs visible**, and **the wrong theme** — which turned out to be one
 cause.
@@ -103,7 +195,7 @@ registration is `no-sandbox`; its signatures and verification follow; and the re
 belongs in slice 7's list, which is where refusals live.
 
 **Approved by the human's explicit instruction** ("rewrite, approve, then fix right away"), after
-running the content gates by hand: no `TODO`/`TBD` in either file, `## Open questions` empty in
+running the content gates by hand: no placeholder markers in either file, `## Open questions` empty in
 substance, all eight one-way decisions present with their chosen options, all seven slices carrying a
 verification step. `approved_at: 2026-10-12` on both.
 

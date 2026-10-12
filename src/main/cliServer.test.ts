@@ -5,6 +5,7 @@ import path from 'node:path'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { request } from '../cli/client'
 import type { CliSession } from '@shared/cli'
+import { errorMessage } from '@shared/sandboxErrors'
 import { gitRepo } from '../core/testing/gitRepo'
 import { createOpenCode, createTerminal, LATER, setupCore } from '../core/testing/setup'
 import * as worktrees from '../core/worktrees'
@@ -53,17 +54,29 @@ describe('cli server', () => {
     expect(await request(socketPath, req('sessions.create', { kind: 'vim', cwd: t.dir }))).toMatchObject({ ok: false, error: { code: 'bad-params' } })
   })
 
+  // The refusal's message must be the one `errorMessage` holds for that code, or the table is
+  // decorative. Both refusals reachable from this test core are asserted; the codes that need a
+  // configured sandbox are covered where that setup exists (sessionCreate.test.ts), and the table
+  // itself is covered in shared/sandboxErrors.test.ts.
+  it('carries each refusal out as its own sentence, not as a bare code', async () => {
+    const { socketPath } = await start()
+    for (const [code, args] of [
+      ['no-sandbox-unconfigured', { kind: 'claude', sandboxed: true }],
+      ['no-sandbox-kind', { kind: 'terminal', sandboxed: true }],
+    ] as const) {
+      const res = await request(socketPath, req('sessions.create', { cwd: t.dir, ...args }))
+      expect(res, code).toMatchObject({ ok: false, error: { code, message: errorMessage(code) } })
+      expect(res.ok === false && res.error.message, code).not.toBe(code)
+    }
+  })
+
   it('carries --sandboxed through to the session, and refuses it when no sandbox can be had', async () => {
     const { core, socketPath } = await start()
     const sandboxed = await request(socketPath, req('sessions.create', { kind: 'claude', cwd: t.dir, sandboxed: true }))
     // the test core has no sandbox configured, so the refusal is the wiring under test
-    expect(sandboxed).toMatchObject({ ok: false, error: { code: 'no-sandbox' } })
-    // D8: the refusal says what to do, rather than printing a bare code at the human
-    expect(sandboxed.ok === false && sandboxed.error.message).toContain('claude setup-token')
-    // and it must say *where*: grove probes by spawning a login shell, so an export typed into
-    // one terminal is invisible to it. Measured — a sandboxed session was refused with the
-    // variable plainly set in the very terminal that ran `grove new`.
-    expect(sandboxed.ok === false && sandboxed.error.message).toContain('~/.zshrc')
+    expect(sandboxed).toMatchObject({ ok: false, error: { code: 'no-sandbox-unconfigured' } })
+    // and it must still say something useful, rather than printing a bare code at the human
+    expect(sandboxed.ok === false && sandboxed.error.message).toBeTruthy()
     expect(core.getSlices().sessions).toEqual([])
 
     const bare = await request(socketPath, req('sessions.create', { kind: 'claude', cwd: t.dir }))

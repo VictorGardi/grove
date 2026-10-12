@@ -1,6 +1,7 @@
 import fs from 'node:fs'
 import net from 'node:net'
 import { PROTOCOL, type CliReply, type CliSession, type TurnResult } from '@shared/cli'
+import { errorMessage } from '@shared/sandboxErrors'
 import type { Session } from '@shared/types'
 import type { Core } from '../core/core'
 import { resolveSessionRef } from '../core/cliOps'
@@ -13,28 +14,7 @@ export interface CliServerOptions {
 
 const fail = (id: string, code: string, message: string): CliReply => ({ id, ok: false, error: { code, message } })
 
-const MESSAGES: Record<string, string> = {
-  'not-found': 'no such session, or the folder is not a directory',
-  'no-feature': 'no such feature in that project',
-  'no-source': 'that agent is not available',
-  ambiguous: 'more than one session matches',
-  timeout: 'timed out waiting for the session',
-  'no-status': 'a terminal session has no status to wait on',
-  gone: 'the session has ended and cannot be resumed',
-  'not-ready': 'the resumed session did not draw its prompt in time',
-  'no-git': 'git was not found, so no worktree could be made',
-  'worktree-failed': 'the worktree could not be created',
-  // One message for every way a sandbox cannot be had, because the CLI has one line to spend on
-  // it (D8): it says what to run rather than printing a code. Naming the command is the whole
-  // mitigation — grove cannot tell a one-year `setup-token` from a short-lived one. The
-  // "shell profile, not this terminal" clause is not decoration: grove probes by spawning
-  // `$SHELL -l -i -c`, so an export typed into one terminal is invisible to it, and the app
-  // that owns the session never sees the invoking shell's environment either.
-  'no-sandbox':
-    'this machine cannot give a sandboxed session what it needs — install and start the `container` CLI, or run `claude setup-token` and put `export CLAUDE_CODE_OAUTH_TOKEN=…` in your shell profile (~/.zshrc): grove reads it from a login shell, so exporting it in one terminal will not do',
-}
-
-const failFrom = (id: string, code: string): CliReply => fail(id, code, MESSAGES[code] ?? code)
+const failFrom = (id: string, code: string): CliReply => fail(id, code, errorMessage(code))
 
 function toCli(core: Core, s: Session): CliSession {
   const project = core.getSlices().projects.find((p) => p.id === s.projectId)
@@ -62,7 +42,7 @@ const timeoutMs = (v: unknown): number => (typeof v === 'number' && v > 0 ? v : 
 async function waitAfter(core: Core, id: string, params: Record<string, unknown>, sessionId: string): Promise<CliReply | TurnResult> {
   const turn = await core.waitTurn(sessionId, { expectStart: true, timeoutMs: timeoutMs(params.timeoutS) })
   if (turn.ok) return turn.data
-  return fail(id, turn.error, `${MESSAGES[turn.error] ?? turn.error} (session ${sessionId})`)
+  return fail(id, turn.error, `${errorMessage(turn.error)} (session ${sessionId})`)
 }
 
 const KINDS: string[] = ['opencode', 'claude', 'terminal']

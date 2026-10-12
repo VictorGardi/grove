@@ -2,7 +2,7 @@
 feature: 2026-10-08-agent-sandboxing
 phase: plan
 status: approved
-version: 7
+version: 8
 created: 2026-10-11
 updated: 2026-10-12
 based_on:
@@ -783,3 +783,88 @@ arrived, so OpenCode fell back to the user's `opencode.json`.
       confirmed it reachable over the bridge, answering `401`: reachable, and correctly demanding
       auth. What is still unverified by hand is the **rendered session itself** — that it comes up
       in grove's theme with no tabs, and answers a prompt. Unticked on purpose.
+
+## Slice 7 — Failing loudly, and saying *which* thing failed
+
+Planned against `03-design.md` v10 / `04-structure.md` v7. Slices 1–6 are done.
+
+### What this slice has to fix, measured against the code as it is now
+
+Every way of asking for a sandbox that cannot be had **already** returns `no-sandbox` and starts
+nothing — slices 1, 2, 5 and 6 built that, and `sessionCreate.test.ts` asserts it. What is missing
+is the half the slice's outcome actually names: *"a message saying what to do."* Two gaps:
+
+- **One code for six failures.** `sandboxArgvFor` collapses everything to `null`, and `sessionCreate`
+  returns the single string `no-sandbox`. So a missing bridge tells you to install the `container`
+  CLI, and a missing OpenCode service tells you to run `claude setup-token` — both wrong, and both
+  the kind of wrong that sends a human down a dead end.
+- **Only the CLI has messages at all.** `MESSAGES` lives in `src/main/cliServer.ts`. The renderer
+  gets `res.error` (`src/renderer/src/App.tsx:147`) and puts the **bare code** in the dialog — so
+  from the GUI a failed sandbox says `no-sandbox`.
+
+Context a fresh agent needs, inlined:
+
+- `Result<T>` is `{ ok: true; data: T } | { ok: false; error: string }` (`src/shared/ipc.ts:3`) — the
+  error is a free string, not a union, so a new code needs no type change anywhere.
+- `failFrom(id, code)` is `fail(id, code, MESSAGES[code] ?? code)` (`src/main/cliServer.ts:37`) — an
+  unmapped code degrades to itself rather than to nothing, which is what makes adding codes safe.
+- `src/shared/` is imported by both `src/main/*` and `src/renderer/*` (`@shared/types`, `@shared/theme`),
+  so one table can serve both surfaces. That is the whole reason this is a shared module.
+- **`sessionResume` reads the same return value** (`core.ts:825`) and downgrades on it. A wider
+  return shape must not break that: `{ refusal }` is truthy, so a bare truthiness check would
+  silently skip the downgrade. Checked for `argv`, not for truth.
+- The bridge retry is **3½ minutes** (`service.ts`: 30 attempts, 250 ms doubling to 8 s). A
+  missing `container` must therefore be caught **before** the image build, not after it.
+
+### Tests first
+
+- [x] `src/core/sandbox/image.test.ts`: `sandboxAvailability(file)` is `{ ok: true }` against the
+      fake `container` and `{ ok: false, refusal: 'no-container' }` for a path that is not there.
+- [x] `src/core/sessionCreate.test.ts`: each refusal names itself — a `terminal` kind is
+      `no-sandbox-kind`; a `container` that is not there is `no-sandbox-no-container` (asserted on a
+      core whose sandbox path points at a missing binary, **not** a build failure); a `container`
+      that fails its build is `no-sandbox-no-image`; no reachable credential is
+      `no-sandbox-no-credential`; a sandboxed opencode with no registration is
+      `no-sandbox-no-service`; and a fake whose `network ls` never names a gateway is
+      `no-sandbox-no-bridge`. Each creates nothing.
+- [x] In the same file: a resume that cannot sandbox still downgrades and still sets `sandboxNote`
+      — the widened return shape must not turn a refusal into "it worked".
+- [x] `src/main/cliServer.test.ts`: every `no-sandbox-*` code maps to a **distinct** message, and
+      each names the command that fixes *that* failure — the credential one names
+      `claude setup-token`, the bridge one names `container system start`, the service one names
+      OpenCode, and none of the OpenCode ones mentions `claude setup-token`.
+- [x] `src/main/cliServer.test.ts`: an unknown code still degrades to itself.
+- [x] `src/shared/sandboxErrors.test.ts`: `errorMessage('no-sandbox-no-bridge')` is the bridge
+      sentence, `errorMessage('nonsense')` is `'nonsense'`, and no sandbox message is empty.
+
+### Implement
+
+- [x] `src/core/sandbox/image.ts`: `export async function sandboxAvailability(container: string):
+      Promise<{ ok: true } | { ok: false; refusal: 'no-container' }>` running `container --version`.
+- [x] `src/core/sandbox/launch.ts`: `export type SandboxRefusal = 'unconfigured' | 'no-container' |
+      'no-image' | 'no-credential' | 'no-bridge' | 'no-service'`, and `sandboxArgvFor` returns
+      `Promise<{ argv: string[] } | { refusal: SandboxRefusal }>` instead of `string[] | null`:
+      `unconfigured` when there is no sandbox to speak of, `no-container` from `sandboxAvailability`
+      **before** `ensureImage`, `no-image` if the build rejects, `no-credential` from the probe,
+      `no-bridge` if `ensureServiceReachable` throws, and `no-service` for an opencode session with
+      no endpoint.
+- [x] `src/core/core.ts`: `sessionCreate` returns `` `no-sandbox-${refusal}` `` (and `no-sandbox-kind`
+      for a terminal, which never reaches the sandbox module); `sessionResume` tests the result for
+      `argv` rather than for truth, so a refusal still downgrades.
+- [x] `src/shared/sandboxErrors.ts` (NEW): `ERROR_MESSAGES` — the whole of `cliServer`'s table plus
+      one entry per sandbox code, each naming its own fix — and `errorMessage(code)` falling back to
+      the code, which is what `failFrom` already does.
+- [x] `src/main/cliServer.ts`: delete its local `MESSAGES`, use `errorMessage`.
+- [x] `src/renderer/src/App.tsx`: `startLaunch` returns `errorMessage(...)` rather than the bare
+      code, so the dialog says the same thing the CLI does. **One line, and no other renderer file
+      changes.**
+
+### Verify
+
+- [x] `npm test` — 949 passed / 84 files (was 941; +8).
+- [x] `npm run typecheck`
+- [x] `npm run build`
+- [ ] **NOT RUN HERE — manual, needs a live app**: `grove new terminal --sandboxed` names the
+      terminal and creates nothing; with `container` absent, the same names the CLI; with no
+      credential in the shell, the Claude case names `claude setup-token`; and **from the GUI**, a
+      failed sandboxed launch reads as a sentence in the dialog, not `no-sandbox`.
