@@ -1,10 +1,11 @@
 ---
 feature: 2026-10-08-agent-sandboxing
 phase: implementation
-status: draft
-version: 15
+status: approved
+version: 16
 created: 2026-10-10
 updated: 2026-10-12
+approved_at: 2026-10-12
 based_on:
   - 03-design.md@10
   - 04-structure.md@7
