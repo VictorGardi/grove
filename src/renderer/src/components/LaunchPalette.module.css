@@ -48,7 +48,14 @@
   cursor: default;
 }
 
-.on {
+.row:hover {
+  background: var(--raised-bg);
+  color: var(--text);
+  cursor: pointer;
+}
+
+.on,
+.on:hover {
   background: var(--card-selected-bg);
   color: var(--text);
 }

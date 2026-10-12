@@ -4,6 +4,7 @@ import { longestWaiting, shownStatus, statusTone } from '../sessionStatus'
 import { listGroups, orderedSessions, type ListGroup } from '../sessionList'
 import { useSlices } from '../stores/slices'
 import { colorTags } from '../tags'
+import { monogram } from '../monogram'
 import { workflowStatusOf } from '../workflowStatus'
 import { cx } from './ui/cx'
 import { Icon } from './ui/Icon'
@@ -30,7 +31,7 @@ function barClass(group: ListGroup, tag: number | null): string | undefined {
   return group.status ? css[`tone-${workflowStatusOf(group.status).tone}`] : undefined
 }
 
-export function SidebarRail() {
+export function SidebarRail({ onNew }: { onNew: () => void }) {
   const { projects, sessions, ui, features, waitingSince, setFocused, toggleGrid } = useSlices()
   const tags = colorTags(projects, features.items)
   const waiting = sessions.filter((x) => shownStatus(x) === 'waiting').length
@@ -46,16 +47,24 @@ export function SidebarRail() {
 
   return (
     <div className={css.rail}>
+      <div className={css.top}>
+        <button type="button" className={css.newBtn} aria-label="New session" title="New session (⌘T)" onClick={onNew}>
+          <Icon name="plus" size={16} />
+        </button>
+      </div>
       <div className={css.list}>
         {blocks.map((g) => {
           const bar = barClass(g, g.project ? tags.project(g.project.id) : null)
           return (
             <div key={g.key} className={css.group} title={g.label}>
-              {bar && <span className={cx(css.bar, bar)} />}
-              <div className={css.tiles}>
-                {g.sessions.map((x) => (
-                  <Tile key={x.id} s={x} focused={x.id === ui.focusedSessionId} inGrid={ui.grid.members.includes(x.id)} onFocus={() => setFocused(x.id)} />
-                ))}
+              {g.project && <span className={cx(css.mono, bar)}>{monogram(g.project.name)}</span>}
+              <div className={css.run}>
+                {bar && <span className={cx(css.bar, bar)} />}
+                <div className={css.tiles}>
+                  {g.sessions.map((x) => (
+                    <Tile key={x.id} s={x} focused={x.id === ui.focusedSessionId} inGrid={ui.grid.members.includes(x.id)} onFocus={() => setFocused(x.id)} />
+                  ))}
+                </div>
               </div>
             </div>
           )

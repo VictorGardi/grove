@@ -18,6 +18,7 @@ import { LinkPicker } from './LinkPicker'
 import { ListRow } from './ui/ListRow'
 import { tagClass } from './ui/Tag'
 import { WorkflowStatusButton, Glyph } from './ui/WorkflowStatusPicker'
+import { worktreeBranch } from '../launchTargets'
 import css from './Sidebar.module.css'
 
 function toggle(set: Set<string>, id: string): Set<string> {
@@ -164,7 +165,7 @@ function ProjectHeader({ project: p, tag, count, refused, onToggle, onRemove, on
     <>
       <div className={cx(css.folder, menuAt && css.folderMenuOpen)} title={p.path} onClick={onToggle}>
         <Icon name="folder" size={16} className={tagClass(tag, 'fg')} />
-        <span className={css.folderName}>{p.name}</span>
+        <span className={css.folderName}>{p.worktreeOf ? worktreeBranch(p) : p.name}</span>
         <div className={css.folderEnd} onClick={(e) => e.stopPropagation()}>
           {count > 0 && <span className={css.folderCount}><Badge tone="muted">{count}</Badge></span>}
           <Button variant="ghost" size="sm" round icon="more-vertical" aria-label="Project options" aria-haspopup="menu"

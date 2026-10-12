@@ -2,6 +2,7 @@ import { useCallback, useEffect, useRef, useState } from 'react'
 import type { Feature, Session, ViewerTarget } from '@shared/types'
 import type { MenuAction } from '@shared/ipc'
 import { errorMessage } from '@shared/sandboxErrors'
+import { openedKey, worktreeKey } from '@shared/groups'
 import { SIDEBAR_RAIL_WIDTH, SIDEBAR_WIDTH } from '@shared/types'
 import { ArtifactViewer } from './components/ArtifactViewer'
 import { CommandPalette } from './components/CommandPalette'
@@ -125,6 +126,21 @@ export default function App() {
 
   useEffect(() => window.api.on('menu:action', runAction), [runAction])
 
+  // A worktree's group starts collapsed (ADR 0037), which hid the very session just opened in it.
+  // Focusing a session opens its worktree group once; collapsing it afterwards sticks until the
+  // focus moves to another session.
+  // Keyed on the worktree the focused session lives in, so a session that arrives a moment after
+  // the focus still opens it.
+  const focusedId = ui.focusedSessionId
+  const focusedWorktree = projects.find((p) => p.id === sessions.find((x) => x.id === focusedId)?.projectId)?.worktreeOf
+    ? sessions.find((x) => x.id === focusedId)!.projectId : null
+  useEffect(() => {
+    if (!focusedWorktree) return
+    const key = openedKey(worktreeKey(focusedWorktree))
+    if (!ui.collapsed.includes(key)) void window.api.invoke('ui:set', { collapsed: [...ui.collapsed, key] })
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- only a change of focus should open it
+  }, [focusedId, focusedWorktree])
+
   // The configured launch. A worktree is made first and registered as a project of its own
   // (ADR 0037), so a conflict is reported against the form the human is still looking at rather
   // than failing a session that was never created. Returns the error, or null once it started.
@@ -189,7 +205,7 @@ export default function App() {
           ...(features.workflowError ? [<Banner key="workflow">Workflow: {features.workflowError}</Banner>] : []),
           ...serviceBanners(opencode, sessions).map((b) => <Banner key={b.text} tone={b.tone}>{b.text}</Banner>),
         ]}
-        sidebar={ui.sidebarCollapsed ? <SidebarRail /> : <Sidebar onNew={(projectId) => setQuickNew({ projectId })} />}
+        sidebar={ui.sidebarCollapsed ? <SidebarRail onNew={() => setQuickNew({ projectId: currentProjectId(content(ui, projects, sessions, features.items)) ?? undefined })} /> : <Sidebar onNew={(projectId) => setQuickNew({ projectId })} />}
         content={
           <>
             <ContentHeader crumbs={header}

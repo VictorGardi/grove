@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
 import type { Project, Session, SessionKind } from '@shared/types'
-import { buildTargets, tidyPath, type Target } from '../launchTargets'
+import { branchName, buildTargets, tidyPath, type Target } from '../launchTargets'
 import { suggestBranch, repoOf, type RefsByRepo } from '../launchRows'
 import { wantsSandbox } from '../sandboxOptIn'
 import { usualKind } from '../usualKind'
@@ -44,10 +44,13 @@ export function LaunchPalette({ projects, sessions, openedFrom, refs, sandboxed,
   const [picked, setPicked] = useState<SessionKind | null>(null)
   const [fromHead, setFromHead] = useState(false)
   const [label, setLabel] = useState('')
+  // the branch field, remembered against the row it was typed for so moving to another row drops it
+  const [edit, setEdit] = useState<{ key: string; value: string } | null>(null)
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const searchRef = useRef<HTMLInputElement>(null)
   const labelRef = useRef<HTMLInputElement>(null)
+  const branchRef = useRef<HTMLInputElement>(null)
   const rowRef = useRef<HTMLDivElement>(null)
 
   const targets = useMemo(() => buildTargets(projects, openedFrom, refs, query, fromHead), [projects, openedFrom, refs, query, fromHead])
@@ -59,6 +62,11 @@ export function LaunchPalette({ projects, sessions, openedFrom, refs, sandboxed,
   // A guess until the human picks: `null` hands it to the repo's own habit, so moving onto another
   // repo re-reads that repo's usual agent instead of keeping the last one's.
   const kind = picked ?? usualKind(sessions, projects, target?.repo.id)
+  // what a create row will name its branch: what was typed in the branch field, else what the search
+  // carried, else a proposal
+  const proposal = target?.type === 'create' ? suggestBranch(target.repo, projects) : ''
+  const branchShown = target?.type === 'create' ? (edit?.key === target.key ? edit.value : target.branch ?? '') : ''
+  const branchFinal = branchName(branchShown) || proposal
   const isolated = wantsSandbox(kind, sandboxed)
 
   useEffect(() => { rowRef.current?.scrollIntoView({ block: 'nearest' }) }, [current, targets])
@@ -70,7 +78,7 @@ export function LaunchPalette({ projects, sessions, openedFrom, refs, sandboxed,
     const failed = await onStart({
       kind,
       where: t.type === 'create'
-        ? { type: 'new', from: t.repo, branch: t.branch ?? suggestBranch(t.repo, projects) }
+        ? { type: 'new', from: t.repo, branch: t.key === target?.key ? branchFinal : t.branch ?? suggestBranch(t.repo, projects) }
         : { type: 'existing', project: t.project },
       prompt: '', sandboxed, feature: null, label,
     })
@@ -78,12 +86,25 @@ export function LaunchPalette({ projects, sessions, openedFrom, refs, sandboxed,
     if (failed) setError(failed)
   }
 
+  // A new worktree needs a name, so choosing its row (click or ↵ in the search) moves to the branch
+  // field instead of starting; ↵ there, or in the label, starts it. Any other row starts at once.
+  const choose = (t: Target | undefined = target) => {
+    if (t?.type === 'create' && document.activeElement !== branchRef.current && document.activeElement !== labelRef.current) {
+      setAt(t.key)
+      setTimeout(() => branchRef.current?.focus(), 0) // the field only exists once this row is the target
+      return
+    }
+    void submit(t)
+  }
+
   const onKeyDown = (e: React.KeyboardEvent) => {
     if (e.key === 'Tab') {
       // Two places take text, so Tab trades between them; the buttons under the list are all
       // reachable by key and would only be somewhere for the focus to get lost.
       e.preventDefault()
-      ;(e.target === labelRef.current ? searchRef : labelRef).current?.focus()
+      const order = [searchRef.current, target?.type === 'create' ? branchRef.current : null, labelRef.current].filter((x): x is HTMLInputElement => !!x)
+      const next = (order.indexOf(e.target as HTMLInputElement) + (e.shiftKey ? order.length - 1 : 1)) % order.length
+      order[next].focus()
       return
     }
     if (e.altKey && !e.metaKey && !e.ctrlKey) {
@@ -100,12 +121,12 @@ export function LaunchPalette({ projects, sessions, openedFrom, refs, sandboxed,
   }
 
   const where = !target ? '' : target.type === 'create'
-    ? `new worktree ${target.branch ?? suggestBranch(target.repo, projects)} from ${target.base ?? 'HEAD'}`
+    ? `new worktree ${branchFinal} from ${target.base ?? 'HEAD'}`
     : `${target.worktree ? target.branch : target.repo.name}`
   const verb = target?.type === 'create' ? 'Create' : 'Start'
 
   return (
-    <Modal onClose={onClose} onConfirm={() => void submit()}>
+    <Modal onClose={onClose} onConfirm={() => choose()}>
       <div className={s.root} onKeyDown={onKeyDown}>
         <div className={s.box}>
           <Icon name="search" size={14} />
@@ -127,8 +148,7 @@ export function LaunchPalette({ projects, sessions, openedFrom, refs, sandboxed,
             return (
               <div key={t.key} ref={on ? rowRef : undefined} role="option" aria-selected={on}
                 className={cx(s.row, on && s.on, gap && s.gap, grouped && (t.type === 'create' || (t.type === 'checkout' && t.worktree)) && s.nested)}
-                onMouseMove={() => at !== t.key && setAt(t.key)}
-                onClick={() => void submit(t)}>
+                onClick={() => choose(t)}>
                 {t.type === 'create' ? (
                   <>
                     <Icon name="plus" size={13} />
@@ -172,6 +192,11 @@ export function LaunchPalette({ projects, sessions, openedFrom, refs, sandboxed,
             <kbd>⌥S</kbd>
           </span>
         </div>
+
+        {target?.type === 'create' && (
+          <input ref={branchRef} className={s.label} value={branchShown} placeholder={`Branch — ${proposal} (Tab)`} aria-label="Branch name"
+            onChange={(e) => setEdit({ key: target.key, value: e.target.value })} />
+        )}
 
         {/* its own line: beside the switch it got whatever width the agent buttons left over */}
         <input ref={labelRef} className={s.label} value={label} placeholder="Label — a name for this session (Tab)" aria-label="Label"
