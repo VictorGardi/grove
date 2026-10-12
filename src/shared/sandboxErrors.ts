@@ -8,6 +8,9 @@
 export const ERROR_MESSAGES: Record<string, string> = {
   'not-found': 'no such session, or the folder is not a directory',
   'no-feature': 'no such feature in that project',
+  'no-parent': 'no such session to use as parent',
+  'is-parent': 'that session has children of its own, so it cannot become a child',
+  'same-session': 'a session cannot be its own parent',
   'no-source': 'that agent is not available',
   ambiguous: 'more than one session matches',
   timeout: 'timed out waiting for the session',

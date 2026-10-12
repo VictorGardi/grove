@@ -12,7 +12,7 @@ import { HttpOpenCode, serviceFilePath } from '../core/opencode/client'
 import { guardNavigation, handleArtifacts, registerArtifactScheme } from './artifacts'
 import { registerIpc } from './ipc'
 import { startCliServer } from './cliServer'
-import { installCommandLineTool, writeLauncher } from './launcher'
+import { installAgentSkill, installCommandLineTool, writeLauncher } from './launcher'
 import { buildMenu } from './menu'
 import { installAttachCleanup } from './attachCleanup'
 
@@ -46,6 +46,22 @@ async function installCli(launcher: string): Promise<void> {
         detail: res.onPath ? 'Open a new terminal and run `grove ls`.' : `${targetDir} is not on your PATH. Add it to your shell profile to run \`grove\` from any terminal.`,
       }
     : { type: 'error' as const, message: 'Could not install the command line tool', detail: res.message }
+  await (win && !win.isDestroyed() ? dialog.showMessageBox(win, opts) : dialog.showMessageBox(opts))
+}
+
+async function installSkill(): Promise<void> {
+  const home = os.homedir()
+  const results = installAgentSkill({
+    source: path.join(app.getAppPath(), 'resources', 'skills', 'grove'),
+    skillsDirs: [
+      path.join(home, '.claude', 'skills'), // Claude Code
+      path.join(process.env.XDG_CONFIG_HOME || path.join(home, '.config'), 'opencode', 'skills'), // OpenCode
+    ],
+  })
+  const failed = results.filter((r) => r.error)
+  const opts = failed.length === 0
+    ? { message: 'Installed the grove skill', detail: `${results.map((r) => r.target).join('\n')}\n\nAgents now find it in every repo. It links to this app, so updates refresh it.` }
+    : { type: 'error' as const, message: 'Could not install the agent skill everywhere', detail: results.map((r) => (r.error ? `✗ ${r.error}` : `✓ ${r.target}`)).join('\n') }
   await (win && !win.isDestroyed() ? dialog.showMessageBox(win, opts) : dialog.showMessageBox(opts))
 }
 
@@ -130,7 +146,7 @@ app.whenReady().then(async () => {
   const { killAttaches } = registerIpc(core, () => win, () => [...errors, ...core.getErrors()])
   buildMenu((a) => {
     if (win && !win.isDestroyed()) win.webContents.send('menu:action', a)
-  }, () => void installCli(launcher))
+  }, () => void installCli(launcher), () => void installSkill())
 
   win = new BrowserWindow({
     width: 1200,

@@ -9,7 +9,9 @@ const SAVE_DELAY_MS = 500
 
 // Global notes (⌘N): one markdown file in userData, autosaved while typing and on close. The editor is only
 // mounted once the file has loaded, so a failed or slow read can never be saved over the notes.
-export function ScratchpadOverlay({ onClose }: { onClose: () => void }) {
+// With a session it is that session's note instead: same editor, its own file.
+export function ScratchpadOverlay({ session, onClose }: { session?: { id: string; label: string }; onClose: () => void }) {
+  const sessionId = session?.id
   const [initial, setInitial] = useState<string | null>(null)
   const [error, setError] = useState<string | null>(null)
   const [saving, setSaving] = useState(false)
@@ -18,20 +20,20 @@ export function ScratchpadOverlay({ onClose }: { onClose: () => void }) {
   const dirty = useRef(false)
 
   useEffect(() => {
-    window.api.invoke('notes:read').then((res) => {
+    window.api.invoke('notes:read', { sessionId }).then((res) => {
       if (res.ok) { content.current = res.data; setInitial(res.data) }
       else setError(`Failed to load: ${res.error}`)
     })
-  }, [])
+  }, [sessionId])
 
   const save = useCallback(async () => {
     if (timer.current) clearTimeout(timer.current)
     if (content.current === null) return
     setSaving(true)
-    const res = await window.api.invoke('notes:write', { content: content.current })
+    const res = await window.api.invoke('notes:write', { content: content.current, sessionId })
     setSaving(false)
     if (res.ok) { dirty.current = false; setError(null) } else setError(`Failed to save: ${res.error}`)
-  }, [])
+  }, [sessionId])
 
   const edit = useCallback((v: string) => {
     content.current = v
@@ -51,7 +53,7 @@ export function ScratchpadOverlay({ onClose }: { onClose: () => void }) {
     <Modal onClose={close} width="lg">
       <div className={s.overlay}>
         <div className={s.header}>
-          <h2>Scratchpad</h2>
+          <h2>{session ? `Note · ${session.label}` : 'Scratchpad'}</h2>
           <div className={s.actions}>
             <Button variant="ghost" size="sm" onClick={() => void save()} disabled={saving || initial === null}>{saving ? 'Saving…' : 'Save'}</Button>
             <Button variant="ghost" size="sm" onClick={close}>Close</Button>
@@ -59,7 +61,7 @@ export function ScratchpadOverlay({ onClose }: { onClose: () => void }) {
         </div>
         {error && <Banner tone="error">{error}</Banner>}
         {initial !== null && <ScratchpadEditor initialValue={initial} onChange={edit} onSave={() => void save()} />}
-        <div className={s.footer}><kbd>⌘N</kbd> or <kbd>Esc</kbd> to close · <kbd>⌘S</kbd> to save</div>
+        <div className={s.footer}>{!session && <><kbd>⌘N</kbd> or </>}<kbd>Esc</kbd> to close · <kbd>⌘S</kbd> to save</div>
       </div>
     </Modal>
   )

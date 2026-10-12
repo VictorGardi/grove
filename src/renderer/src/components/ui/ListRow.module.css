@@ -26,8 +26,21 @@
 }
 
 /* a child of the row above it, indented by a branch glyph's width so the icon still lines up */
-.nested {
-  margin-left: 16px;
+/* a mark (the worktree icon) sits in the bottom-right corner, left of the status dot */
+.mark {
+  position: absolute;
+  right: 6px;
+  bottom: 5px;
+  display: inline-flex;
+  color: var(--worktree);
+}
+
+.markBesideDot {
+  right: 18px;
+}
+
+.hasMark .meta {
+  padding-right: 34px;
 }
 
 .selected,

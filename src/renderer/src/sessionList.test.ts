@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import type { Project, Session } from '@shared/types'
-import { GROUP_BY_OPTIONS, canDrop, collapseKey, dropSession, listGroups, orderedSessions, SORT_OPTIONS, visibleSessions, type ListGroup } from './sessionList'
+import { GROUP_BY_OPTIONS, canDrop, dropSession, groupSize, kidsGroup, listGroups, orderedSessions, SORT_OPTIONS, visibleSessions, type ListGroup } from './sessionList'
 
 const project = (id: string, name = id, worktreeOf?: string): Project => ({ id, name, path: '/' + id, ...(worktreeOf && { worktreeOf }) })
 
@@ -211,50 +211,23 @@ const REPO_SESSIONS = [
 const REPO_ALL = [project('p', 'Project P'), project('wt1', 'Project P · a', 'p'), project('wt2', 'Project P · b', 'p'), project('q', 'Project Q')]
 
 describe('listGroups for worktrees', () => {
-  const tree = (over = {}) =>
-    shape(listGroups(REPO_ALL, REPO_SESSIONS, ui(over))).concat(
-      listGroups(REPO_ALL, REPO_SESSIONS, ui(over)).flatMap((g) => g.children.map((c) => [c.key, c.label, c.project?.id ?? null, c.status, c.sessions.map((s) => s.id)])),
-    )
-
-  it('nests each worktree under its repo, after the repo\'s own sessions', () => {
-    expect(tree()).toEqual([
-      ['p:p', 'Project P', 'p', null, ['main']],
+  it('puts a worktree\'s sessions in its repo\'s group, sorted with the repo\'s own', () => {
+    expect(shape(listGroups(REPO_ALL, REPO_SESSIONS, ui()))).toEqual([
+      ['p:p', 'Project P', 'p', null, ['main', 'inWt', 'inWt2']],
       ['p:q', 'Project Q', 'q', null, ['other']],
-      ['w:wt1', 'Project P · a', 'wt1', null, ['inWt']],
-      ['w:wt2', 'Project P · b', 'wt2', null, ['inWt2']],
     ])
   })
 
-  it('collapses worktree rows until the ui holds their opened key', () => {
-    const groups = listGroups(REPO_ALL, REPO_SESSIONS, ui())
-    expect(groups.map((g) => [g.key, g.collapsed])).toEqual([['p:p', false], ['p:q', false]])
-    expect(groups[0].children.map((c) => [c.key, c.collapsed])).toEqual([['w:wt1', true], ['w:wt2', true]])
-    const opened = listGroups(REPO_ALL, REPO_SESSIONS, ui({ collapsed: ['o:w:wt1'] }))
-    expect(opened[0].children.map((c) => [c.key, c.collapsed])).toEqual([['w:wt1', false], ['w:wt2', true]])
-  })
-
-  it('collapseKey names the key whose presence is the opposite, so one toggle serves both', () => {
-    const groups = listGroups(REPO_ALL, REPO_SESSIONS, ui())
-    const child = groups[0].children[0]
-    expect(collapseKey(child)).toBe('o:w:wt1') // collapsed by default: clicking it writes the opened key
-    expect(collapseKey(groups[0])).toBe('p:p')
-  })
-
-  it('counts a worktree\'s sessions right under its repo\'s own, whether collapsed or not', () => {
-    const groups = listGroups(REPO_ALL, REPO_SESSIONS, ui())
+  it('collapses the repo group with its worktree sessions in it', () => {
+    const groups = listGroups(REPO_ALL, REPO_SESSIONS, ui({ collapsed: ['p:p'] }))
+    expect(groups.map((g) => [g.key, g.collapsed])).toEqual([['p:p', true], ['p:q', false]])
+    expect(visibleSessions(groups).map((s) => s.id)).toEqual(['other'])
     expect(orderedSessions(groups).map((s) => s.id)).toEqual(['main', 'inWt', 'inWt2', 'other'])
-    expect(visibleSessions(groups).map((s) => s.id)).toEqual(['main', 'other'])
-    const opened = listGroups(REPO_ALL, REPO_SESSIONS, ui({ collapsed: ['o:w:wt1', 'p:q'] }))
-    expect(orderedSessions(opened).map((s) => s.id)).toEqual(['main', 'inWt', 'inWt2', 'other'])
-    expect(visibleSessions(opened).map((s) => s.id)).toEqual(['main', 'inWt'])
   })
 
-  it('nests under the project grouping only: by status or none there is nothing to nest', () => {
-    for (const groupBy of ['status', 'none'] as const) {
-      const groups = listGroups(REPO_ALL, REPO_SESSIONS, ui({ groupBy }))
-      expect(groups.flatMap((g) => g.children)).toEqual([])
-      expect(ids(groups).sort()).toEqual(['inWt', 'inWt2', 'main', 'other'])
-    }
+  it('lists every session once by status or none', () => {
+    for (const groupBy of ['status', 'none'] as const)
+      expect(ids(listGroups(REPO_ALL, REPO_SESSIONS, ui({ groupBy }))).sort()).toEqual(['inWt', 'inWt2', 'main', 'other'])
   })
 
   it('hides a repo and its worktrees together; a worktree is not a hide key of its own', () => {
@@ -265,7 +238,6 @@ describe('listGroups for worktrees', () => {
     // the repo is the unit, so nothing can hide a checkout the human cannot see listed
     const stale = listGroups(REPO_ALL, REPO_SESSIONS, ui({ hiddenProjects: ['wt1'] }))
     expect(orderedSessions(stale).map((s) => s.id)).toEqual(['main', 'inWt', 'inWt2', 'other'])
-    expect(stale[0].children.map((c) => c.project?.id)).toEqual(['wt1', 'wt2'])
   })
 })
 
@@ -353,13 +325,9 @@ describe('dropSession', () => {
     expect(dropSession('project', SESSIONS, ORDER, byId('z'), p, p, { target: 'a', after: false })).toBeNull()
   })
 
-  it('refuses another project and a repo/worktree boundary', () => {
+  it('refuses another project', () => {
     const [q, p] = group()
     expect(dropSession('project', SESSIONS, ORDER, byId('a'), p, q, { target: 'c', after: false })).toBeNull()
-    const [repo] = listGroups(REPO_ALL, REPO_SESSIONS, ui())
-    expect(canDrop('project', repo, repo.children[0])).toBe(false)
-    expect(canDrop('project', repo.children[0], repo)).toBe(false)
-    expect(canDrop('status', repo, repo.children[0])).toBe(true)
   })
 
   it('sets the status of a card dropped into another status group, at the drop position', () => {
@@ -378,5 +346,53 @@ describe('dropSession', () => {
   it('does not set a status outside status grouping', () => {
     const [p] = group({ groupBy: 'none' })
     expect(dropSession('none', SESSIONS, ORDER, byId('b'), p, p, { target: 'z', after: false })?.status).toBeNull()
+  })
+})
+
+describe('session groups', () => {
+  // r leads k1 and k2, one of which runs in another project; s stands alone
+  const sessions = [
+    session('r', { startedAt: at(5, 8) }),
+    session('k1', { parentId: 'r', startedAt: at(5, 9) }),
+    session('k2', { parentId: 'r', projectId: 'q', startedAt: at(5, 10) }),
+    session('s', { startedAt: at(5, 11) }),
+  ]
+
+  it('draws a child under its parent, wherever it runs, and not as a row of its own', () => {
+    const g = listGroups(PROJECTS, sessions, ui())
+    expect(shape(g)).toEqual([['p:q', 'Project Q', 'q', null, []], ['p:p', 'Project P', 'p', null, ['r', 's']]])
+    expect(g[0].nest.kids.get('r')?.map((s) => s.id)).toEqual(['k1', 'k2'])
+    expect(groupSize(g[1])).toBe(4)
+  })
+
+  it('groups children by status under their parent only', () => {
+    const g = listGroups(PROJECTS, [...sessions.slice(0, 2), session('s', { workflowStatus: 'done' })], ui({ groupBy: 'status' }))
+    expect(g.flatMap((x) => x.sessions.map((s) => s.id)).sort()).toEqual(['r', 's'])
+  })
+
+  it('keeps a child whose parent is hidden or missing as a row of its own', () => {
+    expect(ids(listGroups(PROJECTS, sessions, ui({ hiddenProjects: ['p'] })))).toEqual(['k2'])
+    expect(ids(listGroups(PROJECTS, [session('k1', { parentId: 'gone' })], ui()))).toEqual(['k1'])
+  })
+
+  it('keeps a child of a child as a row, so no card is ever lost', () => {
+    expect(ids(listGroups(PROJECTS, [session('r'), session('k', { parentId: 'r' }), session('x', { parentId: 'k' })], ui()))).toEqual(['r', 'x'])
+  })
+
+  it('counts children through Cmd+1..9, and in a range only while the parent is expanded', () => {
+    expect(orderedSessions(listGroups(PROJECTS, sessions, ui())).map((s) => s.id)).toEqual(['r', 'k1', 'k2', 's'])
+    expect(visibleSessions(listGroups(PROJECTS, sessions, ui({ collapsed: ['k:r'] }))).map((s) => s.id)).toEqual(['r', 's'])
+  })
+
+  it('lets a child reorder only among its siblings', () => {
+    const g = listGroups(PROJECTS, sessions, ui())
+    const p = g[1]
+    const kg = kidsGroup(p, p.sessions[0])
+    expect(canDrop('project', kg, p)).toBe(false)
+    expect(canDrop('status', kg, p)).toBe(false)
+    expect(canDrop('status', p, kg)).toBe(false)
+    expect(canDrop('project', kg, kg)).toBe(true)
+    const moved = dropSession('project', sessions, [], sessions[1], kg, kg, { target: 'k2', after: true })
+    expect(moved?.order.filter((id) => id.startsWith('k'))).toEqual(['k2', 'k1'])
   })
 })

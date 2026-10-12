@@ -36,6 +36,7 @@ export interface Session {
   model?: string | null            // the model in use; never saved
   sandboxNote?: string             // a resume that could not re-enter its sandbox (ADR 0033): the session is on the host with no filesystem isolation, and this says so; never saved
   lastContext: ContextReading | null // the last known reading (pct known); persisted
+  parentId?: string | null         // the group this session is in: its parent's id. Groups are one level deep, so a parent never has a parent; persisted
 }
 // a viewable file in the project folder (ADR 0032); path relative to the project, POSIX
 export interface FileTarget { kind: 'file'; projectId: string; path: string; hash: string | null; fromDiff: string | null }

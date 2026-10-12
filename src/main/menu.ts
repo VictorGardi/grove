@@ -1,7 +1,7 @@
 import { app, Menu, type MenuItemConstructorOptions } from 'electron'
 import type { MenuAction } from '@shared/ipc'
 
-export function buildMenu(send: (a: MenuAction) => void, installCli: () => void): void {
+export function buildMenu(send: (a: MenuAction) => void, installCli: () => void, installSkill: () => void): void {
   const template: MenuItemConstructorOptions[] = [
     {
       label: app.name,
@@ -9,6 +9,7 @@ export function buildMenu(send: (a: MenuAction) => void, installCli: () => void)
         { role: 'about' },
         { type: 'separator' },
         { label: 'Install Command Line Tool…', click: installCli },
+        { label: 'Install Agent Skill…', click: installSkill },
         { type: 'separator' },
         { role: 'hide' },
         { role: 'hideOthers' },

@@ -13,6 +13,7 @@ export interface InvokeMap {
   'project:add': [void, Project | null]
   'project:remove': [{ id: string }, { id: string }]
   'worktree:create': [{ projectId: string; branch: string }, Project]
+  'worktree:remove': [{ projectId: string }, { id: string }]
   'repo:refs': [{ projectId: string }, { branch: string | null; default: string | null }]
   // what the core command already accepts: until the launch dialog existed the renderer could send
   // only projectId and kind, so the GUI could not reach the fields the CLI always could
@@ -21,6 +22,7 @@ export interface InvokeMap {
   'session:resume': [{ id: string }, Session]
   'session:rename': [{ id: string; label: string }, Session]
   'session:link': [{ id: string; feature: string | null }, Session]
+  'session:setParent': [{ id: string; parent: string | null }, Session]
   'session:workflowStatus': [{ id: string; status: WorkflowStatus }, Session]
   'comment:add': [{ sessionId: string; anchor: CommentAnchor; body: string }, Comment]
   'comment:update': [{ id: string; body: string }, Comment]
@@ -32,8 +34,8 @@ export interface InvokeMap {
   'session:focusLast': [void, { id: string }]
   'viewer:reload': [void, void]
   'pty:attach': [{ sessionId: string; cols: number; rows: number }, { attachId: string }]
-  'notes:read': [void, string]
-  'notes:write': [{ content: string }, void]
+  'notes:read': [{ sessionId?: string } | void, string]
+  'notes:write': [{ content: string; sessionId?: string }, void]
 }
 // fire-and-forget renderer → main
 export interface SendMap {

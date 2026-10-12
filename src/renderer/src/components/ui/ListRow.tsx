@@ -14,7 +14,7 @@ interface Props {
   picked?: boolean // part of a multi-selection
   tone?: 'default' | 'selected' | 'waiting' | 'finished'
   compact?: boolean
-  nested?: boolean // indented under a parent row, for a child of it (a worktree under its checkout)
+  mark?: { icon: ReactNode; label: string } // a small mark in the bottom-right corner, left of the status dot
   actions?: ReactNode // floating buttons on the card's top-right corner, shown on hover
   badge?: ReactNode // right of the title
   onClick?: (e: MouseEvent) => void
@@ -28,9 +28,9 @@ function Title({ title }: { title: string }) {
   return lead ? <><span className={s.lead}>{lead}</span>{rest}</> : <>{title}</>
 }
 
-export function ListRow({ title, corner, cornerPinned, icon, meta, status, tone = 'default', picked, compact, nested, actions, badge, onClick, onContextMenu, onTitleDoubleClick, editor }: Props) {
+export function ListRow({ title, corner, cornerPinned, icon, meta, status, tone = 'default', picked, compact, mark, actions, badge, onClick, onContextMenu, onTitleDoubleClick, editor }: Props) {
   return (
-    <div className={cx(s.row, s[tone], compact && s.compact, !compact && status && !meta && s.hasDot, nested && s.nested, picked && s.picked)} onClick={onClick} onContextMenu={onContextMenu}>
+    <div className={cx(s.row, s[tone], compact && s.compact, !compact && status && !meta && s.hasDot, mark && s.hasMark, picked && s.picked)} onClick={onClick} onContextMenu={onContextMenu}>
       <div className={s.head}>
         {icon && <span className={s.icon}>{icon}</span>}
         {editor ?? <span className={s.title} onDoubleClick={onTitleDoubleClick}><Title title={title} /></span>}
@@ -40,6 +40,7 @@ export function ListRow({ title, corner, cornerPinned, icon, meta, status, tone 
       {corner && <div className={cx(s.corner, cornerPinned && s.cornerPinned)} onClick={(e) => e.stopPropagation()}>{corner}</div>}
       {actions && <div className={s.actions} onClick={(e) => e.stopPropagation()}>{actions}</div>}
       {!compact && meta && <div className={cx(s.meta, status && s.metaClearOfDot)}>{meta}</div>}
+      {!compact && mark && <span className={cx(s.mark, status && s.markBesideDot)} title={mark.label} aria-label={mark.label}>{mark.icon}</span>}
       {!compact && status && <span className={cx(s.statusDot, s[`s-${status.tone}`])} aria-label={status.label} title={status.label} />}
     </div>
   )

@@ -6,6 +6,10 @@ export const projectKey = (id: string) => 'p:' + id
 export const worktreeKey = (id: string) => 'w:' + id
 export const openedKey = (key: string) => 'o:' + key
 
+// A parent session's children, collapsed by the human: `k:` plus the parent's id. Children are
+// expanded until this key is in `ui.collapsed`.
+export const kidsKey = (id: string) => 'k:' + id
+
 // Every `ui.collapsed` key that can name one project. Removing a project has to drop these,
 // or the list keeps a key for a checkout that is no longer there, forever.
 export const projectKeys = (id: string) => [projectKey(id), worktreeKey(id), openedKey(worktreeKey(id))]

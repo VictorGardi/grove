@@ -83,6 +83,11 @@ specific meaning, so humans and agents stay consistent.
 - **Remove**: ends a session if it is running and forgets it, with no confirmation
   (⌘W, the card's ×, or right-click on a shift-click selection). Not resumable.
   `grove kill` only ends it, leaving a gone session to resume.
+- **Session group**: a **parent** session and its **children** (`parentId`). One level
+  deep: a parent never has a parent, and a session started by a child joins the child's
+  group. Children nest under the parent in the Sessions tab whatever project or worktree
+  they run in. Set at creation by `grove new --parent REF | --child`, or from the card
+  menu; removing the parent promotes its children to top level (ADR 0042).
 - **Link**: a session's association with one feature. Set at start by a next
   action, automatically from the session's latest write into a feature folder,
   or manually; a manual link is **pinned** and stops auto-linking.

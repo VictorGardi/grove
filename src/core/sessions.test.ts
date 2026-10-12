@@ -203,6 +203,38 @@ describe('core sessions', () => {
     expect(a.getSlices().sessions).toEqual([])
   })
 
+  it('puts a session in its parent\'s group, and refuses what would break the one-level rule', async () => {
+    const { make } = setup()
+    const a = make()
+    await a.start()
+    const lead = await create(a)
+    const kid = await a.commands.sessionCreate({ projectId: lead.projectId, kind: 'terminal', parent: lead.id, cols: 120, rows: 40 })
+    if (!kid.ok) throw new Error(kid.error)
+    expect(kid.data.parentId).toBe(lead.id)
+    const other = await create(a)
+    expect(await a.commands.sessionSetParent({ id: lead.id, parent: other.id })).toEqual({ ok: false, error: 'is-parent' })
+    expect(await a.commands.sessionSetParent({ id: lead.id, parent: kid.data.id })).toEqual({ ok: false, error: 'same-session' }) // kid's leader is lead itself
+    const moved = await a.commands.sessionSetParent({ id: kid.data.id, parent: other.id })
+    expect(moved.ok && moved.data.parentId).toBe(other.id)
+    const cleared = await a.commands.sessionSetParent({ id: kid.data.id, parent: null })
+    expect(cleared.ok && cleared.data.parentId).toBeNull()
+    expect(await a.commands.sessionCreate({ projectId: lead.projectId, kind: 'terminal', parent: 'nope', cols: 120, rows: 40 })).toEqual({ ok: false, error: 'no-parent' })
+    expect(a.getSlices().sessions).toHaveLength(3) // the refused one made nothing
+  })
+
+  it('promotes the children of a removed parent to top level and forgets its collapsed key', async () => {
+    const { make } = setup()
+    const a = make()
+    await a.start()
+    const lead = await create(a)
+    const kid = await a.commands.sessionCreate({ projectId: lead.projectId, kind: 'terminal', parent: lead.id, cols: 120, rows: 40 })
+    if (!kid.ok) throw new Error(kid.error)
+    await a.commands.uiSet({ collapsed: [`k:${lead.id}`, 'p:keep'] })
+    await a.commands.sessionRemove({ id: lead.id })
+    expect(a.getSlices().sessions.map((s) => [s.id, s.parentId ?? null])).toEqual([[kid.data.id, null]])
+    expect(a.getSlices().ui.collapsed).toEqual(['p:keep'])
+  })
+
   it('prunes a removed session from the custom order', async () => {
     const { make } = setup()
     const a = make()

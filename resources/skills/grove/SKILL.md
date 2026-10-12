@@ -18,7 +18,7 @@ or its exact label. An unknown or ambiguous ref is an error (exit 1).
 ```
 grove ls [--all] [--json]            live sessions (--all: also ended ones)
 grove new <opencode|claude|terminal> [--cwd DIR] [--prompt TEXT|-] [--label L]
-          [--link SLUG] [--wait] [--timeout S] [--json]
+          [--link SLUG] [--parent REF | --child] [--wait] [--timeout S] [--json]
                                      start a background session; prints its id
 grove send <ref> <TEXT|-> [--no-enter] [--wait] [--timeout S]
                                      type text into a session and submit it
@@ -34,6 +34,11 @@ directory; the session lands under the project that contains it (a new folder
 is registered as a project). `--link SLUG` pins the session to a feature of that
 project and fails, creating nothing, if there is no such feature.
 A prompt that starts with `-` must be written `--prompt=-text`.
+
+`--parent REF` puts the new session in REF's group in the sidebar; `--child`
+means "in my group", taking your own `GROVE_SESSION_ID`. Without either, the new
+session stands alone. Both fail, creating nothing (no worktree either), if the
+parent does not exist. See Groups below.
 
 ## Exit codes
 
@@ -62,6 +67,41 @@ Ask a running session something:
 ```
 grove send helper "which files did you change?" --wait && grove read helper --lines 40
 ```
+
+## Groups
+
+A session can have a parent. The sidebar draws the children under it, wherever
+they run (a worktree included), and a collapsed parent still shows its most
+urgent child. Groups are one level deep: a session started by a child with
+`--child` or `--parent <child>` lands beside that child, under the same parent,
+and a session that has children cannot become a child. Removing a parent leaves
+its children as top-level sessions. A human can also set or clear a parent from
+a card's menu.
+
+## Orchestrating
+
+To drive a multi-step job (for example one slice of a feature per session), be
+the parent and start each step with `--child`, so everything you started is
+grouped under you:
+
+```
+id=$(grove new claude --child --label "slice 1" --prompt "implement slice 1 of docs/work/x/04-structure.md" --wait)
+case $? in
+  0) grove read "$id" --lines 80 ;;   # the turn finished: read what it did
+  4) echo "slice 1 needs the human" ;; # a permission or question: stop and say so
+  5) echo "slice 1 ended" ;;
+  124) echo "slice 1 timed out" ;;
+esac
+```
+
+- One step per session. Start the next only after reading the last one's result,
+  and never start a step the human has not approved when the work has a gate.
+- Exit 4 means a human has to answer in that session. Do not `send` around it
+  and do not kill it: report it and wait for the human.
+- Give each child a self-contained `--prompt`: it does not see your context.
+- Use `--worktree --branch NAME` when two children could touch the same files.
+- Do the small, read-only fan-out inside your own session with subagents. A
+  session is for work the human may want to watch, review or resume.
 
 ## Notes
 

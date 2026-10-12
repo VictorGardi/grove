@@ -40,6 +40,7 @@ async function run(cmd: Exclude<Command, { cmd: 'skill' }>, socket: string): Pro
   }
   const reply = await call(socket, 'sessions.create', {
     kind: cmd.kind, cwd: path.resolve(cmd.cwd ?? process.cwd()), prompt: text(cmd.prompt), label: cmd.label, feature: cmd.link,
+    parent: cmd.child ? process.env.GROVE_SESSION_ID : cmd.parent, // --child: the session running this command
     worktree: cmd.worktree, branch: cmd.branch, sandboxed: cmd.sandboxed, wait: cmd.wait, timeoutS: cmd.timeoutS,
   })
   return reply.ok ? { ...reply, print: formatNew(reply.data as CliMethods['sessions.create']['data'], cmd.json), exit: turnOf(reply) } : reply
@@ -55,6 +56,10 @@ async function main(): Promise<number> {
     // The CLI bundle is <app>/out/main/cli.js (ADR 0028); the skill ships in <app>/resources.
     process.stdout.write(fs.readFileSync(path.join(__dirname, '..', '..', 'resources', 'skills', 'grove', 'SKILL.md'), 'utf8'))
     return 0
+  }
+  if (cmd.cmd === 'new' && cmd.child && !process.env.GROVE_SESSION_ID) {
+    console.error('grove: --child needs to run inside a Grove session (GROVE_SESSION_ID is not set); use --parent REF')
+    return 2
   }
   const socket = process.env.GROVE_SOCKET
   if (!socket) {

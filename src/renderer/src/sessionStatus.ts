@@ -22,6 +22,15 @@ export function statusTone(s: Session): StatusTone {
   return shown === 'waiting' && s.waitingFor === 'done' ? 'finished' : shown
 }
 
+// What a collapsed group shows for its children: the one that most needs the human, so a waiting
+// child is never hidden behind its parent. null for no children.
+const URGENCY: ShownStatus[] = ['waiting', 'working', 'idle', 'running', 'gone']
+export function mostUrgent(sessions: Session[]): Session | null {
+  let best: Session | null = null
+  for (const s of sessions) if (!best || URGENCY.indexOf(shownStatus(s)) < URGENCY.indexOf(shownStatus(best))) best = s
+  return best
+}
+
 // When the renderer first saw each session waiting (ms). Same object when unchanged.
 export function trackWaiting(prev: Record<string, number>, sessions: Session[], now: number): Record<string, number> {
   const next: Record<string, number> = {}

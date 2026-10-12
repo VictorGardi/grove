@@ -29,6 +29,8 @@ import { hasLiveSessions, newProject, parentCheckout } from './projects'
 import { readBranch } from './git'
 import { gitCommonDir } from './git'
 import * as worktrees from './worktrees'
+import { kidsKey } from '@shared/groups'
+import { orphanChildren, resolveParent, withParent } from '@shared/sessionGroups'
 import type { AgentEvent, AgentKind, AgentSource } from './agents/types'
 import { LOST_SANDBOX, sandboxArgvFor, type SandboxDeps } from './sandbox/launch'
 import { pruneContainers, removeContainer } from './sandbox/container'
@@ -77,20 +79,22 @@ export interface Commands {
   // A new worktree of the repo `projectId` belongs to, on `branch`, registered as a project of
   // its own (ADR 0037) so a session can be created in it like any other checkout.
   worktreeCreate(a: { projectId: string; branch: string }): Promise<Result<Project>>
+  worktreeRemove(a: { projectId: string }): Promise<Result<{ id: string }>>
   // What a checkout is on, and what a new worktree off it would branch from. Read without
   // spawning git for the current branch (readBranch) and with two git calls for the default,
   // because the launch dialog has to name a base before anyone has picked anything (ADR 0037's
   // worktree is a project, so this is per project and not per session).
   repoRefs(a: { projectId: string }): Promise<Result<{ branch: string | null; default: string | null }>>
   sessionCreate(a: {
-    projectId?: string; cwd?: string; kind: SessionKind; prompt?: string; label?: string; feature?: string; sandboxed?: boolean; cols: number; rows: number
-  }): Promise<Result<Session>> // exactly one of projectId, cwd
+    projectId?: string; cwd?: string; kind: SessionKind; prompt?: string; label?: string; feature?: string; parent?: string; sandboxed?: boolean; cols: number; rows: number
+  }): Promise<Result<Session>> // exactly one of projectId, cwd; `parent` is a session id, whose group the new one joins
   sessionKill(a: { id: string }): Promise<Result<{ id: string }>>
   sessionRemove(a: { id: string }): Promise<Result<{ id: string }>>
   sessionResume(a: { id: string }): Promise<Result<Session>> // gone agent sessions only
   sessionRename(a: { id: string; label: string }): Promise<Result<Session>>
   sessionWorkflowStatus(a: { id: string; status: WorkflowStatus }): Promise<Result<Session>>
   sessionLink(a: { id: string; feature: string | null }): Promise<Result<Session>>
+  sessionSetParent(a: { id: string; parent: string | null }): Promise<Result<Session>> // null: out of its group
   uiSet(partial: Partial<UiState>): Promise<Result<UiState>>
   sessionFocusLast(): Promise<Result<{ id: string }>> // the latest earlier session still valid; ⌃Tab
   commentAdd(a: { sessionId: string; anchor: CommentAnchor; body: string }): Promise<Result<Comment>>
@@ -589,7 +593,7 @@ export function createCore(opts: CoreOptions): Core {
   function dropSessions(keep: (s: Session) => boolean): void {
     const focused = slices.ui.focusedSessionId ? findSession(slices.ui.focusedSessionId) : undefined
     const removed = slices.sessions.filter((s) => !keep(s))
-    set('sessions', slices.sessions.filter(keep))
+    set('sessions', orphanChildren(slices.sessions.filter(keep), removed.map((s) => s.id)))
     let comments = slices.comments
     for (const s of removed) comments = dropSession(comments, s.id)
     if (comments.length !== slices.comments.length) set('comments', comments)
@@ -609,6 +613,7 @@ export function createCore(opts: CoreOptions): Core {
     const grid = pruneGrid(ui.grid, (id) => !!findSession(id))
     if (grid !== ui.grid) ui = { ...ui, grid }
     if (ui.sessionOrder.some((id) => !findSession(id))) ui = { ...ui, sessionOrder: ui.sessionOrder.filter((id) => !!findSession(id)) }
+    if (removed.some((s) => ui.collapsed.includes(kidsKey(s.id)))) ui = { ...ui, collapsed: ui.collapsed.filter((k) => !removed.some((s) => k === kidsKey(s.id))) }
     if (ui !== slices.ui) set('ui', ui)
     syncDiff()
   }
@@ -691,6 +696,21 @@ export function createCore(opts: CoreOptions): Core {
       return { ok: true, data: { id } }
     },
 
+    // Takes a worktree's checkout off disk and forgets its project, once nothing is left in it.
+    // Git's own refusal (uncommitted work, a live lock) is the answer, as in 'clean up merged':
+    // the branch survives either way, and the project stays registered when git says no.
+    async worktreeRemove({ projectId }) {
+      const project = slices.projects.find((p) => p.id === projectId)
+      if (!project?.worktreeOf) return { ok: false, error: 'not-found' }
+      if (!git) return { ok: false, error: 'no-git' }
+      if (slices.sessions.some((s) => s.projectId === projectId)) return { ok: false, error: 'has-sessions' }
+      await worktrees.unlock(repoFor(project), project.path, git)
+      const res = await worktrees.remove(repoFor(project), project.path, git)
+      if (!res.ok) return res
+      unregisterProject(projectId)
+      return { ok: true, data: { id: projectId } }
+    },
+
     // The same `worktrees.add` the CLI drives (ADR 0037), promoted to a command so the app can
     // make one. The CLI passes the resulting `cwd` to `sessionCreate`, which resolves and registers
     // it there; a dialog needs the checkout to exist and be registrable *before* the session does,
@@ -735,7 +755,7 @@ export function createCore(opts: CoreOptions): Core {
     },
 
     // `projectId` (the app) or `cwd` (the CLI, ADR 0029): a folder resolves to its project, registered when new.
-    async sessionCreate({ projectId, cwd, kind, prompt, label, feature, cols, rows, sandboxed }) {
+    async sessionCreate({ projectId, cwd, kind, prompt, label, feature, parent, cols, rows, sandboxed }) {
       const source = kind === 'terminal' ? undefined : states.get(kind)?.source
       if (kind !== 'terminal' && !source) return { ok: false, error: 'no-source' }
       let project = slices.projects.find((p) => p.id === projectId)
@@ -752,6 +772,12 @@ export function createCore(opts: CoreOptions): Core {
       if (feature !== undefined && (added || !slices.features.items.some((f) => f.projectId === chosen.id && f.slug === feature))) {
         return { ok: false, error: 'no-feature' } // checked before anything is created
       }
+      let parentId: string | null = null
+      if (parent !== undefined) {
+        const r = resolveParent(slices.sessions, parent)
+        if (!r.ok) return r // checked before anything is created, like the feature
+        parentId = r.data
+      }
       // A terminal has no agent argv to wrap, and stays refused. Both agents are sandboxable now: a
       // sandboxed OpenCode joins the host's shared service instead of registering its own, which
       // would evict the incumbent and take down every other OpenCode session on this machine (D6).
@@ -762,6 +788,7 @@ export function createCore(opts: CoreOptions): Core {
       const session = {
         ...newSession({ projectId: project.id, kind, now: now(), id: randomUUID(), agentSessionId, cwd: dir, label, sandboxed: !!sandboxKind }),
         ...(feature !== undefined && { feature, linkPinned: true }),
+        ...(parentId && { parentId }),
       }
       const agentArgv = source ? source.argv(agentSessionId!, 'start', { prompt, name: label }) : []
       let argv: string[] | undefined
@@ -874,6 +901,13 @@ export function createCore(opts: CoreOptions): Core {
       const next = link(session, feature)
       replaceSession(next)
       return { ok: true, data: next }
+    },
+
+    async sessionSetParent({ id, parent }) {
+      const next = withParent(slices.sessions, id, parent)
+      if (!next.ok) return next
+      set('sessions', next.data)
+      return { ok: true, data: findSession(id)! }
     },
 
     async uiSet(partial) {
