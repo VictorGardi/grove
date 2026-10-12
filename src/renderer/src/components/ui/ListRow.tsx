@@ -31,7 +31,7 @@ function Title({ title }: { title: string }) {
 
 export function ListRow({ title, corner, cornerPinned, icon, meta, status, tone = 'default', picked, compact, mark, actions, badge, tab, onClick, onContextMenu, onTitleDoubleClick, editor }: Props) {
   return (
-    <div className={cx(s.row, s[tone], compact && s.compact, !compact && status && !meta && s.hasDot, mark && s.hasMark, tab && s.hasTab, picked && s.picked)} onClick={onClick} onContextMenu={onContextMenu}>
+    <div className={cx(s.row, s[tone], compact && s.compact, !compact && status && !meta && s.hasDot, mark && s.hasMark, !!tab && s.hasTab, picked && s.picked)} onClick={onClick} onContextMenu={onContextMenu}>
       <div className={s.head}>
         {icon && <span className={s.icon}>{icon}</span>}
         {editor ?? <span className={s.title} onDoubleClick={onTitleDoubleClick}><Title title={title} /></span>}
