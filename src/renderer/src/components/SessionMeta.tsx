@@ -2,7 +2,7 @@ import type { ReactNode } from 'react'
 import type { Feature, Session } from '@shared/types'
 import { featureStage } from '../featureLabels'
 import { statusView } from '../sessionStatus'
-import { Icon } from './ui/Icon'
+import { BranchMark, showsPr } from './BranchMark'
 import { SandboxMark } from './ui/SandboxMark'
 import { StatusDot } from './ui/StatusDot'
 import { Tag } from './ui/Tag'
@@ -27,7 +27,11 @@ export function SessionMeta({ lead, session, feature, featureInLead, tagIndex, c
     <div className={s.row}>
       <div className={s.lead}>{lead}</div>
       {session.branch && (
-        <span className={s.branch}><Icon name="branch" size={12} /><span className={s.truncate}>{session.branch}</span></span>
+        <span className={s.branch}>
+          <BranchMark pr={session.pr} />
+          {session.pr && showsPr(session.pr) && <a className={s.pr} href={session.pr.url} target="_blank" rel="noreferrer" title={`Pull request #${session.pr.number} (${session.pr.state})`}>#{session.pr.number}</a>}
+          <span className={s.truncate}>{session.branch}</span>
+        </span>
       )}
       {feature && (
         <span className={s.feature}>

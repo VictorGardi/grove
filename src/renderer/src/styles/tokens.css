@@ -27,6 +27,8 @@
   /* accent */
   --accent: #fb923c;
   --worktree: #a78bfa; /* the purple worktree mark on a session card */
+  --pr-open: #5ee0a0; /* a session's branch has an open PR */
+  --pr-merged: #a78bfa; /* ...and a merged one */
   --accent-strong: #f66032;
   --accent-badge: #ffa42c;
 

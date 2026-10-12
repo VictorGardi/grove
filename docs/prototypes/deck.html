@@ -1,0 +1,55 @@
+<!doctype html>
+<meta charset="utf-8">
+<title>Child deck prototype</title>
+<style>
+  :root { --bg:#14161a; --card:#1d2026; --raised:#252932; --border:#343945; --text:#e6e8ec; --text2:#9aa1ae; --text3:#5b6270;
+    --working:#4da3ff; --waiting:#f5b84a; --finished:#58c27d; --idle:#6b7280; --running:#4da3ff; }
+  * { box-sizing:border-box }
+  body { margin:0; background:var(--bg); color:var(--text); font:13px/1.3 -apple-system,system-ui,sans-serif; display:flex; gap:40px; padding:32px }
+  .col { width:260px; display:flex; flex-direction:column; gap:6px } h4 { margin:0 0 8px; color:var(--text2); font-weight:500 }
+  .card { position:relative; background:var(--card); border:1px solid var(--border); border-radius:8px; padding:7px 10px }
+  .card .t { font-weight:600 } .card .m { font:11px ui-monospace,monospace; color:var(--text2); margin-top:2px; display:flex; justify-content:space-between }
+  .dot { width:7px; height:7px; border-radius:50%; background:currentColor; display:inline-block }
+  .s-waiting{color:var(--waiting)} .s-working{color:var(--working)} .s-finished{color:var(--finished)} .s-idle{color:var(--idle)}
+  .tab { position:absolute; left:50%; bottom:-9px; transform:translateX(-50%); display:inline-flex; gap:4px; align-items:center; height:18px; padding:0 8px;
+    border:1px solid var(--border); border-radius:99px; background:#0f1115; color:var(--text2); font-size:11px; cursor:pointer; z-index:3 }
+  .parent { margin-bottom:8px }
+  /* the deck */
+  .deck { position:relative; margin-top:4px }
+  .track { display:flex; gap:8px; overflow-x:auto; scroll-snap-type:x mandatory; padding:4px 22px; scrollbar-width:none; scroll-padding:0 22px }
+  .track::-webkit-scrollbar { display:none }
+  .disc { flex:0 0 100%; scroll-snap-align:center; transition:transform .2s, opacity .2s; transform:scale(.94); opacity:.55; cursor:pointer }
+  .disc.on { transform:none; opacity:1 }
+  .disc .card { background:var(--raised) }
+  .disc .card.waiting { border-color:var(--waiting); box-shadow:0 0 8px #f5b84a55 }
+  .nav { position:absolute; top:50%; transform:translateY(-50%); width:18px; height:18px; border-radius:50%; border:1px solid var(--border); background:#0f1115; color:var(--text2); font-size:10px; z-index:2; cursor:pointer; padding:0 }
+  .nav.l { left:2px } .nav.r { right:2px }
+  .pips { display:flex; justify-content:center; gap:6px; margin-top:6px }
+  .pips button { all:unset; cursor:pointer; padding:3px } .pips .dot { opacity:.5 } .pips .on .dot { opacity:1; box-shadow:0 0 0 2px var(--bg),0 0 0 3px currentColor }
+</style>
+<div class="col"><h4>Current (list)</h4><div id="list"></div></div>
+<div class="col"><h4>Deck: flip with arrows, swipe, ←/→, pips</h4><div id="deckHost"></div></div>
+<script>
+const kids=[
+ {t:'Write migration',b:'auth-migrate',s:'waiting',w:'asks: run on staging?',a:'2m'},
+ {t:'Update login form',b:'auth-form',s:'working',w:'editing LoginForm.tsx',a:'now'},
+ {t:'Token refresh tests',b:'auth-tests',s:'finished',w:'done · 14 passing',a:'9m'},
+ {t:'Docs pass',b:'auth-docs',s:'idle',w:'idle',a:'1h'}]
+const card=(k,extra='')=>`<div class="card ${extra}"><div class="t">${k.t}</div><div class="m"><span>⎇ ${k.b}</span><span class="dot s-${k.s}"></span></div></div>`
+const parent=n=>`<div class="card parent"><div class="t">Refactor auth</div><div class="m"><span>⎇ feat/auth</span><span class="dot s-working"></span></div>
+  <div class="tab"><span class="dot s-${kids.find(k=>k.s=='waiting').s}"></span>▾ ${n}</div></div>`
+document.getElementById('list').innerHTML=parent(kids.length)+'<div style="margin-left:16px;display:flex;flex-direction:column;gap:6px">'+kids.map(k=>card(k)).join('')+'</div>'
+const host=document.getElementById('deckHost')
+host.innerHTML=parent(kids.length)+`<div class="deck" tabindex="0"><button class="nav l">◂</button><button class="nav r">▸</button>
+ <div class="track">${kids.map((k,i)=>`<div class="disc" data-i="${i}">${card(k,k.s=='waiting'?'waiting':'')}<div class="m" style="font:11px ui-monospace,monospace;color:var(--text2);padding:3px 4px 0">${k.w} · ${k.a}</div></div>`).join('')}</div>
+ <div class="pips">${kids.map((k,i)=>`<button data-i="${i}"><span class="dot s-${k.s}"></span></button>`).join('')}</div></div>`
+const track=host.querySelector('.track'),discs=[...host.querySelectorAll('.disc')],pips=[...host.querySelectorAll('.pips button')]
+let cur=kids.findIndex(k=>k.s=='waiting') // opens on the most urgent
+const go=i=>{cur=Math.max(0,Math.min(kids.length-1,i));discs[cur].scrollIntoView({behavior:'smooth',inline:'center',block:'nearest'});mark()}
+const mark=()=>{discs.forEach((d,i)=>d.classList.toggle('on',i==cur));pips.forEach((p,i)=>p.classList.toggle('on',i==cur))}
+host.querySelector('.nav.l').onclick=()=>go(cur-1);host.querySelector('.nav.r').onclick=()=>go(cur+1)
+discs.forEach((d,i)=>d.onclick=()=>go(i));pips.forEach((p,i)=>p.onclick=()=>go(i))
+host.querySelector('.deck').onkeydown=e=>{if(e.key=='ArrowLeft')go(cur-1);if(e.key=='ArrowRight')go(cur+1)}
+let t;track.onscroll=()=>{clearTimeout(t);t=setTimeout(()=>{const c=track.getBoundingClientRect();let best=0,bd=1e9;discs.forEach((d,i)=>{const r=d.getBoundingClientRect();const x=Math.abs(r.left+r.width/2-(c.left+c.width/2));if(x<bd){bd=x;best=i}});cur=best;mark()},60)}
+mark();setTimeout(()=>discs[cur].scrollIntoView({inline:'center',block:'nearest'}),0)
+</script>

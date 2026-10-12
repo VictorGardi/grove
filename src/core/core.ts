@@ -2,7 +2,7 @@ import { randomUUID } from 'node:crypto'
 import fs from 'node:fs'
 import os from 'node:os'
 import path from 'node:path'
-import type { Comment, CommentAnchor, Project, Session, SessionDiff, SessionKind, Slices, UiState, WorkflowStatus } from '@shared/types'
+import type { Comment, CommentAnchor, Project, PullRequest, Session, SessionDiff, SessionKind, Slices, UiState, WorkflowStatus } from '@shared/types'
 import { DEFAULT_UI, EMPTY_FEATURES, OPENCODE_CONNECTING } from '@shared/types'
 import { keyProjectId } from '@shared/groups'
 import { opencodeCliConfig } from '@shared/opencodeSession'
@@ -27,6 +27,7 @@ import { isDirectory, paneStable, realOrSelf, resolveProject, waitTurn } from '.
 import { sendToSession } from './send'
 import { hasLiveSessions, newProject, parentCheckout } from './projects'
 import { readBranch } from './git'
+import type { PrLookup } from './pr'
 import { gitCommonDir } from './git'
 import * as worktrees from './worktrees'
 import { kidsKey } from '@shared/groups'
@@ -35,7 +36,7 @@ import type { AgentEvent, AgentKind, AgentSource } from './agents/types'
 import { LOST_SANDBOX, sandboxArgvFor, type SandboxDeps } from './sandbox/launch'
 import { pruneContainers, removeContainer } from './sandbox/container'
 import type { AgentPaths } from './sandbox/spec'
-import { autoLink, link, markGone, markSeen, newSession, reconcile, rename, resume, setWorkflowStatus, withBranches } from './sessions'
+import { autoLink, link, markGone, markSeen, newSession, reconcile, rename, resume, setWorkflowStatus, withBranches, withPrs } from './sessions'
 import { loadConfig, saveConfig } from './store/configStore'
 import { apply, fromSnapshot, withContext, withStatus, type Tracker } from './status'
 import { loadState, saveState } from './store/stateStore'
@@ -51,6 +52,7 @@ export interface CoreOptions {
   backend: SessionBackend
   sources?: AgentSource[] // one per agent kind; none: tmux-only
   now?: () => Date // tests inject this
+  prLookup?: PrLookup // the PR of a branch, for the marker on a session; none: no markers
   git?: string | null // path to git; undefined: 'git' from PATH, null: not found
   sessionEnv?: { socketPath: string; binDir: string } & Partial<AgentPaths> // the grove CLI's socket and launcher dir, plus every path a sandboxed session mounts; none: sessions get no CLI env and cannot be sandboxed
   sandbox?: { container: string; dockerfile: string } // where the Apple `container` binary and the sandbox image live; none: `--sandboxed` fails `no-sandbox`
@@ -221,7 +223,7 @@ export function createCore(opts: CoreOptions): Core {
     }
     else if (k === 'sessions' || k === 'ui') {
       const sessions = slices.sessions.map(
-        ({ branch: _branch, status: _status, waitingFor: _waitingFor, contextPct: _p, contextTokens: _t, contextWindow: _w, model: _m, sandboxNote: _sn, ...s }) => s,
+        ({ branch: _branch, status: _status, waitingFor: _waitingFor, contextPct: _p, contextTokens: _t, contextWindow: _w, model: _m, sandboxNote: _sn, pr: _pr, ...s }) => s,
       ) // live-only
       saveState(opts.statePath, { schemaVersion: 9, sessions, ui: slices.ui })
     }
@@ -429,6 +431,37 @@ export function createCore(opts: CoreOptions): Core {
     lastCwds = cwds
     const next = withBranches(slices.sessions, cwds, readBranch)
     if (next !== slices.sessions) set('sessions', next)
+    refreshPrs()
+  }
+
+  // PRs are a network call, so they never hold up the 5 s poll: each (checkout, branch) is asked at
+  // most once a minute, in the background, and the answer lands on every session on it. A failed
+  // ask is cached like an empty one, so a machine without gh is not retried every tick.
+  const PR_TTL_MS = 60_000
+  const prCache = new Map<string, { at: number; pr: PullRequest | null }>()
+  const prAsking = new Set<string>()
+  const prKey = (dir: string, branch: string) => `${dir}\0${branch}`
+  function refreshPrs(): void {
+    const lookup = opts.prLookup
+    if (!lookup) return
+    for (const s of slices.sessions) {
+      const dir = lastCwds.get(s.tmuxName)
+      if (s.lastStatus !== 'running' || dir === undefined || !s.branch || s.branch === 'master' || s.branch === 'main') continue
+      const key = prKey(dir, s.branch)
+      const hit = prCache.get(key)
+      if (prAsking.has(key) || (hit && now().getTime() - hit.at < PR_TTL_MS)) continue
+      prAsking.add(key)
+      const branch = s.branch
+      void lookup(dir, branch).catch(() => null).then((pr) => {
+        prAsking.delete(key)
+        prCache.set(key, { at: now().getTime(), pr })
+        const next = withPrs(slices.sessions, (x) => {
+          const d = lastCwds.get(x.tmuxName)
+          return x.branch === branch && d === dir ? pr : undefined
+        })
+        if (next !== slices.sessions) set('sessions', next)
+      })
+    }
   }
 
   // The diff of the session's working directory: the pane's cwd, or the project once it's gone.

@@ -87,6 +87,28 @@ describe('core sessions', () => {
     expect(fs.readFileSync(statePath, 'utf8')).not.toContain('branch')
   })
 
+  it('looks a live session\'s PR up in the background, once a minute, and never saves it', async () => {
+    const { dir, make, statePath } = setup()
+    fs.mkdirSync(path.join(dir, '.git'))
+    fs.writeFileSync(path.join(dir, '.git', 'HEAD'), 'ref: refs/heads/feat/x\n')
+    const pr = { number: 7, state: 'open' as const, draft: false, url: 'https://github.com/o/r/pull/7' }
+    const calls: string[] = []
+    const a = make(NOW, { prLookup: async (_d, branch) => { calls.push(branch); return pr } })
+    await a.start()
+    await create(a)
+    await a.checkLiveness()
+    await vi.waitFor(() => expect(a.getSlices().sessions[0].pr).toEqual(pr))
+
+    await a.checkLiveness()
+    expect(calls).toEqual(['feat/x']) // cached
+    expect(fs.readFileSync(statePath, 'utf8')).not.toContain('pull/7')
+
+    fs.writeFileSync(path.join(dir, '.git', 'HEAD'), 'ref: refs/heads/master\n')
+    await a.checkLiveness()
+    expect(a.getSlices().sessions[0].pr).toBeNull() // another branch drops it; the default branch is not asked
+    expect(calls).toEqual(['feat/x'])
+  })
+
   it('saves sessions missing from tmux as gone on start', async () => {
     const { fake, make, statePath } = setup()
     const a = make()

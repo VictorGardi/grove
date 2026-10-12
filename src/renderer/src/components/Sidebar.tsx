@@ -19,6 +19,7 @@ import { Icon } from './ui/Icon'
 import { LinkPicker } from './LinkPicker'
 import { ParentPicker } from './ParentPicker'
 import { ListRow } from './ui/ListRow'
+import { BranchMark } from './BranchMark'
 import { StatusDot } from './ui/StatusDot'
 import { tagClass } from './ui/Tag'
 import { WorkflowStatusButton, Glyph } from './ui/WorkflowStatusPicker'
@@ -79,7 +80,7 @@ function SessionCard({ s, feature, worktree, focused, picked, compact, inGrid, g
       meta={s.branch && (
         <div className={css.cardInfo}>
           <div className={css.branchLine}>
-            <Icon name="branch" size={12} />
+            <BranchMark pr={s.pr} />
             <span className={css.branchName}>{s.branch}</span>
           </div>
         </div>

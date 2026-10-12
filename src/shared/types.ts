@@ -28,6 +28,7 @@ export interface Session {
   seenAt: string | null           // ISO, when the human last saw it (on screen); persisted
   lastFocusedAt?: string | null   // ISO, when the human last focused it (any kind); persisted; orders the palette
   branch?: string | null           // live sessions: branch at the pane's current directory; never saved
+  pr?: PullRequest | null          // live sessions: the PR for that branch, from `gh`; never saved
   status?: 'working' | 'waiting' | 'idle' // OpenCode sessions while the service is connected; never saved
   waitingFor?: 'permission' | 'question' | 'done' // with status 'waiting'; never saved
   contextPct?: number | null       // Claude sessions once a reading arrived: % of the context window used; null: not known yet; never saved
@@ -40,6 +41,8 @@ export interface Session {
 }
 // a viewable file in the project folder (ADR 0032); path relative to the project, POSIX
 export interface FileTarget { kind: 'file'; projectId: string; path: string; hash: string | null; fromDiff: string | null }
+export interface PullRequest { number: number; state: 'open' | 'merged' | 'closed'; draft: boolean; url: string }
+
 export interface DiffTarget { kind: 'diff'; sessionId: string; base?: string | null } // base: a branch to diff since (merge-base); null/unset: working tree vs HEAD
 export type DocTarget = FileTarget // what the iframe viewer shows; hash: fragment without '#'
 export type ViewerTarget = DocTarget | DiffTarget // fromDiff: the session the file was opened from ("← Diff")

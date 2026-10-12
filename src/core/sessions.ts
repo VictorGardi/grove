@@ -1,4 +1,4 @@
-import type { Session, SessionKind, WorkflowStatus } from '@shared/types'
+import type { PullRequest, Session, SessionKind, WorkflowStatus } from '@shared/types'
 
 const KIND_NAMES: Record<SessionKind, string> = { opencode: 'OpenCode', claude: 'Claude', terminal: 'Terminal' }
 const pad = (n: number) => String(n).padStart(2, '0')
@@ -49,10 +49,25 @@ export function withBranches(sessions: Session[], cwds: Map<string, string>, bra
     const branch = branchAt(cwd)
     if (branch === s.branch) return s
     changed = true
-    return { ...s, branch }
+    return { ...s, branch, pr: null } // a PR belongs to a branch: a new one is looked up afresh
   })
   return changed ? out : sessions
 }
+
+// Each live session's PR, where `prFor` has an answer for it (undefined: not looked up yet, keep what it has).
+export function withPrs(sessions: Session[], prFor: (s: Session) => PullRequest | null | undefined): Session[] {
+  let changed = false
+  const out = sessions.map((s) => {
+    const pr = prFor(s)
+    if (pr === undefined || samePr(pr, s.pr ?? null)) return s
+    changed = true
+    return { ...s, pr }
+  })
+  return changed ? out : sessions
+}
+
+const samePr = (a: PullRequest | null, b: PullRequest | null) =>
+  a === b || (!!a && !!b && a.number === b.number && a.state === b.state && a.draft === b.draft && a.url === b.url)
 
 export function markGone(s: Session, now: string): Session {
   return s.lastStatus === 'gone' ? s : { ...s, lastStatus: 'gone', endedAt: now }

@@ -1,0 +1,13 @@
+.open,
+.merged {
+  display: inline-flex;
+  flex: none;
+}
+
+.open {
+  color: var(--pr-open);
+}
+
+.merged {
+  color: var(--pr-merged);
+}

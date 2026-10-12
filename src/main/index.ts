@@ -7,6 +7,7 @@ import { TmuxBackend } from '../core/backend/tmux'
 import { createCore } from '../core/core'
 import type { AgentPaths } from '../core/sandbox/spec'
 import { findBin, findTmux, minimalEnv } from '../core/env'
+import { ghLookup } from '../core/pr'
 import { SpoolClaude } from '../core/claude/source'
 import { HttpOpenCode, serviceFilePath } from '../core/opencode/client'
 import { guardNavigation, handleArtifacts, registerArtifactScheme } from './artifacts'
@@ -70,6 +71,7 @@ app.whenReady().then(async () => {
   const errors: string[] = []
   const tmuxPath = findTmux(process.env)
   if (!tmuxPath) errors.push('tmux not found (looked in PATH, /opt/homebrew/bin, /usr/local/bin)')
+  const ghPath = findBin('gh', process.env) // null: no PR markers, no banner
   const gitPath = findBin('git', process.env) // null: the diff viewer says so, no banner
 
   const socketPath = path.join(app.getPath('userData'), 'grove.sock')
@@ -112,6 +114,7 @@ app.whenReady().then(async () => {
     }),
     sources: [new HttpOpenCode({ serviceFile: serviceFilePath(process.env, home) }), new SpoolClaude({ dir: spoolDir })],
     git: gitPath,
+    prLookup: ghPath ? ghLookup(ghPath, minimalEnv(process.env)) : undefined,
   })
   await core.start()
   const cliServer = await startCliServer(core, { socketPath, raise }).catch((e: Error) => {

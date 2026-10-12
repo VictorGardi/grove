@@ -25,6 +25,16 @@
   flex: none;
 }
 
+.pr {
+  flex: none;
+  color: inherit;
+  text-decoration: none;
+}
+
+.pr:hover {
+  text-decoration: underline;
+}
+
 .branch {
   flex: 0 2 auto;
   max-width: 28ch;
