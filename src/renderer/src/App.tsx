@@ -2,7 +2,6 @@ import { useCallback, useEffect, useRef, useState } from 'react'
 import type { Feature, Session, ViewerTarget } from '@shared/types'
 import type { MenuAction } from '@shared/ipc'
 import { errorMessage } from '@shared/sandboxErrors'
-import { openedKey, worktreeKey } from '@shared/groups'
 import { SIDEBAR_RAIL_WIDTH, SIDEBAR_WIDTH } from '@shared/types'
 import { ArtifactViewer } from './components/ArtifactViewer'
 import { CommandPalette } from './components/CommandPalette'
@@ -32,6 +31,7 @@ import { boardKey, childrenOf, content, crumbs, currentProjectId, focusTarget } 
 import { serviceBanners } from './sessionStatus'
 import { sessionDiffShortcut, type HiddenRenderedViewer } from './sessionDiffShortcut'
 import { useSlices } from './stores/slices'
+import { useSessionRemoval } from './useSessionRemoval'
 import { colorTags } from './tags'
 import { featureDir, featureOfFile, viewableFiles } from './viewerFiles'
 import { ScratchpadOverlay } from './components/ScratchpadOverlay'
@@ -47,10 +47,12 @@ export default function App() {
   const [quickSandbox, setQuickSandbox] = useState(SANDBOX_DEFAULT)
   const repoRefs = useRepoRefs(projects)
   const [launchNew, setLaunchNew] = useState<{ projectId?: string } | null>(null) // ⌘⇧T: the launch dialog
+  const { removeSessions, dialog: removalDialog } = useSessionRemoval()
   const [confirmRemove, setConfirmRemove] = useState<Session | null>(null) // ⌘W asks first
   const [paletteOpen, setPaletteOpen] = useState(false)
   const [gridView, setGridView] = useState<GridView>(DEFAULT_GRID_VIEW) // toolbar settings, view-only
   const [scratchpadOpen, setScratchpadOpen] = useState(false) // ⌘N: global notes, not persisted
+  const [noteSession, setNoteSession] = useState<{ id: string; label: string } | null>(null) // a session card's note
   const hiddenRendered = useRef<HiddenRenderedViewer | null>(null)
   const tags = colorTags(projects, features.items)
 
@@ -126,21 +128,6 @@ export default function App() {
 
   useEffect(() => window.api.on('menu:action', runAction), [runAction])
 
-  // A worktree's group starts collapsed (ADR 0037), which hid the very session just opened in it.
-  // Focusing a session opens its worktree group once; collapsing it afterwards sticks until the
-  // focus moves to another session.
-  // Keyed on the worktree the focused session lives in, so a session that arrives a moment after
-  // the focus still opens it.
-  const focusedId = ui.focusedSessionId
-  const focusedWorktree = projects.find((p) => p.id === sessions.find((x) => x.id === focusedId)?.projectId)?.worktreeOf
-    ? sessions.find((x) => x.id === focusedId)!.projectId : null
-  useEffect(() => {
-    if (!focusedWorktree) return
-    const key = openedKey(worktreeKey(focusedWorktree))
-    if (!ui.collapsed.includes(key)) void window.api.invoke('ui:set', { collapsed: [...ui.collapsed, key] })
-    // eslint-disable-next-line react-hooks/exhaustive-deps -- only a change of focus should open it
-  }, [focusedId, focusedWorktree])
-
   // The configured launch. A worktree is made first and registered as a project of its own
   // (ADR 0037), so a conflict is reported against the form the human is still looking at rather
   // than failing a session that was never created. Returns the error, or null once it started.
@@ -195,7 +182,7 @@ export default function App() {
   // keys the human is typing into a form. This was two lists — the grid's `overlayOpen` and the
   // terminal's `active` — and they had already drifted, each missing an overlay the other had. One
   // value now, with `active` as its negation, so there is nothing left to keep in step.
-  const overlayOpen = paletteOpen || !!quickNew || !!launchNew || !!confirmRemove || scratchpadOpen
+  const overlayOpen = paletteOpen || !!quickNew || !!launchNew || !!confirmRemove || scratchpadOpen || !!noteSession
 
   return (
     <>
@@ -205,7 +192,7 @@ export default function App() {
           ...(features.workflowError ? [<Banner key="workflow">Workflow: {features.workflowError}</Banner>] : []),
           ...serviceBanners(opencode, sessions).map((b) => <Banner key={b.text} tone={b.tone}>{b.text}</Banner>),
         ]}
-        sidebar={ui.sidebarCollapsed ? <SidebarRail onNew={() => setQuickNew({ projectId: currentProjectId(content(ui, projects, sessions, features.items)) ?? undefined })} /> : <Sidebar onNew={(projectId) => setQuickNew({ projectId })} />}
+        sidebar={ui.sidebarCollapsed ? <SidebarRail onNew={() => setQuickNew({ projectId: currentProjectId(content(ui, projects, sessions, features.items)) ?? undefined })} /> : <Sidebar onNew={(projectId) => setQuickNew({ projectId })} onRemove={(ids) => void removeSessions(ids)} onNote={(s) => setNoteSession({ id: s.id, label: s.label })} />}
         content={
           <>
             <ContentHeader crumbs={header}
@@ -245,7 +232,7 @@ export default function App() {
                   {shown.session.kind !== 'terminal' && (
                     <Button icon="resume" variant="primary" onClick={() => void window.api.invoke('session:resume', { id: shown.session.id })}>Resume</Button>
                   )}
-                  <Button icon="trash" onClick={() => void window.api.invoke('session:remove', { id: shown.session.id })}>Remove</Button>
+                  <Button icon="trash" onClick={() => void removeSessions([shown.session.id])}>Remove</Button>
                 </div>
               </div>
             ) : (
@@ -280,12 +267,13 @@ export default function App() {
           body={`Remove session ${confirmRemove.label}? It will be ended and can't be resumed.`}
           confirmLabel="Remove"
           onConfirm={() => {
-            void window.api.invoke('session:remove', { id: confirmRemove.id })
+            void removeSessions([confirmRemove.id])
             setConfirmRemove(null)
           }}
           onCancel={() => setConfirmRemove(null)}
         />
       )}
+      {removalDialog}
       {quickNew && (
         <LaunchPalette projects={projects} sessions={sessions} openedFrom={quickNew.projectId} refs={repoRefs}
           sandboxed={quickSandbox} onSandbox={setQuickSandbox} onClose={() => setQuickNew(null)} onStart={startLaunch} />
@@ -294,6 +282,7 @@ export default function App() {
         <NewSessionDialog projectId={launchNew.projectId} onClose={() => setLaunchNew(null)} onStart={startLaunch} />
       )}
       {scratchpadOpen && <ScratchpadOverlay onClose={() => setScratchpadOpen(false)} />}
+      {noteSession && <ScratchpadOverlay session={noteSession} onClose={() => setNoteSession(null)} />}
     </>
   )
 }

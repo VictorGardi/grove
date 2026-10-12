@@ -41,12 +41,14 @@ export function registerIpc(core: Core, getWindow: () => BrowserWindow | null, g
   }, true)
   handle('project:remove', (a) => core.commands.projectRemove(a), true)
   handle('worktree:create', (a) => core.commands.worktreeCreate(a), true)
+  handle('worktree:remove', (a) => core.commands.worktreeRemove(a), true)
   handle('repo:refs', (a) => core.commands.repoRefs(a), true)
   handle('session:create', (a) => core.commands.sessionCreate(a), true)
   handle('session:remove', (a) => core.commands.sessionRemove(a), true)
   handle('session:resume', (a) => core.commands.sessionResume(a), true)
   handle('session:rename', (a) => core.commands.sessionRename(a), true)
   handle('session:link', (a) => core.commands.sessionLink(a), true)
+  handle('session:setParent', (a) => core.commands.sessionSetParent(a), true)
   handle('session:workflowStatus', (a) => core.commands.sessionWorkflowStatus(a), true)
   handle('comment:add', (a) => core.commands.commentAdd(a), true)
   handle('comment:update', (a) => core.commands.commentUpdate(a), true)
@@ -63,19 +65,26 @@ export function registerIpc(core: Core, getWindow: () => BrowserWindow | null, g
     for (const f of win.webContents.mainFrame.framesInSubtree) if (f.url.startsWith(`${ARTIFACT_SCHEME}:`)) f.reload()
   })
 
-  const notesPath = path.join(app.getPath('userData'), 'notes.md')
+  // ⌘N notes are one global file; a session's note is its own file beside it, named by the session id.
+  const notesPath = (sessionId?: string) => {
+    if (!sessionId) return path.join(app.getPath('userData'), 'notes.md')
+    if (!/^[\w-]+$/.test(sessionId)) throw new Error('invalid session id')
+    return path.join(app.getPath('userData'), 'session-notes', `${sessionId}.md`)
+  }
 
-  handle('notes:read', () => {
+  handle('notes:read', (a) => {
     try {
-      return fs.readFileSync(notesPath, 'utf8')
+      return fs.readFileSync(notesPath(a?.sessionId), 'utf8')
     } catch (e) {
       if ((e as NodeJS.ErrnoException).code === 'ENOENT') return ''
       throw e
     }
   })
 
-  handle('notes:write', ({ content }) => {
-    atomicWrite(notesPath, content)
+  handle('notes:write', ({ content, sessionId }) => {
+    const file = notesPath(sessionId)
+    fs.mkdirSync(path.dirname(file), { recursive: true })
+    atomicWrite(file, content)
   })
 
   const attaches = new Map<string, AttachHandle>()

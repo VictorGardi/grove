@@ -51,6 +51,24 @@ describe('worktreeCreate', () => {
     expect(core.getSlices().projects.some((p) => p.id === res.data.id)).toBe(true)
   })
 
+  it('removes the checkout and its project, and refuses the main checkout', async () => {
+    const res = await core.commands.worktreeCreate({ projectId: checkoutId, branch: 'fix-auth' })
+    if (!res.ok) throw new Error(res.error)
+    expect(await core.commands.worktreeRemove({ projectId: checkoutId })).toEqual({ ok: false, error: 'not-found' })
+    expect(await core.commands.worktreeRemove({ projectId: res.data.id })).toEqual({ ok: true, data: { id: res.data.id } })
+    expect(fs.existsSync(res.data.path)).toBe(false)
+    expect(core.getSlices().projects.some((p) => p.id === res.data.id)).toBe(false)
+  })
+
+  it('keeps a worktree with uncommitted work, for git refuses to remove it', async () => {
+    const res = await core.commands.worktreeCreate({ projectId: checkoutId, branch: 'fix-auth' })
+    if (!res.ok) throw new Error(res.error)
+    fs.writeFileSync(path.join(res.data.path, 'wip.txt'), 'x')
+    fs.appendFileSync(path.join(res.data.path, 'README.md'), 'edit\n')
+    expect((await core.commands.worktreeRemove({ projectId: res.data.id })).ok).toBe(false)
+    expect(core.getSlices().projects.some((p) => p.id === res.data.id)).toBe(true)
+  })
+
   it('puts the checkout under the injected root, not the real home', async () => {
     const res = await core.commands.worktreeCreate({ projectId: checkoutId, branch: 'fix-auth' })
     if (!res.ok) throw new Error(res.error)

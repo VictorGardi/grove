@@ -26,6 +26,7 @@
 
   /* accent */
   --accent: #fb923c;
+  --worktree: #a78bfa; /* the purple worktree mark on a session card */
   --accent-strong: #f66032;
   --accent-badge: #ffa42c;
 

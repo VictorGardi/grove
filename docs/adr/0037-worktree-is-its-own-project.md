@@ -76,3 +76,9 @@ chip rather than by a duplicate card.
   the disagreement is silent (a draft-anchor collision at `core.ts:308`; wrong line
   numbers shipped to the agent at `comments/anchor.ts:83-84`); and `checkouts[]`
   cannot represent a monorepo subtree, which `git worktree add` cannot create.
+## Amendment (2026-10-12): the sidebar no longer nests worktrees
+
+`worktreeOf` is still how a worktree is tied to its repo, but the Sessions tab no longer draws
+a worktree as a sub-group. Its sessions sit in the repo's group, sorted with the rest, and a
+card in a worktree carries a purple worktree icon in its bottom-right corner. The Projects tab
+lists repos only. Nothing in the data model changed.

@@ -4,7 +4,7 @@ import { exitCode, formatError, formatLs, formatRead, turnExit } from './output'
 
 const s = (over: Partial<CliSession>): CliSession => ({
   id: 'aaaaaaaa-1111', kind: 'opencode', label: 'one', status: 'working', waitingFor: null,
-  lastStatus: 'running', project: 'proj', cwd: '/p', feature: null, ...over,
+  lastStatus: 'running', project: 'proj', cwd: '/p', feature: null, parent: null, ...over,
 })
 
 describe('formatLs', () => {

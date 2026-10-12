@@ -61,18 +61,6 @@
   gap: var(--sp-2);
 }
 
-/* a worktree's heading and rows sit one step in, under the repo they belong to (ADR 0037) */
-.nested {
-  display: flex;
-  flex-direction: column;
-  gap: var(--sp-2);
-  margin-left: var(--sp-4);
-}
-
-.nestedRow {
-  margin-left: var(--sp-4);
-}
-
 .folder {
   display: flex;
   align-items: center;
@@ -365,4 +353,31 @@
 .visibilityAction:disabled {
   color: var(--text-3);
   cursor: default;
+}
+
+/* a parent's children, one step in under it */
+.kids {
+  margin-left: var(--sp-4);
+}
+
+/* the handle on a parent's bottom edge: the count and, collapsed, the most urgent child's dot */
+.kidsToggle {
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+  padding: 0 6px 0 4px;
+  height: 14px;
+  line-height: 1;
+  border: 1px solid var(--card-border);
+  border-radius: var(--r-pill);
+  background: var(--chrome-bg);
+  color: var(--text-2);
+  font: inherit;
+  font-size: 10px;
+  cursor: pointer;
+}
+
+.kidsToggle:hover {
+  color: var(--text);
+  border-color: var(--text-2);
 }

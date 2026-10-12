@@ -105,6 +105,27 @@ describe('cli server', () => {
     expect(t.fake.paths.get(`grove-${created.id}`)).toBe(worktree.path)
   })
 
+  it('puts a new session in its parent\'s group, resolving a child to its leader, and refuses an unknown parent before making a worktree', async () => {
+    const { core, socketPath } = await start()
+    const lead = await createTerminal(core)
+    const first = await request(socketPath, req('sessions.create', { kind: 'terminal', cwd: t.dir, parent: lead.id.slice(0, 6) }))
+    if (!first.ok) throw new Error(JSON.stringify(first.error))
+    const child = (first.data as CliSession).id
+    expect(core.getSlices().sessions.find((s) => s.id === child)?.parentId).toBe(lead.id)
+    expect((first.data as CliSession).parent).toBe(lead.id)
+    // started by the child: a sibling, not a grandchild
+    const second = await request(socketPath, req('sessions.create', { kind: 'terminal', cwd: t.dir, parent: child }))
+    expect(second.ok && core.getSlices().sessions.find((s) => s.id === (second.data as CliSession).id)?.parentId).toBe(lead.id)
+
+    const repo = gitRepo()
+    repo.commit()
+    const before = core.getSlices().sessions.length
+    const bad = await request(socketPath, req('sessions.create', { kind: 'terminal', cwd: repo.dir, worktree: true, branch: 'never', parent: 'nope' }))
+    expect(bad).toMatchObject({ ok: false, error: { code: 'no-parent' } })
+    expect(core.getSlices().sessions).toHaveLength(before)
+    expect(fs.existsSync(worktrees.worktreePath(repo.dir, 'never'))).toBe(false) // nothing left behind
+  })
+
   it('refuses --worktree without --branch, and a branch already checked out', async () => {
     const { core, socketPath } = await start()
     expect(await request(socketPath, req('sessions.create', { kind: 'terminal', cwd: t.dir, worktree: true })))

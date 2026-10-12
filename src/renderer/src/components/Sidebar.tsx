@@ -2,9 +2,11 @@ import { useEffect, useId, useRef, useState, type DragEvent, type MouseEvent, ty
 import { GRID_MAX, type Feature, type Project, type Session } from '@shared/types'
 import { useSlices } from '../stores/slices'
 import { gridShown } from '../gridView'
-import { longestWaiting, shownStatus, statusTone, statusView } from '../sessionStatus'
+import { kidsKey } from '@shared/groups'
+import { canParent, hasChildren } from '@shared/sessionGroups'
+import { longestWaiting, mostUrgent, shownStatus, statusTone, statusView } from '../sessionStatus'
 import { selectRange } from '../selection'
-import { GROUP_BY_OPTIONS, SORT_OPTIONS, canDrop, collapseKey, dropSession, listGroups, visibleSessions, type DropAt, type ListGroup } from '../sessionList'
+import { GROUP_BY_OPTIONS, SORT_OPTIONS, canDrop, dropSession, groupSize, kidsGroup, listGroups, visibleSessions, type DropAt, type ListGroup } from '../sessionList'
 import { repoGroups, repoRows } from '../repoGroups'
 import { colorTags } from '../tags'
 import { linkedFeature } from '../tree'
@@ -15,10 +17,11 @@ import { ContextMenu } from './ui/ContextMenu'
 import { cx } from './ui/cx'
 import { Icon } from './ui/Icon'
 import { LinkPicker } from './LinkPicker'
+import { ParentPicker } from './ParentPicker'
 import { ListRow } from './ui/ListRow'
+import { StatusDot } from './ui/StatusDot'
 import { tagClass } from './ui/Tag'
 import { WorkflowStatusButton, Glyph } from './ui/WorkflowStatusPicker'
-import { worktreeBranch } from '../launchTargets'
 import css from './Sidebar.module.css'
 
 function toggle(set: Set<string>, id: string): Set<string> {
@@ -27,12 +30,13 @@ function toggle(set: Set<string>, id: string): Set<string> {
   return next
 }
 
-function SessionCard({ s, feature, focused, picked, compact, inGrid, gridOn, gridFull, onToggleGrid, onFocus, onOpenFeature, onToggleCompact, onLink, onRemove, onContextMenu }: {
+function SessionCard({ s, feature, worktree, focused, picked, compact, inGrid, gridOn, gridFull, onToggleGrid, onFocus, onOpenFeature, onToggleCompact, onLink, onRemove, onContextMenu, kids }: {
   s: Session
   feature: Feature | null // the linked feature, if it exists
   focused: boolean // a focused card shows selected
   picked: boolean // in the shift-click multi-selection
   compact: boolean
+  worktree?: Project // set when the session runs in a git worktree
   inGrid: boolean // a member of the session grid
   gridOn: boolean // the grid is showing: members keep their check visible
   gridFull: boolean // the grid has its nine
@@ -43,6 +47,7 @@ function SessionCard({ s, feature, focused, picked, compact, inGrid, gridOn, gri
   onLink: () => void
   onRemove: () => void
   onContextMenu: (e: MouseEvent) => void
+  kids?: { list: Session[]; collapsed: boolean; onToggle: () => void } // set on a parent: its children, for the toggle and the roll-up
 }) {
   const [editing, setEditing] = useState(false)
   const shown = shownStatus(s)
@@ -60,6 +65,16 @@ function SessionCard({ s, feature, focused, picked, compact, inGrid, gridOn, gri
           onClick={onToggleGrid} />
       }
       cornerPinned={inGrid && gridOn}
+      tab={kids && kids.list.length > 0 && (
+        <button type="button" className={css.kidsToggle} aria-expanded={!kids.collapsed}
+          title={kids.collapsed ? 'Show children' : 'Hide children'}
+          onClick={(e) => { e.stopPropagation(); kids.onToggle() }}>
+          {/* collapsed, the most urgent child shows through: a waiting child is never hidden */}
+          {kids.collapsed && (() => { const u = mostUrgent(kids.list); return u && <StatusDot tone={statusTone(u)} /> })()}
+          <Icon name={kids.collapsed ? 'chevron-right' : 'chevron-down'} size={10} />
+          {kids.list.length}
+        </button>
+      )}
       icon={<WorkflowStatusButton session={s} />}
       meta={s.branch && (
         <div className={css.cardInfo}>
@@ -69,6 +84,7 @@ function SessionCard({ s, feature, focused, picked, compact, inGrid, gridOn, gri
           </div>
         </div>
       )}
+      mark={worktree && { icon: <Icon name="worktree" size={14} />, label: `Worktree: ${worktree.path}` }}
       status={{ ...statusView(s), tone: statusTone(s) }}
       tone={focused ? 'selected' : needsYou ? 'waiting' : 'default'}
       picked={picked}
@@ -165,7 +181,7 @@ function ProjectHeader({ project: p, tag, count, refused, onToggle, onRemove, on
     <>
       <div className={cx(css.folder, menuAt && css.folderMenuOpen)} title={p.path} onClick={onToggle}>
         <Icon name="folder" size={16} className={tagClass(tag, 'fg')} />
-        <span className={css.folderName}>{p.worktreeOf ? worktreeBranch(p) : p.name}</span>
+        <span className={css.folderName}>{p.name}</span>
         <div className={css.folderEnd} onClick={(e) => e.stopPropagation()}>
           {count > 0 && <span className={css.folderCount}><Badge tone="muted">{count}</Badge></span>}
           <Button variant="ghost" size="sm" round icon="more-vertical" aria-label="Project options" aria-haspopup="menu"
@@ -220,16 +236,18 @@ function OptionRow({ label, checked, onSelect }: { label: string; checked: boole
   )
 }
 
-export function Sidebar({ onNew }: { onNew: (projectId?: string) => void }) {
+export function Sidebar({ onNew, onNote, onRemove }: { onNew: (projectId?: string) => void; onNote: (s: Session) => void; onRemove: (ids: string[]) => void }) {
   const { projects, sessions, ui, features, setFocused, toggleCollapsed, toggleProjectVisibility, focusFeature, openProject, setSidebarTab, setGroupBy, setSessionSort, toggleGrid, toggleGridMember, waitingSince } = useSlices()
   const waitingCount = sessions.filter((x) => shownStatus(x) === 'waiting').length
   const [refused, setRefused] = useState<string | null>(null)
   const [compact, setCompact] = useState<Set<string>>(new Set())
   const [linking, setLinking] = useState<Session | null>(null)
+  const [parenting, setParenting] = useState<Session | null>(null)
   const [picked, setPicked] = useState<Set<string>>(new Set()) // shift-click multi-selection
   const [anchor, setAnchor] = useState<string | null>(null) // where a shift-click range starts
   const [menu, setMenu] = useState<{ x: number; y: number; ids: string[] } | null>(null)
   const hidden = ui.hiddenProjects ?? []
+  const noteTarget = menu?.ids.length === 1 ? sessions.find((x) => x.id === menu.ids[0]) : undefined // a note belongs to one session
   // what the options panel shows and hides: one row per repo, its worktrees counted in, since
   // the repo is the unit rather than the checkout
   const rows = repoRows(projects, sessions)
@@ -294,7 +312,7 @@ export function Sidebar({ onNew }: { onNew: (projectId?: string) => void }) {
 
   const removeSessions = (ids: string[]) => {
     setPicked(new Set())
-    for (const id of ids) void window.api.invoke('session:remove', { id })
+    onRemove(ids)
   }
 
   // Drag to reorder (ADR 0041), on only while the sort is custom. Only the grabbed card moves: the
@@ -330,37 +348,55 @@ export function Sidebar({ onNew }: { onNew: (projectId?: string) => void }) {
     void window.api.invoke('ui:set', { sessionOrder: result.order })
   }
 
+  // one draggable card; `grp` is the list it reorders within (a parent's children are a list of their own)
+  const slot = (s: Session, grp: ListGroup, kids?: Session[]) => {
+    const line = over?.group.key === grp.key && over.at?.target === s.id && drag?.id !== s.id
+      ? over.at.after ? css.dropAfter : css.dropBefore : undefined
+    return (
+      <div key={s.id} className={cx(css.slot, drag?.id === s.id && css.slotDragging, line)}
+        draggable={draggable}
+        onDragStart={draggable ? (e) => {
+          e.dataTransfer.effectAllowed = 'move'
+          e.dataTransfer.setData('text/plain', s.id)
+          setDrag({ id: s.id, from: grp })
+        } : undefined}
+        onDragEnd={draggable ? endDrag : undefined}
+        onDragOver={draggable ? (e) => aimAt(grp, e, s) : undefined}
+        onDrop={draggable ? dropHere : undefined}>
+        {sessionCard(s, kids)}
+      </div>
+    )
+  }
+
   const cardList = (g: ListGroup) => (
     <div className={cx(css.cards, drag && css.cardsDragging)}
       onDragOver={draggable ? (e) => aimAt(g, e) : undefined} onDrop={draggable ? dropHere : undefined}>
       {g.sessions.map((s) => {
-        const line = over?.group.key === g.key && over.at?.target === s.id && drag?.id !== s.id
-          ? over.at.after ? css.dropAfter : css.dropBefore : undefined
+        const list = g.nest.kids.get(s.id) ?? []
+        const kg = kidsGroup(g, s)
         return (
-          <div key={s.id} className={cx(css.slot, drag?.id === s.id && css.slotDragging, line)}
-            draggable={draggable}
-            onDragStart={draggable ? (e) => {
-              e.dataTransfer.effectAllowed = 'move'
-              e.dataTransfer.setData('text/plain', s.id)
-              setDrag({ id: s.id, from: g })
-            } : undefined}
-            onDragEnd={draggable ? endDrag : undefined}
-            onDragOver={draggable ? (e) => aimAt(g, e, s) : undefined}
-            onDrop={draggable ? dropHere : undefined}>
-            {sessionCard(s)}
+          <div key={s.id} className={css.cards}>
+            {slot(s, g, list)}
+            {list.length > 0 && !kg.collapsed && (
+              <div className={cx(css.cards, css.kids, drag && css.cardsDragging)}
+                onDragOver={draggable ? (e) => aimAt(kg, e) : undefined} onDrop={draggable ? dropHere : undefined}>
+                {list.map((k) => slot(k, kg))}
+              </div>
+            )}
           </div>
         )
       })}
     </div>
   )
 
-  const sessionCard = (s: Session) => {
+  const sessionCard = (s: Session, kids?: Session[]) => {
     const f = linkedFeature(s, features.items)
     return (
       <SessionCard
         key={s.id}
         s={s}
         feature={f}
+        worktree={projects.find((p) => p.id === s.projectId && p.worktreeOf)}
         focused={s.id === ui.focusedSessionId}
         picked={picked.has(s.id)}
         compact={compact.has(s.id)}
@@ -374,35 +410,26 @@ export function Sidebar({ onNew }: { onNew: (projectId?: string) => void }) {
         onLink={() => setLinking(s)}
         onRemove={() => removeSessions([s.id])}
         onContextMenu={(e) => openMenu(s.id, e)}
+        kids={kids && { list: kids, collapsed: ui.collapsed.includes(kidsKey(s.id)), onToggle: () => toggleCollapsed(kidsKey(s.id)) }}
       />
     )
   }
 
   const projectHeader = (p: Project, count: number, g: ListGroup) => (
     <ProjectHeader project={p} tag={tags.project(p.id)} count={count} refused={refused === p.id}
-      onToggle={() => toggleCollapsed(collapseKey(g))} onRemove={() => void removeProject(p.id)} onNew={() => onNew(p.id)} />
+      onToggle={() => toggleCollapsed(g.key)} onRemove={() => void removeProject(p.id)} onNew={() => onNew(p.id)} />
   )
 
   // a project's heading when there is a project; a status or plain one when there isn't
   const groupHeading = (g: ListGroup) =>
-    g.project ? projectHeader(g.project, g.sessions.length, g)
-      : <GroupHeading group={g} onToggle={() => toggleCollapsed(collapseKey(g))} />
+    g.project ? projectHeader(g.project, groupSize(g), g)
+      : <GroupHeading group={g} onToggle={() => toggleCollapsed(g.key)} />
 
-  // One group: its heading, its rows, then each worktree nested a step in (ADR 0037).
+  // One group: its heading, then its rows. A worktree's sessions sit among the repo's own (ADR 0037).
   const groupBlock = (g: ListGroup) => (
     <div key={g.key} className={css.project}>
       {groupHeading(g)}
-      {!g.collapsed && (
-        <>
-          {cardList(g)}
-          {g.children.map((child) => (
-            <div key={child.key} className={css.nested}>
-              {groupHeading(child)}
-              {!child.collapsed && cardList(child)}
-            </div>
-          ))}
-        </>
-      )}
+      {!g.collapsed && cardList(g)}
     </div>
   )
 
@@ -435,11 +462,8 @@ export function Sidebar({ onNew }: { onNew: (projectId?: string) => void }) {
         {projects.length === 0 && <div className={css.hint}>Add a project with the folder ＋ above</div>}
         {ui.sidebarTab === 'sessions'
           ? groups.map(groupBlock)
-          // the Projects tab draws the same tree: a repo, then the worktrees under it
-          : repoGroups(projects).flatMap(({ project, worktrees }) => [
-            projectRow(project),
-            ...worktrees.map((w) => <div key={w.id} className={css.nestedRow}>{projectRow(w)}</div>),
-          ])}
+          // the Projects tab lists repos only; a worktree is reached through its sessions
+          : repoGroups(projects).map(({ project }) => projectRow(project))}
       </div>
       <div className={css.bottomBar}>
         <Button variant="ghost" size="sm" icon="grid" aria-pressed={gridShown(ui)} disabled={ui.grid.members.length === 0}
@@ -517,9 +541,17 @@ export function Sidebar({ onNew }: { onNew: (projectId?: string) => void }) {
       </div>
       {menu && (
         <ContextMenu x={menu.x} y={menu.y} onClose={() => setMenu(null)}
-          items={[{ label: menu.ids.length === 1 ? 'Remove session' : `Remove ${menu.ids.length} sessions`, icon: 'trash', danger: true, onSelect: () => removeSessions(menu.ids) }]} />
+          items={[
+            ...(noteTarget ? [{ label: 'Note', icon: 'note' as const, onSelect: () => onNote(noteTarget) }] : []),
+            // a session that leads a group cannot become a child (groups are one level deep)
+            ...(noteTarget && !hasChildren(sessions, noteTarget.id) && sessions.some((x) => canParent(sessions, noteTarget.id, x))
+              ? [{ label: 'Set parent…', icon: 'link' as const, onSelect: () => setParenting(noteTarget) }] : []),
+            ...(noteTarget?.parentId ? [{ label: 'Clear parent', icon: 'minus' as const, onSelect: () => void window.api.invoke('session:setParent', { id: noteTarget.id, parent: null }) }] : []),
+            { label: menu.ids.length === 1 ? 'Remove session' : `Remove ${menu.ids.length} sessions`, icon: 'trash' as const, danger: true, onSelect: () => removeSessions(menu.ids) },
+          ]} />
       )}
       {linking && <LinkPicker session={linking} onClose={() => setLinking(null)} />}
+      {parenting && <ParentPicker session={parenting} onClose={() => setParenting(null)} />}
     </div>
   )
 }

@@ -3,12 +3,14 @@ import type { ReactNode } from 'react'
 export type IconName =
   | 'plus' | 'folder' | 'folder-plus' | 'chevron-down' | 'chevron-up' | 'chevron-right'
   | 'terminal' | 'opencode' | 'claude' | 'branch' | 'search' | 'info' | 'trash'
-  | 'minimize' | 'maximize' | 'x' | 'link' | 'resume' | 'minus' | 'chevrons-down-up' | 'chevrons-up-down' | 'check' | 'grid' | 'eye' | 'eye-off' | 'sidebar' | 'sliders' | 'shield' | 'shield-off' | 'more-vertical'
+  | 'minimize' | 'maximize' | 'x' | 'link' | 'resume' | 'minus' | 'chevrons-down-up' | 'chevrons-up-down' | 'check' | 'grid' | 'eye' | 'eye-off' | 'sidebar' | 'sliders' | 'shield' | 'shield-off' | 'more-vertical' | 'note' | 'worktree'
 
 const folder = 'M20 20a2 2 0 0 0 2-2V8a2 2 0 0 0-2-2h-7.9a2 2 0 0 1-1.69-.9L9.6 3.9A2 2 0 0 0 7.93 3H4a2 2 0 0 0-2 2v13a2 2 0 0 0 2 2Z'
 
 // shapes after Lucide (ISC)
 const shapes: Record<IconName, ReactNode> = {
+  worktree: <><path d="M2 18V5a2 2 0 0 1 2-2h3.9a2 2 0 0 1 1.69.9l.81 1.2a2 2 0 0 0 1.67.9H20a2 2 0 0 1 2 2v1" /><circle cx="13" cy="15" r="2" /><circle cx="20" cy="20" r="2" /><path d="M13 21v-4M20 18v-1a2 2 0 0 0-2-2h-3" /></>,
+  note: <><path d="M15 3H6a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8Z" /><path d="M14 3v5h6" /><path d="M8 13h8M8 17h5" /></>,
   sidebar: <><rect x="3" y="3" width="18" height="18" rx="2" /><path d="M9 3v18" /></>,
   minus: <path d="M5 12h14" />,
   check: <path d="M20 6 9 17l-5-5" />,
