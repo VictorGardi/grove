@@ -21,7 +21,7 @@ const session = (id: string, projectId: string): Session => ({
 const PROJECTS = [project('p', 'grove'), project('wt', 'grove · probe', 'p'), project('q', 'other')]
 
 const railBlocks = () => listGroups(PROJECTS, [session('main', 'p'), session('probe', 'wt'), session('o', 'q')], {
-  collapsed: [], hiddenProjects: [], groupBy: 'project', sessionSort: 'manual', sessionOrder: [],
+  collapsed: [], hiddenProjects: [], groupBy: 'project', sessionSort: 'custom', sessionOrder: [],
 }).map((g) => ({ ...g, sessions: orderedSessions([g]) })).filter((g) => g.sessions.length > 0)
 
 describe('rail blocks', () => {
@@ -35,7 +35,7 @@ describe('rail blocks', () => {
   it('keeps the sidebar\'s order, so ⌘N is the tile the human counts to', () => {
     expect(railBlocks().flatMap((g) => g.sessions.map((s) => s.id)))
       .toEqual(orderedSessions(listGroups(PROJECTS, [session('main', 'p'), session('probe', 'wt'), session('o', 'q')], {
-        collapsed: [], hiddenProjects: [], groupBy: 'project', sessionSort: 'manual', sessionOrder: [],
+        collapsed: [], hiddenProjects: [], groupBy: 'project', sessionSort: 'custom', sessionOrder: [],
       })).map((s) => s.id))
   })
 

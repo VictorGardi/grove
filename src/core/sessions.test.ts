@@ -203,7 +203,7 @@ describe('core sessions', () => {
     expect(a.getSlices().sessions).toEqual([])
   })
 
-  it('prunes a removed session from the manual order', async () => {
+  it('prunes a removed session from the custom order', async () => {
     const { make } = setup()
     const a = make()
     await a.start()

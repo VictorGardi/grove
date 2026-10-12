@@ -1,4 +1,4 @@
-# 0041. Sessions keep one manual order, and dropping into a status group sets the status
+# 0041. Sessions keep one custom order, and dropping into a status group sets the status
 
 Date: 2026-10-12
 
@@ -13,9 +13,9 @@ cards by hand, and Cmd+1..9 and the collapsed rail should follow what they see.
 
 ## Decision
 
-- **`manual` is a sort**, and the default. `SessionSort` replaces `none` with `manual`
+- **`custom` is a sort**, and the default. `SessionSort` replaces `none` with `custom`
   (the old "Default" was created-asc under another name; a saved `none` loads as
-  `manual`). Cards drag only while the sort is `manual`.
+  `custom`). Cards drag only while the sort is `custom`.
 - **One global order**, `ui.sessionOrder: string[]`, shared by every grouping. A group
   shows its sessions in that order. A session missing from it sorts below every placed
   one, in creation order, so a list nobody has dragged reads as it did before.

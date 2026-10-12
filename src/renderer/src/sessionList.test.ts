@@ -26,7 +26,7 @@ const SESSIONS = [
 ]
 
 const ui = (over: Partial<Parameters<typeof listGroups>[2]> = {}) => ({
-  collapsed: [] as string[], hiddenProjects: [] as string[], groupBy: 'project' as const, sessionSort: 'manual' as const, sessionOrder: [] as string[], ...over,
+  collapsed: [] as string[], hiddenProjects: [] as string[], groupBy: 'project' as const, sessionSort: 'custom' as const, sessionOrder: [] as string[], ...over,
 })
 
 const shape = (groups: ListGroup[]) =>
@@ -43,9 +43,9 @@ describe('options', () => {
     ])
   })
 
-  it('offers the five sorts, manual first', () => {
+  it('offers the five sorts, custom first', () => {
     expect(SORT_OPTIONS).toEqual([
-      { value: 'manual', label: 'Manual' },
+      { value: 'custom', label: 'Custom' },
       { value: 'viewed-desc', label: 'Last viewed ↓' },
       { value: 'viewed-asc', label: 'Last viewed ↑' },
       { value: 'created-desc', label: 'Created ↓' },
@@ -125,8 +125,8 @@ describe('sessionSort', () => {
   const bySort = (sessionSort: Parameters<typeof listGroups>[2]['sessionSort'], list = VIEWED) =>
     ids(listGroups(PROJECTS, list, ui({ groupBy: 'none', sessionSort })))
 
-  it('sorts by start time under created-asc, and under manual with nothing placed', () => {
-    expect(bySort('manual')).toEqual(['n2', 'a', 'c', 'b', 'n1'])
+  it('sorts by start time under created-asc, and under custom with nothing placed', () => {
+    expect(bySort('custom')).toEqual(['n2', 'a', 'c', 'b', 'n1'])
     expect(bySort('created-asc')).toEqual(['n2', 'a', 'c', 'b', 'n1'])
   })
 
@@ -311,27 +311,27 @@ describe('visibleSessions', () => {
     expect(visibleSessions(groups)).toEqual(orderedSessions(groups))
   })
 })
-describe('manual order', () => {
-  const manual = (sessionOrder: string[], over: Partial<Parameters<typeof listGroups>[2]> = {}, list = SESSIONS) =>
-    listGroups(PROJECTS, list, ui({ groupBy: 'none', sessionSort: 'manual', sessionOrder, ...over }))
+describe('custom order', () => {
+  const custom = (sessionOrder: string[], over: Partial<Parameters<typeof listGroups>[2]> = {}, list = SESSIONS) =>
+    listGroups(PROJECTS, list, ui({ groupBy: 'none', sessionSort: 'custom', sessionOrder, ...over }))
 
   it('reads in the saved order', () => {
-    expect(ids(manual(['b', 'a', 'z', 'c']))).toEqual(['b', 'a', 'z', 'c'])
+    expect(ids(custom(['b', 'a', 'z', 'c']))).toEqual(['b', 'a', 'z', 'c'])
   })
 
   it('sinks sessions missing from the order below the placed ones, in creation order', () => {
-    expect(ids(manual(['b']))).toEqual(['b', 'z', 'a', 'c'])
-    expect(ids(manual(['a', 'gone']))).toEqual(['a', 'z', 'c', 'b'])
+    expect(ids(custom(['b']))).toEqual(['b', 'z', 'a', 'c'])
+    expect(ids(custom(['a', 'gone']))).toEqual(['a', 'z', 'c', 'b'])
   })
 
   it('shares one order across every grouping', () => {
     const order = ['b', 'c', 'a', 'z']
-    expect(ids(manual(order, { groupBy: 'project' }))).toEqual(['c', 'b', 'a', 'z'])
-    expect(ids(manual(order, { groupBy: 'status' }))).toEqual(['b', 'c', 'a', 'z'])
+    expect(ids(custom(order, { groupBy: 'project' }))).toEqual(['c', 'b', 'a', 'z'])
+    expect(ids(custom(order, { groupBy: 'status' }))).toEqual(['b', 'c', 'a', 'z'])
   })
 
   it('feeds orderedSessions, which the rail and Cmd+1..9 read', () => {
-    expect(orderedSessions(manual(['c', 'a', 'b', 'z'])).map((s) => s.id)).toEqual(['c', 'a', 'b', 'z'])
+    expect(orderedSessions(custom(['c', 'a', 'b', 'z'])).map((s) => s.id)).toEqual(['c', 'a', 'b', 'z'])
   })
 })
 

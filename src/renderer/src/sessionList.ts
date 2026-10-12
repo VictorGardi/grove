@@ -4,7 +4,7 @@ import { repoGroups } from './repoGroups'
 import { WORKFLOW_STATUSES } from './workflowStatus'
 
 export type GroupBy = 'project' | 'status' | 'none'
-export type SessionSort = 'manual' | 'viewed-desc' | 'viewed-asc' | 'created-desc' | 'created-asc'
+export type SessionSort = 'custom' | 'viewed-desc' | 'viewed-asc' | 'created-desc' | 'created-asc'
 
 // A run of rows under one heading. Exactly one of project/status is set; `none`
 // grouping sets neither and labels the whole list. A project's group carries its
@@ -26,7 +26,7 @@ export const GROUP_BY_OPTIONS: { value: GroupBy; label: string }[] = [
 ]
 
 export const SORT_OPTIONS: { value: SessionSort; label: string }[] = [
-  { value: 'manual', label: 'Manual' },
+  { value: 'custom', label: 'Custom' },
   { value: 'viewed-desc', label: 'Last viewed ↓' },
   { value: 'viewed-asc', label: 'Last viewed ↑' },
   { value: 'created-desc', label: 'Created ↓' },
@@ -48,7 +48,7 @@ const byViewed = (newestFirst: boolean) => (a: Session, b: Session) => {
 
 // The dragged order (ADR 0041). A session the human has never placed sorts below every placed
 // one, in creation order, so a list nobody has dragged yet reads exactly as created-asc does.
-const byManual = (order: string[]) => {
+const byCustom = (order: string[]) => {
   const rank = new Map(order.map((id, i) => [id, i] as const))
   return (a: Session, b: Session) => {
     const ar = rank.get(a.id)
@@ -59,7 +59,7 @@ const byManual = (order: string[]) => {
   }
 }
 
-const COMPARATORS: Record<Exclude<SessionSort, 'manual'>, (a: Session, b: Session) => number> = {
+const COMPARATORS: Record<Exclude<SessionSort, 'custom'>, (a: Session, b: Session) => number> = {
   'viewed-desc': byViewed(true),
   'viewed-asc': byViewed(false),
   'created-desc': (a, b) => byStarted(b, a),
@@ -84,7 +84,7 @@ export function listGroups(
   const hidden = new Set(groups.filter((g) => named.has(g.project.id)).map((g) => g.project.id))
   const repoOf = new Map(groups.flatMap((g) => [g.project, ...g.worktrees].map((p) => [p.id, g.project.id] as const)))
   const visible = sessions.filter((s) => !hidden.has(repoOf.get(s.projectId) ?? s.projectId))
-  const sort = ui.sessionSort === 'manual' ? byManual(ui.sessionOrder ?? []) : COMPARATORS[ui.sessionSort] ?? byStarted
+  const sort = ui.sessionSort === 'custom' ? byCustom(ui.sessionOrder ?? []) : COMPARATORS[ui.sessionSort] ?? byStarted
   const group = (
     key: string, label: string, project: Project | null, status: WorkflowStatus | null,
     members: Session[], children: ListGroup[] = [], worktree = false,
@@ -148,7 +148,7 @@ export function dropSession(
 ): DropResult | null {
   if (!canDrop(groupBy, from, to) || at?.target === moved.id) return null
   const status = groupBy === 'status' && to.status && to.status !== moved.workflowStatus ? to.status : null
-  const all = [...sessions].sort(byManual(order)).map((s) => s.id)
+  const all = [...sessions].sort(byCustom(order)).map((s) => s.id)
   const rest = to.sessions.filter((s) => s.id !== moved.id)
   const next = all.filter((id) => id !== moved.id)
   const pos = at ? rest.findIndex((s) => s.id === at.target) + (at.after ? 1 : 0) : rest.length

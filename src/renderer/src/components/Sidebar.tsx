@@ -289,9 +289,9 @@ export function Sidebar({ onNew }: { onNew: (projectId?: string) => void }) {
     for (const id of ids) void window.api.invoke('session:remove', { id })
   }
 
-  // Drag to reorder (ADR 0041), on only while the sort is manual. Only the grabbed card moves: the
+  // Drag to reorder (ADR 0041), on only while the sort is custom. Only the grabbed card moves: the
   // shift-click selection is not part of a drag. `over` is where the indicator line is drawn.
-  const draggable = ui.sessionSort === 'manual'
+  const draggable = ui.sessionSort === 'custom'
   const [drag, setDrag] = useState<{ id: string; from: ListGroup } | null>(null)
   const [over, setOver] = useState<{ group: ListGroup; at: DropAt | null } | null>(null)
   const endDrag = () => { setDrag(null); setOver(null) }
