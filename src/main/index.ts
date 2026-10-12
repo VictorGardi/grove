@@ -70,7 +70,11 @@ app.whenReady().then(async () => {
     opencodeShare: path.join(process.env.XDG_DATA_HOME || path.join(home, '.local', 'share'), 'opencode'),
     opencodeConfig: path.join(process.env.XDG_CONFIG_HOME || path.join(home, '.config'), 'opencode'),
     opencodeState: path.join(process.env.XDG_STATE_HOME || path.join(home, '.local', 'state'), 'opencode'),
-    opencodeServiceConfig: serviceFilePath(process.env, home),
+    // Two files, same name, different jobs (D6). The registration is the service's own: where it
+    // says it can be reached, and the password it wants. The config is where grove writes the
+    // address the service should bind. grove reads the registration and never writes it.
+    opencodeRegistration: serviceFilePath(process.env, home),
+    opencodeServiceConfig: path.join(process.env.XDG_CONFIG_HOME || path.join(home, '.config'), 'opencode', 'service.json'),
     gitconfig: path.join(home, '.gitconfig'),
     spoolDir,
     socketPath,
@@ -90,7 +94,7 @@ app.whenReady().then(async () => {
       confPath: path.join(app.getAppPath(), 'resources', 'tmux.conf'),
       env: minimalEnv(process.env),
     }),
-    sources: [new HttpOpenCode({ serviceFile: agentPaths.opencodeServiceConfig }), new SpoolClaude({ dir: spoolDir })],
+    sources: [new HttpOpenCode({ serviceFile: serviceFilePath(process.env, home) }), new SpoolClaude({ dir: spoolDir })],
     git: gitPath,
   })
   await core.start()

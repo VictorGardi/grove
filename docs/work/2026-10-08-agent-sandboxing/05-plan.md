@@ -2,7 +2,7 @@
 feature: 2026-10-08-agent-sandboxing
 phase: plan
 status: approved
-version: 5
+version: 6
 created: 2026-10-11
 updated: 2026-10-11
 based_on:
@@ -537,3 +537,165 @@ fresh agent needs, inlined:
       `npm run dev`, start a sandboxed session, ⌘W it, and `container list` shows nothing; then
       `container run -d --name grove-orphan sleep 600`, restart the app, and it is gone. Left
       unticked on purpose.
+
+## Slice 6 — OpenCode in the sandbox, joining the host's service (D6)
+
+Re-planned fresh against design v9 / structure v6, and against the four spikes recorded in
+`06-implementation.md` under "OpenCode in the sandbox". Slices 1–5 are done and untouched.
+
+### What slice 6 has to be true about
+
+- **Why it cannot just run `opencode` in the container.** A second registration **evicts** the
+  incumbent (measured: within 3 s service A was dead, no listening socket, the registration read as
+  B). A sandboxed OpenCode starting its own service would take down status, waiting, notifications
+  and write-driven linking for **every** OpenCode session on the host. `--read-only-path
+  <opencodeState>` is the backstop that makes eviction impossible rather than merely unlikely.
+- **How the container finds the service.** The host service writes its reachable `url` into the
+  **registration** file at `$XDG_STATE_HOME/opencode/service.json` — measured: bound to
+  `0.0.0.0` it registered `url=http://0.0.0.0:49558`, bound to the bridge it registers
+  `url=http://192.168.64.1:49561`. So the container reads the registration itself, **and only if
+  `XDG_STATE_HOME` points at the host's state dir**. Without that pointer the client looks in
+  `/root/.local/state/opencode`, finds nothing, starts its own service, and D6's hazard is back.
+  This is the same one-pointer-at-a-mounted-path mechanism D8 established for `XDG_DATA_HOME` and
+  `XDG_CONFIG_HOME`; `XDG_STATE_HOME` is the third pointer and it was missing from design v9's spec
+  block.
+- **Two `service.json` files, and the names in the tree are wrong.** `~/.config/opencode/service.json`
+  is the **config** grove writes (`hostname`, `port`, `password`, `disabled`, `cors`, `env`; closed
+  schema). `~/.local/state/opencode/service.json` is the **registration** grove reads (`url`, `pid`,
+  `password`, `version`, `id`). `AgentPaths.opencodeServiceConfig` currently holds the *registration*
+  path (it is what `HttpOpenCode` watches), under the config's name. This slice gives each field the
+  name it deserves.
+- **The bridge address is derived, never assumed.** `container network ls --format json` on this
+  machine returns exactly one array element:
+  `[{"configuration":{…,"name":"default",…},"status":{"ipv4Gateway":"192.168.64.1","ipv4Subnet":"192.168.64.0/24",…}}]`.
+  A network created with `--subnet 10.99.0.0/24` yields `10.99.0.1`, so `.1` is a coincidence.
+- **The bridge is not there at boot.** `bridge100` is created by `container system start`, measured
+  2m24s after login. So: run `system start` (idempotent), then poll with backoff. Only a failure
+  **past the budget** is `no-sandbox`. grove itself never binds, so it never sees the `Errno 49`
+  the service would — the retry covers the same window, from the other side.
+- **The service reads its config at start.** grove writing the bind does not rebind a running
+  service. This is stated as a fact here and carried as an open item; it is **not** worked around in
+  this slice, because restarting the human's OpenCode service is not a decision design v9 or
+  structure v6 makes.
+
+### Carried forward, and not worked around here
+
+- **`03-design.md`'s two-way table says grove writes the bridge address "with a consent prompt the
+  first time". `04-structure.md` v6 — written after, `based_on: 03-design.md@9` — lists slice 6's
+  files, outcome and verification with no prompt and no renderer file.** Later artifacts take
+  precedence (`contract.md` rule 1), so this slice writes the bind and builds no prompt. A prompt
+  would also need a decision the design does not make — how consent is carried through
+  `sessionCreate` — so building one here would be a new decision, not an implementation. **Owed to
+  `grove-design`**: either fold a consent prompt into a structure entry that owns it, or drop the
+  clause from the two-way table. Recorded, not silently dropped.
+- Slice 5's two blocked commands and its manual pass are still open; nothing here changes them.
+
+### Tests first
+
+- [x] Create `src/core/sandbox/service.test.ts` against a fake `container` script (the shape
+      `container.test.ts` just established) that answers `network ls --format json` from a fixture
+      and records every invocation: `ensureServiceReachable({ configFile, container, attempts: 1,
+      firstDelayMs: 0, maxDelayMs: 0 })` against an empty config file runs `system start`, then
+      `network ls --format json`, then leaves `JSON.parse(configFile)` equal to
+      `{ hostname: '192.168.64.1' }`.
+- [x] In the same file: a config that already carries a usable `hostname` spawns **nothing** at all
+      (the log is empty) and leaves the file byte-identical — the bind is written once, not on
+      every sandboxed session.
+- [x] In the same file: every other key in the config file survives — write
+      `{"port": 49561, "password": "s3cret"}` first, then assert the result is
+      `{"port": 49561, "password": "s3cret", "hostname": "192.168.64.1"}`. The service writes its own
+      `password` back into this file, so read-modify-write is the only safe form.
+- [x] In the same file: a config file that does not exist is created with `hostname` in it, mode
+      `0600`.
+- [x] In the same file: `network ls` answering `[]` for the first two calls and a gateway on the
+      third still succeeds, with three `network ls` calls logged.
+- [x] In the same file: `network ls` answering a gateway of `0.0.0.0`, or of `127.0.0.1`, never
+      writes anything and keeps retrying; past `attempts` it **rejects** (→ `no-sandbox` at the
+      seam), and the config file is untouched.
+- [x] In the same file: a `container` binary that is absent, and a `system start` that fails, both
+      end in a retry that still reaches the write when discovery works — the failure of the
+      idempotent `system start` must not be the refusal.
+- [x] In the same file: `servicePassword(<registration file>)` returns its `password`, and returns
+      `undefined` for a missing file, an unparseable one, and one with no `password`.
+- [x] In the same file: no call grove makes writes to, or even opens, the registration file — the
+      fake's log contains only `system start` and `network ls`.
+- [x] Add to `src/core/sandbox/spec.test.ts`: `envFor('opencode', SESSION, { paths: PATHS,
+      serverPassword: 'p' })` carries `XDG_STATE_HOME: '/home/u/.local/state'` beside the other two
+      XDG pointers and `OPENCODE_SERVER_PASSWORD: 'p'`; `envFor('claude', …, { serverPassword: 'p' })`
+      carries **neither**; `envFor('opencode', …)` with no `serverPassword` carries the pointer and
+      no `OPENCODE_SERVER_PASSWORD` key at all.
+- [x] In the same file: `PATHS` gains `opencodeRegistration: '/home/u/.local/state/opencode/service.json'`
+      and `opencodeServiceConfig` moves to `'/home/u/.config/opencode/service.json'`; the existing
+      `readOnlyPathsFor('opencode', …)` assertion that the state dir is carved out and the claude
+      assertions stay exactly as they are.
+- [x] Add to `src/core/sessionCreate.test.ts`'s `sessionCreate --sandboxed` block: a sandboxed
+      **opencode** session is created (not refused) and its argv is a `container run` whose `-e`
+      list carries `XDG_STATE_HOME=<dirname of paths().opencodeState>`; `sandboxed(core, { kind:
+      'terminal' })` is still refused `no-sandbox`.
+
+### Implement
+
+- [x] Create `src/core/sandbox/service.ts` exporting two functions:
+      `ensureServiceReachable(o: { configFile: string; container: string; attempts?: number;
+      firstDelayMs?: number; maxDelayMs?: number }): Promise<void>` — return immediately when the
+      config already names a usable hostname; otherwise run `container system start` (ignoring its
+      exit status, since it is idempotent and may legitimately fail on a system already up), then
+      poll `container network ls --format json` up to `attempts` times for
+      `.status.ipv4Gateway` of the network whose `.configuration.name` is `default`, treating a
+      missing/empty/wildcard (`0.0.0.0`, `*`)/loopback (`127.`) value as not-ready-yet, with a
+      backoff of `firstDelayMs` doubling to `maxDelayMs` between attempts; on the first usable
+      gateway, read-modify-write `hostname` into `configFile` and return; when the attempts run out,
+      **throw**. Defaults, from the measurement: `attempts: 30`, `firstDelayMs: 250`,
+      `maxDelayMs: 8000` — about 3½ minutes, which clears the measured 2m24s from login to
+      `bridge100`. Writes `{ ...existing, hostname }` so the service's own `password` and `port`
+      survive, creating the file mode `0600` when absent, and re-serialising as `JSON.stringify(x,
+      null, 2) + '\n'`.
+      `servicePassword(registrationFile: string): string | undefined` — the registration's
+      `password`, or `undefined` for a missing, unparseable or passwordless file. Never throws.
+- [x] `src/core/sandbox/spec.ts`: add `opencodeRegistration: string` to `AgentPaths` (next to
+      `opencodeState`); give `envFor`'s options a `serverPassword?: string` and, for
+      `kind === 'opencode'`, set `XDG_STATE_HOME = path.dirname(p.opencodeState)` alongside the two
+      pointers it already sets and `OPENCODE_SERVER_PASSWORD = o.serverPassword` **only when a
+      password was given**; give `specFor`'s options the same `serverPassword?` and thread it into
+      `envFor`. Claude's branch is untouched.
+- [x] `src/core/sandbox/launch.ts`: in `sandboxArgvFor`'s existing `try`, after
+      `loginShellCredential`, add `const serverPassword = o.kind === 'opencode'
+      ? await reachHostService(paths) : undefined` where `reachHostService` awaits
+      `ensureServiceReachable({ configFile: paths.opencodeServiceConfig, container: sandbox.container })`
+      then reads `servicePassword(paths.opencodeRegistration)`; pass `serverPassword` to `specFor`.
+      Inside the `try` on purpose: every failure then collapses to `null` exactly as the other
+      reasons do, which is `no-sandbox` on create and a downgraded resume with its note — never an
+      unguarded pane (ADR 0033, ADR 0036).
+- [x] `src/main/index.ts`: in the `agentPaths` literal, set
+      `opencodeRegistration: serviceFilePath(process.env, home)` and change `opencodeServiceConfig`
+      to `path.join(process.env.XDG_CONFIG_HOME || path.join(home, '.config'), 'opencode',
+      'service.json')`. Pass `serviceFilePath(process.env, home)` to `HttpOpenCode` at the
+      `sources:` line, so the value it watches does not change.
+- [x] `src/core/core.ts` `sessionCreate`: widen the guard from `kind === 'claude'` to
+      `kind === 'claude' || kind === 'opencode'`, and update its comment to say that a terminal is
+      still refused because it has no agent argv to wrap. The `no-repo` guard and `repoRefs`
+      immediately above it are another agent's and are **not** touched.
+- [x] `resources/sandbox/Dockerfile`: replace `opencode-ai@1.19.0` with `@opencode/cli@2.0.26` in
+      the existing `npm install -g` line. Measured: `opencode-ai@2.x` does not exist on npm, the
+      package was renamed and rescoped, and the 2.x tarball is a self-contained Bun binary needing
+      glibc only, so no new apt package. Pinned **independently of the host's version** on purpose —
+      the image is content-addressed on this file alone, and minor skew is tolerated on the
+      `--server` path (it warns and proceeds).
+- [x] `src/renderer/src/sandboxOptIn.ts`: `sandboxable` becomes `kind === 'claude' || kind ===
+      'opencode'`, and its comment says why the terminal stays out. No other renderer file changes:
+      the dialog reads `sandboxable`/`wantsSandbox` for its disabled state, its `aria-checked`, its
+      class and its summary line, so all four follow.
+
+### Verify
+
+- [x] `npm test` — 935 passed / 83 files (was 911 / 81; +24). Slice 5's blocked `typecheck:web` cleared on its own: the other agent's `NewSessionDialog.tsx` landed, so both typechecks and the full build are clean for the first time since that commit.
+- [x] `npm run typecheck`
+- [x] `npm run build`
+- [ ] **NOT RUN HERE — manual, and it needs a live app, a real controlling TTY and a reachable
+      credential**: start an unsandboxed OpenCode session and note its status; start a sandboxed one
+      and send it a prompt; confirm **both** show status; that
+      `lsof -nP -iTCP -a -p $(pgrep -f 'opencode serve') -sTCP:LISTEN` shows the bridge address and
+      not `*`; that the host's LAN address refuses; and that `stat` on the host's `service.json` is
+      unchanged. Then **the cross-version check the spikes could not settle**: the image's
+      `@opencode/cli@2.0.26` client against the host's v2 service over `--server`, and `opencode
+      auth list` inside a sandboxed pane listing the host's provider. Left unticked on purpose.

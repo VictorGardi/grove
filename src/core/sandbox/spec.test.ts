@@ -9,7 +9,8 @@ const PATHS: MountPaths = {
   opencodeShare: '/home/u/.local/share/opencode',
   opencodeConfig: '/home/u/.config/opencode',
   opencodeState: '/home/u/.local/state/opencode',
-  opencodeServiceConfig: '/home/u/.local/state/opencode/service.json',
+  opencodeRegistration: '/home/u/.local/state/opencode/service.json',
+  opencodeServiceConfig: '/home/u/.config/opencode/service.json',
   gitconfig: '/home/u/.gitconfig',
   spoolDir: '/data/agents/claude',
   socketPath: '/data/grove.sock',
@@ -120,9 +121,29 @@ describe('envFor', () => {
 
   it('points opencode at its own XDG dirs, derived from the mounts it already has', () => {
     expect(envFor('opencode', SESSION, { paths: PATHS })).toEqual({
-      env: expect.objectContaining({ XDG_DATA_HOME: '/home/u/.local/share', XDG_CONFIG_HOME: '/home/u/.config' }),
+      env: expect.objectContaining({
+        XDG_DATA_HOME: '/home/u/.local/share',
+        XDG_CONFIG_HOME: '/home/u/.config',
+        XDG_STATE_HOME: '/home/u/.local/state',
+      }),
       passEnv: [],
     })
+  })
+
+  // D6. The registration is where the host service says it can be reached, and it lives under
+  // XDG_STATE_HOME — without that pointer the client finds nothing, registers a service of its own,
+  // and evicts the host's. The password is the half the client does not read for itself.
+  it('hands a sandboxed opencode the host service’s password, and claude neither that nor the pointer', () => {
+    expect(envFor('opencode', SESSION, { paths: PATHS, serverPassword: 's3cret' }).env.OPENCODE_SERVER_PASSWORD).toBe('s3cret')
+    expect(envFor('claude', SESSION, { paths: PATHS, serverPassword: 's3cret' }).env.OPENCODE_SERVER_PASSWORD).toBeUndefined()
+    expect(envFor('claude', SESSION, { paths: PATHS, serverPassword: 's3cret' }).env.XDG_STATE_HOME).toBeUndefined()
+  })
+
+  it('carries no password key at all when no service registration was readable', () => {
+    // Not an empty string: an empty -e would reach the container as an empty credential and fail
+    // authentication in a way that looks like a wrong password rather than a missing service.
+    expect('OPENCODE_SERVER_PASSWORD' in envFor('opencode', SESSION, { paths: PATHS }).env).toBe(false)
+    expect(envFor('opencode', SESSION, { paths: PATHS, serverPassword: '' }).env.OPENCODE_SERVER_PASSWORD).toBeUndefined()
   })
 
   it('gives each agent the other’s no pointer to set', () => {

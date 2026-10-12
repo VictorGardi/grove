@@ -751,10 +751,10 @@ export function createCore(opts: CoreOptions): Core {
       if (feature !== undefined && (added || !slices.features.items.some((f) => f.projectId === chosen.id && f.slug === feature))) {
         return { ok: false, error: 'no-feature' } // checked before anything is created
       }
-      // A terminal has no agent argv to wrap, and a sandboxed OpenCode would register its own
-      // service and evict the host's (D6) — so slice 1 sandboxes Claude alone, and refuses loudly
-      // rather than quietly starting an unsandboxed pane.
-      const sandboxKind: AgentKind | null = sandboxed && kind === 'claude' ? 'claude' : null
+      // A terminal has no agent argv to wrap, and stays refused. Both agents are sandboxable now: a
+      // sandboxed OpenCode joins the host's shared service instead of registering its own, which
+      // would evict the incumbent and take down every other OpenCode session on this machine (D6).
+      const sandboxKind: AgentKind | null = sandboxed && (kind === 'claude' || kind === 'opencode') ? kind : null
       if (sandboxed && !sandboxKind) return { ok: false, error: 'no-sandbox' }
       const workdir = dir ?? project.path
       const agentSessionId = source ? source.mintId(now()) : null

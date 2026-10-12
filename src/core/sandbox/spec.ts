@@ -11,7 +11,8 @@ export interface AgentPaths {
   opencodeShare: string
   opencodeConfig: string
   opencodeState: string
-  opencodeServiceConfig: string
+  opencodeRegistration: string // the service's own registration — where it says it can be reached, and the password it wants (D6)
+  opencodeServiceConfig: string // the service's config — where grove writes the address to bind (D6)
   gitconfig: string
   spoolDir: string
   socketPath: string
@@ -80,7 +81,11 @@ export function readOnlyPathsFor(kind: AgentKind, o: { commonDir: string | null;
 
 // The pane's env *inside* the VM. The host login shell still runs outside it (ADR 0010), so
 // this is the agent's whole environment: the image's, plus these.
-export function envFor(kind: AgentKind, session: Session, o: { paths: MountPaths }): { env: Record<string, string>; passEnv: string[] } {
+export function envFor(
+  kind: AgentKind,
+  session: Session,
+  o: { paths: MountPaths; serverPassword?: string },
+): { env: Record<string, string>; passEnv: string[] } {
   const p = o.paths
   const env: Record<string, string> = {
     GROVE_SESSION_ID: session.id,
@@ -99,6 +104,15 @@ export function envFor(kind: AgentKind, session: Session, o: { paths: MountPaths
   } else {
     if (p.opencodeShare) env.XDG_DATA_HOME = path.dirname(p.opencodeShare)
     if (p.opencodeConfig) env.XDG_CONFIG_HOME = path.dirname(p.opencodeConfig)
+    // D6: the third pointer, and the one that decides whether this session joins the host's service
+    // or starts its own. The registration lives at `$XDG_STATE_HOME/opencode/service.json` and the
+    // state dir is mounted read-only; without the pointer the client looks in `/root/.local/state`,
+    // finds nothing, registers its own service — and a second registration evicts the host's, taking
+    // down status, waiting and linking for every OpenCode session on this machine.
+    if (p.opencodeState) env.XDG_STATE_HOME = path.dirname(p.opencodeState)
+    // The address comes from the registration the client reads; the credential does not, so grove
+    // hands it over. Without it the service answers 401.
+    if (o.serverPassword) env.OPENCODE_SERVER_PASSWORD = o.serverPassword
   }
   // Forwarded bare, so the value comes from the pane's login shell and never enters argv or ps.
   // OpenCode needs no channel of its own (D8), so it forwards nothing.
@@ -114,13 +128,14 @@ export function specFor(o: {
   container: string
   image: string
   credential?: string // D8: a label of the credential this session authenticates with; absent: nothing reachable
+  serverPassword?: string // D6: the host service's password, for a sandboxed opencode to join it
 }): SandboxSpec {
   // A plain checkout's common dir is `.git`, *below* the working directory, so the working
   // directory's volume already carries it and it needs no carve-outs. A worktree's points at
   // another repository entirely, and a session started in a subfolder's points at its parent —
   // both outside the mount, without which git cannot resolve them at all (D2).
   const commonDir = o.commonDir && !o.commonDir.startsWith(o.cwd + path.sep) ? o.commonDir : null
-  const { env, passEnv } = envFor(o.kind, o.session, { paths: o.paths })
+  const { env, passEnv } = envFor(o.kind, o.session, { paths: o.paths, serverPassword: o.serverPassword })
   return {
     container: o.container,
     image: o.image,

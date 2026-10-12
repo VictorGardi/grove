@@ -3,11 +3,12 @@ import type { SessionKind } from '@shared/types'
 import { SANDBOX_DEFAULT, sandboxable, wantsSandbox } from './sandboxOptIn'
 
 describe('sandboxable', () => {
-  // Only Claude: a terminal has no agent argv to wrap, and a sandboxed OpenCode would register
-  // its own service and evict the host's (ADR 0034, D6). Slice 6 is what makes OpenCode eligible.
-  it('is Claude alone', () => {
+  // Both agents, and not a terminal: it has no agent argv to wrap. A sandboxed OpenCode joins the
+  // host's shared service rather than registering its own, which is what keeps the incumbent alive
+  // (ADR 0034, D6).
+  it('is every agent kind, and not a terminal', () => {
     expect(sandboxable('claude')).toBe(true)
-    expect(sandboxable('opencode')).toBe(false)
+    expect(sandboxable('opencode')).toBe(true)
     expect(sandboxable('terminal')).toBe(false)
   })
 })
@@ -22,7 +23,7 @@ describe('wantsSandbox', () => {
   // unsandboxable kind must never reach core with the flag set, or the create is refused
   // `no-sandbox` and the human loses the session over a switch they cannot see.
   it('is false for an unsandboxable kind however the toggle is left', () => {
-    for (const kind of ['opencode', 'terminal'] as SessionKind[]) {
+    for (const kind of ['terminal'] as SessionKind[]) {
       expect(wantsSandbox(kind, true)).toBe(false)
       expect(wantsSandbox(kind, false)).toBe(false)
     }

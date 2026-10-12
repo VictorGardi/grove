@@ -17,6 +17,10 @@ import { add as addWorktree, worktreePath } from './worktrees'
 const created = (fake: { calls: { method: string; args: unknown[] }[] }) =>
   fake.calls.filter((c) => c.method === 'create').map((c) => c.args[0] as { cwd: string; argv?: string[] })
 
+// `container network ls --format json`, in the shape the real CLI prints: the network's name under
+// `configuration`, the address grove binds the host service to under `status`.
+const NETWORKS = JSON.stringify([{ configuration: { name: 'default' }, status: { ipv4Gateway: '192.168.64.1' } }])
+
 describe('sessionCreate for the CLI', () => {
   let t: ReturnType<typeof setupCore>
   beforeEach(() => { t = setupCore() })
@@ -190,6 +194,9 @@ describe('sessionCreate --sandboxed', () => {
   const paths = () => ({
     claudeHome: path.join(home(), '.claude'),
     claudeJson: path.join(home(), '.claude.json'),
+    opencodeState: path.join(home(), '.local', 'state', 'opencode'),
+    opencodeRegistration: path.join(home(), '.local', 'state', 'opencode', 'service.json'),
+    opencodeServiceConfig: path.join(home(), '.config', 'opencode', 'service.json'),
     gitconfig: path.join(home(), '.gitconfig'),
     spoolDir: path.join(t.dir, 'agents', 'claude'),
     socketPath: path.join(t.dir, 'grove.sock'),
@@ -259,8 +266,27 @@ describe('sessionCreate --sandboxed', () => {
   it('refuses a kind it cannot sandbox, and creates nothing', async () => {
     const core = await start()
     expect(await sandboxed(core, { kind: 'terminal' })).toEqual({ ok: false, error: 'no-sandbox' })
-    expect(await sandboxed(core, { kind: 'opencode' })).toEqual({ ok: false, error: 'no-sandbox' })
     expect(created(t.fake)).toEqual([])
+  })
+
+  // D6: both agents are sandboxable. A terminal has no agent argv to wrap, and nothing else changed.
+  it('sandboxes an opencode session, pointing it at the host service rather than its own', async () => {
+    const core = await startWithLog()
+    const res = await sandboxed(core, { kind: 'opencode' })
+    if (!res.ok) throw new Error(res.error)
+    expect(res.data.sandboxed).toBe(true)
+    const argv = created(t.fake)[0].argv![4]
+    expect(argv).toContain(' run --rm -i -t --name ')
+    // the registration has to be readable or the client starts a service of its own and evicts the
+    // host's, so the state dir is both pointed at and carved out read-only
+    expect(argv).toContain(`-e XDG_STATE_HOME=${path.dirname(paths().opencodeState)}`)
+    expect(argv).toContain(`--read-only-path ${paths().opencodeState}`)
+  })
+
+  it('writes the bridge bind once, into the host service config', async () => {
+    const core = await startWithLog()
+    expect(await sandboxed(core, { kind: 'opencode' })).toMatchObject({ ok: true })
+    expect(JSON.parse(fs.readFileSync(paths().opencodeServiceConfig, 'utf8'))).toEqual({ hostname: '192.168.64.1' })
   })
 
   it('refuses no-sandbox when the image cannot be built, rather than launching unguarded', async () => {
@@ -304,13 +330,18 @@ describe('sessionCreate --sandboxed', () => {
   const containerLog = () => container() + '.log'
   const containerCalls = () => (fs.existsSync(containerLog()) ? fs.readFileSync(containerLog(), 'utf8').trim().split('\n').filter(Boolean) : [])
   const removals = () => containerCalls().filter((c) => c.startsWith('rm '))
-  // What startWithLog writes: record every invocation, and answer `list --all --quiet` with
-  // `listed`, one name per line, running and stopped alike — as the real CLI prints them.
+  // What startWithLog writes: record every invocation, and answer the two read-only questions grove
+  // asks — which containers exist, and what the `default` network's gateway is.
   const fakeListingScript = (listed: string[]): string =>
     [
       '#!/bin/sh',
       'echo "$@" >> ' + containerLog(),
       'if [ "$*" = "list --all --quiet" ]; then printf ' + "'%s\\n'" + ' ' + listed.map((n) => "'" + n + "'").join(' ') + '; fi',
+      'if [ "$*" = "network ls --format json" ]; then printf ' +
+        "'%s\\n'" +
+        ' ' +
+        JSON.stringify(NETWORKS) +
+        '; fi',
       'exit 0',
       '',
     ].join('\n')

@@ -12,7 +12,12 @@ RUN apt-get update \
  && rm -rf /var/lib/apt/lists/* \
  && mkdir -p /etc/grove/no-hooks
 
-RUN npm install -g @anthropic-ai/claude-code@2.1.296 opencode-ai@1.19.0
+# Pinned independently of the host's version, on purpose. Minor skew is tolerated on the
+# `--server` path — it warns and proceeds — while this file's bytes are what the image is
+# content-addressed on, so a host-pinned version would rebuild the image on every host upgrade.
+# `opencode-ai@2.x` does not exist: the package was renamed and rescoped, and the 2.x tarball is a
+# self-contained Bun binary needing glibc only, so it costs no new apt package.
+RUN npm install -g @anthropic-ai/claude-code@2.1.296 @opencode/cli@2.0.26
 
 # grove's own CLI, for a sandboxed agent to orchestrate with. The bundle's path differs per
 # install, so it cannot be baked in either: grove passes it in, on the mount it made.

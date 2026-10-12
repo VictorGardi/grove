@@ -2,7 +2,7 @@
 feature: 2026-10-08-agent-sandboxing
 phase: implementation
 status: stale
-version: 9
+version: 10
 created: 2026-10-10
 updated: 2026-10-11
 based_on:
@@ -14,6 +14,141 @@ forced: []
 # Agent session sandboxing — implementation
 ---
 
+# Slice 6 — OpenCode in the sandbox, joining the host's service (D6)
+
+## What landed
+
+- **`src/core/sandbox/service.ts`** (NEW): `ensureServiceReachable({ configFile, container, … })` and
+  `servicePassword(registrationFile)`.
+- **`src/core/sandbox/spec.ts`**: `AgentPaths` gains `opencodeRegistration`; `envFor` and `specFor`
+  take `serverPassword?`; an OpenCode session's env gains `XDG_STATE_HOME` and
+  `OPENCODE_SERVER_PASSWORD`.
+- **`src/core/sandbox/launch.ts`**: a sandboxed OpenCode reaches the host service and collects its
+  password before `specFor`, inside the try that already owns every sandbox failure.
+- **`src/main/index.ts`**: the two `service.json` files each get the field that names them.
+- **`src/core/core.ts`**: the `sessionCreate` refusal widens from Claude alone to both agents; a
+  terminal is still refused.
+- **`src/renderer/src/sandboxOptIn.ts`**: `sandboxable` now covers OpenCode. No other renderer file
+  changed — the dialog reads `sandboxable`/`wantsSandbox` for its disabled state, its `aria-checked`,
+  its class and its summary line, so all four follow.
+- **`resources/sandbox/Dockerfile`**: `opencode-ai@1.19.0` → `@opencode/cli@2.0.26`.
+- **Tests**: `src/core/sandbox/service.test.ts` (NEW, 14 cases), 3 cases added to
+  `src/core/sandbox/spec.test.ts`, 2 added to `src/core/sessionCreate.test.ts` (and the
+  opencode-refusal assertion there replaced), 1 rewritten in `src/renderer/src/sandboxOptIn.test.ts`.
+
+`npm test`: **935 passed / 83 files** (was 911 / 81). `npm run typecheck`: clean. `npm run build`:
+clean — the renderer client build that slice 5 could not run now builds, because the other agent's
+`NewSessionDialog.tsx` landed.
+
+## The three things this slice had to work out, and how
+
+**1. How the container finds the service, at all.** D6's outcome is that the container *joins* the
+host's service. Nothing in design v9's spec block says how. The answer is in the spikes: the host
+service writes the address it is reachable on into its **own registration**, so bound to `0.0.0.0`
+it registered `url=http://0.0.0.0:49558` and bound to the bridge it registers
+`url=http://192.168.64.1:49561`. The container already has that file — it is inside
+`~/.local/state/opencode`, which is mounted read-only. But only if `XDG_STATE_HOME` points at the
+host's state dir, and design v9's spec block pointed only `XDG_DATA_HOME` and `XDG_CONFIG_HOME`.
+Without the third pointer the client looks in `/root/.local/state`, finds no registration, and
+starts a service of its own — which **evicts the host's** and is the exact failure D6 exists to
+prevent. So the container needs no `--server` flag (the spikes confirmed `--server` is the seam for
+a v2 client, and this is that seam, but the registration supplies the URL), and `XDG_STATE_HOME` is
+what makes it work.
+
+**2. The password is the half the client does not read for itself.** The address comes from the
+registration; the credential does not, and the service answers 401 without `OPENCODE_SERVER_PASSWORD`.
+So grove reads the registration — and never writes it. A second registration evicts the incumbent,
+which is why the write is confined to the *config*, read-modify-write so the service's own `password`
+and `port` survive.
+
+**3. `opencodeServiceConfig` was the wrong path under its own name.** `src/main/index.ts` filled it
+with `serviceFilePath(...)` — the registration — and passed that to `HttpOpenCode` as its
+`serviceFile`. Slice 6 needs the config for the bind *and* the registration for the password, so the
+field is now `opencodeRegistration` and `opencodeServiceConfig` means what the design's
+`AgentPaths` list says it means. `HttpOpenCode` is handed `serviceFilePath(...)` directly, so what
+it watches has not changed by a byte.
+
+## Measured this session, read-only
+
+`container network ls --format json` on this machine returns one element:
+`[{"configuration":{…,"name":"default",…},"status":{"ipv4Gateway":"192.168.64.1","ipv4Subnet":"192.168.64.0/24",…}}]`
+— which is the shape `service.ts` parses and the fixture `service.test.ts` is built from. No
+container was started, stopped or removed, and `container system start` was **not** run: it can
+install a kernel and there is a live grove sandbox session on this machine.
+
+## Deviations and decisions taken inside the slice
+
+23. **`XDG_STATE_HOME` is new, and design v9's spec block does not list it.** It is not a new
+    decision; it is the mechanism D6's own outcome requires, and the third instance of the one
+    pointer D8 established (`CLAUDE_CONFIG_DIR`, `XDG_DATA_HOME`, `XDG_CONFIG_HOME`) at a path
+    grove already mounts. Design v9's block should gain the line; `grove-design`'s to correct.
+24. **`AgentPaths` gained `opencodeRegistration`.** Design v9's list names `opencodeServiceConfig`
+    and nothing else; slice 6 needs two different files and the spikes measured exactly why they are
+    easy to confuse. The pre-existing field now holds the config it is named for.
+25. **`ensureServiceReachable` is called from `launch.ts`, not `core.ts`.** The structure lists core.ts
+    for "bind on the first sandboxed OpenCode", but `launch.ts` is the only place that holds both
+    `sandbox.container` and `sessionEnv`, and it owns the try that turns every sandbox failure into
+    `null` — so a bridge that never appears is `no-sandbox` on create and a downgraded resume with
+    its note, never an OpenCode that quietly starts a service of its own (ADR 0033, ADR 0036).
+    core.ts's slice-6 change is the refusal, which is what the structure also asks for.
+26. **`ensureServiceReachable` takes optional `attempts`/`firstDelayMs`/`maxDelayMs`.** The design's
+    call shape `{ configFile, container }` is unchanged and is what production uses; the three knobs
+    exist so the poll can be tested without spending the real budget. Defaults: 30 attempts,
+    250 ms doubling to 8 s — about 3½ minutes, which clears the measured 2m24s from login to
+    `bridge100`.
+27. **`servicePassword` is a second export of `service.ts`.** The design names only
+    `ensureServiceReachable`, but the password has to be read from somewhere and the registration
+    file is the service's; putting it beside the bind keeps the two `service.json` files in one file.
+28. **`sandboxOptIn.ts` is in this slice though the structure's file list omits it.** Slice 4's own
+    comment says it moves "here once, not in two files" when OpenCode becomes eligible, and the
+    design's entry-point row says the dialog is an entry point. Leaving it out would have shipped a
+    capability reachable only from the CLI, with the dialog greying out a toggle that now works.
+29. **`writeConfig` creates the config's parent directory.** opencode normally made it; grove does
+    not assume. The file is created mode `0600` — the human's umask is not a security property, and
+    the file holds a password.
+
+## Open items this slice did not resolve, and deliberately did not work around
+
+- **The service reads its config when it starts.** grove writing the bind changes where the service
+  *will* listen; it does not rebind a service that is already running. So on the first sandboxed
+  OpenCode session after the write, the host service may still be on loopback with a
+  `127.0.0.1` registration, and the container will not reach it until that service next starts.
+  Restarting the human's OpenCode service is not a decision design v9 or structure v6 makes, so
+  nothing here does it. **This is the most likely thing the manual pass will trip over**, and it is
+  a `grove-design` question: does the bind need a restart, a prompt to restart, or a documented
+  "takes effect next time your service starts"?
+- **The consent prompt.** `03-design.md`'s two-way table says grove writes the bridge address "with
+  a consent prompt the first time". `04-structure.md` v6 — later, and `based_on: 03-design.md@9` —
+  lists slice 6's files, outcome and verification with no prompt and no renderer file. Later
+  artifacts take precedence (`contract.md` rule 1), and a prompt would need a decision the design
+  does not make — how consent is carried through `sessionCreate` — so this slice neither built one
+  nor silently dropped the clause. **Owed to `grove-design`**: fold a consent prompt into a
+  structure entry that owns it, or drop the clause.
+- **No registration file means no password.** A machine with no host OpenCode service running gets a
+  sandboxed OpenCode with no `OPENCODE_SERVER_PASSWORD`, which cannot authenticate. Refusing
+  `no-sandbox` there would be a new decision, so it was not taken.
+- **The cross-version check the spikes could not settle**: `@opencode/cli@2.0.26` in the image
+  against this host's `2.0.20` service over `--server`, and `opencode auth list` inside a sandboxed
+  pane listing the host's provider. The bundled source says minor skew warns and proceeds on that
+  path; nothing here has watched it happen.
+- **Slice 5's manual pass** (`container list` after ⌘W, the `grove-orphan` prune at restart) is still
+  unticked for the same reason. Its `typecheck` and `build` boxes are now ticked: the foreign file
+  that blocked them landed.
+
+## Residue
+
+- Nothing left running or on disk. No container was started, stopped or removed; the live sandbox
+  container `grove-941adcfb-f145-4256-8b3e-fb6d61bc2009` is as it was found; `container system start`
+  was not run; the host's `~/.config/opencode/service.json` was **not** written — every test wrote to
+  a temp path.
+- `reports/` and `research_notes/` remain untracked and ignored; nothing from either is staged.
+
+## Open questions
+
+None. The three items above are owed to the human and to `grove-design`; none of them is a question
+this phase can answer by writing code.
+
+---
 # Slice 5 — Teardown, and pruning what a crash left behind
 
 ## Staleness: expected, and the version jump is logged here
