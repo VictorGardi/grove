@@ -48,7 +48,7 @@ function SessionCard({ s, feature, worktree, focused, picked, compact, inGrid, g
   onLink: () => void
   onRemove: () => void
   onContextMenu: (e: MouseEvent) => void
-  kids?: { list: Session[]; collapsed: boolean; onToggle: () => void } // set on a parent: its children, for the toggle and the roll-up
+  kids?: { list: Session[]; collapsed: boolean; holdsFocus: boolean; onToggle: () => void } // set on a parent: its children, for the toggle and the roll-up; holdsFocus when a hidden child is the focused session
 }) {
   const [editing, setEditing] = useState(false)
   const shown = shownStatus(s)
@@ -67,7 +67,7 @@ function SessionCard({ s, feature, worktree, focused, picked, compact, inGrid, g
       }
       cornerPinned={inGrid && gridOn}
       tab={kids && kids.list.length > 0 && (
-        <button type="button" className={css.kidsToggle} aria-expanded={!kids.collapsed}
+        <button type="button" className={cx(css.kidsToggle, kids.holdsFocus && css.kidsToggleHolding)} aria-expanded={!kids.collapsed}
           title={kids.collapsed ? 'Show children' : 'Hide children'}
           onClick={(e) => { e.stopPropagation(); kids.onToggle() }}>
           {/* collapsed, the most urgent child shows through: a waiting child is never hidden */}
@@ -412,7 +412,7 @@ export function Sidebar({ onNew, onNote, onRemove }: { onNew: (projectId?: strin
         onLink={() => setLinking(s)}
         onRemove={() => removeSessions([s.id])}
         onContextMenu={(e) => openMenu(s.id, e)}
-        kids={kids && { list: kids, collapsed: ui.collapsed.includes(kidsKey(s.id)), onToggle: () => toggleCollapsed(kidsKey(s.id)) }}
+        kids={kids && { list: kids, collapsed: ui.collapsed.includes(kidsKey(s.id)), holdsFocus: ui.collapsed.includes(kidsKey(s.id)) && kids.some((k) => k.id === ui.focusedSessionId), onToggle: () => toggleCollapsed(kidsKey(s.id)) }}
       />
     )
   }
