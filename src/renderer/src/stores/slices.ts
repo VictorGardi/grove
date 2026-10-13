@@ -18,6 +18,7 @@ interface SlicesState {
   hydrate(): Promise<void>
   setFocused(id: string | null): void
   toggleCollapsed(key: string): void
+  toggleHideDone(): void
   toggleProjectVisibility(id: string): void
   focusFeature(ref: { projectId: string; slug: string }): void
   openProject(id: string): void
@@ -131,6 +132,7 @@ export const useSlices = create<SlicesState>((set, get) => {
       const next = collapsed.includes(key) ? collapsed.filter((k) => k !== key) : [...collapsed, key]
       void window.api.invoke('ui:set', { collapsed: next })
     },
+    toggleHideDone() { void window.api.invoke('ui:set', { hideDone: !get().ui.hideDone }) },
     toggleProjectVisibility(id) {
       const hidden = get().ui.hiddenProjects ?? []
       const next = hidden.includes(id) ? hidden.filter((x) => x !== id) : [...hidden, id]

@@ -396,3 +396,13 @@ describe('session groups', () => {
     expect(moved?.order.filter((id) => id.startsWith('k'))).toEqual(['k2', 'k1'])
   })
 })
+
+describe('hideDone', () => {
+  const sessions = [session('a'), session('b', { workflowStatus: 'done' })]
+  it('leaves done sessions out of every grouping, and keeps them when off', () => {
+    for (const groupBy of ['project', 'status', 'none'] as const) {
+      expect(ids(listGroups(PROJECTS, sessions, ui({ groupBy, hideDone: true })))).toEqual(['a'])
+      expect(ids(listGroups(PROJECTS, sessions, ui({ groupBy })))).toEqual(expect.arrayContaining(['a', 'b']))
+    }
+  })
+})

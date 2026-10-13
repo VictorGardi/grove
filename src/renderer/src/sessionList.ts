@@ -90,7 +90,7 @@ const COMPARATORS: Record<Exclude<SessionSort, 'custom'>, (a: Session, b: Sessio
 export function listGroups(
   projects: Project[],
   sessions: Session[],
-  ui: Pick<UiState, 'collapsed' | 'hiddenProjects' | 'groupBy' | 'sessionSort' | 'sessionOrder'>,
+  ui: Pick<UiState, 'collapsed' | 'hiddenProjects' | 'hideDone' | 'groupBy' | 'sessionSort' | 'sessionOrder'>,
 ): ListGroup[] {
   const collapsed = new Set(ui.collapsed)
   // `hiddenProjects` names repos, not checkouts: the repo is what the human shows and hides,
@@ -101,7 +101,7 @@ export function listGroups(
   const named = new Set(ui.hiddenProjects ?? [])
   const hidden = new Set(groups.filter((g) => named.has(g.project.id)).map((g) => g.project.id))
   const repoOf = new Map(groups.flatMap((g) => [g.project, ...g.worktrees].map((p) => [p.id, g.project.id] as const)))
-  const visible = sessions.filter((s) => !hidden.has(repoOf.get(s.projectId) ?? s.projectId))
+  const visible = sessions.filter((s) => !hidden.has(repoOf.get(s.projectId) ?? s.projectId) && !(ui.hideDone && s.workflowStatus === 'done'))
   const sort = ui.sessionSort === 'custom' ? byCustom(ui.sessionOrder ?? []) : COMPARATORS[ui.sessionSort] ?? byStarted
   // A session is a child only when its parent is on screen and is not itself a child, so a
   // hidden or missing parent never hides the child with it.

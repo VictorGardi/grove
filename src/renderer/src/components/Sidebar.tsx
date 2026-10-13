@@ -238,7 +238,7 @@ function OptionRow({ label, checked, onSelect }: { label: string; checked: boole
 }
 
 export function Sidebar({ onNew, onNote, onRemove }: { onNew: (projectId?: string) => void; onNote: (s: Session) => void; onRemove: (ids: string[]) => void }) {
-  const { projects, sessions, ui, features, setFocused, toggleCollapsed, toggleProjectVisibility, focusFeature, openProject, setSidebarTab, setGroupBy, setSessionSort, toggleGrid, toggleGridMember, waitingSince } = useSlices()
+  const { projects, sessions, ui, features, setFocused, toggleCollapsed, toggleProjectVisibility, toggleHideDone, focusFeature, openProject, setSidebarTab, setGroupBy, setSessionSort, toggleGrid, toggleGridMember, waitingSince } = useSlices()
   const waitingCount = sessions.filter((x) => shownStatus(x) === 'waiting').length
   const [refused, setRefused] = useState<string | null>(null)
   const [compact, setCompact] = useState<Set<string>>(new Set())
@@ -260,6 +260,7 @@ export function Sidebar({ onNew, onNote, onRemove }: { onNew: (projectId?: strin
   const sidebarId = `${optionsId}-sidebar`
   const groupById = `${optionsId}-group-by`
   const sortId = `${optionsId}-sort`
+  const statusId = `${optionsId}-status`
   const tags = colorTags(projects, features.items)
 
   // the session list, grouped and sorted as the panel says (the Projects tab doesn't draw it)
@@ -483,7 +484,7 @@ export function Sidebar({ onNew, onNote, onRemove }: { onNew: (projectId?: strin
             variant="ghost"
             size="sm"
             icon="sliders"
-            aria-pressed={hidden.length > 0}
+            aria-pressed={hidden.length > 0 || !!ui.hideDone}
             aria-expanded={optionsOpen}
             aria-haspopup="menu"
             title={hidden.length > 0 ? `Session list options (${hidden.length} project hidden)` : 'Session list options'}
@@ -495,7 +496,7 @@ export function Sidebar({ onNew, onNote, onRemove }: { onNew: (projectId?: strin
               }
               setOptionsOpen(next)
             }}
-            className={hidden.length > 0 ? css.visibilityActive : ''} />
+            className={hidden.length > 0 || ui.hideDone ? css.visibilityActive : ''} />
           {optionsOpen && (
             <div ref={panelRef} className={css.visibilityPopover} role="menu" aria-label="Session list options"
               onKeyDown={(e) => { if (e.key === 'Escape') { e.stopPropagation(); setOptionsOpen(false) } }}>
@@ -522,6 +523,13 @@ export function Sidebar({ onNew, onNote, onRemove }: { onNew: (projectId?: strin
                     <button type="button" className={css.visibilityAction} disabled={rows.every((r) => hidden.includes(r.project.id))}
                       onClick={() => void window.api.invoke('ui:set', { hiddenProjects: rows.map((r) => r.project.id) })}>Hide all</button>
                   </div>
+                </OptionSection>
+                <OptionSection headingId={statusId} label="Workflow status">
+                  <button type="button" role="menuitemcheckbox" aria-checked={!ui.hideDone}
+                    className={ui.hideDone ? css.visibilityItemOff : css.visibilityItem} onClick={toggleHideDone}>
+                    <span className={css.visibilityName}>Show done sessions</span>
+                    <span className={css.visibilityCheck}>{!ui.hideDone && <Icon name="check" size={13} />}</span>
+                  </button>
                 </OptionSection>
                 <OptionSection headingId={groupById} label="Group by">
                   {GROUP_BY_OPTIONS.map((o) => (

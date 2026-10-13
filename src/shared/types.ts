@@ -83,6 +83,7 @@ export interface UiState {
   board: 'features' | 'sessions' // what the project page's board shows
   collapsed: string[] // collapsed project folders on the Sessions tab: p:<projectId>
   hiddenProjects: string[] // project IDs hidden from the Sessions tab
+  hideDone?: boolean // sessions whose workflow status is done are left out of the list (absent reads as false)
   groupBy: 'project' | 'status' | 'none' // what the Sessions tab groups rows under
   sessionSort: 'custom' | 'viewed-desc' | 'viewed-asc' | 'created-desc' | 'created-asc' // order of the rows inside a group
   sessionOrder: string[] // the dragged order of every session, one list for all groupings; used while sessionSort is custom
