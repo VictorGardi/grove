@@ -1,7 +1,7 @@
 import { create } from 'zustand'
-import type { Comment, DiffFile, DocTarget, FeaturesSlice, OpenCodeSlice, Project, Session, SessionDiff, UiState } from '@shared/types'
+import type { Comment, DiffFile, DocTarget, FeaturesSlice, OpenCodeSlice, PaneSpan, Project, Session, SessionDiff, UiState } from '@shared/types'
 import { DEFAULT_UI, EMPTY_FEATURES, OPENCODE_CONNECTING } from '@shared/types'
-import { focusAfterRemove, gridShown, withMember } from '../gridView'
+import { focusAfterRemove, gridShown, swapMembers, withMember, withoutArrangement, withSpan, withTracks, type GridLayout } from '../gridView'
 import { openBoard } from '../navigation'
 import { trackWaiting } from '../sessionStatus'
 
@@ -43,6 +43,10 @@ interface SlicesState {
   addFocusedToGrid(): void // ⇧⌘G: put the focused session in the grid and show it; in a showing grid, pull the focused pane out to full screen
   openAlone(id: string): void // focus a session and turn the grid off
   clearGrid(): void
+  swapGridPanes(a: string, b: string): void // dragging a pane header onto another pane
+  resetGridArrangement(): void // forget every manual span and track size
+  setGridSpan(id: string, span: PaneSpan): void
+  setGridTracks(shape: GridLayout, axis: 'cols' | 'rows', fractions: number[] | null): void // null: back to equal
 }
 
 export const useSlices = create<SlicesState>((set, get) => {
@@ -128,6 +132,10 @@ export const useSlices = create<SlicesState>((set, get) => {
     },
     openAlone: (id) => { void window.api.invoke('ui:set', { focusedSessionId: id, grid: { ...get().ui.grid, open: false } }) },
     clearGrid: () => { void window.api.invoke('ui:set', { grid: { open: false, members: [] } }) },
+    swapGridPanes: (a, b) => { void window.api.invoke('ui:set', { grid: swapMembers(get().ui.grid, a, b) }) },
+    resetGridArrangement: () => { void window.api.invoke('ui:set', { grid: withoutArrangement(get().ui.grid) }) },
+    setGridSpan: (id, span) => { void window.api.invoke('ui:set', { grid: withSpan(get().ui.grid, id, span) }) },
+    setGridTracks: (shape, axis, fractions) => { void window.api.invoke('ui:set', { grid: withTracks(get().ui.grid, shape, axis, fractions) }) },
     toggleCollapsed(key) {
       const { collapsed } = get().ui
       const next = collapsed.includes(key) ? collapsed.filter((k) => k !== key) : [...collapsed, key]

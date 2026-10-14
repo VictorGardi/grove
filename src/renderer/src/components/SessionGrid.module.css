@@ -13,17 +13,84 @@
   color: var(--text-2);
 }
 
-.grid {
+.stage {
   flex: 1;
   min-height: 0;
+  position: relative;
+  display: flex;
+  --hit: 10px;
+}
+
+.grid,
+.overlay {
   display: grid;
-  grid-template-columns: repeat(var(--cols, 1), minmax(0, 1fr));
-  grid-template-rows: repeat(var(--rows, 1), minmax(0, 1fr));
+  grid-template-columns: var(--cols-tpl, minmax(0, 1fr));
+  grid-template-rows: var(--rows-tpl, minmax(0, 1fr));
   gap: var(--sp-1);
   padding: var(--sp-1);
 }
 
+.grid {
+  flex: 1;
+  min-height: 0;
+}
+
+/* the dividers sit in a grid of their own with the same tracks, so each lands on its line whatever the gaps */
+.overlay {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+}
+
+.divider {
+  pointer-events: auto;
+  touch-action: none;
+  position: relative;
+  z-index: 1;
+}
+
+.divider::after {
+  content: '';
+  position: absolute;
+  background: var(--focus-border);
+  opacity: 0;
+  transition: opacity 0.1s;
+}
+
+.divider:hover::after,
+.active::after {
+  opacity: 1;
+}
+
+.vertical {
+  grid-column: var(--line);
+  grid-row: var(--from) / var(--to);
+  justify-self: start;
+  width: var(--hit);
+  margin-left: calc(-1 * (var(--sp-1) + var(--hit)) / 2);
+  cursor: col-resize;
+}
+
+.vertical::after {
+  inset: 0 calc(var(--hit) / 2 - 1px);
+}
+
+.horizontal {
+  grid-row: var(--line);
+  grid-column: var(--from) / var(--to);
+  align-self: start;
+  height: var(--hit);
+  margin-top: calc(-1 * (var(--sp-1) + var(--hit)) / 2);
+  cursor: row-resize;
+}
+
+.horizontal::after {
+  inset: calc(var(--hit) / 2 - 1px) 0;
+}
+
 .pane {
+  grid-column: span var(--col-span, 1);
+  grid-row: span var(--row-span, 1);
   min-width: 0;
   min-height: 0;
   display: flex;
@@ -43,6 +110,8 @@
 }
 
 .header {
+  cursor: grab;
+  touch-action: none;
   flex: none;
   border-bottom: 1px solid var(--card-border);
   min-width: 0;
@@ -67,4 +136,18 @@
 .endedActions {
   display: flex;
   gap: var(--sp-2);
+}
+
+/* a header drag: the pane in hand fades, the one it would swap with is outlined */
+.held {
+  opacity: 0.5;
+}
+
+.grabbing {
+  cursor: grabbing;
+}
+
+.target {
+  outline: 2px solid var(--focus-border);
+  outline-offset: -2px;
 }

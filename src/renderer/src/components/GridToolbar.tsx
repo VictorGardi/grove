@@ -46,13 +46,15 @@ function SizePicker({ view, visibleCount, onChange }: { view: GridView; visibleC
   )
 }
 
-// Filter tabs, grid size, dimming slider, eye and Empty grid. View-only: nothing here is persisted.
-export function GridToolbar({ members, projects, view, visibleCount, onChange, onEmpty }: {
+// Filter tabs, grid size, reset, dimming slider, eye and Empty grid. The settings are view-only; reset edits the persisted arrangement.
+export function GridToolbar({ members, projects, view, visibleCount, canReset, onChange, onReset, onEmpty }: {
   members: Session[]
   projects: Project[]
   view: GridView
   visibleCount: number
+  canReset: boolean // some pane has a span or some shape has resized tracks
   onChange: (view: GridView) => void
+  onReset: () => void
   onEmpty: () => void
 }) {
   // One tab per repo, not per checkout (v3): a checkout is not a peer of a repo in a picker, and
@@ -76,6 +78,8 @@ export function GridToolbar({ members, projects, view, visibleCount, onChange, o
       </div>
       <span className={s.spacer} />
       <SizePicker view={view} visibleCount={visibleCount} onChange={onChange} />
+      <Button variant="ghost" size="sm" round icon="resume" disabled={!canReset} aria-label="Reset pane sizes and spans"
+        title="Reset pane sizes and spans" onClick={onReset} />
       <Button variant="ghost" size="sm" round icon={view.hideEnded ? 'eye-off' : 'eye'} aria-pressed={view.hideEnded}
         aria-label={view.hideEnded ? 'Show ended sessions' : 'Hide ended sessions'}
         title={view.hideEnded ? 'Show ended sessions' : 'Hide ended sessions'}

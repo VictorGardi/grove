@@ -3,12 +3,15 @@ import type { ReactNode } from 'react'
 export type IconName =
   | 'plus' | 'folder' | 'folder-plus' | 'chevron-down' | 'chevron-up' | 'chevron-right'
   | 'terminal' | 'opencode' | 'claude' | 'branch' | 'pr-open' | 'pr-merged' | 'search' | 'info' | 'trash'
-  | 'minimize' | 'maximize' | 'x' | 'link' | 'resume' | 'minus' | 'chevrons-down-up' | 'chevrons-up-down' | 'check' | 'grid' | 'eye' | 'eye-off' | 'sidebar' | 'sliders' | 'shield' | 'shield-off' | 'more-vertical' | 'note' | 'worktree'
+  | 'minimize' | 'maximize' | 'x' | 'link' | 'resume' | 'minus' | 'chevrons-down-up' | 'chevrons-up-down' | 'check' | 'grid' | 'eye' | 'eye-off' | 'sidebar' | 'sliders' | 'shield' | 'shield-off' | 'more-vertical' | 'note' | 'worktree' | 'span-1x1' | 'span-wide' | 'span-tall'
 
 const folder = 'M20 20a2 2 0 0 0 2-2V8a2 2 0 0 0-2-2h-7.9a2 2 0 0 1-1.69-.9L9.6 3.9A2 2 0 0 0 7.93 3H4a2 2 0 0 0-2 2v13a2 2 0 0 0 2 2Z'
 
 // shapes after Lucide (ISC)
 const shapes: Record<IconName, ReactNode> = {
+  'span-1x1': <rect x="6" y="6" width="12" height="12" rx="1.5" />,
+  'span-wide': <rect x="3" y="7" width="18" height="10" rx="1.5" />,
+  'span-tall': <rect x="7" y="3" width="10" height="18" rx="1.5" />,
   worktree: <><path d="M2 18V5a2 2 0 0 1 2-2h3.9a2 2 0 0 1 1.69.9l.81 1.2a2 2 0 0 0 1.67.9H20a2 2 0 0 1 2 2v1" /><circle cx="13" cy="15" r="2" /><circle cx="20" cy="20" r="2" /><path d="M13 21v-4M20 18v-1a2 2 0 0 0-2-2h-3" /></>,
   note: <><path d="M15 3H6a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8Z" /><path d="M14 3v5h6" /><path d="M8 13h8M8 17h5" /></>,
   sidebar: <><rect x="3" y="3" width="18" height="18" rx="2" /><path d="M9 3v18" /></>,

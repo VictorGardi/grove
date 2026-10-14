@@ -72,7 +72,14 @@ export interface DiffHunk { header: string; oldStart: number; newStart: number; 
 // Line identity: (path, side, number) — add → new, del → old, context → new.
 export interface DiffLine { kind: 'context' | 'add' | 'del'; text: string; old: number | null; new: number | null }
 export const GRID_MAX = 9 // one Cmd+1..9 per pane
-export interface GridState { open: boolean; members: string[] } // member session ids, in grid order
+export type PaneSpan = '1x1' | 'wide' | 'tall' // a pane's manual span; a pane without one was never touched (auto-fill may stretch it)
+export interface GridTracks { cols?: number[]; rows?: number[] } // track fractions of one axis each, summing to 1; a missing axis is equal
+export interface GridState {
+  open: boolean
+  members: string[] // member session ids, in grid order
+  spans?: Record<string, PaneSpan> // by session id
+  tracks?: Record<string, GridTracks> // by layout shape, e.g. "2x2"
+}
 export interface UiState {
   sidebarWidth: number
   sidebarCollapsed: boolean // ⌘B: the sidebar shrinks to a rail of session tiles
