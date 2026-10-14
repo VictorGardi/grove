@@ -81,3 +81,4 @@
 .waiting { color: var(--status-waiting); }
 .working { color: var(--status-working); }
 .finished { color: var(--status-finished); }
+.mark { display: flex; }

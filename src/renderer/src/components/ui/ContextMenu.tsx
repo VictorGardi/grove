@@ -1,10 +1,12 @@
-import { useEffect, useRef } from 'react'
+import { useEffect, Fragment, useRef, type ReactNode } from 'react'
 import { Icon, type IconName } from './Icon'
 import s from './ContextMenu.module.css'
 
 export interface MenuEntry {
   label: string
   icon?: IconName
+  glyph?: ReactNode // a custom leading mark, instead of an icon
+  separatorBefore?: boolean
   danger?: boolean
   onSelect: () => void
 }
@@ -39,12 +41,16 @@ export function ContextMenu({ x, y, items, onClose }: { x: number; y: number; it
   return (
     <div className={s.backdrop} onMouseDown={onClose} onContextMenu={(e) => { e.preventDefault(); onClose() }}>
       <div ref={root} role="menu" className={s.menu} onMouseDown={(e) => e.stopPropagation()}>
-        {items.map((it) => (
-          <button key={it.label} type="button" role="menuitem" className={it.danger ? s.danger : s.item}
+        {items.map((it, i) => (
+          <Fragment key={it.label}>
+          {it.separatorBefore && i > 0 && <div role="separator" className={s.separator} />}
+          <button type="button" role="menuitem" className={it.danger ? s.danger : s.item}
             onClick={() => { onClose(); it.onSelect() }}>
+            {it.glyph}
             {it.icon && <Icon name={it.icon} size={13} />}
             {it.label}
           </button>
+          </Fragment>
         ))}
       </div>
     </div>

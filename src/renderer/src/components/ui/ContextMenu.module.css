@@ -41,3 +41,10 @@
 .danger {
   color: var(--danger, #f87171);
 }
+
+.separator {
+  height: 1px;
+  margin: var(--sp-1) 0;
+  background: var(--text-3);
+  opacity: 0.35;
+}

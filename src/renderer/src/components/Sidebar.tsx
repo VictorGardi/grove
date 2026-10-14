@@ -1,5 +1,5 @@
 import { useEffect, useId, useRef, useState, type DragEvent, type MouseEvent, type ReactNode } from 'react'
-import { GRID_MAX, type Feature, type Project, type Session } from '@shared/types'
+import { GRID_MAX, type Feature, type Project, type Session, type WorkflowStatus } from '@shared/types'
 import { useSlices } from '../stores/slices'
 import { gridShown } from '../gridView'
 import { kidsKey } from '@shared/groups'
@@ -10,7 +10,7 @@ import { GROUP_BY_OPTIONS, SORT_OPTIONS, canDrop, dropSession, groupSize, kidsGr
 import { repoGroups, repoRows } from '../repoGroups'
 import { colorTags } from '../tags'
 import { linkedFeature } from '../tree'
-import { workflowStatusOf } from '../workflowStatus'
+import { workflowStatusOf, WORKFLOW_STATUSES } from '../workflowStatus'
 import { Badge } from './ui/Badge'
 import { Button } from './ui/Button'
 import { ContextMenu } from './ui/ContextMenu'
@@ -22,7 +22,7 @@ import { ListRow } from './ui/ListRow'
 import { BranchMark } from './BranchMark'
 import { StatusDot } from './ui/StatusDot'
 import { tagClass } from './ui/Tag'
-import { WorkflowStatusButton, Glyph } from './ui/WorkflowStatusPicker'
+import { WorkflowStatusButton, Glyph, StatusMark } from './ui/WorkflowStatusPicker'
 import css from './Sidebar.module.css'
 
 function SessionCard({ s, feature, worktree, focused, picked, compact, inGrid, gridOn, gridFull, onToggleGrid, onFocus, onOpenFeature, onToggleCompact, onLink, onRemove, onContextMenu, kids }: {
@@ -306,6 +306,10 @@ export function Sidebar({ onNew, onNote, onRemove }: { onNew: (projectId?: strin
     setMenu({ x: e.clientX, y: e.clientY, ids })
   }
 
+  const setStatuses = (ids: string[], status: WorkflowStatus) => {
+    for (const id of ids) void window.api.invoke('session:workflowStatus', { id, status })
+  }
+
   const removeSessions = (ids: string[]) => {
     setPicked(new Set())
     onRemove(ids)
@@ -550,7 +554,11 @@ export function Sidebar({ onNew, onNote, onRemove }: { onNew: (projectId?: strin
             ...(noteTarget && !hasChildren(sessions, noteTarget.id) && sessions.some((x) => canParent(sessions, noteTarget.id, x))
               ? [{ label: 'Set parent…', icon: 'link' as const, onSelect: () => setParenting(noteTarget) }] : []),
             ...(noteTarget?.parentId ? [{ label: 'Clear parent', icon: 'minus' as const, onSelect: () => void window.api.invoke('session:setParent', { id: noteTarget.id, parent: null }) }] : []),
-            { label: menu.ids.length === 1 ? 'Remove session' : `Remove ${menu.ids.length} sessions`, icon: 'trash' as const, danger: true, onSelect: () => removeSessions(menu.ids) },
+            // the card's own status button covers a single card; the menu is for a selection
+            ...(menu.ids.length > 1
+              ? WORKFLOW_STATUSES.map((v) => ({ label: `Set ${v.label}`, glyph: <StatusMark view={v} />, onSelect: () => setStatuses(menu.ids, v.value) }))
+              : []),
+            { separatorBefore: true, label: menu.ids.length === 1 ? 'Remove session' : `Remove ${menu.ids.length} sessions`, icon: 'trash' as const, danger: true, onSelect: () => removeSessions(menu.ids) },
           ]} />
       )}
       {linking && <LinkPicker session={linking} onClose={() => setLinking(null)} />}

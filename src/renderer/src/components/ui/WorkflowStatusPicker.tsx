@@ -46,6 +46,11 @@ export function Glyph({ view, size = 14, className }: { view: WorkflowStatusView
   )
 }
 
+// A status glyph in its tone colour, for menus that list the statuses.
+export function StatusMark({ view, size = 13 }: { view: WorkflowStatusView; size?: number }) {
+  return <span className={cx(s.mark, s[view.tone])}><Glyph view={view} size={size} /></span>
+}
+
 // The card's top-left icon: the session's manual workflow status, and the way to change it.
 // Owns its menu, so a caller only hands over a session id.
 export function WorkflowStatusButton({ session, size = 14 }: { session: { id: string; workflowStatus: WorkflowStatus }; size?: number }) {
