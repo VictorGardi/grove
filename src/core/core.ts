@@ -645,6 +645,7 @@ export function createCore(opts: CoreOptions): Core {
     else if (v && v.kind !== 'diff' && v.fromDiff && !findSession(v.fromDiff)) ui = { ...ui, viewer: { ...v, fromDiff: null } }
     const grid = pruneGrid(ui.grid, (id) => !!findSession(id))
     if (grid !== ui.grid) ui = { ...ui, grid }
+    if (ui.compact?.some((id) => !findSession(id))) ui = { ...ui, compact: ui.compact.filter((id) => !!findSession(id)) }
     if (ui.sessionOrder.some((id) => !findSession(id))) ui = { ...ui, sessionOrder: ui.sessionOrder.filter((id) => !!findSession(id)) }
     if (removed.some((s) => ui.collapsed.includes(kidsKey(s.id)))) ui = { ...ui, collapsed: ui.collapsed.filter((k) => !removed.some((s) => k === kidsKey(s.id))) }
     if (ui !== slices.ui) set('ui', ui)

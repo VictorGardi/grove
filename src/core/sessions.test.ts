@@ -257,6 +257,19 @@ describe('core sessions', () => {
     expect(a.getSlices().ui.collapsed).toEqual(['p:keep'])
   })
 
+  it('keeps a compacted card across a restart and forgets it once the session is removed', async () => {
+    const { make } = setup()
+    const a = make()
+    await a.start()
+    const s = await create(a)
+    await a.commands.uiSet({ compact: [s.id] })
+    const b = make()
+    await b.start()
+    expect(b.getSlices().ui.compact).toEqual([s.id]) // saved, not just held in the window
+    await a.commands.sessionRemove({ id: s.id })
+    expect(a.getSlices().ui.compact).toEqual([])
+  })
+
   it('prunes a removed session from the custom order', async () => {
     const { make } = setup()
     const a = make()

@@ -18,6 +18,7 @@ interface SlicesState {
   hydrate(): Promise<void>
   setFocused(id: string | null): void
   toggleCollapsed(key: string): void
+  toggleCompact(id: string): void // a session card between its full and one-line form
   toggleHideDone(): void
   toggleProjectVisibility(id: string): void
   focusFeature(ref: { projectId: string; slug: string }): void
@@ -131,6 +132,11 @@ export const useSlices = create<SlicesState>((set, get) => {
       const { collapsed } = get().ui
       const next = collapsed.includes(key) ? collapsed.filter((k) => k !== key) : [...collapsed, key]
       void window.api.invoke('ui:set', { collapsed: next })
+    },
+    toggleCompact(id) {
+      const compact = get().ui.compact ?? []
+      const next = compact.includes(id) ? compact.filter((x) => x !== id) : [...compact, id]
+      void window.api.invoke('ui:set', { compact: next })
     },
     toggleHideDone() { void window.api.invoke('ui:set', { hideDone: !get().ui.hideDone }) },
     toggleProjectVisibility(id) {

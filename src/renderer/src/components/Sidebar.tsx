@@ -25,12 +25,6 @@ import { tagClass } from './ui/Tag'
 import { WorkflowStatusButton, Glyph } from './ui/WorkflowStatusPicker'
 import css from './Sidebar.module.css'
 
-function toggle(set: Set<string>, id: string): Set<string> {
-  const next = new Set(set)
-  if (!next.delete(id)) next.add(id)
-  return next
-}
-
 function SessionCard({ s, feature, worktree, focused, picked, compact, inGrid, gridOn, gridFull, onToggleGrid, onFocus, onOpenFeature, onToggleCompact, onLink, onRemove, onContextMenu, kids }: {
   s: Session
   feature: Feature | null // the linked feature, if it exists
@@ -238,10 +232,10 @@ function OptionRow({ label, checked, onSelect }: { label: string; checked: boole
 }
 
 export function Sidebar({ onNew, onNote, onRemove }: { onNew: (projectId?: string) => void; onNote: (s: Session) => void; onRemove: (ids: string[]) => void }) {
-  const { projects, sessions, ui, features, setFocused, toggleCollapsed, toggleProjectVisibility, toggleHideDone, focusFeature, openProject, setSidebarTab, setGroupBy, setSessionSort, toggleGrid, toggleGridMember, waitingSince } = useSlices()
+  const { projects, sessions, ui, features, setFocused, toggleCollapsed, toggleCompact, toggleProjectVisibility, toggleHideDone, focusFeature, openProject, setSidebarTab, setGroupBy, setSessionSort, toggleGrid, toggleGridMember, waitingSince } = useSlices()
   const waitingCount = sessions.filter((x) => shownStatus(x) === 'waiting').length
   const [refused, setRefused] = useState<string | null>(null)
-  const [compact, setCompact] = useState<Set<string>>(new Set())
+  const compact = new Set(ui.compact ?? [])
   const [linking, setLinking] = useState<Session | null>(null)
   const [parenting, setParenting] = useState<Session | null>(null)
   const [picked, setPicked] = useState<Set<string>>(new Set()) // shift-click multi-selection
@@ -408,7 +402,7 @@ export function Sidebar({ onNew, onNote, onRemove }: { onNew: (projectId?: strin
         onToggleGrid={() => toggleGridMember(s.id)}
         onFocus={(e) => clickCard(s.id, e)}
         onOpenFeature={() => f && focusFeature({ projectId: f.projectId, slug: f.slug })}
-        onToggleCompact={() => setCompact((c) => toggle(c, s.id))}
+        onToggleCompact={() => toggleCompact(s.id)}
         onLink={() => setLinking(s)}
         onRemove={() => removeSessions([s.id])}
         onContextMenu={(e) => openMenu(s.id, e)}
