@@ -62,6 +62,35 @@ describe('sessionCreate for the CLI', () => {
     expect(created(t.fake)[0].argv![4]).toMatch(/--name helper 'p q'$/)
   })
 
+  it('claude: --model after --settings on start and resume, and launchModel survives a restart', async () => {
+    const argv = claudeArgv('id', '/spool', 'start', undefined, { model: 'm1', name: 'n' })
+    expect(argv.slice(argv.indexOf('--settings') + 2, argv.indexOf('--settings') + 6)).toEqual(['--model', 'm1', '--name', 'n'])
+    expect(claudeArgv('id', '/spool', 'resume', undefined, { model: 'm1' }).slice(-2)).toEqual(['--model', 'm1'])
+    expect(claudeArgv('id', '/spool', 'resume').includes('--model')).toBe(false)
+
+    const claudeDir = path.join(t.dir, 'agents', 'claude')
+    const sources = () => ({ sources: [t.oc, new SpoolClaude({ dir: claudeDir })] })
+    const core = t.make(undefined, sources())
+    await core.start()
+    const plain = await create(core, { cwd: t.dir, kind: 'claude' })
+    const res = await create(core, { cwd: t.dir, kind: 'claude', model: 'm1' })
+    if (!plain.ok || !res.ok) throw new Error('create failed')
+    expect(created(t.fake)[0].argv![4]).not.toContain('--model')
+    expect(plain.data).not.toHaveProperty('launchModel')
+    expect(created(t.fake)[1].argv![4]).toContain('--model m1')
+    expect(res.data.launchModel).toBe('m1')
+
+    await core.commands.sessionKill({ id: res.data.id })
+    await core.commands.sessionResume({ id: res.data.id })
+    expect(created(t.fake)[2].argv![4]).toMatch(/--resume \S+ .*--model m1/)
+
+    core.dispose()
+    expect(loadState(t.statePath).sessions.find((s) => s.id === res.data.id)?.launchModel).toBe('m1')
+    const restarted = t.make(undefined, sources())
+    await restarted.start()
+    expect(restarted.getSlices().sessions.find((s) => s.id === res.data.id)?.launchModel).toBe('m1')
+  })
+
   it('stores the folder for a subfolder, null for the project path, and starts the backend there', async () => {
     const core = await start()
     const sub = await create(core, { cwd: path.join(t.dir, 'sub') })

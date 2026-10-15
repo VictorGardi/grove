@@ -79,6 +79,8 @@ async function dispatch(core: Core, raise: () => void, line: string): Promise<Cl
         if (!found.ok) return failFrom(id, found.error === 'not-found' ? 'no-parent' : found.error)
         parent = found.data.id
       }
+      const model = optString(params.model)
+      if (model !== undefined && kind !== 'claude') return fail(id, 'bad-params', '--model only works with claude')
       const branch = optString(params.branch)
       if (params.worktree === true && !branch) return fail(id, 'bad-params', '--worktree needs --branch')
       // A worktree session runs in the new checkout, so the worktree is made first and the
@@ -93,7 +95,7 @@ async function dispatch(core: Core, raise: () => void, line: string): Promise<Cl
       }
       const res = await core.commands.sessionCreate({
         kind: kind as Session['kind'], cwd: dir, prompt: optString(params.prompt), label: optString(params.label),
-        feature: optString(params.feature), parent, sandboxed: params.sandboxed === true, cols: COLS, rows: ROWS,
+        feature: optString(params.feature), parent, model, sandboxed: params.sandboxed === true, cols: COLS, rows: ROWS,
       })
       if (!res.ok) return failFrom(id, res.error)
       const created = toCli(core, res.data)

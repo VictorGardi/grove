@@ -20,6 +20,7 @@ grove ls [--all] [--json]            live sessions (--all: also ended ones)
 grove new <opencode|claude|terminal> [--cwd DIR] [--prompt TEXT|-] [--label L]
           [--link SLUG] [--parent REF | --child] [--wait] [--timeout S] [--json]
                                      start a background session; prints its id
+grove new claude --model ALIAS        start Claude with that model (an alias such as the ones `claude --model` takes)
 grove send <ref> <TEXT|-> [--no-enter] [--wait] [--timeout S]
                                      type text into a session and submit it
 grove wait <ref> [--timeout S]       block until the session stops working
@@ -34,6 +35,8 @@ directory; the session lands under the project that contains it (a new folder
 is registered as a project). `--link SLUG` pins the session to a feature of that
 project and fails, creating nothing, if there is no such feature.
 A prompt that starts with `-` must be written `--prompt=-text`.
+`--model ALIAS` (claude only; a usage error for other kinds) starts Claude with that model,
+the same alias `claude --model` takes. Resuming the session keeps it.
 
 `--parent REF` puts the new session in REF's group in the sidebar; `--child`
 means "in my group", taking your own `GROVE_SESSION_ID`. Without either, the new

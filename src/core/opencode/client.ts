@@ -51,7 +51,7 @@ export class HttpOpenCode implements AgentSource {
     return mintSessionId(now.getTime())
   }
 
-  argv(id: string, _mode: 'start' | 'resume', opts?: { prompt?: string; name?: string }): string[] {
+  argv(id: string, _mode: 'start' | 'resume', opts?: { prompt?: string; name?: string; model?: string }): string[] {
     return ['opencode', '-s', id, ...(opts?.prompt ? ['--prompt', opts.prompt] : [])] // resume is the same: -s picks up the session's history
   }
 

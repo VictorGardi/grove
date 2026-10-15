@@ -47,9 +47,9 @@ export function hookSettings(spool: string): string {
   return JSON.stringify({ hooks, statusLine: { type: 'command', command: statusLineCommand(spool) } })
 }
 
-// Before loginShellArgv. Resume uses the spool's latest SessionStart id when known (after /clear).
-export function claudeArgv(id: string, spool: string, mode: 'start' | 'resume', resumeId?: string, opts?: { prompt?: string; name?: string }): string[] {
+// Before loginShellArgv. --model rides on start and resume; name and prompt only on start. Resume uses the spool's latest SessionStart id when known (after /clear).
+export function claudeArgv(id: string, spool: string, mode: 'start' | 'resume', resumeId?: string, opts?: { prompt?: string; name?: string; model?: string }): string[] {
   const session = mode === 'start' ? ['--session-id', id] : ['--resume', resumeId ?? id]
   const prompt = opts?.prompt ? [...(opts.prompt.startsWith('-') ? ['--'] : []), opts.prompt] : []
-  return ['claude', ...session, '--settings', hookSettings(spool), ...(opts?.name ? ['--name', opts.name] : []), ...prompt]
+  return ['claude', ...session, '--settings', hookSettings(spool), ...(opts?.model ? ['--model', opts.model] : []), ...(opts?.name ? ['--name', opts.name] : []), ...prompt]
 }

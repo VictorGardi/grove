@@ -6,7 +6,7 @@ export const PROTOCOL = 1
 export interface CliMethods {
   'sessions.list': { params: { all?: boolean }; data: CliSession[] }
   'sessions.create': {
-    params: { kind: SessionKind; cwd: string; prompt?: string; label?: string; feature?: string; parent?: string; worktree?: boolean; branch?: string; base?: string; sandboxed?: boolean; wait?: boolean; timeoutS?: number }
+    params: { kind: SessionKind; cwd: string; prompt?: string; label?: string; feature?: string; parent?: string; worktree?: boolean; branch?: string; base?: string; model?: string; sandboxed?: boolean; wait?: boolean; timeoutS?: number }
     data: CliSession & { turn?: TurnResult }
   }
   'sessions.send': { params: { ref: string; text: string; submit: boolean; wait?: boolean; timeoutS?: number }; data: { id: string; turn?: TurnResult } }
