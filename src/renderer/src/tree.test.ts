@@ -1,13 +1,17 @@
 import { describe, expect, it } from 'vitest'
-import type { Feature, Session } from '@shared/types'
+import type { Feature, FeatureStage, Session } from '@shared/types'
 import { boardColumns, linkedFeature, linkedSessions, sessionColumns } from './tree'
 
-function feature(slug: string, over: Partial<Feature> = {}): Feature {
+function baseFeature(slug: string, over: Partial<Feature> = {}): Feature {
   return {
     projectId: 'p', slug, path: '/p/' + slug, title: slug, kind: 'feature', group: false,
     parent: null, flow: null, stages: [], currentStage: 'questions', cardState: 'ready', progress: null, flags: [], warnings: [], artifacts: [], ...over,
   }
 }
+
+const feature = baseFeature
+const stagesOf = (...ids: string[]): FeatureStage[] =>
+  ids.map((id) => ({ id, label: id, artifact: id + '.md', review: null, state: 'upcoming' }))
 
 function session(id: string, over: Partial<Session> = {}): Session {
   return {
@@ -18,7 +22,7 @@ function session(id: string, over: Partial<Session> = {}): Session {
 }
 
 describe('linkedFeature', () => {
-  const features = [feature('a'), feature('b', { projectId: 'q' })]
+  const features = [baseFeature('a'), baseFeature('b', { projectId: 'q' })]
   it('finds the linked feature in the session\'s project only', () => {
     expect(linkedFeature(session('s', { feature: 'a' }), features)?.slug).toBe('a')
     expect(linkedFeature(session('s', { feature: 'b' }), features)).toBeNull()
@@ -30,6 +34,7 @@ describe('linkedFeature', () => {
 describe('boardColumns', () => {
   const stages = [{ id: 'questions', label: 'Questions' }, { id: 'design', label: 'Design' }, { id: 'implementation', label: 'Implementation' }]
   const cards = (cols: ReturnType<typeof boardColumns>) => cols.map((c) => [c.stage.id, c.cards.map((k) => k.feature.slug)])
+  const feature = (slug: string, over: Partial<Feature> = {}) => baseFeature(slug, { stages: stagesOf('questions', 'design', 'implementation'), ...over })
 
   it('puts non-group features in their current stage, done ones last', () => {
     const cols = boardColumns(stages, [
@@ -61,6 +66,36 @@ describe('boardColumns', () => {
     const titles = (cols: ReturnType<typeof boardColumns>) => cols[0].cards.map((k) => k.parent?.title ?? null)
     expect(titles(boardColumns(stages, features, new Set(['p', 'wt'])))).toEqual(['Parent E'])
     expect(titles(boardColumns(stages, features))).toEqual([null]) // without the repo, 'wt' has no parent 'e'
+  })
+
+  describe('stages in use', () => {
+    const all = ['questions', 'outcome', 'research', 'plan', 'run', 'design', 'structure', 'implementation'].map((id) => ({ id, label: id }))
+    const legacy = stagesOf('questions', 'research', 'design', 'structure', 'implementation')
+    const auto = stagesOf('outcome', 'research', 'plan', 'run')
+    const ids = (cols: ReturnType<typeof boardColumns>) => cols.map((c) => c.stage.id)
+
+    it('draws only the legacy stages for a legacy-only repo', () => {
+      expect(ids(boardColumns(all, [feature('a', { stages: legacy })]))).toEqual(['questions', 'research', 'design', 'structure', 'implementation'])
+    })
+    it('adds an auto feature\'s stages in global order', () => {
+      const cols = boardColumns(all, [feature('a', { stages: legacy }), feature('b', { stages: auto, currentStage: 'plan' })])
+      expect(ids(cols)).toEqual(['questions', 'outcome', 'research', 'plan', 'run', 'design', 'structure', 'implementation'])
+      expect(cards(cols).find(([id]) => id === 'plan')).toEqual(['plan', ['b']])
+    })
+    it('puts a done auto feature in its own last stage', () => {
+      const cols = boardColumns(all, [feature('a', { stages: legacy }), feature('b', { stages: auto, currentStage: null })])
+      expect(cards(cols).find(([id]) => id === 'run')).toEqual(['run', ['b']])
+      expect(cards(cols).find(([id]) => id === 'implementation')).toEqual(['implementation', []])
+    })
+    it('lets a group feature add no columns', () => {
+      expect(ids(boardColumns(all, [feature('e', { group: true, stages: auto }), feature('a', { stages: stagesOf('questions', 'implementation') })]))).toEqual(['questions', 'implementation'])
+    })
+    it('shows only questions and implementation for an all-small repo', () => {
+      expect(ids(boardColumns(all, [feature('a', { stages: stagesOf('questions', 'implementation') })]))).toEqual(['questions', 'implementation'])
+    })
+    it('has no columns without features', () => {
+      expect(boardColumns(all, [])).toEqual([])
+    })
   })
 })
 

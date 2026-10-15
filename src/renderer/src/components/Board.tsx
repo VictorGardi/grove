@@ -52,7 +52,7 @@ function FeatureCard({ feature: f, parent, parentTag, sessions, divergent, onOpe
   )
 }
 
-// One repo's features, one column per workflow stage. The cards are already unioned — one per
+// One repo's features, one column per workflow stage some feature uses. The cards are already unioned — one per
 // (repo, slug), the checkout's copy canonical, a divergent worktree copy behind a chip (D3) —
 // so the repo's sessions are one card's dots however many checkouts ran them.
 export function Board({ stages, features, sessions, projects, onOpen }: {

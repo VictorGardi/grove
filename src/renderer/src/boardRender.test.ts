@@ -19,7 +19,7 @@ const stages = [{ id: 'questions', label: 'Questions' }, { id: 'design', label: 
 
 const feature = (projectId: string, over: Partial<Feature> = {}): Feature => ({
   projectId, slug: 'f', path: '/src/' + projectId + '/f', title: 'Worktree support', kind: 'feature',
-  group: false, parent: null, flow: null, stages: [], currentStage: 'questions', cardState: 'ready',
+  group: false, parent: null, flow: null, stages: stages.map((st) => ({ ...st, artifact: st.id + '.md', review: null, state: 'upcoming' as const })), currentStage: 'questions', cardState: 'ready',
   progress: null, flags: [], warnings: [], artifacts: [], ...over,
 })
 

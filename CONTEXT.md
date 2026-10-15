@@ -148,7 +148,8 @@ specific meaning, so humans and agents stay consistent.
   state and flags, its parent link, its children, its artifacts listed, its
   linked sessions.
 - **Board**: the project page's body. The **features board** groups the
-  project's non-group features into one column per workflow stage; a
+  project's non-group features into one column per workflow stage the
+  project's features use (not every stage); a
   **feature card** shows card state, title, parent tag and linked-session
   dots, and turns amber with "Input required" while a linked session waits.
   The **sessions board** groups the project's sessions into Waiting, Working
