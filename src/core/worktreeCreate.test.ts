@@ -40,6 +40,24 @@ describe('worktreeCreate', () => {
     fs.rmSync(root, { recursive: true, force: true })
   })
 
+  it('forks the base it is given, and reports what a repo could be forked from', async () => {
+    repo.git('switch', '-q', '-c', 'other')
+    repo.write('b.txt', 'b\n')
+    repo.commit()
+    repo.git('switch', '-q', 'main')
+    const res = await core.commands.worktreeCreate({ projectId: checkoutId, branch: 'child', base: 'other' })
+    if (!res.ok) throw new Error(res.error)
+    expect(fs.existsSync(path.join(res.data.path, 'b.txt'))).toBe(true)
+    const refs = await core.commands.repoRefs({ projectId: checkoutId })
+    if (!refs.ok) throw new Error(refs.error)
+    expect(refs.data.bases).toEqual(expect.arrayContaining(['main', 'other', 'child']))
+  })
+
+  it('refuses a base that is not there', async () => {
+    const res = await core.commands.worktreeCreate({ projectId: checkoutId, branch: 'child', base: 'ghost' })
+    expect(res.ok).toBe(false)
+  })
+
   it('makes the checkout and registers it as a project nested under the checkout', async () => {
     const res = await core.commands.worktreeCreate({ projectId: checkoutId, branch: 'fix-auth' })
     if (!res.ok) throw new Error(res.error)
@@ -226,7 +244,7 @@ describe('repoRefs', () => {
     try {
       const added = await core.commands.projectAdd({ path: plain })
       if (!added.ok) throw new Error(added.error)
-      expect(await core.commands.repoRefs({ projectId: added.data.id })).toEqual({ ok: true, data: { branch: null, default: null } })
+      expect(await core.commands.repoRefs({ projectId: added.data.id })).toEqual({ ok: true, data: { branch: null, default: null, bases: [] } })
     } finally {
       fs.rmSync(plain, { recursive: true, force: true })
     }

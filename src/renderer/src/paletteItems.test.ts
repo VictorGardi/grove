@@ -34,7 +34,7 @@ describe('paletteItems', () => {
   it('lists the app commands, which run through runAction', () => {
     const a = actions()
     const cmds = paletteItems({ projects, sessions, features }, a).filter((i) => i.kind === 'command')
-    expect(cmds.map((c) => c.label)).toEqual(['New session', 'New session with options…', 'New terminal', 'Remove session', 'Session diff', 'Project board', 'Toggle sidebar', 'Last session', 'Show grid', 'Add session to grid and show', 'Clear grid', 'Scratchpad'])
+    expect(cmds.map((c) => c.label)).toEqual(['New session', 'New session with options…', 'New terminal', 'Remove session', 'Session diff', 'Project board', 'Toggle sidebar', 'Last session', 'Next waiting session', 'Show grid', 'Add session to grid and show', 'Clear grid', 'Scratchpad'])
     cmds.find((c) => c.label === 'New terminal')!.run()
     expect(a.runAction).toHaveBeenCalledWith({ type: 'newTerminal' })
   })

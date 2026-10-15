@@ -2,7 +2,8 @@ import type { Project } from '@shared/types'
 import { score } from './launchRank'
 
 // What a repo's HEAD is on, and what a fork of it would branch from.
-export interface RepoRefs { branch: string | null; default: string | null }
+// `bases` is every branch a fork could start from, local or already fetched.
+export interface RepoRefs { branch: string | null; default: string | null; bases?: string[] }
 export type RefsByRepo = Record<string, RepoRefs>
 
 // A row in the launch picker. Creating and opening are the same kind of thing here: `create`

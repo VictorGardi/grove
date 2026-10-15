@@ -30,19 +30,40 @@ export function worktreePathIn(root: string, repo: string, branch: string): stri
 
 // A worktree of `repo` on a new `branch`, at `path`, submodules initialised. git itself
 // refuses a branch that already exists or is checked out elsewhere; `conflict` says so first,
-// in our own words and with the worktree to go to.
-export async function add(o: { repo: string; branch: string; path: string; git: GitRun | null }): Promise<Result<{ path: string; branch: string }>> {
+// in our own words and with the worktree to go to. It forks `base` (a branch, local or remote, or
+// any commit-ish already fetched); without one it forks the checkout's HEAD, as git does.
+export async function add(o: { repo: string; branch: string; path: string; base?: string; git: GitRun | null }): Promise<Result<{ path: string; branch: string }>> {
   if (!o.git) return { ok: false, error: 'no-git' }
   const blocked = await conflict(o.repo, o.branch, o.path, o.git)
   if (blocked) return { ok: false, error: blocked }
+  let start: string | null = null
+  if (o.base) {
+    start = await resolveBase(o.repo, o.base, o.git)
+    if (!start) return { ok: false, error: `base ${o.base} does not exist in ${o.repo}` }
+  }
   fs.mkdirSync(path.dirname(o.path), { recursive: true })
   try {
-    await o.git(['worktree', 'add', '-b', o.branch, o.path], o.repo)
+    await o.git(['worktree', 'add', '-b', o.branch, o.path, ...(start ? [start] : [])], o.repo)
     await o.git(['submodule', 'update', '--init', '--recursive'], o.path) // a no-op without submodules
   } catch (e) {
     return { ok: false, error: (e as Error).message }
   }
   return { ok: true, data: { path: o.path, branch: o.branch } }
+}
+
+// What a base names, or null. A local branch or any commit-ish as typed; failing that the same
+// name on origin, because a default branch that was only ever fetched has no local ref and
+// `origin/HEAD` reports it bare. Nothing is fetched: this is whatever the repo already has.
+async function resolveBase(repo: string, base: string, git: GitRun): Promise<string | null> {
+  for (const candidate of [base, `origin/${base}`]) {
+    try {
+      await git(['rev-parse', '--verify', '--quiet', `${candidate}^{commit}`], repo)
+      return candidate
+    } catch {
+      // try the next spelling
+    }
+  }
+  return null
 }
 
 // Why this worktree cannot be made, or null. The first two come from `worktree list`, so a

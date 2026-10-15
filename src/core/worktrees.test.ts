@@ -5,6 +5,7 @@ import path from 'node:path'
 import { describe, expect, it } from 'vitest'
 import { gitRunner } from './diff/git'
 import { gitCommonDir } from './git'
+import { listBases } from './diff/git'
 import { gitRepo } from './testing/gitRepo'
 import { add, list, lock, merged, prune, remove, unlock, worktreePath, worktreePathIn } from './worktrees'
 
@@ -43,6 +44,72 @@ describe('worktreePathIn', () => {
   it('agrees with worktreePath once its root stands in for a home', () => {
     expect(worktreePathIn('/home/me/.grove/worktrees', '/src/grove', 'fix-auth'))
       .toBe(worktreePath('/src/grove', 'fix-auth', '/home/me'))
+  })
+})
+
+describe('add with a base', () => {
+  // main has a.txt; `other` adds b.txt; the checkout stays on main
+  const repoWithOther = () => {
+    const repo = gitRepo()
+    repo.write('a.txt', 'a\n')
+    repo.commit()
+    repo.git('switch', '-q', '-c', 'other')
+    repo.write('b.txt', 'b\n')
+    repo.commit()
+    repo.git('switch', '-q', 'main')
+    return repo
+  }
+
+  it('forks the base instead of the checkout’s HEAD', async () => {
+    const repo = repoWithOther()
+    const at = worktreePath(repo.dir, 'child', home())
+    const res = await add({ repo: repo.dir, branch: 'child', path: at, base: 'other', git })
+    if (!res.ok) throw new Error(res.error)
+    expect(fs.existsSync(path.join(at, 'b.txt'))).toBe(true)
+    expect(out('-C', repo.dir, 'rev-parse', '--abbrev-ref', 'HEAD').trim()).toBe('main') // the checkout did not move
+  })
+
+  it('forks a remote-tracking branch that has no local twin', async () => {
+    const repo = repoWithOther()
+    repo.git('update-ref', 'refs/remotes/origin/feature', 'other')
+    const at = worktreePath(repo.dir, 'from-remote', home())
+    const res = await add({ repo: repo.dir, branch: 'from-remote', path: at, base: 'origin/feature', git })
+    if (!res.ok) throw new Error(res.error)
+    expect(fs.existsSync(path.join(at, 'b.txt'))).toBe(true)
+  })
+
+  it('reads a bare name as its origin branch when there is no local one', async () => {
+    const repo = repoWithOther()
+    repo.git('update-ref', 'refs/remotes/origin/trunk', 'other')
+    const at = worktreePath(repo.dir, 'trunked', home())
+    expect(await add({ repo: repo.dir, branch: 'trunked', path: at, base: 'trunk', git })).toMatchObject({ ok: true })
+    expect(fs.existsSync(path.join(at, 'b.txt'))).toBe(true)
+  })
+
+  it('refuses a base that does not exist, leaving nothing behind', async () => {
+    const repo = repoWithOther()
+    const at = worktreePath(repo.dir, 'nope', home())
+    const res = await add({ repo: repo.dir, branch: 'nope', path: at, base: 'ghost', git })
+    expect(res).toEqual({ ok: false, error: `base ghost does not exist in ${repo.dir}` })
+    expect(fs.existsSync(at)).toBe(false)
+    expect(out('-C', repo.dir, 'branch', '--list', 'nope')).toBe('')
+  })
+})
+
+describe('listBases', () => {
+  it('lists local branches, then remote ones, without the remote’s HEAD alias', async () => {
+    const repo = gitRepo()
+    repo.write('a.txt', 'a\n')
+    repo.commit()
+    repo.git('branch', 'feat/x')
+    repo.git('update-ref', 'refs/remotes/origin/main', 'main')
+    repo.git('update-ref', 'refs/remotes/origin/feat/y', 'main')
+    repo.git('symbolic-ref', 'refs/remotes/origin/HEAD', 'refs/remotes/origin/main')
+    expect(await listBases(git, repo.dir)).toEqual(['feat/x', 'main', 'origin/feat/y', 'origin/main'])
+  })
+
+  it('is empty outside a repo', async () => {
+    expect(await listBases(git, os.tmpdir())).toEqual([])
   })
 })
 

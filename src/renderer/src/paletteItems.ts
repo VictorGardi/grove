@@ -33,6 +33,7 @@ export const PALETTE_COMMANDS: { id: string; label: string; hint?: string; actio
   { id: 'projectBoard', label: 'Project board', hint: '⇧⌘B', action: { type: 'projectBoard' } },
   { id: 'toggleSidebar', label: 'Toggle sidebar', hint: '⌘B', action: { type: 'toggleSidebar' } },
   { id: 'lastSession', label: 'Last session', hint: '⌃Tab', action: { type: 'lastSession' } },
+  { id: 'nextWaiting', label: 'Next waiting session', hint: '⌘.', action: { type: 'nextWaiting' } },
   { id: 'toggleGrid', label: 'Show grid', hint: '⌘G', action: { type: 'toggleGrid' } }, // reads Hide grid while it shows
   { id: 'addToGrid', label: 'Add session to grid and show', hint: '⇧⌘G', action: { type: 'addToGrid' } },
   { id: 'clearGrid', label: 'Clear grid', action: { type: 'clearGrid' } },

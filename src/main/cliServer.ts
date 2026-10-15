@@ -87,7 +87,7 @@ async function dispatch(core: Core, raise: () => void, line: string): Promise<Cl
       let dir = cwd
       if (params.worktree === true) {
         const repo = (await core.gitTop(cwd)) ?? cwd
-        const made = await worktrees.add({ repo, branch: branch!, path: worktrees.worktreePath(repo, branch!), git: core.git })
+        const made = await worktrees.add({ repo, branch: branch!, path: worktrees.worktreePath(repo, branch!), base: optString(params.base), git: core.git })
         if (!made.ok) return fail(id, made.error === 'no-git' ? 'no-git' : 'worktree-failed', made.error)
         dir = made.data.path
       }

@@ -34,6 +34,20 @@ export async function listBranches(git: GitRun, root: string): Promise<string[]>
   }
 }
 
+// Every branch a new worktree could fork: local ones, then remote-tracking ones as `origin/x`,
+// whatever is already fetched. A remote's HEAD is an alias for its default branch, not a branch.
+export async function listBases(git: GitRun, root: string): Promise<string[]> {
+  try {
+    const out = await git(['for-each-ref', '--format=%(refname)', 'refs/heads/', 'refs/remotes/'], root)
+    const refs = out.split('\n').map((r) => r.trim()).filter(Boolean)
+    const local = refs.filter((r) => r.startsWith('refs/heads/')).map((r) => r.slice('refs/heads/'.length))
+    const remote = refs.filter((r) => r.startsWith('refs/remotes/') && !r.endsWith('/HEAD')).map((r) => r.slice('refs/remotes/'.length))
+    return [...local, ...remote]
+  } catch {
+    return []
+  }
+}
+
 // The repo's default branch: origin's HEAD, or a local main/master. null when neither is found.
 export async function defaultBranch(git: GitRun, root: string): Promise<string | null> {
   try {

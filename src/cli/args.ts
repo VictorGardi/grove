@@ -3,7 +3,7 @@ import type { SessionKind } from '@shared/types'
 
 export type Command =
   | { cmd: 'ls'; all: boolean; json: boolean }
-  | { cmd: 'new'; kind: SessionKind; cwd?: string; prompt?: string; label?: string; link?: string; parent?: string; child: boolean; worktree: boolean; branch?: string; sandboxed: boolean; json: boolean; wait: boolean; timeoutS?: number }
+  | { cmd: 'new'; kind: SessionKind; cwd?: string; prompt?: string; label?: string; link?: string; parent?: string; child: boolean; worktree: boolean; branch?: string; base?: string; sandboxed: boolean; json: boolean; wait: boolean; timeoutS?: number }
   | { cmd: 'send'; ref: string; text: string; submit: boolean; wait: boolean; timeoutS?: number }
   | { cmd: 'wait'; ref: string; timeoutS?: number }
   | { cmd: 'focus'; ref: string }
@@ -19,6 +19,8 @@ export const USAGE = `usage: grove <command>
                                                  start a session in the background; prints its id
   grove new <kind> --parent REF | --child        group the new session under REF, or under this session
   grove new <kind> --worktree --branch NAME        start the session in a new git worktree of the cwd's repo
+  grove new <kind> --worktree --branch NAME --base REF
+                                                 fork REF (a branch, local or fetched) instead of the checkout's HEAD
   grove new <kind> --sandboxed                   run the agent inside a container that cannot see the rest of this Mac
   grove send <ref> <TEXT|-> [--no-enter] [--wait] [--timeout S]
                                                  type text into a session and submit it
@@ -55,7 +57,7 @@ export function parseCommand(argv: string[]): Command | UsageError {
         args: rest,
         options: {
           cwd: { type: 'string' }, prompt: { type: 'string' }, label: { type: 'string' }, link: { type: 'string' }, parent: { type: 'string' }, child: { type: 'boolean' },
-          worktree: { type: 'boolean' }, branch: { type: 'string' }, sandboxed: { type: 'boolean' }, json: { type: 'boolean' }, ...TIMEOUT,
+          worktree: { type: 'boolean' }, branch: { type: 'string' }, base: { type: 'string' }, sandboxed: { type: 'boolean' }, json: { type: 'boolean' }, ...TIMEOUT,
         },
         allowPositionals: true,
       })
@@ -66,9 +68,10 @@ export function parseCommand(argv: string[]): Command | UsageError {
       if (values.parent !== undefined && values.child) return new UsageError(`--parent and --child are alternatives\n${USAGE}`)
       // the pair is one flag: a branch without a worktree, or a worktree with no branch, is a mistake
       if (!!values.worktree !== !!values.branch) return new UsageError(`--worktree and --branch go together\n${USAGE}`)
+      if (values.base !== undefined && !values.worktree) return new UsageError(`--base needs --worktree --branch\n${USAGE}`)
       return {
         cmd: 'new', kind: kind as SessionKind, cwd: values.cwd, prompt: values.prompt, label: values.label, link: values.link, parent: values.parent, child: !!values.child,
-        worktree: !!values.worktree, branch: values.branch, sandboxed: !!values.sandboxed, json: !!values.json, wait: !!values.wait, timeoutS,
+        worktree: !!values.worktree, branch: values.branch, base: values.base, sandboxed: !!values.sandboxed, json: !!values.json, wait: !!values.wait, timeoutS,
       }
     }
     if (cmd === 'send') {

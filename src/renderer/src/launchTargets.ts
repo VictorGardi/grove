@@ -26,19 +26,38 @@ export function tidyPath(path: string, max = 36): string {
   return `…${tail.slice(Math.max(tail.indexOf('/'), 0))}`
 }
 
-// What a fork of `repo` branches from: its default branch, or — when the human flipped it — whatever
-// the repo is on right now. Either falls back to the other so a repo that only reports one still
-// has a base to name.
-export function baseOf(refs: RefsByRepo, repoId: string, fromHead: boolean): string | null {
+// The base a human picked for each repo, by repo id.
+export type ChosenBases = Record<string, string>
+
+// What a fork of `repo` branches from: the base the human picked, else its default branch, else
+// whatever the repo is on right now, so a repo that only reports one still has a base to name.
+export function baseOf(refs: RefsByRepo, repoId: string, chosen: ChosenBases = {}): string | null {
   const r = refs[repoId]
-  return (fromHead ? r?.branch ?? r?.default : r?.default ?? r?.branch) ?? null
+  return chosen[repoId] ?? r?.default ?? r?.branch ?? null
+}
+
+// The branches the base picker offers for `repo`, filtered and ranked by `query`. The default
+// and the checked-out branch come first, since those are the usual answers; the rest keep git's
+// order, locals before remotes. A remote branch that only repeats a local one under `origin/` is
+// kept: they can point at different commits, and which one you fork matters.
+export function baseChoices(refs: RefsByRepo, repoId: string, query: string): string[] {
+  const r = refs[repoId]
+  const first = [r?.default, r?.branch].filter((b): b is string => !!b)
+  const all = [...new Set([...first, ...(r?.bases ?? [])])]
+  const q = query.trim()
+  if (!q) return all
+  return all
+    .map((b) => ({ b, s: score(q, b) }))
+    .filter((x): x is { b: string; s: number } => x.s !== null)
+    .sort((a, b) => b.s - a.s)
+    .map((x) => x.b)
 }
 
 // Empty query: every repo as a group — the repo, its worktrees, then a way to make another — with
 // the repo the launcher was opened from first. A query turns the list flat and ranked, because the
 // same box is both the filter and the name of a worktree nobody has made yet: the top row forks
 // the first repo under that name, and every other repo offers the same at the bottom, so ↓ retargets.
-export function buildTargets(projects: Project[], openedFrom: string | undefined, refs: RefsByRepo, query: string, fromHead: boolean): Target[] {
+export function buildTargets(projects: Project[], openedFrom: string | undefined, refs: RefsByRepo, query: string, chosen: ChosenBases = {}): Target[] {
   const ordered = orderProjects(projects, openedFrom)
   const repos = [...new Set(ordered.map(repoOf))]
     .map((id) => projects.find((p) => p.id === id))
@@ -56,7 +75,7 @@ export function buildTargets(projects: Project[], openedFrom: string | undefined
     }))
   }
   const create = (repo: Project, branch: string | null): Target => ({
-    type: 'create', key: `new:${repo.id}`, repo, base: baseOf(refs, repo.id, fromHead), branch,
+    type: 'create', key: `new:${repo.id}`, repo, base: baseOf(refs, repo.id, chosen), branch,
   })
 
   const name = branchName(query)

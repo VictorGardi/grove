@@ -1,13 +1,13 @@
 import { describe, expect, it } from 'vitest'
 import type { Project } from '@shared/types'
-import { baseOf, branchName, buildTargets, tidyPath, worktreeBranch } from './launchTargets'
+import { baseChoices, baseOf, branchName, buildTargets, tidyPath, worktreeBranch } from './launchTargets'
 
 const proj = (id: string, name: string, worktreeOf?: string) => ({ id, name, path: `/Users/v/${name}`, worktreeOf }) as Project
 const grove = proj('g', 'grove')
 const wt = proj('w', 'grove · fix-auth', 'g')
 const other = proj('o', 'other')
 const refs = { g: { branch: 'dev', default: 'master' }, o: { branch: 'main', default: 'main' } }
-const keys = (q: string, from?: string, head = false) => buildTargets([other, grove, wt], from, refs, q, head).map((t) => t.key)
+const keys = (q: string, from?: string) => buildTargets([other, grove, wt], from, refs, q).map((t) => t.key)
 
 describe('buildTargets', () => {
   it('groups each repo with its worktrees and a create row, the opening repo first', () => {
@@ -15,18 +15,18 @@ describe('buildTargets', () => {
   })
 
   it('reads a worktree’s branch from its name and a repo’s from its refs', () => {
-    const rows = buildTargets([grove, wt], undefined, refs, '', false)
+    const rows = buildTargets([grove, wt], undefined, refs, '')
     expect(rows[0]).toMatchObject({ branch: 'dev', worktree: false })
     expect(rows[1]).toMatchObject({ branch: 'fix-auth', worktree: true })
   })
 
   it('names the base every create row forks from', () => {
-    expect(buildTargets([grove], undefined, refs, '', false).at(-1)).toMatchObject({ type: 'create', base: 'master', branch: null })
-    expect(buildTargets([grove], undefined, refs, '', true).at(-1)).toMatchObject({ base: 'dev' })
+    expect(buildTargets([grove], undefined, refs, '').at(-1)).toMatchObject({ type: 'create', base: 'master', branch: null })
+    expect(buildTargets([grove], undefined, refs, '', { g: 'origin/release' }).at(-1)).toMatchObject({ base: 'origin/release' })
   })
 
   it('turns a typed name into the top create row and offers it to every other repo last', () => {
-    const rows = buildTargets([grove, other], undefined, refs, 'login fix', false)
+    const rows = buildTargets([grove, other], undefined, refs, 'login fix')
     expect(rows[0]).toMatchObject({ type: 'create', key: 'new:g', branch: 'login-fix' })
     expect(rows.at(-1)).toMatchObject({ type: 'create', key: 'new:o', branch: 'login-fix' })
   })
@@ -42,8 +42,8 @@ describe('buildTargets', () => {
 
 describe('baseOf', () => {
   it('falls back to whichever ref the repo does report', () => {
-    expect(baseOf({ g: { branch: 'dev', default: null } }, 'g', false)).toBe('dev')
-    expect(baseOf({}, 'g', true)).toBeNull()
+    expect(baseOf({ g: { branch: 'dev', default: null } }, 'g')).toBe('dev')
+    expect(baseOf({}, 'g')).toBeNull()
   })
 })
 
@@ -53,5 +53,29 @@ describe('naming helpers', () => {
   it('abbreviates home and keeps the tail of a long path', () => {
     expect(tidyPath('/Users/victor/git/grove')).toBe('~/git/grove')
     expect(tidyPath('/Users/victor/git/a/very/long/path/to/some/repo', 20)).toBe('…/path/to/some/repo')
+  })
+})
+
+describe('baseChoices', () => {
+  const r = { g: { branch: 'dev', default: 'master', bases: ['dev', 'feat/x', 'master', 'origin/dev', 'origin/feat/y'] } }
+
+  it('leads with the default and the checked-out branch, then the rest without repeats', () => {
+    expect(baseChoices(r, 'g', '')).toEqual(['master', 'dev', 'feat/x', 'origin/dev', 'origin/feat/y'])
+  })
+
+  it('ranks by the query and offers remote branches', () => {
+    expect(baseChoices(r, 'g', 'feat/y')).toEqual(['origin/feat/y'])
+    expect(baseChoices(r, 'g', 'zzz')).toEqual([])
+  })
+
+  it('is empty for a repo nothing is known about', () => {
+    expect(baseChoices({}, 'g', '')).toEqual([])
+  })
+})
+
+describe('chosen base', () => {
+  it('beats the default for that repo only', () => {
+    expect(baseOf(refs, 'g', { g: 'origin/x' })).toBe('origin/x')
+    expect(baseOf(refs, 'o', { g: 'origin/x' })).toBe('main')
   })
 })

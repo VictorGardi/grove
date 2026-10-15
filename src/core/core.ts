@@ -15,7 +15,7 @@ import { listFolders, readFolder, resolveRoot, type FolderSnapshot } from './dis
 import { chokidarWatchers, type Closer, type Watchers } from './discovery/watcher'
 import { loginShellArgv, minimalEnv } from './env'
 import { computeDiff } from './diff/compute'
-import { defaultBranch, gitRunner, listBranches, type GitRun } from './diff/git'
+import { defaultBranch, gitRunner, listBases, listBranches, type GitRun } from './diff/git'
 import { createDiffWatch } from './diff/watch'
 import { reanchorDiff, reanchorFile } from './comments/anchor'
 import { slugFor } from './autolink'
@@ -80,13 +80,13 @@ export interface Commands {
   projectRemove(a: { id: string }): Promise<Result<{ id: string }>>
   // A new worktree of the repo `projectId` belongs to, on `branch`, registered as a project of
   // its own (ADR 0037) so a session can be created in it like any other checkout.
-  worktreeCreate(a: { projectId: string; branch: string }): Promise<Result<Project>>
+  worktreeCreate(a: { projectId: string; branch: string; base?: string }): Promise<Result<Project>>
   worktreeRemove(a: { projectId: string }): Promise<Result<{ id: string }>>
   // What a checkout is on, and what a new worktree off it would branch from. Read without
   // spawning git for the current branch (readBranch) and with two git calls for the default,
   // because the launch dialog has to name a base before anyone has picked anything (ADR 0037's
   // worktree is a project, so this is per project and not per session).
-  repoRefs(a: { projectId: string }): Promise<Result<{ branch: string | null; default: string | null }>>
+  repoRefs(a: { projectId: string }): Promise<Result<{ branch: string | null; default: string | null; bases: string[] }>>
   sessionCreate(a: {
     projectId?: string; cwd?: string; kind: SessionKind; prompt?: string; label?: string; feature?: string; parent?: string; sandboxed?: boolean; cols: number; rows: number
   }): Promise<Result<Session>> // exactly one of projectId, cwd; `parent` is a session id, whose group the new one joins
@@ -750,7 +750,7 @@ export function createCore(opts: CoreOptions): Core {
     // it there; a dialog needs the checkout to exist and be registrable *before* the session does,
     // so a conflict or a missing git is reported against the form the human is still looking at.
     // Made from the parent checkout, so a worktree of a worktree still forks the checkout.
-    async worktreeCreate({ projectId, branch }) {
+    async worktreeCreate({ projectId, branch, base }) {
       const project = slices.projects.find((p) => p.id === projectId)
       if (!project) return { ok: false, error: 'not-found' }
       const name = branch.trim()
@@ -763,7 +763,7 @@ export function createCore(opts: CoreOptions): Core {
       const at = opts.worktreeRoot
         ? worktrees.worktreePathIn(opts.worktreeRoot, repo, name)
         : worktrees.worktreePath(repo, name)
-      const made = await worktrees.add({ repo, branch: name, path: at, git })
+      const made = await worktrees.add({ repo, branch: name, path: at, base: base?.trim() || undefined, git })
       if (!made.ok) return made
       // resolveProject reads the parent from git (parentCheckout), so a new worktree nests under
       // its checkout exactly as one added by hand does
@@ -774,7 +774,8 @@ export function createCore(opts: CoreOptions): Core {
     },
 
     // `readBranch` walks up from the checkout reading HEAD, so it costs no process; the default
-    // branch needs `origin/HEAD` and is what a new worktree branches from. Both null when the
+    // branch needs `origin/HEAD`, and `bases` is every branch, local or fetched, a new worktree
+    // could be forked from. Both null when the
     // folder is not a repo, which is the same `no-repo` case worktreeCreate refuses.
     async repoRefs({ projectId }) {
       const project = slices.projects.find((p) => p.id === projectId)
@@ -782,10 +783,11 @@ export function createCore(opts: CoreOptions): Core {
       // this project's own path, not repoFor's: a worktree's row must name the branch that
       // worktree has checked out, which is not the one its parent checkout has
       const branch = readBranch(project.path)
-      if (!git) return { ok: true, data: { branch, default: null } }
+      if (!git) return { ok: true, data: { branch, default: null, bases: [] } }
       const root = await gitTop(project.path)
-      if (!root) return { ok: true, data: { branch, default: null } }
-      return { ok: true, data: { branch, default: await defaultBranch(git, root) } }
+      if (!root) return { ok: true, data: { branch, default: null, bases: [] } }
+      const [def, bases] = await Promise.all([defaultBranch(git, root), listBases(git, root)])
+      return { ok: true, data: { branch, default: def, bases } }
     },
 
     // `projectId` (the app) or `cwd` (the CLI, ADR 0029): a folder resolves to its project, registered when new.

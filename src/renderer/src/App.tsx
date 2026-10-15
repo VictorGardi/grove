@@ -35,6 +35,7 @@ import { useSessionRemoval } from './useSessionRemoval'
 import { colorTags } from './tags'
 import { featureDir, featureOfFile, viewableFiles } from './viewerFiles'
 import { ScratchpadOverlay } from './components/ScratchpadOverlay'
+import { longestWaiting } from './sessionStatus'
 import s from './App.module.css'
 
 export default function App() {
@@ -83,7 +84,7 @@ export default function App() {
   // the menu and the palette both run actions through here
   const runAction = useCallback((a: MenuAction) => {
     // read the latest state, not this callback's closure
-    const { projects, sessions, ui, features } = useSlices.getState()
+    const { projects, sessions, ui, features, waitingSince } = useSlices.getState()
     if (a.type === 'palette') setPaletteOpen(true)
     else if (a.type === 'toggleGrid') toggleGrid()
     else if (a.type === 'addToGrid') addFocusedToGrid()
@@ -104,6 +105,9 @@ export default function App() {
       if (focused) setConfirmRemove(focused)
     } else if (a.type === 'lastSession') {
       void window.api.invoke('session:focusLast')
+    } else if (a.type === 'nextWaiting') {
+      const w = longestWaiting(sessions, waitingSince)
+      if (w) setFocused(w.id)
     } else if (a.type === 'focusIndex') {
       const target = focusTarget(ui, projects, sessions, features.items, a.n, gridView)
       if (target) setFocused(target.id)
@@ -134,7 +138,7 @@ export default function App() {
   const startLaunch = useCallback(async (l: Launch): Promise<string | null> => {
     let projectId = l.where.type === 'existing' ? l.where.project.id : ''
     if (l.where.type === 'new') {
-      const made = await window.api.invoke('worktree:create', { projectId: l.where.from.id, branch: l.where.branch })
+      const made = await window.api.invoke('worktree:create', { projectId: l.where.from.id, branch: l.where.branch, ...(l.where.base && { base: l.where.base }) })
       if (!made.ok) return errorMessage(made.error)
       projectId = made.data.id
     }

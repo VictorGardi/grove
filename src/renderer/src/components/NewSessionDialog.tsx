@@ -26,7 +26,7 @@ function featureLabel(all: Feature[], f: Feature): string {
 
 export interface Launch {
   kind: SessionKind
-  where: { type: 'new'; from: Project; branch: string } | { type: 'existing'; project: Project }
+  where: { type: 'new'; from: Project; branch: string; base?: string } | { type: 'existing'; project: Project }
   prompt: string
   sandboxed: boolean
   feature: string | null

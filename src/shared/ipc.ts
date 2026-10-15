@@ -5,16 +5,16 @@ export type MenuAction =
   | { type: 'newSession' } | { type: 'newSessionOptions' } | { type: 'closeSession' } | { type: 'focusIndex'; n: number } | { type: 'projectBoard' }
   | { type: 'sessionDiff' } | { type: 'toggleSidebar' } | { type: 'addToGrid' }
   | { type: 'newTerminal' } | { type: 'lastSession' } | { type: 'palette' } | { type: 'toggleGrid' } | { type: 'clearGrid' }
-  | { type: 'scratchpad' }
+  | { type: 'scratchpad' } | { type: 'nextWaiting' }
 // invoke channels: name → [args, result data]
 export interface InvokeMap {
   'state:get': [void, Slices]
   'app:errors': [void, string[]]
   'project:add': [void, Project | null]
   'project:remove': [{ id: string }, { id: string }]
-  'worktree:create': [{ projectId: string; branch: string }, Project]
+  'worktree:create': [{ projectId: string; branch: string; base?: string }, Project]
   'worktree:remove': [{ projectId: string }, { id: string }]
-  'repo:refs': [{ projectId: string }, { branch: string | null; default: string | null }]
+  'repo:refs': [{ projectId: string }, { branch: string | null; default: string | null; bases: string[] }]
   // what the core command already accepts: until the launch dialog existed the renderer could send
   // only projectId and kind, so the GUI could not reach the fields the CLI always could
   'session:create': [{ projectId: string; kind: SessionKind; prompt?: string; label?: string; feature?: string; sandboxed?: boolean; cols: number; rows: number }, Session]

@@ -52,6 +52,7 @@ export function buildMenu(send: (a: MenuAction) => void, installCli: () => void,
         })),
         { type: 'separator' },
         { label: 'Last Session', accelerator: 'Ctrl+Tab', click: () => send({ type: 'lastSession' }) },
+        { label: 'Next Waiting Session', accelerator: 'CmdOrCtrl+.', click: () => send({ type: 'nextWaiting' }) },
       ],
     },
   ]

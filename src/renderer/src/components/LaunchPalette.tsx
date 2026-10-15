@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
 import type { Project, Session, SessionKind } from '@shared/types'
-import { branchName, buildTargets, tidyPath, type Target } from '../launchTargets'
+import { baseChoices, branchName, buildTargets, tidyPath, type ChosenBases, type Target } from '../launchTargets'
 import { suggestBranch, repoOf, type RefsByRepo } from '../launchRows'
 import { wantsSandbox } from '../sandboxOptIn'
 import { usualKind } from '../usualKind'
@@ -24,6 +24,9 @@ const KINDS: { kind: SessionKind; label: string; icon: 'opencode' | 'claude' | '
 // The one input is both the filter and the name of a worktree nobody has made yet, so making one is
 // ⌘T, a name, ↵. Every control under the list has a key written next to it (⌥ plus a letter, since
 // the menu already owns ⌘1–9), so nothing here needs the pointer and nothing is a hidden mode.
+//
+// A new worktree forks the repo's default branch unless ⌥B picks another: a second step that swaps
+// the list for the repo's branches, local and already fetched, and returns here with the choice.
 export function LaunchPalette({ projects, sessions, openedFrom, refs, sandboxed, onSandbox, onClose, onStart }: {
   projects: Project[]
   sessions: Session[]
@@ -42,7 +45,10 @@ export function LaunchPalette({ projects, sessions, openedFrom, refs, sandboxed,
   // the list, and an index would slide the highlight onto whatever landed there.
   const [at, setAt] = useState<string | null>(null)
   const [picked, setPicked] = useState<SessionKind | null>(null)
-  const [fromHead, setFromHead] = useState(false)
+  // the base picked per repo, so it holds while the highlight moves between repos and back
+  const [chosen, setChosen] = useState<ChosenBases>({})
+  // the base picker, when open: it takes over the box and the list until a branch is picked or Esc
+  const [picking, setPicking] = useState<{ repoId: string; query: string; at: number } | null>(null)
   const [label, setLabel] = useState('')
   // the branch field, remembered against the row it was typed for so moving to another row drops it
   const [edit, setEdit] = useState<{ key: string; value: string } | null>(null)
@@ -53,11 +59,13 @@ export function LaunchPalette({ projects, sessions, openedFrom, refs, sandboxed,
   const branchRef = useRef<HTMLInputElement>(null)
   const rowRef = useRef<HTMLDivElement>(null)
 
-  const targets = useMemo(() => buildTargets(projects, openedFrom, refs, query, fromHead), [projects, openedFrom, refs, query, fromHead])
+  const targets = useMemo(() => buildTargets(projects, openedFrom, refs, query, chosen), [projects, openedFrom, refs, query, chosen])
   const current = Math.max(targets.findIndex((t) => t.key === at), 0)
   const target = targets[current]
   const grouped = !query.trim()
   const repos = new Set(projects.map(repoOf)).size
+  const choices = useMemo(() => (picking ? baseChoices(refs, picking.repoId, picking.query) : []), [picking, refs])
+  const choiceAt = Math.min(picking?.at ?? 0, Math.max(choices.length - 1, 0))
 
   // A guess until the human picks: `null` hands it to the repo's own habit, so moving onto another
   // repo re-reads that repo's usual agent instead of keeping the last one's.
@@ -78,7 +86,8 @@ export function LaunchPalette({ projects, sessions, openedFrom, refs, sandboxed,
     const failed = await onStart({
       kind,
       where: t.type === 'create'
-        ? { type: 'new', from: t.repo, branch: t.key === target?.key ? branchFinal : t.branch ?? suggestBranch(t.repo, projects) }
+        // the base named on the row is the one sent, so what the row says is what git forks
+        ? { type: 'new', from: t.repo, branch: t.key === target?.key ? branchFinal : t.branch ?? suggestBranch(t.repo, projects), ...(t.base && { base: t.base }) }
         : { type: 'existing', project: t.project },
       prompt: '', sandboxed, feature: null, label,
     })
@@ -97,7 +106,31 @@ export function LaunchPalette({ projects, sessions, openedFrom, refs, sandboxed,
     void submit(t)
   }
 
+  const openPicker = () => {
+    if (target?.type !== 'create') return
+    setPicking({ repoId: target.repo.id, query: '', at: 0 })
+    setTimeout(() => searchRef.current?.focus(), 0)
+  }
+
+  // Picking a base returns to the branch field: the base was the one thing still undecided.
+  const pickBase = () => {
+    const base = choices[choiceAt]
+    if (!base || !picking) return
+    setChosen((c) => ({ ...c, [picking.repoId]: base }))
+    setPicking(null)
+    setTimeout(() => branchRef.current?.focus(), 0)
+  }
+
   const onKeyDown = (e: React.KeyboardEvent) => {
+    if (picking) {
+      if (e.key === 'Tab') { e.preventDefault(); return }
+      if (e.key === 'ArrowDown' || e.key === 'ArrowUp') {
+        e.preventDefault()
+        const n = choices.length
+        if (n) setPicking({ ...picking, at: (choiceAt + (e.key === 'ArrowDown' ? 1 : n - 1)) % n })
+      }
+      return
+    }
     if (e.key === 'Tab') {
       // Two places take text, so Tab trades between them; the buttons under the list are all
       // reachable by key and would only be somewhere for the focus to get lost.
@@ -112,7 +145,7 @@ export function LaunchPalette({ projects, sessions, openedFrom, refs, sandboxed,
       const k = KINDS.find((x) => x.code === e.code)
       if (k) { e.preventDefault(); setPicked(k.kind); return }
       if (e.code === 'KeyS') { e.preventDefault(); onSandbox(!sandboxed); return }
-      if (e.code === 'KeyB') { e.preventDefault(); setFromHead((h) => !h); return }
+      if (e.code === 'KeyB') { e.preventDefault(); openPicker(); return }
     }
     if (e.key !== 'ArrowDown' && e.key !== 'ArrowUp') return
     e.preventDefault()
@@ -126,7 +159,7 @@ export function LaunchPalette({ projects, sessions, openedFrom, refs, sandboxed,
   const verb = target?.type === 'create' ? 'Create' : 'Start'
 
   return (
-    <Modal onClose={onClose} onConfirm={() => choose()}>
+    <Modal onClose={() => (picking ? setPicking(null) : onClose())} onConfirm={() => (picking ? pickBase() : choose())}>
       <div className={s.root} onKeyDown={onKeyDown}>
         <div className={s.box}>
           <Icon name="search" size={14} />
@@ -134,13 +167,31 @@ export function LaunchPalette({ projects, sessions, openedFrom, refs, sandboxed,
             ref={searchRef}
             autoFocus
             className={s.input}
-            value={query}
-            placeholder="Pick a place, or type a name to make a worktree…"
-            aria-label="Where"
-            onChange={(e) => { setQuery(e.target.value); setAt(null); setError(null) }}
+            value={picking ? picking.query : query}
+            placeholder={picking ? 'Fork from which branch…' : 'Pick a place, or type a name to make a worktree…'}
+            aria-label={picking ? 'Base branch' : 'Where'}
+            onChange={(e) => {
+              if (picking) { setPicking({ ...picking, query: e.target.value, at: 0 }); return }
+              setQuery(e.target.value); setAt(null); setError(null)
+            }}
           />
         </div>
 
+        {picking ? (
+          <div className={s.list} role="listbox" aria-label="Branch to fork">
+            {choices.map((b, i) => (
+              <div key={b} ref={i === choiceAt ? rowRef : undefined} role="option" aria-selected={i === choiceAt}
+                className={cx(s.row, i === choiceAt && s.on)}
+                onClick={() => { setChosen((c) => ({ ...c, [picking.repoId]: b })); setPicking(null); setTimeout(() => branchRef.current?.focus(), 0) }}>
+                <Icon name="branch" size={13} />
+                <span className={s.name}>{b}</span>
+                {b === refs[picking.repoId]?.default && <span className={s.muted}>default</span>}
+                {b === refs[picking.repoId]?.branch && <span className={s.muted}>checked out</span>}
+              </div>
+            ))}
+            {choices.length === 0 && <div className={s.empty}>No branch matches “{picking.query}”.</div>}
+          </div>
+        ) : (
         <div className={s.list} role="listbox" aria-label="Where the session runs">
           {targets.map((t, i) => {
             const on = i === current
@@ -175,6 +226,7 @@ export function LaunchPalette({ projects, sessions, openedFrom, refs, sandboxed,
           })}
           {targets.length === 0 && <div className={s.empty}>No projects yet.</div>}
         </div>
+        )}
 
         {error && <div className={s.error}>{error}</div>}
 
@@ -207,8 +259,8 @@ export function LaunchPalette({ projects, sessions, openedFrom, refs, sandboxed,
           <span className={s.what}>
             {busy ? 'Working…' : target && `${verb} ${where} · ${isolated ? 'sandboxed — files only, network is open' : 'on your host'}`}
           </span>
-          {target?.type === 'create' && <span><kbd>⌥B</kbd> {fromHead ? 'from default' : 'from HEAD'}</span>}
-          <span><kbd>↵</kbd> {verb.toLowerCase()}</span>
+          {target?.type === 'create' && !picking && <span><kbd>⌥B</kbd> pick base</span>}
+          <span><kbd>↵</kbd> {picking ? 'fork this' : verb.toLowerCase()}</span>
         </div>
       </div>
     </Modal>
