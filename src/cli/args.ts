@@ -22,6 +22,7 @@ export const USAGE = `usage: grove <command>
   grove new <kind> --worktree --branch NAME --base REF
                                                  fork REF (a branch, local or fetched) instead of the checkout's HEAD
   grove new claude --model ALIAS                 start Claude with that model (an alias such as \`claude --model\` takes)
+  grove new opencode --model PROVIDER/MODEL      start OpenCode with that model (provider/model, as \`opencode models\` lists them)
   grove new <kind> --sandboxed                   run the agent inside a container that cannot see the rest of this Mac
   grove send <ref> <TEXT|-> [--no-enter] [--wait] [--timeout S]
                                                  type text into a session and submit it
@@ -70,8 +71,8 @@ export function parseCommand(argv: string[]): Command | UsageError {
       // the pair is one flag: a branch without a worktree, or a worktree with no branch, is a mistake
       if (!!values.worktree !== !!values.branch) return new UsageError(`--worktree and --branch go together\n${USAGE}`)
       if (values.base !== undefined && !values.worktree) return new UsageError(`--base needs --worktree --branch\n${USAGE}`)
-      if (values.model !== undefined && !values.model) return new UsageError(`--model takes a model alias\n${USAGE}`)
-      if (values.model !== undefined && kind !== 'claude') return new UsageError(`--model only works with claude\n${USAGE}`)
+      if (values.model !== undefined && !values.model) return new UsageError(`--model takes a model\n${USAGE}`)
+      if (values.model !== undefined && kind !== 'claude' && kind !== 'opencode') return new UsageError(`--model only works with claude and opencode\n${USAGE}`)
       return {
         cmd: 'new', kind: kind as SessionKind, cwd: values.cwd, prompt: values.prompt, label: values.label, link: values.link, parent: values.parent, child: !!values.child,
         worktree: !!values.worktree, branch: values.branch, base: values.base, model: values.model, sandboxed: !!values.sandboxed, json: !!values.json, wait: !!values.wait, timeoutS,

@@ -63,6 +63,9 @@ describe('cli server', () => {
     const bad = await request(socketPath, req('sessions.create', { kind: 'terminal', cwd: t.dir, model: 'm1' }))
     expect(bad).toMatchObject({ ok: false, error: { code: 'bad-params' } })
     expect(core.getSlices().sessions).toHaveLength(1)
+    const oc = await request(socketPath, req('sessions.create', { kind: 'opencode', cwd: t.dir, model: 'p/m1' }))
+    expect(oc.ok).toBe(true)
+    expect(core.getSlices().sessions[1]).toMatchObject({ kind: 'opencode', launchModel: 'p/m1' })
   })
 
   // The refusal's message must be the one `errorMessage` holds for that code, or the table is

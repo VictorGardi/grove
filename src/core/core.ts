@@ -879,9 +879,9 @@ export function createCore(opts: CoreOptions): Core {
       return { ok: true, data: { id } }
     },
 
-    // E-D3: a new tmux session of the same name runs the agent's resume argv (`opencode -s <id>`,
-    // `claude --resume <id>`), picking up its history. A session that was sandboxed is sandboxed
-    // again (ADR 0033), and when this host cannot build the sandbox the resume downgrades: it goes
+    // E-D3: a new tmux session of the same name runs the agent's resume argv (`opencode -s <id>`, or
+    // `opencode mini -s <id> -m <model>` when launched with --model; `claude --resume <id>`), picking up its
+    // history. A session that was sandboxed is sandboxed again (ADR 0033), and when this host cannot build the sandbox the resume downgrades: it goes
     // back unsandboxed, `sandboxed` goes false so nothing claims otherwise, and `sandboxNote`
     // records that a sandbox was *lost* — the half the flag alone cannot say, since `false` is
     // also what a never-sandboxed session looks like. Refusing instead would trap the human out of

@@ -5,11 +5,13 @@ import path from 'node:path'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { opencodeCliConfig } from '@shared/opencodeSession'
 import { SpoolClaude } from './claude/source'
+import { HttpOpenCode } from './opencode/client'
 import { claudeArgv } from './claude/hooks'
 import { gitRunner } from './diff/git'
 import { minimalEnv } from './env'
 import { imageRef } from './sandbox/image'
 import { loadState } from './store/stateStore'
+import type { AgentSource } from './agents/types'
 import type { Core } from './core'
 import { gitRepo } from './testing/gitRepo'
 import { setupCore } from './testing/setup'
@@ -60,6 +62,18 @@ describe('sessionCreate for the CLI', () => {
     await core.start()
     await create(core, { cwd: t.dir, kind: 'claude', prompt: 'p q', label: 'helper' })
     expect(created(t.fake)[0].argv![4]).toMatch(/--name helper 'p q'$/)
+  })
+
+  it('opencode: --model runs opencode mini, and launchModel survives a resume', async () => {
+    const core = t.make(undefined, { sources: [new HttpOpenCode({ serviceFile: path.join(t.dir, 'service.json') }), t.claude] })
+    await core.start()
+    const res = await create(core, { cwd: t.dir, kind: 'opencode', prompt: 'say hi', model: 'p/m1' })
+    if (!res.ok) throw new Error('create failed')
+    expect(created(t.fake)[0].argv![4]).toMatch(/^exec opencode mini -s ses_\S+ -m p\/m1 --prompt 'say hi'$/)
+    expect(res.data.launchModel).toBe('p/m1')
+    await core.commands.sessionKill({ id: res.data.id })
+    await core.commands.sessionResume({ id: res.data.id })
+    expect(created(t.fake)[1].argv![4]).toMatch(/^exec opencode mini -s ses_\S+ -m p\/m1/)
   })
 
   it('claude: --model after --settings on start and resume, and launchModel survives a restart', async () => {
@@ -334,6 +348,14 @@ describe('sessionCreate --sandboxed', () => {
     expect(argv).toContain('-e OPENCODE_SERVER_PASSWORD=s3cret')
   })
 
+  it('puts --server after mini for a sandboxed opencode with a model', async () => {
+    const core = await startWithLog([], [new HttpOpenCode({ serviceFile: path.join(t.dir, 'service.json') }), t.claude])
+    register()
+    const res = await sandboxed(core, { kind: 'opencode', model: 'p/m1' })
+    if (!res.ok) throw new Error(res.error)
+    expect(created(t.fake)[0].argv![4]).toMatch(/opencode mini --server http:\/\/192\.168\.64\.1:49374 -s ses_\S+ -m p\/m1$/)
+  })
+
   it('refuses no-sandbox when there is no host service registration to join', async () => {
     const core = await startWithLog()
     expect(await sandboxed(core, { kind: 'opencode' })).toEqual({ ok: false, error: 'no-sandbox-no-service' })
@@ -457,7 +479,7 @@ describe('sessionCreate --sandboxed', () => {
       'exit 0',
       '',
     ].join('\n')
-  async function startWithLog(listed: string[] = []) {
+  async function startWithLog(listed: string[] = [], sources: AgentSource[] = [t.oc, t.claude]) {
     fs.mkdirSync(path.dirname(container()), { recursive: true })
     fs.writeFileSync(container(), fakeListingScript(listed), { mode: 0o755 })
     fs.mkdirSync(path.dirname(dockerfile()), { recursive: true })
@@ -467,6 +489,7 @@ describe('sessionCreate --sandboxed', () => {
     const core = t.make(undefined, {
       sessionEnv: { binDir: '/bin', ...paths() },
       sandbox: { container: container(), dockerfile: dockerfile() },
+      sources,
     })
     await core.start()
     return core
