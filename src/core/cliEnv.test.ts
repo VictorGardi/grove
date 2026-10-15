@@ -1,11 +1,14 @@
-import { afterEach, describe, expect, it } from 'vitest'
+import { afterEach, describe, expect, it, vi } from 'vitest'
 import { createClaude, createOpenCode, createTerminal, setupCore } from './testing/setup'
 
 const sessionEnv = { socketPath: '/s.sock', binDir: '/bin' }
 
 describe('GROVE_* session env', () => {
   const t = setupCore()
-  afterEach(() => t.disposeAll())
+  afterEach(() => {
+    vi.unstubAllEnvs()
+    t.disposeAll()
+  })
 
   const created = () => t.fake.calls.filter((c) => c.method === 'create').at(-1)!.args[0] as {
     env?: Record<string, string>
@@ -42,5 +45,30 @@ describe('GROVE_* session env', () => {
     await core.start()
     await createTerminal(core)
     expect(created().env).toBeUndefined()
+  })
+
+  const withModel = async () => {
+    const core = t.make(undefined, { sessionEnv })
+    await core.start()
+    const res = await core.commands.sessionCreate({ projectId: 'p', kind: 'opencode', model: 'p/m1', cols: 80, rows: 24 })
+    if (!res.ok) throw new Error(res.error)
+    return res.data
+  }
+
+  it('an opencode session with a model gets it beside the ids and the chrome', async () => {
+    vi.stubEnv('OPENCODE_CONFIG_CONTENT', '')
+    const s = await withModel()
+    expect(created().env).toEqual({
+      GROVE_SESSION_ID: s.id,
+      GROVE_SOCKET: '/s.sock',
+      OPENCODE_CLI_CONFIG_CONTENT: expect.any(String),
+      OPENCODE_CONFIG_CONTENT: '{"model":"p/m1"}',
+    })
+  })
+
+  it('merges the model into an inherited OPENCODE_CONFIG_CONTENT', async () => {
+    vi.stubEnv('OPENCODE_CONFIG_CONTENT', '{"permission":{"x":1}}')
+    await withModel()
+    expect(JSON.parse(created().env!.OPENCODE_CONFIG_CONTENT!)).toEqual({ permission: { x: 1 }, model: 'p/m1' })
   })
 })

@@ -37,8 +37,8 @@ is registered as a project). `--link SLUG` pins the session to a feature of that
 project and fails, creating nothing, if there is no such feature.
 A prompt that starts with `-` must be written `--prompt=-text`.
 `--model` (claude and opencode; a usage error for terminal) starts the agent with that model.
-Claude takes the alias `claude --model` takes; OpenCode takes `provider/model` and then runs in
-its minimal interface (`opencode mini`). Resuming the session keeps the model.
+Claude takes the alias `claude --model` takes; OpenCode takes `provider/model` and gets it through
+its config env `OPENCODE_CONFIG_CONTENT`. Resuming the session keeps the model.
 
 `--parent REF` puts the new session in REF's group in the sidebar; `--child`
 means "in my group", taking your own `GROVE_SESSION_ID`. Without either, the new

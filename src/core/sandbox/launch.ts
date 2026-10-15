@@ -44,14 +44,11 @@ async function reachHostService(paths: Partial<AgentPaths>, container: string): 
   return serviceEndpoint({ registrationFile: paths.opencodeRegistration, gateway })
 }
 
-// `--server` goes right after the binary, or after `mini`, since root flags do not carry into a
-// subcommand. Without it the client falls back to starting a service of its own: measured 2026-10-12, it read the host's
+// `--server` precedes any subcommand, so it goes in immediately after the binary. Without it the
+// client falls back to starting a service of its own: measured 2026-10-12, it read the host's
 // registration, tried the host's loopback, then died with `EADDRNOTAVAIL` binding the bridge
 // address grove wrote into the config. Told where the service is, it binds nothing.
-const withServer = (agentArgv: string[], url: string): string[] => {
-  const at = agentArgv[1] === 'mini' ? 2 : 1
-  return [...agentArgv.slice(0, at), '--server', url, ...agentArgv.slice(at)]
-}
+const withServer = (agentArgv: string[], url: string): string[] => [agentArgv[0], '--server', url, ...agentArgv.slice(1)]
 
 // The pane's argv for a sandboxed agent session, or the reason there is none. None of them may fall
 // back to an unguarded pane (ADR 0036): creation refuses, and a resume downgrades and says so

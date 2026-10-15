@@ -5,7 +5,7 @@ import path from 'node:path'
 import type { Comment, CommentAnchor, Project, PullRequest, Session, SessionDiff, SessionKind, Slices, UiState, WorkflowStatus } from '@shared/types'
 import { DEFAULT_UI, EMPTY_FEATURES, OPENCODE_CONNECTING } from '@shared/types'
 import { keyProjectId } from '@shared/groups'
-import { opencodeCliConfig } from '@shared/opencodeSession'
+import { opencodeCliConfig, opencodeModelEnv } from '@shared/opencodeSession'
 import type { Result } from '@shared/ipc'
 import { pruneGrid } from '@shared/grid'
 import { safeArtifactPath } from './artifacts/path'
@@ -192,8 +192,11 @@ export function createCore(opts: CoreOptions): Core {
   // GROVE_* for the grove CLI (ADR 0027). Terminal sessions get PATH here; agent sessions through loginShellArgv.
   function cliEnv(session: Session): Record<string, string> | undefined {
     const e = opts.sessionEnv
-    if (!e) return undefined
+    // the model for an OpenCode session goes in whether or not the CLI env is there
+    const model = session.kind === 'opencode' ? opencodeModelEnv(session.launchModel, process.env.OPENCODE_CONFIG_CONTENT) : {}
+    if (!e) return Object.keys(model).length ? model : undefined
     return {
+      ...model,
       GROVE_SESSION_ID: session.id,
       GROVE_SOCKET: e.socketPath,
       ...(session.kind === 'terminal' && { PATH: `${e.binDir}:${minimalEnv(process.env).PATH}` }),
@@ -879,9 +882,9 @@ export function createCore(opts: CoreOptions): Core {
       return { ok: true, data: { id } }
     },
 
-    // E-D3: a new tmux session of the same name runs the agent's resume argv (`opencode -s <id>`, or
-    // `opencode mini -s <id> -m <model>` when launched with --model; `claude --resume <id>`), picking up its
-    // history. A session that was sandboxed is sandboxed again (ADR 0033), and when this host cannot build the sandbox the resume downgrades: it goes
+    // E-D3: a new tmux session of the same name runs the agent's resume argv (`opencode -s <id>`,
+    // `claude --resume <id>`), picking up its history (an OpenCode model comes back through
+    // `cliEnv`). A session that was sandboxed is sandboxed again (ADR 0033), and when this host cannot build the sandbox the resume downgrades: it goes
     // back unsandboxed, `sandboxed` goes false so nothing claims otherwise, and `sandboxNote`
     // records that a sandbox was *lost* — the half the flag alone cannot say, since `false` is
     // also what a never-sandboxed session looks like. Refusing instead would trap the human out of

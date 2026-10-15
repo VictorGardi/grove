@@ -52,9 +52,9 @@ export class HttpOpenCode implements AgentSource {
   }
 
   argv(id: string, _mode: 'start' | 'resume', opts?: { prompt?: string; name?: string; model?: string }): string[] {
-    const prompt = opts?.prompt ? ['--prompt', opts.prompt] : []
-    // resume is the same: -s picks up the session's history. The default command has no -m, so a model means `opencode mini`
-    return opts?.model ? ['opencode', 'mini', '-s', id, '-m', opts.model, ...prompt] : ['opencode', '-s', id, ...prompt]
+    // resume is the same: -s picks up the session's history. A model is not an argument here: it
+    // reaches OpenCode through the environment (see `opencodeModelEnv`), so `opts.model` is ignored.
+    return ['opencode', '-s', id, ...(opts?.prompt ? ['--prompt', opts.prompt] : [])]
   }
 
   forget(_id: string): void {} // OpenCode keeps its own sessions

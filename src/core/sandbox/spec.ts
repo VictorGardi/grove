@@ -1,6 +1,6 @@
 import path from 'node:path'
 import type { Session } from '@shared/types'
-import { opencodeCliConfig } from '@shared/opencodeSession'
+import { opencodeCliConfig, opencodeModelEnv } from '@shared/opencodeSession'
 import type { AgentKind } from '../agents/types'
 
 // Every host path a sandboxed session's container binds, each at the identical path inside
@@ -116,6 +116,8 @@ export function envFor(
     // explicitly passed, so without this a sandboxed session falls back to the user's
     // `opencode.json` and comes up looking like a different application. Measured 2026-10-12.
     env.OPENCODE_CLI_CONFIG_CONTENT = opencodeCliConfig()
+    // The model from `grove new opencode --model`, through OpenCode's inline config; same helper as the host path.
+    Object.assign(env, opencodeModelEnv(session.launchModel, process.env.OPENCODE_CONFIG_CONTENT))
     // The address comes from the registration the client reads; the credential does not, so grove
     // hands it over. Without it the service answers 401.
     if (o.serverPassword) env.OPENCODE_SERVER_PASSWORD = o.serverPassword

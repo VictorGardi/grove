@@ -79,7 +79,7 @@ specific meaning, so humans and agents stay consistent.
 - **Seen mark**: `seenAt`, when the human last had a session on screen with the
   window focused; a finished turn after it makes the session waiting.
 - **Resume**: restarting a gone agent session in a new tmux session with
-  `opencode -s <id>` (`opencode mini -s <id> -m <model>` when launched with --model) or
+  `opencode -s <id>` (the model, when launched with --model, comes back through `OPENCODE_CONFIG_CONTENT`) or
   `claude --resume <id>`, keeping its id, label and link.
 - **Remove**: ends a session if it is running and forgets it, with no confirmation
   (⌘W, the card's ×, or right-click on a shift-click selection). Not resumable.

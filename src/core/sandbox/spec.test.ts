@@ -1,5 +1,5 @@
 import path from 'node:path'
-import { describe, expect, it } from 'vitest'
+import { afterEach, describe, expect, it, vi } from 'vitest'
 import { opencodeCliConfig } from '@shared/opencodeSession'
 import { newSession } from '../sessions'
 import { envFor, mountsFor, readOnlyPathsFor, specFor, type MountPaths } from './spec'
@@ -142,6 +142,16 @@ describe('envFor', () => {
     expect(opencode.OPENCODE_CLI_CONFIG_CONTENT).toBe(opencodeCliConfig())
     expect(JSON.parse(opencodeCliConfig())).toEqual({ tabs: { mode: 'off' }, theme: { name: 'tokyonight', mode: 'dark' } })
     expect(envFor('claude', SESSION, { paths: PATHS }).env.OPENCODE_CLI_CONFIG_CONTENT).toBeUndefined()
+  })
+
+  afterEach(() => vi.unstubAllEnvs())
+
+  it('passes an opencode session its launch model as inline config, and nothing without one or for claude', () => {
+    vi.stubEnv('OPENCODE_CONFIG_CONTENT', '')
+    const oc = (launchModel?: string) => ({ ...SESSION, kind: 'opencode' as const, launchModel })
+    expect(envFor('opencode', oc('p/m1'), { paths: PATHS }).env.OPENCODE_CONFIG_CONTENT).toBe('{"model":"p/m1"}')
+    expect('OPENCODE_CONFIG_CONTENT' in envFor('opencode', oc(), { paths: PATHS }).env).toBe(false)
+    expect('OPENCODE_CONFIG_CONTENT' in envFor('claude', { ...SESSION, launchModel: 'm1' }, { paths: PATHS }).env).toBe(false)
   })
 
   it('hands a sandboxed opencode the host service’s password, and claude neither that nor the pointer', () => {

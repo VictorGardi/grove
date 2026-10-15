@@ -96,11 +96,11 @@ describe('HttpOpenCode as an agent source', () => {
     expect(() => source.forget('ses_x')).not.toThrow()
   })
 
-  it('runs opencode mini with -m when there is a model, on start and resume, prompt last', () => {
+  it('keeps the argv plain with a model (it goes through the env), on start and resume, prompt last', () => {
     const source = new HttpOpenCode({ serviceFile: '/nope/service.json' })
     for (const mode of ['start', 'resume'] as const) {
-      expect(source.argv('ses_x', mode, { model: 'p/m' })).toEqual(['opencode', 'mini', '-s', 'ses_x', '-m', 'p/m'])
-      expect(source.argv('ses_x', mode, { model: 'p/m', prompt: 'hi' })).toEqual(['opencode', 'mini', '-s', 'ses_x', '-m', 'p/m', '--prompt', 'hi'])
+      expect(source.argv('ses_x', mode, { model: 'p/m' })).toEqual(['opencode', '-s', 'ses_x'])
+      expect(source.argv('ses_x', mode, { model: 'p/m', prompt: 'hi' })).toEqual(['opencode', '-s', 'ses_x', '--prompt', 'hi'])
     }
     expect(source.argv('ses_x', 'start', { prompt: 'hi' })).toEqual(['opencode', '-s', 'ses_x', '--prompt', 'hi'])
   })

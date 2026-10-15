@@ -27,7 +27,10 @@ const NETWORKS = JSON.stringify([{ configuration: { name: 'default' }, status: {
 describe('sessionCreate for the CLI', () => {
   let t: ReturnType<typeof setupCore>
   beforeEach(() => { t = setupCore() })
-  afterEach(() => t.disposeAll())
+  afterEach(() => {
+    vi.unstubAllEnvs()
+    t.disposeAll()
+  })
 
   async function start() {
     fs.mkdirSync(path.join(t.dir, 'docs', 'work', 'a'), { recursive: true })
@@ -64,16 +67,36 @@ describe('sessionCreate for the CLI', () => {
     expect(created(t.fake)[0].argv![4]).toMatch(/--name helper 'p q'$/)
   })
 
-  it('opencode: --model runs opencode mini, and launchModel survives a resume', async () => {
+  it('opencode: --model sets OPENCODE_CONFIG_CONTENT, not argv, and survives a resume', async () => {
+    vi.stubEnv('OPENCODE_CONFIG_CONTENT', '')
     const core = t.make(undefined, { sources: [new HttpOpenCode({ serviceFile: path.join(t.dir, 'service.json') }), t.claude] })
     await core.start()
     const res = await create(core, { cwd: t.dir, kind: 'opencode', prompt: 'say hi', model: 'p/m1' })
     if (!res.ok) throw new Error('create failed')
-    expect(created(t.fake)[0].argv![4]).toMatch(/^exec opencode mini -s ses_\S+ -m p\/m1 --prompt 'say hi'$/)
+    expect(created(t.fake)[0].argv![4]).toMatch(/^exec opencode -s ses_\S+ --prompt 'say hi'$/)
+    expect(created(t.fake)[0].env?.OPENCODE_CONFIG_CONTENT).toBe('{"model":"p/m1"}')
     expect(res.data.launchModel).toBe('p/m1')
     await core.commands.sessionKill({ id: res.data.id })
     await core.commands.sessionResume({ id: res.data.id })
-    expect(created(t.fake)[1].argv![4]).toMatch(/^exec opencode mini -s ses_\S+ -m p\/m1/)
+    expect(created(t.fake)[1].argv![4]).toMatch(/^exec opencode -s ses_\S+$/)
+    expect(created(t.fake)[1].env?.OPENCODE_CONFIG_CONTENT).toBe('{"model":"p/m1"}')
+  })
+
+  it('opencode: no model, no OPENCODE_CONFIG_CONTENT', async () => {
+    vi.stubEnv('OPENCODE_CONFIG_CONTENT', '')
+    const core = t.make(undefined, { sources: [new HttpOpenCode({ serviceFile: path.join(t.dir, 'service.json') }), t.claude] })
+    await core.start()
+    const res = await create(core, { cwd: t.dir, kind: 'opencode', prompt: 'say hi' })
+    if (!res.ok) throw new Error('create failed')
+    expect(created(t.fake)[0].env?.OPENCODE_CONFIG_CONTENT).toBeUndefined()
+  })
+
+  it('claude: --model puts nothing in OPENCODE_CONFIG_CONTENT', async () => {
+    vi.stubEnv('OPENCODE_CONFIG_CONTENT', '')
+    const core = t.make(undefined, { sources: [t.oc, new SpoolClaude({ dir: path.join(t.dir, 'agents', 'claude') })] })
+    await core.start()
+    await create(core, { cwd: t.dir, kind: 'claude', model: 'm1' })
+    expect(created(t.fake)[0].env?.OPENCODE_CONFIG_CONTENT).toBeUndefined()
   })
 
   it('claude: --model after --settings on start and resume, and launchModel survives a restart', async () => {
@@ -348,12 +371,19 @@ describe('sessionCreate --sandboxed', () => {
     expect(argv).toContain('-e OPENCODE_SERVER_PASSWORD=s3cret')
   })
 
-  it('puts --server after mini for a sandboxed opencode with a model', async () => {
+  it('sandboxed opencode with a model: --server right after opencode, and the container gets the model env, quoted, on create and resume', async () => {
     const core = await startWithLog([], [new HttpOpenCode({ serviceFile: path.join(t.dir, 'service.json') }), t.claude])
     register()
     const res = await sandboxed(core, { kind: 'opencode', model: 'p/m1' })
     if (!res.ok) throw new Error(res.error)
-    expect(created(t.fake)[0].argv![4]).toMatch(/opencode mini --server http:\/\/192\.168\.64\.1:49374 -s ses_\S+ -m p\/m1$/)
+    const flag = `-e 'OPENCODE_CONFIG_CONTENT={"model":"p/m1"}'`
+    expect(created(t.fake)[0].argv![4]).toMatch(/opencode --server http:\/\/192\.168\.64\.1:49374 -s ses_\S+$/)
+    expect(created(t.fake)[0].argv![4]).toContain(flag)
+    await core.commands.sessionKill({ id: res.data.id })
+    const back = await core.commands.sessionResume({ id: res.data.id })
+    if (!back.ok) throw new Error(back.error)
+    expect(created(t.fake)[1].argv![4]).toMatch(/opencode --server http:\/\/192\.168\.64\.1:49374 -s ses_\S+$/)
+    expect(created(t.fake)[1].argv![4]).toContain(flag)
   })
 
   it('refuses no-sandbox when there is no host service registration to join', async () => {

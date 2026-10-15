@@ -35,7 +35,7 @@ export interface AgentSource {
   kind: AgentKind
   statusNeedsEvent: boolean // no status for a session until the source has seen an event for it
   mintId(now: Date): string
-  argv(id: string, mode: 'start' | 'resume', opts?: { prompt?: string; name?: string; model?: string }): string[] // before loginShellArgv; prompt and name only on start, model on start and resume
+  argv(id: string, mode: 'start' | 'resume', opts?: { prompt?: string; name?: string; model?: string }): string[] // before loginShellArgv; prompt and name only on start, model on start and resume, but opencode ignores it (its model goes through env, see opencodeModelEnv)
   start(onEvent: (e: AgentEvent) => void): void // connects and reconnects until stop()
   snapshot(ids: string[]): Promise<Map<string, SessionSnapshot>> // ids and their children
   lastWrites(id: string): Promise<string[]> // paths of the session's latest successful write; [] if none
