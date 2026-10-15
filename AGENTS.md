@@ -27,4 +27,14 @@ Features move through phased, human-gated steps. Each phase is a `grove-*` skill
 - **Content:** an artifact can't be approved with non-empty `## Open questions`, any `TODO`/`TBD`, a structure slice without verification, or a design missing chosen options.
 - **Staleness:** if an input's `version` is newer than the consumer's `based_on`, stop and tell the human.
 - **Approval:** only `grove-approve` sets `status: approved`, and only when the human invokes it directly. Never on a model's own initiative.
+
+### Auto flow
+
+`auto` is an alternative flow (`flow: auto` in `feature.md`):
+
+- `grove-auto`: outcome interview with the human through the question tool, then a research map and a decision-and-slice plan
+- `grove-run`: one child Grove session per slice in a shared worktree on branch `run/<slug>-<profile>`, one commit per slice, unattended after a review gate at slice 1, a final review at the end
+- Artifacts: `01-outcome.md`, `02-research.md`, `03-plan.md`, `04-run.md` (the run log lives in the run worktree)
+- Approvals: `grove-approve <slug> plan` (outcome + research + plan, one approval, unlocks `grove-run`); `grove-approve <slug> run` (the finished run, run from the worktree)
+- Profiles (which agent/model plays cto, researcher, planner, reviewer, implementer) live in `profile`/`profiles` of `grove.config.json`; `grove-run --profile <name>` picks one. The app reads none of it except `grove new --model`
 <!-- grove:end -->
