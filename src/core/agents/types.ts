@@ -16,6 +16,7 @@ export type AgentEvent =
   | { type: 'exec-ended'; sessionId: string; at: string } // succeeded | failed | interrupted
   | { type: 'pending'; sessionId: string; id: string; kind: 'permission' | 'question'; open: boolean }
   | { type: 'child'; sessionId: string; parentId: string } // a subagent session and its parent
+  | { type: 'busy'; sessionId: string; id: string; open: boolean } // a background subagent (id) started or ended in the session
   | { type: 'context'; sessionId: string; context: ContextUsage } // a new reading
   | { type: 'wrote'; sessionId: string; paths: string[] } // a write/edit/patch succeeded; raw paths
 
@@ -25,6 +26,7 @@ export interface SessionSnapshot {
   idleAt: string | null
   pending: { id: string; kind: 'permission' | 'question' }[]
   children: string[]
+  busy?: string[] // subagents running now that the session's own turn doesn't cover
   context?: ContextUsage // the latest reading, if the agent reports one
 }
 

@@ -37,7 +37,7 @@ describe('SpoolClaude', () => {
     source.start((e) => events.push(e))
     expect(events).toEqual([{ type: 'connected', version: 'spool' }])
     const snaps = await source.snapshot(['u', 'none'])
-    expect([...snaps]).toEqual([['u', { running: true, idleAt: null, pending: [], children: [] }]])
+    expect([...snaps]).toEqual([['u', { running: true, idleAt: null, pending: [], children: [], busy: [] }]])
     expect(await source.lastWrites('u')).toEqual(['/w/a.md'])
     expect(await source.lastWrites('none')).toEqual([])
   })

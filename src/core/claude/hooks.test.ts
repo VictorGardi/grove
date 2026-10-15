@@ -14,13 +14,13 @@ describe('hookSettings', () => {
   it('lists the hooks and matchers, each appending to the quoted spool', () => {
     expect(Object.keys(hooks)).toEqual([
       'SessionStart', 'UserPromptSubmit', 'PermissionRequest', 'PreToolUse', 'PostToolUse',
-      'PostToolUseFailure', 'PostToolBatch', 'Stop', 'StopFailure', 'Notification',
+      'PostToolUseFailure', 'PostToolBatch', 'SubagentStart', 'SubagentStop', 'Stop', 'StopFailure', 'Notification',
     ])
     const matchers = Object.fromEntries(Object.entries(hooks).map(([k, v]) => [k, v.map((e) => e.matcher)]))
     expect(matchers).toEqual({
       SessionStart: [undefined], UserPromptSubmit: [undefined], PermissionRequest: [undefined],
       PreToolUse: ['AskUserQuestion'], PostToolUse: ['Write|Edit|MultiEdit|NotebookEdit|AskUserQuestion'],
-      PostToolUseFailure: [undefined], PostToolBatch: [undefined], Stop: [undefined], StopFailure: [undefined],
+      PostToolUseFailure: [undefined], PostToolBatch: [undefined], SubagentStart: [undefined], SubagentStop: [undefined], Stop: [undefined], StopFailure: [undefined],
       Notification: ['idle_prompt'],
     })
     const handlers = Object.entries(hooks).flatMap(([k, v]) => v.flatMap((e) => e.hooks.map((h) => ({ k, ...h }))))

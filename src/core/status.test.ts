@@ -8,7 +8,7 @@ const AT = '2026-10-05T10:05:00.000Z'
 const none = new Map<string, string>()
 
 function tracker(over: Partial<Tracker> = {}): Tracker {
-  return { running: false, pending: new Map(), idleAt: null, children: new Set(), context: null, ...over }
+  return { running: false, pending: new Map(), idleAt: null, children: new Set(), busy: new Set(), context: null, ...over }
 }
 
 function oc(id: string, ocId: string, over: Partial<Session> = {}): Session {
@@ -24,11 +24,31 @@ describe('apply', () => {
     expect(started.get('ses_a')?.running).toBe(true) // input not mutated
   })
 
-  it('ignores a child session starting or ending a turn', () => {
-    const t = new Map([['ses_root', tracker({ running: true })]])
+  it('counts a child session turn as a busy mark on its root', () => {
     const roots = new Map([['ses_child', 'ses_root']])
-    expect(apply(t, roots, { type: 'exec-started', sessionId: 'ses_child' })).toBe(t)
-    expect(apply(t, roots, { type: 'exec-ended', sessionId: 'ses_child', at: AT })).toBe(t)
+    const t = new Map([['ses_root', tracker({ idleAt: AT })]])
+    const busy = apply(t, roots, { type: 'exec-started', sessionId: 'ses_child' })
+    expect(busy.get('ses_root')?.busy).toEqual(new Set(['ses_child']))
+    expect(busy.has('ses_child')).toBe(false)
+    expect(apply(busy, roots, { type: 'exec-started', sessionId: 'ses_child' })).toBe(busy)
+    expect(apply(busy, roots, { type: 'exec-ended', sessionId: 'ses_child', at: AT }).get('ses_root')?.busy.size).toBe(0)
+  })
+
+  it('keeps a session working while a subagent runs past its own turn', () => {
+    const t = tracker({ idleAt: AT, busy: new Set(['agent_1']) })
+    expect(statusOf(t, null)).toEqual({ status: 'working' })
+    expect(statusOf(tracker({ idleAt: AT }), null)).toEqual({ status: 'waiting', waitingFor: 'done' })
+    const open = apply(new Map(), none, { type: 'busy', sessionId: 'ses_a', id: 'agent_1', open: true })
+    expect(open.get('ses_a')?.busy).toEqual(new Set(['agent_1']))
+  })
+
+  it('folds running children and snapshot busy ids into busy on re-sync', () => {
+    const idle = { running: false, idleAt: null, pending: [], children: [] }
+    const snaps = new Map([
+      ['a', { ...idle, children: ['c'], busy: ['x'] }],
+      ['c', { ...idle, running: true }],
+    ])
+    expect(fromSnapshot(snaps, ['a']).trackers.get('a')?.busy).toEqual(new Set(['x', 'c']))
   })
 
   it('opens and closes pending items, a child counting for its root', () => {
@@ -125,6 +145,7 @@ describe('fromSnapshot', () => {
       running: true,
       idleAt: AT,
       children: new Set(['ses_c', 'ses_x']),
+      busy: new Set(['ses_c']),
       pending: new Map([['per_1', 'permission'], ['frm_1', 'question']]),
     }))
     expect(trackers.has('ses_missing')).toBe(false)

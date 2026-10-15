@@ -70,6 +70,29 @@ describe('step', () => {
     expect(fold).toMatchObject({ running: true, pending: new Map() })
   })
 
+  it('SubagentStart and SubagentStop mark a running subagent, which a Stop leaves in place', () => {
+    const busy = (id: string, open: boolean): AgentEvent => ({ type: 'busy', sessionId: 'S', id, open })
+    const out = run([r({ hook_event_name: 'UserPromptSubmit' }), r({ hook_event_name: 'SubagentStart', agent_id: 'a1' }), r({ hook_event_name: 'Stop' })])
+    expect(out.events).toEqual([started, busy('a1', true), ended()])
+    expect(out.fold.agents).toEqual(new Set(['a1']))
+    const done = run([r({ hook_event_name: 'SubagentStop', agent_id: 'a1' }), r({ hook_event_name: 'SubagentStop', agent_id: 'a1' })], out.fold)
+    expect(done.events).toEqual([busy('a1', false)])
+    expect(run([r({ hook_event_name: 'SubagentStart' })]).events).toEqual([])
+  })
+
+  it('UserPromptSubmit clears subagent marks whose stop was missed', () => {
+    const fold = run([r({ hook_event_name: 'SubagentStart', agent_id: 'a1' })]).fold
+    const out = run([r({ hook_event_name: 'UserPromptSubmit' })], fold)
+    expect(out.events).toEqual([{ type: 'busy', sessionId: 'S', id: 'a1', open: false }, started])
+    expect(out.fold.agents.size).toBe(0)
+  })
+
+  it('a PostToolBatch after a Stop restarts the turn (woken by a background task), once', () => {
+    const out = run([r({ hook_event_name: 'UserPromptSubmit' }), r({ hook_event_name: 'Stop' }), r({ hook_event_name: 'PostToolBatch' }), r({ hook_event_name: 'PostToolBatch' })])
+    expect(out.events).toEqual([started, ended(), started])
+    expect(out.fold.running).toBe(true)
+  })
+
   it('PermissionRequest opens a permission per scope, but not for AskUserQuestion', () => {
     expect(run([r(perm())]).events).toEqual([open('perm:main', 'permission')])
     expect(run([r(perm({ agent_id: 'a1' }))]).events).toEqual([open('perm:a1', 'permission')])
@@ -108,7 +131,7 @@ describe('step', () => {
   it('PostToolBatch closes permissions of all scopes, keeping questions', () => {
     const from = run([r(perm()), r(perm({ agent_id: 'a1' })), r(ask())]).fold
     const { fold, events } = run([r({ hook_event_name: 'PostToolBatch' })], from)
-    expect(events).toEqual([close('perm:main', 'permission'), close('perm:a1', 'permission')])
+    expect(events).toEqual([close('perm:main', 'permission'), close('perm:a1', 'permission'), started])
     expect([...fold.pending]).toEqual([['q:tu1', 'question']])
   })
 
@@ -194,7 +217,7 @@ describe('fixture replay', () => {
       'start', 'start', // Esc: no Stop; the next prompt starts over
       'start', '+perm:main', '-perm:main', 'wrote CONTEXT.md', '+perm:main', '-perm:main', 'wrote CONTEXT.md', '+perm:main', '-perm:main', 'end 07:32:02', // Edit, Edit, Bash
       'start', 'end 07:32:12',
-      '+perm:ac0b2a4dd439f0325', '-perm:ac0b2a4dd439f0325', 'start', 'end 07:32:19', // background subagent after the main Stop
+      '+perm:ac0b2a4dd439f0325', '-perm:ac0b2a4dd439f0325', 'start', 'start', 'end 07:32:19', // background subagent after the main Stop: its batch restarts the turn
     ])
     expect(events.filter((e) => e.type === 'pending' && e.kind === 'question')).toHaveLength(2)
     expect(fold).toMatchObject({ running: false, idleAt: '2026-10-07T07:32:19.000Z', pending: new Map(), lastWrite: ['/Users/victor/git/grove/CONTEXT.md'],

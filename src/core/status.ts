@@ -7,23 +7,32 @@ export interface Tracker {
   pending: Map<string, 'permission' | 'question'>
   idleAt: string | null
   children: Set<string>
+  busy: Set<string> // running subagents; they keep the session working past its own turn
   context: ContextUsage | null
 }
 
-const blank = (): Tracker => ({ running: false, pending: new Map(), idleAt: null, children: new Set(), context: null })
+const blank = (): Tracker => ({ running: false, pending: new Map(), idleAt: null, children: new Set(), busy: new Set(), context: null })
 
 // Returns the same map for events that change no tracker; never mutates its input.
-// A child's pending items count for its root; its own turns don't (the parent's turn spans them).
+// A child's pending items count for its root; its own turns count as busy marks (it may outlive the parent's turn).
 export function apply(t: Map<string, Tracker>, roots: Map<string, string>, e: AgentEvent): Map<string, Tracker> {
   if (e.type === 'connected' || e.type === 'disconnected' || e.type === 'wrote') return t
-  if ((e.type === 'exec-started' || e.type === 'exec-ended') && roots.has(e.sessionId)) return t
+  if ((e.type === 'exec-started' || e.type === 'exec-ended') && roots.has(e.sessionId)) {
+    return apply(t, roots, { type: 'busy', sessionId: roots.get(e.sessionId)!, id: e.sessionId, open: e.type === 'exec-started' })
+  }
   if (e.type === 'context') return new Map(t).set(e.sessionId, { ...(t.get(e.sessionId) ?? blank()), context: e.context })
   const root = e.type === 'child' ? roots.get(e.parentId) ?? e.parentId : roots.get(e.sessionId) ?? e.sessionId
   const cur = t.get(root) ?? blank()
   let next: Tracker
   if (e.type === 'exec-started') next = { ...cur, running: true }
   else if (e.type === 'exec-ended') next = { ...cur, running: false, idleAt: e.at }
-  else if (e.type === 'child') next = { ...cur, children: new Set(cur.children).add(e.sessionId) }
+  else if (e.type === 'busy') {
+    if (cur.busy.has(e.id) === e.open) return t
+    const busy = new Set(cur.busy)
+    if (e.open) busy.add(e.id)
+    else busy.delete(e.id)
+    next = { ...cur, busy }
+  } else if (e.type === 'child') next = { ...cur, children: new Set(cur.children).add(e.sessionId) }
   else {
     const pending = new Map(cur.pending)
     if (e.open) pending.set(e.id, e.kind)
@@ -45,17 +54,19 @@ export function fromSnapshot(snaps: Map<string, SessionSnapshot>, ids: string[])
       for (const p of snaps.get(sid)?.pending ?? []) pending.set(p.id, p.kind)
       if (sid !== id) roots.set(sid, id)
     }
-    trackers.set(id, { running: s.running, idleAt: s.idleAt, children: new Set(s.children), pending, context: s.context ?? null })
+    const busy = new Set(s.busy)
+    for (const sid of s.children) if (snaps.get(sid)?.running) busy.add(sid)
+    trackers.set(id, { running: s.running, idleAt: s.idleAt, children: new Set(s.children), busy, pending, context: s.context ?? null })
   }
   return { trackers, roots }
 }
 
-// Precedence: permission > question > working > finished and not yet seen > idle.
+// Precedence: permission > question > working (own turn or a subagent) > finished and not yet seen > idle.
 export function statusOf(t: Tracker | undefined, seenAt: string | null): Pick<Session, 'status' | 'waitingFor'> {
   const kinds = new Set(t?.pending.values())
   if (kinds.has('permission')) return { status: 'waiting', waitingFor: 'permission' }
   if (kinds.has('question')) return { status: 'waiting', waitingFor: 'question' }
-  if (t?.running) return { status: 'working' }
+  if (t?.running || t?.busy.size) return { status: 'working' }
   if (t?.idleAt && (seenAt === null || t.idleAt > seenAt)) return { status: 'waiting', waitingFor: 'done' }
   return { status: 'idle' }
 }

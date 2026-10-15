@@ -7,12 +7,13 @@ export interface ClaudeFold {
   running: boolean
   idleAt: string | null
   pending: Map<string, 'permission' | 'question'> // perm:<scope> | q:<tool_use_id>
+  agents: Set<string> // running subagents (SubagentStart..SubagentStop), which can outlive the turn
   lastWrite: string[] // paths of the latest successful write; [] if none
   resumeId: string | null // latest SessionStart session_id (a /clear starts a new one); null before one
   context: ContextUsage | null // latest StatusLine reading (ADR 0032); null before one
 }
 
-export const emptyFold = (id: string): ClaudeFold => ({ id, running: false, idleAt: null, pending: new Map(), lastWrite: [], resumeId: null, context: null })
+export const emptyFold = (id: string): ClaudeFold => ({ id, running: false, idleAt: null, pending: new Map(), agents: new Set(), lastWrite: [], resumeId: null, context: null })
 
 interface Hook {
   hook_event_name?: unknown
@@ -85,9 +86,25 @@ export function step(f: ClaudeFold, r: SpoolRecord): { fold: ClaudeFold; events:
   switch (e.hook_event_name) {
     case 'UserPromptSubmit':
       close(() => false)
+      if (fold.agents.size) { // a new turn: marks left by a missed SubagentStop go
+        for (const id of fold.agents) events.push({ type: 'busy', sessionId, id, open: false })
+        fold = { ...fold, agents: new Set() }
+      }
       fold = { ...fold, running: true }
       events.push({ type: 'exec-started', sessionId })
       break
+    case 'SubagentStart':
+    case 'SubagentStop': {
+      if (typeof e.agent_id !== 'string') break
+      const started = e.hook_event_name === 'SubagentStart'
+      if (fold.agents.has(e.agent_id) === started) break
+      const agents = new Set(fold.agents)
+      if (started) agents.add(e.agent_id)
+      else agents.delete(e.agent_id)
+      fold = { ...fold, agents }
+      events.push({ type: 'busy', sessionId, id: e.agent_id, open: started })
+      break
+    }
     case 'PermissionRequest':
       if (e.tool_name !== 'AskUserQuestion') open(`perm:${scope}`, 'permission') // it fires for questions too
       break
@@ -107,6 +124,10 @@ export function step(f: ClaudeFold, r: SpoolRecord): { fold: ClaudeFold; events:
       break
     case 'PostToolBatch': // a marker without scope
       close((id) => !id.startsWith('perm:'))
+      if (!fold.running) { // a turn woken by a background task's notification has no UserPromptSubmit
+        fold = { ...fold, running: true }
+        events.push({ type: 'exec-started', sessionId })
+      }
       break
     case 'Stop':
     case 'StopFailure':

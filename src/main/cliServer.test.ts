@@ -42,6 +42,13 @@ describe('cli server', () => {
     expect(all.ok && (all.data as CliSession[]).map((s) => s.id).sort()).toEqual([live.id, dead.id].sort())
   })
 
+  it('answers with an internal error when a command throws, instead of leaving the CLI waiting', async () => {
+    const { core, socketPath } = await start()
+    vi.spyOn(core.commands, 'sessionCreate').mockRejectedValue(new Error('command too long'))
+    const reply = await request(socketPath, req('sessions.create', { kind: 'terminal', cwd: t.dir }))
+    expect(reply).toMatchObject({ ok: false, error: { code: 'internal', message: 'command too long' } })
+  })
+
   it('creates a session in a subfolder and refuses an unknown feature', async () => {
     const { core, socketPath } = await start()
     fs.mkdirSync(path.join(t.dir, 'sub'))

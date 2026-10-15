@@ -161,7 +161,10 @@ export function startCliServer(core: Core, o: CliServerOptions): Promise<{ close
       if (nl < 0) return
       const line = buf.slice(0, nl)
       buf = ''
-      void dispatch(core, o.raise, line).then((reply) => conn.end(JSON.stringify(reply) + '\n'))
+      // a throw (tmux refusing an over-long command, say) must still answer, or the CLI waits forever
+      void dispatch(core, o.raise, line)
+        .catch((e): CliReply => fail('', 'internal', e instanceof Error ? e.message : String(e)))
+        .then((reply) => conn.end(JSON.stringify(reply) + '\n'))
     })
   })
   return new Promise((resolve, reject) => {

@@ -8,6 +8,8 @@ const HOOKS: [event: string, matcher?: string][] = [
   ['PostToolUse', 'Write|Edit|MultiEdit|NotebookEdit|AskUserQuestion'],
   ['PostToolUseFailure'],
   ['PostToolBatch'],
+  ['SubagentStart'],
+  ['SubagentStop'],
   ['Stop'],
   ['StopFailure'],
   ['Notification', 'idle_prompt'],
