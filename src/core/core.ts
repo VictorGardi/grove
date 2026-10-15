@@ -5,7 +5,7 @@ import path from 'node:path'
 import type { Comment, CommentAnchor, Project, PullRequest, Session, SessionDiff, SessionKind, Slices, UiState, WorkflowStatus } from '@shared/types'
 import { DEFAULT_UI, EMPTY_FEATURES, OPENCODE_CONNECTING } from '@shared/types'
 import { keyProjectId } from '@shared/groups'
-import { opencodeCliConfig } from '@shared/opencodeSession'
+import { opencodeCliConfig, opencodeModelEnv } from '@shared/opencodeSession'
 import type { Result } from '@shared/ipc'
 import { pruneGrid } from '@shared/grid'
 import { safeArtifactPath } from './artifacts/path'
@@ -88,7 +88,7 @@ export interface Commands {
   // worktree is a project, so this is per project and not per session).
   repoRefs(a: { projectId: string }): Promise<Result<{ branch: string | null; default: string | null; bases: string[] }>>
   sessionCreate(a: {
-    projectId?: string; cwd?: string; kind: SessionKind; prompt?: string; label?: string; feature?: string; parent?: string; sandboxed?: boolean; cols: number; rows: number
+    projectId?: string; cwd?: string; kind: SessionKind; prompt?: string; label?: string; feature?: string; parent?: string; model?: string; sandboxed?: boolean; cols: number; rows: number
   }): Promise<Result<Session>> // exactly one of projectId, cwd; `parent` is a session id, whose group the new one joins
   sessionKill(a: { id: string }): Promise<Result<{ id: string }>>
   sessionRemove(a: { id: string }): Promise<Result<{ id: string }>>
@@ -192,8 +192,11 @@ export function createCore(opts: CoreOptions): Core {
   // GROVE_* for the grove CLI (ADR 0027). Terminal sessions get PATH here; agent sessions through loginShellArgv.
   function cliEnv(session: Session): Record<string, string> | undefined {
     const e = opts.sessionEnv
-    if (!e) return undefined
+    // the model for an OpenCode session goes in whether or not the CLI env is there
+    const model = session.kind === 'opencode' ? opencodeModelEnv(session.launchModel, process.env.OPENCODE_CONFIG_CONTENT) : {}
+    if (!e) return Object.keys(model).length ? model : undefined
     return {
+      ...model,
       GROVE_SESSION_ID: session.id,
       GROVE_SOCKET: e.socketPath,
       ...(session.kind === 'terminal' && { PATH: `${e.binDir}:${minimalEnv(process.env).PATH}` }),
@@ -791,7 +794,7 @@ export function createCore(opts: CoreOptions): Core {
     },
 
     // `projectId` (the app) or `cwd` (the CLI, ADR 0029): a folder resolves to its project, registered when new.
-    async sessionCreate({ projectId, cwd, kind, prompt, label, feature, parent, cols, rows, sandboxed }) {
+    async sessionCreate({ projectId, cwd, kind, prompt, label, feature, parent, model, cols, rows, sandboxed }) {
       const source = kind === 'terminal' ? undefined : states.get(kind)?.source
       if (kind !== 'terminal' && !source) return { ok: false, error: 'no-source' }
       let project = slices.projects.find((p) => p.id === projectId)
@@ -825,8 +828,9 @@ export function createCore(opts: CoreOptions): Core {
         ...newSession({ projectId: project.id, kind, now: now(), id: randomUUID(), agentSessionId, cwd: dir, label, sandboxed: !!sandboxKind }),
         ...(feature !== undefined && { feature, linkPinned: true }),
         ...(parentId && { parentId }),
+        ...(model && { launchModel: model }),
       }
-      const agentArgv = source ? source.argv(agentSessionId!, 'start', { prompt, name: label }) : []
+      const agentArgv = source ? source.argv(agentSessionId!, 'start', { prompt, name: label, model }) : []
       let argv: string[] | undefined
       if (sandboxKind) {
         const built = await sandboxArgvFor({ kind: sandboxKind, session, cwd: workdir, agentArgv, deps: sandboxDeps() })
@@ -879,8 +883,8 @@ export function createCore(opts: CoreOptions): Core {
     },
 
     // E-D3: a new tmux session of the same name runs the agent's resume argv (`opencode -s <id>`,
-    // `claude --resume <id>`), picking up its history. A session that was sandboxed is sandboxed
-    // again (ADR 0033), and when this host cannot build the sandbox the resume downgrades: it goes
+    // `claude --resume <id>`), picking up its history (an OpenCode model comes back through
+    // `cliEnv`). A session that was sandboxed is sandboxed again (ADR 0033), and when this host cannot build the sandbox the resume downgrades: it goes
     // back unsandboxed, `sandboxed` goes false so nothing claims otherwise, and `sandboxNote`
     // records that a sandbox was *lost* — the half the flag alone cannot say, since `false` is
     // also what a never-sandboxed session looks like. Refusing instead would trap the human out of
@@ -894,7 +898,7 @@ export function createCore(opts: CoreOptions): Core {
       const st = states.get(session.kind)
       if (!st) return { ok: false, error: 'no-source' }
       const workdir = session.cwd ?? project.path
-      const agentArgv = st.source.argv(session.agentSessionId, 'resume')
+      const agentArgv = st.source.argv(session.agentSessionId, 'resume', { model: session.launchModel })
       const built = session.sandboxed
         ? await sandboxArgvFor({ kind: session.kind, session, cwd: workdir, agentArgv, deps: sandboxDeps() })
         : null

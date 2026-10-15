@@ -16,8 +16,9 @@ flows: # second axis; effective stages = kind ∩ flow
   field: flow
   default: full
   values:
-    full: { stages: all }
-    standard: { stages: all }
+    full: { stages: [questions, research, design, structure, implementation] }
+    standard: { stages: [questions, research, design, structure, implementation] }
+    auto: { stages: [outcome, research, plan, run] }
     small: { stages: [questions, implementation] }
 
 stages: # ordered
@@ -25,10 +26,22 @@ stages: # ordered
     label: Questions
     artifact: 01-questions.md
     complete_when: { field: status, equals: approved }
+  - id: outcome
+    label: Outcome
+    artifact: 01-outcome.md
+    complete_when: { field: status, equals: approved }
   - id: research
     label: Research
     artifact: 02-research.md
     review: 02-research.html
+    complete_when: { field: status, equals: approved }
+  - id: plan
+    label: Plan
+    artifact: 03-plan.md
+    complete_when: { field: status, equals: approved }
+  - id: run
+    label: Run
+    artifact: 04-run.md
     complete_when: { field: status, equals: approved }
   - id: design
     label: Design

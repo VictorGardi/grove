@@ -23,3 +23,20 @@ export function opencodeCliConfig(o: OpencodeChrome = {}): string {
     theme: { name: o.theme?.name ?? 'tokyonight', mode: o.theme?.mode ?? 'dark' },
   })
 }
+
+// The model a session was launched with (`grove new opencode --model`), as OpenCode's inline config:
+// `OPENCODE_CONFIG_CONTENT` is merged over the user's own config, so only `model` is pinned. Both
+// launch paths use this (`cliEnv` for the host, `envFor` for the VM). When the environment already
+// carries an inline config, its other keys are kept and grove wins for `model`; a value that is not
+// a JSON object is replaced.
+export function opencodeModelEnv(model: string | undefined, existing?: string): Record<string, string> {
+  if (!model) return {}
+  let base: Record<string, unknown> = {}
+  if (existing) {
+    try {
+      const parsed: unknown = JSON.parse(existing)
+      if (parsed && typeof parsed === 'object' && !Array.isArray(parsed)) base = parsed as Record<string, unknown>
+    } catch {}
+  }
+  return { OPENCODE_CONFIG_CONTENT: JSON.stringify({ ...base, model }) }
+}

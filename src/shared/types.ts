@@ -25,6 +25,7 @@ export interface Session {
   startedAt: string                // ISO
   endedAt: string | null           // ISO, set when first seen gone
   lastStatus: 'running' | 'gone'
+  launchModel?: string            // the model the session was launched with (grove new --model, claude and opencode); persisted so a resume keeps it. Session.model stays the live display field
   seenAt: string | null           // ISO, when the human last saw it (on screen); persisted
   lastFocusedAt?: string | null   // ISO, when the human last focused it (any kind); persisted; orders the palette
   branch?: string | null           // live sessions: branch at the pane's current directory; never saved

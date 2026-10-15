@@ -5,11 +5,13 @@ import path from 'node:path'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { opencodeCliConfig } from '@shared/opencodeSession'
 import { SpoolClaude } from './claude/source'
+import { HttpOpenCode } from './opencode/client'
 import { claudeArgv } from './claude/hooks'
 import { gitRunner } from './diff/git'
 import { minimalEnv } from './env'
 import { imageRef } from './sandbox/image'
 import { loadState } from './store/stateStore'
+import type { AgentSource } from './agents/types'
 import type { Core } from './core'
 import { gitRepo } from './testing/gitRepo'
 import { setupCore } from './testing/setup'
@@ -25,7 +27,10 @@ const NETWORKS = JSON.stringify([{ configuration: { name: 'default' }, status: {
 describe('sessionCreate for the CLI', () => {
   let t: ReturnType<typeof setupCore>
   beforeEach(() => { t = setupCore() })
-  afterEach(() => t.disposeAll())
+  afterEach(() => {
+    vi.unstubAllEnvs()
+    t.disposeAll()
+  })
 
   async function start() {
     fs.mkdirSync(path.join(t.dir, 'docs', 'work', 'a'), { recursive: true })
@@ -60,6 +65,67 @@ describe('sessionCreate for the CLI', () => {
     await core.start()
     await create(core, { cwd: t.dir, kind: 'claude', prompt: 'p q', label: 'helper' })
     expect(created(t.fake)[0].argv![4]).toMatch(/--name helper 'p q'$/)
+  })
+
+  it('opencode: --model sets OPENCODE_CONFIG_CONTENT, not argv, and survives a resume', async () => {
+    vi.stubEnv('OPENCODE_CONFIG_CONTENT', '')
+    const core = t.make(undefined, { sources: [new HttpOpenCode({ serviceFile: path.join(t.dir, 'service.json') }), t.claude] })
+    await core.start()
+    const res = await create(core, { cwd: t.dir, kind: 'opencode', prompt: 'say hi', model: 'p/m1' })
+    if (!res.ok) throw new Error('create failed')
+    expect(created(t.fake)[0].argv![4]).toMatch(/^exec opencode -s ses_\S+ --prompt 'say hi'$/)
+    expect(created(t.fake)[0].env?.OPENCODE_CONFIG_CONTENT).toBe('{"model":"p/m1"}')
+    expect(res.data.launchModel).toBe('p/m1')
+    await core.commands.sessionKill({ id: res.data.id })
+    await core.commands.sessionResume({ id: res.data.id })
+    expect(created(t.fake)[1].argv![4]).toMatch(/^exec opencode -s ses_\S+$/)
+    expect(created(t.fake)[1].env?.OPENCODE_CONFIG_CONTENT).toBe('{"model":"p/m1"}')
+  })
+
+  it('opencode: no model, no OPENCODE_CONFIG_CONTENT', async () => {
+    vi.stubEnv('OPENCODE_CONFIG_CONTENT', '')
+    const core = t.make(undefined, { sources: [new HttpOpenCode({ serviceFile: path.join(t.dir, 'service.json') }), t.claude] })
+    await core.start()
+    const res = await create(core, { cwd: t.dir, kind: 'opencode', prompt: 'say hi' })
+    if (!res.ok) throw new Error('create failed')
+    expect(created(t.fake)[0].env?.OPENCODE_CONFIG_CONTENT).toBeUndefined()
+  })
+
+  it('claude: --model puts nothing in OPENCODE_CONFIG_CONTENT', async () => {
+    vi.stubEnv('OPENCODE_CONFIG_CONTENT', '')
+    const core = t.make(undefined, { sources: [t.oc, new SpoolClaude({ dir: path.join(t.dir, 'agents', 'claude') })] })
+    await core.start()
+    await create(core, { cwd: t.dir, kind: 'claude', model: 'm1' })
+    expect(created(t.fake)[0].env?.OPENCODE_CONFIG_CONTENT).toBeUndefined()
+  })
+
+  it('claude: --model after --settings on start and resume, and launchModel survives a restart', async () => {
+    const argv = claudeArgv('id', '/spool', 'start', undefined, { model: 'm1', name: 'n' })
+    expect(argv.slice(argv.indexOf('--settings') + 2, argv.indexOf('--settings') + 6)).toEqual(['--model', 'm1', '--name', 'n'])
+    expect(claudeArgv('id', '/spool', 'resume', undefined, { model: 'm1' }).slice(-2)).toEqual(['--model', 'm1'])
+    expect(claudeArgv('id', '/spool', 'resume').includes('--model')).toBe(false)
+
+    const claudeDir = path.join(t.dir, 'agents', 'claude')
+    const sources = () => ({ sources: [t.oc, new SpoolClaude({ dir: claudeDir })] })
+    const core = t.make(undefined, sources())
+    await core.start()
+    const plain = await create(core, { cwd: t.dir, kind: 'claude' })
+    const res = await create(core, { cwd: t.dir, kind: 'claude', model: 'm1' })
+    if (!plain.ok || !res.ok) throw new Error('create failed')
+    expect(created(t.fake)[0].argv![4]).not.toContain('--model')
+    expect(plain.data).not.toHaveProperty('launchModel')
+    expect(created(t.fake)[1].argv![4]).toContain('--model m1')
+    expect(res.data.launchModel).toBe('m1')
+
+    await core.commands.sessionKill({ id: res.data.id })
+    await core.commands.sessionResume({ id: res.data.id })
+    expect(created(t.fake)[2].argv![4]).toMatch(/--resume \S+ .*--model m1/)
+
+    core.dispose()
+    expect(loadState(t.statePath).sessions.find((s) => s.id === res.data.id)?.launchModel).toBe('m1')
+    const restarted = t.make(undefined, sources())
+    await restarted.start()
+    expect(restarted.getSlices().sessions.find((s) => s.id === res.data.id)?.launchModel).toBe('m1')
   })
 
   it('stores the folder for a subfolder, null for the project path, and starts the backend there', async () => {
@@ -305,6 +371,21 @@ describe('sessionCreate --sandboxed', () => {
     expect(argv).toContain('-e OPENCODE_SERVER_PASSWORD=s3cret')
   })
 
+  it('sandboxed opencode with a model: --server right after opencode, and the container gets the model env, quoted, on create and resume', async () => {
+    const core = await startWithLog([], [new HttpOpenCode({ serviceFile: path.join(t.dir, 'service.json') }), t.claude])
+    register()
+    const res = await sandboxed(core, { kind: 'opencode', model: 'p/m1' })
+    if (!res.ok) throw new Error(res.error)
+    const flag = `-e 'OPENCODE_CONFIG_CONTENT={"model":"p/m1"}'`
+    expect(created(t.fake)[0].argv![4]).toMatch(/opencode --server http:\/\/192\.168\.64\.1:49374 -s ses_\S+$/)
+    expect(created(t.fake)[0].argv![4]).toContain(flag)
+    await core.commands.sessionKill({ id: res.data.id })
+    const back = await core.commands.sessionResume({ id: res.data.id })
+    if (!back.ok) throw new Error(back.error)
+    expect(created(t.fake)[1].argv![4]).toMatch(/opencode --server http:\/\/192\.168\.64\.1:49374 -s ses_\S+$/)
+    expect(created(t.fake)[1].argv![4]).toContain(flag)
+  })
+
   it('refuses no-sandbox when there is no host service registration to join', async () => {
     const core = await startWithLog()
     expect(await sandboxed(core, { kind: 'opencode' })).toEqual({ ok: false, error: 'no-sandbox-no-service' })
@@ -428,7 +509,7 @@ describe('sessionCreate --sandboxed', () => {
       'exit 0',
       '',
     ].join('\n')
-  async function startWithLog(listed: string[] = []) {
+  async function startWithLog(listed: string[] = [], sources: AgentSource[] = [t.oc, t.claude]) {
     fs.mkdirSync(path.dirname(container()), { recursive: true })
     fs.writeFileSync(container(), fakeListingScript(listed), { mode: 0o755 })
     fs.mkdirSync(path.dirname(dockerfile()), { recursive: true })
@@ -438,6 +519,7 @@ describe('sessionCreate --sandboxed', () => {
     const core = t.make(undefined, {
       sessionEnv: { binDir: '/bin', ...paths() },
       sandbox: { container: container(), dockerfile: dockerfile() },
+      sources,
     })
     await core.start()
     return core

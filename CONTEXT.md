@@ -79,7 +79,8 @@ specific meaning, so humans and agents stay consistent.
 - **Seen mark**: `seenAt`, when the human last had a session on screen with the
   window focused; a finished turn after it makes the session waiting.
 - **Resume**: restarting a gone agent session in a new tmux session with
-  `opencode -s <id>` or `claude --resume <id>`, keeping its id, label and link.
+  `opencode -s <id>` (the model, when launched with --model, comes back through `OPENCODE_CONFIG_CONTENT`) or
+  `claude --resume <id>`, keeping its id, label and link.
 - **Remove**: ends a session if it is running and forgets it, with no confirmation
   (⌘W, the card's ×, or right-click on a shift-click selection). Not resumable.
   `grove kill` only ends it, leaving a gone session to resume.
@@ -148,7 +149,8 @@ specific meaning, so humans and agents stay consistent.
   state and flags, its parent link, its children, its artifacts listed, its
   linked sessions.
 - **Board**: the project page's body. The **features board** groups the
-  project's non-group features into one column per workflow stage; a
+  project's non-group features into one column per workflow stage the
+  project's features use (not every stage); a
   **feature card** shows card state, title, parent tag and linked-session
   dots, and turns amber with "Input required" while a linked session waits.
   The **sessions board** groups the project's sessions into Waiting, Working

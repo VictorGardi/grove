@@ -51,8 +51,10 @@ export class HttpOpenCode implements AgentSource {
     return mintSessionId(now.getTime())
   }
 
-  argv(id: string, _mode: 'start' | 'resume', opts?: { prompt?: string; name?: string }): string[] {
-    return ['opencode', '-s', id, ...(opts?.prompt ? ['--prompt', opts.prompt] : [])] // resume is the same: -s picks up the session's history
+  argv(id: string, _mode: 'start' | 'resume', opts?: { prompt?: string; name?: string; model?: string }): string[] {
+    // resume is the same: -s picks up the session's history. A model is not an argument here: it
+    // reaches OpenCode through the environment (see `opencodeModelEnv`), so `opts.model` is ignored.
+    return ['opencode', '-s', id, ...(opts?.prompt ? ['--prompt', opts.prompt] : [])]
   }
 
   forget(_id: string): void {} // OpenCode keeps its own sessions

@@ -17,6 +17,19 @@ describe('parseWorkflow', () => {
     expect(parseWorkflow(bundled).ok).toBe(true)
   })
 
+  it('defines the legacy, auto and global stage orders', () => {
+    const res = parseWorkflow(bundled)
+    if (!res.ok) throw new Error(res.error)
+    const w = YAML.parse(bundled)
+    const legacy = ['questions', 'research', 'design', 'structure', 'implementation']
+    expect(w.flows.values.full.stages).toEqual(legacy)
+    expect(w.flows.values.standard.stages).toEqual(legacy)
+    expect(w.flows.values.auto.stages).toEqual(['outcome', 'research', 'plan', 'run'])
+    const global = w.stages.map((s: { id: string }) => s.id)
+    expect(global).toEqual(['questions', 'outcome', 'research', 'plan', 'run', 'design', 'structure', 'implementation'])
+    expect(global.at(-1)).toBe('implementation')
+  })
+
   it.each<[string, (w: Record<string, any>) => void, string]>([
     ['an unknown stage in a kind', (w) => { w.kinds.values.epic.stages.push('nope') }, 'kinds.values.epic.stages: unknown stage "nope"'],
     ['an unknown stage in a flow', (w) => { w.flows.values.small.stages.push('nope') }, 'flows.values.small.stages: unknown stage "nope"'],

@@ -107,6 +107,8 @@ Features move through phased, human-gated steps. Each phase is a `grove-*` skill
 
 Only a human can approve a phase. Later phases refuse to start on unapproved input, and an artifact with open questions or `TODO`s can't be approved. See [AGENTS.md](AGENTS.md) for the gates and [`resources/workflow.yaml`](resources/workflow.yaml) for the stage definitions.
 
+The `auto` flow is an alternative for features you want built unattended. `grove-auto` interviews the human about the outcome, then writes a research map and a decision-and-slice plan; one `grove-approve <slug> plan` unlocks `grove-run`, which builds each slice in its own child session on a `run/<slug>-<profile>` branch. After the final review, `grove-approve <slug> run` (from the run worktree) approves `04-run.md`; you then commit it and merge or open a PR. `resources/workflow.yaml` defines its stages: Outcome, Research, Plan, Run. Profiles in `grove.config.json` choose which agent and model plays each role, and `grove new --model <model>` (claude or opencode) sets the child session model.
+
 ## Development
 
 ```sh

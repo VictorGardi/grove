@@ -42,10 +42,21 @@ describe('core features', () => {
     const { features } = core.getSlices()
     expect(features.workflowError).toBeNull()
     expect(features.items).toMatchObject([{ projectId: 'p', slug: 'a', title: 'a', currentStage: 'research' }])
-    expect(features.stages.map((x) => x.id)).toEqual(['questions', 'research', 'design', 'structure', 'implementation'])
+    expect(features.stages.map((x) => x.id)).toEqual(['questions', 'outcome', 'research', 'plan', 'run', 'design', 'structure', 'implementation'])
 
     await core.commands.uiSet({ sidebarWidth: 300 }) // forces a state write
     expect(JSON.parse(fs.readFileSync(s.statePath, 'utf8'))).not.toHaveProperty('features')
+  })
+
+  it('derives an auto-flow feature from its approved outcome', async () => {
+    const s = setup()
+    s.feature('a')
+    fs.writeFileSync(path.join(s.work, 'a', 'feature.md'), '---\nkind: feature\nflow: auto\n---\n# a\n')
+    fs.writeFileSync(path.join(s.work, 'a', '01-outcome.md'), '---\nstatus: approved\n---\n')
+
+    const core = s.make()
+    await core.start()
+    expect(core.getSlices().features.items).toMatchObject([{ slug: 'a', currentStage: 'research', warnings: [] }])
   })
 
   it('updates an artifact mtimeMs when its file changes', async () => {

@@ -10,20 +10,23 @@ const byStart = (a: Session, b: Session) => a.startedAt.localeCompare(b.startedA
 // gets its own type back, not the Feature it extends.
 export interface BoardCard<T extends Feature = Feature> { feature: T; parent: T | null }
 
-// One column per workflow stage; non-group features by current stage, done ones in the last column.
+// One column per workflow stage some feature uses, in the global order; non-group features by current
+// stage, done ones in the last stage of their own flow (the last column when they have none).
 // `repoIds` widens the parent lookup to a repo's checkouts: one card per (repo, slug) means a
 // feature only a worktree has is that checkout's, while its parent — a tracked folder, so the
 // checkout has it too — is the checkout's. Without it a parent is looked up in its own project only.
 export function boardColumns<T extends Feature>(stages: { id: string; label: string }[], features: T[], repoIds?: ReadonlySet<string>): { stage: { id: string; label: string }; cards: BoardCard<T>[] }[] {
-  const last = stages[stages.length - 1]?.id
+  const shown = features.filter((f) => !f.group)
+  const columns = stages.filter((s) => shown.some((f) => f.stages.some((fs) => fs.id === s.id)))
+  const last = columns[columns.length - 1]?.id
   const parentOf = (f: T) =>
     features.find((e) => e.projectId === f.projectId && e.slug === f.parent)
       ?? features.find((e) => repoIds !== undefined && repoIds.has(e.projectId) && e.slug === f.parent)
       ?? null
-  return stages.map((stage) => ({
+  return columns.map((stage) => ({
     stage,
-    cards: features
-      .filter((f) => !f.group && (f.currentStage ?? last) === stage.id)
+    cards: shown
+      .filter((f) => (f.currentStage ?? f.stages[f.stages.length - 1]?.id ?? last) === stage.id)
       .map((feature) => ({ feature, parent: feature.parent === null ? null : parentOf(feature) })),
   }))
 }

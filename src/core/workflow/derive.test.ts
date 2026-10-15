@@ -33,6 +33,12 @@ describe('effectiveStages', () => {
   it('uses the defaults for a missing kind and flow', () => {
     expect(ids({})).toEqual(['questions', 'research', 'design', 'structure', 'implementation'])
   })
+
+  it('gives auto its own four stages and full/standard the five legacy ones', () => {
+    expect(ids({ flow: 'auto' })).toEqual(['outcome', 'research', 'plan', 'run'])
+    expect(ids({ flow: 'standard' })).toEqual(['questions', 'research', 'design', 'structure', 'implementation'])
+    expect(ids({ flow: 'full' })).toEqual(['questions', 'research', 'design', 'structure', 'implementation'])
+  })
 })
 
 describe('isComplete', () => {
@@ -54,6 +60,13 @@ describe('isComplete', () => {
 })
 
 describe('deriveFeatures', () => {
+  it('derives an auto feature from its outcome', () => {
+    const [f] = deriveFeatures(wf, [folder('a', { 'feature.md': fm('flow: auto'), '01-outcome.md': approved })], [])
+    expect(f.stages).toHaveLength(4)
+    expect(f.warnings).toEqual([])
+    expect(f.currentStage).toBe('research')
+  })
+
   it('makes the first incomplete stage current', () => {
     const [f] = deriveFeatures(wf, [folder('a', { 'feature.md': '# A feature\n', '01-questions.md': approved, '02-research.md': fm('status: draft') })], [])
     expect(f.currentStage).toBe('research')

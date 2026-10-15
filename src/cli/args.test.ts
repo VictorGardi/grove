@@ -15,6 +15,14 @@ describe('parseCommand', () => {
     expect(parseCommand(['new', 'terminal'])).toMatchObject({ cmd: 'new', kind: 'terminal', json: false })
   })
 
+  it('parses --model on claude and opencode, not terminal, and not empty', () => {
+    expect(parseCommand(['new', 'claude', '--model', 'm1'])).toMatchObject({ cmd: 'new', kind: 'claude', model: 'm1' })
+    expect(parseCommand(['new', 'claude'])).toMatchObject({ cmd: 'new', model: undefined })
+    expect(parseCommand(['new', 'opencode', '--model', 'p/m1'])).toMatchObject({ cmd: 'new', kind: 'opencode', model: 'p/m1' })
+    expect(parseCommand(['new', 'terminal', '--model', 'm1'])).toBeInstanceOf(UsageError)
+    for (const kind of ['claude', 'opencode']) expect(parseCommand(['new', kind, '--model', ''])).toBeInstanceOf(UsageError)
+  })
+
   it('parses --sandboxed, only on new', () => {
     expect(parseCommand(['new', 'claude', '--sandboxed'])).toMatchObject({ cmd: 'new', kind: 'claude', sandboxed: true })
     expect(parseCommand(['new', 'claude'])).toMatchObject({ cmd: 'new', sandboxed: false })

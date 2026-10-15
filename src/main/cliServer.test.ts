@@ -61,6 +61,20 @@ describe('cli server', () => {
     expect(await request(socketPath, req('sessions.create', { kind: 'vim', cwd: t.dir }))).toMatchObject({ ok: false, error: { code: 'bad-params' } })
   })
 
+  it('carries --model to a claude session, and refuses it for other kinds before creating anything', async () => {
+    const { core, socketPath } = await start()
+    const ok = await request(socketPath, req('sessions.create', { kind: 'claude', cwd: t.dir, model: 'm1' }))
+    expect(ok.ok).toBe(true)
+    expect(core.getSlices().sessions[0]).toMatchObject({ kind: 'claude', launchModel: 'm1' })
+    expect(t.fake.calls.filter((c) => c.method === 'create')[0].args[0]).toMatchObject({ argv: [expect.anything(), expect.anything(), expect.anything(), expect.anything(), expect.stringContaining('--model m1')] })
+    const bad = await request(socketPath, req('sessions.create', { kind: 'terminal', cwd: t.dir, model: 'm1' }))
+    expect(bad).toMatchObject({ ok: false, error: { code: 'bad-params' } })
+    expect(core.getSlices().sessions).toHaveLength(1)
+    const oc = await request(socketPath, req('sessions.create', { kind: 'opencode', cwd: t.dir, model: 'p/m1' }))
+    expect(oc.ok).toBe(true)
+    expect(core.getSlices().sessions[1]).toMatchObject({ kind: 'opencode', launchModel: 'p/m1' })
+  })
+
   // The refusal's message must be the one `errorMessage` holds for that code, or the table is
   // decorative. Both refusals reachable from this test core are asserted; the codes that need a
   // configured sandbox are covered where that setup exists (sessionCreate.test.ts), and the table
