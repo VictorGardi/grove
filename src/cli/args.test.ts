@@ -66,6 +66,18 @@ describe('parseCommand', () => {
     }
   })
 
+  it('parses status with an optional ref and the seven values', () => {
+    expect(parseCommand(['status', 'in-review'])).toEqual({ cmd: 'status', ref: undefined, value: 'in-review' })
+    expect(parseCommand(['status', 'helper', 'done'])).toEqual({ cmd: 'status', ref: 'helper', value: 'done' })
+    for (const value of ['backlog', 'in-progress', 'blocked', 'in-review', 'cancelled', 'done', 'pinned']) {
+      expect(parseCommand(['status', value])).toMatchObject({ cmd: 'status', value })
+    }
+    const bad = parseCommand(['status', 'finished'])
+    expect(bad).toBeInstanceOf(UsageError)
+    expect((bad as UsageError).message).toContain('backlog, in-progress, blocked, in-review, cancelled, done, pinned')
+    for (const argv of [['status'], ['status', 'a', 'b', 'done'], ['status', 'done', 'a']]) expect(parseCommand(argv)).toBeInstanceOf(UsageError)
+  })
+
   it('parses focus, kill and skill', () => {
     expect(parseCommand(['focus', 'abc'])).toEqual({ cmd: 'focus', ref: 'abc' })
     expect(parseCommand(['kill', 'abc'])).toEqual({ cmd: 'kill', ref: 'abc' })

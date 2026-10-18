@@ -1,8 +1,8 @@
 import fs from 'node:fs'
 import net from 'node:net'
-import { PROTOCOL, type CliReply, type CliSession, type TurnResult } from '@shared/cli'
+import { PROTOCOL, WORKFLOW_STATUS_VALUES, type CliReply, type CliSession, type TurnResult } from '@shared/cli'
 import { errorMessage } from '@shared/sandboxErrors'
-import type { Session } from '@shared/types'
+import type { Session, WorkflowStatus } from '@shared/types'
 import type { Core } from '../core/core'
 import { resolveSessionRef } from '../core/cliOps'
 import * as worktrees from '../core/worktrees'
@@ -28,6 +28,7 @@ function toCli(core: Core, s: Session): CliSession {
     project: project?.name ?? '',
     cwd: s.cwd ?? project?.path ?? '',
     feature: s.feature,
+    workflowStatus: s.workflowStatus,
     parent: s.parentId ?? null,
   }
 }
@@ -134,6 +135,17 @@ async function dispatch(core: Core, raise: () => void, line: string): Promise<Cl
       if (!res.ok) return failFrom(id, res.error)
       if (req.method === 'sessions.focus') raise()
       return { id, ok: true, data: { id: found.data.id } }
+    }
+    case 'sessions.status': {
+      const { ref, status } = params
+      if (typeof ref !== 'string' || !ref || typeof status !== 'string' || !WORKFLOW_STATUS_VALUES.includes(status as WorkflowStatus)) {
+        return fail(id, 'bad-params', 'ref and a workflow status are required')
+      }
+      const found = resolveSessionRef(core.getSlices().sessions, ref)
+      if (!found.ok) return failFrom(id, found.error)
+      // the card picker's command: a plain field write, no cascade
+      const res = await core.commands.sessionWorkflowStatus({ id: found.data.id, status: status as WorkflowStatus })
+      return res.ok ? { id, ok: true, data: { id: found.data.id } } : failFrom(id, res.error)
     }
     case 'sessions.read': {
       const { ref, lines } = params

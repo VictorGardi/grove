@@ -5,12 +5,13 @@ const NOT_RUNNING = 'not-running'
 export function formatLs(sessions: CliSession[], caller: string | null, json: boolean): string {
   if (json) return JSON.stringify(sessions, null, 2)
   const rows = [
-    ['', 'ID', 'KIND', 'STATUS', 'LABEL', 'PROJECT', 'FEATURE'],
+    ['', 'ID', 'KIND', 'STATUS', 'WORKFLOW', 'LABEL', 'PROJECT', 'FEATURE'],
     ...sessions.map((s) => [
       s.id === caller ? '*' : '',
       s.id.slice(0, 8),
       s.kind,
       s.status ?? s.lastStatus,
+      s.workflowStatus,
       s.label,
       s.project,
       s.feature ?? '',

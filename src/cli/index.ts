@@ -30,6 +30,11 @@ async function run(cmd: Exclude<Command, { cmd: 'skill' }>, socket: string): Pro
     const reply = await call(socket, cmd.cmd === 'focus' ? 'sessions.focus' : 'sessions.kill', { ref: cmd.ref })
     return reply.ok ? { ...reply, print: undefined } : reply
   }
+  if (cmd.cmd === 'status') {
+    // the ref is checked in main(): without one this is the calling session
+    const reply = await call(socket, 'sessions.status', { ref: cmd.ref ?? process.env.GROVE_SESSION_ID, status: cmd.value })
+    return reply.ok ? { ...reply, print: undefined } : reply
+  }
   if (cmd.cmd === 'wait') {
     const reply = await call(socket, 'sessions.wait', { ref: cmd.ref, timeoutS: cmd.timeoutS })
     return reply.ok ? { ...reply, print: undefined, exit: turnExit(reply.data as TurnResult) } : reply
@@ -59,6 +64,10 @@ async function main(): Promise<number> {
   }
   if (cmd.cmd === 'new' && cmd.child && !process.env.GROVE_SESSION_ID) {
     console.error('grove: --child needs to run inside a Grove session (GROVE_SESSION_ID is not set); use --parent REF')
+    return 2
+  }
+  if (cmd.cmd === 'status' && cmd.ref === undefined && !process.env.GROVE_SESSION_ID) {
+    console.error('grove: status without a session needs to run inside a Grove session (GROVE_SESSION_ID is not set); pass a REF')
     return 2
   }
   const socket = process.env.GROVE_SOCKET

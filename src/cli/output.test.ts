@@ -4,16 +4,16 @@ import { exitCode, formatError, formatLs, formatRead, turnExit } from './output'
 
 const s = (over: Partial<CliSession>): CliSession => ({
   id: 'aaaaaaaa-1111', kind: 'opencode', label: 'one', status: 'working', waitingFor: null,
-  lastStatus: 'running', project: 'proj', cwd: '/p', feature: null, parent: null, ...over,
+  lastStatus: 'running', project: 'proj', cwd: '/p', feature: null, workflowStatus: 'in-progress', parent: null, ...over,
 })
 
 describe('formatLs', () => {
   it('prints a table and marks the caller', () => {
     const out = formatLs([s({}), s({ id: 'bbbbbbbb-2222', kind: 'terminal', status: null, label: 'two', feature: 'f-1' })], 'bbbbbbbb-2222', false)
     expect(out.split('\n')).toEqual([
-      '  ID       KIND     STATUS  LABEL PROJECT FEATURE',
-      '  aaaaaaaa opencode working one   proj',
-      '* bbbbbbbb terminal running two   proj    f-1',
+      '  ID       KIND     STATUS  WORKFLOW    LABEL PROJECT FEATURE',
+      '  aaaaaaaa opencode working in-progress one   proj',
+      '* bbbbbbbb terminal running in-progress two   proj    f-1',
     ])
   })
 
@@ -22,7 +22,7 @@ describe('formatLs', () => {
   })
 
   it('prints the objects with --json', () => {
-    expect(JSON.parse(formatLs([s({})], null, true))).toEqual([s({})])
+    expect(JSON.parse(formatLs([s({ workflowStatus: 'blocked' })], null, true))).toEqual([s({ workflowStatus: 'blocked' })])
   })
 })
 

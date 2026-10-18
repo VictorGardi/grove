@@ -28,6 +28,7 @@ grove wait <ref> [--timeout S]       block until the session stops working
 grove read <ref> [--lines N]         the last N lines of its screen (default 100)
 grove focus <ref>                    show it in the app and raise the window
 grove kill <ref>                     end it
+grove status [<ref>] <value>         set a session's workflow status (default: your own session)
 grove skill                          print this file
 ```
 
@@ -44,6 +45,13 @@ its config env `OPENCODE_CONFIG_CONTENT`. Resuming the session keeps the model.
 means "in my group", taking your own `GROVE_SESSION_ID`. Without either, the new
 session stands alone. Both fail, creating nothing (no worktree either), if the
 parent does not exist. See Groups below.
+
+`grove status` sets the manual workflow label shown on a session's card. `<value>` is one of
+`backlog`, `in-progress`, `blocked`, `in-review`, `cancelled`, `done`, `pinned`; another value is a usage
+error (exit 2). With one argument it sets your own session (needs `GROVE_SESSION_ID`); with two,
+`grove status <ref> <value>` sets that session. Any session may set any session's status. It only
+changes the label: nothing is started, stopped or cascaded. `grove ls` shows it in the WORKFLOW
+column and `grove ls --json` as `workflowStatus`.
 
 ## Exit codes
 

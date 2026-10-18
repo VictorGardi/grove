@@ -1,4 +1,4 @@
-import type { Session, SessionKind } from './types'
+import type { Session, SessionKind, WorkflowStatus } from './types'
 
 // The grove CLI's wire protocol (ADR 0027): one JSON line per connection, over a Unix socket.
 export const PROTOCOL = 1
@@ -13,6 +13,7 @@ export interface CliMethods {
   'sessions.wait': { params: { ref: string; timeoutS?: number }; data: { id: string } & TurnResult }
   'sessions.focus': { params: { ref: string }; data: { id: string } }
   'sessions.kill': { params: { ref: string }; data: { id: string } }
+  'sessions.status': { params: { ref: string; status: WorkflowStatus }; data: { id: string } }
   'sessions.read': { params: { ref: string; lines: number }; data: { text: string } }
 }
 
@@ -21,6 +22,9 @@ export interface TurnResult {
   status: 'idle' | 'waiting' | 'gone'
   waitingFor: Session['waitingFor'] | null
 }
+
+// The workflow statuses `grove status` accepts; the CLI spells them as the app stores them.
+export const WORKFLOW_STATUS_VALUES: WorkflowStatus[] = ['backlog', 'in-progress', 'blocked', 'in-review', 'cancelled', 'done', 'pinned']
 
 export interface CliRequest {
   v: 1
@@ -43,5 +47,6 @@ export interface CliSession {
   project: string
   cwd: string
   feature: string | null
+  workflowStatus: WorkflowStatus
   parent: string | null // id of the session whose group this one is in
 }

@@ -214,6 +214,21 @@ describe('cli server', () => {
     expect(raised).toBe(1)
   })
 
+  it('status sets the workflow status like the card picker, and ls shows it', async () => {
+    const { core, socketPath } = await start()
+    const s = await createTerminal(core)
+    const other = await createTerminal(core)
+    expect(await request(socketPath, req('sessions.status', { ref: s.id.slice(0, 5), status: 'blocked' }))).toMatchObject({ ok: true, data: { id: s.id } })
+    const states = core.getSlices().sessions
+    expect(states.find((x) => x.id === s.id)?.workflowStatus).toBe('blocked')
+    expect(states.find((x) => x.id === other.id)?.workflowStatus).toBe('in-progress')
+    const list = await request(socketPath, req('sessions.list'))
+    expect(list.ok && (list.data as CliSession[]).find((x) => x.id === s.id)?.workflowStatus).toBe('blocked')
+    expect(await request(socketPath, req('sessions.status', { ref: 'nope', status: 'done' }))).toMatchObject({ ok: false, error: { code: 'not-found' } })
+    expect(await request(socketPath, req('sessions.status', { ref: s.id, status: 'finished' }))).toMatchObject({ ok: false, error: { code: 'bad-params' } })
+    expect(core.getSlices().sessions.find((x) => x.id === s.id)?.workflowStatus).toBe('blocked')
+  })
+
   it('rejects another protocol version and unknown methods', async () => {
     const { socketPath } = await start()
     expect(await request(socketPath, req('sessions.list', {}, 2))).toMatchObject({ ok: false, error: { code: 'bad-version' } })

@@ -1,5 +1,6 @@
 import { parseArgs } from 'node:util'
-import type { SessionKind } from '@shared/types'
+import { WORKFLOW_STATUS_VALUES } from '@shared/cli'
+import type { SessionKind, WorkflowStatus } from '@shared/types'
 
 export type Command =
   | { cmd: 'ls'; all: boolean; json: boolean }
@@ -8,6 +9,7 @@ export type Command =
   | { cmd: 'wait'; ref: string; timeoutS?: number }
   | { cmd: 'focus'; ref: string }
   | { cmd: 'kill'; ref: string }
+  | { cmd: 'status'; ref?: string; value: WorkflowStatus }
   | { cmd: 'skill' }
   | { cmd: 'read'; ref: string; lines: number }
 
@@ -29,6 +31,8 @@ export const USAGE = `usage: grove <command>
   grove wait <ref> [--timeout S]                 block until the session stops working (exit 0 done, 4 needs you, 5 gone, 124 timeout)
   grove focus <ref>                              show a session and raise the window
   grove kill <ref>                               end a session
+  grove status [<ref>] <value>                   set a session's workflow status (default: this session); value is one of
+                                                 backlog, in-progress, blocked, in-review, cancelled, done, pinned
   grove skill                                    print the agent skill for grove
   grove read <ref> [--lines N]                   print the last N lines (default 100) of a session's screen`
 
@@ -96,6 +100,13 @@ export function parseCommand(argv: string[]): Command | UsageError {
       const { positionals } = parseArgs({ args: rest, options: {}, allowPositionals: true })
       if (positionals.length !== 1) return new UsageError(`${cmd} takes a session\n${USAGE}`)
       return { cmd, ref: positionals[0] }
+    }
+    if (cmd === 'status') {
+      const { positionals } = parseArgs({ args: rest, options: {}, allowPositionals: true })
+      if (positionals.length < 1 || positionals.length > 2) return new UsageError(`status takes an optional session and a value\n${USAGE}`)
+      const value = positionals[positionals.length - 1]
+      if (!WORKFLOW_STATUS_VALUES.includes(value as WorkflowStatus)) return new UsageError(`status value must be one of: ${WORKFLOW_STATUS_VALUES.join(', ')}\n${USAGE}`)
+      return { cmd: 'status', ref: positionals.length === 2 ? positionals[0] : undefined, value: value as WorkflowStatus }
     }
     if (cmd === 'skill') {
       const { positionals } = parseArgs({ args: rest, options: {}, allowPositionals: true })
