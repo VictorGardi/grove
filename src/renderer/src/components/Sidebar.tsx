@@ -1,4 +1,4 @@
-import { useEffect, useId, useRef, useState, type DragEvent, type MouseEvent, type ReactNode } from 'react'
+import { useEffect, useId, useRef, useState, type MouseEvent, type PointerEvent as ReactPointerEvent, type ReactNode } from 'react'
 import { GRID_MAX, type Feature, type Project, type Session, type WorkflowStatus } from '@shared/types'
 import { useSlices } from '../stores/slices'
 import { gridShown } from '../gridView'
@@ -232,7 +232,7 @@ function OptionRow({ label, checked, onSelect }: { label: string; checked: boole
 }
 
 export function Sidebar({ onNew, onNote, onRemove }: { onNew: (projectId?: string) => void; onNote: (s: Session) => void; onRemove: (ids: string[]) => void }) {
-  const { projects, sessions, ui, features, setFocused, toggleCollapsed, toggleCompact, toggleProjectVisibility, toggleHideDone, focusFeature, openProject, setSidebarTab, setGroupBy, setSessionSort, toggleGrid, toggleGridMember, waitingSince } = useSlices()
+  const { projects, sessions, ui, features, setFocused, toggleCollapsed, toggleCompact, toggleProjectVisibility, toggleHideDone, focusFeature, openProject, setSidebarTab, setGroupBy, setSessionSort, setSessionOrder, toggleGrid, toggleGridMember, waitingSince } = useSlices()
   const waitingCount = sessions.filter((x) => shownStatus(x) === 'waiting').length
   const [refused, setRefused] = useState<string | null>(null)
   const compact = new Set(ui.compact ?? [])
@@ -317,77 +317,173 @@ export function Sidebar({ onNew, onNote, onRemove }: { onNew: (projectId?: strin
 
   // Drag to reorder (ADR 0041), on only while the sort is custom. Only the grabbed card moves: the
   // shift-click selection is not part of a drag. `over` is where the indicator line is drawn.
+  // Pointer events, not native drag-and-drop: the browser decides a native drop's fate out of our
+  // sight and refused it at random. Here the drop is whatever the pointer is over when it lets go.
   const draggable = ui.sessionSort === 'custom'
   const [drag, setDrag] = useState<{ id: string; from: ListGroup } | null>(null)
   const [over, setOver] = useState<{ group: ListGroup; at: DropAt | null } | null>(null)
-  const endDrag = () => { setDrag(null); setOver(null) }
+  type Aim = { group: ListGroup; at: DropAt | null }
+  const press = useRef<{ id: string; from: ListGroup; x: number; y: number; live: boolean } | null>(null)
+  const aimed = useRef<Aim | null>(null)
+  const shownKey = useRef<string | null>(null)
+  const justDragged = useRef(false)
+  // what each rendered card and card list stands for, so a pointer position can be turned into a drop
+  const slotAt = useRef(new Map<string, { s: Session; grp: ListGroup }>())
+  const cardsAt = useRef(new Map<string, ListGroup>())
+  slotAt.current = new Map()
+  cardsAt.current = new Map()
 
-  // where in `g` the pointer is: beside the card under it, or at the end of the group
-  function aimAt(g: ListGroup, e: DragEvent, target?: Session) {
-    if (!drag || !canDrop(ui.groupBy, drag.from, g)) return
-    e.preventDefault()
-    e.stopPropagation()
-    e.dataTransfer.dropEffect = 'move'
-    if (target) {
-      const r = e.currentTarget.getBoundingClientRect()
-      setOver({ group: g, at: { target: target.id, after: e.clientY > r.top + r.height / 2 } })
-    } else {
-      const last = g.sessions[g.sessions.length - 1]
-      setOver({ group: g, at: last ? { target: last.id, after: true } : null })
+  // where the pointer is: beside the card under it. undefined: between cards, keep the last aim
+  function aimFrom(x: number, y: number): Aim | null | undefined {
+    const d = press.current
+    if (!d) return null
+    const el = document.elementFromPoint(x, y)
+    const slotEl = el?.closest<HTMLElement>('[data-slot]')
+    const hit = slotEl ? slotAt.current.get(slotEl.dataset.slot!) : undefined
+    if (slotEl && hit) {
+      if (!canDrop(ui.groupBy, d.from, hit.grp)) return null
+      const r = slotEl.getBoundingClientRect()
+      return { group: hit.grp, at: { target: hit.s.id, after: y > r.top + r.height / 2 } }
     }
+    const cardsEl = el?.closest<HTMLElement>('[data-cards]')
+    const g = cardsEl ? cardsAt.current.get(cardsEl.dataset.cards!) : undefined
+    if (!g) return null
+    if (g.sessions.length > 0) return undefined
+    return canDrop(ui.groupBy, d.from, g) ? { group: g, at: null } : null
   }
 
-  function dropHere(e: DragEvent) {
-    e.preventDefault()
-    e.stopPropagation()
-    const moved = drag && sessions.find((x) => x.id === drag.id)
-    const result = drag && over && moved ? dropSession(ui.groupBy, sessions, ui.sessionOrder, moved, drag.from, over.group, over.at) : null
-    endDrag()
+  // the drop an aim would make, or null when it would change nothing
+  function outcome(a: Aim | null) {
+    const d = press.current
+    const moved = d && sessions.find((x) => x.id === d.id)
+    return a && d && moved ? dropSession(ui.groupBy, sessions, ui.sessionOrder, moved, d.from, a.group, a.at) : null
+  }
+
+  // follow the pointer; render only when the line moves
+  function follow(x: number, y: number) {
+    const found = aimFrom(x, y)
+    if (found === undefined) return
+    aimed.current = found
+    const shown = outcome(found) ? found : null // no line where a drop would do nothing
+    const key = shown ? `${shown.group.key}|${shown.at?.target}|${shown.at?.after}` : null
+    if (key === shownKey.current) return
+    shownKey.current = key
+    setOver(shown)
+  }
+
+  function finish(x: number, y: number) {
+    const d = press.current
+    const found = aimFrom(x, y)
+    const a = found === undefined ? aimed.current : found
+    const result = outcome(a)
+    const moved = d && sessions.find((s) => s.id === d.id)
     if (!result || !moved) return
     if (result.status) void window.api.invoke('session:workflowStatus', { id: moved.id, status: result.status })
-    void window.api.invoke('ui:set', { sessionOrder: result.order })
+    setSessionOrder(result.order)
+  }
+
+  const latest = useRef({ follow, finish })
+  latest.current = { follow, finish }
+
+  function startPress(e: ReactPointerEvent<HTMLElement>, s: Session, grp: ListGroup) {
+    if (!draggable || e.button !== 0 || e.shiftKey || e.metaKey || e.ctrlKey || e.altKey) return
+    if ((e.target as HTMLElement).closest('button, input, textarea, a, [contenteditable]')) return
+    const d = { id: s.id, from: grp, x: e.clientX, y: e.clientY, live: false }
+    press.current = d
+    aimed.current = null
+    shownKey.current = null
+    let last = { x: e.clientX, y: e.clientY }
+    let scroller: HTMLElement | null = null
+    for (let n = e.currentTarget.parentElement; n && !scroller; n = n.parentElement) {
+      if (/auto|scroll/.test(getComputedStyle(n).overflowY) && n.scrollHeight > n.clientHeight) scroller = n
+    }
+    // near the edge of the list the list scrolls, as a native drag would
+    const edge = window.setInterval(() => {
+      if (!d.live || !scroller) return
+      const r = scroller.getBoundingClientRect()
+      const step = last.y < r.top + 40 ? -10 : last.y > r.bottom - 40 ? 10 : 0
+      if (step === 0) return
+      scroller.scrollTop += step
+      latest.current.follow(last.x, last.y)
+    }, 16)
+    const end = () => {
+      window.clearInterval(edge)
+      window.removeEventListener('pointermove', move)
+      window.removeEventListener('pointerup', up)
+      window.removeEventListener('pointercancel', cancel)
+      window.removeEventListener('keydown', key)
+      document.body.style.cursor = ''
+      document.body.style.userSelect = ''
+      press.current = null
+      aimed.current = null
+      shownKey.current = null
+      setDrag(null)
+      setOver(null)
+    }
+    const move = (ev: PointerEvent) => {
+      last = { x: ev.clientX, y: ev.clientY }
+      if (!d.live) {
+        if (Math.hypot(ev.clientX - d.x, ev.clientY - d.y) < 5) return
+        d.live = true
+        setDrag({ id: d.id, from: d.from })
+        document.body.style.cursor = 'grabbing'
+        document.body.style.userSelect = 'none'
+        window.getSelection()?.removeAllRanges()
+      }
+      latest.current.follow(ev.clientX, ev.clientY)
+    }
+    const up = (ev: PointerEvent) => {
+      if (d.live) {
+        latest.current.finish(ev.clientX, ev.clientY)
+        justDragged.current = true // the click that follows a drag is not a click on the card
+        setTimeout(() => { justDragged.current = false }, 0)
+      }
+      end()
+    }
+    const cancel = () => end()
+    const key = (ev: KeyboardEvent) => { if (ev.key === 'Escape') end() }
+    window.addEventListener('pointermove', move)
+    window.addEventListener('pointerup', up)
+    window.addEventListener('pointercancel', cancel)
+    window.addEventListener('keydown', key)
   }
 
   // one draggable card; `grp` is the list it reorders within (a parent's children are a list of their own)
   const slot = (s: Session, grp: ListGroup, kids?: Session[]) => {
+    slotAt.current.set(s.id, { s, grp })
     const line = over?.group.key === grp.key && over.at?.target === s.id && drag?.id !== s.id
       ? over.at.after ? css.dropAfter : css.dropBefore : undefined
     return (
-      <div key={s.id} className={cx(css.slot, drag?.id === s.id && css.slotDragging, line)}
-        draggable={draggable}
-        onDragStart={draggable ? (e) => {
-          e.dataTransfer.effectAllowed = 'move'
-          e.dataTransfer.setData('text/plain', s.id)
-          setDrag({ id: s.id, from: grp })
-        } : undefined}
-        onDragEnd={draggable ? endDrag : undefined}
-        onDragOver={draggable ? (e) => aimAt(grp, e, s) : undefined}
-        onDrop={draggable ? dropHere : undefined}>
+      <div key={s.id} data-slot={s.id} className={cx(css.slot, drag?.id === s.id && css.slotDragging, line)}
+        onPointerDown={draggable ? (e) => startPress(e, s, grp) : undefined}
+        onClickCapture={(e) => { if (justDragged.current) { e.stopPropagation(); e.preventDefault() } }}>
         {sessionCard(s, kids)}
       </div>
     )
   }
 
-  const cardList = (g: ListGroup) => (
-    <div className={cx(css.cards, drag && css.cardsDragging)}
-      onDragOver={draggable ? (e) => aimAt(g, e) : undefined} onDrop={draggable ? dropHere : undefined}>
-      {g.sessions.map((s) => {
-        const list = g.nest.kids.get(s.id) ?? []
-        const kg = kidsGroup(g, s)
-        return (
-          <div key={s.id} className={css.cards}>
-            {slot(s, g, list)}
-            {list.length > 0 && !kg.collapsed && (
-              <div className={cx(css.cards, css.kids, drag && css.cardsDragging)}
-                onDragOver={draggable ? (e) => aimAt(kg, e) : undefined} onDrop={draggable ? dropHere : undefined}>
-                {list.map((k) => slot(k, kg))}
-              </div>
-            )}
-          </div>
-        )
-      })}
-    </div>
-  )
+  const cardList = (g: ListGroup) => {
+    cardsAt.current.set(g.key, g)
+    return (
+      <div className={cx(css.cards, drag && css.cardsDragging)} data-cards={g.key}>
+        {g.sessions.map((s) => {
+          const list = g.nest.kids.get(s.id) ?? []
+          const kg = kidsGroup(g, s)
+          cardsAt.current.set(kg.key, kg)
+          return (
+            <div key={s.id} className={css.cards}>
+              {slot(s, g, list)}
+              {list.length > 0 && !kg.collapsed && (
+                <div className={cx(css.cards, css.kids, drag && css.cardsDragging)} data-cards={kg.key}>
+                  {list.map((k) => slot(k, kg))}
+                </div>
+              )}
+            </div>
+          )
+        })}
+      </div>
+    )
+  }
 
   const sessionCard = (s: Session, kids?: Session[]) => {
     const f = linkedFeature(s, features.items)

@@ -28,6 +28,7 @@ interface SlicesState {
   setSidebarTab(tab: UiState['sidebarTab']): void
   setGroupBy(groupBy: UiState['groupBy']): void
   setSessionSort(sessionSort: UiState['sessionSort']): void
+  setSessionOrder(order: UiState['sessionOrder']): void // shown at once, saved behind it: a drop must not wait for the main process
   toggleSidebar(): void
   openArtifact(t: DocTarget): void
   openDiff(sessionId: string): void
@@ -92,6 +93,10 @@ export const useSlices = create<SlicesState>((set, get) => {
     setSidebarTab: (tab) => { void window.api.invoke('ui:set', { sidebarTab: tab }) },
     setGroupBy: (groupBy) => { void window.api.invoke('ui:set', { groupBy }) },
     setSessionSort: (sessionSort) => { void window.api.invoke('ui:set', { sessionSort }) },
+    setSessionOrder: (sessionOrder) => {
+      set({ ui: { ...get().ui, sessionOrder } })
+      void window.api.invoke('ui:set', { sessionOrder })
+    },
     openArtifact: (t) => { void window.api.invoke('ui:set', { viewer: t }) },
     openDiff: (sessionId) => { void window.api.invoke('ui:set', { viewer: { kind: 'diff', sessionId }, viewerExpanded: false }) },
     backToDiff: (sessionId) => { void window.api.invoke('ui:set', { viewer: { kind: 'diff', sessionId } }) },
