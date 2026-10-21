@@ -6,6 +6,7 @@ import { usualKind } from '../usualKind'
 import { useRepoRefs } from '../useRepoRefs'
 import { useSlices } from '../stores/slices'
 import { Button } from './ui/Button'
+import { Spinner } from './ui/Spinner'
 import { Icon } from './ui/Icon'
 import { Modal } from './ui/Modal'
 import { Switch } from './ui/Switch'
@@ -239,7 +240,7 @@ export function NewSessionDialog({ projectId, onClose, onStart }: {
         <span className={s.summary}>{row && `${where} · ${isolation}`}</span>
         <Button variant="ghost" onClick={onClose}>Cancel</Button>
         <Button variant="primary" disabled={busy || !row} onClick={() => void submit()}>
-          {busy ? 'Working…' : create ? 'Create' : 'Start'}
+          {busy ? <><Spinner /> {create ? 'Creating…' : 'Starting…'}</> : create ? 'Create' : 'Start'}
         </Button>
       </div>
     </Modal>

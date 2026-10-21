@@ -1,15 +1,23 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
 import type { Project, Session, SessionKind } from '@shared/types'
-import { baseChoices, branchName, buildTargets, tidyPath, type ChosenBases, type Target } from '../launchTargets'
+import { baseChoices, branchName, buildTargets, labelFromBranch, prefillBranch, tidyPath, type ChosenBases, type Target } from '../launchTargets'
 import { suggestBranch, repoOf, type RefsByRepo } from '../launchRows'
 import { wantsSandbox } from '../sandboxOptIn'
 import { usualKind } from '../usualKind'
 import { cx } from './ui/cx'
 import { Icon } from './ui/Icon'
 import { Modal } from './ui/Modal'
+import { Spinner } from './ui/Spinner'
 import { SandboxToggle } from './SandboxToggle'
+import { WorktreeRemoveDialog } from './WorktreeRemoveDialog'
 import type { Launch } from './NewSessionDialog'
 import s from './LaunchPalette.module.css'
+
+// Focus with the caret after the text: the branch starts with a prefix the human types after.
+const endFocus = (el: HTMLInputElement | null) => {
+  el?.focus()
+  el?.setSelectionRange(el.value.length, el.value.length)
+}
 
 const KINDS: { kind: SessionKind; label: string; icon: 'opencode' | 'claude' | 'terminal'; code: string; key: string }[] = [
   { kind: 'claude', label: 'Claude Code', icon: 'claude', code: 'Digit1', key: '1' },
@@ -27,6 +35,9 @@ const KINDS: { kind: SessionKind; label: string; icon: 'opencode' | 'claude' | '
 //
 // A new worktree forks the repo's default branch unless ⌥B picks another: a second step that swaps
 // the list for the repo's branches, local and already fetched, and returns here with the choice.
+//
+// Removing a worktree is the one pointer-only control: a trash on its row, shown on hover, opens a
+// confirmation over the palette. It has no key, so nothing destructive sits one stray ↵ away.
 export function LaunchPalette({ projects, sessions, openedFrom, refs, sandboxed, onSandbox, onClose, onStart }: {
   projects: Project[]
   sessions: Session[]
@@ -49,10 +60,13 @@ export function LaunchPalette({ projects, sessions, openedFrom, refs, sandboxed,
   const [chosen, setChosen] = useState<ChosenBases>({})
   // the base picker, when open: it takes over the box and the list until a branch is picked or Esc
   const [picking, setPicking] = useState<{ repoId: string; query: string; at: number } | null>(null)
-  const [label, setLabel] = useState('')
+  // the label as typed; null until then, so it follows the branch name of a new worktree
+  const [labelEdit, setLabelEdit] = useState<string | null>(null)
   // the branch field, remembered against the row it was typed for so moving to another row drops it
   const [edit, setEdit] = useState<{ key: string; value: string } | null>(null)
   const [busy, setBusy] = useState(false)
+  // the worktree whose removal is being asked about; the dialog owns Esc and ↵ while it is open
+  const [removing, setRemoving] = useState<Project | null>(null)
   const [error, setError] = useState<string | null>(null)
   const searchRef = useRef<HTMLInputElement>(null)
   const labelRef = useRef<HTMLInputElement>(null)
@@ -73,8 +87,10 @@ export function LaunchPalette({ projects, sessions, openedFrom, refs, sandboxed,
   // what a create row will name its branch: what was typed in the branch field, else what the search
   // carried, else a proposal
   const proposal = target?.type === 'create' ? suggestBranch(target.repo, projects) : ''
-  const branchShown = target?.type === 'create' ? (edit?.key === target.key ? edit.value : target.branch ?? '') : ''
-  const branchFinal = branchName(branchShown) || proposal
+  const branchShown = target?.type === 'create' ? (edit?.key === target.key ? edit.value : prefillBranch(target.branch ?? '')) : ''
+  // a bare prefix names nothing, so it falls back to the proposal like an empty field does
+  const branchFinal = labelFromBranch(branchShown) ? branchName(branchShown) : proposal
+  const label = labelEdit ?? (target?.type === 'create' ? labelFromBranch(branchShown) : '')
   const isolated = wantsSandbox(kind, sandboxed)
 
   useEffect(() => { rowRef.current?.scrollIntoView({ block: 'nearest' }) }, [current, targets])
@@ -100,7 +116,7 @@ export function LaunchPalette({ projects, sessions, openedFrom, refs, sandboxed,
   const choose = (t: Target | undefined = target) => {
     if (t?.type === 'create' && document.activeElement !== branchRef.current && document.activeElement !== labelRef.current) {
       setAt(t.key)
-      setTimeout(() => branchRef.current?.focus(), 0) // the field only exists once this row is the target
+      setTimeout(() => endFocus(branchRef.current), 0) // the field only exists once this row is the target
       return
     }
     void submit(t)
@@ -118,7 +134,7 @@ export function LaunchPalette({ projects, sessions, openedFrom, refs, sandboxed,
     if (!base || !picking) return
     setChosen((c) => ({ ...c, [picking.repoId]: base }))
     setPicking(null)
-    setTimeout(() => branchRef.current?.focus(), 0)
+    setTimeout(() => endFocus(branchRef.current), 0)
   }
 
   const onKeyDown = (e: React.KeyboardEvent) => {
@@ -159,7 +175,11 @@ export function LaunchPalette({ projects, sessions, openedFrom, refs, sandboxed,
   const verb = target?.type === 'create' ? 'Create' : 'Start'
 
   return (
-    <Modal onClose={() => (picking ? setPicking(null) : onClose())} onConfirm={() => (picking ? pickBase() : choose())}>
+    <>
+    <Modal
+      width="wide"
+      onClose={() => { if (!removing) { if (picking) setPicking(null); else onClose() } }}
+      onConfirm={() => { if (!removing) { if (picking) pickBase(); else choose() } }}>
       <div className={s.root} onKeyDown={onKeyDown}>
         <div className={s.box}>
           <Icon name="search" size={14} />
@@ -182,7 +202,7 @@ export function LaunchPalette({ projects, sessions, openedFrom, refs, sandboxed,
             {choices.map((b, i) => (
               <div key={b} ref={i === choiceAt ? rowRef : undefined} role="option" aria-selected={i === choiceAt}
                 className={cx(s.row, i === choiceAt && s.on)}
-                onClick={() => { setChosen((c) => ({ ...c, [picking.repoId]: b })); setPicking(null); setTimeout(() => branchRef.current?.focus(), 0) }}>
+                onClick={() => { setChosen((c) => ({ ...c, [picking.repoId]: b })); setPicking(null); setTimeout(() => endFocus(branchRef.current), 0) }}>
                 <Icon name="branch" size={13} />
                 <span className={s.name}>{b}</span>
                 {b === refs[picking.repoId]?.default && <span className={s.muted}>default</span>}
@@ -212,6 +232,10 @@ export function LaunchPalette({ projects, sessions, openedFrom, refs, sandboxed,
                     <Icon name="branch" size={13} />
                     <span className={s.name}>{t.branch}</span>
                     {!grouped && <span className={s.where}>in {t.repo.name}</span>}
+                    <button type="button" tabIndex={-1} className={s.trash} aria-label="Remove worktree"
+                      onClick={(e) => { e.stopPropagation(); setRemoving(t.project) }}>
+                      <Icon name="trash" size={13} />
+                    </button>
                   </>
                 ) : (
                   <>
@@ -252,17 +276,25 @@ export function LaunchPalette({ projects, sessions, openedFrom, refs, sandboxed,
 
         {/* its own line: beside the switch it got whatever width the agent buttons left over */}
         <input ref={labelRef} className={s.label} value={label} placeholder="Label — a name for this session (Tab)" aria-label="Label"
-          onChange={(e) => setLabel(e.target.value)} />
+          onChange={(e) => setLabelEdit(e.target.value)} />
 
         {/* what ↵ will do, spelled out — including the part of a sandbox that is not a promise (ADR 0036) */}
         <div className={s.summary}>
           <span className={s.what}>
-            {busy ? 'Working…' : target && `${verb} ${where} · ${isolated ? 'sandboxed — files only, network is open' : 'on your host'}`}
+            {busy ? <><Spinner />{' '}{target?.type === 'create' ? 'Creating worktree…' : 'Starting…'}</> : target && `${verb} ${where} · ${isolated ? 'sandboxed — files only, network is open' : 'on your host'}`}
           </span>
           {target?.type === 'create' && !picking && <span><kbd>⌥B</kbd> pick base</span>}
           <span><kbd>↵</kbd> {picking ? 'fork this' : verb.toLowerCase()}</span>
         </div>
       </div>
     </Modal>
+    {removing && (
+      <WorktreeRemoveDialog
+        project={removing}
+        sessions={sessions.filter((x) => x.projectId === removing.id)}
+        onDone={() => setRemoving(null)}
+        onCancel={() => setRemoving(null)} />
+    )}
+    </>
   )
 }

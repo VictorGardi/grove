@@ -284,6 +284,20 @@ describe('remove', () => {
     expect(fs.readFileSync(path.join(at, 'wip.txt'), 'utf8')).toBe('agent work\n')
   })
 
+  it('deletes a worktree with uncommitted work when forced', async () => {
+    const repo = gitRepo()
+    repo.commit()
+    const at = worktreePath(repo.dir, 'fix-auth', home())
+    expect(await add({ repo: repo.dir, branch: 'fix-auth', path: at, git })).toMatchObject({ ok: true })
+    fs.writeFileSync(path.join(at, 'wip.txt'), 'agent work\n')
+    fs.appendFileSync(path.join(at, 'README.md'), 'edit\n')
+
+    expect((await remove(repo.dir, at, git)).ok).toBe(false)
+    expect(await remove(repo.dir, at, git, { force: true })).toEqual({ ok: true, data: { path: at } })
+    expect(fs.existsSync(at)).toBe(false)
+    expect(out('-C', repo.dir, 'branch', '--list', 'fix-auth').trim()).toBe('fix-auth')
+  })
+
   it('refuses a locked worktree: a session is still running in it', async () => {
     const repo = gitRepo()
     repo.commit()

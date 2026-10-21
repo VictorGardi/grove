@@ -14,6 +14,26 @@ export type Target =
 // A ref cannot hold whitespace, so a typed name with any becomes dashes.
 export const branchName = (raw: string): string => raw.trim().replace(/\s+/g, '-')
 
+// What the branch field starts with, so a typed name lands under it. The human can delete or
+// replace it: nothing downstream cares which prefix, or none, a branch carries.
+export const FEATURE_PREFIX = 'feature/'
+
+// The branch field's starting value: the search text under the prefix, unless it already names
+// its own folder (`fix/login`), in which case it is left as typed.
+export const prefillBranch = (name: string): string => {
+  const n = branchName(name)
+  return n.includes('/') ? n : FEATURE_PREFIX + n
+}
+
+// A session label read off a branch: the part after its first folder, so `feature/test-scoring`
+// and `fix/test-scoring` both read `test-scoring`. A branch without a folder is its own label, and
+// a bare prefix with nothing after it gives none.
+export const labelFromBranch = (branch: string): string => {
+  const b = branchName(branch)
+  const i = b.indexOf('/')
+  return (i < 0 ? b : b.slice(i + 1)).replace(/^\/+|\/+$/g, '')
+}
+
 // A worktree project is named `<repo> · <branch>`; the branch is the part worth reading.
 export const worktreeBranch = (p: Project): string => p.name.split(' · ').slice(1).join(' · ') || p.name
 

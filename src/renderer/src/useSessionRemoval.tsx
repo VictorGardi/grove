@@ -1,6 +1,6 @@
 import { useState, type ReactNode } from 'react'
 import type { Project } from '@shared/types'
-import { ConfirmDialog } from './components/ConfirmDialog'
+import { WorktreeRemoveDialog } from './components/WorktreeRemoveDialog'
 import { worktreeBranch } from './launchTargets'
 import { useSlices } from './stores/slices'
 
@@ -10,8 +10,7 @@ import { useSlices } from './stores/slices'
 export function useSessionRemoval(): { removeSessions: (ids: string[]) => Promise<void>; dialog: ReactNode } {
   const { projects, sessions } = useSlices()
   const [asking, setAsking] = useState<Project[]>([])
-  const [error, setError] = useState<string | null>(null)
-  const next = () => { setError(null); setAsking((l) => l.slice(1)) }
+  const next = () => { setAsking((l) => l.slice(1)) }
 
   const removeSessions = async (ids: string[]) => {
     const gone = new Set(ids)
@@ -23,17 +22,12 @@ export function useSessionRemoval(): { removeSessions: (ids: string[]) => Promis
   }
 
   const dialog = asking.length > 0 && (
-    <ConfirmDialog
-      title={error ? "Couldn't remove worktree" : 'Remove worktree?'}
-      body={error ?? `No sessions are left in ${worktreeBranch(asking[0])}. Remove its checkout from disk too? The branch is kept.`}
-      confirmLabel={error ? 'OK' : 'Remove worktree'}
-      onCancel={next}
-      onConfirm={async () => {
-        if (error) return next()
-        const res = await window.api.invoke('worktree:remove', { projectId: asking[0].id })
-        if (res.ok) next()
-        else setError(res.error)
-      }} />
+    <WorktreeRemoveDialog
+      key={asking[0].id}
+      project={asking[0]}
+      intro={`No sessions are left in ${worktreeBranch(asking[0])}. Remove its checkout from disk too?`}
+      onDone={next}
+      onCancel={next} />
   )
   return { removeSessions, dialog }
 }

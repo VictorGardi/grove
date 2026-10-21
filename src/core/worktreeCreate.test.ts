@@ -83,8 +83,14 @@ describe('worktreeCreate', () => {
     if (!res.ok) throw new Error(res.error)
     fs.writeFileSync(path.join(res.data.path, 'wip.txt'), 'x')
     fs.appendFileSync(path.join(res.data.path, 'README.md'), 'edit\n')
-    expect((await core.commands.worktreeRemove({ projectId: res.data.id })).ok).toBe(false)
+    const refused = await core.commands.worktreeRemove({ projectId: res.data.id })
+    expect(refused).toMatchObject({ ok: false, error: 'git-refused' })
+    expect(refused.ok === false && refused.detail).toMatch(/uncommitted|modified/i)
     expect(core.getSlices().projects.some((p) => p.id === res.data.id)).toBe(true)
+
+    expect(await core.commands.worktreeRemove({ projectId: res.data.id, force: true })).toEqual({ ok: true, data: { id: res.data.id } })
+    expect(fs.existsSync(res.data.path)).toBe(false)
+    expect(core.getSlices().projects.some((p) => p.id === res.data.id)).toBe(false)
   })
 
   it('puts the checkout under the injected root, not the real home', async () => {

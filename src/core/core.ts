@@ -81,7 +81,9 @@ export interface Commands {
   // A new worktree of the repo `projectId` belongs to, on `branch`, registered as a project of
   // its own (ADR 0037) so a session can be created in it like any other checkout.
   worktreeCreate(a: { projectId: string; branch: string; base?: string }): Promise<Result<Project>>
-  worktreeRemove(a: { projectId: string }): Promise<Result<{ id: string }>>
+  // `endSessions` ends whatever still runs in it first (else sessions refuse the removal);
+  // `force` is the retry after a `git-refused` answer, whose `detail` is git's own message.
+  worktreeRemove(a: { projectId: string; force?: boolean; endSessions?: boolean }): Promise<Result<{ id: string }>>
   // What a checkout is on, and what a new worktree off it would branch from. Read without
   // spawning git for the current branch (readBranch) and with two git calls for the default,
   // because the launch dialog has to name a base before anyone has picked anything (ADR 0037's
@@ -736,14 +738,17 @@ export function createCore(opts: CoreOptions): Core {
     // Takes a worktree's checkout off disk and forgets its project, once nothing is left in it.
     // Git's own refusal (uncommitted work, a live lock) is the answer, as in 'clean up merged':
     // the branch survives either way, and the project stays registered when git says no.
-    async worktreeRemove({ projectId }) {
+    // Sessions ended by `endSessions` stay ended when git refuses; `force` retries past it.
+    async worktreeRemove({ projectId, force, endSessions }) {
       const project = slices.projects.find((p) => p.id === projectId)
       if (!project?.worktreeOf) return { ok: false, error: 'not-found' }
       if (!git) return { ok: false, error: 'no-git' }
-      if (slices.sessions.some((s) => s.projectId === projectId)) return { ok: false, error: 'has-sessions' }
+      const inside = slices.sessions.filter((s) => s.projectId === projectId)
+      if (inside.length > 0 && !endSessions) return { ok: false, error: 'has-sessions' }
+      for (const s of inside) await commands.sessionRemove({ id: s.id })
       await worktrees.unlock(repoFor(project), project.path, git)
-      const res = await worktrees.remove(repoFor(project), project.path, git)
-      if (!res.ok) return res
+      const res = await worktrees.remove(repoFor(project), project.path, git, { force })
+      if (!res.ok) return { ok: false, error: 'git-refused', detail: res.error }
       unregisterProject(projectId)
       return { ok: true, data: { id: projectId } }
     },

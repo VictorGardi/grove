@@ -125,11 +125,12 @@ export async function prune(repo: string, git: GitRun): Promise<boolean> {
   return run(repo, ['worktree', 'prune'], git)
 }
 
-export async function remove(repo: string, at: string, git: GitRun): Promise<Result<{ path: string }>> {
+export async function remove(repo: string, at: string, git: GitRun, opts: { force?: boolean } = {}): Promise<Result<{ path: string }>> {
   try {
-    // No --force: git refuses a worktree with uncommitted work or a live lock, and that refusal
-    // is the answer. Removing one is the human's call, not grove's.
-    await git(['worktree', 'remove', at], repo)
+    // Without `force`, git refuses a worktree with uncommitted work or a live lock, and that
+    // refusal is the answer. Forcing is the human's call, not grove's: only a dialog that showed
+    // them git's refusal asks for it, never a bulk cleanup.
+    await git(['worktree', 'remove', ...(opts.force ? ['--force'] : []), at], repo)
     return { ok: true, data: { path: at } }
   } catch (e) {
     return { ok: false, error: (e as Error).message }

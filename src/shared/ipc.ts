@@ -1,6 +1,6 @@
 import type { Comment, CommentAnchor, FeaturesSlice, OpenCodeSlice, Project, Session, SessionDiff, SessionKind, Slices, UiState, WorkflowStatus } from './types'
 
-export type Result<T> = { ok: true; data: T } | { ok: false; error: string }
+export type Result<T> = { ok: true; data: T } | { ok: false; error: string; detail?: string }
 export type MenuAction =
   | { type: 'newSession' } | { type: 'newSessionOptions' } | { type: 'closeSession' } | { type: 'focusIndex'; n: number } | { type: 'projectBoard' }
   | { type: 'sessionDiff' } | { type: 'toggleSidebar' } | { type: 'addToGrid' }
@@ -13,7 +13,7 @@ export interface InvokeMap {
   'project:add': [void, Project | null]
   'project:remove': [{ id: string }, { id: string }]
   'worktree:create': [{ projectId: string; branch: string; base?: string }, Project]
-  'worktree:remove': [{ projectId: string }, { id: string }]
+  'worktree:remove': [{ projectId: string; force?: boolean; endSessions?: boolean }, { id: string }]
   'repo:refs': [{ projectId: string }, { branch: string | null; default: string | null; bases: string[] }]
   // what the core command already accepts: until the launch dialog existed the renderer could send
   // only projectId and kind, so the GUI could not reach the fields the CLI always could

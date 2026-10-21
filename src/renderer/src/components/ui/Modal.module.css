@@ -28,6 +28,11 @@
   width: 520px;
 }
 
+.wide {
+  width: 90vw;
+  max-width: 680px;
+}
+
 .lg {
   width: 90vw;
   max-width: 900px;

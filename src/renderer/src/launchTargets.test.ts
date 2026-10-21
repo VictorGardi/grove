@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import type { Project } from '@shared/types'
-import { baseChoices, baseOf, branchName, buildTargets, tidyPath, worktreeBranch } from './launchTargets'
+import { baseChoices, baseOf, branchName, buildTargets, labelFromBranch, prefillBranch, tidyPath, worktreeBranch } from './launchTargets'
 
 const proj = (id: string, name: string, worktreeOf?: string) => ({ id, name, path: `/Users/v/${name}`, worktreeOf }) as Project
 const grove = proj('g', 'grove')
@@ -77,5 +77,26 @@ describe('chosen base', () => {
   it('beats the default for that repo only', () => {
     expect(baseOf(refs, 'g', { g: 'origin/x' })).toBe('origin/x')
     expect(baseOf(refs, 'o', { g: 'origin/x' })).toBe('main')
+  })
+})
+
+describe('prefillBranch', () => {
+  it('puts a bare name under feature/ and leaves one with its own folder alone', () => {
+    expect(prefillBranch('')).toBe('feature/')
+    expect(prefillBranch('test scoring')).toBe('feature/test-scoring')
+    expect(prefillBranch('fix/login')).toBe('fix/login')
+  })
+})
+
+describe('labelFromBranch', () => {
+  it('reads the label off the part after the first folder', () => {
+    expect(labelFromBranch('feature/test-scoring-model')).toBe('test-scoring-model')
+    expect(labelFromBranch('fix/test-scoring-model')).toBe('test-scoring-model')
+    expect(labelFromBranch('user/feature/x')).toBe('feature/x')
+  })
+  it('uses a folderless branch whole, and gives nothing for a bare prefix', () => {
+    expect(labelFromBranch('test-scoring')).toBe('test-scoring')
+    expect(labelFromBranch('feature/')).toBe('')
+    expect(labelFromBranch('')).toBe('')
   })
 })

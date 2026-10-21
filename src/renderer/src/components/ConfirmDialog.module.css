@@ -5,6 +5,7 @@
 
 .body {
   color: var(--text-2);
+  white-space: pre-line;
 }
 
 .actions {
