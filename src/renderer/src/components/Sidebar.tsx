@@ -25,6 +25,8 @@ import { tagClass } from './ui/Tag'
 import { WorkflowStatusButton, Glyph, StatusMark } from './ui/WorkflowStatusPicker'
 import css from './Sidebar.module.css'
 
+const KIND_LABEL: Record<Session['kind'], string> = { claude: 'Claude', opencode: 'OpenCode', terminal: 'Terminal' }
+
 function SessionCard({ s, feature, worktree, focused, picked, compact, inGrid, gridOn, gridFull, onToggleGrid, onFocus, onOpenFeature, onToggleCompact, onLink, onRemove, onContextMenu, kids }: {
   s: Session
   feature: Feature | null // the linked feature, if it exists
@@ -80,6 +82,7 @@ function SessionCard({ s, feature, worktree, focused, picked, compact, inGrid, g
         </div>
       )}
       mark={worktree && { icon: <Icon name="worktree" size={14} />, label: `Worktree: ${worktree.path}` }}
+      kind={s.kind === 'terminal' ? { icon: <Icon name="terminal" size={12} />, label: KIND_LABEL.terminal } : undefined}
       status={{ ...statusView(s), tone: statusTone(s) }}
       tone={focused ? 'selected' : needsYou ? 'waiting' : 'default'}
       picked={picked}
