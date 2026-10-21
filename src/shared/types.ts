@@ -30,7 +30,7 @@ export interface Session {
   lastFocusedAt?: string | null   // ISO, when the human last focused it (any kind); persisted; orders the palette
   branch?: string | null           // live sessions: branch at the pane's current directory; never saved
   pr?: PullRequest | null          // live sessions: the PR for that branch, from `gh`; never saved
-  status?: 'working' | 'waiting' | 'idle' // OpenCode sessions while the service is connected; never saved
+  status?: 'working' | 'waiting' | 'idle' // agent sessions while their service is connected, terminals from the foreground command; never saved
   waitingFor?: 'permission' | 'question' | 'done' // with status 'waiting'; never saved
   contextPct?: number | null       // Claude sessions once a reading arrived: % of the context window used; null: not known yet; never saved
   contextTokens?: number | null    // tokens in context (input incl. cache); never saved

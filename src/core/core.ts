@@ -36,6 +36,7 @@ import type { AgentEvent, AgentKind, AgentSource } from './agents/types'
 import { LOST_SANDBOX, sandboxArgvFor, type SandboxDeps } from './sandbox/launch'
 import { pruneContainers, removeContainer } from './sandbox/container'
 import type { AgentPaths } from './sandbox/spec'
+import { createTerminalActivity } from './terminalActivity'
 import { autoLink, link, markGone, markSeen, newSession, reconcile, rename, resume, setWorkflowStatus, withBranches, withPrs } from './sessions'
 import { loadConfig, saveConfig } from './store/configStore'
 import { apply, fromSnapshot, withContext, withStatus, type Tracker } from './status'
@@ -140,6 +141,8 @@ export function createCore(opts: CoreOptions): Core {
   const notifyListeners = new Set<(s: Session) => void>()
   const handles = new Set<AttachHandle>()
   let poll: ReturnType<typeof setInterval> | undefined
+  let termPoll: ReturnType<typeof setInterval> | undefined
+  const termActivity = createTerminalActivity()
   const watchers = opts.watchers ?? chokidarWatchers
   let configWorkflow: string | undefined
   let workflow: Workflow | null = null // last valid
@@ -516,10 +519,25 @@ export function createCore(opts: CoreOptions): Core {
       next = withStatus(next, st.source.kind, st.trackers, st.connected, st.source.statusNeedsEvent)
       next = withContext(next, st.source.kind, st.trackers, st.connected)
     }
-    return next
+    return termActivity.apply(next)
+  }
+
+  // Terminals have no event stream: the foreground command of each pane is read every second, so a
+  // command of FINISH_MIN_MS is seen.
+  async function refreshTerminals(): Promise<void> {
+    const terminals = slices.sessions.filter((s) => s.kind === 'terminal' && s.lastStatus === 'running')
+    if (terminals.length === 0) return
+    let cmds: Map<string, string>
+    try {
+      cmds = await backend.commands()
+    } catch {
+      return // retried by the next tick
+    }
+    if (termActivity.observe(cmds, terminals, Date.now(), onScreenId())) refreshStatus()
   }
 
   function refreshStatus(): void {
+    termActivity.seen(onScreenId())
     let next = withAllStatus(slices.sessions)
     const id = onScreenId()
     const after = id ? next.find((s) => s.id === id) : undefined
@@ -1125,6 +1143,7 @@ export function createCore(opts: CoreOptions): Core {
         void checkLiveness()
         syncProjects(false) // picks up a root that appears later
       }, 5000)
+      termPoll = setInterval(() => void refreshTerminals(), 1000)
       if (states.has('opencode')) armUnreachable()
       for (const st of states.values()) st.source.start((e) => onEvent(st, e))
     },
@@ -1199,6 +1218,7 @@ export function createCore(opts: CoreOptions): Core {
     },
     dispose() {
       clearInterval(poll)
+      clearInterval(termPoll)
       clearTimeout(unreachableTimer)
       diffWatch.dispose()
       for (const st of states.values()) st.source.stop()

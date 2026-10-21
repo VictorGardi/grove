@@ -7,6 +7,7 @@ export interface FakeHandle extends AttachHandle {
 export class FakeBackend implements SessionBackend {
   live = new Set<string>()
   paths = new Map<string, string>() // what cwds() returns; create sets the start directory
+  foreground = new Map<string, string>() // what commands() returns
   calls: { method: string; args: unknown[] }[] = []
   handles: FakeHandle[] = []
   pastes: { name: string; text: string; submit: boolean }[] = []
@@ -37,6 +38,10 @@ export class FakeBackend implements SessionBackend {
 
   async cwds(): Promise<Map<string, string>> {
     return new Map(this.paths)
+  }
+
+  async commands(): Promise<Map<string, string>> {
+    return new Map(this.foreground)
   }
 
   async kill(name: string): Promise<void> {

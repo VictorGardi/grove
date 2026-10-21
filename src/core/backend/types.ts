@@ -12,6 +12,7 @@ export interface SessionBackend {
   setColors(name: string, fg: string, bg: string): Promise<void>
   list(): Promise<Set<string>> // live: the session exists and its pane is not dead; empty when no server
   cwds(): Promise<Map<string, string>> // session name → current directory of its active pane
+  commands(): Promise<Map<string, string>> // session name → foreground command of its active pane
   kill(name: string): Promise<void>
   paste(name: string, text: string, submit: boolean): Promise<void> // bracketed paste, then Enter when `submit` (ADR 0023)
   capture(name: string, lines: number): Promise<string> // the pane's last `lines` lines; '' when missing

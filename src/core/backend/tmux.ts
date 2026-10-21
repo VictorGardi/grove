@@ -75,6 +75,16 @@ export class TmuxBackend implements SessionBackend {
     }
   }
 
+  async commands(): Promise<Map<string, string>> {
+    try {
+      const { stdout } = await this.tmux('list-sessions', '-F', '#{session_name}\t#{pane_current_command}')
+      return new Map(stdout.split('\n').filter(Boolean).map((l) => l.split('\t', 2) as [string, string]))
+    } catch (e) {
+      if (NO_SERVER.test(stderrOf(e))) return new Map()
+      throw e
+    }
+  }
+
   async kill(name: string): Promise<void> {
     try {
       await this.tmux('kill-session', '-t', `=${name}`)
