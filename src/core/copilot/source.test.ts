@@ -69,6 +69,14 @@ describe('CopilotSource', () => {
     expect(await new CopilotSource({ dir, onPath: async () => false }).preflight()).toBe('no-copilot')
     expect(await source.preflight()).toBeNull()
   })
+
+  it('probes the login shell once after it finds the binary', async () => {
+    let calls = 0
+    const s = new CopilotSource({ dir, onPath: async () => (calls++, true) })
+    expect(await s.preflight()).toBeNull()
+    expect(await s.preflight()).toBeNull()
+    expect(calls).toBe(1)
+  })
 })
 
 describe('copilotOnPath', () => {
@@ -82,6 +90,8 @@ describe('copilotOnPath', () => {
     }
     expect(await copilotOnPath(shell('exit 1'))).toBe(false)
     expect(await copilotOnPath(shell('echo /opt/homebrew/bin/copilot'))).toBe(true)
+    // a probe killed by its timeout does not claim the binary is missing
+    expect(await copilotOnPath(shell('sleep 5'), 100)).toBe(true)
     fs.rmSync(dir, { recursive: true, force: true })
   })
 })

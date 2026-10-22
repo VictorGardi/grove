@@ -14,10 +14,13 @@ import { emptyFold, step, type CopilotFold } from './normalise'
 const PROBE_TIMEOUT_MS = 5_000
 
 // Whether `copilot` is on the PATH of the login shell the pane is built on (`loginShellArgv`), never a throw:
-// a probe that fails to run counts as missing, so the human is told rather than left with a dead pane.
-export function copilotOnPath(shell: string): Promise<boolean> {
+// a probe that fails to run counts as missing, so the human is told rather than left with a dead pane. A probe
+// killed by its timeout (a slow rc file) proves nothing, so it does not refuse: the pane shows any real error.
+export function copilotOnPath(shell: string, timeoutMs = PROBE_TIMEOUT_MS): Promise<boolean> {
   return new Promise((resolve) => {
-    execFile(shell, ['-l', '-i', '-c', 'command -v copilot'], { timeout: PROBE_TIMEOUT_MS }, (err, stdout) => resolve(!err && stdout.trim() !== ''))
+    execFile(shell, ['-l', '-i', '-c', 'command -v copilot'], { timeout: timeoutMs }, (err, stdout) =>
+      resolve(err ? (err as { killed?: boolean }).killed === true : stdout.trim() !== '')
+    )
   })
 }
 
@@ -27,6 +30,7 @@ export class CopilotSource implements AgentSource {
   private readonly folds = new Map<string, CopilotFold>()
   private readonly tail: SpoolTail
   private onEvent: ((e: AgentEvent) => void) | null = null
+  private found = false // a positive probe is kept: the login-shell start-up costs time on every create
 
   // `dir` holds the spools and one plugin folder per session. `onPath` is injected for tests; the default asks the login shell.
   constructor(private readonly opts: { dir: string; shell?: string; onPath?: () => Promise<boolean> }) {
@@ -47,8 +51,9 @@ export class CopilotSource implements AgentSource {
   // The error code a create is refused with, or null when it can go ahead. Copilot keeps its sign-in in the
   // system keychain and offers no cheap way to read it, so a signed-out Copilot says so itself in its pane.
   async preflight(): Promise<string | null> {
-    const found = await (this.opts.onPath ?? (() => copilotOnPath(this.opts.shell ?? process.env.SHELL ?? '/bin/zsh')))()
-    return found ? null : 'no-copilot'
+    if (this.found) return null
+    this.found = await (this.opts.onPath ?? (() => copilotOnPath(this.opts.shell ?? process.env.SHELL ?? '/bin/zsh')))()
+    return this.found ? null : 'no-copilot'
   }
 
   start(onEvent: (e: AgentEvent) => void): void {
