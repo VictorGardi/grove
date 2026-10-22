@@ -2,7 +2,7 @@ import fs from 'node:fs'
 import os from 'node:os'
 import path from 'node:path'
 import { afterEach, beforeEach, describe, expect, it } from 'vitest'
-import { installAgentSkill } from './launcher'
+import { agentSkillsDirs, installAgentSkill } from './launcher'
 
 describe('installAgentSkill', () => {
   let dir: string
@@ -22,6 +22,11 @@ describe('installAgentSkill', () => {
     expect(installAgentSkill({ source: src, skillsDirs: dirs })).toEqual(dirs.map((d) => ({ target: path.join(d, 'grove') })))
     for (const d of dirs) expect(fs.readFileSync(path.join(d, 'grove', 'SKILL.md'), 'utf8')).toBe('# grove')
     expect(installAgentSkill({ source: src, skillsDirs: dirs }).every((r) => !r.error)).toBe(true)
+  })
+
+  it('names the Claude, OpenCode and Copilot skills folders, honouring XDG_CONFIG_HOME and COPILOT_HOME', () => {
+    expect(agentSkillsDirs('/h', {})).toEqual(['/h/.claude/skills', '/h/.config/opencode/skills', '/h/.copilot/skills'])
+    expect(agentSkillsDirs('/h', { XDG_CONFIG_HOME: '/x', COPILOT_HOME: '/c' })).toEqual(['/h/.claude/skills', '/x/opencode/skills', '/c/skills'])
   })
 
   it('leaves a real folder of that name alone and still installs the others', () => {

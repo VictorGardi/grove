@@ -1,5 +1,5 @@
 import type { SessionKind } from '@shared/types'
-import { sandboxable, wantsSandbox } from '../sandboxOptIn'
+import { noSandboxReason, sandboxable, wantsSandbox } from '../sandboxOptIn'
 import { Icon } from './ui/Icon'
 import { Switch } from './ui/Switch'
 import { cx } from './ui/cx'
@@ -14,7 +14,7 @@ export function SandboxToggle({ kind, checked, onChange }: {
   checked: boolean
   onChange: (next: boolean) => void
 }) {
-  // A terminal has no agent argv to wrap, so the switch is offered and refused rather than hidden:
+  // A terminal has no agent argv to wrap and Copilot has no sandbox, so the switch is offered and refused rather than hidden:
   // a gap in the row where a control should be reads as a layout bug, and the reason belongs in the
   // control that cannot be used.
   const can = sandboxable(kind)
@@ -33,7 +33,7 @@ export function SandboxToggle({ kind, checked, onChange }: {
         checked={on}
         disabled={!can}
         onChange={onChange}
-        label={can ? 'Run this session in a sandbox' : 'A terminal session has no agent to put in a sandbox'}
+        label={can ? 'Run this session in a sandbox' : noSandboxReason(kind)}
       />
     </span>
   )

@@ -2,7 +2,7 @@
 
 **A desktop workspace for running many coding agents at once, and for steering each feature through a human-gated workflow.**
 
-Grove runs [OpenCode](https://opencode.ai) and [Claude Code](https://claude.com/claude-code) sessions side by side, tells you which one needs you, and keeps every feature's research, design and plan as reviewable files in your repo.
+Grove runs [OpenCode](https://opencode.ai), [Claude Code](https://claude.com/claude-code) and [GitHub Copilot CLI](https://github.com/features/copilot/cli) sessions side by side, tells you which one needs you, and keeps every feature's research, design and plan as reviewable files in your repo.
 
 <p align="center">
   <img src="docs/assets/screenshot.png" alt="Grove running: sessions in the sidebar, a live agent terminal and the project board" width="900">
@@ -11,7 +11,7 @@ Grove runs [OpenCode](https://opencode.ai) and [Claude Code](https://claude.com/
 ## Features
 
 **Sessions**
-- Start OpenCode, Claude or plain terminal sessions per project with `⌘T`, or `⌘⇧T` to set prompt, worktree and sandbox.
+- Start OpenCode, Claude, Copilot or plain terminal sessions per project with `⌘T`, or `⌘⇧T` to set prompt, worktree and sandbox.
 - Live status on every session: *working*, *waiting* (a permission, a question, or a finished turn you haven't seen), *idle* or *gone*.
 - Sessions live in tmux, so closing the app or a pane never kills an agent. Resume a gone session with its id, label and link intact.
 - Session grid (`⌘G`): up to nine live terminals tiled on one screen.
@@ -37,7 +37,7 @@ Grove runs [OpenCode](https://opencode.ai) and [Claude Code](https://claude.com/
 ```sh
 grove ls                                          # list sessions
 grove new claude --prompt "fix the flaky test" --worktree --branch fix-flaky
-grove new opencode --sandboxed --cwd ~/code/app   # agent in a container
+grove new opencode --sandboxed --cwd ~/code/app   # agent in a container (Claude and OpenCode only; Copilot has no sandbox)
 grove send <session> "also update the docs"
 grove wait <session>                              # exit 0 done, 4 needs you, 5 gone
 grove read <session> --lines 50                   # last lines of its screen
@@ -54,7 +54,7 @@ Grove is a macOS Electron app, run from source for now.
 - macOS
 - Node.js and npm
 - [`tmux`](https://github.com/tmux/tmux) (`brew install tmux`)
-- At least one agent CLI on your `PATH`: [`opencode`](https://opencode.ai) and/or [`claude`](https://claude.com/claude-code)
+- At least one agent CLI on your `PATH`: [`opencode`](https://opencode.ai), [`claude`](https://claude.com/claude-code) and/or [`copilot`](https://github.com/features/copilot/cli)
 - `git`, for diffs and worktrees
 - Optional: Apple [`container`](https://github.com/apple/container), for sandboxed sessions
 
@@ -107,7 +107,7 @@ Features move through phased, human-gated steps. Each phase is a `grove-*` skill
 
 Only a human can approve a phase. Later phases refuse to start on unapproved input, and an artifact with open questions or `TODO`s can't be approved. See [AGENTS.md](AGENTS.md) for the gates and [`resources/workflow.yaml`](resources/workflow.yaml) for the stage definitions.
 
-The `auto` flow is an alternative for features you want built unattended. `grove-auto` interviews the human about the outcome, then writes a research map and a decision-and-slice plan; one `grove-approve <slug> plan` unlocks `grove-run`, which builds each slice in its own child session on a `run/<slug>-<profile>` branch. After the final review, `grove-approve <slug> run` (from the run worktree) approves `04-run.md`; you then commit it and merge or open a PR. `resources/workflow.yaml` defines its stages: Outcome, Research, Plan, Run. Profiles in `grove.config.json` choose which agent and model plays each role, and `grove new --model <model>` (claude or opencode) sets the child session model.
+The `auto` flow is an alternative for features you want built unattended. `grove-auto` interviews the human about the outcome, then writes a research map and a decision-and-slice plan; one `grove-approve <slug> plan` unlocks `grove-run`, which builds each slice in its own child session on a `run/<slug>-<profile>` branch. After the final review, `grove-approve <slug> run` (from the run worktree) approves `04-run.md`; you then commit it and merge or open a PR. `resources/workflow.yaml` defines its stages: Outcome, Research, Plan, Run. Profiles in `grove.config.json` choose which agent and model plays each role, and `grove new --model <model>` (claude, opencode or copilot) sets the child session model.
 
 ## Development
 

@@ -1,6 +1,6 @@
 import type { PullRequest, Session, SessionKind, WorkflowStatus } from '@shared/types'
 
-const KIND_NAMES: Record<SessionKind, string> = { opencode: 'OpenCode', claude: 'Claude', terminal: 'Terminal' }
+const KIND_NAMES: Record<SessionKind, string> = { opencode: 'OpenCode', claude: 'Claude', copilot: 'Copilot', terminal: 'Terminal' }
 const pad = (n: number) => String(n).padStart(2, '0')
 
 export function makeLabel(kind: SessionKind, date: Date): string {

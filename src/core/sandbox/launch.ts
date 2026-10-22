@@ -1,6 +1,6 @@
 import path from 'node:path'
 import type { Session } from '@shared/types'
-import type { AgentKind } from '../agents/types'
+import { isSandboxKind, type AgentKind } from '../agents/types'
 import { loginShellArgv } from '../env'
 import { sandboxArgv } from './argv'
 import { loginShellCredential } from './auth'
@@ -23,7 +23,7 @@ export interface SandboxDeps {
 //
 // A kind with no agent argv to wrap (a terminal) never reaches here: core refuses it first, as
 // `no-sandbox-kind`.
-export type SandboxRefusal = 'unconfigured' | 'no-container' | 'no-image' | 'no-credential' | 'no-bridge' | 'no-service'
+export type SandboxRefusal = 'kind' | 'unconfigured' | 'no-container' | 'no-image' | 'no-credential' | 'no-bridge' | 'no-service'
 
 // What a resumed session lost when its sandbox could not be built. Deliberately not a diagnosis:
 // a resume cannot refuse — it must hand the human their session back — so it says the consequence,
@@ -60,6 +60,7 @@ export async function sandboxArgvFor(o: {
   agentArgv: string[]
   deps: SandboxDeps
 }): Promise<{ argv: string[] } | { refusal: SandboxRefusal }> {
+  if (!isSandboxKind(o.kind)) return { refusal: 'kind' } // Copilot: never wrapped, whatever was asked
   const { sandbox, sessionEnv: paths, gitCommonDir: commonDir } = o.deps
   if (!paths || !sandbox) return { refusal: 'unconfigured' } // never configured to sandbox at all
   // Before anything expensive. The bridge retry is three and a half minutes, and a missing binary

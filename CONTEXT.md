@@ -36,8 +36,8 @@ specific meaning, so humans and agents stay consistent.
 - **Card state**: the generic per-feature state computed in code (`backlog`,
   `running`, `waiting`, `needs-review`, `ready`, `done`).
 - **Session**: an app-started process in a tmux session on the `grove` socket;
-  an **OpenCode session** or a **Claude session** (both **agent sessions**,
-  running the agent's TUI) or a **terminal session** (a shell). Started either
+  an **OpenCode session**, a **Claude session** or a **Copilot session** (all
+  **agent sessions**, running the agent's TUI) or a **terminal session** (a shell). Started either
   from ⌘T, which picks a checkout and a kind in one keystroke, or from the
   **launch dialog** (⌘⇧T), which also configures prompt, worktree and sandbox.
 - **Launch dialog**: the ⌘⇧T form: agent kind, where (a checkout, one of its
@@ -45,7 +45,8 @@ specific meaning, so humans and agents stay consistent.
   label. It makes a worktree *before* the session, so a conflict is reported
   against the form rather than failing a session that was never created.
 - **Agent session id**: `agentSessionId`, the agent's own id for a session
-  (`ses_…` for OpenCode, a UUID for Claude), minted by grove before launch.
+  (`ses_…` for OpenCode, a UUID for Claude and for Copilot), minted by grove before
+  launch (Copilot: `--session-id`).
 - **Agent source**: the per-kind adapter that reports agent events (turn
   start/end, pending permission or question, writes) to core; one per agent
   kind, each with its own connect and re-sync state (ADR 0019).
@@ -71,6 +72,10 @@ specific meaning, so humans and agents stay consistent.
 - **Hook spool**: the app-owned file `<userData>/agents/claude/<id>.jsonl` that
   a Claude session's per-launch hooks append to, and the Claude source tails
   (ADR 0016).
+- **Copilot hook spool**: `<userData>/agents/copilot/<id>.jsonl`, appended by the
+  hooks of a per-launch plugin (`--plugin-dir`, never the human's
+  `~/.copilot/settings.json`) and tailed by the Copilot source: working and done,
+  permission attention and file writes (ADR 0044).
 - **Session status**: `working`, `waiting`, `idle`, `gone` (agent sessions,
   from their agent source); `running`, `gone` (terminal, from tmux).
   **Waiting** means it's the human's move: a pending permission or question,
@@ -80,7 +85,7 @@ specific meaning, so humans and agents stay consistent.
   window focused; a finished turn after it makes the session waiting.
 - **Resume**: restarting a gone agent session in a new tmux session with
   `opencode -s <id>` (the model, when launched with --model, comes back through `OPENCODE_CONFIG_CONTENT`) or
-  `claude --resume <id>`, keeping its id, label and link.
+  `claude --resume <id>` or `copilot --resume=<id>`, keeping its id, label and link.
 - **Remove**: ends a session if it is running and forgets it, with no confirmation
   (⌘W, the card's ×, or right-click on a shift-click selection). Not resumable.
   `grove kill` only ends it, leaving a gone session to resume.

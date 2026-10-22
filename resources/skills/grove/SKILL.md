@@ -1,6 +1,6 @@
 ---
 name: grove
-description: Drive other Grove sessions from a Grove terminal or agent session with the `grove` command. Use to list sessions, start another Claude, OpenCode or terminal session in any folder, send it a message, read its screen, wait for it to finish, focus or kill it.
+description: Drive other Grove sessions from a Grove terminal or agent session with the `grove` command. Use to list sessions, start another Claude, OpenCode, Copilot or terminal session in any folder, send it a message, read its screen, wait for it to finish, focus or kill it.
 ---
 
 # grove
@@ -17,7 +17,7 @@ or its exact label. An unknown or ambiguous ref is an error (exit 1).
 
 ```
 grove ls [--all] [--json]            live sessions (--all: also ended ones)
-grove new <opencode|claude|terminal> [--cwd DIR] [--prompt TEXT|-] [--label L]
+grove new <opencode|claude|copilot|terminal> [--cwd DIR] [--prompt TEXT|-] [--label L]
           [--link SLUG] [--parent REF | --child] [--wait] [--timeout S] [--json]
                                      start a background session; prints its id
 grove new claude --model ALIAS        start Claude with that model (an alias such as the ones `claude --model` takes)
@@ -37,9 +37,9 @@ directory; the session lands under the project that contains it (a new folder
 is registered as a project). `--link SLUG` pins the session to a feature of that
 project and fails, creating nothing, if there is no such feature.
 A prompt that starts with `-` must be written `--prompt=-text`.
-`--model` (claude and opencode; a usage error for terminal) starts the agent with that model.
+`--model` (claude, opencode and copilot; a usage error for terminal) starts the agent with that model.
 Claude takes the alias `claude --model` takes; OpenCode takes `provider/model` and gets it through
-its config env `OPENCODE_CONFIG_CONTENT`. Resuming the session keeps the model.
+its config env `OPENCODE_CONFIG_CONTENT`; Copilot takes the name `copilot --model` takes. Resuming the session keeps the model.
 
 `--parent REF` puts the new session in REF's group in the sidebar; `--child`
 means "in my group", taking your own `GROVE_SESSION_ID`. Without either, the new
@@ -118,11 +118,14 @@ esac
 
 ## Notes
 
-- `wait` only follows OpenCode and Claude sessions. A terminal session has no
-  status and fails with `no-status`; use `read` to look at it.
+- `wait` follows Claude, OpenCode and Copilot sessions. A terminal session has no
+  status and fails with `no-status`; use `read` to look at it. A Copilot card shows
+  working and done only (no question attention, no subagent marks), so a Copilot
+  session that asks you something in its pane looks idle: `read` it if a wait
+  seems too quiet.
 - `--wait` first gives the turn up to 30 s to start, then waits for it to end.
 - `send` types into the session even if the human is looking at it, and resumes
-  an ended OpenCode or Claude session first.
+  an ended Claude, OpenCode or Copilot session first.
 - `kill` can end any session, including your own. Kill only sessions you
   started, unless asked.
 - A new Claude session in a never-trusted folder shows its trust dialog first;

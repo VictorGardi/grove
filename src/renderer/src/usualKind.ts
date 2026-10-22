@@ -8,7 +8,7 @@ import { repoProjectIds } from './repoGroups'
 // Terminal is left out on purpose. The question is "which agent does this repo run", and a shell
 // someone opened to look at a file says nothing about it; letting terminals outvote the agents
 // would answer it with whichever kind happens to be rarer.
-const AGENTS: SessionKind[] = ['claude', 'opencode']
+const AGENTS: SessionKind[] = ['claude', 'opencode', 'copilot']
 
 // Where a session lands with no history to read: Claude Code, as before.
 export const KIND_DEFAULT: SessionKind = 'claude'

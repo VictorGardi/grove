@@ -32,7 +32,7 @@ import { gitCommonDir } from './git'
 import * as worktrees from './worktrees'
 import { kidsKey } from '@shared/groups'
 import { orphanChildren, resolveParent, withParent } from '@shared/sessionGroups'
-import type { AgentEvent, AgentKind, AgentSource } from './agents/types'
+import { isSandboxKind, type AgentEvent, type AgentKind, type AgentSource } from './agents/types'
 import { LOST_SANDBOX, sandboxArgvFor, type SandboxDeps } from './sandbox/launch'
 import { pruneContainers, removeContainer } from './sandbox/container'
 import type { AgentPaths } from './sandbox/spec'
@@ -823,6 +823,8 @@ export function createCore(opts: CoreOptions): Core {
     async sessionCreate({ projectId, cwd, kind, prompt, label, feature, parent, model, cols, rows, sandboxed }) {
       const source = kind === 'terminal' ? undefined : states.get(kind)?.source
       if (kind !== 'terminal' && !source) return { ok: false, error: 'no-source' }
+      const missing = await source?.preflight?.() // before anything is created: no dead pane, no half-made session
+      if (missing) return { ok: false, error: missing }
       let project = slices.projects.find((p) => p.id === projectId)
       let added = false
       let dir: string | null = null // the folder inside the project, null: the project path
@@ -846,7 +848,7 @@ export function createCore(opts: CoreOptions): Core {
       // A terminal has no agent argv to wrap, and stays refused. Both agents are sandboxable now: a
       // sandboxed OpenCode joins the host's shared service instead of registering its own, which
       // would evict the incumbent and take down every other OpenCode session on this machine (D6).
-      const sandboxKind: AgentKind | null = sandboxed && (kind === 'claude' || kind === 'opencode') ? kind : null
+      const sandboxKind: AgentKind | null = sandboxed && isSandboxKind(kind) ? kind : null
       if (sandboxed && !sandboxKind) return { ok: false, error: 'no-sandbox-kind' }
       const workdir = dir ?? project.path
       const agentSessionId = source ? source.mintId(now()) : null

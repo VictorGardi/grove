@@ -9,11 +9,12 @@ import type { AgentPaths } from '../core/sandbox/spec'
 import { findBin, findTmux, minimalEnv } from '../core/env'
 import { ghLookup } from '../core/pr'
 import { SpoolClaude } from '../core/claude/source'
+import { CopilotSource } from '../core/copilot/source'
 import { HttpOpenCode, serviceFilePath } from '../core/opencode/client'
 import { guardNavigation, handleArtifacts, registerArtifactScheme } from './artifacts'
 import { registerIpc } from './ipc'
 import { startCliServer } from './cliServer'
-import { installAgentSkill, installCommandLineTool, writeLauncher } from './launcher'
+import { agentSkillsDirs, installAgentSkill, installCommandLineTool, writeLauncher } from './launcher'
 import { buildMenu } from './menu'
 import { installAttachCleanup } from './attachCleanup'
 
@@ -54,10 +55,7 @@ async function installSkill(): Promise<void> {
   const home = os.homedir()
   const results = installAgentSkill({
     source: path.join(app.getAppPath(), 'resources', 'skills', 'grove'),
-    skillsDirs: [
-      path.join(home, '.claude', 'skills'), // Claude Code
-      path.join(process.env.XDG_CONFIG_HOME || path.join(home, '.config'), 'opencode', 'skills'), // OpenCode
-    ],
+    skillsDirs: agentSkillsDirs(home, process.env),
   })
   const failed = results.filter((r) => r.error)
   const opts = failed.length === 0
@@ -79,6 +77,7 @@ app.whenReady().then(async () => {
   const cliBundle = path.join(app.getAppPath(), 'out', 'main', 'cli.js')
   const launcher = writeLauncher({ binDir, execPath: process.execPath, cliPath: cliBundle, socketPath })
   const spoolDir = path.join(app.getPath('userData'), 'agents', 'claude')
+  const copilotDir = path.join(app.getPath('userData'), 'agents', 'copilot')
   const home = os.homedir()
   // Everything a sandboxed session's container binds, each at the identical path inside
   // (ADR 0035). Resolved once, here, because only the app knows the Electron paths.
@@ -112,7 +111,7 @@ app.whenReady().then(async () => {
       confPath: path.join(app.getAppPath(), 'resources', 'tmux.conf'),
       env: minimalEnv(process.env),
     }),
-    sources: [new HttpOpenCode({ serviceFile: serviceFilePath(process.env, home) }), new SpoolClaude({ dir: spoolDir })],
+    sources: [new HttpOpenCode({ serviceFile: serviceFilePath(process.env, home) }), new SpoolClaude({ dir: spoolDir }), new CopilotSource({ dir: copilotDir })],
     git: gitPath,
     prLookup: ghPath ? ghLookup(ghPath, minimalEnv(process.env)) : undefined,
   })

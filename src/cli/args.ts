@@ -17,7 +17,7 @@ export class UsageError extends Error {}
 
 export const USAGE = `usage: grove <command>
   grove ls [--all] [--json]                      list sessions
-  grove new <opencode|claude|terminal> [--cwd DIR] [--prompt TEXT|-] [--label L] [--link SLUG] [--wait] [--timeout S] [--json]
+  grove new <opencode|claude|copilot|terminal> [--cwd DIR] [--prompt TEXT|-] [--label L] [--link SLUG] [--wait] [--timeout S] [--json]
                                                  start a session in the background; prints its id
   grove new <kind> --parent REF | --child        group the new session under REF, or under this session
   grove new <kind> --worktree --branch NAME        start the session in a new git worktree of the cwd's repo
@@ -25,6 +25,7 @@ export const USAGE = `usage: grove <command>
                                                  fork REF (a branch, local or fetched) instead of the checkout's HEAD
   grove new claude --model ALIAS                 start Claude with that model (an alias such as \`claude --model\` takes)
   grove new opencode --model PROVIDER/MODEL      start OpenCode with that model (provider/model, as \`opencode models\` lists them)
+  grove new copilot --model NAME                 start Copilot with that model (a name \`copilot --model\` takes)
   grove new <kind> --sandboxed                   run the agent inside a container that cannot see the rest of this Mac
   grove send <ref> <TEXT|-> [--no-enter] [--wait] [--timeout S]
                                                  type text into a session and submit it
@@ -36,7 +37,7 @@ export const USAGE = `usage: grove <command>
   grove skill                                    print the agent skill for grove
   grove read <ref> [--lines N]                   print the last N lines (default 100) of a session's screen`
 
-const KINDS = ['opencode', 'claude', 'terminal']
+const KINDS = ['opencode', 'claude', 'copilot', 'terminal']
 
 const TIMEOUT = { timeout: { type: 'string' }, wait: { type: 'boolean' } } as const
 
@@ -76,7 +77,7 @@ export function parseCommand(argv: string[]): Command | UsageError {
       if (!!values.worktree !== !!values.branch) return new UsageError(`--worktree and --branch go together\n${USAGE}`)
       if (values.base !== undefined && !values.worktree) return new UsageError(`--base needs --worktree --branch\n${USAGE}`)
       if (values.model !== undefined && !values.model) return new UsageError(`--model takes a model\n${USAGE}`)
-      if (values.model !== undefined && kind !== 'claude' && kind !== 'opencode') return new UsageError(`--model only works with claude and opencode\n${USAGE}`)
+      if (values.model !== undefined && kind === 'terminal') return new UsageError(`--model only works with claude, opencode and copilot\n${USAGE}`)
       return {
         cmd: 'new', kind: kind as SessionKind, cwd: values.cwd, prompt: values.prompt, label: values.label, link: values.link, parent: values.parent, child: !!values.child,
         worktree: !!values.worktree, branch: values.branch, base: values.base, model: values.model, sandboxed: !!values.sandboxed, json: !!values.json, wait: !!values.wait, timeoutS,

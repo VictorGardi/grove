@@ -9,6 +9,7 @@ export class FakeAgentSource implements AgentSource {
   snapshotCalls: string[][] = []
   writes = new Map<string, string[]>() // what lastWrites() returns, by session id
   forgotten: string[] = []
+  missing: string | null = null // what preflight() refuses a create with
   private cb: ((e: AgentEvent) => void) | null = null
 
   constructor(readonly kind: AgentKind, readonly statusNeedsEvent = false) {}
@@ -19,6 +20,10 @@ export class FakeAgentSource implements AgentSource {
 
   argv(id: string, _mode: 'start' | 'resume', opts?: { prompt?: string; name?: string; model?: string }): string[] {
     return [this.kind, '-s', id, ...(opts?.model ? ['--model', opts.model] : []), ...(opts?.name ? ['--name', opts.name] : []), ...(opts?.prompt ? ['--prompt', opts.prompt] : [])]
+  }
+
+  async preflight(): Promise<string | null> {
+    return this.missing
   }
 
   start(onEvent: (e: AgentEvent) => void): void {

@@ -94,3 +94,10 @@ describe('loginShellCredential — opencode', () => {
     )
   })
 })
+describe('loginShellCredential — copilot', () => {
+  it('finds nothing to forward, and spawns nothing', async () => {
+    const { shell, asked } = fakeShell(SET('CLAUDE_CODE_OAUTH_TOKEN'))
+    expect(await loginShellCredential('copilot', { shell })).toBeNull()
+    expect(asked()).toEqual([])
+  })
+})

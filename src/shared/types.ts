@@ -1,7 +1,7 @@
 // `worktreeOf` names the project this one is a git worktree of, for nesting only; which
 // repository a checkout belongs to is derived from git (gitCommonDir), never from this.
 export interface Project { id: string; name: string; path: string; worktreeOf?: string }
-export type SessionKind = 'opencode' | 'claude' | 'terminal'
+export type SessionKind = 'opencode' | 'claude' | 'copilot' | 'terminal'
 // The last context reading of an agent session, kept so an ended session shows it dimmed; pct is always known.
 export interface ContextReading { pct: number; tokens: number | null; window: number | null }
 // A manual workflow label, independent of the live agent status. ADR-less: see
@@ -17,7 +17,7 @@ export interface Session {
   labelPinned: boolean
   tmuxName: string                 // `grove-${id}`
   cwd: string | null               // folder the session starts in; null: the project's path
-  agentSessionId: string | null    // set for agent kinds (opencode, claude)
+  agentSessionId: string | null    // set for agent kinds (opencode, claude, copilot)
   feature: string | null           // linked feature slug in this project
   linkPinned: boolean              // true once set by hand; auto-linking (child 3) leaves it alone
   action: { stage: string; actionId: string } | null // always null
@@ -25,7 +25,7 @@ export interface Session {
   startedAt: string                // ISO
   endedAt: string | null           // ISO, set when first seen gone
   lastStatus: 'running' | 'gone'
-  launchModel?: string            // the model the session was launched with (grove new --model, claude and opencode); persisted so a resume keeps it. Session.model stays the live display field
+  launchModel?: string            // the model the session was launched with (grove new --model, claude, opencode and copilot); persisted so a resume keeps it. Session.model stays the live display field
   seenAt: string | null           // ISO, when the human last saw it (on screen); persisted
   lastFocusedAt?: string | null   // ISO, when the human last focused it (any kind); persisted; orders the palette
   branch?: string | null           // live sessions: branch at the pane's current directory; never saved

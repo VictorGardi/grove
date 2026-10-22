@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import type { SessionKind } from '@shared/types'
-import { SANDBOX_DEFAULT, sandboxable, wantsSandbox } from './sandboxOptIn'
+import { SANDBOX_DEFAULT, noSandboxReason, sandboxable, wantsSandbox } from './sandboxOptIn'
 
 describe('sandboxable', () => {
   // Both agents, and not a terminal: it has no agent argv to wrap. A sandboxed OpenCode joins the
@@ -10,6 +10,7 @@ describe('sandboxable', () => {
     expect(sandboxable('claude')).toBe(true)
     expect(sandboxable('opencode')).toBe(true)
     expect(sandboxable('terminal')).toBe(false)
+    expect(sandboxable('copilot')).toBe(false) // no sandbox for Copilot in v1
   })
 })
 
@@ -23,7 +24,7 @@ describe('wantsSandbox', () => {
   // unsandboxable kind must never reach core with the flag set, or the create is refused
   // `no-sandbox` and the human loses the session over a switch they cannot see.
   it('is false for an unsandboxable kind however the toggle is left', () => {
-    for (const kind of ['terminal'] as SessionKind[]) {
+    for (const kind of ['terminal', 'copilot'] as SessionKind[]) {
       expect(wantsSandbox(kind, true)).toBe(false)
       expect(wantsSandbox(kind, false)).toBe(false)
     }
@@ -36,5 +37,12 @@ describe('SANDBOX_DEFAULT', () => {
   // asking for containment they did not request.
   it('is off', () => {
     expect(SANDBOX_DEFAULT).toBe(false)
+  })
+})
+
+describe('noSandboxReason', () => {
+  it('gives each unsandboxable kind its own short reason', () => {
+    expect(noSandboxReason('copilot')).toMatch(/Copilot/)
+    expect(noSandboxReason('terminal')).toMatch(/terminal/)
   })
 })

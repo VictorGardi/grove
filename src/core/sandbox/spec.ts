@@ -1,7 +1,7 @@
 import path from 'node:path'
 import type { Session } from '@shared/types'
 import { opencodeCliConfig, opencodeModelEnv } from '@shared/opencodeSession'
-import type { AgentKind } from '../agents/types'
+import { isSandboxKind, type AgentKind } from '../agents/types'
 
 // Every host path a sandboxed session's container binds, each at the identical path inside
 // (ADR 0035): diff, discovery, autolink and the viewer all resolve `project.path` on the host,
@@ -46,7 +46,13 @@ export interface SandboxSpec {
 
 // The whole host the sandbox sees, as read-write binds. `commonDir` arrives already resolved:
 // non-null only when it needs a volume of its own (D2).
+// Copilot has no sandbox (v1): a helper asked for one throws, so the OpenCode branch is never taken for it.
+function assertSandboxKind(kind: AgentKind): void {
+  if (!isSandboxKind(kind)) throw new Error(`no sandbox for ${kind}`)
+}
+
 export function mountsFor(kind: AgentKind, o: { cwd: string; commonDir: string | null; paths: MountPaths }): string[] {
+  assertSandboxKind(kind)
   const p = o.paths
   const bind = (host: string | undefined) => (host ? [`${host}:${host}`] : [])
   return [
@@ -66,6 +72,7 @@ export function mountsFor(kind: AgentKind, o: { cwd: string; commonDir: string |
 // every unsandboxed git run on this host afterwards, and one that could write a worktree's hooks
 // or config could make the host run something on its next checkout.
 export function readOnlyPathsFor(kind: AgentKind, o: { commonDir: string | null; paths: MountPaths }): string[] {
+  assertSandboxKind(kind)
   const p = o.paths
   const carve = (dir: string | undefined, ...files: string[]) => (dir ? files.map((f) => path.join(dir, f)) : [])
   return [
@@ -87,6 +94,7 @@ export function envFor(
   session: Session,
   o: { paths: MountPaths; serverPassword?: string },
 ): { env: Record<string, string>; passEnv: string[] } {
+  assertSandboxKind(kind)
   const p = o.paths
   const env: Record<string, string> = {
     GROVE_SESSION_ID: session.id,

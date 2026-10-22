@@ -59,4 +59,9 @@ describe('usualKind', () => {
     const sessions = [session('g', 'opencode', '2026-01-01T10:00:00Z'), session('g', 'terminal', '2026-02-01T10:00:00Z')]
     expect(usualKind(sessions, projects, 'g')).toBe('opencode')
   })
+
+  it('offers Copilot when it is what the repo was last run with', () => {
+    const sessions = [session('g', 'claude', '2026-01-01T10:00:00Z'), session('g', 'copilot', '2026-03-01T10:00:00Z')]
+    expect(usualKind(sessions, projects, 'g')).toBe('copilot')
+  })
 })

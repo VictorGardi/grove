@@ -16,6 +16,11 @@ export const sandboxable = (kind: SessionKind): boolean => kind === 'claude' || 
 // they asked to be sandboxed was not.
 export const wantsSandbox = (kind: SessionKind, sandboxed: boolean): boolean => sandboxable(kind) && sandboxed
 
+// Why a kind that cannot be sandboxed is not offered the switch: shown beside the disabled control,
+// because a refusal with no reason reads as a bug.
+export const noSandboxReason = (kind: SessionKind): string =>
+  kind === 'copilot' ? 'Copilot has no sandbox support yet' : 'A terminal session has no agent to put in a sandbox'
+
 // Off, because the human has not asked for containment. 03-design.md: "Default off";
 // 01-questions.md: "not a default for every session", "explicit per-session decision"; ADR 0033
 // rejects "making sandboxing the default" outright.
