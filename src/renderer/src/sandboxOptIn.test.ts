@@ -10,6 +10,7 @@ describe('sandboxable', () => {
     expect(sandboxable('claude')).toBe(true)
     expect(sandboxable('opencode')).toBe(true)
     expect(sandboxable('terminal')).toBe(false)
+    expect(sandboxable('copilot')).toBe(false) // no sandbox for Copilot in v1
   })
 })
 
@@ -23,7 +24,7 @@ describe('wantsSandbox', () => {
   // unsandboxable kind must never reach core with the flag set, or the create is refused
   // `no-sandbox` and the human loses the session over a switch they cannot see.
   it('is false for an unsandboxable kind however the toggle is left', () => {
-    for (const kind of ['terminal'] as SessionKind[]) {
+    for (const kind of ['terminal', 'copilot'] as SessionKind[]) {
       expect(wantsSandbox(kind, true)).toBe(false)
       expect(wantsSandbox(kind, false)).toBe(false)
     }

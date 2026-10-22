@@ -8,6 +8,8 @@ describe('errorMessage', () => {
     expect(errorMessage('no-sandbox-no-service')).toMatch(/opencode/)
     expect(errorMessage('no-sandbox-no-credential')).toMatch(/claude setup-token/)
     expect(errorMessage('no-sandbox-kind')).toMatch(/terminal/)
+    expect(errorMessage('no-sandbox-kind')).toMatch(/Copilot/)
+    expect(errorMessage('no-copilot')).toMatch(/copilot login/)
   })
 
   // The thing that was actually wrong: a missing bridge used to tell you to install Docker, and a

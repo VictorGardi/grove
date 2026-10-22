@@ -32,6 +32,10 @@ export interface SessionSnapshot {
 
 export type AgentKind = Exclude<SessionKind, 'terminal'>
 
+// The kinds that can run in a sandbox. Copilot cannot (v1): every sandbox helper refuses it rather than taking the OpenCode branch.
+export type SandboxKind = Extract<AgentKind, 'claude' | 'opencode'>
+export const isSandboxKind = (kind: SessionKind): kind is SandboxKind => kind === 'claude' || kind === 'opencode'
+
 // One per agent kind. Each source owns its kind's id format, argv and files.
 export interface AgentSource {
   kind: AgentKind
@@ -43,4 +47,5 @@ export interface AgentSource {
   lastWrites(id: string): Promise<string[]> // paths of the session's latest successful write; [] if none
   forget(id: string): void // the session was removed
   stop(): void
+  preflight?(): Promise<string | null> // an error code that refuses a create before any pane exists (the agent is missing); null: go ahead
 }

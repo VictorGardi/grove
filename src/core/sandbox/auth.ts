@@ -1,7 +1,7 @@
 import { execFile } from 'node:child_process'
 import fs from 'node:fs'
 import path from 'node:path'
-import type { AgentKind } from '../agents/types'
+import { isSandboxKind, type AgentKind } from '../agents/types'
 
 // A credential exists nowhere on disk on a Mac: Claude Code keeps its OAuth token in the Keychain,
 // which a Linux VM cannot read (D8). So grove forwards the variable instead — and has to know
@@ -24,6 +24,7 @@ export async function loginShellCredential(
   // OpenCode cannot reach the no-credential state: its Zen free tier authenticates by the client
   // being opencode (measured, `0 credentials`, no auth.json), and a host `opencode auth login`
   // lands in the auth.json grove already mounts. Nothing to probe, so nothing is spawned.
+  if (!isSandboxKind(kind)) return null // Copilot has no sandbox, so no credential to forward
   if (kind !== 'claude') return "the host's opencode auth.json, or the free tier"
 
   for (const name of CLAUDE_VARS) {

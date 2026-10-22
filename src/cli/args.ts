@@ -17,7 +17,7 @@ export class UsageError extends Error {}
 
 export const USAGE = `usage: grove <command>
   grove ls [--all] [--json]                      list sessions
-  grove new <opencode|claude|terminal> [--cwd DIR] [--prompt TEXT|-] [--label L] [--link SLUG] [--wait] [--timeout S] [--json]
+  grove new <opencode|claude|copilot|terminal> [--cwd DIR] [--prompt TEXT|-] [--label L] [--link SLUG] [--wait] [--timeout S] [--json]
                                                  start a session in the background; prints its id
   grove new <kind> --parent REF | --child        group the new session under REF, or under this session
   grove new <kind> --worktree --branch NAME        start the session in a new git worktree of the cwd's repo
@@ -36,7 +36,7 @@ export const USAGE = `usage: grove <command>
   grove skill                                    print the agent skill for grove
   grove read <ref> [--lines N]                   print the last N lines (default 100) of a session's screen`
 
-const KINDS = ['opencode', 'claude', 'terminal']
+const KINDS = ['opencode', 'claude', 'copilot', 'terminal']
 
 const TIMEOUT = { timeout: { type: 'string' }, wait: { type: 'boolean' } } as const
 

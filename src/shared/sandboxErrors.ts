@@ -12,6 +12,7 @@ export const ERROR_MESSAGES: Record<string, string> = {
   'is-parent': 'that session has children of its own, so it cannot become a child',
   'same-session': 'a session cannot be its own parent',
   'no-source': 'that agent is not available',
+  'no-copilot': 'GitHub Copilot CLI (`copilot`) was not found on your PATH — install it (`brew install --cask copilot-cli`), run `copilot login`, then try again',
   ambiguous: 'more than one session matches',
   timeout: 'timed out waiting for the session',
   'no-status': 'a terminal session has no status to wait on',
@@ -23,7 +24,7 @@ export const ERROR_MESSAGES: Record<string, string> = {
   // One entry per way a sandbox cannot be had, each naming the command that fixes *that* one. These
   // used to be a single message, which meant a missing bridge told you to install Docker. A refusal
   // is the only thing the human can act on, so it has to be specific.
-  'no-sandbox-kind': 'a terminal session has no agent to put in a sandbox — sandboxing applies to Claude Code and OpenCode sessions',
+  'no-sandbox-kind': 'a terminal session has no agent to put in a sandbox — sandboxing applies to Claude Code and OpenCode sessions, and Copilot has no sandbox yet',
   'no-sandbox-unconfigured': 'this build cannot find the sandbox image recipe, so it cannot sandbox anything',
   'no-sandbox-no-container': "Apple's `container` CLI is not installed or not on your PATH — install it, then run `container system start`",
   'no-sandbox-no-image': 'the sandbox image could not be built — run `container image ls` to see why, and check `resources/sandbox/Dockerfile`',

@@ -13,6 +13,7 @@ import { imageRef } from './sandbox/image'
 import { loadState } from './store/stateStore'
 import type { AgentSource } from './agents/types'
 import type { Core } from './core'
+import { FakeAgentSource } from './testing/fakeAgentSource'
 import { gitRepo } from './testing/gitRepo'
 import { setupCore } from './testing/setup'
 import { add as addWorktree, worktreePath } from './worktrees'
@@ -249,6 +250,47 @@ describe('sessionCreate for the CLI', () => {
     await core.commands.sessionKill({ id: res.data.id })
     await core.commands.sessionResume({ id: res.data.id })
     expect(created(t.fake).at(-1)!.cwd).toBe(fs.realpathSync(path.join(t.dir, 'sub')))
+  })
+})
+
+describe('sessionCreate copilot', () => {
+  let t: ReturnType<typeof setupCore>
+  beforeEach(() => { t = setupCore() })
+  afterEach(() => t.disposeAll())
+
+  const copilot = () => new FakeAgentSource('copilot', true)
+  const start = async (src: FakeAgentSource, over: Record<string, unknown> = {}) => {
+    const core = t.make(undefined, { sources: [t.oc, t.claude, src], ...over })
+    await core.start()
+    return core
+  }
+
+  it('starts a copilot pane and a session card', async () => {
+    const core = await start(copilot())
+    const res = await core.commands.sessionCreate({ kind: 'copilot', cwd: t.dir, cols: 120, rows: 40 })
+    if (!res.ok) throw new Error(res.error)
+    expect(res.data).toMatchObject({ kind: 'copilot', sandboxed: false })
+    expect(res.data.label).toMatch(/^Copilot · /)
+    expect(created(t.fake)[0].argv![4]).toMatch(/^exec copilot -s \S+$/) // the fake source's argv
+    expect(core.getSlices().sessions).toHaveLength(1)
+  })
+
+  it('refuses with the source error and creates no pane when copilot is missing', async () => {
+    const src = copilot()
+    src.missing = 'no-copilot'
+    const core = await start(src)
+    expect(await core.commands.sessionCreate({ kind: 'copilot', cwd: t.dir, cols: 120, rows: 40 })).toEqual({ ok: false, error: 'no-copilot' })
+    expect(created(t.fake)).toEqual([])
+    expect(core.getSlices().sessions).toEqual([])
+  })
+
+  it('is never wrapped in a sandbox, however a sandbox is asked for', async () => {
+    const container = path.join(t.dir, 'bin', 'container')
+    fs.mkdirSync(path.dirname(container), { recursive: true })
+    fs.writeFileSync(container, '#!/bin/sh\nexit 0\n', { mode: 0o755 })
+    const core = await start(copilot(), { sandbox: { container, dockerfile: path.join(t.dir, 'Dockerfile') } })
+    expect(await core.commands.sessionCreate({ kind: 'copilot', sandboxed: true, cwd: t.dir, cols: 120, rows: 40 })).toEqual({ ok: false, error: 'no-sandbox-kind' })
+    expect(created(t.fake)).toEqual([])
   })
 })
 

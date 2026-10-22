@@ -20,6 +20,7 @@ describe('parseCommand', () => {
     expect(parseCommand(['new', 'claude'])).toMatchObject({ cmd: 'new', model: undefined })
     expect(parseCommand(['new', 'opencode', '--model', 'p/m1'])).toMatchObject({ cmd: 'new', kind: 'opencode', model: 'p/m1' })
     expect(parseCommand(['new', 'terminal', '--model', 'm1'])).toBeInstanceOf(UsageError)
+    expect(parseCommand(['new', 'copilot'])).toMatchObject({ cmd: 'new', kind: 'copilot' })
     for (const kind of ['claude', 'opencode']) expect(parseCommand(['new', kind, '--model', ''])).toBeInstanceOf(UsageError)
   })
 

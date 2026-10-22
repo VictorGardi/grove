@@ -6,6 +6,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { request } from '../cli/client'
 import type { CliSession } from '@shared/cli'
 import { errorMessage } from '@shared/sandboxErrors'
+import { FakeAgentSource } from '../core/testing/fakeAgentSource'
 import { gitRepo } from '../core/testing/gitRepo'
 import { createOpenCode, createTerminal, LATER, setupCore } from '../core/testing/setup'
 import * as worktrees from '../core/worktrees'
@@ -59,6 +60,23 @@ describe('cli server', () => {
     expect(bad).toMatchObject({ ok: false, error: { code: 'no-feature' } })
     expect(core.getSlices().sessions).toHaveLength(1)
     expect(await request(socketPath, req('sessions.create', { kind: 'vim', cwd: t.dir }))).toMatchObject({ ok: false, error: { code: 'bad-params' } })
+  })
+
+  it('creates a copilot session, names a missing copilot plainly, and keeps --model for claude and opencode', async () => {
+    const fake = new FakeAgentSource('copilot', true)
+    const core = t.make(undefined, { sources: [t.oc, t.claude, fake] })
+    await core.start()
+    const socketPath = path.join(t.dir, 'grove.sock')
+    const server = await startCliServer(core, { socketPath, raise: () => {} })
+    closers.push(() => server.close())
+    const ok = await request(socketPath, req('sessions.create', { kind: 'copilot', cwd: t.dir }))
+    expect(ok.ok && ok.data).toMatchObject({ kind: 'copilot' })
+    fake.missing = 'no-copilot'
+    const missing = await request(socketPath, req('sessions.create', { kind: 'copilot', cwd: t.dir }))
+    expect(missing).toMatchObject({ ok: false, error: { code: 'no-copilot', message: errorMessage('no-copilot') } })
+    expect(core.getSlices().sessions).toHaveLength(1)
+    fake.missing = null
+    expect(await request(socketPath, req('sessions.create', { kind: 'copilot', cwd: t.dir, model: 'm' }))).toMatchObject({ ok: false, error: { code: 'bad-params' } })
   })
 
   it('carries --model to a claude session, and refuses it for other kinds before creating anything', async () => {

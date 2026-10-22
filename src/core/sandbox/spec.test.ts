@@ -235,3 +235,11 @@ describe('specFor', () => {
     expect('cliBundle' in s).toBe(false)
   })
 })
+describe('Copilot has no sandbox', () => {
+  it('every helper refuses it rather than taking the OpenCode branch', () => {
+    expect(() => mountsFor('copilot', { cwd: '/w', commonDir: null, paths: PATHS })).toThrow(/no sandbox/)
+    expect(() => readOnlyPathsFor('copilot', { commonDir: null, paths: PATHS })).toThrow(/no sandbox/)
+    expect(() => envFor('copilot', SESSION, { paths: PATHS })).toThrow(/no sandbox/)
+    expect(() => specFor({ kind: 'copilot', cwd: '/w', commonDir: null, paths: PATHS, session: SESSION, container: 'container', image: 'img' })).toThrow(/no sandbox/)
+  })
+})

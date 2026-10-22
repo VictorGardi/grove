@@ -47,7 +47,7 @@ async function waitAfter(core: Core, id: string, params: Record<string, unknown>
   return fail(id, turn.error, `${errorMessage(turn.error)} (session ${sessionId})`)
 }
 
-const KINDS: string[] = ['opencode', 'claude', 'terminal']
+const KINDS: string[] = ['opencode', 'claude', 'copilot', 'terminal']
 const optString = (v: unknown) => (typeof v === 'string' && v !== '' ? v : undefined)
 
 // The size of a session nobody is looking at; attaching resizes it.

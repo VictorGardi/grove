@@ -25,7 +25,7 @@ import { tagClass } from './ui/Tag'
 import { WorkflowStatusButton, Glyph, StatusMark } from './ui/WorkflowStatusPicker'
 import css from './Sidebar.module.css'
 
-const KIND_LABEL: Record<Session['kind'], string> = { claude: 'Claude', opencode: 'OpenCode', terminal: 'Terminal' }
+const KIND_LABEL: Record<Session['kind'], string> = { claude: 'Claude', opencode: 'OpenCode', copilot: 'Copilot', terminal: 'Terminal' }
 
 function SessionCard({ s, feature, worktree, focused, picked, compact, inGrid, gridOn, gridFull, onToggleGrid, onFocus, onOpenFeature, onToggleCompact, onLink, onRemove, onContextMenu, kids }: {
   s: Session
