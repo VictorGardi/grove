@@ -1,11 +1,11 @@
 ---
 feature: 2026-10-22-smarter-diff-view
 phase: run
-status: draft
+status: approved
 version: 1
 created: 2026-10-22
 updated: 2026-10-22
-approved_at:
+approved_at: 2026-10-22
 based_on: [03-plan.md@3]
 forced: []
 ---
