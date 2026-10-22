@@ -24,16 +24,6 @@ export function gitRunner(gitPath: string, env: NodeJS.ProcessEnv): GitRun {
   })
 }
 
-// Local branch names, for a "diff against" picker.
-export async function listBranches(git: GitRun, root: string): Promise<string[]> {
-  try {
-    const out = await git(['for-each-ref', '--format=%(refname:short)', 'refs/heads/'], root)
-    return out.split('\n').map((s) => s.trim()).filter(Boolean)
-  } catch {
-    return []
-  }
-}
-
 // Every branch a new worktree could fork: local ones, then remote-tracking ones as `origin/x`,
 // whatever is already fetched. A remote's HEAD is an alias for its default branch, not a branch.
 export async function listBases(git: GitRun, root: string): Promise<string[]> {
@@ -70,6 +60,29 @@ export async function defaultBranch(git: GitRun, root: string): Promise<string |
 export async function mergeBase(git: GitRun, root: string, ref: string, head: string): Promise<string | null> {
   try {
     return (await git(['merge-base', ref, head], root)).trim() || null
+  } catch {
+    return null
+  }
+}
+
+// The default branch as something to diff against: the local branch, else `origin/<name>`. `name` is the
+// detected branch name, `ref` null when neither exists. null when no default is detected at all.
+export async function resolveDefaultBase(git: GitRun, root: string): Promise<{ name: string; ref: string | null } | null> {
+  const name = await defaultBranch(git, root)
+  if (!name) return null
+  for (const ref of [name, `origin/${name}`]) {
+    try {
+      await git(['rev-parse', '--verify', '-q', `${ref}^{commit}`], root)
+      return { name, ref }
+    } catch { /* try the next spelling */ }
+  }
+  return { name, ref: null }
+}
+
+// The branch HEAD is on, or null when detached.
+export async function currentBranch(git: GitRun, root: string): Promise<string | null> {
+  try {
+    return (await git(['symbolic-ref', '--short', '-q', 'HEAD'], root)).trim() || null
   } catch {
     return null
   }

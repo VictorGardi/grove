@@ -1,4 +1,46 @@
-import type { CommentAnchor, DiffFile, DiffLine, SessionDiff } from '@shared/types'
+import type { CommentAnchor, DiffCompared, DiffFile, DiffLine, DiffMode, DiffPrefs, DiffTarget, SessionDiff } from '@shared/types'
+
+// The viewer target that opens a session's diff: its remembered view and branch, or the defaults (no mode, no base) for a session with none.
+export function diffTargetFor(sessionId: string, prefs: Record<string, DiffPrefs> | undefined): DiffTarget {
+  const p = prefs?.[sessionId]
+  return p ? { kind: 'diff', sessionId, mode: p.mode, base: p.base } : { kind: 'diff', sessionId }
+}
+
+// The prefs after the human picks a view and/or a branch: `current` is what the diff shows now (a missing mode reads as 'branch', a missing base as the auto-detected main).
+// An unset part keeps its current value; picking the default branch passes base null so it keeps auto-detecting.
+export function pickDiffPrefs(current: { mode?: DiffMode; base?: string | null } | undefined, pick: { mode?: DiffMode; base?: string | null }): DiffPrefs {
+  return { mode: pick.mode ?? current?.mode ?? 'branch', base: pick.base !== undefined ? pick.base : current?.base ?? null }
+}
+
+// The note above the diff when the Branch view has nothing to compare against (only the default pick, not an explicit branch); null otherwise.
+// The one place that words it.
+export function branchNote(compared: DiffCompared | null): string | null {
+  if (!compared || compared.mode !== 'branch' || compared.base) return null
+  if (compared.onDefault) return `You are on ${compared.defaultBase}; showing uncommitted changes only.`
+  if (compared.noDefault) return 'No main branch found; showing uncommitted changes only. Pick a branch to compare against.'
+  return null
+}
+
+export interface EmptyMessage { text: string; switchTo: { mode: DiffMode; label: string } }
+
+const VIEW_LABEL: Record<DiffMode, string> = { branch: 'Show branch changes', uncommitted: 'Show uncommitted only', 'last-commit': 'Show last commit' }
+const quick = (mode: DiffMode) => ({ mode, label: VIEW_LABEL[mode] })
+
+// What to say when the diff has no files, and the view the quick-switch button goes to.
+export function emptyMessage(compared: DiffCompared | null, mode: DiffMode): EmptyMessage {
+  // the Branch view is the uncommitted view when there is no branch to compare against
+  const degenerate = !!compared && !compared.base && (compared.onDefault || compared.noDefault)
+  if (mode === 'last-commit') {
+    return compared?.noOwnCommits
+      ? { text: 'No commits on this branch yet.', switchTo: quick('uncommitted') }
+      : { text: 'No commits to show.', switchTo: quick('uncommitted') }
+  }
+  if (mode === 'uncommitted' || degenerate) {
+    return { text: 'No uncommitted changes.', switchTo: quick(mode === 'uncommitted' && !degenerate ? 'branch' : 'last-commit') }
+  }
+  const target = compared?.base ?? compared?.defaultBase
+  return { text: target ? `No changes on this branch compared to ${target}.` : 'No changes on this branch.', switchTo: quick('last-commit') }
+}
 
 export function visibleFiles(d: SessionDiff, showUntracked: boolean): DiffFile[] {
   return showUntracked ? d.files : d.files.filter((f) => f.status !== 'untracked')

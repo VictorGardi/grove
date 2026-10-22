@@ -59,6 +59,7 @@ export function loadState(file: string, onBad?: (msg: string) => void): StateFil
   const known = (id: string) => sessions.some((x) => x.id === id)
   if (v?.kind === 'diff' && !known(v.sessionId)) ui.viewer = null
   else if (v && v.kind !== 'diff' && v.fromDiff && !known(v.fromDiff)) ui.viewer = { ...v, fromDiff: null }
+  if (ui.diffPrefs) ui.diffPrefs = Object.fromEntries(Object.entries(ui.diffPrefs).filter(([id]) => known(id)))
   ui.grid = pruneGrid(ui.grid ?? DEFAULT_UI.grid, known)
   return { ...s, sessions, ui }
 }

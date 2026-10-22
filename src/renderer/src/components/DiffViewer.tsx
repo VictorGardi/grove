@@ -1,12 +1,13 @@
 import type { CSSProperties, KeyboardEvent as ReactKeyboardEvent, MouseEvent as ReactMouseEvent } from 'react'
 import { Fragment, useEffect, useMemo, useRef, useState } from 'react'
-import type { Comment, DiffFile, DiffLine, SessionDiff } from '@shared/types'
+import type { Comment, DiffFile, DiffLine, DiffMode, SessionDiff } from '@shared/types'
 import {
-  fileFocusTarget, fileTreeRows, filterFiles, gaps, lineKey, pickFile, rangeAnchor, selectionRange, sideOf, splitRows, STATUS_LETTER, visibleFiles, wordMarks,
+  branchNote, emptyMessage, fileFocusTarget, fileTreeRows, filterFiles, gaps, lineKey, pickFile, rangeAnchor, selectionRange, sideOf, splitRows, STATUS_LETTER, visibleFiles, wordMarks,
   type Cell, type DraftRange, type Gap, type Seg,
 } from '../diffView'
 import { draftsByLine } from '../reviewView'
 import { useSlices } from '../stores/slices'
+import { BasePicker } from './BasePicker'
 import { CommentEditor } from './CommentEditor'
 import { ReviewMenu } from './ReviewTray'
 import { Icon } from './ui/Icon'
@@ -18,6 +19,12 @@ type Draft = DraftRange
 const STATUS: Record<DiffFile['status'], string> = {
   modified: 'Modified', added: 'Added', deleted: 'Deleted', renamed: 'Renamed', untracked: 'Untracked',
 }
+
+const VIEWS: { mode: DiffMode; label: string }[] = [
+  { mode: 'branch', label: 'Branch + uncommitted' },
+  { mode: 'uncommitted', label: 'Uncommitted only' },
+  { mode: 'last-commit', label: 'Last commit' },
+]
 
 // The session diff, one file at a time, drawn as text nodes only (D1). Expanded: a file list and
 // side-by-side lines; in the narrow panel: a file switcher and unified lines.
@@ -32,16 +39,16 @@ export function DiffViewer({ diff, sessionId, label, expanded, onOpenRendered, o
 }) {
   const d = diff && diff.sessionId === sessionId ? diff : null
   const [showUntracked, setShowUntracked] = useState(true)
-  const files = d ? visibleFiles(d, showUntracked) : []
   const setDiffBase = useSlices((x) => x.setDiffBase)
-  const base = useSlices((x) => (x.ui.viewer?.kind === 'diff' && x.ui.viewer.sessionId === sessionId ? x.ui.viewer.base ?? null : null))
-  const [refs, setRefs] = useState<{ branches: string[]; default: string | null }>({ branches: [], default: null })
-  useEffect(() => {
-    let alive = true
-    void window.api.invoke('diff:refs', { sessionId }).then((res) => { if (alive && res.ok) setRefs(res.data) })
-    return () => { alive = false }
-  }, [sessionId])
-  const baseOptions = [...refs.branches].sort((a, b) => (a === refs.default ? -1 : b === refs.default ? 1 : a.localeCompare(b)))
+  const choice = useSlices((x) => (x.ui.viewer?.kind === 'diff' && x.ui.viewer.sessionId === sessionId ? x.ui.viewer : null))
+  const mode: DiffMode = choice?.mode ?? 'branch'
+  const setDiffMode = useSlices((x) => x.setDiffMode)
+  const files = d ? visibleFiles(d, showUntracked && mode !== 'last-commit') : []
+  const base = choice?.base ?? null
+  const compared = d?.compared ?? null
+  const note = branchNote(compared)
+  const empty = emptyMessage(compared, mode)
+  const recents = useSlices((x) => (d ? x.ui.recentBases?.[d.projectId] : undefined))
   // the chosen file, per session: another session's diff starts on its first file
   const [chosen, setChosen] = useState<{ sessionId: string; path: string | null }>({ sessionId, path: null })
   const file = pickFile(files, chosen.sessionId === sessionId ? chosen.path : null)
@@ -147,17 +154,19 @@ export function DiffViewer({ diff, sessionId, label, expanded, onOpenRendered, o
     <div className={s.viewer}>
       <div className={s.header}>
         <span className={s.label} title={d?.root ?? undefined}>Diff · {label}</span>
-        <select className={s.baseSelect} aria-label="Diff against" value={base ?? ''}
-          onChange={(e) => setDiffBase(sessionId, e.target.value || null)}>
-          <option value="">Working tree</option>
-          {baseOptions.length > 0 && (
-            <optgroup label="Since branched from">
-              {baseOptions.map((b) => <option key={b} value={b}>{b}</option>)}
-            </optgroup>
-          )}
-        </select>
-        <Button variant="ghost" size="sm" icon={showUntracked ? 'eye' : 'eye-off'} aria-pressed={showUntracked}
-          onClick={() => setShowUntracked((v) => !v)}>Untracked</Button>
+        <div className={s.views} role="group" aria-label="Diff view">
+          {VIEWS.map((v) => (
+            <button key={v.mode} type="button" className={s.view} aria-pressed={mode === v.mode} onClick={() => setDiffMode(sessionId, v.mode)}>{v.label}</button>
+          ))}
+        </div>
+        {mode === 'branch' && (
+          <BasePicker sessionId={sessionId} base={base} defaultName={compared?.defaultBase ?? null} recents={recents}
+            onPick={(b) => setDiffBase(sessionId, b, 'branch')} />
+        )}
+        {mode !== 'last-commit' && (
+          <Button variant="ghost" size="sm" icon={showUntracked ? 'eye' : 'eye-off'} aria-pressed={showUntracked}
+            onClick={() => setShowUntracked((v) => !v)}>Untracked</Button>
+        )}
         {files.length > 0 && (
           <div className={s.pager}>
             <span className={s.count}>{at + 1} / {files.length}</span>
@@ -214,11 +223,17 @@ export function DiffViewer({ diff, sessionId, label, expanded, onOpenRendered, o
         )}
         <div className={s.content}>
           <div ref={body} className={s.body} data-sel="" onScroll={() => setPicked(null)} onMouseDown={onMouseDown}>
+            {d?.state === 'ok' && note && <div className={s.notice}>{note}</div>}
             {d?.truncated && <div className={s.notice}>Diff too large: later files are listed without their lines</div>}
             {!d ? <div className={s.note}>Loading…</div>
               : d.state === 'not-git' ? <div className={s.note}>Not a git repository</div>
               : d.state === 'error' ? <div className={s.note}>{d.error}</div>
-              : !file ? <div className={s.note}>No changes</div>
+              : !file ? (d.files.length > 0 ? <div className={s.note}>No changes (untracked files hidden)</div> : (
+                <div className={s.note}>
+                  {empty.text}
+                  <Button variant="ghost" size="sm" onClick={() => setDiffMode(sessionId, empty.switchTo.mode)}>{empty.switchTo.label}</Button>
+                </div>
+              ))
               : (
                 <FileView key={file.path} file={file} sessionId={sessionId} split={expanded} drafts={draftsByLine(comments, file.path)}
                   writing={writing?.path === file.path ? writing : null} error={error}

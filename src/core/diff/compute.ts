@@ -2,8 +2,8 @@ import { createHash } from 'node:crypto'
 import fs from 'node:fs'
 import path from 'node:path'
 import { isViewable } from '@shared/artifactUrl'
-import type { DiffFile, Project, SessionDiff } from '@shared/types'
-import { GitError, mergeBase, type GitRun } from './git'
+import type { DiffCompared, DiffFile, DiffMode, Project, SessionDiff } from '@shared/types'
+import { currentBranch, GitError, mergeBase, resolveDefaultBase, type GitRun } from './git'
 import { parseUnifiedDiff, untrackedFile } from './parse'
 
 export const EMPTY_TREE = '4b825dc642cb6eb9a060e54bf8d69288fbee4904'
@@ -14,14 +14,20 @@ const MAX_LINES = 20_000 // once passed, later files are listed without lines
 
 const sha1 = (s: string) => createHash('sha1').update(s).digest('hex')
 
-// The session's repo diff, plus untracked files. Against HEAD by default (working tree changes);
-// given `base`, against where it and HEAD forked, so committed-but-unpushed work still shows (D-base).
+export const noCompared = (mode: DiffMode = 'branch'): DiffCompared =>
+  ({ mode, base: null, defaultBase: null, onDefault: false, noDefault: false, noOwnCommits: false })
+
+// The session's repo diff, plus untracked files. In 'branch' mode (the default) against where HEAD forked from
+// `base`, else from the detected main branch, so committed-but-unpushed work shows (D1, D2); on the main branch,
+// or with none found, against HEAD. 'uncommitted': against HEAD (an explicit `base` is ignored). 'last-commit': HEAD
+// against its parent (the empty tree for a root commit), tracked files only, nothing when the branch has no commits of its own.
 // `key` fingerprints git's raw output and the base actually used: equal keys, equal diff.
-export async function computeDiff(o: { sessionId: string; dir: string; project: Project; git: GitRun | null; base?: string | null }):
+export async function computeDiff(o: { sessionId: string; dir: string; project: Project; git: GitRun | null; mode?: DiffMode; base?: string | null }):
   Promise<{ key: string; diff: SessionDiff }> {
-  const empty: SessionDiff = { sessionId: o.sessionId, projectId: o.project.id, state: 'ok', error: null, root: null, files: [], truncated: false, base: null }
+  const mode = o.mode ?? 'branch'
+  const empty: SessionDiff = { sessionId: o.sessionId, projectId: o.project.id, state: 'ok', error: null, root: null, files: [], truncated: false, base: null, compared: noCompared(mode) }
   const { git } = o
-  const wantBase = o.base ?? null
+  const explicitBase = mode === 'branch' ? o.base ?? null : null
   try {
     if (!git) throw new Error('git not found')
     let root: string
@@ -32,16 +38,40 @@ export async function computeDiff(o: { sessionId: string; dir: string; project: 
       throw e
     }
     const head = await git(['rev-parse', '--verify', '-q', 'HEAD'], root).then(() => 'HEAD', () => EMPTY_TREE) // no commits yet
+    const compared = noCompared(mode)
+    let target: string | null = explicitBase // the ref to fork from
+    if (mode === 'branch' || mode === 'last-commit') {
+      const def = await resolveDefaultBase(git, root)
+      const branch = await currentBranch(git, root)
+      compared.defaultBase = def?.name ?? null
+      compared.noDefault = !def || !def.ref || !branch || head !== 'HEAD' // detached or unborn HEAD: nothing to fork from
+      compared.onDefault = !!def && branch === def.name
+      if (!explicitBase && def?.ref && !compared.onDefault && !compared.noDefault) target = def.ref
+      compared.base = explicitBase ?? (target ? def!.name : null)
+      if (mode === 'last-commit') target = !compared.onDefault && !compared.noDefault ? def!.ref : null // only to tell whether the branch has commits of its own
+    }
     // merge-base needs a real HEAD commit; with none yet (or an unrelated history) diff the base ref's tip directly
-    const against = wantBase ? (head === 'HEAD' ? await mergeBase(git, root, wantBase, head) : null) ?? wantBase : head
+    const fork = target ? (head === 'HEAD' ? await mergeBase(git, root, target, head) : null) : null
+    const against = target ? fork ?? target : head
     const scope = projectScope(root, o.project.path) // a project can be a subtree of its repo (e.g. a monorepo package): scope the diff to it
-    const raw = await git(['diff', against, '-M', '--no-color', '--no-ext-diff', '--no-relative', '--src-prefix=a/', '--dst-prefix=b/', ...scope], root)
+    if (target && !compared.onDefault && head === 'HEAD') compared.noOwnCommits = fork !== null && fork === (await git(['rev-parse', 'HEAD'], root)).trim()
+    const diffArgs = ['-M', '--no-color', '--no-ext-diff', '--no-relative', '--src-prefix=a/', '--dst-prefix=b/', ...scope]
+    if (mode === 'last-commit') {
+      compared.base = null
+      const parent = head === 'HEAD' && !compared.noOwnCommits ? await git(['rev-parse', '--verify', '-q', 'HEAD~1'], root).then(() => 'HEAD~1', () => EMPTY_TREE) : null
+      const lastRaw = parent ? await git(['diff', parent, 'HEAD', ...diffArgs], root) : ''
+      const files = parseUnifiedDiff(lastRaw, MAX_FILE_BYTES)
+      setRendered(files, root, o.project.path)
+      const key = sha1([mode, JSON.stringify(compared), lastRaw].join('\0'))
+      return { key, diff: { ...empty, root, files, truncated: capLines(files), base: null, compared } }
+    }
+    const raw = await git(['diff', against, ...diffArgs], root)
     const names = (await git(['ls-files', '--others', '--exclude-standard', '-z', ...scope], root)).split('\0').filter(Boolean)
     const untracked = await readUntracked(root, names)
-    const key = sha1([wantBase ?? '', against, raw, ...names, ...untracked.stamps].join('\0'))
+    const key = sha1([mode, JSON.stringify(compared), against, raw, ...names, ...untracked.stamps].join('\0'))
     const files = [...parseUnifiedDiff(raw, MAX_FILE_BYTES), ...untracked.files]
     setRendered(files, root, o.project.path)
-    return { key, diff: { ...empty, root, files, truncated: capLines(files), base: wantBase } }
+    return { key, diff: { ...empty, root, files, truncated: capLines(files), base: compared.base, compared } }
   } catch (e) {
     const error = (e as Error).message
     return { key: `error:${error}`, diff: { ...empty, state: 'error', error } }

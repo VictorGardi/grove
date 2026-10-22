@@ -14,8 +14,8 @@ import { terminalTheme } from '@shared/theme'
 import { listFolders, readFolder, resolveRoot, type FolderSnapshot } from './discovery/folder'
 import { chokidarWatchers, type Closer, type Watchers } from './discovery/watcher'
 import { loginShellArgv, minimalEnv } from './env'
-import { computeDiff } from './diff/compute'
-import { defaultBranch, gitRunner, listBases, listBranches, type GitRun } from './diff/git'
+import { computeDiff, noCompared } from './diff/compute'
+import { currentBranch, defaultBranch, gitRunner, listBases, type GitRun } from './diff/git'
 import { createDiffWatch } from './diff/watch'
 import { reanchorDiff, reanchorFile } from './comments/anchor'
 import { slugFor } from './autolink'
@@ -106,7 +106,7 @@ export interface Commands {
   commentUpdate(a: { id: string; body: string }): Promise<Result<Comment>>
   commentDelete(a: { id: string }): Promise<Result<{ id: string }>>
   diffLines(a: { sessionId: string; path: string; from: number; to: number }): Promise<Result<string[]>> // lines of a changed file in the open diff, 1-based inclusive
-  diffRefs(a: { sessionId: string }): Promise<Result<{ branches: string[]; default: string | null }>> // branches to offer as a diff base
+  diffRefs(a: { sessionId: string }): Promise<Result<{ branches: string[]; current: string | null; default: string | null }>> // every local and fetched remote branch to search as a diff base, the branch HEAD is on, the detected default
   reviewSend(a: { sessionId: string }): Promise<Result<{ sent: number }>> // the session's drafts as one message; none: 'empty'
   sendToSession(a: { id: string; text: string; submit?: boolean }): Promise<Result<{ id: string }>>
   sessionRead(a: { id: string; lines: number }): Promise<Result<{ text: string }>> // the pane's last lines; empty when it is gone
@@ -480,12 +480,12 @@ export function createCore(opts: CoreOptions): Core {
     const project = s && slices.projects.find((p) => p.id === s.projectId)
     if (!s || !project) {
       const error = 'session not found'
-      return { key: `error:${error}`, diff: { sessionId: id, projectId: s?.projectId ?? '', state: 'error', error, root: null, files: [], truncated: false, base: null } }
+      return { key: `error:${error}`, diff: { sessionId: id, projectId: s?.projectId ?? '', state: 'error', error, root: null, files: [], truncated: false, base: null, compared: noCompared() } }
     }
     const dir = s.lastStatus === 'running' ? lastCwds.get(s.tmuxName) ?? project.path : project.path
     const v = slices.ui.viewer
-    const base = v?.kind === 'diff' && v.sessionId === id ? v.base ?? null : null
-    return computeDiff({ sessionId: id, dir, project, git, base })
+    const target = v?.kind === 'diff' && v.sessionId === id ? v : null
+    return computeDiff({ sessionId: id, dir, project, git, mode: target?.mode, base: target?.base ?? null })
   }
 
   const diffWatch = createDiffWatch(runDiff, (d) => {
@@ -498,14 +498,14 @@ export function createCore(opts: CoreOptions): Core {
 
   // Computed only while the viewer shows a diff (D4). DiffWatch dedupes by session id alone, so a
   // base change on the same session needs an explicit poke to retarget the recompute.
-  let lastDiffBase: string | null = null
+  let lastDiffChoice = ''
   function syncDiff(): void {
     const v = slices.ui.viewer
     const id = v?.kind === 'diff' ? v.sessionId : null
-    const base = v?.kind === 'diff' ? v.base ?? null : null
+    const choice = v?.kind === 'diff' ? `${v.mode ?? 'branch'}\0${v.base ?? ''}` : ''
     diffWatch.target(id)
-    if (id && base !== lastDiffBase) diffWatch.poke()
-    lastDiffBase = base
+    if (id && choice !== lastDiffChoice) diffWatch.poke()
+    lastDiffChoice = choice
   }
 
   // The session the human is looking at: focused window, session focused (the focuses are exclusive).
@@ -701,8 +701,8 @@ export function createCore(opts: CoreOptions): Core {
     for (const s of gone) if (s.kind !== 'terminal' && s.agentSessionId) states.get(s.kind)?.source.forget(s.agentSessionId)
   }
 
-  // `ui` remembers a project in three places: the focused page, its collapsed group keys, the
-  // hidden list. None may outlive it — a removed project, a dead worktree pruned at start and a
+  // `ui` remembers a project in four places: the focused page, its collapsed group keys, the
+  // hidden list, the branches recently picked as a diff base. None may outlive it — a removed project, a dead worktree pruned at start and a
   // project dropped from config.json while grove was closed all leave the same stale keys, and
   // nothing else would ever clear them. Called on removal and once at start.
   function forgetProjectUi(absent: (id: string) => boolean): void {
@@ -713,11 +713,14 @@ export function createCore(opts: CoreOptions): Core {
       return id === '' || !absent(id)
     })
     const hiddenProjects = (ui.hiddenProjects ?? []).filter((id) => !absent(id))
+    const recentEntries = Object.entries(ui.recentBases ?? {})
+    const recentBases = Object.fromEntries(recentEntries.filter(([id]) => !absent(id)))
     // The filters only ever remove, so equal lengths mean nothing was there to forget.
     if (focusedProject === ui.focusedProject
       && collapsed.length === ui.collapsed.length
-      && hiddenProjects.length === (ui.hiddenProjects ?? []).length) return
-    set('ui', { ...ui, focusedProject, collapsed, hiddenProjects })
+      && hiddenProjects.length === (ui.hiddenProjects ?? []).length
+      && Object.keys(recentBases).length === recentEntries.length) return
+    set('ui', { ...ui, focusedProject, collapsed, hiddenProjects, ...(ui.recentBases ? { recentBases } : {}) })
   }
 
   // Forget a project and everything that pointed at it. The checkout on disk is never touched:
@@ -1042,14 +1045,14 @@ export function createCore(opts: CoreOptions): Core {
       const s = findSession(sessionId)
       const project = s && slices.projects.find((p) => p.id === s.projectId)
       if (!s || !project) return { ok: false, error: 'not-found' }
-      if (!git) return { ok: true, data: { branches: [], default: null } }
+      if (!git) return { ok: true, data: { branches: [], current: null, default: null } }
       const dir = s.lastStatus === 'running' ? lastCwds.get(s.tmuxName) ?? project.path : project.path
       try {
         const root = (await git(['rev-parse', '--show-toplevel'], dir)).trim()
-        const [branches, def] = await Promise.all([listBranches(git, root), defaultBranch(git, root)])
-        return { ok: true, data: { branches, default: def } }
+        const [branches, current, def] = await Promise.all([listBases(git, root), currentBranch(git, root), defaultBranch(git, root)])
+        return { ok: true, data: { branches, current, default: def } }
       } catch {
-        return { ok: true, data: { branches: [], default: null } } // not a repo, or git failed: no bases to offer
+        return { ok: true, data: { branches: [], current: null, default: null } } // not a repo, or git failed: no bases to offer
       }
     },
 

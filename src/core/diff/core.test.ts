@@ -119,25 +119,45 @@ describe('core session diff', () => {
     repo.write('a.txt', 'one\ncommitted\n')
     repo.commit('on feature')
     await core.commands.uiSet({ viewer: { kind: 'diff', sessionId: session.id } })
-    await vi.waitFor(() => expect(core.getSlices().diff?.state).toBe('ok'))
-    expect(core.getSlices().diff?.files).toEqual([]) // fully committed: nothing against plain HEAD
-
-    await core.commands.uiSet({ viewer: { kind: 'diff', sessionId: session.id, base: 'main' } })
+    // no choice made: the branch's committed work shows against the detected main branch
     await vi.waitFor(() => expect(core.getSlices().diff?.files).toHaveLength(1))
-    expect(core.getSlices().diff).toMatchObject({ base: 'main' })
+    expect(core.getSlices().diff).toMatchObject({ base: 'main', compared: { mode: 'branch', defaultBase: 'main' } })
 
-    // switching back to the working tree drops it again
-    await core.commands.uiSet({ viewer: { kind: 'diff', sessionId: session.id, base: null } })
+    // Uncommitted only drops it again
+    await core.commands.uiSet({ viewer: { kind: 'diff', sessionId: session.id, mode: 'uncommitted' } })
     await vi.waitFor(() => expect(core.getSlices().diff?.files).toEqual([]))
+    expect(core.getSlices().diff).toMatchObject({ compared: { mode: 'uncommitted' } })
+  })
+})
+
+describe('core diff against a remote-only branch', () => {
+  it('diffs from the merge-base with origin/<branch>, which has no local branch', async () => {
+    const { core, repo, session } = await setup()
+    repo.git('update-ref', 'refs/remotes/origin/release', 'main')
+    repo.git('checkout', '-q', '-b', 'feature')
+    repo.write('b.txt', 'new\n')
+    repo.commit('on feature')
+    await core.commands.uiSet({ viewer: { kind: 'diff', sessionId: session.id, mode: 'branch', base: 'origin/release' } })
+    await vi.waitFor(() => expect(core.getSlices().diff?.files.map((f) => f.path)).toEqual(['b.txt']))
+    expect(core.getSlices().diff).toMatchObject({ state: 'ok', base: 'origin/release', compared: { mode: 'branch', base: 'origin/release' } })
   })
 })
 
 describe('core diffRefs', () => {
-  it('lists local branches and the detected default branch', async () => {
+  it('lists local branches, the branch HEAD is on and the detected default branch', async () => {
     const { core, repo, session } = await setup()
     repo.git('branch', 'feature')
     const res = await core.commands.diffRefs({ sessionId: session.id })
-    expect(res).toEqual({ ok: true, data: { branches: ['feature', 'main'], default: 'main' } })
+    expect(res).toEqual({ ok: true, data: { branches: ['feature', 'main'], current: 'main', default: 'main' } })
+  })
+
+  it('offers fetched remote branches too, without the remote HEAD alias', async () => {
+    const { core, repo, session } = await setup()
+    repo.git('update-ref', 'refs/remotes/origin/main', 'main')
+    repo.git('update-ref', 'refs/remotes/origin/release', 'main')
+    repo.git('symbolic-ref', 'refs/remotes/origin/HEAD', 'refs/remotes/origin/main')
+    const res = await core.commands.diffRefs({ sessionId: session.id })
+    expect(res).toEqual({ ok: true, data: { branches: ['main', 'origin/main', 'origin/release'], current: 'main', default: 'main' } })
   })
 
   it('fails for an unknown session', async () => {
@@ -150,7 +170,7 @@ describe('core diffRefs', () => {
     const core = s.make()
     await core.start()
     const session = await createTerminal(core)
-    expect(await core.commands.diffRefs({ sessionId: session.id })).toEqual({ ok: true, data: { branches: [], default: null } })
+    expect(await core.commands.diffRefs({ sessionId: session.id })).toEqual({ ok: true, data: { branches: [], current: null, default: null } })
   })
 })
 
