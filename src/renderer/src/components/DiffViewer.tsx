@@ -19,6 +19,8 @@ const STATUS: Record<DiffFile['status'], string> = {
   modified: 'Modified', added: 'Added', deleted: 'Deleted', renamed: 'Renamed', untracked: 'Untracked',
 }
 
+const UNCOMMITTED = '\0uncommitted' // the select's value for the Uncommitted only view; never a branch name
+
 // The session diff, one file at a time, drawn as text nodes only (D1). Expanded: a file list and
 // side-by-side lines; in the narrow panel: a file switcher and unified lines.
 export function DiffViewer({ diff, sessionId, label, expanded, onOpenRendered, onToggleExpanded, onClose }: {
@@ -34,14 +36,17 @@ export function DiffViewer({ diff, sessionId, label, expanded, onOpenRendered, o
   const [showUntracked, setShowUntracked] = useState(true)
   const files = d ? visibleFiles(d, showUntracked) : []
   const setDiffBase = useSlices((x) => x.setDiffBase)
-  const base = useSlices((x) => (x.ui.viewer?.kind === 'diff' && x.ui.viewer.sessionId === sessionId ? x.ui.viewer.base ?? null : null))
+  const choice = useSlices((x) => (x.ui.viewer?.kind === 'diff' && x.ui.viewer.sessionId === sessionId ? x.ui.viewer : null))
+  const uncommitted = choice?.mode === 'uncommitted'
+  const base = choice?.base ?? null
+  const compared = d?.compared ?? null
   const [refs, setRefs] = useState<{ branches: string[]; default: string | null }>({ branches: [], default: null })
   useEffect(() => {
     let alive = true
     void window.api.invoke('diff:refs', { sessionId }).then((res) => { if (alive && res.ok) setRefs(res.data) })
     return () => { alive = false }
   }, [sessionId])
-  const baseOptions = [...refs.branches].sort((a, b) => (a === refs.default ? -1 : b === refs.default ? 1 : a.localeCompare(b)))
+  const baseOptions = refs.branches.filter((b) => b !== refs.default).sort((a, b) => a.localeCompare(b))
   // the chosen file, per session: another session's diff starts on its first file
   const [chosen, setChosen] = useState<{ sessionId: string; path: string | null }>({ sessionId, path: null })
   const file = pickFile(files, chosen.sessionId === sessionId ? chosen.path : null)
@@ -147,9 +152,10 @@ export function DiffViewer({ diff, sessionId, label, expanded, onOpenRendered, o
     <div className={s.viewer}>
       <div className={s.header}>
         <span className={s.label} title={d?.root ?? undefined}>Diff · {label}</span>
-        <select className={s.baseSelect} aria-label="Diff against" value={base ?? ''}
-          onChange={(e) => setDiffBase(sessionId, e.target.value || null)}>
-          <option value="">Working tree</option>
+        <select className={s.baseSelect} aria-label="Diff against" value={uncommitted ? UNCOMMITTED : base && base !== (refs.default ?? compared?.defaultBase) ? base : ''}
+          onChange={(e) => e.target.value === UNCOMMITTED ? setDiffBase(sessionId, null, 'uncommitted') : setDiffBase(sessionId, e.target.value || null, 'branch')}>
+          <option value="">{refs.default ?? compared?.defaultBase ? `${refs.default ?? compared?.defaultBase} (default)` : 'Default branch'}</option>
+          <option value={UNCOMMITTED}>Uncommitted only</option>
           {baseOptions.length > 0 && (
             <optgroup label="Since branched from">
               {baseOptions.map((b) => <option key={b} value={b}>{b}</option>)}
@@ -214,6 +220,12 @@ export function DiffViewer({ diff, sessionId, label, expanded, onOpenRendered, o
         )}
         <div className={s.content}>
           <div ref={body} className={s.body} data-sel="" onScroll={() => setPicked(null)} onMouseDown={onMouseDown}>
+            {d?.state === 'ok' && compared?.mode === 'branch' && !base && compared.onDefault && (
+              <div className={s.notice}>You are on {compared.defaultBase}; showing uncommitted changes only</div>
+            )}
+            {d?.state === 'ok' && compared?.mode === 'branch' && !base && compared.noDefault && (
+              <div className={s.notice}>No main branch found; showing uncommitted changes only. Pick a branch to compare against.</div>
+            )}
             {d?.truncated && <div className={s.notice}>Diff too large: later files are listed without their lines</div>}
             {!d ? <div className={s.note}>Loading…</div>
               : d.state === 'not-git' ? <div className={s.note}>Not a git repository</div>

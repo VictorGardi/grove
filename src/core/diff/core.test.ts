@@ -119,16 +119,14 @@ describe('core session diff', () => {
     repo.write('a.txt', 'one\ncommitted\n')
     repo.commit('on feature')
     await core.commands.uiSet({ viewer: { kind: 'diff', sessionId: session.id } })
-    await vi.waitFor(() => expect(core.getSlices().diff?.state).toBe('ok'))
-    expect(core.getSlices().diff?.files).toEqual([]) // fully committed: nothing against plain HEAD
-
-    await core.commands.uiSet({ viewer: { kind: 'diff', sessionId: session.id, base: 'main' } })
+    // no choice made: the branch's committed work shows against the detected main branch
     await vi.waitFor(() => expect(core.getSlices().diff?.files).toHaveLength(1))
-    expect(core.getSlices().diff).toMatchObject({ base: 'main' })
+    expect(core.getSlices().diff).toMatchObject({ base: 'main', compared: { mode: 'branch', defaultBase: 'main' } })
 
-    // switching back to the working tree drops it again
-    await core.commands.uiSet({ viewer: { kind: 'diff', sessionId: session.id, base: null } })
+    // Uncommitted only drops it again
+    await core.commands.uiSet({ viewer: { kind: 'diff', sessionId: session.id, mode: 'uncommitted' } })
     await vi.waitFor(() => expect(core.getSlices().diff?.files).toEqual([]))
+    expect(core.getSlices().diff).toMatchObject({ compared: { mode: 'uncommitted' } })
   })
 })
 

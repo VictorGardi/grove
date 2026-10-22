@@ -6,7 +6,7 @@ import { fileFocusTarget, fileTreeRows, filterFiles, gaps, lineKey, pickFile, ra
 const file = (path: string, status: DiffFile['status']): DiffFile =>
   ({ path, oldPath: null, status, binary: false, additions: 0, deletions: 0, hunks: [], truncated: false, rendered: null })
 const diff: SessionDiff = {
-  sessionId: 's', projectId: 'p', state: 'ok', error: null, root: '/r', truncated: false, base: null,
+  sessionId: 's', projectId: 'p', state: 'ok', error: null, root: '/r', truncated: false, base: null, compared: { mode: 'branch', base: null, defaultBase: null, onDefault: false, noDefault: false, noOwnCommits: false },
   files: [file('a.ts', 'modified'), file('new.ts', 'untracked'), file('b.ts', 'added')],
 }
 

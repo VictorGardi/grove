@@ -44,7 +44,10 @@ export interface Session {
 export interface FileTarget { kind: 'file'; projectId: string; path: string; hash: string | null; fromDiff: string | null }
 export interface PullRequest { number: number; state: 'open' | 'merged' | 'closed'; draft: boolean; url: string }
 
-export interface DiffTarget { kind: 'diff'; sessionId: string; base?: string | null } // base: a branch to diff since (merge-base); null/unset: working tree vs HEAD
+export type DiffMode = 'branch' | 'uncommitted' | 'last-commit'
+// mode: unset means 'branch'. base: a branch to diff since (merge-base); null/unset in 'branch' mode: the auto-detected main branch.
+// base is ignored in 'uncommitted' and 'last-commit'.
+export interface DiffTarget { kind: 'diff'; sessionId: string; mode?: DiffMode; base?: string | null }
 export type DocTarget = FileTarget // what the iframe viewer shows; hash: fragment without '#'
 export type ViewerTarget = DocTarget | DiffTarget // fromDiff: the session the file was opened from ("← Diff")
 // A session's git diff plus untracked files, parsed in core (ADR 0021).
@@ -57,6 +60,16 @@ export interface SessionDiff {
   files: DiffFile[]
   truncated: boolean   // total over the line cap
   base: string | null  // the branch actually diffed since (merge-base); null: working tree vs HEAD
+  compared: DiffCompared
+}
+// What the diff was compared against, resolved by core.
+export interface DiffCompared {
+  mode: DiffMode
+  base: string | null        // as `base`
+  defaultBase: string | null // the detected main branch name; null with noDefault
+  onDefault: boolean         // HEAD is the default branch
+  noDefault: boolean         // no default branch found (none detected, no ref for it, or a detached HEAD)
+  noOwnCommits: boolean      // HEAD is the merge-base with the compared branch; false when onDefault
 }
 export interface DiffFile {
   path: string           // POSIX, relative to root; the new path for renames

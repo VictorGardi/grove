@@ -192,7 +192,7 @@ describe('computeDiff', () => {
     r.git('checkout', '-b', 'feature')
     r.write('a.txt', 'one\ntwo\n')
     r.commit('on feature') // fully committed: a plain HEAD diff shows nothing
-    const plain = await compute(r.dir)
+    const plain = await compute(r.dir, { mode: 'uncommitted' })
     expect(plain.diff.files).toEqual([])
     const { diff } = await compute(r.dir, { base: 'main' })
     expect(diff.base).toBe('main')
@@ -233,8 +233,107 @@ describe('computeDiff', () => {
     r.git('checkout', '-b', 'feature')
     r.write('a.txt', 'one\ntwo\n')
     r.commit()
-    const plain = await compute(r.dir)
+    const plain = await compute(r.dir, { mode: 'uncommitted' })
     const sinceMain = await compute(r.dir, { base: 'main' })
     expect(sinceMain.key).not.toBe(plain.key)
+  })
+})
+
+describe('computeDiff default branch view', () => {
+  const featureRepo = () => {
+    const r = gitRepo()
+    r.write('a.txt', 'one\n')
+    r.commit()
+    r.git('checkout', '-q', '-b', 'feature')
+    r.write('a.txt', 'one\ntwo\n')
+    r.commit('on feature')
+    return r
+  }
+
+  it('shows the branch work against the detected main branch with no base given', async () => {
+    const r = featureRepo()
+    r.write('new.txt', 'x\n')
+    const { diff } = await compute(r.dir)
+    expect(diff.files.map((f) => f.path)).toEqual(['a.txt', 'new.txt'])
+    expect(diff.base).toBe('main')
+    expect(diff.compared).toEqual({ mode: 'branch', base: 'main', defaultBase: 'main', onDefault: false, noDefault: false, noOwnCommits: false })
+  })
+
+  it('reports noOwnCommits when the branch has nothing past main', async () => {
+    const r = gitRepo()
+    r.write('a.txt', 'one\n')
+    r.commit()
+    r.git('checkout', '-q', '-b', 'feature')
+    const { diff } = await compute(r.dir)
+    expect(diff.files).toEqual([])
+    expect(diff.compared).toMatchObject({ base: 'main', onDefault: false, noOwnCommits: true })
+  })
+
+  it('on the main branch shows only uncommitted changes and says so', async () => {
+    const r = gitRepo()
+    r.write('a.txt', 'one\n')
+    r.commit()
+    r.write('a.txt', 'one\nedit\n')
+    const { diff } = await compute(r.dir)
+    expect(diff.files.map((f) => f.path)).toEqual(['a.txt'])
+    expect(diff.compared).toMatchObject({ mode: 'branch', base: null, defaultBase: 'main', onDefault: true, noDefault: false, noOwnCommits: false })
+  })
+
+  it('uses origin/<name> when the default branch has no local ref', async () => {
+    const r = featureRepo()
+    r.git('update-ref', 'refs/remotes/origin/main', 'main')
+    r.git('symbolic-ref', 'refs/remotes/origin/HEAD', 'refs/remotes/origin/main')
+    r.git('branch', '-q', '-D', 'main')
+    const { diff } = await compute(r.dir)
+    expect(diff.state).toBe('ok')
+    expect(diff.files.map((f) => f.path)).toEqual(['a.txt'])
+    expect(diff.compared).toMatchObject({ defaultBase: 'main', noDefault: false })
+  })
+
+  it('reports noDefault, not an error, with no main or master', async () => {
+    const r = gitRepo()
+    r.write('a.txt', 'one\n')
+    r.commit()
+    r.git('branch', '-q', '-m', 'trunk')
+    r.write('a.txt', 'two\n')
+    const { diff } = await compute(r.dir)
+    expect(diff.state).toBe('ok')
+    expect(diff.files.map((f) => f.path)).toEqual(['a.txt'])
+    expect(diff.compared).toMatchObject({ base: null, defaultBase: null, noDefault: true })
+  })
+
+  it('reports noDefault when origin/HEAD names a branch with no ref', async () => {
+    const r = featureRepo()
+    r.git('update-ref', 'refs/remotes/origin/gone', 'main')
+    r.git('symbolic-ref', 'refs/remotes/origin/HEAD', 'refs/remotes/origin/gone')
+    r.git('update-ref', '-d', 'refs/remotes/origin/gone')
+    const { diff } = await compute(r.dir)
+    expect(diff.state).toBe('ok')
+    expect(diff.compared).toMatchObject({ noDefault: true, base: null })
+  })
+
+  it('reports noDefault on a detached HEAD', async () => {
+    const r = featureRepo()
+    r.git('checkout', '-q', '--detach')
+    const { diff } = await compute(r.dir)
+    expect(diff.state).toBe('ok')
+    expect(diff.compared).toMatchObject({ noDefault: true, onDefault: false, base: null })
+  })
+
+  it('uncommitted mode ignores a base and the default', async () => {
+    const r = featureRepo()
+    const { diff } = await compute(r.dir, { mode: 'uncommitted', base: 'main' })
+    expect(diff.files).toEqual([])
+    expect(diff.compared).toMatchObject({ mode: 'uncommitted', base: null })
+  })
+
+  it('an explicit base overrides the main-branch fallback', async () => {
+    const r = featureRepo()
+    r.git('checkout', '-q', 'main')
+    r.git('checkout', '-q', '-b', 'other', 'feature')
+    r.git('checkout', '-q', 'main')
+    r.git('merge', '-q', '--ff-only', 'feature')
+    const { diff } = await compute(r.dir, { base: 'other' })
+    expect(diff.compared).toMatchObject({ base: 'other', onDefault: true })
   })
 })

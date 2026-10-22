@@ -14,7 +14,7 @@ import { terminalTheme } from '@shared/theme'
 import { listFolders, readFolder, resolveRoot, type FolderSnapshot } from './discovery/folder'
 import { chokidarWatchers, type Closer, type Watchers } from './discovery/watcher'
 import { loginShellArgv, minimalEnv } from './env'
-import { computeDiff } from './diff/compute'
+import { computeDiff, noCompared } from './diff/compute'
 import { defaultBranch, gitRunner, listBases, listBranches, type GitRun } from './diff/git'
 import { createDiffWatch } from './diff/watch'
 import { reanchorDiff, reanchorFile } from './comments/anchor'
@@ -480,12 +480,12 @@ export function createCore(opts: CoreOptions): Core {
     const project = s && slices.projects.find((p) => p.id === s.projectId)
     if (!s || !project) {
       const error = 'session not found'
-      return { key: `error:${error}`, diff: { sessionId: id, projectId: s?.projectId ?? '', state: 'error', error, root: null, files: [], truncated: false, base: null } }
+      return { key: `error:${error}`, diff: { sessionId: id, projectId: s?.projectId ?? '', state: 'error', error, root: null, files: [], truncated: false, base: null, compared: noCompared() } }
     }
     const dir = s.lastStatus === 'running' ? lastCwds.get(s.tmuxName) ?? project.path : project.path
     const v = slices.ui.viewer
-    const base = v?.kind === 'diff' && v.sessionId === id ? v.base ?? null : null
-    return computeDiff({ sessionId: id, dir, project, git, base })
+    const target = v?.kind === 'diff' && v.sessionId === id ? v : null
+    return computeDiff({ sessionId: id, dir, project, git, mode: target?.mode, base: target?.base ?? null })
   }
 
   const diffWatch = createDiffWatch(runDiff, (d) => {
@@ -498,14 +498,14 @@ export function createCore(opts: CoreOptions): Core {
 
   // Computed only while the viewer shows a diff (D4). DiffWatch dedupes by session id alone, so a
   // base change on the same session needs an explicit poke to retarget the recompute.
-  let lastDiffBase: string | null = null
+  let lastDiffChoice = ''
   function syncDiff(): void {
     const v = slices.ui.viewer
     const id = v?.kind === 'diff' ? v.sessionId : null
-    const base = v?.kind === 'diff' ? v.base ?? null : null
+    const choice = v?.kind === 'diff' ? `${v.mode ?? 'branch'}\0${v.base ?? ''}` : ''
     diffWatch.target(id)
-    if (id && base !== lastDiffBase) diffWatch.poke()
-    lastDiffBase = base
+    if (id && choice !== lastDiffChoice) diffWatch.poke()
+    lastDiffChoice = choice
   }
 
   // The session the human is looking at: focused window, session focused (the focuses are exclusive).
