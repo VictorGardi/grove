@@ -271,13 +271,91 @@ approved, 0 blocking after fix, 1 fix round (no second reviewer round: wording a
 - Not run: a small feature through the workflow skills inside an interactive Copilot session, and `grove-run --profile` with Copilot as `implementer` making two slices (this child is headless; the recipe's delete-on-profile-switch and git-exclude steps are specified and grep-checked, not exercised end to end). A Claude-only profile is unchanged by the diff (Claude text untouched).
 - Review the skills commit on `run/2026-10-22-copilot-cli-support`.
 
-## Gaps
+## Slice 7
 
-- Signed-out Copilot is not detected by Grove (no way to read the keychain login); Copilot shows its own message.
-- Status (working, done), permission attention and file links work through hooks; question attention, subagent marks and context gauge are not signalled. Resume UI: later slices.
-- Resume in an interactive pane is untested against the real app; an unavailable model fails in the pane.
-- Sandbox: none for Copilot (non-goal).
-- Copilot question tool: not verified; `roles.md` "In Copilot" says so. Subagent roles with per-role models work through generated agent files and the `task` tool (verified, Slice 6); the interactive-session pickup of files written mid-session and an end-to-end `grove-run` with Copilot as implementer are untested.
-- Copilot skills install is user-level only and explicit for the skills repo (`--target copilot-only`).
+Session: run/2026-10-22-copilot-cli-support-inherit-slice-7-a1
+Status: done
+Commit: this commit (see git log)
+
+### Slice plan
+
+Found in the code: README, CONTEXT.md and the ADR folder (last ADR 0043) named two agents; the skills repo README named OpenCode and Claude. Slices 1 to 6 already changed `resources/skills/grove/SKILL.md`, so the `grove` skill text needed nothing here.
+
+Implementer 1 (done in this session by the planner, see Deviations):
+- [x] `README.md`: three agents in the intro, sessions, requirements, `--model`, sandbox note
+- [x] `CONTEXT.md`: Copilot session, agent id, Copilot hook spool, resume
+- [x] `docs/adr/0044-copilot-cli-as-a-third-agent-source.md`: D1 to D4 picks, no sandbox, unverified list
+- [x] this file: gap report (below)
+- [x] skills repo `README.md` (branch `run/2026-10-22-copilot-cli-support`)
+
+Models passed: reviewer: inherit
+
+### Review rounds
+
+Round 1: fresh reviewer subagent, 1 blocking: the ADR said the app links the `grove` skill at start-up, but it is the "Install Agent Skill…" menu item. Fixed, along with the non-blocking over-claims (skills-repo branch pending merge, D4 settled by the Slice 6 probe, unverified items now stated in the ADR).
+
+approved, 0 blocking after fix, 1 fix round (wording only). Non-blocking left: uneven line wraps in CONTEXT.md.
+
+### Deviations
+
+- Built directly by the planner session, not through an `implementer` subagent (docs only). Review was a fresh reviewer subagent.
+- The `grove` skill text needed no change in this slice (done in slices 2 and 5).
+
+### Verification
+
+- `npm run typecheck` clean; `npm test`: 98 files, 1147 tests passed; `npm run build` ok. Skills repo: `bash scripts/validate.sh` OK.
+- Tests for Copilot start, resume, model and prompt: `src/core/copilot/source.test.ts`, `src/core/sessionCreate.test.ts`, `src/cli/args.test.ts`, `src/main/cliServer.test.ts`; status, attention and writes: `src/core/copilot/normalise.test.ts`, `source.test.ts`; dialog and palette: `src/renderer/src/launchKinds.test.ts`; sandbox refusal: `src/core/sandbox/{spec,auth,launch}.test.ts`, `src/renderer/src/sandboxOptIn.test.ts`, `src/shared/sandboxErrors.test.ts`; skills folders: `src/main/launcher.test.ts`.
+- Regression: the Claude and OpenCode tests were not changed except to add Copilot cases; default kind unchanged (`usualKind.test.ts`).
+- Models requested: none (all roles inherit).
+
+### Left for the human
+
+- Review the ADR picks against what you chose at the slice-1 gate.
+- Merge the skills repo branch `run/2026-10-22-copilot-cli-support`.
+
+## Gap report
+
+Checked against the outcome's "How I'll know it works". Verified on copilot 1.0.102 and 1.0.103.
+
+**Works (shown by tests or a real-binary run)**
+- Verified facts list from a real install: `02-research.md`, "Verified on a real install".
+- Copilot third in the dialog and palette with an icon and shortcut; Terminal fourth, shortcut unchanged (`launchKinds.test.ts`). Default kind unchanged.
+- `grove new copilot --model <m> --prompt ...` argv, resume by `--resume=<id>` with the stored model; missing `copilot` refused with a plain message and no pane.
+- Status working and done, permission attention, file links from `apply_patch` and `bash` writes (hooks, `-p` runs).
+- Skills in `~/.copilot/skills`; profile `agent: copilot`; Copilot subagent roles with per-role models (`cto`, `researcher`, `reviewer`, `implementer`, run once each).
+- Sandbox refused for Copilot everywhere (tests); the dialog gives the reason.
+
+**Degraded**
+- No question attention, subagent marks or context gauge: no verified Copilot signal.
+- `name` is ignored by the Copilot argv; an unavailable `--model` fails fast in the pane and the session shows gone.
+- Signed-out Copilot is not detected (token in the keychain, no read-only check); Copilot shows its own login message. `grove wait` relies on working and done, which are signalled.
+- The Copilot icon is a placeholder.
+
+**Missing, with reason**
+- Sandbox: a non-goal for v1.
+- Not run: anything in an interactive tmux pane (resume after a dead pane, hooks, permission attention), `edit` and `create` write shapes, the Copilot question tool, interactive pickup of agent files written mid-session, a small feature through the workflow skills in Copilot, `grove-run --profile` with Copilot as `implementer` for two slices, `grove` skill end to end from Copilot. The child sessions of this run were headless.
+- Skills install is user-level only and explicit for the skills repo (`--target copilot-only`).
+
+## Final summary
+
+- Slice 1: Verify Copilot, then `grove new copilot` opens a session. Review: approved, 0 fix rounds. Deviations: built by the planner; new `preflight()` hook.
+- Slice 2: Model, prompt and resume. Review: approved, 0 fix rounds. Deviations: `--interactive=<prompt>`.
+- Slice 3: Copilot in the dialog, palette and sidebar. Review: approved, 0 fix rounds. Deviations: shared `launchKinds.ts`.
+- Slice 4: Status, attention and file links from Copilot (hooks via `--plugin-dir`). Review: approved, 0 fix rounds. Deviations: reuses `SpoolTail`.
+- Slice 5: The `grove` skill and workflow skills inside Copilot (`~/.copilot/skills`). Review: approved, 1 fix round on the skills repo. Deviations: none beyond planner-built.
+- Slice 6: Copilot as a profile role and `grove-run` child (D4 = A, verified). Review: approved, 1 fix round. Deviations: schema enum rejects unknown agents.
+- Slice 7: Docs and the gap report (README, CONTEXT, ADR 0044, skills README). Review: approved, 1 fix round (wording). Deviations: none.
+
+### Left for the human
+
+- Try it in the running app: `grove new copilot --model <m> --prompt "..."`, kill the pane and resume, a permission prompt showing attention; with `copilot` off PATH, the plain refusal.
+- Run a small feature through the workflow skills in Copilot, and `grove-run --profile` with Copilot as `implementer` for two slices.
+- Merge the skills repo branch `run/2026-10-22-copilot-cli-support` (slices 5 to 7 commits).
+
+### PR description
+
+Add GitHub Copilot CLI as a third agent
+
+Copilot is a launchable agent kind (dialog, palette, `grove new copilot`, resume by session id, `--model`, prompt), reports working, done, permission attention and file writes through per-launch plugin hooks (ADR 0044), gets the `grove` skill in `~/.copilot/skills`, and can play any profile role, with per-role models through generated agent files. It is never sandboxed. README, CONTEXT.md and the gap report are updated. Verified by `npm test`, `npm run typecheck`, `npm run build` and real-binary runs on copilot 1.0.102 and 1.0.103; interactive-pane behaviour and an end-to-end `grove-run` with Copilot as implementer are not verified (see the gap report in `04-run.md`). The skills repo changes are on its own branch.
 
 ## Open questions
