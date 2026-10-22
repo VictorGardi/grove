@@ -2,6 +2,7 @@ import { create } from 'zustand'
 import type { Comment, DiffFile, DiffMode, DocTarget, FeaturesSlice, OpenCodeSlice, PaneSpan, Project, Session, SessionDiff, UiState } from '@shared/types'
 import { DEFAULT_UI, EMPTY_FEATURES, OPENCODE_CONNECTING } from '@shared/types'
 import { focusAfterRemove, gridShown, swapMembers, withMember, withoutArrangement, withSpan, withTracks, type GridLayout } from '../gridView'
+import { pushRecentBase } from '../diffBases'
 import { diffTargetFor, pickDiffPrefs } from '../diffView'
 import { openBoard } from '../navigation'
 import { trackWaiting } from '../sessionStatus'
@@ -61,10 +62,13 @@ export const useSlices = create<SlicesState>((set, get) => {
 
   // the one writer of a diff's view and branch: the open viewer carries them for core, diffPrefs keeps them for the session's next open
   const pickDiff = (sessionId: string, pick: { mode?: DiffMode; base?: string | null }) => {
-    const { viewer, diffPrefs } = get().ui
+    const { viewer, diffPrefs, recentBases } = get().ui
     const shown = viewer?.kind === 'diff' && viewer.sessionId === sessionId ? viewer : diffTargetFor(sessionId, diffPrefs)
     const prefs = pickDiffPrefs(shown, pick)
-    void window.api.invoke('ui:set', { viewer: { kind: 'diff', sessionId, ...prefs }, diffPrefs: { ...diffPrefs, [sessionId]: prefs } })
+    // a branch picked other than the default (null) is a recent one of the session's project
+    const projectId = pick.base ? get().sessions.find((x) => x.id === sessionId)?.projectId : undefined
+    const recent = projectId && pick.base ? { recentBases: { ...recentBases, [projectId]: pushRecentBase(recentBases?.[projectId], pick.base) } } : {}
+    void window.api.invoke('ui:set', { viewer: { kind: 'diff', sessionId, ...prefs }, diffPrefs: { ...diffPrefs, [sessionId]: prefs }, ...recent })
   }
 
   return {

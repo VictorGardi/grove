@@ -68,6 +68,21 @@ describe('forgetting a project', () => {
     })
   })
 
+  it('drops the recent diff bases of a removed project, and keeps another repo\'s', async () => {
+    twoProjects()
+    savedUi({ recentBases: { p: ['dev'], other: ['main', 'dev'] } })
+    const core = await start()
+    expect((await core.commands.projectRemove({ id: 'p' })).ok).toBe(true)
+    expect(core.getSlices().ui.recentBases).toEqual({ other: ['main', 'dev'] })
+  })
+
+  it('drops recent diff bases of projects that are gone at start', async () => {
+    savedUi({ recentBases: { gone: ['dev'], p: ['dev'] } })
+    onlyProjectP()
+    const core = await start()
+    expect(core.getSlices().ui.recentBases).toEqual({ p: ['dev'] })
+  })
+
   it('leaves ui untouched when the project had nothing to forget', async () => {
     const core = await start()
     const before = core.getSlices().ui

@@ -1,0 +1,93 @@
+.picker {
+  position: relative;
+  flex-shrink: 0;
+}
+
+.button {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-1);
+  max-width: 200px;
+  height: 28px;
+  padding: 0 var(--sp-2);
+  font: inherit;
+  font-size: var(--fs-sm);
+  color: var(--text);
+  background: var(--panel-bg);
+  border: 1px solid var(--card-border);
+  border-radius: var(--r-md);
+  cursor: pointer;
+}
+
+.name {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.pop {
+  position: absolute;
+  top: calc(100% + var(--sp-1));
+  left: 0;
+  z-index: 10;
+  width: 260px;
+  background: var(--raised-bg);
+  border: 1px solid var(--card-border);
+  border-radius: var(--r-md);
+  box-shadow: 0 6px 20px rgb(0 0 0 / 0.25);
+}
+
+.input {
+  box-sizing: border-box;
+  width: 100%;
+  padding: var(--sp-2);
+  font: inherit;
+  font-size: var(--fs-sm);
+  color: var(--text);
+  background: transparent;
+  border: 0;
+  border-bottom: 1px solid var(--card-border);
+  outline: none;
+}
+
+.list {
+  max-height: 240px;
+  overflow: auto;
+}
+
+.row {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-2);
+  padding: var(--sp-1) var(--sp-2);
+  font-size: var(--fs-sm);
+  cursor: pointer;
+}
+
+.on {
+  background: var(--panel-bg);
+}
+
+.chosen .rowName {
+  font-weight: 600;
+}
+
+.rowName {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.tag {
+  flex-shrink: 0;
+  color: var(--text-2);
+  font-size: var(--fs-xs);
+}
+
+.empty {
+  padding: var(--sp-2);
+  font-size: var(--fs-sm);
+  color: var(--text-2);
+}

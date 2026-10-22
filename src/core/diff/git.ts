@@ -24,16 +24,6 @@ export function gitRunner(gitPath: string, env: NodeJS.ProcessEnv): GitRun {
   })
 }
 
-// Local branch names, for a "diff against" picker.
-export async function listBranches(git: GitRun, root: string): Promise<string[]> {
-  try {
-    const out = await git(['for-each-ref', '--format=%(refname:short)', 'refs/heads/'], root)
-    return out.split('\n').map((s) => s.trim()).filter(Boolean)
-  } catch {
-    return []
-  }
-}
-
 // Every branch a new worktree could fork: local ones, then remote-tracking ones as `origin/x`,
 // whatever is already fetched. A remote's HEAD is an alias for its default branch, not a branch.
 export async function listBases(git: GitRun, root: string): Promise<string[]> {

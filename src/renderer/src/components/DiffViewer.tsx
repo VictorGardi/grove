@@ -7,6 +7,7 @@ import {
 } from '../diffView'
 import { draftsByLine } from '../reviewView'
 import { useSlices } from '../stores/slices'
+import { BasePicker } from './BasePicker'
 import { CommentEditor } from './CommentEditor'
 import { ReviewMenu } from './ReviewTray'
 import { Icon } from './ui/Icon'
@@ -45,13 +46,7 @@ export function DiffViewer({ diff, sessionId, label, expanded, onOpenRendered, o
   const files = d ? visibleFiles(d, showUntracked && mode !== 'last-commit') : []
   const base = choice?.base ?? null
   const compared = d?.compared ?? null
-  const [refs, setRefs] = useState<{ branches: string[]; default: string | null }>({ branches: [], default: null })
-  useEffect(() => {
-    let alive = true
-    void window.api.invoke('diff:refs', { sessionId }).then((res) => { if (alive && res.ok) setRefs(res.data) })
-    return () => { alive = false }
-  }, [sessionId])
-  const baseOptions = refs.branches.filter((b) => b !== refs.default).sort((a, b) => a.localeCompare(b))
+  const recents = useSlices((x) => (d ? x.ui.recentBases?.[d.projectId] : undefined))
   // the chosen file, per session: another session's diff starts on its first file
   const [chosen, setChosen] = useState<{ sessionId: string; path: string | null }>({ sessionId, path: null })
   const file = pickFile(files, chosen.sessionId === sessionId ? chosen.path : null)
@@ -163,15 +158,8 @@ export function DiffViewer({ diff, sessionId, label, expanded, onOpenRendered, o
           ))}
         </div>
         {mode === 'branch' && (
-          <select className={s.baseSelect} aria-label="Diff against" value={base && base !== (refs.default ?? compared?.defaultBase) ? base : ''}
-            onChange={(e) => setDiffBase(sessionId, e.target.value || null, 'branch')}>
-            <option value="">{refs.default ?? compared?.defaultBase ? `${refs.default ?? compared?.defaultBase} (default)` : 'Default branch'}</option>
-            {baseOptions.length > 0 && (
-              <optgroup label="Since branched from">
-                {baseOptions.map((b) => <option key={b} value={b}>{b}</option>)}
-              </optgroup>
-            )}
-          </select>
+          <BasePicker sessionId={sessionId} base={base} defaultName={compared?.defaultBase ?? null} recents={recents}
+            onPick={(b) => setDiffBase(sessionId, b, 'branch')} />
         )}
         {mode !== 'last-commit' && (
           <Button variant="ghost" size="sm" icon={showUntracked ? 'eye' : 'eye-off'} aria-pressed={showUntracked}

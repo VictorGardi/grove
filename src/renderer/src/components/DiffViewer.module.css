@@ -56,19 +56,6 @@
   font-weight: var(--fw-semibold);
 }
 
-.baseSelect {
-  flex-shrink: 0;
-  max-width: 200px;
-  height: 28px;
-  padding: 0 var(--sp-2);
-  font: inherit;
-  font-size: var(--fs-sm);
-  color: var(--text);
-  background: var(--panel-bg);
-  border: 1px solid var(--card-border);
-  border-radius: var(--r-md);
-}
-
 .body {
   flex: 1;
   min-height: 0;

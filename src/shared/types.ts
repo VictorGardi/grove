@@ -114,6 +114,7 @@ export interface UiState {
   viewerWidth: number | null // null uses the responsive default; a number is a user-resized pixel width
   viewerExpanded: boolean     // the viewer fills the content area
   diffPrefs?: Record<string, DiffPrefs> // by session id: what the diff opens on again in that session (absent reads as none: defaults)
+  recentBases?: Record<string, string[]> // by project id: branches picked as a diff base there, newest first (absent reads as none)
   grid: GridState             // the session grid (ADR 0031); the focused pane is focusedSessionId
 }
 export interface FeatureStage {

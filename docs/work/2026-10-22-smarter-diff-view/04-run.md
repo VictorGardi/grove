@@ -133,4 +133,42 @@ The planner session wrote the code itself instead of delegating to an implemente
 
 Observable check in `npm run dev`: pick Uncommitted only, close and reopen the diff, it is still Uncommitted only; open another session's diff, it is Branch.
 
+## Slice 4
+
+Session: smarter-diff-view-slice-4-a1
+Status: done
+Commit: this commit (see git log)
+
+### Slice plan
+
+Found in the code: `diffRefs` returned local branch names only (`listBranches`) and the default; the header used a native `<select>` over all local branches; `ui:set` shallow-merges `UiState`; `stateStore.loadState` has no projects, which `forgetProjectUi` in `core.ts` prunes `ui` by.
+
+Implementer 1:
+- [x] `src/core/diff/git.ts`, `src/core/core.ts`, `src/shared/ipc.ts`: `diffRefs` returns `listBases` (local and remote, no `*/HEAD`), `current` and `default`; unused `listBranches` removed
+- [x] `src/shared/types.ts`, `src/core/core.ts`: optional `UiState.recentBases`, pruned for removed projects in `forgetProjectUi`
+- [x] `src/renderer/src/diffBases.ts`: pure `baseChoices` and `pushRecentBase` (cap 5)
+- [x] `src/renderer/src/components/BasePicker.tsx` and `.module.css`: popover with search, keyboard handling, refs read on open; `DiffViewer.tsx` uses it, `.baseSelect` CSS removed
+- [x] `src/renderer/src/stores/slices.ts`: `pickDiff` records a non-default picked base in the project's recents
+- [x] tests: `diffBases.test.ts`, `core/diff/core.test.ts`, `core/projectUi.test.ts`
+
+Models passed: reviewer: inherit
+
+### Review rounds
+
+Round 1: no blocking findings; applied non-blocking: no empty-state flash before the branch list arrives, `origin/<default>` no longer listed beside the default.
+
+approved, 0 blocking, 0 fix rounds. Non-blocking left: `recentBases` written from a store snapshot (two near-simultaneous picks could overwrite each other), a recent that is only `origin/<current>` is not excluded, a hand-edited non-array `recentBases` is not sanitised on load, key handling only while the search input has focus.
+
+### Deviations
+
+The planner session wrote the code itself instead of delegating to an implementer subagent (small, tightly coupled slice). Pruning of `recentBases` lives in `forgetProjectUi` (`core.ts`), not `stateStore.ts`, because the state file holds no projects; its test is in `projectUi.test.ts`, and the write path (cap 5, no duplicates) is covered by the pure `pushRecentBase` test in `diffBases.test.ts`, not `stateStore.test.ts`. "Keyed per project" is covered by the pruning test only.
+
+### Verification
+
+`npx vitest run src/renderer src/core/diff` 420 passed (new: empty query default then capped recents, current branch excluded, case-insensitive local and remote search, default listed once, `diffRefs` with remote branches, diff against a remote-only `origin/release`, recents pruned on project removal and at start); `npm test` and `npm run typecheck` clean. Reviewer requested with model inherit.
+
+### Left for the human
+
+Observable check in `npm run dev`: in a repo with many branches the picker lists only main and recents until you type; type a remote branch name and pick it. Check the popover visually in light and dark.
+
 ## Open questions
