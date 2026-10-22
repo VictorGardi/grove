@@ -2,7 +2,7 @@ import type { CSSProperties, KeyboardEvent as ReactKeyboardEvent, MouseEvent as 
 import { Fragment, useEffect, useMemo, useRef, useState } from 'react'
 import type { Comment, DiffFile, DiffLine, DiffMode, SessionDiff } from '@shared/types'
 import {
-  fileFocusTarget, fileTreeRows, filterFiles, gaps, lineKey, pickFile, rangeAnchor, selectionRange, sideOf, splitRows, STATUS_LETTER, visibleFiles, wordMarks,
+  branchNote, emptyMessage, fileFocusTarget, fileTreeRows, filterFiles, gaps, lineKey, pickFile, rangeAnchor, selectionRange, sideOf, splitRows, STATUS_LETTER, visibleFiles, wordMarks,
   type Cell, type DraftRange, type Gap, type Seg,
 } from '../diffView'
 import { draftsByLine } from '../reviewView'
@@ -46,6 +46,8 @@ export function DiffViewer({ diff, sessionId, label, expanded, onOpenRendered, o
   const files = d ? visibleFiles(d, showUntracked && mode !== 'last-commit') : []
   const base = choice?.base ?? null
   const compared = d?.compared ?? null
+  const note = branchNote(compared)
+  const empty = emptyMessage(compared, mode)
   const recents = useSlices((x) => (d ? x.ui.recentBases?.[d.projectId] : undefined))
   // the chosen file, per session: another session's diff starts on its first file
   const [chosen, setChosen] = useState<{ sessionId: string; path: string | null }>({ sessionId, path: null })
@@ -221,17 +223,17 @@ export function DiffViewer({ diff, sessionId, label, expanded, onOpenRendered, o
         )}
         <div className={s.content}>
           <div ref={body} className={s.body} data-sel="" onScroll={() => setPicked(null)} onMouseDown={onMouseDown}>
-            {d?.state === 'ok' && compared?.mode === 'branch' && !base && compared.onDefault && (
-              <div className={s.notice}>You are on {compared.defaultBase}; showing uncommitted changes only</div>
-            )}
-            {d?.state === 'ok' && compared?.mode === 'branch' && !base && compared.noDefault && (
-              <div className={s.notice}>No main branch found; showing uncommitted changes only. Pick a branch to compare against.</div>
-            )}
+            {d?.state === 'ok' && note && <div className={s.notice}>{note}</div>}
             {d?.truncated && <div className={s.notice}>Diff too large: later files are listed without their lines</div>}
             {!d ? <div className={s.note}>Loading…</div>
               : d.state === 'not-git' ? <div className={s.note}>Not a git repository</div>
               : d.state === 'error' ? <div className={s.note}>{d.error}</div>
-              : !file ? <div className={s.note}>No changes</div>
+              : !file ? (d.files.length > 0 ? <div className={s.note}>No changes (untracked files hidden)</div> : (
+                <div className={s.note}>
+                  {empty.text}
+                  <Button variant="ghost" size="sm" onClick={() => setDiffMode(sessionId, empty.switchTo.mode)}>{empty.switchTo.label}</Button>
+                </div>
+              ))
               : (
                 <FileView key={file.path} file={file} sessionId={sessionId} split={expanded} drafts={draftsByLine(comments, file.path)}
                   writing={writing?.path === file.path ? writing : null} error={error}

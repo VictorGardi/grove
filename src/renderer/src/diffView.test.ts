@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest'
 import type { DiffFile, SessionDiff } from '@shared/types'
 import type { DiffLine } from '@shared/types'
-import { diffTargetFor, pickDiffPrefs, fileFocusTarget, fileTreeRows, filterFiles, gaps, lineKey, pickFile, rangeAnchor, selectionRange, splitRows, visibleFiles, wordMarks, wordSegs } from './diffView'
+import { branchNote, diffTargetFor, emptyMessage, pickDiffPrefs, fileFocusTarget, fileTreeRows, filterFiles, gaps, lineKey, pickFile, rangeAnchor, selectionRange, splitRows, visibleFiles, wordMarks, wordSegs } from './diffView'
 
 const file = (path: string, status: DiffFile['status']): DiffFile =>
   ({ path, oldPath: null, status, binary: false, additions: 0, deletions: 0, hunks: [], truncated: false, rendered: null })
@@ -206,5 +206,36 @@ describe('pickDiffPrefs', () => {
   })
   it('stores null when the default branch is picked again', () => {
     expect(pickDiffPrefs({ mode: 'branch', base: 'dev' }, { base: null, mode: 'branch' })).toEqual({ mode: 'branch', base: null })
+  })
+})
+
+describe('emptyMessage and branchNote', () => {
+  const cmp = (o: Partial<SessionDiff['compared']>): SessionDiff['compared'] => ({ ...diff.compared, defaultBase: 'main', ...o })
+
+  it('words the Branch view with no changes and switches to last commit', () => {
+    expect(emptyMessage(cmp({}), 'branch')).toEqual({ text: 'No changes on this branch compared to main.', switchTo: { mode: 'last-commit', label: 'Show last commit' } })
+    expect(emptyMessage(cmp({ base: 'origin/dev' }), 'branch').text).toBe('No changes on this branch compared to origin/dev.')
+  })
+  it('words Uncommitted only and switches to the branch view', () => {
+    expect(emptyMessage(cmp({ mode: 'uncommitted' }), 'uncommitted')).toEqual({ text: 'No uncommitted changes.', switchTo: { mode: 'branch', label: 'Show branch changes' } })
+  })
+  it('words Last commit on a branch with no commits of its own, switching to uncommitted', () => {
+    expect(emptyMessage(cmp({ mode: 'last-commit', noOwnCommits: true }), 'last-commit')).toEqual({ text: 'No commits on this branch yet.', switchTo: { mode: 'uncommitted', label: 'Show uncommitted only' } })
+    expect(emptyMessage(cmp({ mode: 'last-commit' }), 'last-commit').text).toBe('No commits to show.')
+  })
+  it('treats the Branch view as uncommitted on main or with no main', () => {
+    expect(emptyMessage(cmp({ onDefault: true }), 'branch')).toEqual({ text: 'No uncommitted changes.', switchTo: { mode: 'last-commit', label: 'Show last commit' } })
+    expect(emptyMessage(cmp({ noDefault: true, defaultBase: null }), 'branch').text).toBe('No uncommitted changes.')
+  })
+  it('falls back without compared info, and Uncommitted only on main switches to last commit', () => {
+    expect(emptyMessage(null, 'branch').text).toBe('No changes on this branch.')
+    expect(emptyMessage(cmp({ mode: 'uncommitted', onDefault: true }), 'uncommitted').switchTo.mode).toBe('last-commit')
+  })
+  it('words the on-main and no-main notes, only for the default pick', () => {
+    expect(branchNote(cmp({ onDefault: true }))).toBe('You are on main; showing uncommitted changes only.')
+    expect(branchNote(cmp({ noDefault: true, defaultBase: null }))).toBe('No main branch found; showing uncommitted changes only. Pick a branch to compare against.')
+    expect(branchNote(cmp({ onDefault: true, base: 'dev' }))).toBeNull()
+    expect(branchNote(cmp({ onDefault: true, mode: 'uncommitted' }))).toBeNull()
+    expect(branchNote(null)).toBeNull()
   })
 })

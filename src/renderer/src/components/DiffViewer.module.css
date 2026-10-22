@@ -74,6 +74,10 @@
 }
 
 .note {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--sp-2);
   padding: var(--sp-3);
   font-family: var(--font-ui);
   color: var(--text-2);
