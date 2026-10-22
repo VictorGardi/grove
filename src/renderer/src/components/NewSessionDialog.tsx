@@ -1,7 +1,8 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
 import type { Feature, Project, SessionKind } from '@shared/types'
+import { LAUNCH_KINDS as KINDS } from '../launchKinds'
 import { branchFor, buildRows, orderProjects, repoOf } from '../launchRows'
-import { SANDBOX_DEFAULT, sandboxable, wantsSandbox } from '../sandboxOptIn'
+import { SANDBOX_DEFAULT, noSandboxReason, sandboxable, wantsSandbox } from '../sandboxOptIn'
 import { usualKind } from '../usualKind'
 import { useRepoRefs } from '../useRepoRefs'
 import { useSlices } from '../stores/slices'
@@ -11,12 +12,6 @@ import { Icon } from './ui/Icon'
 import { Modal } from './ui/Modal'
 import { Switch } from './ui/Switch'
 import s from './NewSessionDialog.module.css'
-
-const KINDS: { kind: SessionKind; label: string; icon: 'opencode' | 'claude' | 'terminal' }[] = [
-  { kind: 'claude', label: 'Claude Code', icon: 'claude' },
-  { kind: 'opencode', label: 'OpenCode', icon: 'opencode' },
-  { kind: 'terminal', label: 'Terminal', icon: 'terminal' },
-]
 
 // The feature as one line of a dropdown. Two features can share a title, and the slug is what tells
 // them apart, so it is spelled out only where the titles alone would not — a name is the thing
@@ -207,6 +202,7 @@ export function NewSessionDialog({ projectId, onClose, onStart }: {
             <div className={s.hint}>The agent runs inside a Linux VM. Its working directory appears at the
               same path it has on your Mac; the rest of your machine is not visible.
               <b> Network access is unrestricted</b> — this isolates files only.</div>
+            {!sandboxable(kind) && <div className={s.hint}>{noSandboxReason(kind)}.</div>}
           </div>
         </div>
 

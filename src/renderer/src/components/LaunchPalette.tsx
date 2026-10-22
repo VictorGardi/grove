@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
 import type { Project, Session, SessionKind } from '@shared/types'
+import { LAUNCH_KINDS as KINDS } from '../launchKinds'
 import { baseChoices, branchName, buildTargets, labelFromBranch, prefillBranch, tidyPath, type ChosenBases, type Target } from '../launchTargets'
 import { suggestBranch, repoOf, type RefsByRepo } from '../launchRows'
 import { wantsSandbox } from '../sandboxOptIn'
@@ -18,12 +19,6 @@ const endFocus = (el: HTMLInputElement | null) => {
   el?.focus()
   el?.setSelectionRange(el.value.length, el.value.length)
 }
-
-const KINDS: { kind: SessionKind; label: string; icon: 'opencode' | 'claude' | 'terminal'; code: string; key: string }[] = [
-  { kind: 'claude', label: 'Claude Code', icon: 'claude', code: 'Digit1', key: '1' },
-  { kind: 'opencode', label: 'OpenCode', icon: 'opencode', code: 'Digit2', key: '2' },
-  { kind: 'terminal', label: 'Terminal', icon: 'terminal', code: 'Digit3', key: '3' },
-]
 
 // ⌘T: where a session goes, and everything that shapes it, in one box and one keyboard.
 //

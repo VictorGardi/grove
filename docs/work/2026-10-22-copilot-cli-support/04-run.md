@@ -108,6 +108,45 @@ approved, 0 blocking, 0 fix rounds. Non-blocking left: `name` is ignored (Copilo
 
 - Manual in the running app: `grove new copilot --model <m> --prompt "do X"` shows both applied; kill the pane, resume from the app, the conversation continues (resume was verified only with `-p` runs, not in an interactive pane); `grove new terminal --model m` is refused (covered by tests).
 
+## Slice 3
+
+Session: run/2026-10-22-copilot-cli-support-inherit-slice-3-a1
+Status: done
+Commit: this commit (see git log)
+
+### Slice plan
+
+Found in the code: `NewSessionDialog.tsx` and `LaunchPalette.tsx` each held their own `KINDS` list; the palette finds a shortcut by `e.code`, so display order and shortcut are independent. The `copilot` icon and `SessionKind` member already existed from slice 1; `sandboxable` was already false for Copilot.
+
+Implementer 1 (done in this session by the planner, see Deviations):
+- [x] `src/renderer/src/launchKinds.ts` (+ test): one shared list, order Claude, OpenCode, Copilot, Terminal; Digit1, Digit2, Digit4 (Copilot), Digit3 (Terminal)
+- [x] `NewSessionDialog.tsx`, `LaunchPalette.tsx`: use the shared list
+- [x] `sandboxOptIn.ts` (+ test): `noSandboxReason`; used by `SandboxToggle.tsx` label and a hint line in the dialog
+- [x] `usualKind.ts` (+ test): Copilot counts as an agent for the repo's usual kind
+
+Models passed: reviewer: inherit
+
+### Review rounds
+
+Round 1: fresh reviewer subagent, 0 blocking.
+
+approved, 0 blocking, 0 fix rounds. Non-blocking left: dialog still shows the VM text for Copilot (dimmed, with the reason below); no render test for the four kinds; the Copilot icon is still the slice-1 placeholder.
+
+### Deviations
+
+- Built directly by the planner session, not through an `implementer` subagent (small, tightly coupled). Review was a fresh reviewer subagent.
+- The two `KINDS` lists were merged into `src/renderer/src/launchKinds.ts` (not in the plan) so the order and shortcuts are testable. `Sidebar.tsx` needed no change (label and icon came in slice 1).
+- `usualKind` now preselects Copilot when it is the repo's most recent agent; `KIND_DEFAULT` is still `claude`.
+
+### Verification
+
+- `npm run typecheck`: clean. `npm test`: 97 files, 1134 passed, 1 failed (`pruneContainers` in `src/core/sandbox`, timing under load); re-run of `src/core/sandbox` alone: 68 passed. Unrelated to this slice.
+- Models requested: none (all roles inherit).
+
+### Left for the human
+
+- Manual in the running app (headless child, not driven): open the dialog and palette, pick Copilot by mouse and by ⌥4, check ⌥3 still opens Terminal, check the sandbox switch is disabled for Copilot with its reason, and Claude and OpenCode launch as before.
+
 ## Gaps
 
 - Signed-out Copilot is not detected by Grove (no way to read the keychain login); Copilot shows its own message.

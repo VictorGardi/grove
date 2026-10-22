@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import type { SessionKind } from '@shared/types'
-import { SANDBOX_DEFAULT, sandboxable, wantsSandbox } from './sandboxOptIn'
+import { SANDBOX_DEFAULT, noSandboxReason, sandboxable, wantsSandbox } from './sandboxOptIn'
 
 describe('sandboxable', () => {
   // Both agents, and not a terminal: it has no agent argv to wrap. A sandboxed OpenCode joins the
@@ -37,5 +37,12 @@ describe('SANDBOX_DEFAULT', () => {
   // asking for containment they did not request.
   it('is off', () => {
     expect(SANDBOX_DEFAULT).toBe(false)
+  })
+})
+
+describe('noSandboxReason', () => {
+  it('gives each unsandboxable kind its own short reason', () => {
+    expect(noSandboxReason('copilot')).toMatch(/Copilot/)
+    expect(noSandboxReason('terminal')).toMatch(/terminal/)
   })
 })
