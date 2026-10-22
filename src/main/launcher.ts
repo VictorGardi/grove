@@ -14,6 +14,15 @@ export function writeLauncher(o: { binDir: string; execPath: string; cliPath: st
   return file
 }
 
+// Where each agent reads user-level skills: Claude Code, OpenCode, GitHub Copilot CLI (`COPILOT_HOME` moves its folder).
+export function agentSkillsDirs(home: string, env: Record<string, string | undefined>): string[] {
+  return [
+    path.join(home, '.claude', 'skills'),
+    path.join(env.XDG_CONFIG_HOME || path.join(home, '.config'), 'opencode', 'skills'),
+    path.join(env.COPILOT_HOME || path.join(home, '.copilot'), 'skills'),
+  ]
+}
+
 // The bundled `grove` skill, linked into each agent's skills folder so its own skill matching finds
 // it in every repo. A symlink, so an app update refreshes it. A symlink already there is replaced;
 // anything else is left alone. Every folder is tried: one failing does not stop the others, and the

@@ -189,11 +189,56 @@ approved, 0 blocking, 0 fix rounds. Non-blocking left: Copilot fires `permission
 - Manual in the running app (headless child, not driven): send a prompt in a Copilot pane and watch the card go working then done; trigger a permission request (no `--allow-all`) and see attention, then approve and see it clear; edit a file in a feature folder and see the session link to it. Hooks via `--plugin-dir` were only run with `-p`, not in an interactive pane; if the pane shows no status, that is the first thing to check.
 - Gaps found: no question attention (no verified `ask_user` signal), no subagent busy marks, no context gauge, aborted turns are unverified (the next prompt, `agentStop` or `sessionStart` resets the card), `edit`/`create` write shapes unverified (only `apply_patch` seen).
 
+## Slice 5
+
+Session: run/2026-10-22-copilot-cli-support-inherit-slice-5-a1
+Status: done
+Commit: this commit (see git log)
+
+### Slice plan
+
+Found in the code: `installSkill()` in `src/main/index.ts` listed two skills folders inline (Claude, OpenCode) and `installAgentSkill` links the bundled `grove` skill into each. In the skills repo, `install.sh` has modes `claude` (default) and `opencode`; `uninstall.sh` scans two dirs; `shared/roles.md` is copied into `grove-auto` and `grove-run` references by `sync-shared.sh`. D3 = A (user-level `~/.copilot/skills`) was the gate choice; no generated files are written, so nothing needs an `info/exclude` entry in this slice.
+
+Implementer 1 (done in this session by the planner, see Deviations):
+- [x] App: `src/main/launcher.ts` `agentSkillsDirs(home, env)` (adds `$COPILOT_HOME/skills`, default `~/.copilot/skills`), used by `src/main/index.ts`; test in `launcher.test.ts`
+- [x] App: `resources/skills/grove/SKILL.md` (description, `wait` and `send` notes for Copilot)
+- [x] Skills repo (branch `run/2026-10-22-copilot-cli-support`, worktree `~/.grove/worktrees/grove-skills/run-2026-10-22-copilot-cli-support`, one commit): `install.sh --target copilot-only`, `uninstall.sh` covers the Copilot folder, `shared/roles.md` "In Copilot" (+ synced copies), `scripts/validate.sh` round-trip check, README note
+- [x] Skills that name Claude tools, found by grep and patched: `grove-approve` (disable-model-invocation note), `grove-auto` (question tool, researcher spawn, model rule), `grove-run` (permission note, child question tool), `grove-run/references/slice-mode.md` (question tool). The other skills only say "the equivalent in other agents" and needed no change.
+
+Models passed: reviewer: inherit
+
+### Review rounds
+
+Round 1: fresh reviewer subagent, 2 blocking: (a) the new `validate.sh` block overrode only `HOME`, so a set `COPILOT_HOME` would hit the developer's real folder; (b) `roles.md` claimed `/fleet`, `/tasks`, `/subagents` and interactive-pane permission behaviour that no verified fact backs. Fixed: `COPILOT_HOME` pinned to the temp dir in the check; claims removed or marked unverified. Also applied: helper comment placement, Copilot pointer in the model rules, clearer `grove-approve` wording. Re-checked by running `validate.sh` with a bogus `COPILOT_HOME` (nothing written outside the temp dir); no second reviewer round (fixes were wording and a test guard).
+
+approved, 0 blocking after fixes, 1 fix round. Non-blocking left: `install.sh` accepts unknown targets silently (as before); the app writes into `$COPILOT_HOME` only if the Electron process has that variable (a GUI launch usually does not); the `grove` skill's "working and done only" and `roles.md`'s "should show as waiting" must be re-read together after the interactive check.
+
+### Deviations
+
+- Built directly by the planner session, not through an `implementer` subagent (small, coupled). Review was a fresh reviewer subagent.
+- Helper `agentSkillsDirs` extracted (not in the plan) so the Copilot folder is testable.
+- `install.sh --target copilot-only` is explicit; the default install does not write to `~/.copilot` (chosen so no new home folder is written without being asked). Copilot has no command wrappers, so `commands/` is not linked in that mode.
+- The question tool and subagent tool of Copilot could not be named: in a `-p` run the model reports it has no `ask_user`. `roles.md` says so; subagent roles in Copilot inherit the session model until Slice 6 verifies a route.
+
+### Verification
+
+- App: `npm run typecheck` clean; `npm test`: 98 files, 1147 passed.
+- Skills: `bash scripts/validate.sh` OK, including the new check: default install leaves `~/.copilot` absent; `--target copilot-only` links every skill and writes only `skills/`; `uninstall.sh` removes exactly those links (negative run with the uninstall dir removed fails the check as intended).
+- Real binary (copilot 1.0.103): with `COPILOT_HOME` set to a temp dir holding links to the app's `grove` skill and `grove-run`, `copilot skill list` listed both under "Personal skills".
+- Models requested: none (all roles inherit).
+
+### Left for the human
+
+- Manual: from an interactive Copilot session, run the `grove` skill to start another session, send it a message, wait for it, and read its screen (not run: this child is headless and a Copilot interactive pane was not driven). Run `./install.sh --target copilot-only` in `~/git/grove-skills` (after merging the branch) to get the workflow skills in Copilot; the app's "Install Agent Skill…" menu now also links `grove` into `~/.copilot/skills`.
+- Review the skills repo commit on branch `run/2026-10-22-copilot-cli-support` (`~/.grove/worktrees/grove-skills/run-2026-10-22-copilot-cli-support`).
+
 ## Gaps
 
 - Signed-out Copilot is not detected by Grove (no way to read the keychain login); Copilot shows its own message.
 - Status (working, done), permission attention and file links work through hooks; question attention, subagent marks and context gauge are not signalled. Resume UI: later slices.
 - Resume in an interactive pane is untested against the real app; an unavailable model fails in the pane.
 - Sandbox: none for Copilot (non-goal).
+- Copilot question tool and subagent-by-role spawning: not verified; `roles.md` "In Copilot" says so. Workflow skills that need blind subagents depend on the latter (Slice 6).
+- Copilot skills install is user-level only and explicit for the skills repo (`--target copilot-only`).
 
 ## Open questions

@@ -14,7 +14,7 @@ import { HttpOpenCode, serviceFilePath } from '../core/opencode/client'
 import { guardNavigation, handleArtifacts, registerArtifactScheme } from './artifacts'
 import { registerIpc } from './ipc'
 import { startCliServer } from './cliServer'
-import { installAgentSkill, installCommandLineTool, writeLauncher } from './launcher'
+import { agentSkillsDirs, installAgentSkill, installCommandLineTool, writeLauncher } from './launcher'
 import { buildMenu } from './menu'
 import { installAttachCleanup } from './attachCleanup'
 
@@ -55,10 +55,7 @@ async function installSkill(): Promise<void> {
   const home = os.homedir()
   const results = installAgentSkill({
     source: path.join(app.getAppPath(), 'resources', 'skills', 'grove'),
-    skillsDirs: [
-      path.join(home, '.claude', 'skills'), // Claude Code
-      path.join(process.env.XDG_CONFIG_HOME || path.join(home, '.config'), 'opencode', 'skills'), // OpenCode
-    ],
+    skillsDirs: agentSkillsDirs(home, process.env),
   })
   const failed = results.filter((r) => r.error)
   const opts = failed.length === 0

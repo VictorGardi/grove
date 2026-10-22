@@ -1,6 +1,6 @@
 ---
 name: grove
-description: Drive other Grove sessions from a Grove terminal or agent session with the `grove` command. Use to list sessions, start another Claude, OpenCode or terminal session in any folder, send it a message, read its screen, wait for it to finish, focus or kill it.
+description: Drive other Grove sessions from a Grove terminal or agent session with the `grove` command. Use to list sessions, start another Claude, OpenCode, Copilot or terminal session in any folder, send it a message, read its screen, wait for it to finish, focus or kill it.
 ---
 
 # grove
@@ -118,11 +118,14 @@ esac
 
 ## Notes
 
-- `wait` only follows OpenCode and Claude sessions. A terminal session has no
-  status and fails with `no-status`; use `read` to look at it.
+- `wait` follows Claude, OpenCode and Copilot sessions. A terminal session has no
+  status and fails with `no-status`; use `read` to look at it. A Copilot card shows
+  working and done only (no question attention, no subagent marks), so a Copilot
+  session that asks you something in its pane looks idle: `read` it if a wait
+  seems too quiet.
 - `--wait` first gives the turn up to 30 s to start, then waits for it to end.
 - `send` types into the session even if the human is looking at it, and resumes
-  an ended OpenCode or Claude session first.
+  an ended Claude, OpenCode or Copilot session first.
 - `kill` can end any session, including your own. Kill only sessions you
   started, unless asked.
 - A new Claude session in a never-trusted folder shows its trust dialog first;
