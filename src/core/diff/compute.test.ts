@@ -337,3 +337,72 @@ describe('computeDiff default branch view', () => {
     expect(diff.compared).toMatchObject({ base: 'other', onDefault: true })
   })
 })
+
+describe('computeDiff last commit view', () => {
+  const lastCommit = (dir: string) => compute(dir, { mode: 'last-commit' })
+
+  it('shows only the newest commit, without uncommitted or untracked files', async () => {
+    const r = gitRepo()
+    r.write('a.txt', 'one\n')
+    r.commit()
+    r.git('checkout', '-q', '-b', 'feature')
+    r.write('b.txt', 'b\n')
+    r.commit('first')
+    r.write('c.txt', 'c\n')
+    r.commit('second')
+    r.write('a.txt', 'edited\n')
+    r.write('new.txt', 'x\n')
+    const { diff } = await lastCommit(r.dir)
+    expect(diff.files.map((f) => f.path)).toEqual(['c.txt'])
+    expect(diff.compared).toMatchObject({ mode: 'last-commit', base: null, noOwnCommits: false })
+  })
+
+  it('shows a root commit against the empty tree', async () => {
+    const r = gitRepo()
+    r.write('a.txt', 'one\n')
+    r.commit()
+    const { diff } = await lastCommit(r.dir)
+    expect(diff.files.map((f) => f.path)).toEqual(['a.txt'])
+    expect(diff.files[0]).toMatchObject({ status: 'added', additions: 1 })
+  })
+
+  it('shows main\'s latest commit when on main', async () => {
+    const r = gitRepo()
+    r.write('a.txt', 'one\n')
+    r.commit()
+    r.write('b.txt', 'b\n')
+    r.commit()
+    const { diff } = await lastCommit(r.dir)
+    expect(diff.files.map((f) => f.path)).toEqual(['b.txt'])
+    expect(diff.compared).toMatchObject({ onDefault: true, noOwnCommits: false })
+  })
+
+  it('shows no files when HEAD equals the merge-base with main', async () => {
+    const r = gitRepo()
+    r.write('a.txt', 'one\n')
+    r.commit()
+    r.write('b.txt', 'b\n')
+    r.commit()
+    r.git('checkout', '-q', '-b', 'feature')
+    const { diff } = await lastCommit(r.dir)
+    expect(diff.state).toBe('ok')
+    expect(diff.files).toEqual([])
+    expect(diff.compared.noOwnCommits).toBe(true)
+  })
+
+  it('shows no files in a repo without commits', async () => {
+    const r = gitRepo()
+    r.write('a.txt', 'one\n')
+    const { diff } = await lastCommit(r.dir)
+    expect(diff.state).toBe('ok')
+    expect(diff.files).toEqual([])
+  })
+
+  it('changes the key when only the mode changes', async () => {
+    const r = gitRepo()
+    r.write('a.txt', 'one\n')
+    r.commit()
+    const keys = await Promise.all((['branch', 'uncommitted', 'last-commit'] as const).map(async (mode) => (await compute(r.dir, { mode })).key))
+    expect(new Set(keys).size).toBe(3)
+  })
+})

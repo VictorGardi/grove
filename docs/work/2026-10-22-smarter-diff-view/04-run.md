@@ -60,4 +60,40 @@ The planner session wrote the code itself instead of delegating to an implemente
 
 Observable check in `npm run dev`: commit in a worktree session, open the diff, see the commit's files without choosing a branch.
 
+## Slice 2
+
+Session: smarter-diff-view-slice-2-a1
+Status: done
+Commit: this commit (see git log)
+
+### Slice plan
+
+Found in the code: `computeDiff` resolved the default base only for 'branch' mode and always read untracked files; the header had a `<select>` mixing views and branches; `setDiffBase` was the only viewer writer.
+
+Implementer 1:
+- [x] `src/core/diff/compute.ts`: 'last-commit' mode (HEAD vs parent or empty tree, tracked only, empty when `noOwnCommits`)
+- [x] `src/renderer/src/stores/slices.ts`: `setDiffMode`
+- [x] `DiffViewer.tsx`, `.module.css`: segmented switch, base select only in Branch, Untracked toggle hidden in Last commit
+- [x] tests in `compute.test.ts` and `src/core/comments/reanchor.test.ts`
+
+Models passed: reviewer: inherit
+
+### Review rounds
+
+Round 1: no blocking findings; non-blocking left (roundabout `compared.base` reset in last-commit, merge commits diff against first parent untested, empty Last commit has no message until slice 5).
+
+approved, 0 blocking, 0 fix rounds. Non-blocking left: see round 1.
+
+### Deviations
+
+The planner session wrote the code itself instead of delegating to an implementer subagent (small, tightly coupled slice). Otherwise none.
+
+### Verification
+
+`npx vitest run src/core/diff/compute.test.ts src/core/comments` 86 passed (new: last commit newest only, root commit, on main, HEAD equals merge-base, no commits, mode-only key change, comment orphaned on mode switch); `npm test` 1133 passed; `npm run typecheck` clean. Reviewer requested with model inherit.
+
+### Left for the human
+
+Observable check in `npm run dev`: add an uncommitted edit; Branch shows commits plus the edit, Uncommitted only shows the edit, Last commit shows the newest commit. Check the segmented switch visually in light and dark.
+
 ## Open questions

@@ -34,6 +34,7 @@ interface SlicesState {
   openDiff(sessionId: string): void
   backToDiff(sessionId: string): void
   setDiffBase(sessionId: string, base: string | null, mode?: DiffMode): void // what the open diff compares against; null: the auto-detected main branch (mode 'branch')
+  setDiffMode(sessionId: string, mode: DiffMode): void // the view of the open diff; an explicit base is kept and ignored outside 'branch'
   openRendered(projectId: string, sessionId: string, r: NonNullable<DiffFile['rendered']>): void // "← Diff" returns to sessionId
   closeViewer(): void
   setViewerWidth(px: number): void
@@ -101,6 +102,11 @@ export const useSlices = create<SlicesState>((set, get) => {
     openDiff: (sessionId) => { void window.api.invoke('ui:set', { viewer: { kind: 'diff', sessionId }, viewerExpanded: false }) },
     backToDiff: (sessionId) => { void window.api.invoke('ui:set', { viewer: { kind: 'diff', sessionId } }) },
     setDiffBase: (sessionId, base, mode) => { void window.api.invoke('ui:set', { viewer: { kind: 'diff', sessionId, base, ...(mode && { mode }) } }) },
+    setDiffMode: (sessionId, mode) => {
+      const v = get().ui.viewer
+      const base = v?.kind === 'diff' && v.sessionId === sessionId ? v.base ?? null : null
+      void window.api.invoke('ui:set', { viewer: { kind: 'diff', sessionId, mode, base } })
+    },
     openRendered: (projectId, sessionId, r) => {
       const viewer = { kind: 'file' as const, projectId, path: r.path, hash: null, fromDiff: sessionId }
       void window.api.invoke('ui:set', { viewer })

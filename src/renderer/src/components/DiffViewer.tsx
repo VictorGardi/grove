@@ -1,6 +1,6 @@
 import type { CSSProperties, KeyboardEvent as ReactKeyboardEvent, MouseEvent as ReactMouseEvent } from 'react'
 import { Fragment, useEffect, useMemo, useRef, useState } from 'react'
-import type { Comment, DiffFile, DiffLine, SessionDiff } from '@shared/types'
+import type { Comment, DiffFile, DiffLine, DiffMode, SessionDiff } from '@shared/types'
 import {
   fileFocusTarget, fileTreeRows, filterFiles, gaps, lineKey, pickFile, rangeAnchor, selectionRange, sideOf, splitRows, STATUS_LETTER, visibleFiles, wordMarks,
   type Cell, type DraftRange, type Gap, type Seg,
@@ -19,7 +19,11 @@ const STATUS: Record<DiffFile['status'], string> = {
   modified: 'Modified', added: 'Added', deleted: 'Deleted', renamed: 'Renamed', untracked: 'Untracked',
 }
 
-const UNCOMMITTED = '\0uncommitted' // the select's value for the Uncommitted only view; never a branch name
+const VIEWS: { mode: DiffMode; label: string }[] = [
+  { mode: 'branch', label: 'Branch + uncommitted' },
+  { mode: 'uncommitted', label: 'Uncommitted only' },
+  { mode: 'last-commit', label: 'Last commit' },
+]
 
 // The session diff, one file at a time, drawn as text nodes only (D1). Expanded: a file list and
 // side-by-side lines; in the narrow panel: a file switcher and unified lines.
@@ -34,10 +38,11 @@ export function DiffViewer({ diff, sessionId, label, expanded, onOpenRendered, o
 }) {
   const d = diff && diff.sessionId === sessionId ? diff : null
   const [showUntracked, setShowUntracked] = useState(true)
-  const files = d ? visibleFiles(d, showUntracked) : []
   const setDiffBase = useSlices((x) => x.setDiffBase)
   const choice = useSlices((x) => (x.ui.viewer?.kind === 'diff' && x.ui.viewer.sessionId === sessionId ? x.ui.viewer : null))
-  const uncommitted = choice?.mode === 'uncommitted'
+  const mode: DiffMode = choice?.mode ?? 'branch'
+  const setDiffMode = useSlices((x) => x.setDiffMode)
+  const files = d ? visibleFiles(d, showUntracked && mode !== 'last-commit') : []
   const base = choice?.base ?? null
   const compared = d?.compared ?? null
   const [refs, setRefs] = useState<{ branches: string[]; default: string | null }>({ branches: [], default: null })
@@ -152,18 +157,26 @@ export function DiffViewer({ diff, sessionId, label, expanded, onOpenRendered, o
     <div className={s.viewer}>
       <div className={s.header}>
         <span className={s.label} title={d?.root ?? undefined}>Diff · {label}</span>
-        <select className={s.baseSelect} aria-label="Diff against" value={uncommitted ? UNCOMMITTED : base && base !== (refs.default ?? compared?.defaultBase) ? base : ''}
-          onChange={(e) => e.target.value === UNCOMMITTED ? setDiffBase(sessionId, null, 'uncommitted') : setDiffBase(sessionId, e.target.value || null, 'branch')}>
-          <option value="">{refs.default ?? compared?.defaultBase ? `${refs.default ?? compared?.defaultBase} (default)` : 'Default branch'}</option>
-          <option value={UNCOMMITTED}>Uncommitted only</option>
-          {baseOptions.length > 0 && (
-            <optgroup label="Since branched from">
-              {baseOptions.map((b) => <option key={b} value={b}>{b}</option>)}
-            </optgroup>
-          )}
-        </select>
-        <Button variant="ghost" size="sm" icon={showUntracked ? 'eye' : 'eye-off'} aria-pressed={showUntracked}
-          onClick={() => setShowUntracked((v) => !v)}>Untracked</Button>
+        <div className={s.views} role="group" aria-label="Diff view">
+          {VIEWS.map((v) => (
+            <button key={v.mode} type="button" className={s.view} aria-pressed={mode === v.mode} onClick={() => setDiffMode(sessionId, v.mode)}>{v.label}</button>
+          ))}
+        </div>
+        {mode === 'branch' && (
+          <select className={s.baseSelect} aria-label="Diff against" value={base && base !== (refs.default ?? compared?.defaultBase) ? base : ''}
+            onChange={(e) => setDiffBase(sessionId, e.target.value || null, 'branch')}>
+            <option value="">{refs.default ?? compared?.defaultBase ? `${refs.default ?? compared?.defaultBase} (default)` : 'Default branch'}</option>
+            {baseOptions.length > 0 && (
+              <optgroup label="Since branched from">
+                {baseOptions.map((b) => <option key={b} value={b}>{b}</option>)}
+              </optgroup>
+            )}
+          </select>
+        )}
+        {mode !== 'last-commit' && (
+          <Button variant="ghost" size="sm" icon={showUntracked ? 'eye' : 'eye-off'} aria-pressed={showUntracked}
+            onClick={() => setShowUntracked((v) => !v)}>Untracked</Button>
+        )}
         {files.length > 0 && (
           <div className={s.pager}>
             <span className={s.count}>{at + 1} / {files.length}</span>

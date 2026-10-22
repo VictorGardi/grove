@@ -37,6 +37,33 @@ describe('core diff drafts', () => {
   }, 20000)
 })
 
+describe('core diff drafts across views', () => {
+  it('orphan when the view changes to one without their lines', async () => {
+    s = setupCore()
+    const repo = gitRepo(s.dir)
+    repo.write('.gitignore', '*.json\nagents/\n')
+    repo.write('a.txt', 'one\ntwo\n')
+    repo.commit()
+    repo.git('checkout', '-q', '-b', 'feature')
+    repo.write('a.txt', 'one\nTWO\n')
+    repo.commit('on feature')
+    const core = s.make()
+    await core.start()
+    const session = await createTerminal(core)
+    await core.commands.uiSet({ viewer: { kind: 'diff', sessionId: session.id } })
+    await vi.waitFor(() => expect(core.getSlices().diff?.files).toHaveLength(1))
+    const root = core.getSlices().diff!.root!
+    await core.commands.commentAdd({
+      sessionId: session.id, body: 'why',
+      anchor: { kind: 'diff', root, path: 'a.txt', side: 'new', start: 2, end: 2, lines: ['TWO'] },
+    })
+    await core.commands.uiSet({ viewer: { kind: 'diff', sessionId: session.id, mode: 'uncommitted' } })
+    await vi.waitFor(() => expect(core.getSlices().diff?.compared.mode).toBe('uncommitted'), { timeout: 8000 })
+    expect(core.getSlices().diff?.files).toEqual([])
+    await vi.waitFor(() => expect(core.getSlices().comments[0].orphaned).toBe(true), { timeout: 8000 })
+  }, 20000)
+})
+
 describe('core artifact drafts', () => {
   it('follow an edited file and orphan when the quote is gone', async () => {
     s = setupCore()
