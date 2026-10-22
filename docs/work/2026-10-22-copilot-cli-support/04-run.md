@@ -232,13 +232,52 @@ approved, 0 blocking after fixes, 1 fix round. Non-blocking left: `install.sh` a
 - Manual: from an interactive Copilot session, run the `grove` skill to start another session, send it a message, wait for it, and read its screen (not run: this child is headless and a Copilot interactive pane was not driven). Run `./install.sh --target copilot-only` in `~/git/grove-skills` (after merging the branch) to get the workflow skills in Copilot; the app's "Install Agent Skill…" menu now also links `grove` into `~/.copilot/skills`.
 - Review the skills repo commit on branch `run/2026-10-22-copilot-cli-support` (`~/.grove/worktrees/grove-skills/run-2026-10-22-copilot-cli-support`).
 
+## Slice 6
+
+Session: run/2026-10-22-copilot-cli-support-inherit-slice-6-a1
+Status: done
+Commit: this commit (see git log)
+
+### Slice plan
+
+Found in the code: the work is in the skills repo (branch `run/2026-10-22-copilot-cli-support`, worktree `~/.grove/worktrees/grove-skills/run-2026-10-22-copilot-cli-support`). `config.schema.json` had `agent` as a free string; `roles.md` step 6 allowed `claude` and `opencode`; `slice-mode.md` steps 4 to 6 spawn only in the Claude and OpenCode forms. App: nothing needed.
+
+Implementer 1 (done in this session by the planner, see Deviations):
+- [x] D4 probe against the real binary (copilot 1.0.103) before writing the recipe
+- [x] Skills: `shared/config.schema.json` (`agent` enum claude/opencode/copilot), `shared/roles.md` (accept `copilot`, `--model`, "In Copilot" recipe), synced copies, `grove-auto/SKILL.md`, `grove-run/references/slice-mode.md` (steps 4 to 6), README, `scripts/validate.sh`
+
+Models passed: reviewer: inherit
+
+### Review rounds
+
+Round 1: fresh reviewer subagent, 1 blocking: `slice-mode.md` steps 5 and 6 still gave only the Claude and OpenCode spawn forms. Fixed. Also applied: concrete fallback (default `task` subagent), version wording, linked-worktree reason for the shell-only exclude step, implementer verified, README reflow, validate.sh check for the slice-mode text.
+
+approved, 0 blocking after fix, 1 fix round (no second reviewer round: wording and a grep check). Non-blocking left: no listing check like OpenCode's `opencode debug agents` polling (agent files written mid-session were loaded by a new `-p` process; whether an already running interactive session picks up a new file is untested); `.agent.md` naming not used (plain `.md` loads).
+
+### Deviations
+
+- Built directly by the planner session, not through an `implementer` subagent. Review was a fresh reviewer subagent.
+- D4 outcome (gate choice A or B was open): **A**, verified. Each role was run once as a Copilot subagent through the `task` tool from a generated `.github/agents/grove-<role>.md` with `model:` frontmatter: `reviewer` working (model applied; an unavailable model fails the spawn with the list of available ones), `cto` working, `researcher` working, `implementer` working (created a file with its own shell tool). All with `claude-haiku-4.5`, from a probe repo in the scratchpad.
+- The schema now rejects unknown agents (enum) as well as `roles.md` step 6.
+
+### Verification
+
+- Skills: `bash scripts/validate.sh` OK, including: schema `agent` enum is exactly claude/opencode/copilot for all five roles, the recipe's `.github/agents/grove-*.md` and `info/exclude` steps exist in `roles.md`, `slice-mode.md` carries the Copilot spawn text. (`jsonschema` is not installed here, so accept/reject is checked on the enum, not by validating a sample config.)
+- Real binary: the four subagent roles above.
+- Models requested: none (all roles inherit).
+
+### Left for the human
+
+- Not run: a small feature through the workflow skills inside an interactive Copilot session, and `grove-run --profile` with Copilot as `implementer` making two slices (this child is headless; the recipe's delete-on-profile-switch and git-exclude steps are specified and grep-checked, not exercised end to end). A Claude-only profile is unchanged by the diff (Claude text untouched).
+- Review the skills commit on `run/2026-10-22-copilot-cli-support`.
+
 ## Gaps
 
 - Signed-out Copilot is not detected by Grove (no way to read the keychain login); Copilot shows its own message.
 - Status (working, done), permission attention and file links work through hooks; question attention, subagent marks and context gauge are not signalled. Resume UI: later slices.
 - Resume in an interactive pane is untested against the real app; an unavailable model fails in the pane.
 - Sandbox: none for Copilot (non-goal).
-- Copilot question tool and subagent-by-role spawning: not verified; `roles.md` "In Copilot" says so. Workflow skills that need blind subagents depend on the latter (Slice 6).
+- Copilot question tool: not verified; `roles.md` "In Copilot" says so. Subagent roles with per-role models work through generated agent files and the `task` tool (verified, Slice 6); the interactive-session pickup of files written mid-session and an end-to-end `grove-run` with Copilot as implementer are untested.
 - Copilot skills install is user-level only and explicit for the skills repo (`--target copilot-only`).
 
 ## Open questions
