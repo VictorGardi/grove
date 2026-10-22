@@ -277,15 +277,16 @@ describe('sessionCreate copilot', () => {
   })
 
   it('--model and --prompt reach the argv, the model is kept on the session, and a resume reuses the id and the model', async () => {
-    const core = await start(new CopilotSource({ onPath: async () => true }))
+    const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'grove-copilot-'))
+    const core = await start(new CopilotSource({ dir, onPath: async () => true }))
     const res = await core.commands.sessionCreate({ kind: 'copilot', cwd: t.dir, prompt: 'say hi', model: 'gpt-5.4', cols: 120, rows: 40 })
     if (!res.ok) throw new Error(res.error)
     const id = core.getSlices().sessions[0].agentSessionId!
-    expect(created(t.fake)[0].argv![4]).toBe(`exec copilot --session-id ${id} --model gpt-5.4 '--interactive=say hi'`)
+    expect(created(t.fake)[0].argv![4]).toBe(`exec copilot --session-id ${id} --plugin-dir ${path.join(dir, `${id}.plugin`)} --model gpt-5.4 '--interactive=say hi'`)
     expect(res.data.launchModel).toBe('gpt-5.4')
     await core.commands.sessionKill({ id: res.data.id })
     await core.commands.sessionResume({ id: res.data.id })
-    expect(created(t.fake)[1].argv![4]).toBe(`exec copilot --resume=${id} --model gpt-5.4`)
+    expect(created(t.fake)[1].argv![4]).toBe(`exec copilot --resume=${id} --plugin-dir ${path.join(dir, `${id}.plugin`)} --model gpt-5.4`)
   })
 
   it('refuses with the source error and creates no pane when copilot is missing', async () => {

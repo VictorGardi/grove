@@ -80,6 +80,7 @@ app.whenReady().then(async () => {
   const cliBundle = path.join(app.getAppPath(), 'out', 'main', 'cli.js')
   const launcher = writeLauncher({ binDir, execPath: process.execPath, cliPath: cliBundle, socketPath })
   const spoolDir = path.join(app.getPath('userData'), 'agents', 'claude')
+  const copilotDir = path.join(app.getPath('userData'), 'agents', 'copilot')
   const home = os.homedir()
   // Everything a sandboxed session's container binds, each at the identical path inside
   // (ADR 0035). Resolved once, here, because only the app knows the Electron paths.
@@ -113,7 +114,7 @@ app.whenReady().then(async () => {
       confPath: path.join(app.getAppPath(), 'resources', 'tmux.conf'),
       env: minimalEnv(process.env),
     }),
-    sources: [new HttpOpenCode({ serviceFile: serviceFilePath(process.env, home) }), new SpoolClaude({ dir: spoolDir }), new CopilotSource()],
+    sources: [new HttpOpenCode({ serviceFile: serviceFilePath(process.env, home) }), new SpoolClaude({ dir: spoolDir }), new CopilotSource({ dir: copilotDir })],
     git: gitPath,
     prLookup: ghPath ? ghLookup(ghPath, minimalEnv(process.env)) : undefined,
   })
