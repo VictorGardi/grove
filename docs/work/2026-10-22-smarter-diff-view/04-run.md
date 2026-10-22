@@ -96,4 +96,41 @@ The planner session wrote the code itself instead of delegating to an implemente
 
 Observable check in `npm run dev`: add an uncommitted edit; Branch shows commits plus the edit, Uncommitted only shows the edit, Last commit shows the newest commit. Check the segmented switch visually in light and dark.
 
+## Slice 3
+
+Session: smarter-diff-view-slice-3-a1
+Status: done
+Commit: this commit (see git log)
+
+### Slice plan
+
+Found in the code: `openDiff` and `backToDiff` in `slices.ts` wrote a bare `{kind:'diff', sessionId}` viewer, so the choice was lost on every reopen; `setDiffBase` and `setDiffMode` wrote only `ui.viewer`; `loadState` pruned `ui.viewer` and the grid by known session ids; `uiSet` shallow-merges.
+
+Implementer 1:
+- [x] `src/shared/types.ts`: `DiffPrefs`, optional `UiState.diffPrefs` (no schema bump, `DEFAULT_UI` untouched)
+- [x] `src/core/store/stateStore.ts`: prune `diffPrefs` with the sessions on load
+- [x] `src/renderer/src/diffView.ts`: pure `diffTargetFor` and `pickDiffPrefs`
+- [x] `src/renderer/src/stores/slices.ts`: `openDiff`/`backToDiff` read the prefs; `setDiffBase`/`setDiffMode` write viewer and prefs through one `pickDiff`
+- [x] tests in `stateStore.test.ts` and `diffView.test.ts`
+
+Models passed: reviewer: inherit
+
+### Review rounds
+
+Round 1: no blocking findings; non-blocking left: two picks inside one IPC round trip could read stale prefs, prefs of a session deleted at runtime stay until the next load, no test of the close-and-reopen flow itself (the pure helpers are tested).
+
+approved, 0 blocking, 0 fix rounds. Non-blocking left: see round 1.
+
+### Deviations
+
+The planner session wrote the code itself instead of delegating to an implementer subagent (small, tightly coupled slice). Optional `diffPrefs` is left absent in `DEFAULT_UI` and read as empty, rather than defaulted to `{}` on load, so an old state file round-trips unchanged. Otherwise none.
+
+### Verification
+
+`npx vitest run src/core/store src/renderer` 381 passed (new: prefs of a deleted session dropped on load, old file without prefs, no prefs opens on defaults, prefs open on their view and branch, picking keeps the unpicked part, default re-pick stores null); `npm run typecheck` clean. Reviewer requested with model inherit.
+
+### Left for the human
+
+Observable check in `npm run dev`: pick Uncommitted only, close and reopen the diff, it is still Uncommitted only; open another session's diff, it is Branch.
+
 ## Open questions

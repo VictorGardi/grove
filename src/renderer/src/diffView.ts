@@ -1,4 +1,16 @@
-import type { CommentAnchor, DiffFile, DiffLine, SessionDiff } from '@shared/types'
+import type { CommentAnchor, DiffFile, DiffLine, DiffMode, DiffPrefs, DiffTarget, SessionDiff } from '@shared/types'
+
+// The viewer target that opens a session's diff: its remembered view and branch, or the defaults (no mode, no base) for a session with none.
+export function diffTargetFor(sessionId: string, prefs: Record<string, DiffPrefs> | undefined): DiffTarget {
+  const p = prefs?.[sessionId]
+  return p ? { kind: 'diff', sessionId, mode: p.mode, base: p.base } : { kind: 'diff', sessionId }
+}
+
+// The prefs after the human picks a view and/or a branch: `current` is what the diff shows now (a missing mode reads as 'branch', a missing base as the auto-detected main).
+// An unset part keeps its current value; picking the default branch passes base null so it keeps auto-detecting.
+export function pickDiffPrefs(current: { mode?: DiffMode; base?: string | null } | undefined, pick: { mode?: DiffMode; base?: string | null }): DiffPrefs {
+  return { mode: pick.mode ?? current?.mode ?? 'branch', base: pick.base !== undefined ? pick.base : current?.base ?? null }
+}
 
 export function visibleFiles(d: SessionDiff, showUntracked: boolean): DiffFile[] {
   return showUntracked ? d.files : d.files.filter((f) => f.status !== 'untracked')

@@ -94,6 +94,7 @@ export interface GridState {
   spans?: Record<string, PaneSpan> // by session id
   tracks?: Record<string, GridTracks> // by layout shape, e.g. "2x2"
 }
+export interface DiffPrefs { mode: DiffMode; base: string | null } // a session's picked view and compare branch; base null: the auto-detected main branch
 export interface UiState {
   sidebarWidth: number
   sidebarCollapsed: boolean // ⌘B: the sidebar shrinks to a rail of session tiles
@@ -112,6 +113,7 @@ export interface UiState {
   viewer: ViewerTarget | null // what the right-hand panel shows
   viewerWidth: number | null // null uses the responsive default; a number is a user-resized pixel width
   viewerExpanded: boolean     // the viewer fills the content area
+  diffPrefs?: Record<string, DiffPrefs> // by session id: what the diff opens on again in that session (absent reads as none: defaults)
   grid: GridState             // the session grid (ADR 0031); the focused pane is focusedSessionId
 }
 export interface FeatureStage {

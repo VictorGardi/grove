@@ -2,6 +2,7 @@ import { create } from 'zustand'
 import type { Comment, DiffFile, DiffMode, DocTarget, FeaturesSlice, OpenCodeSlice, PaneSpan, Project, Session, SessionDiff, UiState } from '@shared/types'
 import { DEFAULT_UI, EMPTY_FEATURES, OPENCODE_CONNECTING } from '@shared/types'
 import { focusAfterRemove, gridShown, swapMembers, withMember, withoutArrangement, withSpan, withTracks, type GridLayout } from '../gridView'
+import { diffTargetFor, pickDiffPrefs } from '../diffView'
 import { openBoard } from '../navigation'
 import { trackWaiting } from '../sessionStatus'
 
@@ -58,6 +59,14 @@ export const useSlices = create<SlicesState>((set, get) => {
       waitingSince: trackWaiting(get().waitingSince, sessions, Date.now()),
     })
 
+  // the one writer of a diff's view and branch: the open viewer carries them for core, diffPrefs keeps them for the session's next open
+  const pickDiff = (sessionId: string, pick: { mode?: DiffMode; base?: string | null }) => {
+    const { viewer, diffPrefs } = get().ui
+    const shown = viewer?.kind === 'diff' && viewer.sessionId === sessionId ? viewer : diffTargetFor(sessionId, diffPrefs)
+    const prefs = pickDiffPrefs(shown, pick)
+    void window.api.invoke('ui:set', { viewer: { kind: 'diff', sessionId, ...prefs }, diffPrefs: { ...diffPrefs, [sessionId]: prefs } })
+  }
+
   return {
     projects: [],
     sessions: [],
@@ -99,14 +108,10 @@ export const useSlices = create<SlicesState>((set, get) => {
       void window.api.invoke('ui:set', { sessionOrder })
     },
     openArtifact: (t) => { void window.api.invoke('ui:set', { viewer: t }) },
-    openDiff: (sessionId) => { void window.api.invoke('ui:set', { viewer: { kind: 'diff', sessionId }, viewerExpanded: false }) },
-    backToDiff: (sessionId) => { void window.api.invoke('ui:set', { viewer: { kind: 'diff', sessionId } }) },
-    setDiffBase: (sessionId, base, mode) => { void window.api.invoke('ui:set', { viewer: { kind: 'diff', sessionId, base, ...(mode && { mode }) } }) },
-    setDiffMode: (sessionId, mode) => {
-      const v = get().ui.viewer
-      const base = v?.kind === 'diff' && v.sessionId === sessionId ? v.base ?? null : null
-      void window.api.invoke('ui:set', { viewer: { kind: 'diff', sessionId, mode, base } })
-    },
+    openDiff: (sessionId) => { void window.api.invoke('ui:set', { viewer: diffTargetFor(sessionId, get().ui.diffPrefs), viewerExpanded: false }) },
+    backToDiff: (sessionId) => { void window.api.invoke('ui:set', { viewer: diffTargetFor(sessionId, get().ui.diffPrefs) }) },
+    setDiffBase: (sessionId, base, mode) => pickDiff(sessionId, mode ? { base, mode } : { base }),
+    setDiffMode: (sessionId, mode) => pickDiff(sessionId, { mode }),
     openRendered: (projectId, sessionId, r) => {
       const viewer = { kind: 'file' as const, projectId, path: r.path, hash: null, fromDiff: sessionId }
       void window.api.invoke('ui:set', { viewer })

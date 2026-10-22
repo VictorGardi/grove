@@ -46,6 +46,16 @@ describe('stateStore', () => {
     expect(loadState(file).ui.grid).toEqual({ open: false, members: [] })
   })
 
+  it('drops diff prefs of unknown sessions, and loads an old file without any', () => {
+    const file = tmpFile()
+    const known = newSession({ projectId: 'p', kind: 'terminal', now: new Date(), id: 'a', agentSessionId: null })
+    const diffPrefs = { a: { mode: 'uncommitted' as const, base: null }, gone: { mode: 'last-commit' as const, base: 'dev' } }
+    saveState(file, { schemaVersion: 9, sessions: [known], ui: { ...DEFAULT_UI, diffPrefs } })
+    expect(loadState(file).ui.diffPrefs).toEqual({ a: { mode: 'uncommitted', base: null } })
+    saveState(file, { schemaVersion: 9, sessions: [known], ui: DEFAULT_UI })
+    expect(loadState(file).ui.diffPrefs).toBeUndefined()
+  })
+
   it('migrates a saved sort of none to custom, and gives an older file an empty order', () => {
     const file = tmpFile()
     const { sessionOrder: _o, ...old } = DEFAULT_UI

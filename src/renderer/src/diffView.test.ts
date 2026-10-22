@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest'
 import type { DiffFile, SessionDiff } from '@shared/types'
 import type { DiffLine } from '@shared/types'
-import { fileFocusTarget, fileTreeRows, filterFiles, gaps, lineKey, pickFile, rangeAnchor, selectionRange, splitRows, visibleFiles, wordMarks, wordSegs } from './diffView'
+import { diffTargetFor, pickDiffPrefs, fileFocusTarget, fileTreeRows, filterFiles, gaps, lineKey, pickFile, rangeAnchor, selectionRange, splitRows, visibleFiles, wordMarks, wordSegs } from './diffView'
 
 const file = (path: string, status: DiffFile['status']): DiffFile =>
   ({ path, oldPath: null, status, binary: false, additions: 0, deletions: 0, hunks: [], truncated: false, rendered: null })
@@ -182,5 +182,29 @@ describe('fileTreeRows', () => {
 
     const forced = fileTreeRows(files, collapsed, true)
     expect(forced.some((r) => r.path.startsWith('src/'))).toBe(true)
+  })
+})
+
+describe('diffTargetFor', () => {
+  it('opens a session without prefs on the defaults', () => {
+    expect(diffTargetFor('s', undefined)).toEqual({ kind: 'diff', sessionId: 's' })
+    expect(diffTargetFor('s', { other: { mode: 'last-commit', base: null } })).toEqual({ kind: 'diff', sessionId: 's' })
+  })
+  it('opens a session with prefs on its view and branch', () => {
+    expect(diffTargetFor('s', { s: { mode: 'branch', base: 'dev' } })).toEqual({ kind: 'diff', sessionId: 's', mode: 'branch', base: 'dev' })
+  })
+})
+
+describe('pickDiffPrefs', () => {
+  it('keeps the part that was not picked', () => {
+    expect(pickDiffPrefs({ mode: 'branch', base: 'dev' }, { mode: 'uncommitted' })).toEqual({ mode: 'uncommitted', base: 'dev' })
+    expect(pickDiffPrefs({ mode: 'last-commit', base: null }, { base: 'dev' })).toEqual({ mode: 'last-commit', base: 'dev' })
+  })
+  it('starts from the defaults when nothing is shown yet', () => {
+    expect(pickDiffPrefs(undefined, { mode: 'last-commit' })).toEqual({ mode: 'last-commit', base: null })
+    expect(pickDiffPrefs({}, { base: 'dev' })).toEqual({ mode: 'branch', base: 'dev' })
+  })
+  it('stores null when the default branch is picked again', () => {
+    expect(pickDiffPrefs({ mode: 'branch', base: 'dev' }, { base: null, mode: 'branch' })).toEqual({ mode: 'branch', base: null })
   })
 })
