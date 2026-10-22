@@ -28,7 +28,7 @@ export function BasePicker({ sessionId, base, defaultName, recents, onPick }: {
     let alive = true
     setRefs(null)
     void window.api.invoke('diff:refs', { sessionId }).then((res) => { if (alive && res.ok) setRefs(res.data) })
-    const onDown = (e: MouseEvent) => { if (!root.current?.contains(e.target as Node)) setOpen(false) }
+    const onDown = (e: MouseEvent) => { if (!root.current?.contains(e.target as Node)) { setOpen(false); setQuery(''); setAt(0) } }
     document.addEventListener('mousedown', onDown)
     return () => { alive = false; document.removeEventListener('mousedown', onDown) }
   }, [open, sessionId])
