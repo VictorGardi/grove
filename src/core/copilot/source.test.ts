@@ -14,6 +14,13 @@ describe('CopilotSource', () => {
     expect(source.argv(id, 'resume')).toEqual(['copilot', `--resume=${id}`])
   })
 
+  it('passes the model on start and resume, and the prompt on start only', () => {
+    const id = source.mintId()
+    expect(source.argv(id, 'start', { model: 'gpt-5.4', prompt: 'do X', name: 'l' })).toEqual(['copilot', '--session-id', id, '--model', 'gpt-5.4', '--interactive=do X'])
+    expect(source.argv(id, 'start', { prompt: '-x' })).toEqual(['copilot', '--session-id', id, '--interactive=-x'])
+    expect(source.argv(id, 'resume', { model: 'gpt-5.4', prompt: 'do X' })).toEqual(['copilot', `--resume=${id}`, '--model', 'gpt-5.4'])
+  })
+
   it('signals nothing, so a card has no status', async () => {
     const events: string[] = []
     source.start((e) => events.push(e.type))

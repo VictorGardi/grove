@@ -25,8 +25,11 @@ export class CopilotSource implements AgentSource {
     return randomUUID()
   }
 
-  argv(id: string, mode: 'start' | 'resume'): string[] {
-    return mode === 'start' ? ['copilot', '--session-id', id] : ['copilot', `--resume=${id}`]
+  // `--interactive=<prompt>` (`-i`) starts the interactive UI and runs the prompt; the `=` form keeps a prompt that starts with `-` from reading as a flag.
+  argv(id: string, mode: 'start' | 'resume', opts?: { prompt?: string; name?: string; model?: string }): string[] {
+    const session = mode === 'start' ? ['--session-id', id] : [`--resume=${id}`]
+    const prompt = mode === 'start' && opts?.prompt ? [`--interactive=${opts.prompt}`] : []
+    return ['copilot', ...session, ...(opts?.model ? ['--model', opts.model] : []), ...prompt]
   }
 
   // The error code a create is refused with, or null when it can go ahead. Copilot keeps its sign-in in the

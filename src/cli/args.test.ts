@@ -15,13 +15,14 @@ describe('parseCommand', () => {
     expect(parseCommand(['new', 'terminal'])).toMatchObject({ cmd: 'new', kind: 'terminal', json: false })
   })
 
-  it('parses --model on claude and opencode, not terminal, and not empty', () => {
+  it('parses --model on claude, opencode and copilot, not terminal, and not empty', () => {
     expect(parseCommand(['new', 'claude', '--model', 'm1'])).toMatchObject({ cmd: 'new', kind: 'claude', model: 'm1' })
     expect(parseCommand(['new', 'claude'])).toMatchObject({ cmd: 'new', model: undefined })
     expect(parseCommand(['new', 'opencode', '--model', 'p/m1'])).toMatchObject({ cmd: 'new', kind: 'opencode', model: 'p/m1' })
     expect(parseCommand(['new', 'terminal', '--model', 'm1'])).toBeInstanceOf(UsageError)
     expect(parseCommand(['new', 'copilot'])).toMatchObject({ cmd: 'new', kind: 'copilot' })
-    for (const kind of ['claude', 'opencode']) expect(parseCommand(['new', kind, '--model', ''])).toBeInstanceOf(UsageError)
+    expect(parseCommand(['new', 'copilot', '--model', 'gpt-5.4'])).toMatchObject({ cmd: 'new', kind: 'copilot', model: 'gpt-5.4' })
+    for (const kind of ['claude', 'opencode', 'copilot']) expect(parseCommand(['new', kind, '--model', ''])).toBeInstanceOf(UsageError)
   })
 
   it('parses --sandboxed, only on new', () => {

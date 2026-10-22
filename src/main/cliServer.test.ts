@@ -62,7 +62,7 @@ describe('cli server', () => {
     expect(await request(socketPath, req('sessions.create', { kind: 'vim', cwd: t.dir }))).toMatchObject({ ok: false, error: { code: 'bad-params' } })
   })
 
-  it('creates a copilot session, names a missing copilot plainly, and keeps --model for claude and opencode', async () => {
+  it('creates a copilot session, names a missing copilot plainly, and accepts --model', async () => {
     const fake = new FakeAgentSource('copilot', true)
     const core = t.make(undefined, { sources: [t.oc, t.claude, fake] })
     await core.start()
@@ -76,7 +76,7 @@ describe('cli server', () => {
     expect(missing).toMatchObject({ ok: false, error: { code: 'no-copilot', message: errorMessage('no-copilot') } })
     expect(core.getSlices().sessions).toHaveLength(1)
     fake.missing = null
-    expect(await request(socketPath, req('sessions.create', { kind: 'copilot', cwd: t.dir, model: 'm' }))).toMatchObject({ ok: false, error: { code: 'bad-params' } })
+    expect(await request(socketPath, req('sessions.create', { kind: 'copilot', cwd: t.dir, model: 'm' }))).toMatchObject({ ok: true })
   })
 
   it('carries --model to a claude session, and refuses it for other kinds before creating anything', async () => {

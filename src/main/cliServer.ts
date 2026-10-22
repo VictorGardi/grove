@@ -81,7 +81,7 @@ async function dispatch(core: Core, raise: () => void, line: string): Promise<Cl
         parent = found.data.id
       }
       const model = optString(params.model)
-      if (model !== undefined && kind !== 'claude' && kind !== 'opencode') return fail(id, 'bad-params', '--model only works with claude and opencode')
+      if (model !== undefined && kind === 'terminal') return fail(id, 'bad-params', '--model only works with claude, opencode and copilot')
       const branch = optString(params.branch)
       if (params.worktree === true && !branch) return fail(id, 'bad-params', '--worktree needs --branch')
       // A worktree session runs in the new checkout, so the worktree is made first and the

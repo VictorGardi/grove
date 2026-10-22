@@ -17,7 +17,7 @@ or its exact label. An unknown or ambiguous ref is an error (exit 1).
 
 ```
 grove ls [--all] [--json]            live sessions (--all: also ended ones)
-grove new <opencode|claude|terminal> [--cwd DIR] [--prompt TEXT|-] [--label L]
+grove new <opencode|claude|copilot|terminal> [--cwd DIR] [--prompt TEXT|-] [--label L]
           [--link SLUG] [--parent REF | --child] [--wait] [--timeout S] [--json]
                                      start a background session; prints its id
 grove new claude --model ALIAS        start Claude with that model (an alias such as the ones `claude --model` takes)
@@ -37,9 +37,9 @@ directory; the session lands under the project that contains it (a new folder
 is registered as a project). `--link SLUG` pins the session to a feature of that
 project and fails, creating nothing, if there is no such feature.
 A prompt that starts with `-` must be written `--prompt=-text`.
-`--model` (claude and opencode; a usage error for terminal) starts the agent with that model.
+`--model` (claude, opencode and copilot; a usage error for terminal) starts the agent with that model.
 Claude takes the alias `claude --model` takes; OpenCode takes `provider/model` and gets it through
-its config env `OPENCODE_CONFIG_CONTENT`. Resuming the session keeps the model.
+its config env `OPENCODE_CONFIG_CONTENT`; Copilot takes the name `copilot --model` takes. Resuming the session keeps the model.
 
 `--parent REF` puts the new session in REF's group in the sidebar; `--child`
 means "in my group", taking your own `GROVE_SESSION_ID`. Without either, the new

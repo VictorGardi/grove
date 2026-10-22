@@ -70,10 +70,49 @@ approved, 0 blocking, 0 fix rounds. Non-blocking left: `--prompt`/label are acce
 - Signed-out: Copilot offers no read-only sign-in check, so there is no Grove message for it; Copilot's own login prompt shows in the pane. Listed as a gap.
 - Gate choices (run rule 1), from the facts: D1 = A (hooks per launch via `--plugin-dir`, no edit to `~/.copilot/settings.json`; permissionRequest and agentStop exist; question and subagent signals unverified); D2 = A (`--session-id`, `--resume=<id>`); D3 = A (`~/.copilot/skills`, user level); D4 = A or B still open (agent file model unverified; `subagents.agents.<name>.model` in settings is a candidate).
 
+## Slice 2
+
+Session: run/2026-10-22-copilot-cli-support-inherit-slice-2-a1
+Status: done
+Commit: this commit (see git log)
+
+### Slice plan
+
+Found in the code: `core.ts` `sessionCreate` already passes `{ prompt, name, model }` to `source.argv` and stores `launchModel`; `sessionResume` already passes `{ model: session.launchModel }`. Only `CopilotSource.argv` ignored the options, and `args.ts` / `cliServer.ts` allow-listed `--model` to claude and opencode.
+
+Implementer 1 (done in this session by the planner, see Deviations):
+- [x] `src/core/copilot/source.ts` (+ test): `--model <m>` on start and resume, `--interactive=<prompt>` on start only
+- [x] `src/cli/args.ts`, `src/main/cliServer.ts` (+ tests): `--model` allowed for every agent kind, still refused for terminal
+- [x] `src/core/sessionCreate.test.ts`: real `CopilotSource`, model and prompt in the argv, resume reuses id and model
+- [x] `resources/skills/grove/SKILL.md`, `src/shared/types.ts` comment
+
+Models passed: reviewer: inherit
+
+### Review rounds
+
+Round 1: fresh reviewer subagent, 0 blocking. Ran the real binary: a prompt starting with `-` passes through the `--interactive=` form.
+
+approved, 0 blocking, 0 fix rounds. Non-blocking left: `name` is ignored (Copilot has `--name`, possible follow-up); an unavailable `--model` fails fast in the pane and the session shows gone; resuming a session Copilot never persisted (killed before its first turn) errors in the pane.
+
+### Deviations
+
+- Built directly by the planner session, not through an `implementer` subagent (small, tightly coupled). Review was a fresh reviewer subagent.
+- `--interactive=<prompt>` is used instead of `-i <prompt>` so a prompt starting with `-` is safe.
+
+### Verification
+
+- `npm run typecheck`: clean. `npm test`: 96 files, 1130 tests passed (before the last test-typing fix); `src/core/sessionCreate.test.ts` re-run: 51 passed.
+- Models requested: none (all roles inherit).
+
+### Left for the human
+
+- Manual in the running app: `grove new copilot --model <m> --prompt "do X"` shows both applied; kill the pane, resume from the app, the conversation continues (resume was verified only with `-p` runs, not in an interactive pane); `grove new terminal --model m` is refused (covered by tests).
+
 ## Gaps
 
 - Signed-out Copilot is not detected by Grove (no way to read the keychain login); Copilot shows its own message.
-- Status, attention, file links, model, prompt, resume UI: later slices.
+- Status, attention, file links, resume UI: later slices.
+- Resume in an interactive pane is untested against the real app; an unavailable model fails in the pane.
 - Sandbox: none for Copilot (non-goal).
 
 ## Open questions
