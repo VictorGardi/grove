@@ -132,6 +132,40 @@
   gap: 6px;
 }
 
+.slot {
+  position: relative;
+}
+
+/* a parent's show/hide-children toggle, on the tile's top-right corner */
+.kidsToggle {
+  position: absolute;
+  top: -3px;
+  right: -3px;
+  width: 14px;
+  height: 14px;
+  display: grid;
+  place-items: center;
+  padding: 0;
+  border: 1px solid var(--card-border);
+  border-radius: var(--r-pill);
+  background: var(--chrome-bg);
+  color: var(--text-2);
+  cursor: pointer;
+}
+
+.kidsToggle:hover {
+  color: var(--text);
+  border-color: var(--text-2);
+}
+
+/* the focused session is one of the children this collapsed parent hides */
+.kidsHolding,
+.kidsHolding:hover {
+  background: var(--card-selected-bg);
+  border-color: var(--card-selected-border);
+  color: var(--text);
+}
+
 .tile {
   position: relative;
   width: 36px;

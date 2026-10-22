@@ -1,6 +1,7 @@
+import { kidsKey } from '@shared/groups'
 import { GRID_MAX, type Session } from '@shared/types'
 import { gridShown } from '../gridView'
-import { longestWaiting, shownStatus, statusTone } from '../sessionStatus'
+import { longestWaiting, mostUrgent, shownStatus, statusTone } from '../sessionStatus'
 import { listGroups, orderedSessions, type ListGroup } from '../sessionList'
 import { useSlices } from '../stores/slices'
 import { colorTags } from '../tags'
@@ -12,15 +13,29 @@ import { tagClass } from './ui/Tag'
 import css from './SidebarRail.module.css'
 
 // The collapsed sidebar (⌘B): a tile per session, grouped the way the panel says. Same state as the full sidebar.
-function Tile({ s, focused, inGrid, onFocus }: { s: Session; focused: boolean; inGrid: boolean; onFocus: () => void }) {
+function Tile({ s, focused, inGrid, kids, onFocus }: {
+  s: Session; focused: boolean; inGrid: boolean; onFocus: () => void
+  kids?: { list: Session[]; collapsed: boolean; holdsFocus: boolean; onToggle: () => void } // set on a parent: its children, for the toggle and the roll-up
+}) {
   const shown = shownStatus(s)
+  // collapsed, the most urgent hidden child shows through on the parent's dot: a waiting child is never hidden
+  const urgent = kids?.collapsed ? mostUrgent([s, ...kids.list]) ?? s : s
   return (
-    <button type="button" className={cx(css.tile, focused && css.focused, shown === 'gone' && css.ended)}
-      aria-pressed={focused} aria-label={s.label} title={`${s.label} · ${shown}`} onClick={onFocus}>
-      <Icon name={s.kind} size={16} />
-      <span className={cx(css.dot, css[`t-${statusTone(s)}`])} />
-      {inGrid && <span className={css.grid} />}
-    </button>
+    <div className={css.slot}>
+      <button type="button" className={cx(css.tile, focused && css.focused, shown === 'gone' && css.ended)}
+        aria-pressed={focused} aria-label={s.label} title={`${s.label} · ${shown}`} onClick={onFocus}>
+        <Icon name={s.kind} size={16} />
+        <span className={cx(css.dot, css[`t-${statusTone(urgent)}`])} />
+        {inGrid && <span className={css.grid} />}
+      </button>
+      {kids && (
+        <button type="button" className={cx(css.kidsToggle, kids.holdsFocus && css.kidsHolding)} aria-expanded={!kids.collapsed}
+          aria-label={kids.collapsed ? 'Show children' : 'Hide children'} title={kids.collapsed ? `Show ${kids.list.length} children` : 'Hide children'}
+          onClick={kids.onToggle}>
+          <Icon name={kids.collapsed ? 'chevron-right' : 'chevron-down'} size={9} />
+        </button>
+      )}
+    </div>
   )
 }
 
@@ -32,7 +47,7 @@ function barClass(group: ListGroup, tag: number | null): string | undefined {
 }
 
 export function SidebarRail({ onNew }: { onNew: () => void }) {
-  const { projects, sessions, ui, features, waitingSince, setFocused, toggleGrid } = useSlices()
+  const { projects, sessions, ui, features, waitingSince, setFocused, toggleGrid, toggleCollapsed } = useSlices()
   const tags = colorTags(projects, features.items)
   const waiting = sessions.filter((x) => shownStatus(x) === 'waiting').length
   const members = ui.grid.members.length
@@ -61,9 +76,14 @@ export function SidebarRail({ onNew }: { onNew: () => void }) {
               <div className={css.run}>
                 {bar && <span className={cx(css.bar, bar)} />}
                 <div className={css.tiles}>
-                  {g.sessions.map((x) => (
-                    <Tile key={x.id} s={x} focused={x.id === ui.focusedSessionId} inGrid={ui.grid.members.includes(x.id)} onFocus={() => setFocused(x.id)} />
-                  ))}
+                  {g.sessions.map((x) => {
+                    const list = g.nest.kids.get(x.id) ?? []
+                    const collapsed = g.nest.collapsed.has(kidsKey(x.id))
+                    return (
+                      <Tile key={x.id} s={x} focused={x.id === ui.focusedSessionId} inGrid={ui.grid.members.includes(x.id)} onFocus={() => setFocused(x.id)}
+                        kids={list.length > 0 ? { list, collapsed, holdsFocus: collapsed && list.some((k) => k.id === ui.focusedSessionId), onToggle: () => toggleCollapsed(kidsKey(x.id)) } : undefined} />
+                    )
+                  })}
                 </div>
               </div>
             </div>

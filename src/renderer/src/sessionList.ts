@@ -130,11 +130,13 @@ export function listGroups(
     ))
 }
 
-// Every visible session once, in group order, collapsed groups included: what Cmd+1..9 counts
-// through. A shift-click range uses visibleSessions below instead, so a range that spans a
-// collapsed group can't select — and so delete — sessions the human cannot see.
+// Every visible session once, in group order, collapsed groups included but a collapsed
+// parent's children left out: what Cmd+1..9 and the rail's tiles count through, so the number
+// the human counts is the session they get. A shift-click range uses visibleSessions below
+// instead, so a range that spans a collapsed group can't select — and so delete — sessions the
+// human cannot see.
 export function orderedSessions(groups: ListGroup[]): Session[] {
-  return groups.flatMap((g) => g.sessions.flatMap((s) => [s, ...(g.nest.kids.get(s.id) ?? [])]))
+  return groups.flatMap((g) => g.sessions.flatMap((s) => [s, ...(g.nest.collapsed.has(kidsKey(s.id)) ? [] : g.nest.kids.get(s.id) ?? [])]))
 }
 
 // The same order, minus sessions inside collapsed groups: what a shift-click range runs over.

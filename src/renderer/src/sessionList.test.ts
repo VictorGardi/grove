@@ -379,8 +379,9 @@ describe('session groups', () => {
     expect(ids(listGroups(PROJECTS, [session('r'), session('k', { parentId: 'r' }), session('x', { parentId: 'k' })], ui()))).toEqual(['r', 'x'])
   })
 
-  it('counts children through Cmd+1..9, and in a range only while the parent is expanded', () => {
+  it('counts children through Cmd+1..9 and the rail only while the parent is expanded; a range likewise', () => {
     expect(orderedSessions(listGroups(PROJECTS, sessions, ui())).map((s) => s.id)).toEqual(['r', 'k1', 'k2', 's'])
+    expect(orderedSessions(listGroups(PROJECTS, sessions, ui({ collapsed: ['k:r'] }))).map((s) => s.id)).toEqual(['r', 's'])
     expect(visibleSessions(listGroups(PROJECTS, sessions, ui({ collapsed: ['k:r'] }))).map((s) => s.id)).toEqual(['r', 's'])
   })
 
