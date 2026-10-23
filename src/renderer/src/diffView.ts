@@ -12,11 +12,10 @@ export function pickDiffPrefs(current: { mode?: DiffMode; base?: string | null }
   return { mode: pick.mode ?? current?.mode ?? 'branch', base: pick.base !== undefined ? pick.base : current?.base ?? null }
 }
 
-// The note above the diff when the Branch view has nothing to compare against (only the default pick, not an explicit branch); null otherwise.
+// The note above the diff when the Branch view has no main branch to compare against (only the default pick, not an explicit branch); null otherwise.
 // The one place that words it.
 export function branchNote(compared: DiffCompared | null): string | null {
   if (!compared || compared.mode !== 'branch' || compared.base) return null
-  if (compared.onDefault) return `You are on ${compared.defaultBase}; showing uncommitted changes only.`
   if (compared.noDefault) return 'No main branch found; showing uncommitted changes only. Pick a branch to compare against.'
   return null
 }

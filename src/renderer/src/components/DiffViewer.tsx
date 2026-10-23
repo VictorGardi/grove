@@ -12,6 +12,7 @@ import { CommentEditor } from './CommentEditor'
 import { ReviewMenu } from './ReviewTray'
 import { Icon } from './ui/Icon'
 import { Button } from './ui/Button'
+import { cx } from './ui/cx'
 import s from './DiffViewer.module.css'
 
 type Draft = DraftRange
@@ -118,15 +119,24 @@ export function DiffViewer({ diff, sessionId, label, expanded, onOpenRendered, o
     if (body.current) body.current.dataset.sel = col ?? ''
   }
 
-  async function save(f: DiffFile, text: string) {
+  async function save(f: DiffFile, text: string): Promise<boolean> {
     const a = writing && d?.root ? rangeAnchor(d.root, f, writing.hunk, writing.side, writing.origin, writing.end) : null
-    if (!a) return
+    if (!a) return false
     // SAVE uses the session whose diff is being viewed; SEND (in ReviewMenu) uses focusedSessionId
     const res = await window.api.invoke('comment:add', { sessionId, anchor: a, body: text })
     if (res.ok) {
       setWriting(null)
       setError(null)
     } else setError(res.error)
+    return res.ok
+  }
+
+  // Save, then send every draft of the session, like Send in the Comments tray.
+  async function saveAndSend(f: DiffFile, text: string) {
+    if (!(await save(f, text))) return
+    const target = useSlices.getState().ui.focusedSessionId ?? sessionId
+    const res = await window.api.invoke('review:send', { sessionId: target })
+    if (!res.ok) setError(res.error)
   }
 
   const nav = (to: number) => {
@@ -153,20 +163,22 @@ export function DiffViewer({ diff, sessionId, label, expanded, onOpenRendered, o
   return (
     <div className={s.viewer}>
       <div className={s.header}>
+        {/* Fixed label column, then the controls: nothing that changes width (picker, pager, comment count) sits left of the view buttons, so they never move. */}
         <span className={s.label} title={d?.root ?? undefined}>Diff · {label}</span>
         <div className={s.views} role="group" aria-label="Diff view">
           {VIEWS.map((v) => (
-            <button key={v.mode} type="button" className={s.view} aria-pressed={mode === v.mode} onClick={() => setDiffMode(sessionId, v.mode)}>{v.label}</button>
+            <button key={v.mode} type="button" className={s.view} data-label={v.label} aria-pressed={mode === v.mode} onClick={() => setDiffMode(sessionId, v.mode)}>{v.label}</button>
           ))}
+        </div>
+        <div className={cx(s.slot, mode === 'last-commit' && s.off)}>
+          <Button variant="ghost" size="sm" icon={showUntracked ? 'eye' : 'eye-off'} aria-pressed={showUntracked}
+            onClick={() => setShowUntracked((v) => !v)}>Untracked</Button>
         </div>
         {mode === 'branch' && (
           <BasePicker sessionId={sessionId} base={base} defaultName={compared?.defaultBase ?? null} recents={recents}
             onPick={(b) => setDiffBase(sessionId, b, 'branch')} />
         )}
-        {mode !== 'last-commit' && (
-          <Button variant="ghost" size="sm" icon={showUntracked ? 'eye' : 'eye-off'} aria-pressed={showUntracked}
-            onClick={() => setShowUntracked((v) => !v)}>Untracked</Button>
-        )}
+        <span className={s.spacer} />
         {files.length > 0 && (
           <div className={s.pager}>
             <span className={s.count}>{at + 1} / {files.length}</span>
@@ -237,7 +249,7 @@ export function DiffViewer({ diff, sessionId, label, expanded, onOpenRendered, o
               : (
                 <FileView key={file.path} file={file} sessionId={sessionId} split={expanded} drafts={draftsByLine(comments, file.path)}
                   writing={writing?.path === file.path ? writing : null} error={error}
-                  onWrite={(next) => { setError(null); setWriting(next) }} onSave={(text) => save(file, text)} onCancel={() => setWriting(null)}
+                  onWrite={(next) => { setError(null); setWriting(next) }} onSave={(text) => void save(file, text)} onSend={(text) => void saveAndSend(file, text)} onCancel={() => setWriting(null)}
                   onOpenRendered={(r) => onOpenRendered(d.projectId, r)} />
               )}
           </div>
@@ -266,7 +278,7 @@ function Text({ text, segs, kind }: { text: string; segs?: Seg[]; kind: DiffLine
 // Unmodified lines read from the file on click: `from` is the new-file number of the first, old = new + delta.
 interface Revealed { from: number; delta: number; lines: string[] }
 
-function FileView({ file, sessionId, split, drafts, writing, error, onWrite, onSave, onCancel, onOpenRendered }: {
+function FileView({ file, sessionId, split, drafts, writing, error, onWrite, onSave, onSend, onCancel, onOpenRendered }: {
   file: DiffFile
   sessionId: string
   split: boolean
@@ -275,6 +287,7 @@ function FileView({ file, sessionId, split, drafts, writing, error, onWrite, onS
   error: string | null
   onWrite: (d: Draft) => void
   onSave: (body: string) => void
+  onSend: (body: string) => void
   onCancel: () => void
   onOpenRendered: (r: NonNullable<DiffFile['rendered']>) => void
 }) {
@@ -300,7 +313,7 @@ function FileView({ file, sessionId, split, drafts, writing, error, onWrite, onS
       <>
         {here && Math.max(writing.origin, writing.end) === li && (
           <div className={s.block}>
-            <CommentEditor key={`${writing.path}:${writing.hunk}:${writing.side}:${writing.origin}`} error={error} onSave={onSave} onCancel={onCancel} />
+            <CommentEditor key={`${writing.path}:${writing.hunk}:${writing.side}:${writing.origin}`} error={error} onSave={onSave} onSend={onSend} onCancel={onCancel} />
           </div>
         )}
         {drafts.get(lineKey(file.path, l))?.map((c) => <DraftBlock key={c.id} comment={c} />)}

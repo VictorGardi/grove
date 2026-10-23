@@ -231,8 +231,8 @@ describe('emptyMessage and branchNote', () => {
     expect(emptyMessage(null, 'branch').text).toBe('No changes on this branch.')
     expect(emptyMessage(cmp({ mode: 'uncommitted', onDefault: true }), 'uncommitted').switchTo.mode).toBe('last-commit')
   })
-  it('words the on-main and no-main notes, only for the default pick', () => {
-    expect(branchNote(cmp({ onDefault: true }))).toBe('You are on main; showing uncommitted changes only.')
+  it('words the no-main note, only for the default pick; being on main says nothing', () => {
+    expect(branchNote(cmp({ onDefault: true }))).toBeNull()
     expect(branchNote(cmp({ noDefault: true, defaultBase: null }))).toBe('No main branch found; showing uncommitted changes only. Pick a branch to compare against.')
     expect(branchNote(cmp({ onDefault: true, base: 'dev' }))).toBeNull()
     expect(branchNote(cmp({ onDefault: true, mode: 'uncommitted' }))).toBeNull()

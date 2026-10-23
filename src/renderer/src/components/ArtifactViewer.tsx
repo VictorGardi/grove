@@ -65,13 +65,20 @@ export function ArtifactViewer({ target, dir, groups, mtimeMs, expanded, onOpen,
   }, [commentable, drafts])
   useEffect(() => { if (commentable) syncRef.current() }, [commentable, sessionId, highlights])
 
-  async function save(body: string) {
-    if (!editing) return
+  async function save(body: string): Promise<boolean> {
+    if (!editing) return false
     const res = 'sel' in editing
       ? await window.api.invoke('comment:add', { sessionId: sessionId!, anchor: fileAnchor(target, editing.sel), body })
       : await window.api.invoke('comment:update', { id: editing.id, body })
     if (res.ok) setEditing(null)
     else setError(res.error)
+    return res.ok
+  }
+  // Save, then send every draft of the session, like Send in the Comments tray.
+  async function saveAndSend(body: string) {
+    if (!(await save(body))) return
+    const res = await window.api.invoke('review:send', { sessionId: useSlices.getState().ui.focusedSessionId ?? sessionId! })
+    if (!res.ok) setError(res.error)
   }
   const editingDraft = editing && 'id' in editing ? drafts.find((c) => c.id === editing.id) : undefined
   const quote = editing && 'sel' in editing ? editing.sel.exact : editingDraft?.anchor.kind === 'file' ? editingDraft.anchor.exact : ''
@@ -100,7 +107,7 @@ export function ArtifactViewer({ target, dir, groups, mtimeMs, expanded, onOpen,
         <div className={s.editor}>
           <div className={s.quote}>{quote}</div>
           <CommentEditor key={editingDraft?.id ?? 'new'} initial={editingDraft?.body ?? ''} error={error}
-            onSave={(b) => void save(b)} onCancel={() => setEditing(null)} />
+            onSave={(b) => void save(b)} onSend={(b) => void saveAndSend(b)} onCancel={() => setEditing(null)} />
           {editingDraft && (
             <Button size="sm" variant="ghost" onClick={() => { void window.api.invoke('comment:delete', { id: editingDraft.id }); setEditing(null) }}>Delete</Button>
           )}

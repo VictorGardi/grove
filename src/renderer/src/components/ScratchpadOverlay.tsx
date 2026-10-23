@@ -53,7 +53,7 @@ export function ScratchpadOverlay({ session, onClose }: { session?: { id: string
     <Modal onClose={close} width="lg">
       <div className={s.overlay}>
         <div className={s.header}>
-          <h2>{session ? `Note · ${session.label}` : 'Scratchpad'}</h2>
+          {session ? <h2>{`Note · ${session.label}`}</h2> : <span />}
           <div className={s.actions}>
             <Button variant="ghost" size="sm" onClick={() => void save()} disabled={saving || initial === null}>{saving ? 'Saving…' : 'Save'}</Button>
             <Button variant="ghost" size="sm" onClick={close}>Close</Button>
