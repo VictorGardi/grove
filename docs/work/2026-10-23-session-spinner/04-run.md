@@ -103,4 +103,47 @@ none
 
 none
 
+## Slice 3
+
+Session: session-spinner-slice-3-a1
+Status: done
+Commit: this commit (see git log)
+
+### Slice plan
+
+Found in the code: `sessionCreate` ran preflight first and the placeholder only after sandbox argv; slice 1 removed the placeholder on a throwing create. `pending` ids are never saved or marked gone; `clearStarted`/`expireStarted` act on `startup` regardless of phase; `dropSessions` restores focus and grid.
+
+Implementer 1 (core, shared):
+- [x] `types.ts`: `startup` also `{ phase: 'failed'; reason }`
+- [x] `core.ts`: placeholder before preflight and sandbox argv; any later failure (refusal or throw) marks it `failed` via a `failedNew` set (unsaved, not marked gone, kill refused, remove dismisses); `sessionDismissStartup` (new session: `dropSessions`; resumed session: clears `startup` only); `session:create` returns/throws as before
+- [x] `sessions.ts`: `clearStarted`/`expireStarted` only touch `phase: 'starting'`
+- [x] `shared/ipc.ts`, `main/ipc.ts`: `session:dismissStartup`
+- [x] tests: sessionStartup, sessions, sessionCreate, cliServer updated
+
+Implementer 2 (renderer):
+- [x] `sessionStatus.ts`: `failed` shown status (over gone), label `failed · <reason>`, first in URGENCY
+- [x] `StatusDot`, `ListRow`, `SidebarRail` css: danger dot; card Dismiss button, card click inert when failed; rail tile click opens `ConfirmDialog`, tile title carries the reason
+- [x] `sessionStatus.test.ts`
+
+Models passed: implementer: inherit, reviewer: inherit
+
+### Review rounds
+
+Round 1: fresh reviewer, 1 blocking: dismissing a new failed card used a bare filter, leaving focus and grid stale. Fixed with `dropSessions`, plus a focus-restore test. Verdict: approved after 1 fix round (re-review not run; the fix is the one-line change the reviewer named, verified by the new test). Non-blocking applied: failed card click is a no-op. Non-blocking left: (1) a refusing preflight with `cwd` now leaves a newly resolved project registered; (2) a failed card can still be chosen as a parent, renamed or linked; (3) the label shows the raw error code, not `errorMessage(code)`; (4) no test of `dismissStartup` on a resumed session (slice 4) or `no-feature`; (5) rail click and dismiss button are manual checks.
+
+### Deviations
+
+- Existing tests that expected no session after a failed start (copilot missing, sandbox refusal, throwing create) now expect the failed card.
+- Preflight now runs after project resolution, so a missing agent with `cwd` leaves a newly resolved project registered.
+- A failed resumed session shows `failed` over its `gone` state; slice 4 wires resume itself.
+- Worktree failures (slice 5) are not covered yet.
+
+### Verification
+
+`npm test` (1214 passed) and `npm run typecheck` pass. Earlier runs showed one unrelated flaky test (`pruneContainers`), green on rerun. Models requested: implementer inherit, reviewer inherit.
+
+### Left for the human
+
+Manual: `npm run dev`, force a failure (Copilot with no binary), see the error card and rail tile dot, hover for the reason, dismiss from the card button and from the rail dialog.
+
 ## Open questions

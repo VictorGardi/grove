@@ -37,7 +37,7 @@ export interface Session {
   contextWindow?: number | null    // size of the context window in tokens; never saved
   model?: string | null            // the model in use; never saved
   sandboxNote?: string             // a resume that could not re-enter its sandbox (ADR 0033): the session is on the host with no filesystem isolation, and this says so; never saved
-  startup?: { phase: 'starting'; since: string } // a session whose pane is being made, until its first status (or gone); ISO since; never saved
+  startup?: { phase: 'starting'; since: string } | { phase: 'failed'; reason: string } // a session whose pane is being made, until its first status (or gone); ISO since; never saved
   lastContext: ContextReading | null // the last known reading (pct known); persisted
   parentId?: string | null         // the group this session is in: its parent's id. Groups are one level deep, so a parent never has a parent; persisted
 }

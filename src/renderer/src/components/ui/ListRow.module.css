@@ -211,6 +211,7 @@
 .s-idle { color: var(--status-idle); }
 .s-finished { color: var(--status-finished); }
 .s-gone { color: var(--status-gone); }
+.s-failed { color: var(--danger); }
 
 /* starting: no status yet, so the dot is a turning ring in the same spot and size */
 .statusDot.s-starting {

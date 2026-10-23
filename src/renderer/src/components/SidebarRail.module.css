@@ -215,6 +215,7 @@
 .t-working { background: var(--status-working); }
 .t-finished { background: var(--status-finished); }
 .t-gone { background: var(--status-gone); }
+.t-failed { background: var(--danger); }
 /* `idle` has no rule and keeps the tile's default --status-idle */
 
 .t-starting {

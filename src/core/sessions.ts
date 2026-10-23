@@ -44,7 +44,7 @@ export function reconcile(sessions: Session[], live: Set<string>, now: string): 
 export function clearStarted(sessions: Session[]): Session[] {
   let changed = false
   const out = sessions.map((s) => {
-    if (!s.startup || (s.status === undefined && s.lastStatus !== 'gone')) return s
+    if (s.startup?.phase !== 'starting' || (s.status === undefined && s.lastStatus !== 'gone')) return s
     changed = true
     const { startup: _startup, ...rest } = s
     return rest
@@ -60,7 +60,7 @@ export const STARTUP_TIMEOUT_MS = 60_000
 export function expireStarted(sessions: Session[], nowMs: number, skip: ReadonlySet<string> = new Set()): Session[] {
   let changed = false
   const out = sessions.map((s) => {
-    if (!s.startup || skip.has(s.id) || nowMs - Date.parse(s.startup.since) < STARTUP_TIMEOUT_MS) return s
+    if (s.startup?.phase !== 'starting' || skip.has(s.id) || nowMs - Date.parse(s.startup.since) < STARTUP_TIMEOUT_MS) return s
     changed = true
     const { startup: _startup, ...rest } = s
     return rest

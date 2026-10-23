@@ -66,6 +66,15 @@ describe('expireStarted', () => {
   })
 })
 
+describe('failed startup', () => {
+  const failed = { phase: 'failed', reason: 'no-claude' } as const
+  it('is neither cleared by a status nor expired by the clock', () => {
+    const list = [session('a', { startup: failed, status: 'idle', lastStatus: 'gone' })]
+    expect(clearStarted(list)).toBe(list)
+    expect(expireStarted(list, NOW.getTime() + 600_000)).toBe(list)
+  })
+})
+
 describe('makeLabel', () => {
   it('uses local HH:MM', () => {
     expect(makeLabel('terminal', new Date(2026, 9, 5, 9, 7))).toBe('Terminal · 09:07')

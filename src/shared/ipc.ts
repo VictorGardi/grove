@@ -19,6 +19,7 @@ export interface InvokeMap {
   // only projectId and kind, so the GUI could not reach the fields the CLI always could
   'session:create': [{ projectId: string; kind: SessionKind; prompt?: string; label?: string; feature?: string; sandboxed?: boolean; cols: number; rows: number }, Session]
   'session:remove': [{ id: string }, { id: string }]
+  'session:dismissStartup': [{ id: string }, { id: string }]
   'session:resume': [{ id: string }, Session]
   'session:rename': [{ id: string; label: string }, Session]
   'session:link': [{ id: string; feature: string | null }, Session]

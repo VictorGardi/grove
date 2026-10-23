@@ -95,6 +95,7 @@ export interface Commands {
   }): Promise<Result<Session>> // exactly one of projectId, cwd; `parent` is a session id, whose group the new one joins
   sessionKill(a: { id: string }): Promise<Result<{ id: string }>>
   sessionRemove(a: { id: string }): Promise<Result<{ id: string }>>
+  sessionDismissStartup(a: { id: string }): Promise<Result<{ id: string }>> // ends a failed-start card: a never-started session goes, a failed resume keeps its saved copy
   sessionResume(a: { id: string }): Promise<Result<Session>> // gone agent sessions only
   sessionRename(a: { id: string; label: string }): Promise<Result<Session>>
   sessionWorkflowStatus(a: { id: string; status: WorkflowStatus }): Promise<Result<Session>>
@@ -222,10 +223,14 @@ export function createCore(opts: CoreOptions): Core {
   // Sessions being created: in `slices.sessions` as a placeholder (so the card shows) before their pane
   // exists. Never saved, never marked gone, not killable until the pane is made.
   const pending = new Set<string>()
+  // New sessions whose start failed: the card stays (with its reason) until dismissed, still without a pane
+  // and still never saved.
+  const failedNew = new Set<string>()
+  const unsaved = (id: string): boolean => pending.has(id) || failedNew.has(id)
   const liveWithPending = (live: Set<string>): Set<string> => {
-    if (pending.size === 0) return live
+    if (pending.size === 0 && failedNew.size === 0) return live
     const out = new Set(live)
-    for (const s of slices.sessions) if (pending.has(s.id)) out.add(s.tmuxName)
+    for (const s of slices.sessions) if (unsaved(s.id)) out.add(s.tmuxName)
     return out
   }
 
@@ -240,7 +245,7 @@ export function createCore(opts: CoreOptions): Core {
       })
     }
     else if (k === 'sessions' || k === 'ui') {
-      const sessions = slices.sessions.filter((s) => !pending.has(s.id)).map(
+      const sessions = slices.sessions.filter((s) => !unsaved(s.id)).map(
         ({ startup: _startup, branch: _branch, status: _status, waitingFor: _waitingFor, contextPct: _p, contextTokens: _t, contextWindow: _w, model: _m, sandboxNote: _sn, pr: _pr, ...s }) => s,
       ) // live-only
       saveState(opts.statePath, { schemaVersion: 9, sessions, ui: slices.ui })
@@ -840,8 +845,6 @@ export function createCore(opts: CoreOptions): Core {
     async sessionCreate({ projectId, cwd, kind, prompt, label, feature, parent, model, cols, rows, sandboxed }) {
       const source = kind === 'terminal' ? undefined : states.get(kind)?.source
       if (kind !== 'terminal' && !source) return { ok: false, error: 'no-source' }
-      const missing = await source?.preflight?.() // before anything is created: no dead pane, no half-made session
-      if (missing) return { ok: false, error: missing }
       let project = slices.projects.find((p) => p.id === projectId)
       let added = false
       let dir: string | null = null // the folder inside the project, null: the project path
@@ -876,30 +879,43 @@ export function createCore(opts: CoreOptions): Core {
         ...(model && { launchModel: model }),
       }
       const agentArgv = source ? source.argv(agentSessionId!, 'start', { prompt, name: label, model }) : []
-      let argv: string[] | undefined
-      if (sandboxKind) {
-        const built = await sandboxArgvFor({ kind: sandboxKind, session, cwd: workdir, agentArgv, deps: sandboxDeps() })
-        // never an unsandboxed pane, and never a refusal nobody can act on: the reason travels with
-        // the code, so the message names the thing to run rather than "something is wrong"
-        if ('refusal' in built) return { ok: false, error: `no-sandbox-${built.refusal}` }
-        argv = built.argv
-      } else if (source) {
-        argv = loginShellArgv(agentArgv, shellOpts())
-      }
       // The placeholder goes in before the pane exists, so the card shows a spinner at once. The
-      // project is registered first: the placeholder points at it (a failed create leaves it registered).
+      // project is registered first: the placeholder points at it (a failed start leaves it registered).
       if (added) {
         set('projects', [...slices.projects, project])
         syncProjects(false)
       }
       pending.add(session.id)
       set('sessions', [...slices.sessions, { ...session, startup: { phase: 'starting', since: now().toISOString() } }])
+      // From here a failure keeps the card, marked failed with its reason, until it is dismissed.
+      const failStart = (reason: string): void => {
+        pending.delete(session.id)
+        failedNew.add(session.id)
+        set('sessions', slices.sessions.map((x) => (x.id === session.id ? { ...x, startup: { phase: 'failed', reason } } : x)))
+      }
       try {
+        const missing = await source?.preflight?.() // before the pane is made: no dead pane, no half-made session
+        if (missing) {
+          failStart(missing)
+          return { ok: false, error: missing }
+        }
+        let argv: string[] | undefined
+        if (sandboxKind) {
+          const built = await sandboxArgvFor({ kind: sandboxKind, session, cwd: workdir, agentArgv, deps: sandboxDeps() })
+          // never an unsandboxed pane, and never a refusal nobody can act on: the reason travels with
+          // the code, so the message names the thing to run rather than "something is wrong"
+          if ('refusal' in built) {
+            failStart(`no-sandbox-${built.refusal}`)
+            return { ok: false, error: `no-sandbox-${built.refusal}` }
+          }
+          argv = built.argv
+        } else if (source) {
+          argv = loginShellArgv(agentArgv, shellOpts())
+        }
         await backend.create({ name: session.tmuxName, cwd: workdir, cols, rows, argv, env: cliEnv(session) })
         await backend.setColors(session.tmuxName, terminalTheme.foreground, terminalTheme.background)
       } catch (e) {
-        pending.delete(session.id)
-        set('sessions', slices.sessions.filter((s) => s.id !== session.id))
+        failStart(e instanceof Error ? e.message : String(e))
         throw e
       }
       pending.delete(session.id)
@@ -919,6 +935,7 @@ export function createCore(opts: CoreOptions): Core {
       const session = findSession(id)
       if (!session) return { ok: false, error: 'not-found' }
       if (pending.has(id)) return { ok: false, error: 'starting' }
+      if (failedNew.has(id)) return { ok: false, error: 'failed' } // no pane to end: dismiss it
       await backend.kill(session.tmuxName) // already-missing counts as success
       await dropContainer(session) // --rm never fired, so the VM outlived the pane
       // re-read: a poll may have flipped it while kill was in flight
@@ -932,11 +949,28 @@ export function createCore(opts: CoreOptions): Core {
       const session = findSession(id)
       if (!session) return { ok: false, error: 'not-found' }
       if (pending.has(id)) return { ok: false, error: 'starting' }
+      if (failedNew.has(id)) return commands.sessionDismissStartup({ id }) // nothing was made: the card is all there is
       await backend.kill(session.tmuxName) // already-missing counts as success
       await dropContainer(session)
       dropSessions((s) => s.id !== id)
       forgetAgents([session])
       await unlockWorktree(projectOf(session))
+      return { ok: true, data: { id } }
+    },
+
+    // Ends a failed-start card. A session that never started goes; one that failed to resume keeps its saved
+    // (gone, resumable) self and only loses the error.
+    async sessionDismissStartup({ id }) {
+      const session = findSession(id)
+      if (!session) return { ok: false, error: 'not-found' }
+      if (session.startup?.phase !== 'failed') return { ok: false, error: 'not-failed' }
+      if (failedNew.has(id)) {
+        failedNew.delete(id)
+        dropSessions((x) => x.id !== id) // also restores focus and the grid if the card held them
+      } else {
+        const { startup: _startup, ...rest } = session
+        replaceSession(rest)
+      }
       return { ok: true, data: { id } }
     },
 

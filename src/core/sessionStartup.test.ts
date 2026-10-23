@@ -64,7 +64,7 @@ describe('session startup placeholder', () => {
     await created
   })
 
-  it('removes the placeholder and reports the failure when create throws', async () => {
+  it('marks the placeholder failed and reports the failure when create throws', async () => {
     const { core, fail, sessions, start, statePath } = setup()
     await core.start()
     const created = start()
@@ -72,7 +72,8 @@ describe('session startup placeholder', () => {
     expect(sessions()).toHaveLength(1)
     fail(new Error('tmux failed'))
     await expect(created).rejects.toThrow('tmux failed')
-    expect(sessions()).toEqual([])
+    expect(sessions()).toHaveLength(1)
+    expect(sessions()[0].startup).toEqual({ phase: 'failed', reason: 'tmux failed' })
     expect(loadState(statePath).sessions).toEqual([])
   })
 
@@ -87,6 +88,107 @@ describe('session startup placeholder', () => {
     expect(sessions()).toHaveLength(1)
     release()
     await created
+  })
+
+  describe('failed start', () => {
+    it('keeps a failed card for a refusing preflight, with the same refusal, and never saves it', async () => {
+      const { core, claude, sessions, statePath } = setup()
+      await core.start()
+      claude.missing = 'no-claude'
+      expect(await core.commands.sessionCreate({ projectId: 'p', kind: 'claude', cols: 80, rows: 24 })).toEqual({ ok: false, error: 'no-claude' })
+      expect(sessions()).toHaveLength(1)
+      expect(sessions()[0].startup).toEqual({ phase: 'failed', reason: 'no-claude' })
+      expect(loadState(statePath).sessions).toEqual([])
+      await core.checkLiveness()
+      expect(sessions()[0].lastStatus).toBe('running') // not marked gone
+    })
+
+    it('keeps a failed card for a throwing backend.create, and still throws', async () => {
+      const { core, fail, sessions, start } = setup()
+      await core.start()
+      const created = start()
+      await new Promise((r) => setTimeout(r, 0))
+      fail(new Error('tmux failed'))
+      await expect(created).rejects.toThrow('tmux failed')
+      expect(sessions()[0].startup).toEqual({ phase: 'failed', reason: 'tmux failed' })
+    })
+
+    it('keeps a failed card for a sandbox refusal', async () => {
+      const { core, sessions } = setup()
+      await core.start()
+      // no sandbox configured on this core: the sandbox refuses
+      const res = await core.commands.sessionCreate({ projectId: 'p', kind: 'opencode', sandboxed: true, cols: 80, rows: 24 })
+      expect(res.ok).toBe(false)
+      if (res.ok) return
+      expect(res.error).toMatch(/^no-sandbox-/)
+      expect(sessions()[0].startup).toEqual({ phase: 'failed', reason: res.error })
+    })
+
+    it('leaves no card for refusals before a project is resolved', async () => {
+      const { core, claude, sessions } = setup()
+      await core.start()
+      expect(await core.commands.sessionCreate({ projectId: 'nope', kind: 'terminal', cols: 80, rows: 24 })).toEqual({ ok: false, error: 'not-found' })
+      expect(await core.commands.sessionCreate({ projectId: 'p', kind: 'copilot', cols: 80, rows: 24 })).toEqual({ ok: false, error: 'no-source' })
+      expect(await core.commands.sessionCreate({ projectId: 'p', kind: 'terminal', parent: 'nope', cols: 80, rows: 24 })).toMatchObject({ ok: false })
+      expect(await core.commands.sessionCreate({ projectId: 'p', kind: 'terminal', sandboxed: true, cols: 80, rows: 24 })).toEqual({ ok: false, error: 'no-sandbox-kind' })
+      void claude
+      expect(sessions()).toEqual([])
+    })
+
+    it('dismissStartup removes a failed new session, and refuses one that has not failed', async () => {
+      const { core, claude, sessions, release, start } = setup()
+      await core.start()
+      release()
+      const ok = await start()
+      if (!ok.ok) throw new Error('create failed')
+      expect(await core.commands.sessionDismissStartup({ id: ok.data.id })).toEqual({ ok: false, error: 'not-failed' })
+      claude.missing = 'no-claude'
+      await core.commands.sessionCreate({ projectId: 'p', kind: 'claude', cols: 80, rows: 24 })
+      const failed = sessions().find((x) => x.startup?.phase === 'failed')!
+      expect(await core.commands.sessionKill({ id: failed.id })).toEqual({ ok: false, error: 'failed' })
+      expect(await core.commands.sessionDismissStartup({ id: failed.id })).toEqual({ ok: true, data: { id: failed.id } })
+      expect(sessions().map((x) => x.id)).toEqual([ok.data.id])
+      expect(await core.commands.sessionDismissStartup({ id: failed.id })).toEqual({ ok: false, error: 'not-found' })
+    })
+
+    it('dismissing a focused failed card restores focus', async () => {
+      const { core, claude, sessions } = setup()
+      await core.start()
+      claude.missing = 'no-claude'
+      await core.commands.sessionCreate({ projectId: 'p', kind: 'claude', cols: 80, rows: 24 })
+      const id = sessions()[0].id
+      await core.commands.uiSet({ focusedSessionId: id })
+      await core.commands.sessionDismissStartup({ id })
+      expect(core.getSlices().ui.focusedSessionId).not.toBe(id)
+    })
+
+    it('sessionRemove on a failed card dismisses it', async () => {
+      const { core, claude, sessions } = setup()
+      await core.start()
+      claude.missing = 'no-claude'
+      await core.commands.sessionCreate({ projectId: 'p', kind: 'claude', cols: 80, rows: 24 })
+      const id = sessions()[0].id
+      expect(await core.commands.sessionRemove({ id })).toEqual({ ok: true, data: { id } })
+      expect(sessions()).toEqual([])
+    })
+
+    it('a failed card does not expire on the 60 s sweep', async () => {
+      vi.useFakeTimers()
+      try {
+        let clock = new Date('2026-10-05T10:00:00.000Z')
+        const s = setupCore()
+        disposeAll = s.disposeAll
+        const core = s.make(undefined, { now: () => clock })
+        await core.start()
+        s.claude.missing = 'no-claude'
+        await core.commands.sessionCreate({ projectId: 'p', kind: 'claude', cols: 80, rows: 24 })
+        clock = new Date('2026-10-05T10:05:00.000Z')
+        vi.advanceTimersByTime(2000)
+        expect(core.getSlices().sessions[0].startup?.phase).toBe('failed')
+      } finally {
+        vi.useRealTimers()
+      }
+    })
   })
 
   describe('60 s timeout', () => {

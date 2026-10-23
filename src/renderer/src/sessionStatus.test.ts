@@ -131,3 +131,20 @@ describe('serviceBanners', () => {
     expect(serviceBanners({ state: 'connected', version: '2.1.0' }, [])).toEqual([])
   })
 })
+
+describe('failed', () => {
+  const failed = { phase: 'failed', reason: 'no-claude' } as const
+
+  it('shows failed with the reason, over gone', () => {
+    expect(shownStatus(session({ startup: failed }))).toBe('failed')
+    expect(shownStatus(session({ startup: failed, lastStatus: 'gone' }))).toBe('failed')
+    expect(statusView(session({ startup: failed }))).toEqual({ label: 'failed · no-claude', tone: 'failed' })
+    expect(statusTone(session({ startup: failed }))).toBe('failed')
+  })
+
+  it('beats every other child on a collapsed parent', () => {
+    const w = session({ id: 'w', status: 'waiting' })
+    const f = session({ id: 'f', startup: failed })
+    expect(mostUrgent([w, f])?.id).toBe('f')
+  })
+})

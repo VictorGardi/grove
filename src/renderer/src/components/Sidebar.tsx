@@ -87,7 +87,7 @@ function SessionCard({ s, feature, worktree, focused, picked, compact, inGrid, g
       tone={focused ? 'selected' : needsYou ? 'waiting' : 'default'}
       picked={picked}
       compact={compact}
-      onClick={onFocus}
+      onClick={shown === 'failed' ? undefined : onFocus} // no pane to open: dismiss it instead
       onContextMenu={onContextMenu}
       onTitleDoubleClick={() => setEditing(true)}
       editor={editing ? (
@@ -119,7 +119,12 @@ function SessionCard({ s, feature, worktree, focused, picked, compact, inGrid, g
           )}
           <Button variant="ghost" size="sm" round icon="minus" aria-label={compact ? 'Expand' : 'Compact'}
             title={compact ? 'Expand' : 'Compact'} onClick={onToggleCompact} />
-          <Button variant="ghost" size="sm" round icon="x" aria-label="Remove session" title="Remove session" onClick={onRemove} />
+          {shown === 'failed' ? (
+            <Button variant="ghost" size="sm" round icon="x" aria-label="Dismiss" title="Dismiss"
+              onClick={() => void window.api.invoke('session:dismissStartup', { id: s.id })} />
+          ) : (
+            <Button variant="ghost" size="sm" round icon="x" aria-label="Remove session" title="Remove session" onClick={onRemove} />
+          )}
         </>
       }
     />
