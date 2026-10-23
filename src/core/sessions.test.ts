@@ -3,7 +3,7 @@ import path from 'node:path'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { DEFAULT_UI, type Session } from '@shared/types'
 import { terminalTheme } from '@shared/theme'
-import { makeLabel, newSession, reconcile } from './sessions'
+import { clearStarted, expireStarted, makeLabel, newSession, reconcile } from './sessions'
 import { loadState } from './store/stateStore'
 import type { AgentEvent } from './agents/types'
 import { SpoolClaude } from './claude/source'
@@ -27,6 +27,51 @@ describe('reconcile', () => {
   it('returns the same array when nothing changed', () => {
     const list = [session('a')]
     expect(reconcile(list, new Set(['grove-a']), LATER.toISOString())).toBe(list)
+  })
+})
+
+describe('clearStarted', () => {
+  const starting = { phase: 'starting', since: NOW.toISOString() } as const
+  it('drops startup once a status is set or the session is gone', () => {
+    const out = clearStarted([
+      session('a', { startup: starting }),
+      session('b', { startup: starting, status: 'idle' }),
+      session('c', { startup: starting, lastStatus: 'gone' }),
+      session('d'),
+    ])
+    expect(out.map((s) => 'startup' in s)).toEqual([true, false, false, false])
+  })
+
+  it('returns the same array when nothing changed', () => {
+    const list = [session('a', { startup: starting }), session('b', { status: 'idle' })]
+    expect(clearStarted(list)).toBe(list)
+  })
+})
+
+describe('expireStarted', () => {
+  const t0 = NOW.getTime()
+  const starting = { phase: 'starting', since: NOW.toISOString() } as const
+  it('keeps startup at 59 s and drops it at 60 s, leaving status alone', () => {
+    const list = [session('a', { startup: starting }), session('b')]
+    expect(expireStarted(list, t0 + 59_000)).toBe(list)
+    const out = expireStarted(list, t0 + 60_000)
+    expect(out[0]).not.toHaveProperty('startup')
+    expect(out[0].status).toBeUndefined()
+    expect(out[1]).toBe(list[1])
+  })
+
+  it('skips sessions still being created', () => {
+    const list = [session('a', { startup: starting })]
+    expect(expireStarted(list, t0 + 90_000, new Set(['a']))).toBe(list)
+  })
+})
+
+describe('failed startup', () => {
+  const failed = { phase: 'failed', reason: 'no-claude' } as const
+  it('is neither cleared by a status nor expired by the clock', () => {
+    const list = [session('a', { startup: failed, status: 'idle', lastStatus: 'gone' })]
+    expect(clearStarted(list)).toBe(list)
+    expect(expireStarted(list, NOW.getTime() + 600_000)).toBe(list)
   })
 })
 

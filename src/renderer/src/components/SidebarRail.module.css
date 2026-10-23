@@ -215,7 +215,25 @@
 .t-working { background: var(--status-working); }
 .t-finished { background: var(--status-finished); }
 .t-gone { background: var(--status-gone); }
+.t-failed { background: var(--danger); }
 /* `idle` has no rule and keeps the tile's default --status-idle */
+
+.t-starting {
+  background: transparent;
+  box-shadow: none;
+  border: 1.5px solid var(--text-2);
+  border-right-color: transparent;
+  box-sizing: border-box;
+  animation: spin 0.7s linear infinite;
+}
+
+@keyframes spin {
+  to { transform: rotate(360deg); }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .t-starting { animation-duration: 2s; }
+}
 
 .t-waiting {
   background: var(--status-waiting);

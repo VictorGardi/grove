@@ -74,7 +74,8 @@ describe('cli server', () => {
     fake.missing = 'no-copilot'
     const missing = await request(socketPath, req('sessions.create', { kind: 'copilot', cwd: t.dir }))
     expect(missing).toMatchObject({ ok: false, error: { code: 'no-copilot', message: errorMessage('no-copilot') } })
-    expect(core.getSlices().sessions).toHaveLength(1)
+    expect(core.getSlices().sessions).toHaveLength(2) // the created one and the failed card
+    expect(core.getSlices().sessions[1].startup).toEqual({ phase: 'failed', reason: 'no-copilot' })
     fake.missing = null
     expect(await request(socketPath, req('sessions.create', { kind: 'copilot', cwd: t.dir, model: 'm' }))).toMatchObject({ ok: true })
   })

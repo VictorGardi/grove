@@ -10,6 +10,16 @@
   animation: spin 0.7s linear infinite;
 }
 
+/* the footprint of a status dot (6px), drawn as a slightly larger ring so it stays legible */
+.sm {
+  width: 8px;
+  height: 8px;
+  margin: -1px;
+  border-width: 1.5px;
+  vertical-align: baseline;
+  color: var(--text-2);
+}
+
 @keyframes spin {
   to { transform: rotate(360deg); }
 }

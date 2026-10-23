@@ -35,6 +35,7 @@ export interface Session {
   contextTokens?: number | null    // tokens in context (input incl. cache); never saved
   contextWindow?: number | null    // size of the context window in tokens; never saved
   model?: string | null            // the model in use; never saved
+  startup?: { phase: 'starting'; since: string } | { phase: 'failed'; reason: string } // a session whose pane is being made, until its first status (or gone); ISO since; never saved
   lastContext: ContextReading | null // the last known reading (pct known); persisted
   parentId?: string | null         // the group this session is in: its parent's id. Groups are one level deep, so a parent never has a parent; persisted
 }

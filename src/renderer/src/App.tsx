@@ -127,19 +127,15 @@ export default function App() {
 
   useEffect(() => window.api.on('menu:action', runAction), [runAction])
 
-  // The configured launch. A worktree is made first and registered as a project of its own
-  // (ADR 0037), so a conflict is reported against the form the human is still looking at rather
-  // than failing a session that was never created. Returns the error, or null once it started.
+  // The configured launch. A new worktree is made by `session:create` itself, so the card is in
+  // the sidebar from the click and a conflict still comes back here, against the form the human is
+  // still looking at. Returns the error, or null once it started.
   const startLaunch = useCallback(async (l: Launch): Promise<string | null> => {
-    let projectId = l.where.type === 'existing' ? l.where.project.id : ''
-    if (l.where.type === 'new') {
-      const made = await window.api.invoke('worktree:create', { projectId: l.where.from.id, branch: l.where.branch, ...(l.where.base && { base: l.where.base }) })
-      if (!made.ok) return errorMessage(made.error)
-      projectId = made.data.id
-    }
+    const projectId = l.where.type === 'existing' ? l.where.project.id : l.where.from.id
     const trimmed = l.label.trim()
     const res = await window.api.invoke('session:create', {
       projectId,
+      ...(l.where.type === 'new' && { worktree: { branch: l.where.branch, ...(l.where.base && { base: l.where.base }) } }),
       kind: l.kind,
       ...(l.prompt.trim() && { prompt: l.prompt.trim() }),
       ...(trimmed && { label: trimmed }),

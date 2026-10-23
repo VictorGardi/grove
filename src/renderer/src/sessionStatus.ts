@@ -1,16 +1,19 @@
 import type { OpenCodeSlice, Session } from '@shared/types'
 import type { StatusTone } from './components/ui/StatusDot'
 
-export type ShownStatus = 'running' | 'gone' | 'working' | 'waiting' | 'idle'
+export type ShownStatus = 'running' | 'gone' | 'working' | 'waiting' | 'idle' | 'starting' | 'failed'
 
 // gone (tmux) wins; else the live agent status; else tmux running (terminals, or no service).
 export function shownStatus(s: Session): ShownStatus {
+  if (s.startup?.phase === 'failed') return 'failed' // the start failed: an error card, even over a resumable gone session
   if (s.lastStatus === 'gone') return 'gone'
+  if (s.startup?.phase === 'starting') return 'starting' // no status yet: the card shows a spinner
   return s.status ?? 'running'
 }
 
 export function statusView(s: Session): { label: string; tone: StatusTone } {
   const shown = shownStatus(s)
+  if (s.startup?.phase === 'failed') return { label: `failed · ${s.startup.reason}`, tone: 'failed' }
   return { label: shown === 'waiting' && s.waitingFor ? `waiting · ${s.waitingFor}` : shown, tone: shown }
 }
 
@@ -24,7 +27,7 @@ export function statusTone(s: Session): StatusTone {
 
 // What a collapsed group shows for its children: the one that most needs the human, so a waiting
 // child is never hidden behind its parent. null for no children.
-const URGENCY: ShownStatus[] = ['waiting', 'working', 'idle', 'running', 'gone']
+const URGENCY: ShownStatus[] = ['failed', 'waiting', 'working', 'idle', 'starting', 'running', 'gone']
 export function mostUrgent(sessions: Session[]): Session | null {
   let best: Session | null = null
   for (const s of sessions) if (!best || URGENCY.indexOf(shownStatus(s)) < URGENCY.indexOf(shownStatus(best))) best = s

@@ -1,12 +1,14 @@
 import { kidsKey } from '@shared/groups'
+import { useState } from 'react'
 import { GRID_MAX, type Session } from '@shared/types'
 import { gridShown } from '../gridView'
-import { longestWaiting, mostUrgent, shownStatus, statusTone } from '../sessionStatus'
+import { longestWaiting, mostUrgent, shownStatus, statusTone, statusView } from '../sessionStatus'
 import { listGroups, orderedSessions, type ListGroup } from '../sessionList'
 import { useSlices } from '../stores/slices'
 import { colorTags } from '../tags'
 import { monogram } from '../monogram'
 import { workflowStatusOf } from '../workflowStatus'
+import { ConfirmDialog } from './ConfirmDialog'
 import { cx } from './ui/cx'
 import { Icon } from './ui/Icon'
 import { tagClass } from './ui/Tag'
@@ -23,7 +25,7 @@ function Tile({ s, focused, inGrid, kids, onFocus }: {
   return (
     <div className={css.slot}>
       <button type="button" className={cx(css.tile, focused && css.focused, shown === 'gone' && css.ended)}
-        aria-pressed={focused} aria-label={s.label} title={`${s.label} · ${shown}`} onClick={onFocus}>
+        aria-pressed={focused} aria-label={s.label} title={`${s.label} · ${s.startup?.phase === 'failed' ? statusView(s).label : shown}`} onClick={onFocus}>
         <Icon name={s.kind} size={16} />
         <span className={cx(css.dot, css[`t-${statusTone(urgent)}`])} />
         {inGrid && <span className={css.grid} />}
@@ -48,6 +50,8 @@ function barClass(group: ListGroup, tag: number | null): string | undefined {
 
 export function SidebarRail({ onNew }: { onNew: () => void }) {
   const { projects, sessions, ui, features, waitingSince, setFocused, toggleGrid, toggleCollapsed } = useSlices()
+  // a failed start has no terminal to open: clicking its tile offers to dismiss it
+  const [dismissing, setDismissing] = useState<Session | null>(null)
   const tags = colorTags(projects, features.items)
   const waiting = sessions.filter((x) => shownStatus(x) === 'waiting').length
   const members = ui.grid.members.length
@@ -80,7 +84,7 @@ export function SidebarRail({ onNew }: { onNew: () => void }) {
                     const list = g.nest.kids.get(x.id) ?? []
                     const collapsed = g.nest.collapsed.has(kidsKey(x.id))
                     return (
-                      <Tile key={x.id} s={x} focused={x.id === ui.focusedSessionId} inGrid={ui.grid.members.includes(x.id)} onFocus={() => setFocused(x.id)}
+                      <Tile key={x.id} s={x} focused={x.id === ui.focusedSessionId} inGrid={ui.grid.members.includes(x.id)} onFocus={() => (shownStatus(x) === 'failed' ? setDismissing(x) : setFocused(x.id))}
                         kids={list.length > 0 ? { list, collapsed, holdsFocus: collapsed && list.some((k) => k.id === ui.focusedSessionId), onToggle: () => toggleCollapsed(kidsKey(x.id)) } : undefined} />
                     )
                   })}
@@ -103,6 +107,11 @@ export function SidebarRail({ onNew }: { onNew: () => void }) {
           {members > 0 && <span className={css.count}>{members}</span>}
         </button>
       </div>
+      {dismissing && (
+        <ConfirmDialog title="Dismiss failed session?" body={statusView(dismissing).label} confirmLabel="Dismiss"
+          onCancel={() => setDismissing(null)}
+          onConfirm={() => { void window.api.invoke('session:dismissStartup', { id: dismissing.id }); setDismissing(null) }} />
+      )}
     </div>
   )
 }

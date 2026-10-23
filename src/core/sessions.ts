@@ -39,6 +39,35 @@ export function reconcile(sessions: Session[], live: Set<string>, now: string): 
   return changed ? out : sessions
 }
 
+// Drops `startup` from a session that has a status (or is gone). Ids in `skip` (a resume still making its
+// pane, so still `gone`) keep it. Same array when unchanged.
+export function clearStarted(sessions: Session[], skip: ReadonlySet<string> = new Set()): Session[] {
+  let changed = false
+  const out = sessions.map((s) => {
+    if (s.startup?.phase !== 'starting' || skip.has(s.id) || (s.status === undefined && s.lastStatus !== 'gone')) return s
+    changed = true
+    const { startup: _startup, ...rest } = s
+    return rest
+  })
+  return changed ? out : sessions
+}
+
+export const STARTUP_TIMEOUT_MS = 60_000
+
+// Drops `startup` from a session that has been starting for STARTUP_TIMEOUT_MS or more: a silent
+// agent stops spinning and looks like any other card. Ids in `skip` (still being created) keep it.
+// Same array when unchanged.
+export function expireStarted(sessions: Session[], nowMs: number, skip: ReadonlySet<string> = new Set()): Session[] {
+  let changed = false
+  const out = sessions.map((s) => {
+    if (s.startup?.phase !== 'starting' || skip.has(s.id) || nowMs - Date.parse(s.startup.since) < STARTUP_TIMEOUT_MS) return s
+    changed = true
+    const { startup: _startup, ...rest } = s
+    return rest
+  })
+  return changed ? out : sessions
+}
+
 // Each live session's branch, from its tmux pane's current directory. Same array when unchanged.
 export function withBranches(sessions: Session[], cwds: Map<string, string>, branchAt: (dir: string) => string | null): Session[] {
   let changed = false
@@ -80,8 +109,10 @@ export function autoLink(s: Session, feature: string): Session {
   return { ...s, feature } // leaves linkPinned alone
 }
 
+// `status` is dropped: the previous run's dot must not end the next run's spinner.
 export function resume(s: Session): Session {
-  return { ...s, lastStatus: 'running', endedAt: null }
+  const { status: _status, ...rest } = s
+  return { ...rest, lastStatus: 'running', endedAt: null }
 }
 
 export function link(s: Session, feature: string | null): Session {

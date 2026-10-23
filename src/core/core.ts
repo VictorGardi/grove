@@ -33,7 +33,7 @@ import { kidsKey } from '@shared/groups'
 import { orphanChildren, resolveParent, withParent } from '@shared/sessionGroups'
 import { type AgentEvent, type AgentKind, type AgentSource } from './agents/types'
 import { createTerminalActivity } from './terminalActivity'
-import { autoLink, link, markGone, markSeen, newSession, reconcile, rename, resume, setWorkflowStatus, withBranches, withPrs } from './sessions'
+import { autoLink, clearStarted, expireStarted, link, markGone, markSeen, newSession, reconcile, rename, resume, setWorkflowStatus, withBranches, withPrs } from './sessions'
 import { loadConfig, saveConfig } from './store/configStore'
 import { apply, fromSnapshot, withContext, withStatus, type Tracker } from './status'
 import { loadState, saveState } from './store/stateStore'
@@ -52,6 +52,7 @@ export interface CoreOptions {
   prLookup?: PrLookup // the PR of a branch, for the marker on a session; none: no markers
   git?: string | null // path to git; undefined: 'git' from PATH, null: not found
   sessionEnv?: { socketPath: string; binDir: string } // the grove CLI's socket and launcher dir; none: sessions get no CLI env
+  worktreeAdd?: typeof worktrees.add // the git worktree add `worktreeCreate` and a worktree launch run; tests hold it open to watch the card meanwhile
   worktreeRoot?: string // where `worktreeCreate` puts new checkouts; none: ~/.grove. Tests point it elsewhere, so a test never writes into the real home.
 }
 
@@ -86,10 +87,11 @@ export interface Commands {
   // worktree is a project, so this is per project and not per session).
   repoRefs(a: { projectId: string }): Promise<Result<{ branch: string | null; default: string | null; bases: string[] }>>
   sessionCreate(a: {
-    projectId?: string; cwd?: string; kind: SessionKind; prompt?: string; label?: string; feature?: string; parent?: string; model?: string; cols: number; rows: number
-  }): Promise<Result<Session>> // exactly one of projectId, cwd; `parent` is a session id, whose group the new one joins
+    projectId?: string; cwd?: string; worktree?: { branch: string; base?: string }; kind: SessionKind; prompt?: string; label?: string; feature?: string; parent?: string; model?: string; cols: number; rows: number
+  }): Promise<Result<Session>> // exactly one of projectId, cwd; `parent` is a session id, whose group the new one joins; `worktree` (with projectId) makes a worktree of that project first and starts the session in it
   sessionKill(a: { id: string }): Promise<Result<{ id: string }>>
   sessionRemove(a: { id: string }): Promise<Result<{ id: string }>>
+  sessionDismissStartup(a: { id: string }): Promise<Result<{ id: string }>> // ends a failed-start card: a never-started session goes, a failed resume keeps its saved copy
   sessionResume(a: { id: string }): Promise<Result<Session>> // gone agent sessions only
   sessionRename(a: { id: string; label: string }): Promise<Result<Session>>
   sessionWorkflowStatus(a: { id: string; status: WorkflowStatus }): Promise<Result<Session>>
@@ -206,6 +208,22 @@ export function createCore(opts: CoreOptions): Core {
     }
   }
   const shellOpts = () => ({ pathPrefix: opts.sessionEnv?.binDir })
+  // Sessions being created: in `slices.sessions` as a placeholder (so the card shows) before their pane
+  // exists. Never saved, never marked gone, not killable until the pane is made.
+  const pending = new Set<string>()
+  // New sessions whose start failed: the card stays (with its reason) until dismissed, still without a pane
+  // and still never saved.
+  const failedNew = new Set<string>()
+  // Gone sessions being resumed: they carry `startup` while their pane is made, but stay saved (as gone).
+  const resuming = new Set<string>()
+  const unsaved = (id: string): boolean => pending.has(id) || failedNew.has(id)
+  const liveWithPending = (live: Set<string>): Set<string> => {
+    if (pending.size === 0 && failedNew.size === 0) return live
+    const out = new Set(live)
+    for (const s of slices.sessions) if (unsaved(s.id)) out.add(s.tmuxName)
+    return out
+  }
+
   function set<K extends keyof Slices>(k: K, v: Slices[K]): void {
     slices[k] = v
     for (const l of listeners) l(k, v)
@@ -217,8 +235,8 @@ export function createCore(opts: CoreOptions): Core {
       })
     }
     else if (k === 'sessions' || k === 'ui') {
-      const sessions = slices.sessions.map(
-        ({ branch: _branch, status: _status, waitingFor: _waitingFor, contextPct: _p, contextTokens: _t, contextWindow: _w, model: _m, pr: _pr, ...s }) => s,
+      const sessions = slices.sessions.filter((s) => !unsaved(s.id)).map(
+        ({ startup: _startup, branch: _branch, status: _status, waitingFor: _waitingFor, contextPct: _p, contextTokens: _t, contextWindow: _w, model: _m, pr: _pr, ...s }) => s,
       ) // live-only
       saveState(opts.statePath, { schemaVersion: 10, sessions, ui: slices.ui })
     }
@@ -410,7 +428,7 @@ export function createCore(opts: CoreOptions): Core {
     } catch {
       return // transient tmux errors are retried by the next poll
     }
-    const next = reconcile(slices.sessions, live, now().toISOString())
+    const next = reconcile(slices.sessions, liveWithPending(live), now().toISOString())
     if (next !== slices.sessions) set('sessions', next)
     await refreshBranches()
     diffWatch.poke() // the 5 s tick keeps an open diff current
@@ -506,12 +524,19 @@ export function createCore(opts: CoreOptions): Core {
       next = withStatus(next, st.source.kind, st.trackers, st.connected, st.source.statusNeedsEvent)
       next = withContext(next, st.source.kind, st.trackers, st.connected)
     }
-    return termActivity.apply(next)
+    return clearStarted(termActivity.apply(next), resuming)
+  }
+
+  // Runs on the 1 s tick whether or not any terminal exists.
+  function sweepStartup(): void {
+    const next = expireStarted(slices.sessions, now().getTime(), new Set([...pending, ...resuming]))
+    if (next !== slices.sessions) set('sessions', next)
   }
 
   // Terminals have no event stream: the foreground command of each pane is read every second, so a
   // command of FINISH_MIN_MS is seen.
   async function refreshTerminals(): Promise<void> {
+    sweepStartup()
     const terminals = slices.sessions.filter((s) => s.kind === 'terminal' && s.lastStatus === 'running')
     if (terminals.length === 0) return
     let cmds: Map<string, string>
@@ -723,6 +748,29 @@ export function createCore(opts: CoreOptions): Core {
 
   const sendDeps = { find: findSession, backend, resume: (id: string) => commands.sessionResume({ id }) }
 
+  // Makes the worktree and registers it as a project (see `worktreeCreate`); also what a session
+  // launched with `worktree` runs. Made from the parent checkout, so a worktree of a worktree still forks the checkout.
+  async function makeWorktree(project: Project, branch: string, base: string | undefined): Promise<Result<Project>> {
+    const name = branch.trim()
+    if (!name) return { ok: false, error: 'no-branch' }
+    const repo = repoFor(project)
+    // a project can be any folder, so say so before git does — the launch dialog offers a
+    // worktree for every repo, and "is not a git repository" is the answer rather than a
+    // git `fatal` the human has to interpret
+    if (!(await gitTop(repo))) return { ok: false, error: 'no-repo' }
+    const at = opts.worktreeRoot
+      ? worktrees.worktreePathIn(opts.worktreeRoot, repo, name)
+      : worktrees.worktreePath(repo, name)
+    const made = await (opts.worktreeAdd ?? worktrees.add)({ repo, branch: name, path: at, base: base?.trim() || undefined, git })
+    if (!made.ok) return made
+    // resolveProject reads the parent from git (parentCheckout), so a new worktree nests under
+    // its checkout exactly as one added by hand does
+    const { project: wt } = await resolveProject(slices.projects, made.data.path, gitTop)
+    set('projects', [...slices.projects, wt])
+    syncProjects(false)
+    return { ok: true, data: wt }
+  }
+
   const commands: Commands = {
     async projectAdd({ path }) {
       const project = newProject(path, randomUUID(), parentCheckout(path, slices.projects))
@@ -769,24 +817,7 @@ export function createCore(opts: CoreOptions): Core {
     async worktreeCreate({ projectId, branch, base }) {
       const project = slices.projects.find((p) => p.id === projectId)
       if (!project) return { ok: false, error: 'not-found' }
-      const name = branch.trim()
-      if (!name) return { ok: false, error: 'no-branch' }
-      const repo = repoFor(project)
-      // a project can be any folder, so say so before git does — the launch dialog offers a
-      // worktree for every repo, and "is not a git repository" is the answer rather than a
-      // git `fatal` the human has to interpret
-      if (!(await gitTop(repo))) return { ok: false, error: 'no-repo' }
-      const at = opts.worktreeRoot
-        ? worktrees.worktreePathIn(opts.worktreeRoot, repo, name)
-        : worktrees.worktreePath(repo, name)
-      const made = await worktrees.add({ repo, branch: name, path: at, base: base?.trim() || undefined, git })
-      if (!made.ok) return made
-      // resolveProject reads the parent from git (parentCheckout), so a new worktree nests under
-      // its checkout exactly as one added by hand does
-      const { project: wt } = await resolveProject(slices.projects, made.data.path, gitTop)
-      set('projects', [...slices.projects, wt])
-      syncProjects(false)
-      return { ok: true, data: wt }
+      return makeWorktree(project, branch, base)
     },
 
     // `readBranch` walks up from the checkout reading HEAD, so it costs no process; the default
@@ -807,11 +838,9 @@ export function createCore(opts: CoreOptions): Core {
     },
 
     // `projectId` (the app) or `cwd` (the CLI, ADR 0029): a folder resolves to its project, registered when new.
-    async sessionCreate({ projectId, cwd, kind, prompt, label, feature, parent, model, cols, rows }) {
+    async sessionCreate({ projectId, cwd, worktree, kind, prompt, label, feature, parent, model, cols, rows }) {
       const source = kind === 'terminal' ? undefined : states.get(kind)?.source
       if (kind !== 'terminal' && !source) return { ok: false, error: 'no-source' }
-      const missing = await source?.preflight?.() // before anything is created: no dead pane, no half-made session
-      if (missing) return { ok: false, error: missing }
       let project = slices.projects.find((p) => p.id === projectId)
       let added = false
       let dir: string | null = null // the folder inside the project, null: the project path
@@ -822,7 +851,10 @@ export function createCore(opts: CoreOptions): Core {
         dir = real === realOrSelf(project.path) ? null : real
       }
       if (!project) return { ok: false, error: 'not-found' }
+      if (worktree && cwd !== undefined) return { ok: false, error: 'not-found' } // a worktree is made from a project, which `cwd` would only resolve later
       const chosen = project
+      // a worktree has no features until discovery runs there, so none can be linked to a new one
+      if (worktree && feature !== undefined) return { ok: false, error: 'no-feature' }
       if (feature !== undefined && (added || !slices.features.items.some((f) => f.projectId === chosen.id && f.slug === feature))) {
         return { ok: false, error: 'no-feature' } // checked before anything is created
       }
@@ -832,23 +864,60 @@ export function createCore(opts: CoreOptions): Core {
         if (!r.ok) return r // checked before anything is created, like the feature
         parentId = r.data
       }
-      const workdir = dir ?? project.path
+      let workdir = dir ?? project.path
       const agentSessionId = source ? source.mintId(now()) : null
-      const session = {
+      let session = {
         ...newSession({ projectId: project.id, kind, now: now(), id: randomUUID(), agentSessionId, cwd: dir, label }),
         ...(feature !== undefined && { feature, linkPinned: true }),
         ...(parentId && { parentId }),
         ...(model && { launchModel: model }),
       }
       const agentArgv = source ? source.argv(agentSessionId!, 'start', { prompt, name: label, model }) : []
-      const argv = source ? loginShellArgv(agentArgv, shellOpts()) : undefined
-      await backend.create({ name: session.tmuxName, cwd: workdir, cols, rows, argv, env: cliEnv(session) })
-      await backend.setColors(session.tmuxName, terminalTheme.foreground, terminalTheme.background)
+      // The placeholder goes in before the pane exists, so the card shows a spinner at once. The
+      // project is registered first: the placeholder points at it (a failed start leaves it registered).
       if (added) {
         set('projects', [...slices.projects, project])
         syncProjects(false)
       }
-      set('sessions', [...slices.sessions, session])
+      pending.add(session.id)
+      set('sessions', [...slices.sessions, { ...session, startup: { phase: 'starting', since: now().toISOString() } }])
+      // From here a failure keeps the card, marked failed with its reason, until it is dismissed.
+      const failStart = (reason: string): void => {
+        pending.delete(session.id)
+        failedNew.add(session.id)
+        set('sessions', slices.sessions.map((x) => (x.id === session.id ? { ...x, startup: { phase: 'failed', reason } } : x)))
+      }
+      try {
+        const missing = await source?.preflight?.() // before the pane is made: no dead pane, no half-made session
+        if (missing) {
+          failStart(missing)
+          return { ok: false, error: missing }
+        }
+        if (worktree) {
+          // The card sits under the source project until the worktree exists, then moves to it: same
+          // id, so focus and selection follow. A failure after this leaves the worktree and its project.
+          const made = await makeWorktree(project, worktree.branch, worktree.base)
+          if (!made.ok) {
+            failStart(made.error)
+            return made
+          }
+          project = made.data
+          workdir = project.path
+          const wtId = project.id
+          session = { ...session, projectId: wtId } // the launch below builds from the re-homed session
+          set('sessions', slices.sessions.map((x) => (x.id === session.id ? { ...x, projectId: wtId, startup: { phase: 'starting', since: now().toISOString() } } : x)))
+        }
+        const argv = source ? loginShellArgv(agentArgv, shellOpts()) : undefined
+        await backend.create({ name: session.tmuxName, cwd: workdir, cols, rows, argv, env: cliEnv(session) })
+        await backend.setColors(session.tmuxName, terminalTheme.foreground, terminalTheme.background)
+      } catch (e) {
+        failStart(e instanceof Error ? e.message : String(e))
+        throw e
+      }
+      pending.delete(session.id)
+      // the pane exists: the session is saved now, still carrying `startup`, and the 60 s clock starts here
+      // (a slow preflight, sandbox build or worktree must not eat it)
+      set('sessions', slices.sessions.map((x) => (x.id === session.id ? { ...x, startup: { phase: 'starting', since: now().toISOString() } } : x)))
       await lockWorktree(project)
       refreshStatus()
       if (prompt && kind === 'terminal') {
@@ -863,6 +932,8 @@ export function createCore(opts: CoreOptions): Core {
     async sessionKill({ id }) {
       const session = findSession(id)
       if (!session) return { ok: false, error: 'not-found' }
+      if (pending.has(id) || resuming.has(id)) return { ok: false, error: 'starting' }
+      if (failedNew.has(id)) return { ok: false, error: 'failed' } // no pane to end: dismiss it
       await backend.kill(session.tmuxName) // already-missing counts as success
       // re-read: a poll may have flipped it while kill was in flight
       replaceSession(markGone(findSession(id) ?? session, now().toISOString()))
@@ -874,10 +945,28 @@ export function createCore(opts: CoreOptions): Core {
     async sessionRemove({ id }) {
       const session = findSession(id)
       if (!session) return { ok: false, error: 'not-found' }
+      if (pending.has(id) || resuming.has(id)) return { ok: false, error: 'starting' }
+      if (failedNew.has(id)) return commands.sessionDismissStartup({ id }) // nothing was made: the card is all there is
       await backend.kill(session.tmuxName) // already-missing counts as success
       dropSessions((s) => s.id !== id)
       forgetAgents([session])
       await unlockWorktree(projectOf(session))
+      return { ok: true, data: { id } }
+    },
+
+    // Ends a failed-start card. A session that never started goes; one that failed to resume keeps its saved
+    // (gone, resumable) self and only loses the error.
+    async sessionDismissStartup({ id }) {
+      const session = findSession(id)
+      if (!session) return { ok: false, error: 'not-found' }
+      if (session.startup?.phase !== 'failed') return { ok: false, error: 'not-failed' }
+      if (failedNew.has(id)) {
+        failedNew.delete(id)
+        dropSessions((x) => x.id !== id) // also restores focus and the grid if the card held them
+      } else {
+        const { startup: _startup, ...rest } = session
+        replaceSession(rest)
+      }
       return { ok: true, data: { id } }
     },
 
@@ -892,13 +981,27 @@ export function createCore(opts: CoreOptions): Core {
       if (session.lastStatus !== 'gone') return { ok: false, error: 'not-gone' }
       const st = states.get(session.kind)
       if (!st) return { ok: false, error: 'no-source' }
+      if (resuming.has(id)) return { ok: false, error: 'starting' }
       const workdir = session.cwd ?? project.path
       const agentArgv = st.source.argv(session.agentSessionId, 'resume', { model: session.launchModel })
-      const argv = loginShellArgv(agentArgv, shellOpts())
-      await backend.kill(session.tmuxName) // a leftover dead pane
-      await backend.create({ name: session.tmuxName, cwd: workdir, cols: 80, rows: 24, argv, env: cliEnv(session) }) // attaching resizes it
-      await backend.setColors(session.tmuxName, terminalTheme.foreground, terminalTheme.background)
-      replaceSession(resume(session))
+      // The card spins from here, on its own clock; it stays `gone` (and saved so) until the pane exists.
+      resuming.add(id)
+      const { status: _stale, ...fresh } = session
+      replaceSession({ ...fresh, startup: { phase: 'starting', since: now().toISOString() } })
+      try {
+        const argv = loginShellArgv(agentArgv, shellOpts())
+        await backend.kill(session.tmuxName) // a leftover dead pane
+        await backend.create({ name: session.tmuxName, cwd: workdir, cols: 80, rows: 24, argv, env: cliEnv(session) }) // attaching resizes it
+        await backend.setColors(session.tmuxName, terminalTheme.foreground, terminalTheme.background)
+        resuming.delete(id)
+        replaceSession({ ...resume(findSession(id) ?? session), startup: { phase: 'starting', since: now().toISOString() } })
+      } catch (e) {
+        resuming.delete(id)
+        // the saved copy stays gone and resumable: only the card shows the error, until dismissed
+        const current = findSession(id)
+        if (current) replaceSession({ ...current, startup: { phase: 'failed', reason: e instanceof Error ? e.message : String(e) } })
+        throw e
+      }
       if (st.connected) void resync(st)
       refreshStatus()
       return { ok: true, data: findSession(id)! }
@@ -1093,7 +1196,7 @@ export function createCore(opts: CoreOptions): Core {
       try {
         await backend.ensureConfig()
         const live = await backend.list()
-        const next = reconcile(slices.sessions, live, now().toISOString())
+        const next = reconcile(slices.sessions, liveWithPending(live), now().toISOString())
         if (next !== slices.sessions) set('sessions', next)
         await refreshBranches()
       } catch (e) {

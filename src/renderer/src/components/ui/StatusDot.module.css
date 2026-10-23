@@ -11,3 +11,4 @@
 .idle { background: var(--status-idle); }
 .finished { background: var(--status-finished); }
 .gone { background: var(--status-gone); }
+.failed { background: var(--danger); }

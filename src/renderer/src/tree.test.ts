@@ -115,6 +115,12 @@ describe('sessionColumns', () => {
       ['ended', 'Ended', ['g']],
     ])
   })
+
+  it('keeps a starting session in the Working column, never off the board', () => {
+    const cols = sessionColumns([session('s', { startup: { phase: 'starting', since: '2026-10-05T10:00:00.000Z' } })])
+    expect(cols.find((c) => c.id === 'working')?.sessions.map((s) => s.id)).toEqual(['s'])
+    expect(cols.flatMap((c) => c.sessions)).toHaveLength(1)
+  })
 })
 
 describe('linkedSessions', () => {

@@ -287,6 +287,6 @@ describe('sessionCreate copilot', () => {
     const core = await start(src)
     expect(await core.commands.sessionCreate({ kind: 'copilot', cwd: t.dir, cols: 120, rows: 40 })).toEqual({ ok: false, error: 'no-copilot' })
     expect(created(t.fake)).toEqual([])
-    expect(core.getSlices().sessions).toEqual([])
+    expect(core.getSlices().sessions.map((s) => s.startup)).toEqual([{ phase: 'failed', reason: 'no-copilot' }]) // an error card, no pane
   })
 })
