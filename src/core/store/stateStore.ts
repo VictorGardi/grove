@@ -1,5 +1,6 @@
 import { DEFAULT_UI, type Session, type StateFile, type UiState } from '@shared/types'
 import { pruneGrid } from '@shared/grid'
+import { orphanChildren } from '@shared/sessionGroups'
 import { atomicWrite, readVersioned } from './jsonFile'
 
 type V1Session = Omit<Session, 'agentSessionId'> & { opencodeSessionId?: string | null }
@@ -44,11 +45,13 @@ const v7ToV8 = (s: { sessions?: Session[] }) => ({
 const v8ToV9 = (s: object) => s
 
 // v9 → v10 (sandbox removed, ADR 0045): a sandboxed session cannot resume without its sandbox, so
-// it is dropped; the rest lose the `sandboxed` field.
-const v9ToV10 = (s: { sessions?: (Session & { sandboxed?: boolean })[] }) => ({
-  ...s,
-  sessions: (s.sessions ?? []).filter((x) => !x.sandboxed).map(({ sandboxed: _sandboxed, ...x }) => x),
-})
+// it is dropped (its children become top level); the rest lose the `sandboxed` field.
+const v9ToV10 = (s: { sessions?: (Session & { sandboxed?: boolean })[] }) => {
+  const all = s.sessions ?? []
+  const gone = all.filter((x) => x.sandboxed).map((x) => x.id)
+  const kept = all.filter((x) => !x.sandboxed).map(({ sandboxed: _sandboxed, ...x }) => x)
+  return { ...s, sessions: orphanChildren(kept, gone) }
+}
 
 export function loadState(file: string, onBad?: (msg: string) => void): StateFile {
   const s = readVersioned<StateFile>(file, 10, { schemaVersion: 10, sessions: [], ui: DEFAULT_UI }, onBad, { 1: v1ToV2, 2: v2ToV3, 3: v3ToV4, 4: v4ToV5, 5: v5ToV6, 6: v6ToV7, 7: v7ToV8, 8: v8ToV9, 9: v9ToV10 })

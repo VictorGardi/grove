@@ -221,4 +221,14 @@ describe('stateStore', () => {
     expect(s.sessions.map((x) => x.id)).toEqual(['ok'])
     expect('sandboxed' in s.sessions[0]).toBe(false)
   })
+
+  it('migrates a v9 file: children of a dropped sandboxed session become top level', () => {
+    const file = tmpFile()
+    const base = newSession({ projectId: 'p', kind: 'claude', now: new Date(), id: 'a', agentSessionId: 'u' })
+    const parent = { ...base, id: 'sb', sandboxed: true }
+    const child = { ...base, id: 'kid', parentId: 'sb' }
+    fs.writeFileSync(file, JSON.stringify({ schemaVersion: 9, sessions: [parent, child], ui: DEFAULT_UI }))
+    const s = loadState(file)
+    expect(s.sessions.map((x) => [x.id, x.parentId ?? null])).toEqual([['kid', null]])
+  })
 })
