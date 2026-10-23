@@ -32,8 +32,6 @@ import * as worktrees from './worktrees'
 import { kidsKey } from '@shared/groups'
 import { orphanChildren, resolveParent, withParent } from '@shared/sessionGroups'
 import { type AgentEvent, type AgentKind, type AgentSource } from './agents/types'
-import { pruneContainers, removeContainer } from './sandbox/container'
-import type { AgentPaths } from './sandbox/spec'
 import { createTerminalActivity } from './terminalActivity'
 import { autoLink, link, markGone, markSeen, newSession, reconcile, rename, resume, setWorkflowStatus, withBranches, withPrs } from './sessions'
 import { loadConfig, saveConfig } from './store/configStore'
@@ -53,8 +51,7 @@ export interface CoreOptions {
   now?: () => Date // tests inject this
   prLookup?: PrLookup // the PR of a branch, for the marker on a session; none: no markers
   git?: string | null // path to git; undefined: 'git' from PATH, null: not found
-  sessionEnv?: { socketPath: string; binDir: string } & Partial<AgentPaths> // the grove CLI's socket and launcher dir, plus every path a sandboxed session mounts; none: sessions get no CLI env and cannot be sandboxed
-  sandbox?: { container: string; dockerfile: string } // where the Apple `container` binary and the sandbox image live; none: `--sandboxed` fails `no-sandbox`
+  sessionEnv?: { socketPath: string; binDir: string } // the grove CLI's socket and launcher dir; none: sessions get no CLI env
   worktreeRoot?: string // where `worktreeCreate` puts new checkouts; none: ~/.grove. Tests point it elsewhere, so a test never writes into the real home.
 }
 
@@ -204,17 +201,11 @@ export function createCore(opts: CoreOptions): Core {
       GROVE_SOCKET: e.socketPath,
       ...(session.kind === 'terminal' && { PATH: `${e.binDir}:${minimalEnv(process.env).PATH}` }),
       // OpenCode's TUI tabs and theme are overridden inside grove's own session UI;
-      // the inline cli settings merge over the user's global cli.json. Shared with the sandbox path,
-      // which has to pass it into the VM explicitly — see `shared/opencodeSession.ts`.
+      // the inline cli settings merge over the user's global cli.json. See `shared/opencodeSession.ts`.
       ...(session.kind === 'opencode' && { OPENCODE_CLI_CONFIG_CONTENT: opencodeCliConfig() }),
     }
   }
   const shellOpts = () => ({ pathPrefix: opts.sessionEnv?.binDir })
-  // Takes a session's VM with it when the session ends. Only for a session that had one: a host
-  // session has no container, and a machine that cannot sandbox has no binary to ask.
-  const dropContainer = (session: Session): Promise<void> =>
-    session.sandboxed && opts.sandbox ? removeContainer(opts.sandbox.container, session.tmuxName) : Promise.resolve()
-
   function set<K extends keyof Slices>(k: K, v: Slices[K]): void {
     slices[k] = v
     for (const l of listeners) l(k, v)
@@ -873,7 +864,6 @@ export function createCore(opts: CoreOptions): Core {
       const session = findSession(id)
       if (!session) return { ok: false, error: 'not-found' }
       await backend.kill(session.tmuxName) // already-missing counts as success
-      await dropContainer(session) // --rm never fired, so the VM outlived the pane
       // re-read: a poll may have flipped it while kill was in flight
       replaceSession(markGone(findSession(id) ?? session, now().toISOString()))
       await unlockWorktree(projectOf(session)) // nothing runs in it now, so nothing may prune it
@@ -885,7 +875,6 @@ export function createCore(opts: CoreOptions): Core {
       const session = findSession(id)
       if (!session) return { ok: false, error: 'not-found' }
       await backend.kill(session.tmuxName) // already-missing counts as success
-      await dropContainer(session)
       dropSessions((s) => s.id !== id)
       forgetAgents([session])
       await unlockWorktree(projectOf(session))
@@ -1106,10 +1095,6 @@ export function createCore(opts: CoreOptions): Core {
         const live = await backend.list()
         const next = reconcile(slices.sessions, live, now().toISOString())
         if (next !== slices.sessions) set('sessions', next)
-        // A crash SIGKILLs `container run`, which never gets to honour its own `--rm`, so a VM can
-        // outlive its pane. Anything grove named that no live tmux session accounts for is an
-        // orphan. `live` comes from tmux, so this sits inside the try: without tmux, no pruning.
-        if (opts.sandbox) await pruneContainers(opts.sandbox.container, live)
         await refreshBranches()
       } catch (e) {
         errors.push(`tmux: ${(e as Error).message}`)

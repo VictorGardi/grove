@@ -62,4 +62,38 @@ Approved, 0 blocking, 0 fix rounds. Non-blocking left: no test asserts "always h
 
 none
 
+## Slice 2
+
+Session: remove-sandbox-slice-2-a1
+Status: done
+Commit: this commit (see git log)
+
+### Slice plan
+
+Found in the code: `core.ts` still imports `pruneContainers`/`removeContainer`/`AgentPaths` from `./sandbox/*`, has `CoreOptions.sandbox`, `sessionEnv` typed with `Partial<AgentPaths>`, `dropContainer` (kill/remove) and a startup `pruneContainers`; `agents/types.ts` has `SandboxKind`/`isSandboxKind`; `main/index.ts` builds `agentPaths` and passes `sandbox:`. Slice 1 already removed `sandboxDeps`, `LOST_SANDBOX` and the `gitCommonDir` import.
+
+Implementer 1:
+- [x] delete `src/core/sandbox/` and `resources/sandbox/`
+- [x] `src/core/core.ts`: imports, `CoreOptions.sandbox`, `sessionEnv` type, `dropContainer` and calls, startup prune
+- [x] `src/core/agents/types.ts`: `SandboxKind`, `isSandboxKind`
+- [x] `src/main/index.ts`: `AgentPaths`, `agentPaths`, `sandbox` option; `sessionEnv: { binDir, socketPath }`
+
+Models passed: implementer: inherit, reviewer: inherit
+
+### Review rounds
+
+Round 1: no blocking findings. Verdict: approved, 0 fix rounds. Non-blocking, left for later slices: sandbox/VM wording in `opencodeSession.ts`, `sessionStatus.ts`, `SandboxMark.tsx`, `sandboxErrors.ts` (slices 3 and 5); the `sandboxNote` persist-strip comment in `core.ts` (slice 3).
+
+### Deviations
+
+none
+
+### Verification
+
+`npm run typecheck`, `npm test` (91 files, 1080 tests) and `npm run build` pass; `grep -rn "sandboxArgvFor\|isSandboxKind\|pruneContainers\|removeContainer\|AgentPaths\|core/sandbox" src` finds nothing. Subagents (implementer, reviewer) requested with the inherited model.
+
+### Left for the human
+
+none
+
 ## Open questions
