@@ -96,4 +96,41 @@ none
 
 none
 
+## Slice 3
+
+Session: remove-sandbox-slice-3-a1
+Status: done
+Commit: this commit (see git log)
+
+### Slice plan
+
+Found in the code: `Session.sandboxed` and `sandboxNote` live in `shared/types.ts`; `newSession` in `core/sessions.ts` takes and sets `sandboxed`; `stateStore.ts` is at version 9 (`v8ToV9` adds `sandboxed`) and `core.ts` strips `sandboxNote` and writes `schemaVersion: 9` on persist; `sessionStatus.ts` has `sandboxView`, used only by `ui/SandboxMark.tsx`, which `SessionMeta.tsx` renders; six renderer tests carry `sandboxed: false` fixtures.
+
+Implementer 1:
+- [x] `src/shared/types.ts`: remove `sandboxed` and `sandboxNote`
+- [x] `src/core/sessions.ts`: drop the `sandboxed` option and field
+- [x] `src/core/store/stateStore.ts`: add `v9ToV10` (drop sessions with `sandboxed === true`, strip the field from the rest), version 10 in `loadState`; `core.ts`: `schemaVersion: 10`, drop the `sandboxNote` strip
+- [x] `stateStore.test.ts`: v9 file with one sandboxed and one ordinary session loads with only the ordinary one, field stripped, version 10; remove the v8 and "keeps a sandboxed session" cases and update other `schemaVersion: 9` literals
+- [x] `sessionStatus.ts` and its test: remove `sandboxView` and its describe block
+- [x] delete `ui/SandboxMark.tsx` and css; edit `SessionMeta.tsx` (import, usage, comment)
+- [x] remove `sandboxed: false` from the navigation, railBars, sessionList, tree, sessionStatus and contextGauge test fixtures
+
+Models passed: implementer: inherit, reviewer: inherit
+
+### Review rounds
+
+Round 1: no blocking findings. Verdict: approved, 0 fix rounds. Non-blocking: an empty `.dense {}` rule left in `SessionMeta.module.css` (removed); the "ADR 0045" comment in the migration points at an ADR written in slice 6 (left); `sandboxErrors.ts` wording is slice 5.
+
+### Deviations
+
+`dense` became unused in `SessionMeta` once `SandboxMark` was gone (typecheck failed on it), so it was removed from its props and from the one caller in `SessionGrid.tsx`; its dead css rule was removed too. `v8ToV9` became an identity step. `projectUi.test.ts` had a `schemaVersion: 9` literal, now 10; the "unknown schemaVersion" test case moved from 10 to 11.
+
+### Verification
+
+`npm run typecheck` and `npm test` pass (91 files, 1075 tests); the new v9 migration test passes. `grep -rln "sandboxed\|sandboxNote\|sandboxView\|SandboxMark" src` lists only `stateStore.ts`, `stateStore.test.ts`, `cliServer.ts`, `cliServer.test.ts`, `args.test.ts`, `sandboxErrors.ts`, `opencodeSession.ts`, the artifact iframe files and a JSONL fixture. Subagents (implementer, reviewer) requested with the inherited model.
+
+### Left for the human
+
+none
+
 ## Open questions

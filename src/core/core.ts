@@ -218,9 +218,9 @@ export function createCore(opts: CoreOptions): Core {
     }
     else if (k === 'sessions' || k === 'ui') {
       const sessions = slices.sessions.map(
-        ({ branch: _branch, status: _status, waitingFor: _waitingFor, contextPct: _p, contextTokens: _t, contextWindow: _w, model: _m, sandboxNote: _sn, pr: _pr, ...s }) => s,
+        ({ branch: _branch, status: _status, waitingFor: _waitingFor, contextPct: _p, contextTokens: _t, contextWindow: _w, model: _m, pr: _pr, ...s }) => s,
       ) // live-only
-      saveState(opts.statePath, { schemaVersion: 9, sessions, ui: slices.ui })
+      saveState(opts.statePath, { schemaVersion: 10, sessions, ui: slices.ui })
     }
     else if (k === 'comments') saveComments(opts.commentsPath, { schemaVersion: 2, comments: slices.comments })
     if (k === 'sessions') publish() // card state reads linked sessions

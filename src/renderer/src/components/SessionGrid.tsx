@@ -140,7 +140,7 @@ export function SessionGrid({ sessions, focusedId, view, onViewChange, onFocusPa
               <div className={cx(s.header, held === x.id && s.grabbing)} onPointerDown={(e) => startPick(e, x.id)} onPointerMove={movePick} onPointerUp={endPick} onPointerCancel={endPick}>
                 <SessionMeta lead={<span className={s.title}>{paneTitle(projects.find((p) => p.id === x.projectId), x)}</span>}
                   session={x} feature={feature} tagIndex={feature ? tags.group(feature.projectId, feature.group ? feature.slug : feature.parent) : null}
-                  context={context ? <ContextGauge view={context} /> : undefined} dense
+                  context={context ? <ContextGauge view={context} /> : undefined}
                   actions={<>
                     <Button variant="ghost" size="sm" round icon={`span-${span}` as const} aria-label={`Span ${span}, change`} title={`Span: ${span} (click for ${nextSpan(span)})`} onClick={() => setGridSpan(x.id, nextSpan(span))} />
                     <Button variant="ghost" size="sm" round icon="maximize" aria-label="Open alone" title="Open alone" onClick={() => openAlone(x.id)} />

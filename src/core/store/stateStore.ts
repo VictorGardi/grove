@@ -39,14 +39,19 @@ const v7ToV8 = (s: { sessions?: Session[] }) => ({
   sessions: (s.sessions ?? []).map((x) => ({ ...x, workflowStatus: x.workflowStatus ?? 'in-progress' })),
 })
 
-// v8 → v9 (ADR 0033): every session says whether it runs in a sandbox; none do yet.
-const v8ToV9 = (s: { sessions?: Session[] }) => ({
+// v8 → v9 (ADR 0033): added the per-session `sandboxed` flag. v9 → v10 removes it again, so
+// this step has nothing left to do.
+const v8ToV9 = (s: object) => s
+
+// v9 → v10 (sandbox removed, ADR 0045): a sandboxed session cannot resume without its sandbox, so
+// it is dropped; the rest lose the `sandboxed` field.
+const v9ToV10 = (s: { sessions?: (Session & { sandboxed?: boolean })[] }) => ({
   ...s,
-  sessions: (s.sessions ?? []).map((x) => ({ ...x, sandboxed: x.sandboxed ?? false })),
+  sessions: (s.sessions ?? []).filter((x) => !x.sandboxed).map(({ sandboxed: _sandboxed, ...x }) => x),
 })
 
 export function loadState(file: string, onBad?: (msg: string) => void): StateFile {
-  const s = readVersioned<StateFile>(file, 9, { schemaVersion: 9, sessions: [], ui: DEFAULT_UI }, onBad, { 1: v1ToV2, 2: v2ToV3, 3: v3ToV4, 4: v4ToV5, 5: v5ToV6, 6: v6ToV7, 7: v7ToV8, 8: v8ToV9 })
+  const s = readVersioned<StateFile>(file, 10, { schemaVersion: 10, sessions: [], ui: DEFAULT_UI }, onBad, { 1: v1ToV2, 2: v2ToV3, 3: v3ToV4, 4: v4ToV5, 5: v5ToV6, 6: v6ToV7, 7: v7ToV8, 8: v8ToV9, 9: v9ToV10 })
   const sessions = (s.sessions ?? []).map((x) => ({ ...x, seenAt: x.seenAt ?? null })) // seenAt: added after v1 shipped
   // v1 files from before ADR 0018 carry `view` and may have the old features tab
   const { view: _view, ...saved } = (s.ui ?? {}) as Partial<UiState> & { view?: unknown }
