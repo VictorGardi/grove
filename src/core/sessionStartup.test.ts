@@ -113,24 +113,12 @@ describe('session startup placeholder', () => {
       expect(sessions()[0].startup).toEqual({ phase: 'failed', reason: 'tmux failed' })
     })
 
-    it('keeps a failed card for a sandbox refusal', async () => {
-      const { core, sessions } = setup()
-      await core.start()
-      // no sandbox configured on this core: the sandbox refuses
-      const res = await core.commands.sessionCreate({ projectId: 'p', kind: 'opencode', sandboxed: true, cols: 80, rows: 24 })
-      expect(res.ok).toBe(false)
-      if (res.ok) return
-      expect(res.error).toMatch(/^no-sandbox-/)
-      expect(sessions()[0].startup).toEqual({ phase: 'failed', reason: res.error })
-    })
-
     it('leaves no card for refusals before a project is resolved', async () => {
       const { core, claude, sessions } = setup()
       await core.start()
       expect(await core.commands.sessionCreate({ projectId: 'nope', kind: 'terminal', cols: 80, rows: 24 })).toEqual({ ok: false, error: 'not-found' })
       expect(await core.commands.sessionCreate({ projectId: 'p', kind: 'copilot', cols: 80, rows: 24 })).toEqual({ ok: false, error: 'no-source' })
       expect(await core.commands.sessionCreate({ projectId: 'p', kind: 'terminal', parent: 'nope', cols: 80, rows: 24 })).toMatchObject({ ok: false })
-      expect(await core.commands.sessionCreate({ projectId: 'p', kind: 'terminal', sandboxed: true, cols: 80, rows: 24 })).toEqual({ ok: false, error: 'no-sandbox-kind' })
       void claude
       expect(sessions()).toEqual([])
     })

@@ -1,12 +1,12 @@
 import { describe, expect, it } from 'vitest'
 import type { Session } from '@shared/types'
-import { longestWaiting, mostUrgent, sandboxView, serviceBanners, shownStatus, statusTone, statusView, trackWaiting } from './sessionStatus'
+import { longestWaiting, mostUrgent, serviceBanners, shownStatus, statusTone, statusView, trackWaiting } from './sessionStatus'
 
 function session(over: Partial<Session> = {}): Session {
   return {
     id: 'a', projectId: 'p', kind: 'opencode', label: 'a', labelPinned: false, tmuxName: 'grove-a',
     cwd: null, agentSessionId: 'ses_a', feature: null, linkPinned: false, action: null,
-    startedAt: '2026-10-05T10:00:00.000Z', endedAt: null, lastStatus: 'running', seenAt: null, lastContext: null, workflowStatus: 'in-progress', sandboxed: false, ...over,
+    startedAt: '2026-10-05T10:00:00.000Z', endedAt: null, lastStatus: 'running', seenAt: null, lastContext: null, workflowStatus: 'in-progress', ...over,
   }
 }
 
@@ -88,31 +88,6 @@ describe('waiting', () => {
     expect(longestWaiting(list, { a: 300, b: 100 })?.id).toBe('b')
     expect(longestWaiting(list, {})?.id).toBe('a')
     expect(longestWaiting([session()], {})).toBeNull()
-  })
-})
-
-describe('sandboxView', () => {
-  it('says nothing at all for the ordinary unsandboxed session', () => {
-    expect(sandboxView(session())).toEqual({ state: 'none' })
-    expect(sandboxView(session()).label).toBeUndefined()
-  })
-
-  it('names the sandbox while the session has one', () => {
-    expect(sandboxView(session({ sandboxed: true }))).toEqual({ state: 'sandboxed', label: 'Sandboxed' })
-  })
-
-  // The case the whole field exists for: `sandboxed` went false, so the mark would otherwise go
-  // dark and the session would look exactly like one that was never confined.
-  it('flags a session that was confined and is not any more', () => {
-    expect(sandboxView(session({ sandboxed: false, sandboxNote: 'the sandbox could not start' })))
-      .toEqual({ state: 'lost', label: 'Not sandboxed' })
-  })
-
-  // A live sandbox is the stronger claim: if one is running, nothing is lost whatever a stale
-  // note says.
-  it('prefers the live sandbox over a stale note', () => {
-    expect(sandboxView(session({ sandboxed: true, sandboxNote: 'the sandbox could not start' })))
-      .toEqual({ state: 'sandboxed', label: 'Sandboxed' })
   })
 })
 

@@ -1,7 +1,7 @@
 import fs from 'node:fs'
 import net from 'node:net'
 import { PROTOCOL, WORKFLOW_STATUS_VALUES, type CliReply, type CliSession, type TurnResult } from '@shared/cli'
-import { errorMessage } from '@shared/sandboxErrors'
+import { errorMessage } from '@shared/sessionErrors'
 import type { Session, WorkflowStatus } from '@shared/types'
 import type { Core } from '../core/core'
 import { resolveSessionRef } from '../core/cliOps'
@@ -72,6 +72,7 @@ async function dispatch(core: Core, raise: () => void, line: string): Promise<Cl
       if (typeof kind !== 'string' || !KINDS.includes(kind) || typeof cwd !== 'string' || !cwd) {
         return fail(id, 'bad-params', 'kind and cwd are required')
       }
+      if ('sandboxed' in params) return fail(id, 'bad-params', 'unknown parameter: sandboxed')
       // resolved before the worktree below is made: a parent that does not exist must leave nothing behind
       const wantedParent = optString(params.parent)
       let parent: string | undefined
@@ -96,7 +97,7 @@ async function dispatch(core: Core, raise: () => void, line: string): Promise<Cl
       }
       const res = await core.commands.sessionCreate({
         kind: kind as Session['kind'], cwd: dir, prompt: optString(params.prompt), label: optString(params.label),
-        feature: optString(params.feature), parent, model, sandboxed: params.sandboxed === true, cols: COLS, rows: ROWS,
+        feature: optString(params.feature), parent, model, cols: COLS, rows: ROWS,
       })
       if (!res.ok) return failFrom(id, res.error)
       const created = toCli(core, res.data)

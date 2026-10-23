@@ -34,7 +34,7 @@ describe('forgetting a project', () => {
 
   // A previous run's ui, written the way grove writes it: state.json before anything starts.
   const savedUi = (over: Partial<UiState>) =>
-    saveState(t.statePath, { schemaVersion: 9, sessions: [], ui: { ...DEFAULT_UI, ...over } })
+    saveState(t.statePath, { schemaVersion: 10, sessions: [], ui: { ...DEFAULT_UI, ...over } })
   const start = async () => {
     const core = t.make()
     await core.start()

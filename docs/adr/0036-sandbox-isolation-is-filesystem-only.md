@@ -4,7 +4,7 @@ Date: 2026-10-09
 
 ## Status
 
-Accepted
+Superseded by [0045](./0045-sandboxing-is-left-to-each-provider.md)
 
 ## Context
 
@@ -25,6 +25,8 @@ machinery for this round, and it is separable: the mount set is the property
 that does the confining.
 
 ## Decision
+
+Superseded. Grove removed sandboxed sessions and leaves isolation to each agent provider; [ADR 0045](./0045-sandboxing-is-left-to-each-provider.md) records it. The decision below is kept for history.
 
 - **This round:** a sandboxed session runs with Apple's default container
   networking. No egress restriction is attempted. Measured 2026-10-10: DNS

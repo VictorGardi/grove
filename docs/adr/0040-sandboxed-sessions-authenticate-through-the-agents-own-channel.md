@@ -4,7 +4,7 @@ Date: 2026-10-11
 
 ## Status
 
-Accepted
+Superseded by [0045](./0045-sandboxing-is-left-to-each-provider.md)
 
 ## Context
 
@@ -33,6 +33,8 @@ Mac — never reached the sandbox: OpenCode documents that credential as
 `~/.local/share/opencode/auth.json`, inside a directory grove already mounts.
 
 ## Decision
+
+Superseded. Grove removed sandboxed sessions and leaves isolation to each agent provider; [ADR 0045](./0045-sandboxing-is-left-to-each-provider.md) records it. The decision below is kept for history.
 
 A sandboxed session authenticates through each agent's **own documented credential
 channel**, and grove refuses `no-sandbox` rather than opening a pane that cannot log in.

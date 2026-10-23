@@ -4,8 +4,8 @@ import os from 'node:os'
 import path from 'node:path'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { request } from '../cli/client'
+import { errorMessage } from '@shared/sessionErrors'
 import type { CliSession } from '@shared/cli'
-import { errorMessage } from '@shared/sandboxErrors'
 import { FakeAgentSource } from '../core/testing/fakeAgentSource'
 import { gitRepo } from '../core/testing/gitRepo'
 import { createOpenCode, createTerminal, LATER, setupCore } from '../core/testing/setup'
@@ -94,36 +94,13 @@ describe('cli server', () => {
     expect(core.getSlices().sessions[1]).toMatchObject({ kind: 'opencode', launchModel: 'p/m1' })
   })
 
-  // The refusal's message must be the one `errorMessage` holds for that code, or the table is
-  // decorative. Both refusals reachable from this test core are asserted; the codes that need a
-  // configured sandbox are covered where that setup exists (sessionCreate.test.ts), and the table
-  // itself is covered in shared/sandboxErrors.test.ts.
-  it('carries each refusal out as its own sentence, not as a bare code', async () => {
-    const { socketPath } = await start()
-    for (const [code, args] of [
-      ['no-sandbox-unconfigured', { kind: 'claude', sandboxed: true }],
-      ['no-sandbox-kind', { kind: 'terminal', sandboxed: true }],
-    ] as const) {
-      const res = await request(socketPath, req('sessions.create', { cwd: t.dir, ...args }))
-      expect(res, code).toMatchObject({ ok: false, error: { code, message: errorMessage(code) } })
-      expect(res.ok === false && res.error.message, code).not.toBe(code)
-    }
-  })
-
-  it('carries --sandboxed through to the session, and refuses it when no sandbox can be had', async () => {
+  it('rejects a request carrying `sandboxed`, true or false, and creates no session', async () => {
     const { core, socketPath } = await start()
-    const sandboxed = await request(socketPath, req('sessions.create', { kind: 'claude', cwd: t.dir, sandboxed: true }))
-    // the test core has no sandbox configured, so the refusal is the wiring under test
-    expect(sandboxed).toMatchObject({ ok: false, error: { code: 'no-sandbox-unconfigured' } })
-    // and it must still say something useful, rather than printing a bare code at the human
-    expect(sandboxed.ok === false && sandboxed.error.message).toBeTruthy()
-    expect(core.getSlices().sessions.map((s) => s.startup?.phase)).toEqual(['failed']) // the error card, no pane
-    await core.commands.sessionDismissStartup({ id: core.getSlices().sessions[0].id })
+    for (const sandboxed of [true, false]) {
+      const res = await request(socketPath, req('sessions.create', { kind: 'claude', cwd: t.dir, sandboxed }))
+      expect(res).toMatchObject({ ok: false, error: { code: 'bad-params', message: 'unknown parameter: sandboxed' } })
+    }
     expect(core.getSlices().sessions).toEqual([])
-
-    const bare = await request(socketPath, req('sessions.create', { kind: 'claude', cwd: t.dir }))
-    expect(bare.ok).toBe(true)
-    expect(core.getSlices().sessions.map((s) => s.sandboxed)).toEqual([false])
   })
 
   it('starts a session in a new worktree of the cwd\'s repo, registered as its own project', async () => {

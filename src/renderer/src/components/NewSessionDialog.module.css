@@ -57,7 +57,7 @@
   color: var(--accent);
 }
 
-/* The ring Switch uses, so keyboard focus reads the same everywhere it is offered. */
+/* The accent focus ring, so keyboard focus reads the same everywhere it is offered. */
 .kind:focus-visible {
   outline: none;
   box-shadow: 0 0 0 2px var(--panel-bg), 0 0 0 4px var(--accent);
@@ -238,43 +238,6 @@
 
 .prompt:focus {
   border-color: var(--focus-border);
-}
-
-/* The consequence is written out under the switch, never in a tooltip: a tooltip is the one
-   place a reader looks *after* they have already chosen (ADR 0036 — filesystem only). */
-.isolation {
-  display: flex;
-  align-items: flex-start;
-  gap: 10px;
-  padding: 9px 11px;
-  background: var(--card-bg);
-  border: 1px solid var(--card-border);
-  border-radius: var(--r-md);
-}
-
-.off {
-  opacity: 0.5;
-}
-
-.isolationText {
-  min-width: 0;
-}
-
-.isolationTitle {
-  font-size: var(--fs-card);
-  margin-bottom: 2px;
-}
-
-/* what the switch actually buys, in the app's own words */
-.hint {
-  font-size: var(--fs-sm);
-  color: var(--text-2);
-  line-height: 1.5;
-}
-
-.hint b {
-  color: var(--text);
-  font-weight: var(--fw-semibold);
 }
 
 .note {

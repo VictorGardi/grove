@@ -21,7 +21,6 @@ export interface Session {
   feature: string | null           // linked feature slug in this project
   linkPinned: boolean              // true once set by hand; auto-linking (child 3) leaves it alone
   action: { stage: string; actionId: string } | null // always null
-  sandboxed: boolean          // runs its agent inside an Apple `container` VM (ADR 0034); persisted, so a resume never widens
   startedAt: string                // ISO
   endedAt: string | null           // ISO, set when first seen gone
   lastStatus: 'running' | 'gone'
@@ -36,7 +35,6 @@ export interface Session {
   contextTokens?: number | null    // tokens in context (input incl. cache); never saved
   contextWindow?: number | null    // size of the context window in tokens; never saved
   model?: string | null            // the model in use; never saved
-  sandboxNote?: string             // a resume that could not re-enter its sandbox (ADR 0033): the session is on the host with no filesystem isolation, and this says so; never saved
   startup?: { phase: 'starting'; since: string } | { phase: 'failed'; reason: string } // a session whose pane is being made, until its first status (or gone); ISO since; never saved
   lastContext: ContextReading | null // the last known reading (pct known); persisted
   parentId?: string | null         // the group this session is in: its parent's id. Groups are one level deep, so a parent never has a parent; persisted
@@ -168,7 +166,7 @@ export interface Comment {
 export interface CommentsFile { schemaVersion: 2; comments: Comment[] }
 export type Slices = { projects: Project[]; sessions: Session[]; ui: UiState; features: FeaturesSlice; opencode: OpenCodeSlice; diff: SessionDiff | null; comments: Comment[] } // diff: the one on screen, not persisted
 export interface ConfigFile { schemaVersion: 1; projects: Project[]; workflow?: string }
-export interface StateFile { schemaVersion: 9; sessions: Session[]; ui: UiState }
+export interface StateFile { schemaVersion: 10; sessions: Session[]; ui: UiState }
 export const SIDEBAR_RAIL_WIDTH = 56 // the collapsed sidebar
 export const SIDEBAR_WIDTH = 220 // the default; drag the sidebar's edge to resize, double-click it to come back here
 export const DEFAULT_UI: UiState = { sidebarWidth: SIDEBAR_WIDTH, sidebarCollapsed: false, focusedSessionId: null, focusedFeature: null, focusedProject: null, sidebarTab: 'sessions', board: 'sessions', collapsed: [], hiddenProjects: [], groupBy: 'project', sessionSort: 'custom', sessionOrder: [], viewer: null, viewerWidth: null, viewerExpanded: false, grid: { open: false, members: [] } }

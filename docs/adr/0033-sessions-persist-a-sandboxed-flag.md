@@ -4,7 +4,7 @@ Date: 2026-10-09
 
 ## Status
 
-Accepted
+Superseded by [0045](./0045-sandboxing-is-left-to-each-provider.md)
 
 ## Context
 
@@ -18,6 +18,8 @@ ADR 0029 added `Session.cwd` for the same reason and used the same mechanism:
 a persisted per-session field plus one step in the state migration chain.
 
 ## Decision
+
+Superseded. Grove removed sandboxed sessions and leaves isolation to each agent provider; [ADR 0045](./0045-sandboxing-is-left-to-each-provider.md) records it. The decision below is kept for history.
 
 - **Field:** `Session.sandboxed: boolean`, persisted, set once at creation and
   read again by `sessionResume`.

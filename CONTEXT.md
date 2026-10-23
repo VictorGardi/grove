@@ -39,9 +39,9 @@ specific meaning, so humans and agents stay consistent.
   an **OpenCode session**, a **Claude session** or a **Copilot session** (all
   **agent sessions**, running the agent's TUI) or a **terminal session** (a shell). Started either
   from ⌘T, which picks a checkout and a kind in one keystroke, or from the
-  **launch dialog** (⌘⇧T), which also configures prompt, worktree and sandbox.
+  **launch dialog** (⌘⇧T), which also configures prompt and worktree.
 - **Launch dialog**: the ⌘⇧T form: agent kind, where (a checkout, one of its
-  worktrees, or a new worktree on a branch), prompt, sandbox, feature link and
+  worktrees, or a new worktree on a branch), prompt, feature link and
   label. It makes a worktree *before* the session, so a conflict is reported
   against the form rather than failing a session that was never created.
 - **Agent session id**: `agentSessionId`, the agent's own id for a session
@@ -50,25 +50,6 @@ specific meaning, so humans and agents stay consistent.
 - **Agent source**: the per-kind adapter that reports agent events (turn
   start/end, pending permission or question, writes) to core; one per agent
   kind, each with its own connect and re-sync state (ADR 0019).
-- **Sandboxed session**: an agent session whose process runs inside an Apple
-  `container` Linux VM rather than on the host. Chosen per session at creation
-  and persisted, so resuming it stays sandboxed (ADR 0033) — unless this host
-  cannot build the sandbox, where a resume downgrades to the host and the app
-  says so once. Its working directory and a fixed mount set appear inside at
-  their host-identical paths; nothing else of the host does (ADR 0035). A
-  sandboxed **OpenCode** session joins the host's shared service over the
-  container gateway — that service is bound to a routable address, and the
-  container's copy of its `service.json` is read-only so the sandbox can never
-  evict the host's (ADR 0034). Filesystem isolation only — no egress
-  restriction (ADR 0036). Marked in the session header and on its grid pane.
-- **Sandbox spec**: the image, mounts, env and workdir that `src/core/sandbox/`
-  derives from a session and turns into the pane's `container run …` argv. The
-  container is named after the tmux session, so a leftover is traceable
-  (ADR 0034).
-- **Container bridge**: the host side of the private subnet Apple's `container`
-  gives a VM (measured `192.168.64.1`), reachable from inside a container and
-  **not** from the LAN. The one address a sandboxed OpenCode session's service
-  may bind to (ADR 0034).
 - **Hook spool**: the app-owned file `<userData>/agents/claude/<id>.jsonl` that
   a Claude session's per-launch hooks append to, and the Claude source tails
   (ADR 0016).
