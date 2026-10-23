@@ -200,4 +200,39 @@ The css modules needed no change: slice 1 had already removed the unused sandbox
 
 none
 
+## Slice 6
+
+Session: remove-sandbox-slice-6-a1
+Status: done
+Commit: this commit (see git log)
+
+### Slice plan
+
+Found in the code: `README.md` mentions the sandbox on lines 14, 22, 40, 59 and 75; `CONTEXT.md` on lines 42, 44 and 53-71 (three definitions) plus the unrelated iframe line 165. ADRs 0033-0036, 0039 and 0040 are `Accepted`; 0038 is already superseded and keeps its own status. The ADR template is `docs/adr/0000-template.md`; the repo's one superseded ADR (0038) uses `Superseded by [NNNN](./file.md)` in Status and a `Superseded.` paragraph under Decision. `.grove/tasks/backlog` holds T-191 and T-196; `.grove/tasks/archive/T-191.md` differs from the backlog copy only in `status`; T-196 has no archived copy.
+
+Implementer 1:
+- [ ] `README.md`: remove the sandbox wording from the launch-dialog lines, the "Sandboxed sessions" bullet, the `--sandboxed` example and the Apple container prerequisite; add one sentence saying isolation is left to each provider, without the word "sandbox"
+- [ ] `CONTEXT.md`: remove the three sandbox definitions and the sandbox mentions in the launch-dialog and session-creation lines; keep the iframe line
+- [x] add `docs/adr/0045-sandboxing-is-left-to-each-provider.md` (Accepted; Context, Decision, Consequences with the one-time cleanup and its limits from D3)
+- [x] mark ADRs 0033, 0034, 0035, 0036, 0039, 0040 `Superseded by [0045](./0045-sandboxing-is-left-to-each-provider.md)` with a `Superseded.` paragraph
+- [x] `git mv` T-196 to the archive with `status: archived` and the reason; delete the backlog T-191 and add the reason to the archived one
+
+Models passed: implementer: inherit, reviewer: inherit
+
+### Review rounds
+
+Round 1: no blocking findings. Verdict: approved, 0 blocking, 0 fix rounds. Non-blocking left: the README Isolation sentence is a loose paragraph under a one-bullet list (renders fine).
+
+### Deviations
+
+none
+
+### Verification
+
+`grep -rniE "sandbox" README.md CONTEXT.md` finds only the iframe line in `CONTEXT.md`; ADRs 0033, 0034, 0035, 0036, 0039 and 0040 each show `Superseded by [0045]` and the link resolves; `.grove/tasks/backlog` has neither T-191 nor T-196; the ADR's version 10 and error-message claims match `stateStore.ts` and `cliServer.ts`. Subagents (implementer, reviewer) requested with the inherited model.
+
+### Left for the human
+
+none
+
 ## Open questions

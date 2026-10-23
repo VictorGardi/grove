@@ -4,7 +4,7 @@ Date: 2026-10-09
 
 ## Status
 
-Accepted
+Superseded by [0045](./0045-sandboxing-is-left-to-each-provider.md)
 
 ## Context
 
@@ -22,6 +22,8 @@ rest of the machine — which means the mount set cannot simply be "everything
 useful".
 
 ## Decision
+
+Superseded. Grove removed sandboxed sessions and leaves isolation to each agent provider; [ADR 0045](./0045-sandboxing-is-left-to-each-provider.md) records it. The decision below is kept for history.
 
 - **Same-path invariant:** every `--volume` is `hostPath:hostPath`. A container-
   only path (`/workspace`) is never used.

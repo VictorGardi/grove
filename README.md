@@ -11,7 +11,7 @@ Grove runs [OpenCode](https://opencode.ai), [Claude Code](https://claude.com/cla
 ## Features
 
 **Sessions**
-- Start OpenCode, Claude, Copilot or plain terminal sessions per project with `⌘T`, or `⌘⇧T` to set prompt, worktree and sandbox.
+- Start OpenCode, Claude, Copilot or plain terminal sessions per project with `⌘T`, or `⌘⇧T` to set prompt and worktree.
 - Live status on every session: *working*, *waiting* (a permission, a question, or a finished turn you haven't seen), *idle* or *gone*.
 - Sessions live in tmux, so closing the app or a pane never kills an agent. Resume a gone session with its id, label and link intact.
 - Session grid (`⌘G`): up to nine live terminals tiled on one screen.
@@ -19,7 +19,8 @@ Grove runs [OpenCode](https://opencode.ai), [Claude Code](https://claude.com/cla
 
 **Isolation**
 - **Git worktrees:** launch a session in a fresh worktree on a new branch, so parallel agents never share a working tree.
-- **Sandboxed sessions:** run an agent inside an Apple [`container`](https://github.com/apple/container) Linux VM that sees only its working directory and a fixed mount set. This is filesystem isolation only, with no network restriction.
+
+Isolation beyond git worktrees is left to each agent provider's own features.
 
 **Review**
 - Session diff (`⌘⌥B`): `git diff HEAD` plus untracked files, in the app.
@@ -37,7 +38,6 @@ Grove runs [OpenCode](https://opencode.ai), [Claude Code](https://claude.com/cla
 ```sh
 grove ls                                          # list sessions
 grove new claude --prompt "fix the flaky test" --worktree --branch fix-flaky
-grove new opencode --sandboxed --cwd ~/code/app   # agent in a container (Claude and OpenCode only; Copilot has no sandbox)
 grove send <session> "also update the docs"
 grove wait <session>                              # exit 0 done, 4 needs you, 5 gone
 grove read <session> --lines 50                   # last lines of its screen
@@ -56,7 +56,6 @@ Grove is a macOS Electron app, run from source for now.
 - [`tmux`](https://github.com/tmux/tmux) (`brew install tmux`)
 - At least one agent CLI on your `PATH`: [`opencode`](https://opencode.ai), [`claude`](https://claude.com/claude-code) and/or [`copilot`](https://github.com/features/copilot/cli)
 - `git`, for diffs and worktrees
-- Optional: Apple [`container`](https://github.com/apple/container), for sandboxed sessions
 
 ```sh
 git clone https://github.com/VictorGardi/grove.git
@@ -72,7 +71,7 @@ To get the `grove` command in your terminal, choose **Grove → Install Command 
 ## Getting started
 
 1. Open Grove and add a project: any folder, usually a git checkout.
-2. Press `⌘T` to start a session, or `⌘⇧T` for the launch dialog (agent, worktree, prompt, sandbox).
+2. Press `⌘T` to start a session, or `⌘⇧T` for the launch dialog (agent, worktree, prompt).
 3. Watch the sidebar. Sessions that need you are marked *waiting*.
 4. Open the project board (`⌘⇧B`) for features by stage, or the sessions board.
 5. To use the feature workflow, run the setup skill in your repo (`grove-setup`). It creates `grove.config.json`, `docs/adr/`, `CONTEXT.md` and an `AGENTS.md` block. Then start a feature from the board.
