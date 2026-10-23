@@ -1,0 +1,1 @@
+i want to remove the sandbox feature and everything related to it in the app. I've decided grove itself should not serve the sandbox feature, instead each provider (claude code, github copilot, opencode) has to provide the users with that feature.
