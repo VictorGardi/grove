@@ -183,4 +183,41 @@ Approved, 0 blocking, 0 fix rounds. Non-blocking left: (1) a session dropped mid
 
 Manual: resume a gone session in `npm run dev` and see the spinner, then the dot.
 
+## Slice 5
+
+Session: session-spinner-slice-5-a1
+Status: done
+Commit: this commit (see git log)
+
+### Slice plan
+
+Found in the code: the app made the worktree with `worktree:create` and only then called `session:create`, so core saw no session during `git worktree add`. `worktreeCreate` held the add and registration inline. `sessionCreate` already puts a `starting` placeholder in before preflight (slice 3) and marks it `failed` on any later error.
+
+Implementer 1 (done by the planner in this session):
+- [x] `src/core/core.ts`: `makeWorktree` extracted from `worktreeCreate`, with injectable `worktreeAdd` option; `sessionCreate` takes `worktree`, runs it after preflight, re-homes the placeholder (same id, fresh `since`) to the worktree project, and fails the card on a worktree error
+- [x] `src/shared/ipc.ts`: `session:create` input `worktree`
+- [x] `src/renderer/src/App.tsx`: `startLaunch` passes `worktree` instead of calling `worktree:create`; the dialog already stays busy for the whole call, so it needed no change
+- [x] `src/core/sessionWorktreeStartup.test.ts`: card under the source while the add is held then same id under the worktree project; git failure leaves a failed card and no project; pane failure keeps worktree and project and fails only the card; feature refused
+
+Models passed: implementer: inherit (done by the planner in this session), reviewer: inherit
+
+### Review rounds
+
+Round 1: fresh reviewer, no blocking findings. Non-blocking: added the D2 test (pane failure after the worktree is made). Left: (1) a rejected branch or base leaves a failed card beside the dialog error, one per retry; `no-branch` and `no-repo` now also leave one; (2) `worktree` with `cwd` answers `not-found`; (3) the worktree project exists one tick before the card moves; (4) a source project removed mid-add orphans the card until the re-home; (5) no test for sandbox with a worktree, preflight order, `lockWorktree`, or the renderer `startLaunch`; (6) the early-state test waits 20 ms rather than on the mock; (7) `session.projectId` in the local object stays the source id.
+
+### Deviations
+
+- `feature` with `worktree` is refused with `no-feature` (a new worktree has no features until discovery runs).
+- `startup.since` is reset when the card moves, so the 60 s clock starts after the worktree exists.
+- `NewSessionDialog` unchanged.
+- `worktree:create` remains as a command but the app no longer calls it.
+
+### Verification
+
+`npm test` (1223 passed, plus one test added after) and `npm run typecheck` pass. Models requested: implementer inherit, reviewer inherit.
+
+### Left for the human
+
+Manual: `npm run dev`, start a session with a new branch; the card appears under the source project with a spinner, moves to the worktree project, and focus stays on it.
+
 ## Open questions

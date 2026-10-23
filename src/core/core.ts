@@ -57,6 +57,7 @@ export interface CoreOptions {
   git?: string | null // path to git; undefined: 'git' from PATH, null: not found
   sessionEnv?: { socketPath: string; binDir: string } & Partial<AgentPaths> // the grove CLI's socket and launcher dir, plus every path a sandboxed session mounts; none: sessions get no CLI env and cannot be sandboxed
   sandbox?: { container: string; dockerfile: string } // where the Apple `container` binary and the sandbox image live; none: `--sandboxed` fails `no-sandbox`
+  worktreeAdd?: typeof worktrees.add // the git worktree add `worktreeCreate` and a worktree launch run; tests hold it open to watch the card meanwhile
   worktreeRoot?: string // where `worktreeCreate` puts new checkouts; none: ~/.grove. Tests point it elsewhere, so a test never writes into the real home.
 }
 
@@ -91,8 +92,8 @@ export interface Commands {
   // worktree is a project, so this is per project and not per session).
   repoRefs(a: { projectId: string }): Promise<Result<{ branch: string | null; default: string | null; bases: string[] }>>
   sessionCreate(a: {
-    projectId?: string; cwd?: string; kind: SessionKind; prompt?: string; label?: string; feature?: string; parent?: string; model?: string; sandboxed?: boolean; cols: number; rows: number
-  }): Promise<Result<Session>> // exactly one of projectId, cwd; `parent` is a session id, whose group the new one joins
+    projectId?: string; cwd?: string; worktree?: { branch: string; base?: string }; kind: SessionKind; prompt?: string; label?: string; feature?: string; parent?: string; model?: string; sandboxed?: boolean; cols: number; rows: number
+  }): Promise<Result<Session>> // exactly one of projectId, cwd; `parent` is a session id, whose group the new one joins; `worktree` (with projectId) makes a worktree of that project first and starts the session in it
   sessionKill(a: { id: string }): Promise<Result<{ id: string }>>
   sessionRemove(a: { id: string }): Promise<Result<{ id: string }>>
   sessionDismissStartup(a: { id: string }): Promise<Result<{ id: string }>> // ends a failed-start card: a never-started session goes, a failed resume keeps its saved copy
@@ -760,6 +761,29 @@ export function createCore(opts: CoreOptions): Core {
 
   const sendDeps = { find: findSession, backend, resume: (id: string) => commands.sessionResume({ id }) }
 
+  // Makes the worktree and registers it as a project (see `worktreeCreate`); also what a session
+  // launched with `worktree` runs. Made from the parent checkout, so a worktree of a worktree still forks the checkout.
+  async function makeWorktree(project: Project, branch: string, base: string | undefined): Promise<Result<Project>> {
+    const name = branch.trim()
+    if (!name) return { ok: false, error: 'no-branch' }
+    const repo = repoFor(project)
+    // a project can be any folder, so say so before git does — the launch dialog offers a
+    // worktree for every repo, and "is not a git repository" is the answer rather than a
+    // git `fatal` the human has to interpret
+    if (!(await gitTop(repo))) return { ok: false, error: 'no-repo' }
+    const at = opts.worktreeRoot
+      ? worktrees.worktreePathIn(opts.worktreeRoot, repo, name)
+      : worktrees.worktreePath(repo, name)
+    const made = await (opts.worktreeAdd ?? worktrees.add)({ repo, branch: name, path: at, base: base?.trim() || undefined, git })
+    if (!made.ok) return made
+    // resolveProject reads the parent from git (parentCheckout), so a new worktree nests under
+    // its checkout exactly as one added by hand does
+    const { project: wt } = await resolveProject(slices.projects, made.data.path, gitTop)
+    set('projects', [...slices.projects, wt])
+    syncProjects(false)
+    return { ok: true, data: wt }
+  }
+
   const commands: Commands = {
     async projectAdd({ path }) {
       const project = newProject(path, randomUUID(), parentCheckout(path, slices.projects))
@@ -806,24 +830,7 @@ export function createCore(opts: CoreOptions): Core {
     async worktreeCreate({ projectId, branch, base }) {
       const project = slices.projects.find((p) => p.id === projectId)
       if (!project) return { ok: false, error: 'not-found' }
-      const name = branch.trim()
-      if (!name) return { ok: false, error: 'no-branch' }
-      const repo = repoFor(project)
-      // a project can be any folder, so say so before git does — the launch dialog offers a
-      // worktree for every repo, and "is not a git repository" is the answer rather than a
-      // git `fatal` the human has to interpret
-      if (!(await gitTop(repo))) return { ok: false, error: 'no-repo' }
-      const at = opts.worktreeRoot
-        ? worktrees.worktreePathIn(opts.worktreeRoot, repo, name)
-        : worktrees.worktreePath(repo, name)
-      const made = await worktrees.add({ repo, branch: name, path: at, base: base?.trim() || undefined, git })
-      if (!made.ok) return made
-      // resolveProject reads the parent from git (parentCheckout), so a new worktree nests under
-      // its checkout exactly as one added by hand does
-      const { project: wt } = await resolveProject(slices.projects, made.data.path, gitTop)
-      set('projects', [...slices.projects, wt])
-      syncProjects(false)
-      return { ok: true, data: wt }
+      return makeWorktree(project, branch, base)
     },
 
     // `readBranch` walks up from the checkout reading HEAD, so it costs no process; the default
@@ -844,7 +851,7 @@ export function createCore(opts: CoreOptions): Core {
     },
 
     // `projectId` (the app) or `cwd` (the CLI, ADR 0029): a folder resolves to its project, registered when new.
-    async sessionCreate({ projectId, cwd, kind, prompt, label, feature, parent, model, cols, rows, sandboxed }) {
+    async sessionCreate({ projectId, cwd, worktree, kind, prompt, label, feature, parent, model, cols, rows, sandboxed }) {
       const source = kind === 'terminal' ? undefined : states.get(kind)?.source
       if (kind !== 'terminal' && !source) return { ok: false, error: 'no-source' }
       let project = slices.projects.find((p) => p.id === projectId)
@@ -857,7 +864,10 @@ export function createCore(opts: CoreOptions): Core {
         dir = real === realOrSelf(project.path) ? null : real
       }
       if (!project) return { ok: false, error: 'not-found' }
+      if (worktree && cwd !== undefined) return { ok: false, error: 'not-found' } // a worktree is made from a project, which `cwd` would only resolve later
       const chosen = project
+      // a worktree has no features until discovery runs there, so none can be linked to a new one
+      if (worktree && feature !== undefined) return { ok: false, error: 'no-feature' }
       if (feature !== undefined && (added || !slices.features.items.some((f) => f.projectId === chosen.id && f.slug === feature))) {
         return { ok: false, error: 'no-feature' } // checked before anything is created
       }
@@ -872,7 +882,7 @@ export function createCore(opts: CoreOptions): Core {
       // would evict the incumbent and take down every other OpenCode session on this machine (D6).
       const sandboxKind: AgentKind | null = sandboxed && isSandboxKind(kind) ? kind : null
       if (sandboxed && !sandboxKind) return { ok: false, error: 'no-sandbox-kind' }
-      const workdir = dir ?? project.path
+      let workdir = dir ?? project.path
       const agentSessionId = source ? source.mintId(now()) : null
       const session = {
         ...newSession({ projectId: project.id, kind, now: now(), id: randomUUID(), agentSessionId, cwd: dir, label, sandboxed: !!sandboxKind }),
@@ -900,6 +910,19 @@ export function createCore(opts: CoreOptions): Core {
         if (missing) {
           failStart(missing)
           return { ok: false, error: missing }
+        }
+        if (worktree) {
+          // The card sits under the source project until the worktree exists, then moves to it: same
+          // id, so focus and selection follow. A failure after this leaves the worktree and its project.
+          const made = await makeWorktree(project, worktree.branch, worktree.base)
+          if (!made.ok) {
+            failStart(made.error)
+            return made
+          }
+          project = made.data
+          workdir = project.path
+          const wtId = project.id
+          set('sessions', slices.sessions.map((x) => (x.id === session.id ? { ...x, projectId: wtId, startup: { phase: 'starting', since: now().toISOString() } } : x)))
         }
         let argv: string[] | undefined
         if (sandboxKind) {
