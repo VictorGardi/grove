@@ -1,7 +1,7 @@
 import fs from 'node:fs'
 import net from 'node:net'
 import { PROTOCOL, WORKFLOW_STATUS_VALUES, type CliReply, type CliSession, type TurnResult } from '@shared/cli'
-import { errorMessage } from '@shared/sandboxErrors'
+import { errorMessage } from '@shared/sessionErrors'
 import type { Session, WorkflowStatus } from '@shared/types'
 import type { Core } from '../core/core'
 import { resolveSessionRef } from '../core/cliOps'

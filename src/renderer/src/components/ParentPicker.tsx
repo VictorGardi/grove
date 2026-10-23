@@ -1,6 +1,6 @@
 import { useState } from 'react'
 import type { Session } from '@shared/types'
-import { errorMessage } from '@shared/sandboxErrors'
+import { errorMessage } from '@shared/sessionErrors'
 import { parentOptions } from '../parentOptions'
 import { useSlices } from '../stores/slices'
 import { colorTags } from '../tags'

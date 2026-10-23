@@ -22,7 +22,7 @@ export function buildMenu(send: (a: MenuAction) => void, installCli: () => void,
       submenu: [
         { label: 'New Session', accelerator: 'CmdOrCtrl+T', click: () => send({ type: 'newSession' }) },
         // ⌘T picks a checkout and a kind in one keystroke, which is the point of it; this is the
-        // configured launch — where the prompt, the worktree and the sandbox are chosen.
+        // configured launch — where the prompt and the worktree are chosen.
         { label: 'New Session with Options…', accelerator: 'CmdOrCtrl+Shift+T', click: () => send({ type: 'newSessionOptions' }) },
         { label: 'New Terminal', accelerator: 'CmdOrCtrl+J', click: () => send({ type: 'newTerminal' }) },
         { type: 'separator' },

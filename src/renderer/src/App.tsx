@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
 import type { Feature, Session, ViewerTarget } from '@shared/types'
 import type { MenuAction } from '@shared/ipc'
-import { errorMessage } from '@shared/sandboxErrors'
+import { errorMessage } from '@shared/sessionErrors'
 import { SIDEBAR_RAIL_WIDTH, SIDEBAR_WIDTH } from '@shared/types'
 import { ArtifactViewer } from './components/ArtifactViewer'
 import { CommandPalette } from './components/CommandPalette'

@@ -166,4 +166,38 @@ The container binary is resolved with `findBin` in `src/main/index.ts` (not in t
 
 The manual checks from the plan: launch `npm run dev` with a stub `container` first on PATH, confirm the first launch makes the expected calls and writes `sandbox-cleanup.done` in the data folder, and the second launch makes none; confirm a leftover sandboxed pane closes when its container is removed and does not reappear in the session list.
 
+## Slice 5
+
+Session: remove-sandbox-slice-5-a1
+Status: done
+Commit: this commit (see git log)
+
+### Slice plan
+
+Found in the code: `src/shared/sandboxErrors.ts` (with its test) holds the generic session error table plus eight `no-sandbox*` entries; it is imported by `cliServer.ts`, `cliServer.test.ts`, `App.tsx` and `ParentPicker.tsx`. `opencodeSession.ts` (header comment), `menu.ts` (L25 comment) still mention the sandbox; the `paletteItems.test.ts`, `core.ts` and the two css modules showed no `sandbox` match in a case-insensitive search, so they are checked for VM, container or isolation wording only.
+
+Implementer 1:
+- [x] `git mv` `sandboxErrors.ts` and `sandboxErrors.test.ts` to `sessionErrors`; remove all `no-sandbox*` entries and their comments, keep the rest; trim the test to the remaining entries and drop the sandbox assertions
+- [x] update the four importers
+- [x] reword the comments in `opencodeSession.ts` and `menu.ts` (and any in `paletteItems.test.ts`, `core.ts`) that mention sandbox, VM or container
+- [x] remove unused css rules in `NewSessionDialog.module.css` and `LaunchPalette.module.css`
+
+Models passed: implementer: inherit, reviewer: inherit
+
+### Review rounds
+
+Round 1: no blocking findings. Verdict: approved, 0 fix rounds. Non-blocking left: the two renamed files have no trailing newline (as before); the "ADR 0045" comment in `stateStore.ts` points at the ADR slice 6 writes.
+
+### Deviations
+
+The css modules needed no change: slice 1 had already removed the unused sandbox rules. `paletteItems.test.ts` and `core.ts` had no sandbox wording left to reword. Otherwise none.
+
+### Verification
+
+`npm run typecheck`, `npm test` (92 files, 1081 tests) and `npm run build` pass. `grep -rniE "sandbox" src resources scripts package.json electron.vite.config.ts` finds only the allowed leftovers (artifact iframe and CSP, fixtures, `watcher.test.ts`, `stateStore.ts` and its test, `legacySandboxCleanup.ts`, its test and the call in `src/main/index.ts`, the `sandboxed` rejection in `cliServer.ts` and its two negative tests). Subagents (implementer, reviewer) requested with the inherited model.
+
+### Left for the human
+
+none
+
 ## Open questions
