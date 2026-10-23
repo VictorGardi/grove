@@ -220,4 +220,54 @@ Round 1: fresh reviewer, no blocking findings. Non-blocking: added the D2 test (
 
 Manual: `npm run dev`, start a session with a new branch; the card appears under the source project with a spinner, moves to the worktree project, and focus stays on it.
 
+## Slice 6
+
+Session: session-spinner-slice-6-a1
+Status: done
+Commit: this commit (see git log)
+
+### Slice plan
+
+Found in the code: the ranking and the wiring were already in place from slices 1 and 3. `URGENCY` ranks failed, waiting, working, idle, starting, running, gone; `Sidebar.tsx` draws the collapsed-parent dot from `mostUrgent(kids.list)` through `StatusDot`, which has starting and failed tones; `SidebarRail.tsx` rolls up `[s, ...kids.list]` and uses `.t-starting` / `.t-failed`. Only the slice's tests were missing, so no source change.
+
+Implementer 1:
+- [x] `src/renderer/src/sessionStatus.test.ts`: `mostUrgent` tests (empty, starting alone, beside idle, beside running, failed beats all in a shuffled list, existing ordering unchanged); `failed` fixture hoisted
+
+Models passed: implementer: inherit, reviewer: inherit
+
+### Review rounds
+
+Round 1: fresh reviewer, no blocking findings, 0 fix rounds. Non-blocking left: (1) the sidebar badge ranks only the children while the rail also includes the parent, so the two can differ when the parent itself is starting or failed; (2) the rail tile `title` and `aria-label` describe the parent's own status, not the child shown on the dot; (3) no test for `waitingFor: 'done'` or a failed child over a gone parent; (4) no test renders `StatusDot` or the rail CSS.
+
+### Deviations
+
+- No source change: slices 1 and 3 had already added the ranking and the wiring; this slice adds the tests only.
+
+### Verification
+
+`npm test` (1230 passed) and `npm run typecheck` pass. Models requested: implementer inherit, reviewer inherit.
+
+### Left for the human
+
+Manual: `npm run dev`, collapse a parent that has a starting child (spinner on the badge and the rail dot) and one with a failed child (red dot).
+
+## Final summary
+
+- Slice 1: `2026-10-23-session-spinner: slice 1 — A new session shows a spinner until its first status`: a `starting` placeholder card with a spinner until the first status. Review: approved, 0 fix rounds. Deviations: see `## Slice 1`.
+- Slice 2: `2026-10-23-session-spinner: slice 2 — A silent agent stops spinning after 60 s`: the spinner stops after 60 s of silence. Review: see `## Slice 2`. Deviations: see `## Slice 2`.
+- Slice 3: `2026-10-23-session-spinner: slice 3 — A failed start becomes a dismissable error card`: a failed start leaves a dismissable error card. Review: see `## Slice 3`. Deviations: see `## Slice 3`.
+- Slice 4: `2026-10-23-session-spinner: slice 4 — A resumed session spins too`: a resumed session shows the spinner. Review: see `## Slice 4`. Deviations: see `## Slice 4`.
+- Slice 5: `2026-10-23-session-spinner: slice 5 — The card appears during worktree creation`: the card appears during worktree creation and moves to the worktree project. Review: no blocking, 0 fix rounds. Deviations: see `## Slice 5`.
+- Slice 6: `2026-10-23-session-spinner: slice 6 — A collapsed parent shows a starting or failed child`: tests for the collapsed-parent roll-up; no source change. Review: no blocking, 0 fix rounds. Deviations: none beyond the tests-only slice.
+
+### Left for the human
+
+The manual checks listed under each slice's `### Left for the human`, mainly `npm run dev` with a new session, a silent agent, a failing start, a resume, a new worktree and a collapsed parent.
+
+### PR description
+
+Session spinner while a session starts
+
+A new session now shows a card with a spinner from the moment it is requested, instead of appearing only once tmux has made the pane. The spinner stops after 60 s without a status, a failed start leaves a dismissable error card, a resumed session spins too, the card appears during worktree creation, and a collapsed parent shows its most urgent child (failed above waiting; starting between idle and running). Verified with `npm test` and `npm run typecheck`; the visual behaviour is left to a manual check in `npm run dev`.
+
 ## Open questions

@@ -24,6 +24,7 @@ describe('shownStatus', () => {
 })
 
 const starting = { phase: 'starting', since: '2026-10-05T10:00:00.000Z' } as const
+const failed = { phase: 'failed', reason: 'no-claude' } as const
 
 describe('starting', () => {
   it('shows starting for a session that has not reported yet', () => {
@@ -133,8 +134,6 @@ describe('serviceBanners', () => {
 })
 
 describe('failed', () => {
-  const failed = { phase: 'failed', reason: 'no-claude' } as const
-
   it('shows failed with the reason, over gone', () => {
     expect(shownStatus(session({ startup: failed }))).toBe('failed')
     expect(shownStatus(session({ startup: failed, lastStatus: 'gone' }))).toBe('failed')
@@ -146,5 +145,45 @@ describe('failed', () => {
     const w = session({ id: 'w', status: 'waiting' })
     const f = session({ id: 'f', startup: failed })
     expect(mostUrgent([w, f])?.id).toBe('f')
+  })
+})
+
+describe('mostUrgent', () => {
+  const waiting = session({ id: 'waiting', status: 'waiting', waitingFor: 'question' })
+  const working = session({ id: 'working', status: 'working' })
+  const idle = session({ id: 'idle', status: 'idle' })
+  const st = session({ id: 'starting', startup: starting })
+  const running = session({ id: 'running' })
+  const gone = session({ id: 'gone', lastStatus: 'gone' })
+  const fail = session({ id: 'failed', startup: failed })
+
+  it('gives null for an empty list', () => {
+    expect(mostUrgent([])).toBeNull()
+  })
+
+  it('picks a starting child that is alone', () => {
+    expect(mostUrgent([st])?.id).toBe('starting')
+  })
+
+  it('ranks starting below idle', () => {
+    expect(mostUrgent([st, idle])?.id).toBe('idle')
+    expect(mostUrgent([idle, st])?.id).toBe('idle')
+  })
+
+  it('ranks starting above running', () => {
+    expect(mostUrgent([st, running])?.id).toBe('starting')
+    expect(mostUrgent([running, st])?.id).toBe('starting')
+  })
+
+  it('lets a failed child beat every other child, in any order', () => {
+    expect(mostUrgent([idle, gone, working, fail, running, st, waiting])?.id).toBe('failed')
+  })
+
+  it('keeps waiting > working > idle > running > gone', () => {
+    expect(mostUrgent([gone, running, idle, working, waiting])?.id).toBe('waiting')
+    expect(mostUrgent([gone, running, idle, working])?.id).toBe('working')
+    expect(mostUrgent([gone, running, idle])?.id).toBe('idle')
+    expect(mostUrgent([gone, running])?.id).toBe('running')
+    expect(mostUrgent([gone])?.id).toBe('gone')
   })
 })
