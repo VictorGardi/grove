@@ -133,4 +133,37 @@ Round 1: no blocking findings. Verdict: approved, 0 fix rounds. Non-blocking: an
 
 none
 
+## Slice 4
+
+Session: remove-sandbox-slice-4-a1
+Status: done
+Commit: this commit (see git log)
+
+### Slice plan
+
+Found in the code: `src/core/sandbox/` is gone; the old `service.ts` (git `6d3c4c8`) read the gateway from `container network ls --format json` (network `default`, `status.ipv4Gateway`) and wrote `hostname` into `$XDG_CONFIG_HOME/opencode/service.json` (not the state-dir registration file that `serviceFilePath` returns); the old `container.ts` listed with `container list --all --quiet`, removed with `container rm -f <name>`, and only touched names matching `/^grove-/`; the image tag was `grove-sandbox:<hash>`. `src/main/index.ts` builds `home` and calls `await core.start()`; the binary was the bare name `container`.
+
+Implementer 1:
+- [x] add `src/core/legacySandboxCleanup.ts`: `runLegacySandboxCleanup({ markerPath, configFile, container?, run?, timeoutMs? })`, an injectable command runner (default `execFile` with 10 s timeout, resolves `{ ok, stdout }`, never rejects); steps: skip with zero calls if marker exists; `container list --all --quiet` then `container rm -f` for names starting `grove-` only; `container image ls --quiet` (or `--format json` equivalent) then `container image rm` for tags starting `grove-sandbox:`; gateway lookup; if the config file's `hostname` equals the gateway remove only that key and rewrite keeping other keys (mode 0600); write the marker last, after every attempt; never throws
+- [x] `src/core/legacySandboxCleanup.test.ts` with a fake runner covering the cases in the plan
+- [x] `src/main/index.ts`: after `await core.start()`, call it without awaiting (`void ….catch(() => {})`), marker `path.join(app.getPath('userData'), 'sandbox-cleanup.done')`, config file `path.join(process.env.XDG_CONFIG_HOME || path.join(home, '.config'), 'opencode', 'service.json')`
+
+Models passed: implementer: inherit, reviewer: inherit
+
+### Review rounds
+
+Round 1: two findings called blocking. (1) "Wrong `service.json` path": rejected; the old code (git `6d3c4c8`, `main/index.ts`) wrote `hostname` into `$XDG_CONFIG_HOME/opencode/service.json`, the config, not the state-dir registration file that `serviceFilePath` returns, so the path stays. (2) bare `container` lookup under a GUI launch's minimal PATH: fixed with `findBin('container', process.env) ?? 'container'` (`/usr/local/bin` is in `FIXED_DIRS`), plus a test running the real runner against a missing binary. The one-line fix was not re-reviewed by a fresh reviewer. Non-blocking left: no tests for a missing or malformed config file; `.catch(() => {})` at the call site is redundant but harmless.
+
+### Deviations
+
+The container binary is resolved with `findBin` in `src/main/index.ts` (not in the plan). Otherwise none.
+
+### Verification
+
+`npm run typecheck`, `npm test` (92 files, 1083 tests) and `npm run build` pass; the new test file has 8 tests. Reviewer confirmed the `container` output formats (`list --all --quiet`, `image ls --quiet`, `network ls --format json`) against the installed CLI and that `rm -f` removes running containers. Subagents (implementer, reviewer) requested with the inherited model.
+
+### Left for the human
+
+The manual checks from the plan: launch `npm run dev` with a stub `container` first on PATH, confirm the first launch makes the expected calls and writes `sandbox-cleanup.done` in the data folder, and the second launch makes none; confirm a leftover sandboxed pane closes when its container is removed and does not reappear in the session list.
+
 ## Open questions

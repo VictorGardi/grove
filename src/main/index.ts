@@ -6,6 +6,7 @@ import { chromeBackground } from '@shared/theme'
 import { TmuxBackend } from '../core/backend/tmux'
 import { createCore } from '../core/core'
 import { findBin, findTmux, minimalEnv } from '../core/env'
+import { runLegacySandboxCleanup } from '../core/legacySandboxCleanup'
 import { ghLookup } from '../core/pr'
 import { SpoolClaude } from '../core/claude/source'
 import { CopilotSource } from '../core/copilot/source'
@@ -95,6 +96,12 @@ app.whenReady().then(async () => {
     prLookup: ghPath ? ghLookup(ghPath, minimalEnv(process.env)) : undefined,
   })
   await core.start()
+  // One-time sweep of leftovers from the removed feature; not awaited so startup stays fast.
+  void runLegacySandboxCleanup({
+    container: findBin('container', process.env) ?? 'container', // a GUI launch has a minimal PATH
+    markerPath: path.join(app.getPath('userData'), 'sandbox-cleanup.done'),
+    configFile: path.join(process.env.XDG_CONFIG_HOME || path.join(home, '.config'), 'opencode', 'service.json'),
+  }).catch(() => {})
   const cliServer = await startCliServer(core, { socketPath, raise }).catch((e: Error) => {
     errors.push(`grove CLI: ${e.message}`)
     return null
