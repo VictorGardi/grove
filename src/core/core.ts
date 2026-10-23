@@ -884,7 +884,7 @@ export function createCore(opts: CoreOptions): Core {
       if (sandboxed && !sandboxKind) return { ok: false, error: 'no-sandbox-kind' }
       let workdir = dir ?? project.path
       const agentSessionId = source ? source.mintId(now()) : null
-      const session = {
+      let session = {
         ...newSession({ projectId: project.id, kind, now: now(), id: randomUUID(), agentSessionId, cwd: dir, label, sandboxed: !!sandboxKind }),
         ...(feature !== undefined && { feature, linkPinned: true }),
         ...(parentId && { parentId }),
@@ -922,6 +922,7 @@ export function createCore(opts: CoreOptions): Core {
           project = made.data
           workdir = project.path
           const wtId = project.id
+          session = { ...session, projectId: wtId } // the launch below builds from the re-homed session
           set('sessions', slices.sessions.map((x) => (x.id === session.id ? { ...x, projectId: wtId, startup: { phase: 'starting', since: now().toISOString() } } : x)))
         }
         let argv: string[] | undefined
@@ -944,7 +945,9 @@ export function createCore(opts: CoreOptions): Core {
         throw e
       }
       pending.delete(session.id)
-      set('sessions', [...slices.sessions]) // the pane exists: the session is saved now, still carrying `startup`
+      // the pane exists: the session is saved now, still carrying `startup`, and the 60 s clock starts here
+      // (a slow preflight, sandbox build or worktree must not eat it)
+      set('sessions', slices.sessions.map((x) => (x.id === session.id ? { ...x, startup: { phase: 'starting', since: now().toISOString() } } : x)))
       await lockWorktree(project)
       refreshStatus()
       if (prompt && kind === 'terminal') {
