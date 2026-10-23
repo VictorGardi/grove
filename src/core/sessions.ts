@@ -40,6 +40,18 @@ export function reconcile(sessions: Session[], live: Set<string>, now: string): 
   return changed ? out : sessions
 }
 
+// Drops `startup` from a session that has a status (or is gone). Same array when unchanged.
+export function clearStarted(sessions: Session[]): Session[] {
+  let changed = false
+  const out = sessions.map((s) => {
+    if (!s.startup || (s.status === undefined && s.lastStatus !== 'gone')) return s
+    changed = true
+    const { startup: _startup, ...rest } = s
+    return rest
+  })
+  return changed ? out : sessions
+}
+
 // Each live session's branch, from its tmux pane's current directory. Same array when unchanged.
 export function withBranches(sessions: Session[], cwds: Map<string, string>, branchAt: (dir: string) => string | null): Session[] {
   let changed = false

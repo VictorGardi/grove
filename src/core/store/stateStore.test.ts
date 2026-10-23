@@ -225,4 +225,12 @@ describe('stateStore', () => {
     saveState(file, { schemaVersion: 9, sessions: [s], ui: DEFAULT_UI })
     expect(loadState(file).sessions[0].sandboxed).toBe(true)
   })
+
+  it('never writes startup, and loads sessions without it', () => {
+    const file = tmpFile()
+    const live = { ...newSession({ projectId: 'p', kind: 'terminal', now: new Date(), id: 'a', agentSessionId: null }), startup: { phase: 'starting' as const, since: 'x' } }
+    saveState(file, { schemaVersion: 9, sessions: [live], ui: DEFAULT_UI })
+    expect(fs.readFileSync(file, 'utf8')).not.toContain('startup')
+    expect(loadState(file).sessions[0]).not.toHaveProperty('startup')
+  })
 })

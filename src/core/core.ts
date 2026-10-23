@@ -37,7 +37,7 @@ import { LOST_SANDBOX, sandboxArgvFor, type SandboxDeps } from './sandbox/launch
 import { pruneContainers, removeContainer } from './sandbox/container'
 import type { AgentPaths } from './sandbox/spec'
 import { createTerminalActivity } from './terminalActivity'
-import { autoLink, link, markGone, markSeen, newSession, reconcile, rename, resume, setWorkflowStatus, withBranches, withPrs } from './sessions'
+import { autoLink, clearStarted, link, markGone, markSeen, newSession, reconcile, rename, resume, setWorkflowStatus, withBranches, withPrs } from './sessions'
 import { loadConfig, saveConfig } from './store/configStore'
 import { apply, fromSnapshot, withContext, withStatus, type Tracker } from './status'
 import { loadState, saveState } from './store/stateStore'
@@ -219,6 +219,16 @@ export function createCore(opts: CoreOptions): Core {
   const dropContainer = (session: Session): Promise<void> =>
     session.sandboxed && opts.sandbox ? removeContainer(opts.sandbox.container, session.tmuxName) : Promise.resolve()
 
+  // Sessions being created: in `slices.sessions` as a placeholder (so the card shows) before their pane
+  // exists. Never saved, never marked gone, not killable until the pane is made.
+  const pending = new Set<string>()
+  const liveWithPending = (live: Set<string>): Set<string> => {
+    if (pending.size === 0) return live
+    const out = new Set(live)
+    for (const s of slices.sessions) if (pending.has(s.id)) out.add(s.tmuxName)
+    return out
+  }
+
   function set<K extends keyof Slices>(k: K, v: Slices[K]): void {
     slices[k] = v
     for (const l of listeners) l(k, v)
@@ -230,8 +240,8 @@ export function createCore(opts: CoreOptions): Core {
       })
     }
     else if (k === 'sessions' || k === 'ui') {
-      const sessions = slices.sessions.map(
-        ({ branch: _branch, status: _status, waitingFor: _waitingFor, contextPct: _p, contextTokens: _t, contextWindow: _w, model: _m, sandboxNote: _sn, pr: _pr, ...s }) => s,
+      const sessions = slices.sessions.filter((s) => !pending.has(s.id)).map(
+        ({ startup: _startup, branch: _branch, status: _status, waitingFor: _waitingFor, contextPct: _p, contextTokens: _t, contextWindow: _w, model: _m, sandboxNote: _sn, pr: _pr, ...s }) => s,
       ) // live-only
       saveState(opts.statePath, { schemaVersion: 9, sessions, ui: slices.ui })
     }
@@ -423,7 +433,7 @@ export function createCore(opts: CoreOptions): Core {
     } catch {
       return // transient tmux errors are retried by the next poll
     }
-    const next = reconcile(slices.sessions, live, now().toISOString())
+    const next = reconcile(slices.sessions, liveWithPending(live), now().toISOString())
     if (next !== slices.sessions) set('sessions', next)
     await refreshBranches()
     diffWatch.poke() // the 5 s tick keeps an open diff current
@@ -519,7 +529,7 @@ export function createCore(opts: CoreOptions): Core {
       next = withStatus(next, st.source.kind, st.trackers, st.connected, st.source.statusNeedsEvent)
       next = withContext(next, st.source.kind, st.trackers, st.connected)
     }
-    return termActivity.apply(next)
+    return clearStarted(termActivity.apply(next))
   }
 
   // Terminals have no event stream: the foreground command of each pane is read every second, so a
@@ -869,13 +879,24 @@ export function createCore(opts: CoreOptions): Core {
       } else if (source) {
         argv = loginShellArgv(agentArgv, shellOpts())
       }
-      await backend.create({ name: session.tmuxName, cwd: workdir, cols, rows, argv, env: cliEnv(session) })
-      await backend.setColors(session.tmuxName, terminalTheme.foreground, terminalTheme.background)
+      // The placeholder goes in before the pane exists, so the card shows a spinner at once. The
+      // project is registered first: the placeholder points at it (a failed create leaves it registered).
       if (added) {
         set('projects', [...slices.projects, project])
         syncProjects(false)
       }
-      set('sessions', [...slices.sessions, session])
+      pending.add(session.id)
+      set('sessions', [...slices.sessions, { ...session, startup: { phase: 'starting', since: now().toISOString() } }])
+      try {
+        await backend.create({ name: session.tmuxName, cwd: workdir, cols, rows, argv, env: cliEnv(session) })
+        await backend.setColors(session.tmuxName, terminalTheme.foreground, terminalTheme.background)
+      } catch (e) {
+        pending.delete(session.id)
+        set('sessions', slices.sessions.filter((s) => s.id !== session.id))
+        throw e
+      }
+      pending.delete(session.id)
+      set('sessions', [...slices.sessions]) // the pane exists: the session is saved now, still carrying `startup`
       await lockWorktree(project)
       refreshStatus()
       if (prompt && kind === 'terminal') {
@@ -890,6 +911,7 @@ export function createCore(opts: CoreOptions): Core {
     async sessionKill({ id }) {
       const session = findSession(id)
       if (!session) return { ok: false, error: 'not-found' }
+      if (pending.has(id)) return { ok: false, error: 'starting' }
       await backend.kill(session.tmuxName) // already-missing counts as success
       await dropContainer(session) // --rm never fired, so the VM outlived the pane
       // re-read: a poll may have flipped it while kill was in flight
@@ -902,6 +924,7 @@ export function createCore(opts: CoreOptions): Core {
     async sessionRemove({ id }) {
       const session = findSession(id)
       if (!session) return { ok: false, error: 'not-found' }
+      if (pending.has(id)) return { ok: false, error: 'starting' }
       await backend.kill(session.tmuxName) // already-missing counts as success
       await dropContainer(session)
       dropSessions((s) => s.id !== id)
@@ -1133,7 +1156,7 @@ export function createCore(opts: CoreOptions): Core {
       try {
         await backend.ensureConfig()
         const live = await backend.list()
-        const next = reconcile(slices.sessions, live, now().toISOString())
+        const next = reconcile(slices.sessions, liveWithPending(live), now().toISOString())
         if (next !== slices.sessions) set('sessions', next)
         // A crash SIGKILLs `container run`, which never gets to honour its own `--rm`, so a VM can
         // outlive its pane. Anything grove named that no live tmux session accounts for is an

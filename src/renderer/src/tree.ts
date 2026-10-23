@@ -47,7 +47,7 @@ export interface SessionColumn { id: 'waiting' | 'working' | 'idle' | 'ended'; l
 
 const SESSION_COLUMNS: { id: SessionColumn['id']; label: string; shown: ShownStatus[] }[] = [
   { id: 'waiting', label: 'Waiting', shown: ['waiting'] },
-  { id: 'working', label: 'Working', shown: ['working', 'running'] }, // a plain terminal counts as working
+  { id: 'working', label: 'Working', shown: ['working', 'running', 'starting'] }, // a plain terminal counts as working, and so does one still starting
   { id: 'idle', label: 'Idle', shown: ['idle'] },
   { id: 'ended', label: 'Ended', shown: ['gone'] },
 ]

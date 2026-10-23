@@ -65,5 +65,6 @@ export function loadState(file: string, onBad?: (msg: string) => void): StateFil
 }
 
 export function saveState(file: string, s: StateFile): void {
-  atomicWrite(file, JSON.stringify(s, null, 2) + '\n')
+  const sessions = s.sessions.map(({ startup: _startup, ...x }) => x) // startup is live-only
+  atomicWrite(file, JSON.stringify({ ...s, sessions }, null, 2) + '\n')
 }

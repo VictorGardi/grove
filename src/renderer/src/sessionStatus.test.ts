@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import type { Session } from '@shared/types'
-import { longestWaiting, sandboxView, serviceBanners, shownStatus, statusTone, statusView, trackWaiting } from './sessionStatus'
+import { longestWaiting, mostUrgent, sandboxView, serviceBanners, shownStatus, statusTone, statusView, trackWaiting } from './sessionStatus'
 
 function session(over: Partial<Session> = {}): Session {
   return {
@@ -20,6 +20,29 @@ describe('shownStatus', () => {
 
   it('uses the shown status as label and tone', () => {
     expect(statusView(session({ status: 'working' }))).toEqual({ label: 'working', tone: 'working' })
+  })
+})
+
+const starting = { phase: 'starting', since: '2026-10-05T10:00:00.000Z' } as const
+
+describe('starting', () => {
+  it('shows starting for a session that has not reported yet', () => {
+    expect(shownStatus(session({ startup: starting }))).toBe('starting')
+    expect(statusView(session({ startup: starting }))).toEqual({ label: 'starting', tone: 'starting' })
+    expect(statusTone(session({ startup: starting }))).toBe('starting')
+  })
+
+  it('lets gone win, and an unset startup change nothing', () => {
+    expect(shownStatus(session({ startup: starting, lastStatus: 'gone' }))).toBe('gone')
+    expect(shownStatus(session({ startup: undefined, status: 'idle' }))).toBe('idle')
+    expect(shownStatus(session({ startup: undefined }))).toBe('running')
+  })
+
+  it('ranks between idle and running when rolled up', () => {
+    const st = session({ id: 's', startup: starting })
+    expect(mostUrgent([st])?.id).toBe('s')
+    expect(mostUrgent([st, session({ id: 'i', status: 'idle' })])?.id).toBe('i')
+    expect(mostUrgent([session({ id: 'r' }), st])?.id).toBe('s')
   })
 })
 

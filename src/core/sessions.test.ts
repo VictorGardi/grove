@@ -3,7 +3,7 @@ import path from 'node:path'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { DEFAULT_UI, type Session } from '@shared/types'
 import { terminalTheme } from '@shared/theme'
-import { makeLabel, newSession, reconcile } from './sessions'
+import { clearStarted, makeLabel, newSession, reconcile } from './sessions'
 import { loadState } from './store/stateStore'
 import type { AgentEvent } from './agents/types'
 import { SpoolClaude } from './claude/source'
@@ -27,6 +27,24 @@ describe('reconcile', () => {
   it('returns the same array when nothing changed', () => {
     const list = [session('a')]
     expect(reconcile(list, new Set(['grove-a']), LATER.toISOString())).toBe(list)
+  })
+})
+
+describe('clearStarted', () => {
+  const starting = { phase: 'starting', since: NOW.toISOString() } as const
+  it('drops startup once a status is set or the session is gone', () => {
+    const out = clearStarted([
+      session('a', { startup: starting }),
+      session('b', { startup: starting, status: 'idle' }),
+      session('c', { startup: starting, lastStatus: 'gone' }),
+      session('d'),
+    ])
+    expect(out.map((s) => 'startup' in s)).toEqual([true, false, false, false])
+  })
+
+  it('returns the same array when nothing changed', () => {
+    const list = [session('a', { startup: starting }), session('b', { status: 'idle' })]
+    expect(clearStarted(list)).toBe(list)
   })
 })
 
