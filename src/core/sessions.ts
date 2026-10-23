@@ -52,6 +52,22 @@ export function clearStarted(sessions: Session[]): Session[] {
   return changed ? out : sessions
 }
 
+export const STARTUP_TIMEOUT_MS = 60_000
+
+// Drops `startup` from a session that has been starting for STARTUP_TIMEOUT_MS or more: a silent
+// agent stops spinning and looks like any other card. Ids in `skip` (still being created) keep it.
+// Same array when unchanged.
+export function expireStarted(sessions: Session[], nowMs: number, skip: ReadonlySet<string> = new Set()): Session[] {
+  let changed = false
+  const out = sessions.map((s) => {
+    if (!s.startup || skip.has(s.id) || nowMs - Date.parse(s.startup.since) < STARTUP_TIMEOUT_MS) return s
+    changed = true
+    const { startup: _startup, ...rest } = s
+    return rest
+  })
+  return changed ? out : sessions
+}
+
 // Each live session's branch, from its tmux pane's current directory. Same array when unchanged.
 export function withBranches(sessions: Session[], cwds: Map<string, string>, branchAt: (dir: string) => string | null): Session[] {
   let changed = false

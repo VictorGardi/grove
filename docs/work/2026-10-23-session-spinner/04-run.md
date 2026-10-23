@@ -68,4 +68,39 @@ Approved, 0 blocking, 0 fix rounds. Non-blocking left: (1) a `backend.list()` th
 
 Visual size and position of the spinner on cards and rail tile, and `npm run dev` with a Claude session, a terminal and an OpenCode session (spinner, then dot).
 
+## Slice 2
+
+Session: session-spinner-slice-2-a1
+Status: done
+Commit: this commit (see git log)
+
+### Slice plan
+
+Found in the code: `termPoll` (core.ts, armed unconditionally in `start()`) calls `refreshTerminals`, which returns early when no running terminal exists. `startup.since` is set when the placeholder goes in (slice 1). `now` is injectable through `CoreOptions`. `pending` holds ids still inside `backend.create`.
+
+Implementer 1:
+- [x] `src/core/sessions.ts`: pure `expireStarted(sessions, nowMs, skip)` dropping `startup` at 60 s, same array when unchanged
+- [x] `src/core/core.ts`: `sweepStartup()` called first in `refreshTerminals`, before its early return, skipping `pending`
+- [x] tests: `expireStarted` unit tests in `sessions.test.ts`; fake-timer core tests in `sessionStartup.test.ts` (59 s / 60 s, no failed state, no terminals present, untouched array without startup, status after timeout)
+
+Models passed: implementer: inherit, reviewer: inherit
+
+### Review rounds
+
+Round 1: fresh reviewer, no blocking findings.
+
+Approved, 0 blocking, 0 fix rounds. Non-blocking left: (1) if `backend.create` takes over 60 s, `startup` expires on the first tick after creation because `since` is set at placeholder time (slice 5 may reset it when the pane appears); (2) an unparseable `since` counts as expired (benign); (3) the test helper's `kind` argument is only used for opencode, no terminal-specific expiry test; (4) expiry lands up to 1 s after 60 s; (5) `STARTUP_TIMEOUT_MS` is exported but only used in `sessions.ts`.
+
+### Deviations
+
+none
+
+### Verification
+
+`npm test` (1203 passed) and `npm run typecheck` pass. Models requested: implementer inherit, reviewer inherit.
+
+### Left for the human
+
+none
+
 ## Open questions

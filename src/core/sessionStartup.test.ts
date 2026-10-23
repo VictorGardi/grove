@@ -1,4 +1,4 @@
-import { afterEach, describe, expect, it } from 'vitest'
+import { afterEach, describe, expect, it, vi } from 'vitest'
 import { loadState } from './store/stateStore'
 import { setupCore } from './testing/setup'
 
@@ -87,5 +87,55 @@ describe('session startup placeholder', () => {
     expect(sessions()).toHaveLength(1)
     release()
     await created
+  })
+
+  describe('60 s timeout', () => {
+    afterEach(() => vi.useRealTimers())
+
+    async function started(kind: 'terminal' | 'opencode' = 'opencode') {
+      vi.useFakeTimers()
+      let clock = new Date('2026-10-05T10:00:00.000Z')
+      const s = setupCore()
+      disposeAll = s.disposeAll
+      const core = s.make(undefined, { now: () => clock })
+      await core.start()
+      const res = await core.commands.sessionCreate({ projectId: 'p', kind, cols: 80, rows: 24 })
+      if (!res.ok) throw new Error(res.error)
+      const at = (ms: number) => {
+        clock = new Date(new Date('2026-10-05T10:00:00.000Z').getTime() + ms)
+        vi.advanceTimersByTime(1000)
+      }
+      return { ...s, core, id: res.data.id, at, session: () => core.getSlices().sessions.find((x) => x.id === res.data.id)! }
+    }
+
+    it('keeps startup at 59 s and clears it at 60 s, with no failed state', async () => {
+      const { at, session } = await started()
+      at(59_000)
+      expect(session().startup?.phase).toBe('starting')
+      at(60_000)
+      expect(session().startup).toBeUndefined()
+      expect(session().lastStatus).toBe('running')
+      expect(session().status).toBeUndefined()
+    })
+
+    it('clears with no terminal sessions present, and leaves sessions without startup alone', async () => {
+      const { at, core, session } = await started('opencode')
+      const before = core.getSlices().sessions
+      at(30_000)
+      expect(core.getSlices().sessions).toBe(before)
+      at(61_000)
+      expect(session().startup).toBeUndefined()
+      const after = core.getSlices().sessions
+      at(120_000)
+      expect(core.getSlices().sessions).toBe(after)
+    })
+
+    it('shows the dot when a status arrives after the timeout', async () => {
+      const { at, oc, session } = await started()
+      at(61_000)
+      oc.emit({ type: 'connected', version: '2.0.20' })
+      expect(session().startup).toBeUndefined()
+      expect(session().lastStatus).toBeDefined()
+    })
   })
 })

@@ -3,7 +3,7 @@ import path from 'node:path'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { DEFAULT_UI, type Session } from '@shared/types'
 import { terminalTheme } from '@shared/theme'
-import { clearStarted, makeLabel, newSession, reconcile } from './sessions'
+import { clearStarted, expireStarted, makeLabel, newSession, reconcile } from './sessions'
 import { loadState } from './store/stateStore'
 import type { AgentEvent } from './agents/types'
 import { SpoolClaude } from './claude/source'
@@ -45,6 +45,24 @@ describe('clearStarted', () => {
   it('returns the same array when nothing changed', () => {
     const list = [session('a', { startup: starting }), session('b', { status: 'idle' })]
     expect(clearStarted(list)).toBe(list)
+  })
+})
+
+describe('expireStarted', () => {
+  const t0 = NOW.getTime()
+  const starting = { phase: 'starting', since: NOW.toISOString() } as const
+  it('keeps startup at 59 s and drops it at 60 s, leaving status alone', () => {
+    const list = [session('a', { startup: starting }), session('b')]
+    expect(expireStarted(list, t0 + 59_000)).toBe(list)
+    const out = expireStarted(list, t0 + 60_000)
+    expect(out[0]).not.toHaveProperty('startup')
+    expect(out[0].status).toBeUndefined()
+    expect(out[1]).toBe(list[1])
+  })
+
+  it('skips sessions still being created', () => {
+    const list = [session('a', { startup: starting })]
+    expect(expireStarted(list, t0 + 90_000, new Set(['a']))).toBe(list)
   })
 })
 

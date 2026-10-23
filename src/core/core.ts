@@ -37,7 +37,7 @@ import { LOST_SANDBOX, sandboxArgvFor, type SandboxDeps } from './sandbox/launch
 import { pruneContainers, removeContainer } from './sandbox/container'
 import type { AgentPaths } from './sandbox/spec'
 import { createTerminalActivity } from './terminalActivity'
-import { autoLink, clearStarted, link, markGone, markSeen, newSession, reconcile, rename, resume, setWorkflowStatus, withBranches, withPrs } from './sessions'
+import { autoLink, clearStarted, expireStarted, link, markGone, markSeen, newSession, reconcile, rename, resume, setWorkflowStatus, withBranches, withPrs } from './sessions'
 import { loadConfig, saveConfig } from './store/configStore'
 import { apply, fromSnapshot, withContext, withStatus, type Tracker } from './status'
 import { loadState, saveState } from './store/stateStore'
@@ -532,9 +532,16 @@ export function createCore(opts: CoreOptions): Core {
     return clearStarted(termActivity.apply(next))
   }
 
+  // Runs on the 1 s tick whether or not any terminal exists.
+  function sweepStartup(): void {
+    const next = expireStarted(slices.sessions, now().getTime(), pending)
+    if (next !== slices.sessions) set('sessions', next)
+  }
+
   // Terminals have no event stream: the foreground command of each pane is read every second, so a
   // command of FINISH_MIN_MS is seen.
   async function refreshTerminals(): Promise<void> {
+    sweepStartup()
     const terminals = slices.sessions.filter((s) => s.kind === 'terminal' && s.lastStatus === 'running')
     if (terminals.length === 0) return
     let cmds: Map<string, string>
