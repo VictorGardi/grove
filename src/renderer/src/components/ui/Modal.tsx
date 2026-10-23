@@ -17,10 +17,9 @@ export function Modal({ onClose, onConfirm, width = 'md', children }: Props) {
       // a textarea's ↵ is a newline, not a confirmation
       if (e.key === 'Enter' && (e.target as HTMLElement).tagName === 'TEXTAREA') return
       // A control that answers ↵ itself owns the key. This listener is on window in the capture
-      // phase, so nothing below it can stop it — without this line, ↵ on the palette's trailing
-      // sandbox switch would flip it *and* launch the highlighted row, and ↵ on the launch form's
+      // phase, so nothing below it can stop it — without this line, ↵ on the launch form's
       // own Cancel button would submit the form it is meant to dismiss.
-      if (e.key === 'Enter' && (e.target as HTMLElement).closest('button, [role="switch"]')) return
+      if (e.key === 'Enter' && (e.target as HTMLElement).closest('button')) return
       e.preventDefault()
       e.stopPropagation()
       action()

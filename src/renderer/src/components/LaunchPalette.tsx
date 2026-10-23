@@ -3,13 +3,11 @@ import type { Project, Session, SessionKind } from '@shared/types'
 import { LAUNCH_KINDS as KINDS } from '../launchKinds'
 import { baseChoices, branchName, buildTargets, labelFromBranch, prefillBranch, tidyPath, type ChosenBases, type Target } from '../launchTargets'
 import { suggestBranch, repoOf, type RefsByRepo } from '../launchRows'
-import { wantsSandbox } from '../sandboxOptIn'
 import { usualKind } from '../usualKind'
 import { cx } from './ui/cx'
 import { Icon } from './ui/Icon'
 import { Modal } from './ui/Modal'
 import { Spinner } from './ui/Spinner'
-import { SandboxToggle } from './SandboxToggle'
 import { WorktreeRemoveDialog } from './WorktreeRemoveDialog'
 import type { Launch } from './NewSessionDialog'
 import s from './LaunchPalette.module.css'
@@ -33,14 +31,11 @@ const endFocus = (el: HTMLInputElement | null) => {
 //
 // Removing a worktree is the one pointer-only control: a trash on its row, shown on hover, opens a
 // confirmation over the palette. It has no key, so nothing destructive sits one stray ↵ away.
-export function LaunchPalette({ projects, sessions, openedFrom, refs, sandboxed, onSandbox, onClose, onStart }: {
+export function LaunchPalette({ projects, sessions, openedFrom, refs, onClose, onStart }: {
   projects: Project[]
   sessions: Session[]
   openedFrom: string | undefined
   refs: RefsByRepo
-  // The sandbox choice outlives the launcher (it is left on across launches), so the caller owns it.
-  sandboxed: boolean
-  onSandbox: (next: boolean) => void
   onClose: () => void
   // Resolves to the error, or null once the session started. A refusal stays on this form, next to
   // the fields that caused it, rather than in a banner the form has already closed over.
@@ -86,7 +81,6 @@ export function LaunchPalette({ projects, sessions, openedFrom, refs, sandboxed,
   // a bare prefix names nothing, so it falls back to the proposal like an empty field does
   const branchFinal = labelFromBranch(branchShown) ? branchName(branchShown) : proposal
   const label = labelEdit ?? (target?.type === 'create' ? labelFromBranch(branchShown) : '')
-  const isolated = wantsSandbox(kind, sandboxed)
 
   useEffect(() => { rowRef.current?.scrollIntoView({ block: 'nearest' }) }, [current, targets])
 
@@ -100,7 +94,7 @@ export function LaunchPalette({ projects, sessions, openedFrom, refs, sandboxed,
         // the base named on the row is the one sent, so what the row says is what git forks
         ? { type: 'new', from: t.repo, branch: t.key === target?.key ? branchFinal : t.branch ?? suggestBranch(t.repo, projects), ...(t.base && { base: t.base }) }
         : { type: 'existing', project: t.project },
-      prompt: '', sandboxed, feature: null, label,
+      prompt: '', feature: null, label,
     })
     setBusy(false)
     if (failed) setError(failed)
@@ -152,10 +146,9 @@ export function LaunchPalette({ projects, sessions, openedFrom, refs, sandboxed,
       return
     }
     if (e.altKey && !e.metaKey && !e.ctrlKey) {
-      // `code`, not `key`: ⌥ composes a different character on a Mac (⌥S is ß)
+      // `code`, not `key`: ⌥ composes a different character on a Mac (⌥B is ∫)
       const k = KINDS.find((x) => x.code === e.code)
       if (k) { e.preventDefault(); setPicked(k.kind); return }
-      if (e.code === 'KeyS') { e.preventDefault(); onSandbox(!sandboxed); return }
       if (e.code === 'KeyB') { e.preventDefault(); openPicker(); return }
     }
     if (e.key !== 'ArrowDown' && e.key !== 'ArrowUp') return
@@ -258,10 +251,6 @@ export function LaunchPalette({ projects, sessions, openedFrom, refs, sandboxed,
               </button>
             ))}
           </div>
-          <span className={s.sandbox}>
-            <SandboxToggle kind={kind} checked={sandboxed} onChange={onSandbox} />
-            <kbd>⌥S</kbd>
-          </span>
         </div>
 
         {target?.type === 'create' && (
@@ -269,14 +258,14 @@ export function LaunchPalette({ projects, sessions, openedFrom, refs, sandboxed,
             onChange={(e) => setEdit({ key: target.key, value: e.target.value })} />
         )}
 
-        {/* its own line: beside the switch it got whatever width the agent buttons left over */}
+        {/* its own line: beside the agent buttons it got only the width they left over */}
         <input ref={labelRef} className={s.label} value={label} placeholder="Label — a name for this session (Tab)" aria-label="Label"
           onChange={(e) => setLabelEdit(e.target.value)} />
 
-        {/* what ↵ will do, spelled out — including the part of a sandbox that is not a promise (ADR 0036) */}
+        {/* what ↵ will do, spelled out */}
         <div className={s.summary}>
           <span className={s.what}>
-            {busy ? <><Spinner />{' '}{target?.type === 'create' ? 'Creating worktree…' : 'Starting…'}</> : target && `${verb} ${where} · ${isolated ? 'sandboxed — files only, network is open' : 'on your host'}`}
+            {busy ? <><Spinner />{' '}{target?.type === 'create' ? 'Creating worktree…' : 'Starting…'}</> : target && `${verb} ${where}`}
           </span>
           {target?.type === 'create' && !picking && <span><kbd>⌥B</kbd> pick base</span>}
           <span><kbd>↵</kbd> {picking ? 'fork this' : verb.toLowerCase()}</span>

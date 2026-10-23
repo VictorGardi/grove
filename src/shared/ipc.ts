@@ -17,7 +17,7 @@ export interface InvokeMap {
   'repo:refs': [{ projectId: string }, { branch: string | null; default: string | null; bases: string[] }]
   // what the core command already accepts: until the launch dialog existed the renderer could send
   // only projectId and kind, so the GUI could not reach the fields the CLI always could
-  'session:create': [{ projectId: string; kind: SessionKind; prompt?: string; label?: string; feature?: string; sandboxed?: boolean; cols: number; rows: number }, Session]
+  'session:create': [{ projectId: string; kind: SessionKind; prompt?: string; label?: string; feature?: string; cols: number; rows: number }, Session]
   'session:remove': [{ id: string }, { id: string }]
   'session:resume': [{ id: string }, Session]
   'session:rename': [{ id: string; label: string }, Session]

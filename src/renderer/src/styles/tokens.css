@@ -17,7 +17,6 @@
   --divider: #212123;
   --header-divider: #303035;
   --scrollbar-thumb: #38383c;
-  --switch-track: #3a3a3c; /* the off state of ui/Switch: card-border alone disappears into the card */
 
   /* text */
   --text: #ffffff;

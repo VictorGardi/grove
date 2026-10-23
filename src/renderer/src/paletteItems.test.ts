@@ -40,7 +40,7 @@ describe('paletteItems', () => {
   })
 
   // ⌘T and ⌘⇧T are different surfaces, not two spellings: ⌘T picks a checkout and a kind in one
-  // keystroke, ⌘⇧T configures prompt, worktree and sandbox.
+  // keystroke, ⌘⇧T configures prompt and worktree.
   it('keeps the quick picker and the configured launch as separate commands', () => {
     const a = actions()
     const cmds = paletteItems({ projects, sessions, features }, a).filter((i) => i.kind === 'command')

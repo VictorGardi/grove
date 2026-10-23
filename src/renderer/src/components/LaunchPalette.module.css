@@ -195,13 +195,6 @@
   color: var(--accent);
 }
 
-.sandbox {
-  flex: none;
-  display: flex;
-  align-items: center;
-  gap: var(--sp-2);
-}
-
 .label {
   width: 100%;
   height: 28px;

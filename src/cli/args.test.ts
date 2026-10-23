@@ -10,7 +10,7 @@ describe('parseCommand', () => {
   it('parses new with its flags', () => {
     expect(parseCommand(['new', 'claude', '--cwd', '/x', '--prompt', '-', '--label', 'h', '--link', 'f-1', '--json'])).toEqual({
       cmd: 'new', kind: 'claude', cwd: '/x', prompt: '-', label: 'h', link: 'f-1', json: true, wait: false, timeoutS: undefined,
-      parent: undefined, child: false, worktree: false, branch: undefined, sandboxed: false,
+      parent: undefined, child: false, worktree: false, branch: undefined,
     })
     expect(parseCommand(['new', 'terminal'])).toMatchObject({ cmd: 'new', kind: 'terminal', json: false })
   })
@@ -25,12 +25,8 @@ describe('parseCommand', () => {
     for (const kind of ['claude', 'opencode', 'copilot']) expect(parseCommand(['new', kind, '--model', ''])).toBeInstanceOf(UsageError)
   })
 
-  it('parses --sandboxed, only on new', () => {
-    expect(parseCommand(['new', 'claude', '--sandboxed'])).toMatchObject({ cmd: 'new', kind: 'claude', sandboxed: true })
-    expect(parseCommand(['new', 'claude'])).toMatchObject({ cmd: 'new', sandboxed: false })
-    for (const argv of [['ls', '--sandboxed'], ['send', 'a', 'b', '--sandboxed'], ['kill', 'a', '--sandboxed']]) {
-      expect(parseCommand(argv)).toBeInstanceOf(UsageError)
-    }
+  it('rejects --sandboxed as an unknown option', () => {
+    expect(parseCommand(['new', 'claude', '--sandboxed'])).toBeInstanceOf(UsageError)
   })
 
   it('parses --parent and --child, which are alternatives', () => {

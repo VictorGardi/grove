@@ -26,7 +26,6 @@ import { paletteItems } from './paletteItems'
 import { useRepoRefs } from './useRepoRefs'
 import { DEFAULT_GRID_VIEW, gridShown, visibleMembers, type GridView } from './gridView'
 import { contextView } from './contextGauge'
-import { wantsSandbox, SANDBOX_DEFAULT } from './sandboxOptIn'
 import { boardKey, childrenOf, content, crumbs, currentProjectId, focusTarget } from './navigation'
 import { serviceBanners } from './sessionStatus'
 import { sessionDiffShortcut, type HiddenRenderedViewer } from './sessionDiffShortcut'
@@ -42,10 +41,6 @@ export default function App() {
   const { projects, sessions, ui, features, opencode, diff, errors, hydrate, setFocused, focusFeature, openProject, toggleGrid, addFocusedToGrid, toggleSidebar, clearGrid, go, setBoard,
     openArtifact, openDiff, backToDiff, openRendered, closeViewer, setViewerWidth, toggleViewerExpanded, reloadViewer } = useSlices()
   const [quickNew, setQuickNew] = useState<{ projectId?: string } | null>(null) // ⌘T: the new-session palette
-  // ⌘T's sandbox choice, remembered for as long as the app runs. A remembered preference rather than
-  // a persisted default: it starts off on every launch and nothing reaches the state file, so
-  // ADR 0033's "an explicit per-session decision" survives it.
-  const [quickSandbox, setQuickSandbox] = useState(SANDBOX_DEFAULT)
   const repoRefs = useRepoRefs(projects)
   const [launchNew, setLaunchNew] = useState<{ projectId?: string } | null>(null) // ⌘⇧T: the launch dialog
   const { removeSessions, dialog: removalDialog } = useSessionRemoval()
@@ -149,12 +144,11 @@ export default function App() {
       ...(l.prompt.trim() && { prompt: l.prompt.trim() }),
       ...(trimmed && { label: trimmed }),
       ...(l.feature && { feature: l.feature }),
-      sandboxed: wantsSandbox(l.kind, l.sandboxed),
       cols: 120,
       rows: 40,
     })
     // the same sentence the CLI would print: a refusal the human cannot act on is a refusal that
-    // was not worth having (the GUI used to show the bare code — `no-sandbox`, or worse)
+    // was not worth having
     if (!res.ok) return errorMessage(res.error)
     setFocused(res.data.id)
     setLaunchNew(null)
@@ -280,7 +274,7 @@ export default function App() {
       {removalDialog}
       {quickNew && (
         <LaunchPalette projects={projects} sessions={sessions} openedFrom={quickNew.projectId} refs={repoRefs}
-          sandboxed={quickSandbox} onSandbox={setQuickSandbox} onClose={() => setQuickNew(null)} onStart={startLaunch} />
+          onClose={() => setQuickNew(null)} onStart={startLaunch} />
       )}
       {launchNew && (
         <NewSessionDialog projectId={launchNew.projectId} onClose={() => setLaunchNew(null)} onStart={startLaunch} />
