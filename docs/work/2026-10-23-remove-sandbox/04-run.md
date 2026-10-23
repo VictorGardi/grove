@@ -211,8 +211,8 @@ Commit: this commit (see git log)
 Found in the code: `README.md` mentions the sandbox on lines 14, 22, 40, 59 and 75; `CONTEXT.md` on lines 42, 44 and 53-71 (three definitions) plus the unrelated iframe line 165. ADRs 0033-0036, 0039 and 0040 are `Accepted`; 0038 is already superseded and keeps its own status. The ADR template is `docs/adr/0000-template.md`; the repo's one superseded ADR (0038) uses `Superseded by [NNNN](./file.md)` in Status and a `Superseded.` paragraph under Decision. `.grove/tasks/backlog` holds T-191 and T-196; `.grove/tasks/archive/T-191.md` differs from the backlog copy only in `status`; T-196 has no archived copy.
 
 Implementer 1:
-- [ ] `README.md`: remove the sandbox wording from the launch-dialog lines, the "Sandboxed sessions" bullet, the `--sandboxed` example and the Apple container prerequisite; add one sentence saying isolation is left to each provider, without the word "sandbox"
-- [ ] `CONTEXT.md`: remove the three sandbox definitions and the sandbox mentions in the launch-dialog and session-creation lines; keep the iframe line
+- [x] `README.md`: remove the sandbox wording from the launch-dialog lines, the "Sandboxed sessions" bullet, the `--sandboxed` example and the Apple container prerequisite; add one sentence saying isolation is left to each provider, without the word "sandbox"
+- [x] `CONTEXT.md`: remove the three sandbox definitions and the sandbox mentions in the launch-dialog and session-creation lines; keep the iframe line
 - [x] add `docs/adr/0045-sandboxing-is-left-to-each-provider.md` (Accepted; Context, Decision, Consequences with the one-time cleanup and its limits from D3)
 - [x] mark ADRs 0033, 0034, 0035, 0036, 0039, 0040 `Superseded by [0045](./0045-sandboxing-is-left-to-each-provider.md)` with a `Superseded.` paragraph
 - [x] `git mv` T-196 to the archive with `status: archived` and the reason; delete the backlog T-191 and add the reason to the archived one
@@ -234,5 +234,69 @@ none
 ### Left for the human
 
 none
+
+## Slice 7
+
+Session: remove-sandbox-slice-7-a1
+Status: done
+Commit: this commit (see git log)
+
+### Slice plan
+
+Found in the code: slices 1-6 are committed and the tree is clean; the plan lists no edits for this slice, only the final checks.
+
+Implementer 1:
+- [x] run the typecheck, tests and build, and the repo-wide sandbox search from "Allowed leftovers"; fix anything found (nothing found)
+
+Models passed: none (no code changed, so no implementer or reviewer subagent was needed)
+
+### Review rounds
+
+No review round: the slice changes no source, only this log.
+
+Approved, 0 blocking, 0 fix rounds. Non-blocking left: none.
+
+### Deviations
+
+No subagents were used, since the slice has no edits to build or review.
+
+### Verification
+
+`npm run typecheck`, `npm test` (92 files, 1081 tests) and `npm run build` pass. `grep -rniE "sandbox" src resources scripts package.json electron.vite.config.ts` finds only the allowed leftovers: `ArtifactViewer.tsx` and `artifacts.ts` (iframe and CSP), `watcher.test.ts`, `stateStore.ts` and its test, `legacySandboxCleanup.ts`, its test and the call in `src/main/index.ts`, the `sandboxed` rejection in `cliServer.ts` with its test and the one in `args.test.ts`. The JSONL fixtures under `src/core/claude/fixtures/` were excluded from the listing as allowed.
+
+### Left for the human
+
+Start `npm run dev` and confirm the launch palette and new-session dialog show no sandbox control. Also the slice 4 manual checks above (stub `container` on PATH, marker written, second launch silent; leftover pane closes and does not reappear).
+
+## Final summary
+
+- Slice 1: `2026-10-23-remove-sandbox: slice 1 — Nobody can ask for a sandboxed session`: palette, dialog, `--sandboxed` and the socket key are gone (socket rejects `sandboxed`); core always runs on the host. Review: approved, 0 fix rounds. Deviations: `sandboxDeps` removed early.
+- Slice 2: `2026-10-23-remove-sandbox: slice 2 — Delete the sandbox module`: `src/core/sandbox/`, its resources and wiring deleted. Review: approved, 0 fix rounds. Deviations: none.
+- Slice 3: `2026-10-23-remove-sandbox: slice 3 — Stored data and session marks`: state file version 10 drops sandboxed sessions; mark and fields removed. Review: approved, 0 fix rounds. Deviations: unused `dense` prop removed.
+- Slice 4: `2026-10-23-remove-sandbox: slice 4 — One-time leftover cleanup`: `legacySandboxCleanup` removes `grove-` containers, `grove-sandbox:` images and a matching OpenCode `hostname`, once, guarded by a marker. Review: approved after one fix, not re-reviewed by a fresh reviewer. Deviations: container binary resolved with `findBin`.
+- Slice 5: `2026-10-23-remove-sandbox: slice 5 — Shared error names and leftover wording`: `sandboxErrors` renamed to `sessionErrors` without sandbox entries; comments reworded. Review: approved, 0 fix rounds. Deviations: css needed no change.
+- Slice 6: `2026-10-23-remove-sandbox: slice 6 — Docs and history`: README and CONTEXT cleaned, ADR 0045 added, six ADRs superseded, T-191 and T-196 closed. Review: approved, 0 fix rounds. Deviations: none.
+- Slice 7: `2026-10-23-remove-sandbox: slice 7 — Final sweep`: typecheck, tests, build and the sandbox search all clean. Review: none needed. Deviations: no subagents used.
+
+### Left for the human
+
+- `npm run dev`: the palette and dialog show no sandbox control.
+- Slice 4 manual checks: stub `container` first on PATH; first launch makes the expected calls and writes `sandbox-cleanup.done`, second launch makes none; a leftover sandboxed pane closes and does not reappear.
+
+### PR description
+
+Remove the sandbox feature
+
+Grove no longer offers sandboxed sessions; isolation is left to each provider.
+
+- Slice 1: removes the sandbox toggle, ⌥S, `--sandboxed` and the socket `sandboxed` key (rejected with `bad-params`); sessions always run on the host.
+- Slice 2: deletes the sandbox module, its Dockerfile and wiring.
+- Slice 3: state file moves to version 10; sandboxed sessions are dropped and the field stripped; the session mark is gone.
+- Slice 4: a one-time, marker-guarded cleanup removes old `grove-` containers, `grove-sandbox:` images and the OpenCode `hostname` when it equals the default network gateway.
+- Slice 5: `sandboxErrors` becomes `sessionErrors`, with no sandbox codes.
+- Slice 6: README and CONTEXT cleaned; ADR 0045 supersedes 0033-0036, 0039 and 0040; T-191 and T-196 closed.
+- Slice 7: final sweep, no changes.
+
+Verified with typecheck, tests (1081) and build, and a repo-wide search that finds only the allowed leftovers (artifact iframe and CSP, the migration, the cleanup module, the rejection of the old parameter and their tests). Left for the human: start `npm run dev` and check the launch UI; the slice 4 manual cleanup checks. Older Grove builds cannot read the version 10 state file.
 
 ## Open questions
