@@ -146,4 +146,41 @@ Round 1: fresh reviewer, 1 blocking: dismissing a new failed card used a bare fi
 
 Manual: `npm run dev`, force a failure (Copilot with no binary), see the error card and rail tile dot, hover for the reason, dismiss from the card button and from the rail dialog.
 
+## Slice 4
+
+Session: session-spinner-slice-4-a1
+Status: done
+Commit: this commit (see git log)
+
+### Slice plan
+
+Found in the code: `sessionResume` (core.ts) built argv, killed the dead pane, created the pane and replaced the session with `resume(...)`; no `startup`. `clearStarted` clears `startup` on any `gone` session, which would end a resume's spinner at once. `pending` sessions are excluded from the saved file, which a resume must not be (its saved copy stays `gone`).
+
+Implementer 1:
+- [x] `src/core/sessions.ts`: `resume()` drops the stale `status`; `clearStarted` takes a `skip` set
+- [x] `src/core/core.ts`: a `resuming` set (not `pending`, so the saved copy stays); `sessionResume` sets `startup: starting` with a fresh `since` before the pane is made, skips sweeps while resuming, refuses kill/remove/second resume (`starting`), and on any throw leaves a `failed` card on the still-`gone` session and rethrows
+- [x] `src/core/sessionResumeStartup.test.ts`: own `since`, saved without `startup`, stale status cleared, 60 s expiry, sweeps leave a resuming session alone, failed create keeps the saved copy `gone` and dismiss clears only `startup`
+
+Models passed: implementer: inherit (done by the planner in this session), reviewer: inherit
+
+### Review rounds
+
+Round 1: fresh reviewer, no blocking findings.
+
+Approved, 0 blocking, 0 fix rounds. Non-blocking left: (1) a session dropped mid-resume (project removal) leaves an orphan pane; (2) in-memory `status` is not restored after a failed resume (harmless); (3) the restart test only checks the saved file, not a real restart; (4) no sandbox-downgrade test and no second-resume-after-failure test; (5) the error-text expression is duplicated from the create path.
+
+### Deviations
+
+- A `resuming` set was added beside `pending`, because `pending` sessions are never saved and a resumed session must stay saved as `gone`.
+- `sandboxArgvFor` now runs inside the try, so a throwing sandbox build also leaves a failed card.
+- A second `sessionResume` while one runs returns `starting`.
+
+### Verification
+
+`npm test` (1220 passed) and `npm run typecheck` pass. Models requested: implementer inherit, reviewer inherit.
+
+### Left for the human
+
+Manual: resume a gone session in `npm run dev` and see the spinner, then the dot.
+
 ## Open questions

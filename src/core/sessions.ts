@@ -40,11 +40,12 @@ export function reconcile(sessions: Session[], live: Set<string>, now: string): 
   return changed ? out : sessions
 }
 
-// Drops `startup` from a session that has a status (or is gone). Same array when unchanged.
-export function clearStarted(sessions: Session[]): Session[] {
+// Drops `startup` from a session that has a status (or is gone). Ids in `skip` (a resume still making its
+// pane, so still `gone`) keep it. Same array when unchanged.
+export function clearStarted(sessions: Session[], skip: ReadonlySet<string> = new Set()): Session[] {
   let changed = false
   const out = sessions.map((s) => {
-    if (s.startup?.phase !== 'starting' || (s.status === undefined && s.lastStatus !== 'gone')) return s
+    if (s.startup?.phase !== 'starting' || skip.has(s.id) || (s.status === undefined && s.lastStatus !== 'gone')) return s
     changed = true
     const { startup: _startup, ...rest } = s
     return rest
@@ -109,8 +110,10 @@ export function autoLink(s: Session, feature: string): Session {
   return { ...s, feature } // leaves linkPinned alone
 }
 
+// `status` is dropped: the previous run's dot must not end the next run's spinner.
 export function resume(s: Session): Session {
-  return { ...s, lastStatus: 'running', endedAt: null }
+  const { status: _status, ...rest } = s
+  return { ...rest, lastStatus: 'running', endedAt: null }
 }
 
 export function link(s: Session, feature: string | null): Session {

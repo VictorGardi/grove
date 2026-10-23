@@ -226,6 +226,8 @@ export function createCore(opts: CoreOptions): Core {
   // New sessions whose start failed: the card stays (with its reason) until dismissed, still without a pane
   // and still never saved.
   const failedNew = new Set<string>()
+  // Gone sessions being resumed: they carry `startup` while their pane is made, but stay saved (as gone).
+  const resuming = new Set<string>()
   const unsaved = (id: string): boolean => pending.has(id) || failedNew.has(id)
   const liveWithPending = (live: Set<string>): Set<string> => {
     if (pending.size === 0 && failedNew.size === 0) return live
@@ -534,12 +536,12 @@ export function createCore(opts: CoreOptions): Core {
       next = withStatus(next, st.source.kind, st.trackers, st.connected, st.source.statusNeedsEvent)
       next = withContext(next, st.source.kind, st.trackers, st.connected)
     }
-    return clearStarted(termActivity.apply(next))
+    return clearStarted(termActivity.apply(next), resuming)
   }
 
   // Runs on the 1 s tick whether or not any terminal exists.
   function sweepStartup(): void {
-    const next = expireStarted(slices.sessions, now().getTime(), pending)
+    const next = expireStarted(slices.sessions, now().getTime(), new Set([...pending, ...resuming]))
     if (next !== slices.sessions) set('sessions', next)
   }
 
@@ -934,7 +936,7 @@ export function createCore(opts: CoreOptions): Core {
     async sessionKill({ id }) {
       const session = findSession(id)
       if (!session) return { ok: false, error: 'not-found' }
-      if (pending.has(id)) return { ok: false, error: 'starting' }
+      if (pending.has(id) || resuming.has(id)) return { ok: false, error: 'starting' }
       if (failedNew.has(id)) return { ok: false, error: 'failed' } // no pane to end: dismiss it
       await backend.kill(session.tmuxName) // already-missing counts as success
       await dropContainer(session) // --rm never fired, so the VM outlived the pane
@@ -948,7 +950,7 @@ export function createCore(opts: CoreOptions): Core {
     async sessionRemove({ id }) {
       const session = findSession(id)
       if (!session) return { ok: false, error: 'not-found' }
-      if (pending.has(id)) return { ok: false, error: 'starting' }
+      if (pending.has(id) || resuming.has(id)) return { ok: false, error: 'starting' }
       if (failedNew.has(id)) return commands.sessionDismissStartup({ id }) // nothing was made: the card is all there is
       await backend.kill(session.tmuxName) // already-missing counts as success
       await dropContainer(session)
@@ -989,20 +991,35 @@ export function createCore(opts: CoreOptions): Core {
       if (session.lastStatus !== 'gone') return { ok: false, error: 'not-gone' }
       const st = states.get(session.kind)
       if (!st) return { ok: false, error: 'no-source' }
+      if (resuming.has(id)) return { ok: false, error: 'starting' }
       const workdir = session.cwd ?? project.path
       const agentArgv = st.source.argv(session.agentSessionId, 'resume', { model: session.launchModel })
-      const built = session.sandboxed
-        ? await sandboxArgvFor({ kind: session.kind, session, cwd: workdir, agentArgv, deps: sandboxDeps() })
-        : null
-      // `'argv' in built`, not `built`: a refusal is truthy, so a truthiness check would read one as
-      // success and resume the session believing it was still sandboxed.
-      const sandboxed = built !== null && 'argv' in built
-      // built first: a sandbox that cannot be built must not cost the pane it was replacing
-      const argv = sandboxed ? (built as { argv: string[] }).argv : loginShellArgv(agentArgv, shellOpts())
-      await backend.kill(session.tmuxName) // a leftover dead pane
-      await backend.create({ name: session.tmuxName, cwd: workdir, cols: 80, rows: 24, argv, env: cliEnv(session) }) // attaching resizes it
-      await backend.setColors(session.tmuxName, terminalTheme.foreground, terminalTheme.background)
-      replaceSession(resume(sandboxed ? session : { ...session, ...(session.sandboxed && { sandboxed: false, sandboxNote: LOST_SANDBOX }) }))
+      // The card spins from here, on its own clock; it stays `gone` (and saved so) until the pane exists.
+      resuming.add(id)
+      const { status: _stale, ...fresh } = session
+      replaceSession({ ...fresh, startup: { phase: 'starting', since: now().toISOString() } })
+      try {
+        const built = session.sandboxed
+          ? await sandboxArgvFor({ kind: session.kind, session, cwd: workdir, agentArgv, deps: sandboxDeps() })
+          : null
+        // `'argv' in built`, not `built`: a refusal is truthy, so a truthiness check would read one as
+        // success and resume the session believing it was still sandboxed.
+        const sandboxed = built !== null && 'argv' in built
+        // built first: a sandbox that cannot be built must not cost the pane it was replacing
+        const argv = sandboxed ? (built as { argv: string[] }).argv : loginShellArgv(agentArgv, shellOpts())
+        await backend.kill(session.tmuxName) // a leftover dead pane
+        await backend.create({ name: session.tmuxName, cwd: workdir, cols: 80, rows: 24, argv, env: cliEnv(session) }) // attaching resizes it
+        await backend.setColors(session.tmuxName, terminalTheme.foreground, terminalTheme.background)
+        resuming.delete(id)
+        const current = findSession(id) ?? session
+        replaceSession({ ...resume(sandboxed ? current : { ...current, ...(current.sandboxed && { sandboxed: false, sandboxNote: LOST_SANDBOX }) }), startup: { phase: 'starting', since: now().toISOString() } })
+      } catch (e) {
+        resuming.delete(id)
+        // the saved copy stays gone and resumable: only the card shows the error, until dismissed
+        const current = findSession(id)
+        if (current) replaceSession({ ...current, startup: { phase: 'failed', reason: e instanceof Error ? e.message : String(e) } })
+        throw e
+      }
       if (st.connected) void resync(st)
       refreshStatus()
       return { ok: true, data: findSession(id)! }
