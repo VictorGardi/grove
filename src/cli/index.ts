@@ -46,7 +46,7 @@ async function run(cmd: Exclude<Command, { cmd: 'skill' }>, socket: string): Pro
   const reply = await call(socket, 'sessions.create', {
     kind: cmd.kind, cwd: path.resolve(cmd.cwd ?? process.cwd()), prompt: text(cmd.prompt), label: cmd.label, feature: cmd.link,
     parent: cmd.child ? process.env.GROVE_SESSION_ID : cmd.parent, // --child: the session running this command
-    worktree: cmd.worktree, branch: cmd.branch, base: cmd.base, model: cmd.model, sandboxed: cmd.sandboxed, wait: cmd.wait, timeoutS: cmd.timeoutS,
+    worktree: cmd.worktree, branch: cmd.branch, base: cmd.base, model: cmd.model, wait: cmd.wait, timeoutS: cmd.timeoutS,
   })
   return reply.ok ? { ...reply, print: formatNew(reply.data as CliMethods['sessions.create']['data'], cmd.json), exit: turnOf(reply) } : reply
 }

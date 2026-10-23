@@ -28,14 +28,10 @@ import { sendToSession } from './send'
 import { hasLiveSessions, newProject, parentCheckout } from './projects'
 import { readBranch } from './git'
 import type { PrLookup } from './pr'
-import { gitCommonDir } from './git'
 import * as worktrees from './worktrees'
 import { kidsKey } from '@shared/groups'
 import { orphanChildren, resolveParent, withParent } from '@shared/sessionGroups'
-import { isSandboxKind, type AgentEvent, type AgentKind, type AgentSource } from './agents/types'
-import { LOST_SANDBOX, sandboxArgvFor, type SandboxDeps } from './sandbox/launch'
-import { pruneContainers, removeContainer } from './sandbox/container'
-import type { AgentPaths } from './sandbox/spec'
+import { type AgentEvent, type AgentKind, type AgentSource } from './agents/types'
 import { createTerminalActivity } from './terminalActivity'
 import { autoLink, link, markGone, markSeen, newSession, reconcile, rename, resume, setWorkflowStatus, withBranches, withPrs } from './sessions'
 import { loadConfig, saveConfig } from './store/configStore'
@@ -55,8 +51,7 @@ export interface CoreOptions {
   now?: () => Date // tests inject this
   prLookup?: PrLookup // the PR of a branch, for the marker on a session; none: no markers
   git?: string | null // path to git; undefined: 'git' from PATH, null: not found
-  sessionEnv?: { socketPath: string; binDir: string } & Partial<AgentPaths> // the grove CLI's socket and launcher dir, plus every path a sandboxed session mounts; none: sessions get no CLI env and cannot be sandboxed
-  sandbox?: { container: string; dockerfile: string } // where the Apple `container` binary and the sandbox image live; none: `--sandboxed` fails `no-sandbox`
+  sessionEnv?: { socketPath: string; binDir: string } // the grove CLI's socket and launcher dir; none: sessions get no CLI env
   worktreeRoot?: string // where `worktreeCreate` puts new checkouts; none: ~/.grove. Tests point it elsewhere, so a test never writes into the real home.
 }
 
@@ -91,7 +86,7 @@ export interface Commands {
   // worktree is a project, so this is per project and not per session).
   repoRefs(a: { projectId: string }): Promise<Result<{ branch: string | null; default: string | null; bases: string[] }>>
   sessionCreate(a: {
-    projectId?: string; cwd?: string; kind: SessionKind; prompt?: string; label?: string; feature?: string; parent?: string; model?: string; sandboxed?: boolean; cols: number; rows: number
+    projectId?: string; cwd?: string; kind: SessionKind; prompt?: string; label?: string; feature?: string; parent?: string; model?: string; cols: number; rows: number
   }): Promise<Result<Session>> // exactly one of projectId, cwd; `parent` is a session id, whose group the new one joins
   sessionKill(a: { id: string }): Promise<Result<{ id: string }>>
   sessionRemove(a: { id: string }): Promise<Result<{ id: string }>>
@@ -206,19 +201,11 @@ export function createCore(opts: CoreOptions): Core {
       GROVE_SOCKET: e.socketPath,
       ...(session.kind === 'terminal' && { PATH: `${e.binDir}:${minimalEnv(process.env).PATH}` }),
       // OpenCode's TUI tabs and theme are overridden inside grove's own session UI;
-      // the inline cli settings merge over the user's global cli.json. Shared with the sandbox path,
-      // which has to pass it into the VM explicitly — see `shared/opencodeSession.ts`.
+      // the inline cli settings merge over the user's global cli.json. See `shared/opencodeSession.ts`.
       ...(session.kind === 'opencode' && { OPENCODE_CLI_CONFIG_CONTENT: opencodeCliConfig() }),
     }
   }
   const shellOpts = () => ({ pathPrefix: opts.sessionEnv?.binDir })
-  // The sandbox's view of this host, for the one argv builder both launch paths call.
-  const sandboxDeps = (): SandboxDeps => ({ sandbox: opts.sandbox, sessionEnv: opts.sessionEnv, gitCommonDir })
-  // Takes a session's VM with it when the session ends. Only for a session that had one: a host
-  // session has no container, and a machine that cannot sandbox has no binary to ask.
-  const dropContainer = (session: Session): Promise<void> =>
-    session.sandboxed && opts.sandbox ? removeContainer(opts.sandbox.container, session.tmuxName) : Promise.resolve()
-
   function set<K extends keyof Slices>(k: K, v: Slices[K]): void {
     slices[k] = v
     for (const l of listeners) l(k, v)
@@ -231,9 +218,9 @@ export function createCore(opts: CoreOptions): Core {
     }
     else if (k === 'sessions' || k === 'ui') {
       const sessions = slices.sessions.map(
-        ({ branch: _branch, status: _status, waitingFor: _waitingFor, contextPct: _p, contextTokens: _t, contextWindow: _w, model: _m, sandboxNote: _sn, pr: _pr, ...s }) => s,
+        ({ branch: _branch, status: _status, waitingFor: _waitingFor, contextPct: _p, contextTokens: _t, contextWindow: _w, model: _m, pr: _pr, ...s }) => s,
       ) // live-only
-      saveState(opts.statePath, { schemaVersion: 9, sessions, ui: slices.ui })
+      saveState(opts.statePath, { schemaVersion: 10, sessions, ui: slices.ui })
     }
     else if (k === 'comments') saveComments(opts.commentsPath, { schemaVersion: 2, comments: slices.comments })
     if (k === 'sessions') publish() // card state reads linked sessions
@@ -820,7 +807,7 @@ export function createCore(opts: CoreOptions): Core {
     },
 
     // `projectId` (the app) or `cwd` (the CLI, ADR 0029): a folder resolves to its project, registered when new.
-    async sessionCreate({ projectId, cwd, kind, prompt, label, feature, parent, model, cols, rows, sandboxed }) {
+    async sessionCreate({ projectId, cwd, kind, prompt, label, feature, parent, model, cols, rows }) {
       const source = kind === 'terminal' ? undefined : states.get(kind)?.source
       if (kind !== 'terminal' && !source) return { ok: false, error: 'no-source' }
       const missing = await source?.preflight?.() // before anything is created: no dead pane, no half-made session
@@ -845,30 +832,16 @@ export function createCore(opts: CoreOptions): Core {
         if (!r.ok) return r // checked before anything is created, like the feature
         parentId = r.data
       }
-      // A terminal has no agent argv to wrap, and stays refused. Both agents are sandboxable now: a
-      // sandboxed OpenCode joins the host's shared service instead of registering its own, which
-      // would evict the incumbent and take down every other OpenCode session on this machine (D6).
-      const sandboxKind: AgentKind | null = sandboxed && isSandboxKind(kind) ? kind : null
-      if (sandboxed && !sandboxKind) return { ok: false, error: 'no-sandbox-kind' }
       const workdir = dir ?? project.path
       const agentSessionId = source ? source.mintId(now()) : null
       const session = {
-        ...newSession({ projectId: project.id, kind, now: now(), id: randomUUID(), agentSessionId, cwd: dir, label, sandboxed: !!sandboxKind }),
+        ...newSession({ projectId: project.id, kind, now: now(), id: randomUUID(), agentSessionId, cwd: dir, label }),
         ...(feature !== undefined && { feature, linkPinned: true }),
         ...(parentId && { parentId }),
         ...(model && { launchModel: model }),
       }
       const agentArgv = source ? source.argv(agentSessionId!, 'start', { prompt, name: label, model }) : []
-      let argv: string[] | undefined
-      if (sandboxKind) {
-        const built = await sandboxArgvFor({ kind: sandboxKind, session, cwd: workdir, agentArgv, deps: sandboxDeps() })
-        // never an unsandboxed pane, and never a refusal nobody can act on: the reason travels with
-        // the code, so the message names the thing to run rather than "something is wrong"
-        if ('refusal' in built) return { ok: false, error: `no-sandbox-${built.refusal}` }
-        argv = built.argv
-      } else if (source) {
-        argv = loginShellArgv(agentArgv, shellOpts())
-      }
+      const argv = source ? loginShellArgv(agentArgv, shellOpts()) : undefined
       await backend.create({ name: session.tmuxName, cwd: workdir, cols, rows, argv, env: cliEnv(session) })
       await backend.setColors(session.tmuxName, terminalTheme.foreground, terminalTheme.background)
       if (added) {
@@ -891,7 +864,6 @@ export function createCore(opts: CoreOptions): Core {
       const session = findSession(id)
       if (!session) return { ok: false, error: 'not-found' }
       await backend.kill(session.tmuxName) // already-missing counts as success
-      await dropContainer(session) // --rm never fired, so the VM outlived the pane
       // re-read: a poll may have flipped it while kill was in flight
       replaceSession(markGone(findSession(id) ?? session, now().toISOString()))
       await unlockWorktree(projectOf(session)) // nothing runs in it now, so nothing may prune it
@@ -903,7 +875,6 @@ export function createCore(opts: CoreOptions): Core {
       const session = findSession(id)
       if (!session) return { ok: false, error: 'not-found' }
       await backend.kill(session.tmuxName) // already-missing counts as success
-      await dropContainer(session)
       dropSessions((s) => s.id !== id)
       forgetAgents([session])
       await unlockWorktree(projectOf(session))
@@ -912,11 +883,7 @@ export function createCore(opts: CoreOptions): Core {
 
     // E-D3: a new tmux session of the same name runs the agent's resume argv (`opencode -s <id>`,
     // `claude --resume <id>`), picking up its history (an OpenCode model comes back through
-    // `cliEnv`). A session that was sandboxed is sandboxed again (ADR 0033), and when this host cannot build the sandbox the resume downgrades: it goes
-    // back unsandboxed, `sandboxed` goes false so nothing claims otherwise, and `sandboxNote`
-    // records that a sandbox was *lost* — the half the flag alone cannot say, since `false` is
-    // also what a never-sandboxed session looks like. Refusing instead would trap the human out of
-    // a session over a pruned image.
+    // `cliEnv`).
     async sessionResume({ id }) {
       const session = findSession(id)
       const project = session && slices.projects.find((p) => p.id === session.projectId)
@@ -927,18 +894,11 @@ export function createCore(opts: CoreOptions): Core {
       if (!st) return { ok: false, error: 'no-source' }
       const workdir = session.cwd ?? project.path
       const agentArgv = st.source.argv(session.agentSessionId, 'resume', { model: session.launchModel })
-      const built = session.sandboxed
-        ? await sandboxArgvFor({ kind: session.kind, session, cwd: workdir, agentArgv, deps: sandboxDeps() })
-        : null
-      // `'argv' in built`, not `built`: a refusal is truthy, so a truthiness check would read one as
-      // success and resume the session believing it was still sandboxed.
-      const sandboxed = built !== null && 'argv' in built
-      // built first: a sandbox that cannot be built must not cost the pane it was replacing
-      const argv = sandboxed ? (built as { argv: string[] }).argv : loginShellArgv(agentArgv, shellOpts())
+      const argv = loginShellArgv(agentArgv, shellOpts())
       await backend.kill(session.tmuxName) // a leftover dead pane
       await backend.create({ name: session.tmuxName, cwd: workdir, cols: 80, rows: 24, argv, env: cliEnv(session) }) // attaching resizes it
       await backend.setColors(session.tmuxName, terminalTheme.foreground, terminalTheme.background)
-      replaceSession(resume(sandboxed ? session : { ...session, ...(session.sandboxed && { sandboxed: false, sandboxNote: LOST_SANDBOX }) }))
+      replaceSession(resume(session))
       if (st.connected) void resync(st)
       refreshStatus()
       return { ok: true, data: findSession(id)! }
@@ -1135,10 +1095,6 @@ export function createCore(opts: CoreOptions): Core {
         const live = await backend.list()
         const next = reconcile(slices.sessions, live, now().toISOString())
         if (next !== slices.sessions) set('sessions', next)
-        // A crash SIGKILLs `container run`, which never gets to honour its own `--rm`, so a VM can
-        // outlive its pane. Anything grove named that no live tmux session accounts for is an
-        // orphan. `live` comes from tmux, so this sits inside the try: without tmux, no pruning.
-        if (opts.sandbox) await pruneContainers(opts.sandbox.container, live)
         await refreshBranches()
       } catch (e) {
         errors.push(`tmux: ${(e as Error).message}`)

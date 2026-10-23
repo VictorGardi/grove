@@ -4,7 +4,7 @@ Date: 2026-10-09
 
 ## Status
 
-Accepted
+Superseded by [0045](./0045-sandboxing-is-left-to-each-provider.md)
 
 ## Context
 
@@ -22,6 +22,8 @@ how a session is launched, not of which agent it runs and not of what a pane is.
 started, torn down and named so a crash leaves something identifiable.
 
 ## Decision
+
+Superseded. Grove removed sandboxed sessions and leaves isolation to each agent provider; [ADR 0045](./0045-sandboxing-is-left-to-each-provider.md) records it. The decision below is kept for history.
 
 - **Module:** `src/core/sandbox/` builds a `SandboxSpec` (image, mounts, env,
   workdir) from the session, and `sandboxArgv` turns the agent's argv into

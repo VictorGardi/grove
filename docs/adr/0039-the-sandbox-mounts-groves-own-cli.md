@@ -4,7 +4,7 @@ Date: 2026-10-11
 
 ## Status
 
-Accepted
+Superseded by [0045](./0045-sandboxing-is-left-to-each-provider.md)
 
 ## Context
 
@@ -38,6 +38,8 @@ gauge, write-driven autolink, discovery and the diff are all host-side readers k
 agent-initiated orchestration was gone.
 
 ## Decision
+
+Superseded. Grove removed sandboxed sessions and leaves isolation to each agent provider; [ADR 0045](./0045-sandboxing-is-left-to-each-provider.md) records it. The decision below is kept for history.
 
 - **Mount `out/main/cli.js` read-only, at its host path**, adding one `--volume` to the
   set in ADR 0035. Same-path invariant preserved; nothing new has to learn to resolve it.

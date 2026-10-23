@@ -2,7 +2,6 @@ import { useEffect, useMemo, useRef, useState } from 'react'
 import type { Feature, Project, SessionKind } from '@shared/types'
 import { LAUNCH_KINDS as KINDS } from '../launchKinds'
 import { branchFor, buildRows, orderProjects, repoOf } from '../launchRows'
-import { SANDBOX_DEFAULT, noSandboxReason, sandboxable, wantsSandbox } from '../sandboxOptIn'
 import { usualKind } from '../usualKind'
 import { useRepoRefs } from '../useRepoRefs'
 import { useSlices } from '../stores/slices'
@@ -10,7 +9,6 @@ import { Button } from './ui/Button'
 import { Spinner } from './ui/Spinner'
 import { Icon } from './ui/Icon'
 import { Modal } from './ui/Modal'
-import { Switch } from './ui/Switch'
 import s from './NewSessionDialog.module.css'
 
 // The feature as one line of a dropdown. Two features can share a title, and the slug is what tells
@@ -24,7 +22,6 @@ export interface Launch {
   kind: SessionKind
   where: { type: 'new'; from: Project; branch: string; base?: string } | { type: 'existing'; project: Project }
   prompt: string
-  sandboxed: boolean
   feature: string | null
   label: string
 }
@@ -33,8 +30,8 @@ export function NewSessionDialog({ projectId, onClose, onStart }: {
   projectId?: string
   onClose: () => void
   // resolves to the error, or null once the session started (and the caller closed the dialog).
-  // A failure keeps this form open with the reason on it — a worktree conflict or a refused
-  // sandbox belongs next to the fields that caused it, not in a banner the form replaced.
+  // A failure keeps this form open with the reason on it — a worktree conflict
+  // belongs next to the fields that caused it, not in a banner the form replaced.
   onStart(l: Launch): Promise<string | null>
 }) {
   const { projects, sessions, features } = useSlices()
@@ -43,7 +40,6 @@ export function NewSessionDialog({ projectId, onClose, onStart }: {
   // moving the highlight onto another repo re-reads that repo's habit instead of keeping the
   // previous row's. A click pins it, and a pinned kind is never second-guessed.
   const [picked, setPicked] = useState<SessionKind | null>(null)
-  const [sandboxed, setSandboxed] = useState(SANDBOX_DEFAULT)
   const [prompt, setPrompt] = useState('')
   const [label, setLabel] = useState('')
   const [feature, setFeature] = useState<string | null>(null)
@@ -61,7 +57,7 @@ export function NewSessionDialog({ projectId, onClose, onStart }: {
   const branchRef = useRef<HTMLInputElement>(null)
   const promptRef = useRef<HTMLTextAreaElement>(null)
   // Choosing a row (a click, or ↵ in the search) hands the keyboard to the rest of the form. It
-  // never commits: the branch name, the prompt and the sandbox are still to be decided.
+  // never commits: the branch name and the prompt are still to be decided.
   const [chose, setChose] = useState(0)
 
   const ordered = useMemo(() => orderProjects(projects, projectId), [projects, projectId])
@@ -88,8 +84,8 @@ export function NewSessionDialog({ projectId, onClose, onStart }: {
   const linked = existing && linkable.some((f) => f.slug === feature) ? feature : null
 
   const onKeyDown = (e: React.KeyboardEvent) => {
-    // ⌘↵ commits from anywhere in the form, so you can click a row, go fix the sandbox toggle or
-    // write a prompt, and still commit without reaching for the mouse. Modal owns bare ↵.
+    // ⌘↵ commits from anywhere in the form, so you can click a row, write a prompt or
+    // pick a feature, and still commit without reaching for the mouse. Modal owns bare ↵.
     if (e.key === 'Enter' && (e.metaKey || e.ctrlKey)) {
       e.preventDefault()
       e.stopPropagation()
@@ -113,13 +109,11 @@ export function NewSessionDialog({ projectId, onClose, onStart }: {
     const failed = await onStart({
       kind,
       where: target,
-      prompt, sandboxed, feature: linked, label,
+      prompt, feature: linked, label,
     })
     setBusy(false)
     if (failed) setError(failed)
   }
-
-  const isolation = wantsSandbox(kind, sandboxed) ? 'sandboxed' : 'on your host'
 
   return (
     <Modal onClose={onClose} onConfirm={() => (document.activeElement === searchRef.current ? row && choose(row.key) : void submit())} width="md">
@@ -193,19 +187,6 @@ export function NewSessionDialog({ projectId, onClose, onStart }: {
             }
           }} />
 
-        <div className={s.label}>Isolation</div>
-        <div className={`${s.isolation} ${sandboxable(kind) ? '' : s.off}`}>
-          <Switch checked={wantsSandbox(kind, sandboxed)} disabled={!sandboxable(kind)}
-            label="Run in a sandbox" onChange={setSandboxed} />
-          <div className={s.isolationText}>
-            <div className={s.isolationTitle}>Run in a sandbox</div>
-            <div className={s.hint}>The agent runs inside a Linux VM. Its working directory appears at the
-              same path it has on your Mac; the rest of your machine is not visible.
-              <b> Network access is unrestricted</b> — this isolates files only.</div>
-            {!sandboxable(kind) && <div className={s.hint}>{noSandboxReason(kind)}.</div>}
-          </div>
-        </div>
-
         <div className={s.label}>Link to feature</div>
         {create ? (
           <div className={s.note}>A new worktree has no features of its own until discovery runs there.
@@ -233,7 +214,7 @@ export function NewSessionDialog({ projectId, onClose, onStart }: {
 
       <div className={s.foot}>
         {/* the summary names the outcome, because a row click only selects */}
-        <span className={s.summary}>{row && `${where} · ${isolation}`}</span>
+        <span className={s.summary}>{row && where}</span>
         <Button variant="ghost" onClick={onClose}>Cancel</Button>
         <Button variant="primary" disabled={busy || !row} onClick={() => void submit()}>
           {busy ? <><Spinner /> {create ? 'Creating…' : 'Starting…'}</> : create ? 'Create' : 'Start'}

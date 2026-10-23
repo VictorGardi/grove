@@ -5,8 +5,8 @@ import { app, BrowserWindow, dialog, Notification } from 'electron'
 import { chromeBackground } from '@shared/theme'
 import { TmuxBackend } from '../core/backend/tmux'
 import { createCore } from '../core/core'
-import type { AgentPaths } from '../core/sandbox/spec'
 import { findBin, findTmux, minimalEnv } from '../core/env'
+import { runLegacySandboxCleanup } from '../core/legacySandboxCleanup'
 import { ghLookup } from '../core/pr'
 import { SpoolClaude } from '../core/claude/source'
 import { CopilotSource } from '../core/copilot/source'
@@ -79,28 +79,8 @@ app.whenReady().then(async () => {
   const spoolDir = path.join(app.getPath('userData'), 'agents', 'claude')
   const copilotDir = path.join(app.getPath('userData'), 'agents', 'copilot')
   const home = os.homedir()
-  // Everything a sandboxed session's container binds, each at the identical path inside
-  // (ADR 0035). Resolved once, here, because only the app knows the Electron paths.
-  const agentPaths: AgentPaths = {
-    claudeHome: process.env.CLAUDE_CONFIG_DIR || path.join(home, '.claude'), // what Claude's own hooks script resolves
-    claudeJson: path.join(home, '.claude.json'),
-    opencodeShare: path.join(process.env.XDG_DATA_HOME || path.join(home, '.local', 'share'), 'opencode'),
-    opencodeConfig: path.join(process.env.XDG_CONFIG_HOME || path.join(home, '.config'), 'opencode'),
-    opencodeState: path.join(process.env.XDG_STATE_HOME || path.join(home, '.local', 'state'), 'opencode'),
-    // Two files, same name, different jobs (D6). The registration is the service's own: where it
-    // says it can be reached, and the password it wants. The config is where grove writes the
-    // address the service should bind. grove reads the registration and never writes it.
-    opencodeRegistration: serviceFilePath(process.env, home),
-    opencodeServiceConfig: path.join(process.env.XDG_CONFIG_HOME || path.join(home, '.config'), 'opencode', 'service.json'),
-    gitconfig: path.join(home, '.gitconfig'),
-    spoolDir,
-    socketPath,
-    cliBundle,
-  }
-
   const core = createCore({
-    sessionEnv: { binDir, ...agentPaths },
-    sandbox: { container: 'container', dockerfile: path.join(app.getAppPath(), 'resources', 'sandbox', 'Dockerfile') },
+    sessionEnv: { binDir, socketPath },
     configPath: path.join(home, '.config', 'grove', 'config.json'),
     statePath: path.join(app.getPath('userData'), 'state.json'),
     commentsPath: path.join(app.getPath('userData'), 'comments.json'),
@@ -116,6 +96,12 @@ app.whenReady().then(async () => {
     prLookup: ghPath ? ghLookup(ghPath, minimalEnv(process.env)) : undefined,
   })
   await core.start()
+  // One-time sweep of leftovers from the removed feature; not awaited so startup stays fast.
+  void runLegacySandboxCleanup({
+    container: findBin('container', process.env) ?? 'container', // a GUI launch has a minimal PATH
+    markerPath: path.join(app.getPath('userData'), 'sandbox-cleanup.done'),
+    configFile: path.join(process.env.XDG_CONFIG_HOME || path.join(home, '.config'), 'opencode', 'service.json'),
+  }).catch(() => {})
   const cliServer = await startCliServer(core, { socketPath, raise }).catch((e: Error) => {
     errors.push(`grove CLI: ${e.message}`)
     return null
