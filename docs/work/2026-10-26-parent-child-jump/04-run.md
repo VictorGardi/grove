@@ -170,4 +170,69 @@ Approved, 0 blocking, 0 fix rounds. Non-blocking left: the menu test's list of e
 
 Manual check with `npm run dev`: focus a parent with a running child, press ⌘⇧J three times and confirm parent → child → parent → the same child; confirm ⌘⇧J does nothing on a lone session; confirm the Session menu lists "Jump to Parent / Active Child ⇧⌘J".
 
+## Slice 5
+
+Session: parent-child-jump-slice-5-a1
+Status: done
+Commit: this commit (see git log)
+
+### Slice plan
+
+Found in the code: `SessionMeta.module.css` `.row` is a no-wrap flex row with no `overflow`; `.lead` is `0 1 auto`, `.branch` `0 2 auto` (max 28ch), `.feature` `0 3 auto`, `.status` `none`, the jump `.chip` `0 2 auto` with `min-width: 0` (so it shrinks at the branch's rate, and its dot and arrow can be squeezed), and `ChildrenPopover`'s `.wrap`/`.trigger` are `none`. In the main view the row sits in `ContentHeader`'s `.left` (`overflow: hidden`, nowrap), so it is clipped rather than wrapped; in a grid pane the row sits in `SessionGrid.module.css` `.header` (no overflow), so a narrow span-1 pane lets the row spill out. Grid wiring needs no change: `SessionGrid.tsx` passes `family={{ ...familyOf(all, x.id), onJump: onFocusPane }}`, `startPick` skips `<button>` targets (all chips and popover rows are buttons), and the pane's `onMouseDownCapture` focuses it first. The "holding focus" marker is already computed at Sidebar.tsx:517 (`holdsFocus` when the parent's group is collapsed and a hidden child is focused): confirmed, not rebuilt.
+
+Implementer 1:
+- [x] `src/renderer/src/components/SessionMeta.module.css`: `.row` gets `overflow: hidden` so a pane header never spills; `.chip` shrinks first (`flex: 0 4 auto`, a small `min-width` so the arrow and dot stay, its dot and arrow `flex: none`, the label ellipsis); `.lead` keeps a minimum (`min-width` of a few ch) so the lead and status keep space; comments say the shrink order (chips, then feature title, then branch, then lead)
+- [x] `src/renderer/src/sessionMetaRender.test.ts`: a grid-pane configuration (`actions` set, `context` set) for a session that is both a child and a parent renders the "↑ parent" chip, the active-child chip and "N children" inside the one `SessionMeta` row, after the status and before the actions
+- [x] `src/renderer/src/sessionMetaRender.test.ts` (or a sibling CSS test): reads `SessionMeta.module.css` and asserts the row does not wrap (no `flex-wrap: wrap`, `overflow: hidden`) and `.chip`'s flex-shrink is greater than `.branch`'s and `.lead`'s
+
+Models passed: implementer: inherit; reviewer: inherit
+
+### Review rounds
+
+Round 1: 1 blocking: `overflow: hidden` on `.row` clipped the focus ring of the pane's round action buttons (the outline sits 2px outside them). Fix: dropped it (the grid `.pane` and `ContentHeader`'s `.left` already clip the row), the CSS test now asserts only no `flex-wrap: wrap`; also applied: accurate shrink-order comments, a chip minimum that fits arrow + 6px dot + two gaps, `.row > button:not(.chip) { flex: none }` so the pane's action buttons are never squeezed, a `flex-shrink` longhand fallback in the CSS test, the weak `endsWith('</div>')` check removed. Result: Verification passes.
+Round 2: 0 blocking. Non-blocking applied: the shrink order stated once (on `.row`), the redundant `.chip > .truncate` rule dropped, the CSS test also asserts `.status` is `flex: none`, `.lead` has `min-width: 6ch` and `.row` has no `overflow: hidden`, the selector in the test helper is escaped and the row-class match cannot hit a class like "arrow".
+
+Approved, 1 blocking, 1 fix round. Non-blocking left: in a very narrow span-1 pane the actions sit last and are clipped from the right before the lead gives way, as before this slice; the CSS test reads the stylesheet text, so it checks the rules, not the rendered layout.
+
+### Deviations
+
+`.row` does not get `overflow: hidden` (the slice plan's first step): it cut the focus rings; the pane and the content header already clip the row. Added `.row > button:not(.chip) { flex: none }` to keep the pane's action buttons whole. `SessionGrid.tsx` is unchanged: the slice 1 wiring already focuses the target and chips are buttons, so no drag starts.
+
+### Verification
+
+`npm test`: 98 files, 1159 tests pass, including the new grid-pane render test (a session that is both a child and a parent, with `actions` and `context` set: the "↑ parent" chip, the active-child chip and "1 child" render inside the one row, after the status and before the actions) and the row CSS test (no `flex-wrap: wrap`, no `overflow: hidden` on `.row`, `.chip` shrinks more than `.branch` and `.lead`, `.status` is `flex: none`, `.lead` keeps `min-width: 6ch`). `npm run typecheck`: passes (node and web). `npm run build`: passes. The collapsed-group "holding focus" marker is computed at Sidebar.tsx:517 (confirmed in the code, not rebuilt). Models requested: implementer: inherit; reviewer: inherit.
+
+### Left for the human
+
+Manual check with `npm run dev`: start a session, run `grove new claude --child` from it twice, open both in the grid with ⌘⇧G, confirm the parent's pane shows the chip and "2 children", clicking the chip focuses the child pane, dragging a pane by its title still works, and narrowing the window and a span-1 pane in a many-column grid keeps the header to one row. Then show the main view, collapse the parent's group in the sidebar, press ⌘⇧J from the parent and confirm the child is focused and the parent's kids toggle shows the "holding focus" marker.
+
+## Final summary
+
+- Slice 1: `2026-10-26-parent-child-jump: slice 1 — A parent's header shows its active child, and clicking it jumps there`: pure `familyOf` (parent, ranked children, active child) and an active-child chip in `SessionMeta`, used by the content header and every grid pane. Review: approved, 0 fix rounds. Deviations: an exported `Family` type; in a pane the chip jumps through `onFocusPane`.
+- Slice 2: `2026-10-26-parent-child-jump: slice 2 — A child's header shows "↑ parent", and clicking it jumps to the parent`: an "↑ parent" chip on children (also for an ended parent, none for a removed one). Review: approved, 0 fix rounds. Deviations: one shared `.chip` class; the whole `familyOf` result is spread into the prop.
+- Slice 3: `2026-10-26-parent-child-jump: slice 3 — "N children" opens a list of every child; clicking one jumps to it`: `ChildrenPopover` with the count, a portalled list (running by rank, then ended marked "ended"), closing on a jump, outside click or Escape. Review: approved, 0 fix rounds. Deviations: the prop is `kids`; `isEnded` exported.
+- Slice 4: `2026-10-26-parent-child-jump: slice 4 — ⌘⇧J jumps parent → active child and child → parent`: `familyJump` menu action on `CmdOrCtrl+Shift+J` in the Session menu, `familyJumpTarget`, and a menu test that every accelerator stays present and unique. Review: approved, 0 fix rounds. Deviations: null focus also yields no target.
+- Slice 5: `2026-10-26-parent-child-jump: slice 5 — Grid panes and the one-row header hold up`: the row's shrink order (chips fastest, then feature title, branch, lead; status never), chip minimum keeps arrow and dot, pane action buttons never squeezed, render and CSS tests. Review: approved, 1 fix round. Deviations: no `overflow: hidden` on the row (it clipped focus rings).
+
+### Left for the human
+
+- Slice 1: click the active-child chip in the header and in the parent's grid pane; the child is focused.
+- Slice 3: open "N children" in the header and a pane; running first, ended marked; a row click focuses and closes; outside click and Escape close it (also with a terminal focused).
+- Slice 4: ⌘⇧J three times from a parent goes parent → child → parent → the same child; nothing on a lone session; the Session menu lists "Jump to Parent / Active Child ⇧⌘J".
+- Slice 5: the grid, drag, narrow-window and collapsed-group "holding focus" checks listed under Slice 5.
+
+### PR description
+
+Session family in the header: jump between a parent and its active child
+
+A session that belongs to a family now shows it in its header and in every grid pane header, and lets you jump inside it in one step.
+
+- A parent shows a chip for its active child (the running child that needs you most: waiting, then working, then idle, then plain running, then starting; ties by most recently viewed, then newest) and an "N children" control that lists every child, running first and ended last; clicking any entry focuses it.
+- A child shows "↑ <parent>", also when the parent has ended; a child whose parent was removed shows nothing, as before.
+- ⌘⇧J (Session → Jump to Parent / Active Child) goes parent → active child and child → parent, and does nothing on a session with no family or a parent whose children have all ended.
+- The header stays one row: the chips shrink first and keep their arrow and status dot, the lead and status keep their space, and the grid pane's buttons keep their size and focus ring.
+- All family facts come from one pure function (`src/renderer/src/family.ts`), so the header, the panes and the shortcut cannot disagree. No new persisted fields, IPC channels or CLI surface; the sidebar, palette and Ctrl+Tab are unchanged.
+
+Verified: `npm test` (98 files, 1159 tests, new `family.test.ts`, `sessionMetaRender.test.ts`, `main/menu.test.ts`), `npm run typecheck`, `npm run build`. Left for the human: the manual checks in `04-run.md` (chip clicks in header and grid, the children list, ⌘⇧J round trip, drag and narrow-pane layout, the collapsed-group "holding focus" marker).
+
 ## Open questions

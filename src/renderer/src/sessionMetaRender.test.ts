@@ -1,3 +1,5 @@
+import { readFileSync } from 'node:fs'
+import { fileURLToPath } from 'node:url'
 import { createElement } from 'react'
 import { renderToStaticMarkup } from 'react-dom/server'
 import { describe, expect, it } from 'vitest'
@@ -79,5 +81,68 @@ describe('SessionMeta children chip', () => {
   it('shows no count without children', () => {
     const html = render({ parent: null, children: [], active: null, onJump: () => {} })
     expect(html).not.toMatch(/\d+ child/)
+  })
+})
+
+describe('SessionMeta in a grid pane', () => {
+  // a pane passes context and actions too; the chips sit in the one row between the status and them
+  it('keeps every family chip in the single row, after the status and before the actions', () => {
+    const grandparent = session('grandparent')
+    const middle = session('middle', { parentId: 'grandparent', status: 'working' })
+    const kid = session('kid', { parentId: 'middle', status: 'working' })
+    const html = renderToStaticMarkup(createElement(SessionMeta, {
+      lead: 'p / middle',
+      session: middle,
+      context: createElement('span', null, 'ctx'),
+      actions: createElement('button', { 'aria-label': 'Open alone' }, '⤢'),
+      family: { parent: grandparent, children: [kid], active: kid, onJump: () => {} },
+    }))
+    // one row: everything sits inside the single row div, which opens first. css modules name the
+    // class `_row_<hash>`, so `\b` can't bound it (`_` is a word character); letters, digits and `-`
+    // can't touch it either side, so a class like "arrow" doesn't count
+    expect(html).toMatch(/^<div class="[^"]*(?<![a-zA-Z0-9-])row(?![a-zA-Z0-9-])[^"]*">/)
+    expect(html.match(/class="[^"]*(?<![a-zA-Z0-9-])row(?![a-zA-Z0-9-])[^"]*"/g)).toHaveLength(1)
+
+    const status = html.indexOf('>working<')
+    const up = html.indexOf('aria-label="Jump to parent grandparent"')
+    const down = html.indexOf('aria-label="Jump to child kid"')
+    const count = html.indexOf('>1 child</button>')
+    const open = html.indexOf('aria-label="Open alone"')
+    for (const i of [status, up, down, count, open]) expect(i).toBeGreaterThan(-1)
+    expect(status).toBeLessThan(up)
+    expect(up).toBeLessThan(down)
+    expect(down).toBeLessThan(count)
+    expect(count).toBeLessThan(open)
+  })
+})
+
+describe('SessionMeta row CSS', () => {
+  const css = readFileSync(fileURLToPath(new URL('./components/SessionMeta.module.css', import.meta.url)), 'utf8')
+  // the body of the first rule whose selector is exactly `selector`
+  const rule = (selector: string) => {
+    const escaped = selector.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
+    const m = css.match(new RegExp(`(?:^|\\n)${escaped}\\s*\\{([^}]*)\\}`))
+    if (!m) throw new Error(`no rule ${selector}`)
+    return m[1]
+  }
+  // flex-shrink from a `flex: <grow> <shrink> <basis>` shorthand, or a `flex-shrink: N` longhand
+  const shrink = (selector: string) => {
+    const body = rule(selector)
+    const m = body.match(/(?:^|[;\s])flex:\s*\d+\s+(\d+)/) ?? body.match(/flex-shrink:\s*(\d+)/)
+    if (!m) throw new Error(`no flex shrink in ${selector}`)
+    return Number(m[1])
+  }
+
+  it('keeps the row to one line', () => {
+    expect(css).not.toMatch(/flex-wrap:\s*wrap/)
+    expect(rule('.status')).toMatch(/(?:^|[;\s])flex:\s*none/)
+    expect(rule('.lead')).toMatch(/min-width:\s*6ch/)
+    // the pane clips the row, so the row must not: its buttons' focus rings would be cut off
+    expect(rule('.row')).not.toMatch(/overflow:\s*hidden/)
+  })
+
+  it('lets the chips shrink before the branch and the lead', () => {
+    expect(shrink('.chip')).toBeGreaterThan(shrink('.branch'))
+    expect(shrink('.chip')).toBeGreaterThan(shrink('.lead'))
   })
 })
