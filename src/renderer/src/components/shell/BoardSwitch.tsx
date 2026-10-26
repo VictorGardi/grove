@@ -5,6 +5,7 @@ import s from './BoardSwitch.module.css'
 const boards: { board: UiState['board']; label: string }[] = [
   { board: 'features', label: 'Features' },
   { board: 'sessions', label: 'Sessions' },
+  { board: 'artifacts', label: 'Artifacts' },
 ]
 
 // What the project page's board shows (⌘B also switches it).

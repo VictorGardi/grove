@@ -80,8 +80,10 @@ const web = (url: string) => scheme(url) === 'http:' || scheme(url) === 'https:'
 const sameDoc = (a: DocTarget, b: ViewerTarget | null) => b !== null && b.kind === 'file' && a.projectId === b.projectId
   && a.path === b.path && a.hash === b.hash
 
-// The viewer frame follows ui.viewer: artifact links go through uiSet, http(s) to the browser,
-// everything else is denied. The renderer's own load of ui.viewer is the one navigation let through.
+// Artifact frames follow the app: a load the renderer starts by setting an iframe's src (the viewer,
+// a board card's preview, the full-page artifact) has the main frame as initiator and goes through, as
+// does the current ui.viewer. Anything else in a sub-frame is a link clicked inside a sandboxed artifact:
+// artifact links go through uiSet, http(s) to the browser, everything else is denied.
 export function guardNavigation(win: BrowserWindow, core: Core): void {
   const wc = win.webContents
   wc.on('will-frame-navigate', (e) => {
@@ -91,6 +93,8 @@ export function guardNavigation(win: BrowserWindow, core: Core): void {
       return
     }
     if (scheme(e.url) === `${ARTIFACT_SCHEME}:`) {
+      // by node id, not object identity: WebFrameMain wrappers aren't guaranteed to be the same instance
+      if (e.initiator && e.initiator.frameTreeNodeId === wc.mainFrame.frameTreeNodeId) return
       const t = parseArtifactUrl(e.url)
       const cur = core.getSlices().ui.viewer
       if (t && sameDoc(t, cur)) return

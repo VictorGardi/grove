@@ -93,6 +93,13 @@ export interface GridState {
   spans?: Record<string, PaneSpan> // by session id
   tracks?: Record<string, GridTracks> // by layout shape, e.g. "2x2"
 }
+export interface ArtifactRef { projectId: string; slug: string; name: string } // a card on the artifacts board: the feature's own checkout, its slug, the card's name
+export interface CanvasView { x: number; y: number; scale: number } // a pan/zoom canvas's offset in px and its zoom
+export interface ArtifactsView {
+  open: ArtifactRef | null // the artifact shown full page; never reopened on restart
+  view?: CanvasView        // the board's pan and zoom, kept across restarts (absent: the default view)
+  filter?: string | null   // the slug of the one feature the board shows (absent or null: all); a page's features are unioned by repo, so a slug names one cluster
+}
 export interface DiffPrefs { mode: DiffMode; base: string | null } // a session's picked view and compare branch; base null: the auto-detected main branch
 export interface UiState {
   sidebarWidth: number
@@ -101,7 +108,7 @@ export interface UiState {
   focusedFeature: { projectId: string; slug: string } | null
   focusedProject: string | null // the project page; the three focuses are exclusive (ADR 0018)
   sidebarTab: 'sessions' | 'projects'
-  board: 'features' | 'sessions' // what the project page's board shows
+  board: 'features' | 'sessions' | 'artifacts' // what the project page's board shows
   collapsed: string[] // collapsed project folders on the Sessions tab: p:<projectId>
   hiddenProjects: string[] // project IDs hidden from the Sessions tab
   compact?: string[] // session IDs whose card is compacted to one line (absent reads as none)
@@ -113,6 +120,7 @@ export interface UiState {
   viewerWidth: number | null // null uses the responsive default; a number is a user-resized pixel width
   viewerExpanded: boolean     // the viewer fills the content area
   diffPrefs?: Record<string, DiffPrefs> // by session id: what the diff opens on again in that session (absent reads as none: defaults)
+  artifacts?: Record<string, ArtifactsView> // by project page id: the artifacts board's state there (absent reads as none)
   recentBases?: Record<string, string[]> // by project id: branches picked as a diff base there, newest first (absent reads as none)
   grid: GridState             // the session grid (ADR 0031); the focused pane is focusedSessionId
 }
@@ -147,14 +155,16 @@ export interface FeaturesSlice {
   items: Feature[]
 }
 export interface OpenCodeSlice { state: 'connecting' | 'connected' | 'unreachable'; version: string | null } // not persisted
-// A review comment (ADR 0024, 0025): a draft in a session's tray until it is sent.
+// A review comment (ADR 0024, 0025): a draft in a session's tray, or kept on its feature (D3), until it is sent.
 export type CommentAnchor =
   | { kind: 'diff'; root: string; path: string; side: 'old' | 'new'; start: number; end: number; lines: string[] }
   | { kind: 'file'; projectId: string; path: string; exact: string; prefix: string; suffix: string; start: number; end: number }
   | { kind: 'note' } // at most one draft note per session
+export interface FeatureKey { projectId: string; slug: string } // a feature folder: its own checkout and slug
 export interface Comment {
   id: string
-  sessionId: string
+  sessionId: string | null // null: a draft owned by its feature, file anchors only (D3)
+  feature?: FeatureKey     // set exactly when sessionId is null
   anchor: CommentAnchor
   body: string
   state: 'draft' | 'sent'
@@ -163,7 +173,7 @@ export interface Comment {
   updatedAt: string // ISO
   sentAt: string | null // ISO
 }
-export interface CommentsFile { schemaVersion: 2; comments: Comment[] }
+export interface CommentsFile { schemaVersion: 3; comments: Comment[] }
 export type Slices = { projects: Project[]; sessions: Session[]; ui: UiState; features: FeaturesSlice; opencode: OpenCodeSlice; diff: SessionDiff | null; comments: Comment[] } // diff: the one on screen, not persisted
 export interface ConfigFile { schemaVersion: 1; projects: Project[]; workflow?: string }
 export interface StateFile { schemaVersion: 10; sessions: Session[]; ui: UiState }

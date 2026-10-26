@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import type { Comment, DocTarget } from '@shared/types'
-import { draftsForFile, isCommentable, parseIframeMessage } from './artifactComments'
+import { draftsForFile, isCommentable, ownerArgs, parseIframeMessage } from './artifactComments'
 
 const sel = { grove: 1, type: 'select', exact: 'hi', prefix: 'a', suffix: 'b', start: 2, end: 3 }
 
@@ -32,7 +32,22 @@ describe('artifact comments', () => {
   })
   it('lists the session\'s drafts on the file', () => {
     const cs = [draft('1'), draft('2', { sessionId: 'o' }), draft('3', { state: 'sent' }), draft('4', { anchor: { kind: 'note' } })]
-    expect(draftsForFile(cs, 's', art).map((c) => c.id)).toEqual(['1'])
+    expect(draftsForFile(cs, { kind: 'session', sessionId: 's' }, art).map((c) => c.id)).toEqual(['1'])
     expect(draftsForFile(cs, null, art)).toEqual([])
+  })
+  it('a session never sees a feature\'s drafts as its own on the file', () => {
+    const cs = [draft('1'), draft('f', { sessionId: null, feature: { projectId: 'p', slug: 'f' } })]
+    expect(draftsForFile(cs, { kind: 'session', sessionId: 's' }, art).map((c) => c.id)).toEqual(['1'])
+  })
+  it('lists a feature\'s own drafts on the file, never a session\'s or another feature\'s', () => {
+    const f = { projectId: 'p', slug: 'f' }
+    const cs = [draft('1'), draft('2', { sessionId: null, feature: f }), draft('3', { sessionId: null, feature: { projectId: 'p', slug: 'g' } }),
+      draft('4', { sessionId: null, feature: { projectId: 'q', slug: 'f' } }), draft('5', { sessionId: null, feature: f, state: 'sent' }),
+      draft('6', { sessionId: null, feature: f, anchor: { kind: 'file', projectId: 'p', path: 'docs/work/f/01-questions.md', exact: 'e', prefix: '', suffix: '', start: 1, end: 1 } })]
+    expect(draftsForFile(cs, { kind: 'feature', feature: f }, art).map((c) => c.id)).toEqual(['2'])
+  })
+  it('turns an owner into comment:add\'s fields', () => {
+    expect(ownerArgs({ kind: 'session', sessionId: 's' })).toEqual({ sessionId: 's' })
+    expect(ownerArgs({ kind: 'feature', feature: { projectId: 'p', slug: 'f' } })).toEqual({ sessionId: null, feature: { projectId: 'p', slug: 'f' } })
   })
 })

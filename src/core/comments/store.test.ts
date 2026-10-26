@@ -13,13 +13,30 @@ const tmp = () => path.join(fs.mkdtempSync(path.join(os.tmpdir(), 'grove-c-')), 
 
 describe('comments store', () => {
   it('starts empty when the file is missing', () => {
-    expect(loadComments(tmp())).toEqual({ schemaVersion: 2, comments: [] })
+    expect(loadComments(tmp())).toEqual({ schemaVersion: 3, comments: [] })
   })
 
   it('round-trips', () => {
     const file = tmp()
-    saveComments(file, { schemaVersion: 2, comments: [note] })
+    saveComments(file, { schemaVersion: 3, comments: [note] })
     expect(loadComments(file).comments).toEqual([note])
+  })
+
+  it('round-trips a draft kept on its feature', () => {
+    const file = tmp()
+    const kept: Comment = {
+      ...note, id: 'k', sessionId: null, feature: { projectId: 'p', slug: 'f' },
+      anchor: { kind: 'file', projectId: 'p', path: 'docs/work/f/03-design.md', exact: 'e', prefix: '', suffix: '', start: 1, end: 1 },
+    }
+    saveComments(file, { schemaVersion: 3, comments: [kept, note] })
+    expect(loadComments(file)).toEqual({ schemaVersion: 3, comments: [kept, note] })
+  })
+
+  it('migrates v2: comments pass through unchanged', () => {
+    const file = tmp()
+    const sent = { ...note, id: 's', state: 'sent', sentAt: note.createdAt }
+    fs.writeFileSync(file, JSON.stringify({ schemaVersion: 2, comments: [note, sent] }))
+    expect(loadComments(file)).toEqual({ schemaVersion: 3, comments: [note, sent] })
   })
 
   it('migrates v1: drafts on artifacts are dropped, sent ones become file anchors labelled slug/path', () => {
@@ -28,7 +45,7 @@ describe('comments store', () => {
     const cs = [{ ...note, id: 'd', state: 'draft', anchor }, { ...note, id: 's', state: 'sent', anchor }, note]
     fs.writeFileSync(file, JSON.stringify({ schemaVersion: 1, comments: cs }))
     const out = loadComments(file)
-    expect(out.schemaVersion).toBe(2)
+    expect(out.schemaVersion).toBe(3)
     expect(out.comments.map((c) => c.id)).toEqual(['s', note.id])
     expect(out.comments[0].anchor).toEqual({ kind: 'file', projectId: 'p', path: 'f/03-design.md', exact: 'e', prefix: '', suffix: '', start: 1, end: 1 })
   })

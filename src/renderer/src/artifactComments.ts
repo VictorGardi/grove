@@ -1,4 +1,5 @@
-import type { Comment, CommentAnchor, DocTarget } from '@shared/types'
+import { featureDrafts } from '@shared/comments'
+import type { Comment, CommentAnchor, DocTarget, FeatureKey } from '@shared/types'
 
 type FileAnchor = Extract<CommentAnchor, { kind: 'file' }>
 
@@ -32,9 +33,18 @@ export const fileAnchor = (t: DocTarget, m: Extract<IframeMessage, { type: 'sele
   exact: m.exact, prefix: m.prefix, suffix: m.suffix, start: m.start, end: m.end,
 })
 
-// A session's draft comments on one file.
-export function draftsForFile(cs: Comment[], sessionId: string | null, t: DocTarget): Comment[] {
-  if (!sessionId) return []
-  return cs.filter((c) => c.sessionId === sessionId && c.state === 'draft' && c.anchor.kind === 'file'
-    && c.anchor.projectId === t.projectId && c.anchor.path === t.path)
+// Who a new comment belongs to: the session it is for, or, with no session, the artifact's feature (design D3).
+export type CommentOwner = { kind: 'session'; sessionId: string } | { kind: 'feature'; feature: FeatureKey }
+
+const onFile = (c: Comment, t: DocTarget) => c.anchor.kind === 'file' && c.anchor.projectId === t.projectId && c.anchor.path === t.path
+
+// The owner's draft comments on one file: a session's own, or the feature's own (never a session's).
+export function draftsForFile(cs: Comment[], owner: CommentOwner | null, t: DocTarget): Comment[] {
+  if (!owner) return []
+  if (owner.kind === 'feature') return featureDrafts(cs, owner.feature).filter((c) => onFile(c, t))
+  return cs.filter((c) => c.sessionId === owner.sessionId && c.state === 'draft' && onFile(c, t))
 }
+
+// comment:add's owner fields.
+export const ownerArgs = (o: CommentOwner): { sessionId: string | null; feature?: FeatureKey } =>
+  o.kind === 'session' ? { sessionId: o.sessionId } : { sessionId: null, feature: o.feature }

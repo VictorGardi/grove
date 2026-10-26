@@ -26,6 +26,7 @@ import { paletteItems } from './paletteItems'
 import { useRepoRefs } from './useRepoRefs'
 import { DEFAULT_GRID_VIEW, gridShown, visibleMembers, type GridView } from './gridView'
 import { contextView } from './contextGauge'
+import { artifactCrumbs, openCard } from './artifactsBoard'
 import { boardKey, childrenOf, content, crumbs, currentProjectId, focusTarget } from './navigation'
 import { serviceBanners } from './sessionStatus'
 import { sessionDiffShortcut, type HiddenRenderedViewer } from './sessionDiffShortcut'
@@ -38,7 +39,7 @@ import { longestWaiting } from './sessionStatus'
 import s from './App.module.css'
 
 export default function App() {
-  const { projects, sessions, ui, features, opencode, diff, errors, hydrate, setFocused, focusFeature, openProject, toggleGrid, addFocusedToGrid, toggleSidebar, clearGrid, go, setBoard,
+  const { projects, sessions, ui, features, opencode, diff, errors, hydrate, setFocused, focusFeature, openProject, toggleGrid, addFocusedToGrid, toggleSidebar, clearGrid, go, setBoard, openBoardArtifact, setBoardView, setBoardFilter,
     openArtifact, openDiff, backToDiff, openRendered, closeViewer, setViewerWidth, toggleViewerExpanded, reloadViewer } = useSlices()
   const [quickNew, setQuickNew] = useState<{ projectId?: string } | null>(null) // ⌘T: the new-session palette
   const repoRefs = useRepoRefs(projects)
@@ -159,7 +160,9 @@ export default function App() {
     const visible = visibleMembers(shown.sessions, next, projects)
     if (visible.length > 0 && !visible.some((x) => x.id === shown.focused.id)) setFocused(visible[0].id)
   }
-  const header = crumbs(shown, projects, features.items).map((c) => ({ label: c.label, onClick: c.to && (() => go(c.to!)) }))
+  const openArt = shown.kind === 'project' ? openCard(ui, shown.project, projects, features.stages, features.items) : undefined
+  const trail = openArt && shown.kind === 'project' ? artifactCrumbs(shown.project, openArt.cluster.feature, openArt.card, ui) : crumbs(shown, projects, features.items)
+  const header = trail.map((c) => ({ label: c.label, onClick: c.to && (() => go(c.to!)) }))
   const context = shown.kind === 'session' ? contextView(shown.session) : null
   // the same tag colour a grid pane gives this session's feature: one rule, two places
   const linked = shown.kind === 'session'
@@ -204,8 +207,11 @@ export default function App() {
                 ) : undefined} />
             {shown.kind === 'project' ? (
               <ProjectPage project={shown.project} projects={projects} board={ui.board} stages={features.stages}
-                features={features.items} sessions={sessions}
-                onOpenFeature={openFeature} onFocusSession={setFocused} />
+                features={features.items} sessions={sessions} artifactsOpen={ui.artifacts?.[shown.project.id]?.open ?? null}
+                artifactsView={ui.artifacts?.[shown.project.id]?.view} artifactsFilter={ui.artifacts?.[shown.project.id]?.filter ?? null}
+                onOpenFeature={openFeature} onFocusSession={setFocused} onOpenArtifact={(r) => openBoardArtifact(shown.project.id, r)}
+                onArtifactsViewChange={(v) => setBoardView(shown.project.id, v)}
+                onArtifactsFilterChange={(f, v) => setBoardFilter(shown.project.id, f, v)} />
             ) : shown.kind === 'feature' ? (
               <FeaturePage feature={shown.feature}
                 parent={features.items.find((f) => f.projectId === shown.feature.projectId && f.slug === shown.feature.parent) ?? null}

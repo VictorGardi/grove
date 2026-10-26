@@ -94,3 +94,34 @@ describe('core artifact drafts', () => {
     await vi.waitFor(() => expect(core.getSlices().comments[0].orphaned).toBe(true))
   })
 })
+
+describe('core artifact drafts kept on a feature', () => {
+  it('follow an edited file and orphan when the quote is gone, with no session', async () => {
+    s = setupCore()
+    const work = path.join(s.dir, 'docs', 'work')
+    fs.mkdirSync(path.join(work, 'a'), { recursive: true })
+    fs.writeFileSync(path.join(work, 'a', 'feature.md'), '---\nkind: feature\n---\n# a\n')
+    const file = path.join(work, 'a', '03-design.md')
+    fs.writeFileSync(file, 'intro\n\nthe quoted words\n')
+    fs.utimesSync(file, new Date('2026-01-01'), new Date('2026-01-01'))
+    const core = s.make()
+    await core.start()
+    await vi.waitFor(() => expect(core.getSlices().features.items.map((f) => f.slug)).toContain('a'))
+    const added = await core.commands.commentAdd({
+      sessionId: null, feature: { projectId: 'p', slug: 'a' }, body: 'hm',
+      anchor: { kind: 'file', projectId: 'p', path: 'docs/work/a/03-design.md', exact: 'the quoted words', prefix: 'intro ', suffix: '', start: 3, end: 3 },
+    })
+    expect(added.ok).toBe(true)
+
+    fs.writeFileSync(file, 'new\n\nnew too\n\nintro\n\nthe quoted words\n')
+    fs.utimesSync(file, new Date('2026-02-01'), new Date('2026-02-01'))
+    s.watchers.roots.get(work)!('a')
+    await vi.waitFor(() => expect(core.getSlices().comments[0].anchor).toMatchObject({ start: 7, end: 7 }))
+    expect(core.getSlices().comments[0]).toMatchObject({ sessionId: null, orphaned: false })
+
+    fs.writeFileSync(file, 'new\n\nintro\n\nsomething else\n')
+    fs.utimesSync(file, new Date('2026-03-01'), new Date('2026-03-01'))
+    s.watchers.roots.get(work)!('a')
+    await vi.waitFor(() => expect(core.getSlices().comments[0].orphaned).toBe(true))
+  })
+})

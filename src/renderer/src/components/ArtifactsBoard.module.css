@@ -1,0 +1,116 @@
+.board {
+  flex: 1;
+  min-height: 0;
+  position: relative;
+}
+
+/* the whiteboard's window: the plane moves inside it, nothing scrolls */
+.viewport {
+  position: absolute;
+  inset: 0;
+  overflow: hidden;
+  cursor: grab;
+  touch-action: none;
+  user-select: none;
+}
+
+.panning {
+  cursor: grabbing;
+}
+
+/* a fixed width so clusters keep their layout at every zoom; drawn at --x, --y, --scale */
+.plane {
+  position: absolute;
+  top: 0;
+  left: 0;
+  box-sizing: border-box;
+  width: 1280px;
+  display: flex;
+  flex-direction: column;
+  gap: var(--sp-4);
+  padding: var(--sp-4);
+  transform: translate(var(--x), var(--y)) scale(var(--scale));
+  transform-origin: 0 0;
+}
+
+.controls {
+  position: absolute;
+  right: var(--sp-3);
+  bottom: var(--sp-3);
+  display: flex;
+  align-items: center;
+  gap: var(--sp-1);
+  padding: var(--sp-1);
+  background: var(--panel-glass);
+  border: 1px solid var(--glass-border);
+  border-radius: var(--r-card);
+}
+
+/* the feature filter, top-left across from the zoom controls; outside the viewport, so it never pans */
+.filter {
+  position: absolute;
+  left: var(--sp-3);
+  top: var(--sp-3);
+  display: flex;
+  align-items: center;
+  gap: var(--sp-1);
+  padding: var(--sp-1);
+  background: var(--panel-glass);
+  border: 1px solid var(--glass-border);
+  border-radius: var(--r-card);
+}
+
+.select {
+  max-width: 280px; /* long feature titles ellipsize; the repo has no width tokens */
+  height: 24px; /* the sm Buttons' height beside it */
+  padding: 0 var(--sp-2);
+  background: var(--chrome-bg);
+  border: 1px solid var(--card-border);
+  border-radius: var(--r-md);
+  color: var(--text);
+  font: inherit;
+  font-size: var(--fs-sm);
+  outline: none;
+}
+
+.select:focus {
+  border-color: var(--focus-border);
+}
+
+.percent {
+  min-width: 52px;
+  font-variant-numeric: tabular-nums;
+}
+
+.empty {
+  flex: 1;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: var(--text-3);
+  font-size: var(--fs-sm);
+}
+
+.cluster {
+  display: flex;
+  flex-direction: column;
+  gap: var(--sp-2);
+}
+
+.heading {
+  margin: 0;
+  font-size: var(--fs-sm);
+  font-weight: var(--fw-semibold);
+  color: var(--text-3);
+  text-transform: uppercase;
+}
+
+.count {
+  font-weight: var(--fw-regular);
+}
+
+.cards {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, 240px); /* ArtifactCard's width (--card-w in ArtifactCard.module.css): fixed, so measured rects hold */
+  gap: var(--sp-2);
+}

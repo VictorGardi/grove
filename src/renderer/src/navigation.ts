@@ -78,8 +78,8 @@ export function childrenOf(feature: Feature, features: Feature[]): Feature[] {
   return features.filter((f) => f.projectId === feature.projectId && f.parent === feature.slug).sort(bySlugDoneLast)
 }
 
-// ⌘B: on a checkout's page switch its board, elsewhere open the context project's page. A
-// worktree's page has only the sessions board, so ⌘B there goes to the repo's page instead.
+// ⌘B: on a checkout's page flip features and sessions (artifacts goes to features), elsewhere open the
+// context project's page. A worktree's page has only the sessions board, so ⌘B there goes to the repo's page.
 export function boardKey(ui: UiState, projects: Project[], sessions: Session[], features: Feature[]): Partial<UiState> | null {
   const c = content(ui, projects, sessions, features)
   if (c.kind === 'project' && repoHead(projects, c.project.id) === c.project.id) return { board: ui.board === 'features' ? 'sessions' : 'features' }

@@ -18,6 +18,11 @@ describe('artifactUrl', () => {
     }
   })
 
+  it('ignores a query, so a cache-busting ?v= still names the file', () => {
+    expect(parseArtifactUrl('grove-artifact://p1/refs/a%20b.png?v=123')).toEqual(
+      { kind: 'file', projectId: 'p1', path: 'refs/a b.png', hash: null, fromDiff: null })
+  })
+
   it('rejects assets, other schemes, missing paths and garbage', () => {
     for (const url of [
       'grove-artifact://assets/mermaid.min.js',

@@ -2,7 +2,7 @@ import { randomUUID } from 'node:crypto'
 import fs from 'node:fs'
 import os from 'node:os'
 import path from 'node:path'
-import type { Comment, CommentAnchor, Project, PullRequest, Session, SessionDiff, SessionKind, Slices, UiState, WorkflowStatus } from '@shared/types'
+import type { Comment, CommentAnchor, FeatureKey, Project, PullRequest, Session, SessionDiff, SessionKind, Slices, UiState, WorkflowStatus } from '@shared/types'
 import { DEFAULT_UI, EMPTY_FEATURES, OPENCODE_CONNECTING } from '@shared/types'
 import { keyProjectId } from '@shared/groups'
 import { opencodeCliConfig, opencodeModelEnv } from '@shared/opencodeSession'
@@ -20,7 +20,8 @@ import { createDiffWatch } from './diff/watch'
 import { reanchorDiff, reanchorFile } from './comments/anchor'
 import { slugFor } from './autolink'
 import { formatReview } from './comments/format'
-import { addComment, draftsOf, dropSession, markSent, removeComment, updateComment } from './comments/model'
+import { addComment, dropFeatureProject, dropSession, markSent, removeComment, reown, updateComment } from './comments/model'
+import { linkedDrafts, repoFeatureDrafts } from '@shared/comments'
 import { loadComments, saveComments } from './comments/store'
 import type { TurnResult } from '@shared/cli'
 import { isDirectory, paneStable, realOrSelf, resolveProject, waitTurn } from './cliOps'
@@ -99,12 +100,13 @@ export interface Commands {
   sessionSetParent(a: { id: string; parent: string | null }): Promise<Result<Session>> // null: out of its group
   uiSet(partial: Partial<UiState>): Promise<Result<UiState>>
   sessionFocusLast(): Promise<Result<{ id: string }>> // the latest earlier session still valid; ⌃Tab
-  commentAdd(a: { sessionId: string; anchor: CommentAnchor; body: string }): Promise<Result<Comment>>
+  commentAdd(a: { sessionId: string | null; feature?: FeatureKey; anchor: CommentAnchor; body: string }): Promise<Result<Comment>> // null: kept on a listed feature
   commentUpdate(a: { id: string; body: string }): Promise<Result<Comment>>
   commentDelete(a: { id: string }): Promise<Result<{ id: string }>>
   diffLines(a: { sessionId: string; path: string; from: number; to: number }): Promise<Result<string[]>> // lines of a changed file in the open diff, 1-based inclusive
   diffRefs(a: { sessionId: string }): Promise<Result<{ branches: string[]; current: string | null; default: string | null }>> // every local and fetched remote branch to search as a diff base, the branch HEAD is on, the detected default
-  reviewSend(a: { sessionId: string }): Promise<Result<{ sent: number }>> // the session's drafts as one message; none: 'empty'
+  reviewSend(a: { sessionId: string }): Promise<Result<{ sent: number }>> // the session's drafts and those kept on its linked feature as one message, the latter re-owned to it; none: 'empty'
+  reviewStartAndSend(a: { feature: FeatureKey; kind: SessionKind; cols: number; rows: number }): Promise<Result<{ sessionId: string; sent: number }>> // a new agent session linked to the feature, launched with its kept drafts as the prompt (D4)
   sendToSession(a: { id: string; text: string; submit?: boolean }): Promise<Result<{ id: string }>>
   sessionRead(a: { id: string; lines: number }): Promise<Result<{ text: string }>> // the pane's last lines; empty when it is gone
 }
@@ -128,6 +130,11 @@ export interface Core {
 }
 
 const MAX_EXPAND = 20_000 // lines one expansion may read
+
+// The `sending` key for a feature's kept drafts: one send of them at a time, to any target.
+const featureBusyKey = (f: { projectId: string; slug: string }) => `feature:${f.projectId}:${f.slug}`
+const featureBusyKeys = (drafts: Comment[]) =>
+  [...new Set(drafts.flatMap((c) => (c.sessionId === null && c.feature ? [featureBusyKey(c.feature)] : [])))]
 
 export function createCore(opts: CoreOptions): Core {
   const { backend } = opts
@@ -180,7 +187,7 @@ export function createCore(opts: CoreOptions): Core {
   const waitKey = new Map<string, string>() // session id → waitingFor it was last seen waiting with
   const held = new Map<string, string>() // session id → slug it wrote to that discovery hasn't listed yet
   let lastCwds = new Map<string, string>() // tmux name → pane cwd, from the last refresh
-  const sending = new Set<string>() // sessions with a review send in flight
+  const sending = new Set<string>() // sessions, and `feature:` keys, with a review send in flight
   const gitTop = async (dir: string): Promise<string | null> => {
     if (!git) return null
     try {
@@ -240,7 +247,7 @@ export function createCore(opts: CoreOptions): Core {
       ) // live-only
       saveState(opts.statePath, { schemaVersion: 10, sessions, ui: slices.ui })
     }
-    else if (k === 'comments') saveComments(opts.commentsPath, { schemaVersion: 2, comments: slices.comments })
+    else if (k === 'comments') saveComments(opts.commentsPath, { schemaVersion: 3, comments: slices.comments })
     if (k === 'sessions') publish() // card state reads linked sessions
   }
 
@@ -741,6 +748,8 @@ export function createCore(opts: CoreOptions): Core {
     set('projects', slices.projects.filter((p) => p.id !== id))
     const gone = slices.sessions.filter((s) => s.projectId === id)
     dropSessions((s) => s.projectId !== id)
+    const kept = dropFeatureProject(slices.comments, id)
+    if (kept.length !== slices.comments.length) set('comments', kept)
     forgetAgents(gone)
     forgetProjectUi((x) => x === id)
     syncProjects(false)
@@ -1068,9 +1077,14 @@ export function createCore(opts: CoreOptions): Core {
       return { ok: false, error: 'not-found' }
     },
 
-    async commentAdd({ sessionId, anchor, body }) {
-      if (!findSession(sessionId)) return { ok: false, error: 'not-found' }
-      const r = addComment(slices.comments, { id: randomUUID(), sessionId, anchor, body, now: now().toISOString() })
+    async commentAdd({ sessionId, feature, anchor, body }) {
+      let owner: { feature: { projectId: string; slug: string } } | {} = {}
+      if (sessionId === null) {
+        if (!feature || !slices.features.items.some((f) => f.projectId === feature.projectId && f.slug === feature.slug)) return { ok: false, error: 'not-found' }
+        if (anchor.kind === 'file' && anchor.projectId !== feature.projectId) return { ok: false, error: 'bad-owner' }
+        owner = { feature: { projectId: feature.projectId, slug: feature.slug } }
+      } else if (!findSession(sessionId)) return { ok: false, error: 'not-found' }
+      const r = addComment(slices.comments, { id: randomUUID(), sessionId, ...owner, anchor, body, now: now().toISOString() })
       if (!r.ok) return r
       set('comments', r.comments)
       return { ok: true, data: r.comment }
@@ -1126,23 +1140,57 @@ export function createCore(opts: CoreOptions): Core {
       const project = session && slices.projects.find((p) => p.id === session.projectId)
       if (!session || !project) return { ok: false, error: 'not-found' }
       if (sending.has(sessionId)) return { ok: false, error: 'busy' }
-      const drafts = draftsOf(slices.comments, sessionId)
+      const drafts = linkedDrafts(slices.comments, session, slices.projects)
       if (drafts.length === 0) return { ok: false, error: 'empty' }
+      // the feature-owned drafts among them: a start-and-send or another session's send of them is refused
+      const keys = [sessionId, ...featureBusyKeys(drafts)]
+      if (keys.some((k) => sending.has(k))) return { ok: false, error: 'busy' }
       const text = formatReview(drafts, {
         projectPath: project.path,
         // A session's drafts can span checkouts, so every configured one is offered: each heading
         // names the checkout its path came from (design: Comment headings).
         checkouts: slices.projects,
       })
-      sending.add(sessionId)
+      for (const k of keys) sending.add(k)
       try {
         const sent = await sendToSession(sendDeps, { id: sessionId, text })
         if (!sent.ok) return sent
         // re-read: the drafts may have changed while the paste ran; only these were sent
-        set('comments', markSent(slices.comments, drafts.map((c) => c.id), now().toISOString()))
+        const ids = drafts.map((c) => c.id)
+        const kept = drafts.filter((c) => c.sessionId === null).map((c) => c.id)
+        set('comments', markSent(reown(slices.comments, kept, sessionId), ids, now().toISOString()))
         return { ok: true, data: { sent: drafts.length } }
       } finally {
-        sending.delete(sessionId)
+        for (const k of keys) sending.delete(k)
+      }
+    },
+
+    async reviewStartAndSend({ feature, kind, cols, rows }) {
+      if (kind === 'terminal') return { ok: false, error: 'bad-kind' }
+      if (!slices.features.items.some((f) => f.projectId === feature.projectId && f.slug === feature.slug)) return { ok: false, error: 'not-found' }
+      const project = slices.projects.find((p) => p.id === feature.projectId)
+      if (!project) return { ok: false, error: 'not-found' }
+      const drafts = repoFeatureDrafts(slices.comments, feature, slices.projects)
+      // this feature, and every checkout's feature its drafts are kept on: refused while a send holds any
+      const keys = [...new Set([featureBusyKey(feature), ...featureBusyKeys(drafts)])]
+      if (keys.some((k) => sending.has(k))) return { ok: false, error: 'busy' }
+      if (drafts.length === 0) return { ok: false, error: 'empty' }
+      const text = formatReview(drafts, { projectPath: project.path, checkouts: slices.projects })
+      for (const k of keys) sending.add(k)
+      try {
+        let made: Result<Session>
+        try {
+          made = await commands.sessionCreate({ projectId: feature.projectId, kind, prompt: text, feature: feature.slug, cols, rows })
+        } catch (e) {
+          return { ok: false, error: e instanceof Error ? e.message : String(e) }
+        }
+        if (!made.ok) return made
+        // re-read: the drafts may have changed while the session started; only these went in its prompt
+        const ids = drafts.map((c) => c.id)
+        set('comments', markSent(reown(slices.comments, ids, made.data.id), ids, now().toISOString()))
+        return { ok: true, data: { sessionId: made.data.id, sent: drafts.length } }
+      } finally {
+        for (const k of keys) sending.delete(k)
       }
     },
 

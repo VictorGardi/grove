@@ -121,6 +121,10 @@ describe('boardKey', () => {
     expect(of({ focusedSessionId: 't', board: 'features' })).toEqual({ focusedProject: 'q', board: 'sessions' })
     expect(boardKey(ui(), [], [], [])).toBeNull()
   })
+
+  it('leaves the artifacts board for the features board', () => {
+    expect(of({ focusedProject: 'q', board: 'artifacts' })).toEqual({ board: 'features' })
+  })
 })
 
 describe('boardProject, boardKey, a repo\'s checkouts', () => {

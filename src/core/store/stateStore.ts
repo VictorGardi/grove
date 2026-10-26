@@ -68,6 +68,8 @@ export function loadState(file: string, onBad?: (msg: string) => void): StateFil
   if (v?.kind === 'diff' && !known(v.sessionId)) ui.viewer = null
   else if (v && v.kind !== 'diff' && v.fromDiff && !known(v.fromDiff)) ui.viewer = { ...v, fromDiff: null }
   if (ui.diffPrefs) ui.diffPrefs = Object.fromEntries(Object.entries(ui.diffPrefs).filter(([id]) => known(id)))
+  // the full page is a place the human went, not one to come back to on launch
+  if (ui.artifacts) ui.artifacts = Object.fromEntries(Object.entries(ui.artifacts).map(([id, a]) => [id, { ...a, open: null }]))
   ui.grid = pruneGrid(ui.grid ?? DEFAULT_UI.grid, known)
   return { ...s, sessions, ui }
 }

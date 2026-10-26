@@ -1,0 +1,42 @@
+.chip {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-1);
+  align-self: flex-start;
+  max-width: 100%;
+  padding: 2px var(--sp-2);
+  border: 1px solid var(--card-border);
+  border-radius: var(--r-md);
+  background: var(--card-bg);
+  color: var(--text-2);
+  font: inherit;
+  font-size: var(--fs-sm);
+  text-align: left;
+}
+
+button.chip {
+  cursor: pointer;
+}
+
+button.chip:hover {
+  color: var(--text);
+}
+
+.name {
+  min-width: 0;
+  overflow: hidden;
+  color: var(--text);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.caret {
+  color: var(--text-3);
+}
+
+.check {
+  width: 1em;
+  flex: none;
+  color: var(--text-2);
+  text-align: center;
+}
