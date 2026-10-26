@@ -60,6 +60,7 @@ export function buildMenu(send: (a: MenuAction) => void, installCli: () => void,
   const view: MenuItemConstructorOptions[] = [
     { label: 'Toggle Sidebar', accelerator: 'CmdOrCtrl+B', click: () => send({ type: 'toggleSidebar' }) },
     { label: 'Project Board', accelerator: 'CmdOrCtrl+Shift+B', click: () => send({ type: 'projectBoard' }) },
+    { label: 'Artifacts', accelerator: 'CmdOrCtrl+Shift+A', click: () => send({ type: 'artifactsBoard' }) },
     { label: 'Session Diff', accelerator: 'CmdOrCtrl+Alt+B', click: () => send({ type: 'sessionDiff' }) },
     { label: 'Session Grid', accelerator: 'CmdOrCtrl+G', click: () => send({ type: 'toggleGrid' }) },
     { label: 'Add Session to Grid', accelerator: 'CmdOrCtrl+Shift+G', click: () => send({ type: 'addToGrid' }) },

@@ -5,6 +5,7 @@ import { DEFAULT_VIEW, clampPan, fitView, panBy, viewWriter, wheelFactor, zoomAt
 import { livePreviews, sameSet, type Rect } from '../previewGate'
 import { ArtifactCard as CardView } from './ArtifactCard'
 import { Button } from './ui/Button'
+import { ContextMenu, type MenuEntry } from './ui/ContextMenu'
 import { cx } from './ui/cx'
 import s from './ArtifactsBoard.module.css'
 
@@ -38,6 +39,7 @@ function Canvas({ clusters: all, stages, view: saved, onViewChange, filter, onFi
   // memoised: the measuring effect below re-runs when, and only when, the drawn clusters change
   const clusters = useMemo(() => filterClusters(all, filter), [all, filter])
   const active = all.some((c) => c.feature.slug === filter) ? filter : null // a stale filter draws all, so the picker says so
+  const [filterMenu, setFilterMenu] = useState<{ x: number; y: number } | null>(null)
   // live in component state while the gesture runs, saved behind it (design D1); the prop only seeds it
   const [view, setView] = useState(saved ?? DEFAULT_VIEW)
   const [panning, setPanning] = useState(false)
@@ -197,6 +199,13 @@ function Canvas({ clusters: all, stages, view: saved, onViewChange, filter, onFi
     else cards.current.delete(key)
   }, [])
 
+  // the feature picker: the app's own menu, the current choice checked
+  const check = (on: boolean) => <span className={s.check} aria-hidden="true">{on ? '✓' : ''}</span>
+  const filterItems: MenuEntry[] = [
+    { label: 'All features', glyph: check(!active), onSelect: () => pick(null) },
+    ...all.map((c, i): MenuEntry => ({ label: c.feature.title, glyph: check(c.feature.slug === active), separatorBefore: i === 0, onSelect: () => pick(c.feature.slug) })),
+  ]
+
   const label = (stage: string | null) => stages.find((st) => st.id === stage)?.label ?? 'Other'
   return (
     <div className={s.board}>
@@ -219,12 +228,14 @@ function Canvas({ clusters: all, stages, view: saved, onViewChange, filter, onFi
         </div>
       </div>
       <div className={s.filter}>
-        <select className={s.select} aria-label="Feature" value={active ?? ''} onChange={(e) => pick(e.target.value || null)}>
-          <option value="">All features</option>
-          {all.map((c) => <option key={clusterKey(c)} value={c.feature.slug}>{c.feature.title}</option>)}
-        </select>
+        <Button variant="ghost" size="sm" className={s.picker} aria-label="Feature" aria-haspopup="menu" aria-expanded={!!filterMenu}
+          onClick={(e) => { const r = e.currentTarget.getBoundingClientRect(); setFilterMenu(filterMenu ? null : { x: r.left, y: r.bottom + 4 }) }}>
+          <span className={s.pickerName}>{all.find((c) => c.feature.slug === active)?.feature.title ?? 'All features'}</span>
+          <span className={s.caret}>▾</span>
+        </Button>
         {active && <Button variant="ghost" size="sm" aria-label="Clear filter" onClick={() => pick(null)}>×</Button>}
       </div>
+      {filterMenu && <ContextMenu x={filterMenu.x} y={filterMenu.y} items={filterItems} onClose={() => setFilterMenu(null)} />}
       <div className={s.controls}>
         <Button variant="ghost" size="sm" aria-label="Zoom out" onClick={() => step(-1)}>−</Button>
         <Button variant="ghost" size="sm" aria-label="Zoom to 100%" className={s.percent} onClick={actualSize}>{Math.round(view.scale * 100)}%</Button>

@@ -56,7 +56,7 @@ describe('resolveTarget', () => {
   })
 
   it('starts a session when none can take it', () => {
-    expect(resolveTarget(feature, [], projects)).toEqual({ kind: 'none', default: null, candidates: [] })
+    expect(resolveTarget(feature, [], projects)).toEqual({ kind: 'none', default: null, candidates: [], others: [] })
     const t = resolveTarget(feature, [session('lost', { lastStatus: 'gone' }), session('shell', { kind: 'terminal' })], projects)
     expect(t.kind).toBe('none')
     expect(t.default).toBeNull()
@@ -65,6 +65,24 @@ describe('resolveTarget', () => {
   it('takes sessions in any checkout of the repo, not another slug or another repo', () => {
     const sessions = [session('wt', { projectId: 'wt' }), session('slug', { feature: 'g' }), session('repo', { projectId: 'o' }), session('none', { feature: null })]
     expect(ids(resolveTarget(feature, sessions, projects).candidates)).toEqual(['wt'])
+  })
+
+  it("offers the repo's unlinked sessions as others, never as the default, with the same rules", () => {
+    const sessions = [
+      session('linked'),
+      session('free', { feature: null, startedAt: '2026-10-02T10:00:00.000Z' }),
+      session('freeWt', { feature: null, projectId: 'wt', lastFocusedAt: '2026-10-05T10:00:00.000Z' }),
+      session('elsewhere', { feature: 'g' }),
+      session('otherRepo', { feature: null, projectId: 'o' }),
+      session('shell', { feature: null, kind: 'terminal' }),
+      session('lost', { feature: null, lastStatus: 'gone' }),
+    ]
+    const t = resolveTarget(feature, sessions, projects)
+    expect(ids(t.candidates)).toEqual(['linked'])
+    expect(ids(t.others)).toEqual(['freeWt', 'free'])
+    expect(t.default?.id).toBe('linked')
+    const unlinkedOnly = resolveTarget(feature, sessions.slice(1), projects)
+    expect([unlinkedOnly.kind, unlinkedOnly.default]).toEqual(['none', null])
   })
 })
 

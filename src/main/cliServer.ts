@@ -4,7 +4,7 @@ import { PROTOCOL, WORKFLOW_STATUS_VALUES, type CliReply, type CliSession, type 
 import { errorMessage } from '@shared/sessionErrors'
 import type { Session, WorkflowStatus } from '@shared/types'
 import type { Core } from '../core/core'
-import { resolveSessionRef } from '../core/cliOps'
+import { realOrSelf, resolveSessionRef } from '../core/cliOps'
 import * as worktrees from '../core/worktrees'
 
 export interface CliServerOptions {
@@ -91,6 +91,10 @@ async function dispatch(core: Core, raise: () => void, line: string): Promise<Cl
       let dir = cwd
       if (params.worktree === true) {
         const repo = (await core.gitTop(cwd)) ?? cwd
+        // a link is checked against the checkout the worktree is made from, before it is made
+        const feature = optString(params.feature)
+        const source = core.getSlices().projects.find((p) => realOrSelf(p.path) === realOrSelf(repo))
+        if (feature !== undefined && !core.getSlices().features.items.some((f) => f.projectId === source?.id && f.slug === feature)) return failFrom(id, 'no-feature')
         const made = await worktrees.add({ repo, branch: branch!, path: worktrees.worktreePath(repo, branch!), base: optString(params.base), git: core.git })
         if (!made.ok) return fail(id, made.error === 'no-git' ? 'no-git' : 'worktree-failed', made.error)
         dir = made.data.path

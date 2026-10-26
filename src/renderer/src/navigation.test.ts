@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest'
 import { DEFAULT_UI, type Feature, type Project, type Session, type UiState } from '@shared/types'
 import { DEFAULT_GRID_VIEW, type GridView } from './gridView'
-import { boardKey, boardProject, childrenOf, content, crumbs, currentProjectId, focusTarget } from './navigation'
+import { artifactsKey, boardKey, boardProject, childrenOf, content, crumbs, currentProjectId, focusTarget } from './navigation'
 
 const project = (id: string): Project => ({ id, name: id.toUpperCase(), path: '/' + id })
 
@@ -124,6 +124,40 @@ describe('boardKey', () => {
 
   it('leaves the artifacts board for the features board', () => {
     expect(of({ focusedProject: 'q', board: 'artifacts' })).toEqual({ board: 'features' })
+  })
+})
+
+describe('artifactsKey', () => {
+  const of = (u: Partial<UiState>, ss = sessions) => artifactsKey(ui(u), projects, ss, features)
+  const wt = [project('p'), { ...project('wt'), worktreeOf: 'p' }]
+
+  it("opens the session's repo page on the artifacts board, filtered to its linked feature", () => {
+    expect(of({ focusedSessionId: 's' })).toEqual({ focusedProject: 'p', board: 'artifacts', artifacts: { p: { open: null, filter: 'a' } } })
+  })
+
+  it('shows every feature for an unlinked session', () => {
+    expect(of({ focusedSessionId: 't' })).toEqual({ focusedProject: 'q', board: 'artifacts', artifacts: { q: { open: null } } })
+  })
+
+  it("filters to a feature page's own feature", () => {
+    expect(of({ focusedFeature: { projectId: 'p', slug: 'e' } })?.artifacts?.p).toEqual({ open: null, filter: 'e' })
+  })
+
+  it('goes to the repo page from a session in a worktree', () => {
+    const w = session('w', { projectId: 'wt', feature: 'a' })
+    expect(artifactsKey(ui({ focusedSessionId: 'w' }), wt, [w], features)).toMatchObject({ focusedProject: 'p', artifacts: { p: { filter: 'a' } } })
+  })
+
+  it('keeps the filter and the view when it does not change, and drops the view when it does', () => {
+    const view = { x: 1, y: 2, scale: 1 }
+    const open = { projectId: 'p', slug: 'a', name: 'x.md' }
+    expect(of({ focusedSessionId: 's', artifacts: { p: { open, view, filter: 'a' } } })?.artifacts?.p).toEqual({ open: null, view, filter: 'a' })
+    expect(of({ focusedSessionId: 's', artifacts: { p: { open: null, view, filter: 'e' } } })?.artifacts?.p).toEqual({ open: null, filter: 'a' })
+    expect(of({ focusedProject: 'p', board: 'artifacts', artifacts: { p: { open, view, filter: 'e' } } })?.artifacts?.p).toEqual({ open: null, view, filter: 'e' })
+  })
+
+  it('does nothing with no project', () => {
+    expect(artifactsKey(ui(), [], [], [])).toBeNull()
   })
 })
 

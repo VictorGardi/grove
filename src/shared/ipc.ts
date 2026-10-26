@@ -2,7 +2,7 @@ import type { Comment, CommentAnchor, FeatureKey, FeaturesSlice, OpenCodeSlice, 
 
 export type Result<T> = { ok: true; data: T } | { ok: false; error: string; detail?: string }
 export type MenuAction =
-  | { type: 'newSession' } | { type: 'newSessionOptions' } | { type: 'closeSession' } | { type: 'focusIndex'; n: number } | { type: 'projectBoard' }
+  | { type: 'newSession' } | { type: 'newSessionOptions' } | { type: 'closeSession' } | { type: 'focusIndex'; n: number } | { type: 'projectBoard' } | { type: 'artifactsBoard' }
   | { type: 'sessionDiff' } | { type: 'toggleSidebar' } | { type: 'addToGrid' }
   | { type: 'newTerminal' } | { type: 'lastSession' } | { type: 'palette' } | { type: 'toggleGrid' } | { type: 'clearGrid' }
   | { type: 'scratchpad' } | { type: 'nextWaiting' } | { type: 'familyJump' }
@@ -28,7 +28,7 @@ export interface InvokeMap {
   'comment:add': [{ sessionId: string | null; feature?: FeatureKey; anchor: CommentAnchor; body: string }, Comment]
   'comment:update': [{ id: string; body: string }, Comment]
   'comment:delete': [{ id: string }, { id: string }]
-  'review:send': [{ sessionId: string }, { sent: number }]
+  'review:send': [{ sessionId: string; feature?: FeatureKey }, { sent: number }]
   'review:start-and-send': [{ feature: FeatureKey; kind: SessionKind; cols: number; rows: number }, { sessionId: string; sent: number }]
   'diff:lines': [{ sessionId: string; path: string; from: number; to: number }, string[]]
   'diff:refs': [{ sessionId: string }, { branches: string[]; current: string | null; default: string | null }]

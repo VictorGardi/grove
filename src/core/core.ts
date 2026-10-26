@@ -105,7 +105,7 @@ export interface Commands {
   commentDelete(a: { id: string }): Promise<Result<{ id: string }>>
   diffLines(a: { sessionId: string; path: string; from: number; to: number }): Promise<Result<string[]>> // lines of a changed file in the open diff, 1-based inclusive
   diffRefs(a: { sessionId: string }): Promise<Result<{ branches: string[]; current: string | null; default: string | null }>> // every local and fetched remote branch to search as a diff base, the branch HEAD is on, the detected default
-  reviewSend(a: { sessionId: string }): Promise<Result<{ sent: number }>> // the session's drafts and those kept on its linked feature as one message, the latter re-owned to it; none: 'empty'
+  reviewSend(a: { sessionId: string; feature?: FeatureKey }): Promise<Result<{ sent: number }>> // the session's drafts and those kept on its linked feature (or on `feature`, for a session not linked to it) as one message, the latter re-owned to it; none: 'empty'
   reviewStartAndSend(a: { feature: FeatureKey; kind: SessionKind; cols: number; rows: number }): Promise<Result<{ sessionId: string; sent: number }>> // a new agent session linked to the feature, launched with its kept drafts as the prompt (D4)
   sendToSession(a: { id: string; text: string; submit?: boolean }): Promise<Result<{ id: string }>>
   sessionRead(a: { id: string; lines: number }): Promise<Result<{ text: string }>> // the pane's last lines; empty when it is gone
@@ -862,9 +862,11 @@ export function createCore(opts: CoreOptions): Core {
       if (!project) return { ok: false, error: 'not-found' }
       if (worktree && cwd !== undefined) return { ok: false, error: 'not-found' } // a worktree is made from a project, which `cwd` would only resolve later
       const chosen = project
-      // a worktree has no features until discovery runs there, so none can be linked to a new one
-      if (worktree && feature !== undefined) return { ok: false, error: 'no-feature' }
-      if (feature !== undefined && (added || !slices.features.items.some((f) => f.projectId === chosen.id && f.slug === feature))) {
+      // A new worktree has no features until discovery runs there, so a link is checked against the
+      // checkout it is made from: a run's worktree starts from a plan commit that holds the feature.
+      // That covers the app's `worktree` (chosen is the source) and the CLI's, made first and registered here.
+      const lists = (id: string | undefined) => slices.features.items.some((f) => f.projectId === id && f.slug === feature)
+      if (feature !== undefined && !((!added && lists(chosen.id)) || (!!chosen.worktreeOf && lists(chosen.worktreeOf)))) {
         return { ok: false, error: 'no-feature' } // checked before anything is created
       }
       let parentId: string | null = null
@@ -1135,12 +1137,15 @@ export function createCore(opts: CoreOptions): Core {
       }
     },
 
-    async reviewSend({ sessionId }) {
+    async reviewSend({ sessionId, feature }) {
       const session = findSession(sessionId)
       const project = session && slices.projects.find((p) => p.id === session.projectId)
       if (!session || !project) return { ok: false, error: 'not-found' }
       if (sending.has(sessionId)) return { ok: false, error: 'busy' }
-      const drafts = linkedDrafts(slices.comments, session, slices.projects)
+      // the full page can send a feature's drafts to a session not linked to it: its own, then the feature's
+      const drafts = feature && session.feature !== feature.slug
+        ? [...linkedDrafts(slices.comments, { ...session, feature: null }, slices.projects), ...repoFeatureDrafts(slices.comments, feature, slices.projects)]
+        : linkedDrafts(slices.comments, session, slices.projects)
       if (drafts.length === 0) return { ok: false, error: 'empty' }
       // the feature-owned drafts among them: a start-and-send or another session's send of them is refused
       const keys = [sessionId, ...featureBusyKeys(drafts)]

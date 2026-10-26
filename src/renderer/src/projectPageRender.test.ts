@@ -128,10 +128,8 @@ describe('ProjectPage, the artifacts board', () => {
       const html = page(projects[0], 'artifacts', two, [], null, undefined, 'g')
       expect(html).toContain('00-ticket.md')
       expect(html).not.toContain('01-questions.md')
-      expect(html).toContain('aria-label="Feature"')
-      expect(html).toContain('<option value="">All features</option>')
-      expect(html).toContain('<option value="f">Worktree support</option>')
-      expect(html).toContain('<option value="g" selected="">Session notes</option>')
+      expect(html).toMatch(/<button[^>]*aria-label="Feature"[^>]*aria-haspopup="menu"[^>]*><span[^>]*>Session notes<\/span>/)
+      expect(html).not.toContain('<select')
       expect(html).toContain('aria-label="Clear filter"')
     })
 
@@ -139,6 +137,7 @@ describe('ProjectPage, the artifacts board', () => {
       const html = page(projects[0], 'artifacts', two, [])
       expect(html).toContain('00-ticket.md')
       expect(html).toContain('01-questions.md')
+      expect(html).toMatch(/aria-label="Feature"[^>]*><span[^>]*>All features<\/span>/)
       expect(html).not.toContain('aria-label="Clear filter"')
     })
 

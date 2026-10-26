@@ -60,21 +60,26 @@
   border-radius: var(--r-card);
 }
 
-.select {
+.picker {
   max-width: 280px; /* long feature titles ellipsize; the repo has no width tokens */
-  height: 24px; /* the sm Buttons' height beside it */
-  padding: 0 var(--sp-2);
-  background: var(--chrome-bg);
-  border: 1px solid var(--card-border);
-  border-radius: var(--r-md);
-  color: var(--text);
-  font: inherit;
-  font-size: var(--fs-sm);
-  outline: none;
 }
 
-.select:focus {
-  border-color: var(--focus-border);
+.pickerName {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.caret {
+  color: var(--text-3);
+}
+
+.check {
+  width: 1em;
+  flex: none;
+  color: var(--text-2);
+  text-align: center;
 }
 
 .percent {

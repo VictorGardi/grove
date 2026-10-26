@@ -36,7 +36,7 @@ describe('buildMenu', () => {
     const earlier = [
       'CmdOrCtrl+T', 'CmdOrCtrl+Shift+T', 'CmdOrCtrl+J', 'CmdOrCtrl+N', 'CmdOrCtrl+W',
       ...Array.from({ length: 9 }, (_, i) => `CmdOrCtrl+${i + 1}`),
-      'Ctrl+Tab', 'CmdOrCtrl+.', 'CmdOrCtrl+B', 'CmdOrCtrl+Shift+B', 'CmdOrCtrl+Alt+B', 'CmdOrCtrl+G', 'CmdOrCtrl+Shift+G', 'CmdOrCtrl+K',
+      'Ctrl+Tab', 'CmdOrCtrl+.', 'CmdOrCtrl+B', 'CmdOrCtrl+Shift+B', 'CmdOrCtrl+Shift+A', 'CmdOrCtrl+Alt+B', 'CmdOrCtrl+G', 'CmdOrCtrl+Shift+G', 'CmdOrCtrl+K',
     ]
     for (const a of earlier) expect(accelerators).toContain(a)
     expect(new Set(accelerators).size).toBe(accelerators.length)

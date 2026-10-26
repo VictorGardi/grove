@@ -122,7 +122,9 @@ specific meaning, so humans and agents stay consistent.
 - **Project page**: the content area for one project: a Features | Sessions |
   Artifacts switch over its board. Going to it always shows the sessions board
   first (ADR 0020). ⌘B opens the current context's project page, and on it
-  switches between features and sessions (from artifacts, to features).
+  switches between features and sessions (from artifacts, to features). ⌘⇧A
+  opens the context's repo page on its artifacts board, filtered to the
+  session's linked feature or the feature page's own.
 - **Breadcrumb**: the content header's trail (project › parent › feature, or
   project › linked feature › session); every segment but the last is an
   up-link. There is no back history.

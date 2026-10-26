@@ -1,7 +1,7 @@
 import fs from 'node:fs'
 import os from 'node:os'
 import path from 'node:path'
-import { afterEach, beforeEach, describe, expect, it } from 'vitest'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import * as worktrees from './worktrees'
 import { gitRepo } from './testing/gitRepo'
 import { setupCore } from './testing/setup'
@@ -92,7 +92,18 @@ describe('session start in a new worktree', () => {
     expect(core.getSlices().projects.some((p) => p.id === wt!.id)).toBe(true)
   })
 
-  it('refuses a feature with a new worktree, before anything is created', async () => {
+  it('links the new session to a feature the source checkout lists, pinned', async () => {
+    repo.write('docs/work/a/feature.md', '---\nkind: feature\n---\n# a\n')
+    repo.commit()
+    const { core, source } = await setup(false)
+    await vi.waitFor(() => expect(core.getSlices().features.items.some((f) => f.projectId === source && f.slug === 'a')).toBe(true))
+    const res = await core.commands.sessionCreate({ projectId: source, worktree: { branch: 'feat' }, feature: 'a', kind: 'terminal', cols: 80, rows: 24 })
+    if (!res.ok) throw new Error(res.error)
+    expect(res.data).toMatchObject({ feature: 'a', linkPinned: true })
+    expect(core.getSlices().projects.find((p) => p.id === res.data.projectId)?.worktreeOf).toBe(source)
+  })
+
+  it("refuses a feature the source checkout does not list, before anything is created", async () => {
     const { core, source } = await setup(false)
     const res = await core.commands.sessionCreate({ projectId: source, worktree: { branch: 'feat' }, feature: 'x', kind: 'terminal', cols: 80, rows: 24 })
     expect(res).toEqual({ ok: false, error: 'no-feature' })

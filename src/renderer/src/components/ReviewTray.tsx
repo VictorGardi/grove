@@ -201,14 +201,15 @@ export function FeatureReviewPanel({ feature, drafts, sessions, projects, onJump
   feature: FeatureKey; drafts: Comment[]; sessions: Session[]; projects: Project[]; onJump: (c: Comment) => void
 }) {
   const target = resolveTarget(feature, sessions, projects)
-  const [pickedId, setPickedId] = useState<string | null>(null)
-  const [kind, setKind] = useState<SessionKind | null>(null)
+  // a session the human picked, or a new session of a kind; null: the default
+  const [pick, setPick] = useState<{ session: string } | { kind: SessionKind } | null>(null)
   // the mode Send ran in, fixed at the click so its label holds while it runs; null: idle
   const [sending, setSending] = useState<'send' | 'resume' | 'start' | null>(null)
   const [error, setError] = useState<string | null>(null)
-  // a pick that is no longer a candidate falls back to the default
-  const picked = target.candidates.find((c) => c.id === pickedId) ?? target.default
-  const startKind = kind ?? defaultKind(sessions, projects, feature.projectId)
+  // a picked session that can no longer take it falls back to the default
+  const chosen = pick && 'session' in pick ? [...target.candidates, ...target.others].find((c) => c.id === pick.session) : undefined
+  const picked = chosen ?? target.default // a kind is only offered when no session is linked, so no default to override
+  const startKind = pick && 'kind' in pick ? pick.kind : defaultKind(sessions, projects, feature.projectId)
   const resuming = picked?.lastStatus === 'gone'
 
   async function send() {
@@ -216,7 +217,8 @@ export function FeatureReviewPanel({ feature, drafts, sessions, projects, onJump
     setSending(picked ? (resuming ? 'resume' : 'send') : 'start')
     try {
       if (picked) {
-        const res = await window.api.invoke('review:send', { sessionId: picked.id })
+        // the feature goes with it, so an unlinked session gets this feature's drafts too
+        const res = await window.api.invoke('review:send', { sessionId: picked.id, feature })
         if (!res.ok) setError(SEND_ERRORS[res.error] ?? res.error)
       } else {
         const res = await window.api.invoke('review:start-and-send', { feature, kind: startKind, cols: 120, rows: 40 })
@@ -232,7 +234,7 @@ export function FeatureReviewPanel({ feature, drafts, sessions, projects, onJump
     <>
       <TrayGroups drafts={drafts} onJump={onJump} />
       <div className={s.hint}>Comments are kept on this feature until they are sent to a session.</div>
-      <SendTargetChip target={target} picked={picked} onPick={setPickedId} kind={startKind} onKind={setKind} />
+      <SendTargetChip target={target} picked={picked} onPick={(id) => setPick({ session: id })} kind={startKind} onKind={(k) => setPick({ kind: k })} />
       {error && <div className={s.error}>{error}</div>}
       <div className={s.actions}>
         <Button variant="primary" size="sm" disabled={!!sending || drafts.length === 0} onClick={() => void send()}>

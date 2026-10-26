@@ -124,6 +124,24 @@ describe('cli server', () => {
     expect(t.fake.paths.get(`grove-${created.id}`)).toBe(worktree.path)
   })
 
+  it('links a new worktree session to a feature its source checkout lists, and refuses another before making the worktree', async () => {
+    const { core, socketPath } = await start()
+    const repo = gitRepo()
+    repo.write('docs/work/a/feature.md', '---\nkind: feature\n---\n# a\n')
+    repo.commit()
+    const checkout = await core.commands.projectAdd({ path: repo.dir })
+    if (!checkout.ok) throw new Error(checkout.error)
+    await vi.waitFor(() => expect(core.getSlices().features.items.some((f) => f.projectId === checkout.data.id && f.slug === 'a')).toBe(true))
+
+    const reply = await request(socketPath, req('sessions.create', { kind: 'terminal', cwd: repo.dir, worktree: true, branch: 'run', feature: 'a' }))
+    if (!reply.ok) throw new Error(JSON.stringify(reply.error))
+    expect(core.getSlices().sessions.find((s) => s.id === (reply.data as CliSession).id)).toMatchObject({ feature: 'a', linkPinned: true })
+
+    const bad = await request(socketPath, req('sessions.create', { kind: 'terminal', cwd: repo.dir, worktree: true, branch: 'never', feature: 'nope' }))
+    expect(bad).toMatchObject({ ok: false, error: { code: 'no-feature' } })
+    expect(fs.existsSync(worktrees.worktreePath(repo.dir, 'never'))).toBe(false) // nothing left behind
+  })
+
   it('puts a new session in its parent\'s group, resolving a child to its leader, and refuses an unknown parent before making a worktree', async () => {
     const { core, socketPath } = await start()
     const lead = await createTerminal(core)

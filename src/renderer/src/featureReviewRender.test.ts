@@ -30,6 +30,11 @@ describe('the full page Comments tray', () => {
     expect(html).toMatch(/<button[^>]*>Send<\/button>/)
   })
 
+  it("offers to switch when an unlinked session could take it too, still defaulting to the linked one", () => {
+    const html = panel([session('Design review'), session('scratch', { feature: null, lastFocusedAt: '2026-10-05T10:00:00.000Z' })])
+    expect(html).toMatch(/<button[^>]*aria-haspopup="menu"[^>]*>Sending to: <span[^>]*>Design review<\/span>/)
+  })
+
   it('offers to switch between several, defaulting to the most recently focused', () => {
     const html = panel([session('older'), session('newer', { lastFocusedAt: '2026-10-05T10:00:00.000Z' })])
     expect(html).toMatch(/<button[^>]*aria-haspopup="menu"[^>]*>Sending to: <span[^>]*>newer<\/span>/)

@@ -8,17 +8,27 @@ import s from './SendTargetChip.module.css'
 const AGENT_KINDS = LAUNCH_KINDS.filter((k) => k.kind !== 'terminal')
 const kindLabel = (k: SessionKind) => LAUNCH_KINDS.find((x) => x.kind === k)?.label ?? k
 
-// "Sending to: …" above the full page's Send (D4). One session: plain. Several: a menu to switch, the current one checked.
-// None: the agent a new session starts with, and a menu to change it.
+// "Sending to: …" above the full page's Send (D4). One linked session and nothing else: plain.
+// Otherwise a menu, the current pick checked: the linked sessions, the repo's unlinked ones below
+// them, and, when none is linked, a new session of each agent kind.
 export function SendTargetChip({ target, picked, onPick, kind, onKind }: {
   target: SendTarget; picked: Session | null; onPick: (id: string) => void; kind: SessionKind; onKind: (k: SessionKind) => void
 }) {
   const [menu, setMenu] = useState<{ x: number; y: number } | null>(null)
-  const text = target.kind === 'none' ? `new ${kindLabel(kind)} session` : picked?.label ?? ''
-  if (target.kind === 'one') return <div className={s.chip}>Sending to: <span className={s.name}>{text}</span></div>
-  const items: MenuEntry[] = target.kind === 'many'
-    ? target.candidates.map((c) => ({ label: c.lastStatus === 'gone' ? `${c.label} (ended)` : c.label, glyph: <span className={s.check} aria-hidden="true">{c.id === picked?.id ? '✓' : ''}</span>, onSelect: () => onPick(c.id) }))
-    : AGENT_KINDS.map((k) => ({ label: k.label, icon: k.icon, onSelect: () => onKind(k.kind) }))
+  const text = picked ? picked.label : `new ${kindLabel(kind)} session`
+  if (target.kind === 'one' && target.others.length === 0) return <div className={s.chip}>Sending to: <span className={s.name}>{text}</span></div>
+  const check = (on: boolean) => <span className={s.check} aria-hidden="true">{on ? '✓' : ''}</span>
+  const sessionItem = (c: Session, i: number, linked: boolean): MenuEntry => ({
+    label: `${c.label}${c.lastStatus === 'gone' ? ' (ended)' : ''}${linked ? '' : ' · not linked'}`,
+    glyph: check(c.id === picked?.id), separatorBefore: !linked && i === 0 && target.candidates.length > 0, onSelect: () => onPick(c.id),
+  })
+  const items: MenuEntry[] = [
+    ...target.candidates.map((c, i) => sessionItem(c, i, true)),
+    ...target.others.map((c, i) => sessionItem(c, i, false)),
+    ...(target.kind === 'none' ? AGENT_KINDS.map((k, i): MenuEntry => ({
+      label: `New ${k.label} session`, glyph: check(!picked && k.kind === kind), separatorBefore: i === 0 && target.others.length > 0, onSelect: () => onKind(k.kind),
+    })) : []),
+  ]
   return (
     <>
       <button type="button" className={s.chip} aria-haspopup="menu" aria-expanded={!!menu}

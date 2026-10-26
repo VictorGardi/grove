@@ -79,6 +79,16 @@ describe('pageClusters, openCard', () => {
     expect(list[1].cards[0].path).toBe('docs/work/w/x.md')
   })
 
+  it("takes each feature's cards from the copy whose files changed last, the checkout's on a tie", () => {
+    const head = feature('a', { artifacts: [md('03-plan.md', null, 5)] })
+    const ahead = feature('a', { projectId: 'wt', path: '/src/wt/docs/work/a', title: 'Ta in wt', artifacts: [md('03-plan.md', null, 9), md('04-run.md', null, 9)] })
+    const [c] = pageClusters(projects[0], projects, stages, [head, ahead])
+    expect([c.feature.projectId, c.feature.title, c.cards.map((k) => k.name)]).toEqual(['wt', 'Ta in wt', ['03-plan.md', '04-run.md']])
+    expect(c.feature).toMatchObject({ headId: 'p', copies: [{ projectId: 'p' }, { projectId: 'wt' }] })
+    const tied = feature('a', { projectId: 'wt', path: '/src/wt/docs/work/a', artifacts: [md('03-plan.md', null, 5)] })
+    expect(pageClusters(projects[0], projects, stages, [head, tied])[0].feature.projectId).toBe('p')
+  })
+
   it('resolves the open artifact only on a checkout page showing the artifacts board', () => {
     const open = ui({ board: 'artifacts', artifacts: { p: { open: ref } } })
     expect(openCard(open, projects[0], projects, stages, features)?.card.name).toBe('x.md')
@@ -90,9 +100,10 @@ describe('pageClusters, openCard', () => {
 
 describe('findCard', () => {
   const list = clusters([feature('a', { artifacts: [md('x.md', null)] })])
-  it('finds a card by feature and name, and nothing for a stale ref', () => {
+  it('finds a card by slug and name, whichever copy the ref was made on, and nothing for a stale name', () => {
     expect(findCard(list, { projectId: 'p', slug: 'a', name: 'x.md' })?.card.path).toBe('docs/work/a/x.md')
-    expect(findCard(list, { projectId: 'wt', slug: 'a', name: 'x.md' })).toBeUndefined()
+    expect(findCard(list, { projectId: 'wt', slug: 'a', name: 'x.md' })?.card.path).toBe('docs/work/a/x.md')
+    expect(findCard(list, { projectId: 'p', slug: 'b', name: 'x.md' })).toBeUndefined()
     expect(findCard(list, { projectId: 'p', slug: 'a', name: 'y.md' })).toBeUndefined()
   })
 })

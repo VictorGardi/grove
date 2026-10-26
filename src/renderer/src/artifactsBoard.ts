@@ -42,14 +42,27 @@ export function artifactClusters<T extends Feature>(stages: { id: string; label:
   })
 }
 
-// A checkout page's clusters: the repo's features, unioned like the features board's.
-export function pageClusters(project: Project, projects: Project[], stages: { id: string; label: string }[], features: Feature[]): ArtifactCluster[] {
-  const scope = repoProjectIds(projects, project.id)
-  return artifactClusters(stages, unionFeatures(features.filter((f) => scope.has(f.projectId)), repoGroups(projects)), projects)
+// When its viewable files last changed in one checkout's copy; 0 with none.
+const touchedAt = (f: Feature) => Math.max(0, ...f.artifacts.filter((a) => isViewable(a.name)).map((a) => a.mtimeMs))
+
+// A feature's cards come from the copy whose files changed last, not always the checkout's: while a
+// run works in a worktree, its artifacts are ahead of the plan the checkout holds. A tie keeps the checkout's.
+function newestCopy(f: UnionFeature): UnionFeature {
+  const best = f.copies.reduce<Feature>((b, c) => (touchedAt(c.feature) > touchedAt(b) ? c.feature : b), f)
+  return best === f || best.projectId === f.projectId ? f : { ...best, flags: f.flags, headId: f.headId, copies: f.copies }
 }
 
+// A checkout page's clusters: the repo's features, unioned like the features board's, each from its newest copy.
+export function pageClusters(project: Project, projects: Project[], stages: { id: string; label: string }[], features: Feature[]): ArtifactCluster[] {
+  const scope = repoProjectIds(projects, project.id)
+  const union = unionFeatures(features.filter((f) => scope.has(f.projectId)), repoGroups(projects))
+  return artifactClusters(stages, union.map(newestCopy), projects)
+}
+
+// By slug: a page's clusters are one repo's, one per slug, and the copy behind a cluster can change
+// under an open ref as another checkout's files move ahead.
 export function findCard<T extends Feature>(clusters: ArtifactCluster<T>[], ref: ArtifactRef): { cluster: ArtifactCluster<T>; card: ArtifactCard } | undefined {
-  const cluster = clusters.find((c) => c.feature.projectId === ref.projectId && c.feature.slug === ref.slug)
+  const cluster = clusters.find((c) => c.feature.slug === ref.slug)
   const card = cluster?.cards.find((c) => c.name === ref.name)
   return cluster && card ? { cluster, card } : undefined
 }

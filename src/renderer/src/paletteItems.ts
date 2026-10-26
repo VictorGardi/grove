@@ -31,6 +31,7 @@ export const PALETTE_COMMANDS: { id: string; label: string; hint?: string; actio
   { id: 'closeSession', label: 'Remove session', hint: '⌘W', action: { type: 'closeSession' } },
   { id: 'sessionDiff', label: 'Session diff', hint: '⌥⌘B', action: { type: 'sessionDiff' } },
   { id: 'projectBoard', label: 'Project board', hint: '⇧⌘B', action: { type: 'projectBoard' } },
+  { id: 'artifactsBoard', label: 'Artifacts', hint: '⇧⌘A', action: { type: 'artifactsBoard' } },
   { id: 'toggleSidebar', label: 'Toggle sidebar', hint: '⌘B', action: { type: 'toggleSidebar' } },
   { id: 'lastSession', label: 'Last session', hint: '⌃Tab', action: { type: 'lastSession' } },
   { id: 'nextWaiting', label: 'Next waiting session', hint: '⌘.', action: { type: 'nextWaiting' } },

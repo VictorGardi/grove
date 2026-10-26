@@ -27,7 +27,7 @@ import { useRepoRefs } from './useRepoRefs'
 import { DEFAULT_GRID_VIEW, gridShown, visibleMembers, type GridView } from './gridView'
 import { contextView } from './contextGauge'
 import { artifactCrumbs, openCard } from './artifactsBoard'
-import { boardKey, childrenOf, content, crumbs, currentProjectId, focusTarget } from './navigation'
+import { artifactsKey, boardKey, childrenOf, content, crumbs, currentProjectId, focusTarget } from './navigation'
 import { familyJumpTarget, familyOf } from './family'
 import { serviceBanners } from './sessionStatus'
 import { sessionDiffShortcut, type HiddenRenderedViewer } from './sessionDiffShortcut'
@@ -113,6 +113,9 @@ export default function App() {
       if (target) setFocused(target.id)
     } else if (a.type === 'projectBoard') {
       const to = boardKey(ui, projects, sessions, features.items)
+      if (to) go(to)
+    } else if (a.type === 'artifactsBoard') {
+      const to = artifactsKey(ui, projects, sessions, features.items)
       if (to) go(to)
     } else if (a.type === 'sessionDiff') {
       if (ui.focusedSessionId) toggleSessionDiff(ui.focusedSessionId, ui.viewer)

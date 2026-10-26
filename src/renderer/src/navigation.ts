@@ -87,6 +87,20 @@ export function boardKey(ui: UiState, projects: Project[], sessions: Session[], 
   return id ? openBoard(id) : null
 }
 
+// ⌘⇧A: the context's repo page on its artifacts board, filtered to the feature the human came from
+// (a session's link, a feature page's own); unlinked, all features. On the board itself, the filter
+// stays and an open artifact closes. A new filter drops the saved view, so the board starts at its top-left.
+export function artifactsKey(ui: UiState, projects: Project[], sessions: Session[], features: Feature[]): Partial<UiState> | null {
+  const c = content(ui, projects, sessions, features)
+  const id = boardProject(ui, projects, sessions, features)
+  if (!id) return null
+  const cur = ui.artifacts?.[id]
+  const slug = c.kind === 'session' ? c.session.feature ?? null : c.kind === 'grid' ? c.focused.feature ?? null
+    : c.kind === 'feature' ? c.feature.slug : cur?.filter ?? null
+  const next = slug === (cur?.filter ?? null) ? { ...cur, open: null } : { open: null, filter: slug }
+  return { focusedProject: id, board: 'artifacts', artifacts: { ...ui.artifacts, [id]: next } }
+}
+
 // Cmd+1..9: visible pane n while the grid shows, else the nth session in sidebar order.
 export function focusTarget(ui: UiState, projects: Project[], sessions: Session[], features: Feature[], n: number, view: GridView = DEFAULT_GRID_VIEW): Session | undefined {
   const c = content(ui, projects, sessions, features)

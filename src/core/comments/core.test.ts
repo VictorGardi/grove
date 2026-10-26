@@ -199,6 +199,17 @@ describe('core drafts kept on a feature', () => {
     expect('feature' in cs[0]).toBe(false)
   })
 
+  it('is sent to an unlinked session the full page picks, with its own drafts, and re-owned to it', async () => {
+    const { core, fake } = await setup()
+    const session = await create(core)
+    await core.commands.commentAdd({ sessionId: null, feature: F, anchor, body: 'kept' })
+    await core.commands.commentAdd({ sessionId: session.id, anchor: { kind: 'note' }, body: 'mine' })
+    expect(await core.commands.reviewSend({ sessionId: session.id, feature: F })).toEqual({ ok: true, data: { sent: 2 } })
+    expect(fake.pastes[0].text).toContain('kept')
+    expect(core.getSlices().comments.map((c) => [c.body, c.state, c.sessionId])).toEqual([['kept', 'sent', session.id], ['mine', 'sent', session.id]])
+    expect(core.getSlices().sessions[0].feature ?? null).toBeNull() // sending does not link it
+  })
+
   it('stays kept on its feature when the send fails or is busy', async () => {
     const { core, fake } = await setup()
     const session = await create(core)
