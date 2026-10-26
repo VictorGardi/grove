@@ -119,10 +119,10 @@ specific meaning, so humans and agents stay consistent.
   page or a project page (`focusedSessionId`, `focusedFeature`,
   `focusedProject`, mutually exclusive). With none, the first project's page
   (ADR 0018).
-- **Project page**: the content area for one project: a Features | Sessions
-  switch over its board. Going to it always shows the sessions board first
-  (ADR 0020). ⌘B opens the current context's project page, and on it switches
-  the board.
+- **Project page**: the content area for one project: a Features | Sessions |
+  Artifacts switch over its board. Going to it always shows the sessions board
+  first (ADR 0020). ⌘B opens the current context's project page, and on it
+  switches between features and sessions (from artifacts, to features).
 - **Breadcrumb**: the content header's trail (project › parent › feature, or
   project › linked feature › session); every segment but the last is an
   up-link. There is no back history.
@@ -141,6 +141,11 @@ specific meaning, so humans and agents stay consistent.
   dots, and turns amber with "Input required" while a linked session waits.
   The **sessions board** groups the project's sessions into Waiting, Working
   (also plain terminals), Idle and Ended, with time in the current status.
+  The **artifacts board** shows every feature's viewable files as title cards,
+  one labelled cluster per feature in the features board's order; a markdown
+  and its html review are one card. Opening a card shows that artifact **full
+  page** in place of the board, with Back and a project › Artifacts › feature ›
+  artifact breadcrumb; it is never reopened on launch.
 - **Artifact viewer**: the right-hand panel showing one viewer target (a
   project file or a session diff), next to the main area or
   expanded over it; HTML in an opaque sandboxed iframe

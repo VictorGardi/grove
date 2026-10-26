@@ -1,9 +1,10 @@
 import { create } from 'zustand'
-import type { Comment, DiffFile, DiffMode, DocTarget, FeaturesSlice, OpenCodeSlice, PaneSpan, Project, Session, SessionDiff, UiState } from '@shared/types'
+import type { ArtifactRef, Comment, DiffFile, DiffMode, DocTarget, FeaturesSlice, OpenCodeSlice, PaneSpan, Project, Session, SessionDiff, UiState } from '@shared/types'
 import { DEFAULT_UI, EMPTY_FEATURES, OPENCODE_CONNECTING } from '@shared/types'
 import { focusAfterRemove, gridShown, swapMembers, withMember, withoutArrangement, withSpan, withTracks, type GridLayout } from '../gridView'
 import { pushRecentBase } from '../diffBases'
 import { diffTargetFor, pickDiffPrefs } from '../diffView'
+import { artifactsTo } from '../artifactsBoard'
 import { openBoard } from '../navigation'
 import { trackWaiting } from '../sessionStatus'
 
@@ -27,6 +28,7 @@ interface SlicesState {
   openProject(id: string): void
   go(to: Partial<UiState>): void // a breadcrumb up-link
   setBoard(board: UiState['board']): void
+  openBoardArtifact(projectId: string, ref: ArtifactRef | null): void // the artifacts board's full page on that project page; null closes it
   setSidebarTab(tab: UiState['sidebarTab']): void
   setGroupBy(groupBy: UiState['groupBy']): void
   setSessionSort(sessionSort: UiState['sessionSort']): void
@@ -103,6 +105,7 @@ export const useSlices = create<SlicesState>((set, get) => {
     openProject: (id) => { void window.api.invoke('ui:set', openBoard(id)) },
     go: (to) => { void window.api.invoke('ui:set', to) },
     setBoard: (board) => { void window.api.invoke('ui:set', { board }) },
+    openBoardArtifact: (projectId, ref) => { void window.api.invoke('ui:set', artifactsTo(get().ui, projectId, ref)) },
     toggleSidebar: () => { void window.api.invoke('ui:set', { sidebarCollapsed: !get().ui.sidebarCollapsed }) },
     setSidebarTab: (tab) => { void window.api.invoke('ui:set', { sidebarTab: tab }) },
     setGroupBy: (groupBy) => { void window.api.invoke('ui:set', { groupBy }) },

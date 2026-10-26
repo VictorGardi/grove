@@ -93,6 +93,8 @@ export interface GridState {
   spans?: Record<string, PaneSpan> // by session id
   tracks?: Record<string, GridTracks> // by layout shape, e.g. "2x2"
 }
+export interface ArtifactRef { projectId: string; slug: string; name: string } // a card on the artifacts board: the feature's own checkout, its slug, the card's name
+export interface ArtifactsView { open: ArtifactRef | null } // the artifact shown full page; never reopened on restart
 export interface DiffPrefs { mode: DiffMode; base: string | null } // a session's picked view and compare branch; base null: the auto-detected main branch
 export interface UiState {
   sidebarWidth: number
@@ -101,7 +103,7 @@ export interface UiState {
   focusedFeature: { projectId: string; slug: string } | null
   focusedProject: string | null // the project page; the three focuses are exclusive (ADR 0018)
   sidebarTab: 'sessions' | 'projects'
-  board: 'features' | 'sessions' // what the project page's board shows
+  board: 'features' | 'sessions' | 'artifacts' // what the project page's board shows
   collapsed: string[] // collapsed project folders on the Sessions tab: p:<projectId>
   hiddenProjects: string[] // project IDs hidden from the Sessions tab
   compact?: string[] // session IDs whose card is compacted to one line (absent reads as none)
@@ -113,6 +115,7 @@ export interface UiState {
   viewerWidth: number | null // null uses the responsive default; a number is a user-resized pixel width
   viewerExpanded: boolean     // the viewer fills the content area
   diffPrefs?: Record<string, DiffPrefs> // by session id: what the diff opens on again in that session (absent reads as none: defaults)
+  artifacts?: Record<string, ArtifactsView> // by project page id: the artifacts board's state there (absent reads as none)
   recentBases?: Record<string, string[]> // by project id: branches picked as a diff base there, newest first (absent reads as none)
   grid: GridState             // the session grid (ADR 0031); the focused pane is focusedSessionId
 }

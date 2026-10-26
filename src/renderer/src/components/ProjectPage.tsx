@@ -1,33 +1,49 @@
-import type { Feature, Project, Session, UiState } from '@shared/types'
+import type { ArtifactRef, Feature, Project, Session, UiState } from '@shared/types'
+import { openCard, pageClusters } from '../artifactsBoard'
 import { unionFeatures } from '../featureUnion'
 import { repoGroups, repoProjectIds } from '../repoGroups'
+import { ArtifactPage } from './ArtifactPage'
+import { ArtifactsBoard } from './ArtifactsBoard'
 import { Board } from './Board'
 import { SessionsBoard } from './SessionsBoard'
 import s from './ProjectPage.module.css'
 
-// The content area for one project: its features or sessions board (ADR 0018). A checkout's page
-// is the repo's — every checkout's sessions, and one card per feature however many checkouts hold
-// a copy of it (design D3). A worktree's page is that checkout's sessions and nothing else: the
-// features board is repo-scoped, so it lives on the parent checkout's page, and ⌘B goes there.
-export function ProjectPage({ project, projects, board, stages, features, sessions, onOpenFeature, onFocusSession }: {
+// The content area for one project: its features, sessions or artifacts board (ADR 0018). A checkout's
+// page is the repo's — every checkout's sessions, and one card per feature however many checkouts hold
+// a copy of it (design D3). The artifacts board clusters those features' files; an open one replaces
+// the board full page. A worktree's page is that checkout's sessions and nothing else: the features
+// and artifacts boards are repo-scoped, so they live on the parent checkout's page, and ⌘B goes there.
+export function ProjectPage({ project, projects, board, stages, features, sessions, artifactsOpen, onOpenFeature, onFocusSession, onOpenArtifact }: {
   project: Project
   projects: Project[]
   board: UiState['board']
   stages: { id: string; label: string }[]
   features: Feature[] // all features; scoped to the repo here
   sessions: Session[] // all sessions; scoped to the repo here
+  artifactsOpen: ArtifactRef | null // the artifact shown full page on the artifacts board
   onOpenFeature(f: Feature): void
   onFocusSession(id: string): void
+  onOpenArtifact(ref: ArtifactRef | null): void
 }) {
   const worktree = !!project.worktreeOf
   const scope = worktree ? new Set([project.id]) : repoProjectIds(projects, project.id)
   const own = features.filter((f) => scope.has(f.projectId))
   const ownSessions = sessions.filter((x) => scope.has(x.projectId))
   const shown = worktree ? 'sessions' : board
+  const union = () => unionFeatures(own, repoGroups(projects))
+  const artifacts = () => {
+    // the same decision App's header crumbs make, so the page and its crumbs never disagree
+    const open = openCard({ board, artifacts: { [project.id]: { open: artifactsOpen } } }, project, projects, stages, features)
+    return open
+      ? <ArtifactPage projectId={open.cluster.feature.projectId} card={open.card} onBack={() => onOpenArtifact(null)} />
+      : <ArtifactsBoard clusters={pageClusters(project, projects, stages, features)} stages={stages}
+        onOpen={(c, card) => onOpenArtifact({ projectId: c.feature.projectId, slug: c.feature.slug, name: card.name })} />
+  }
   return (
     <div className={s.page}>
       {shown === 'features'
-        ? <Board stages={stages} features={unionFeatures(own, repoGroups(projects))} sessions={ownSessions} projects={projects} onOpen={onOpenFeature} />
+        ? <Board stages={stages} features={union()} sessions={ownSessions} projects={projects} onOpen={onOpenFeature} />
+        : shown === 'artifacts' ? artifacts()
         : <SessionsBoard sessions={ownSessions} features={own} projects={projects}
           onFocus={onFocusSession} onOpenFeature={onOpenFeature} />}
     </div>

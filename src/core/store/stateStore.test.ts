@@ -56,6 +56,15 @@ describe('stateStore', () => {
     expect(loadState(file).ui.diffPrefs).toBeUndefined()
   })
 
+  it('never reopens an artifact full page on launch, and loads an old file without any', () => {
+    const file = tmpFile()
+    const artifacts = { p: { open: { projectId: 'p', slug: 'f', name: '03-design.md' } }, q: { open: null } }
+    saveState(file, { schemaVersion: 10, sessions: [], ui: { ...DEFAULT_UI, artifacts } })
+    expect(loadState(file).ui.artifacts).toEqual({ p: { open: null }, q: { open: null } })
+    saveState(file, { schemaVersion: 10, sessions: [], ui: DEFAULT_UI })
+    expect(loadState(file).ui.artifacts).toBeUndefined()
+  })
+
   it('migrates a saved sort of none to custom, and gives an older file an empty order', () => {
     const file = tmpFile()
     const { sessionOrder: _o, ...old } = DEFAULT_UI
