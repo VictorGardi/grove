@@ -132,4 +132,42 @@ The popover prop is `kids`, not `children` (React reserves `children`). `family.
 
 Manual check with `npm run dev`: open "N children" on a parent (header and grid pane), confirm running children come first and ended ones are marked, a row click focuses that child and closes the list, and an outside click or Escape closes it (also with a terminal focused in a grid pane).
 
+## Slice 4
+
+Session: parent-child-jump-slice-4-a1
+Status: done
+Commit: this commit (see git log)
+
+### Slice plan
+
+Found in the code: `MenuAction` is a union in src/shared/ipc.ts:4-8. src/main/menu.ts `buildMenu(send, installCli, installSkill)` builds the template and calls `Menu.setApplicationMenu(Menu.buildFromTemplate(template))`; the Session submenu ends with "Next Waiting Session" (`CmdOrCtrl+.`); the View items are pushed after, plus dev-only items when `!app.isPackaged`. App.tsx `runAction` (:81) reads `useSlices.getState()` and dispatches on `a.type` with an if/else chain; `nextWaiting` is the model (`if (w) setFocused(w.id)`). `familyOf` in src/renderer/src/family.ts already gives `parent` and `active`; `active` ranks ties by later `lastFocusedAt`, which the main process sets on focus. No main-side test mocks electron yet.
+
+Implementer 1:
+- [x] `src/shared/ipc.ts`: add `{ type: 'familyJump' }` to `MenuAction`
+- [x] `src/main/menu.ts`: Session submenu item "Jump to Parent / Active Child", accelerator `CmdOrCtrl+Shift+J`, after "Next Waiting Session", sending `{ type: 'familyJump' }`
+- [x] `src/renderer/src/family.ts`: `familyJumpTarget(sessions, focusedId) → Session | null` (parent if it has one, else the active child, else null; null for a null/unknown id)
+- [x] `src/renderer/src/App.tsx` `runAction`: on `familyJump`, `const t = familyJumpTarget(sessions, ui.focusedSessionId)`; `if (t) setFocused(t.id)`
+- [x] Extend `src/renderer/src/family.test.ts`: active child for a parent, parent for a child, null for a lone session, null for a parent with only ended children, and the parent → child → parent → same active child round trip (bumping `lastFocusedAt` on each visited session)
+- [x] New `src/main/menu.test.ts`: `vi.mock('electron')` capturing the template passed to `Menu.buildFromTemplate`; exactly one `CmdOrCtrl+Shift+J` that sends `familyJump`; every previous accelerator still present and all accelerators unique
+
+Models passed: implementer: inherit; reviewer: inherit
+
+### Review rounds
+
+Round 1: 0 blocking; non-blocking applied: dropped a redundant unknown-id guard in `familyJumpTarget` (`familyOf` already gives nothing for an unknown id); the round-trip test now gives the earlier-started child an older `lastFocusedAt` so the first jump is decided by `lastFocusedAt`, not `startedAt`.
+
+Approved, 0 blocking, 0 fix rounds. Non-blocking left: the menu test's list of earlier accelerators is hand-copied and can drift when shortcuts are added (the uniqueness check is the part that generalises); from a child whose parent has ended but still exists, ⌘⇧J goes to that ended parent, as the outcome specifies (case 7).
+
+### Deviations
+
+`familyJumpTarget` also returns null for a null or undefined focus. A session whose parent was removed and which has children of its own jumps to its active child (parent first, else active child, as planned).
+
+### Verification
+
+`npm test`: 98 files, 1156 tests pass, including the new `familyJumpTarget` cases in `family.test.ts` (active child for a parent, parent for a child, null for a lone session, unknown id and no focus, null for a parent with only ended children, and the parent → child → parent → same child round trip) and the new `src/main/menu.test.ts` (exactly one `CmdOrCtrl+Shift+J`, sending `familyJump`; every earlier accelerator present; all unique). `npm run typecheck`: passes (node and web). `npm run build`: passes. Models requested: implementer: inherit; reviewer: inherit.
+
+### Left for the human
+
+Manual check with `npm run dev`: focus a parent with a running child, press ⌘⇧J three times and confirm parent → child → parent → the same child; confirm ⌘⇧J does nothing on a lone session; confirm the Session menu lists "Jump to Parent / Active Child ⇧⌘J".
+
 ## Open questions

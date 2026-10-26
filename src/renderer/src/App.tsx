@@ -27,7 +27,7 @@ import { useRepoRefs } from './useRepoRefs'
 import { DEFAULT_GRID_VIEW, gridShown, visibleMembers, type GridView } from './gridView'
 import { contextView } from './contextGauge'
 import { boardKey, childrenOf, content, crumbs, currentProjectId, focusTarget } from './navigation'
-import { familyOf } from './family'
+import { familyJumpTarget, familyOf } from './family'
 import { serviceBanners } from './sessionStatus'
 import { sessionDiffShortcut, type HiddenRenderedViewer } from './sessionDiffShortcut'
 import { useSlices } from './stores/slices'
@@ -104,6 +104,9 @@ export default function App() {
     } else if (a.type === 'nextWaiting') {
       const w = longestWaiting(sessions, waitingSince)
       if (w) setFocused(w.id)
+    } else if (a.type === 'familyJump') {
+      const t = familyJumpTarget(sessions, ui.focusedSessionId)
+      if (t) setFocused(t.id)
     } else if (a.type === 'focusIndex') {
       const target = focusTarget(ui, projects, sessions, features.items, a.n, gridView)
       if (target) setFocused(target.id)

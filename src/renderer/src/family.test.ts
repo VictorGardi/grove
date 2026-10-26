@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import type { Session } from '@shared/types'
-import { childrenCount, familyOf } from './family'
+import { childrenCount, familyJumpTarget, familyOf } from './family'
 
 const session = (id: string, over: Partial<Session> = {}): Session =>
   ({ id, projectId: 'p', kind: 'claude', label: id, lastStatus: 'running', startedAt: '2026-10-05T10:00:00.000Z', ...over } as Session)
@@ -108,5 +108,45 @@ describe('familyOf children list', () => {
     const f = familyOf([parent, child('a', { lastStatus: 'gone' }), child('b', { lastStatus: 'gone' })], 'parent')
     expect(f.active).toBeNull()
     expect(ids(f.children).sort()).toEqual(['a', 'b'])
+  })
+})
+
+describe('familyJumpTarget', () => {
+  it('goes from a parent to its active child', () => {
+    expect(familyJumpTarget([parent, child('idle', { status: 'idle' }), child('waiting', { status: 'waiting', waitingFor: 'question' })], 'parent')?.id).toBe('waiting')
+  })
+
+  it('goes from a child to its parent', () => {
+    expect(familyJumpTarget([parent, child('c')], 'c')?.id).toBe('parent')
+  })
+
+  it('goes nowhere from a lone session, an unknown id or no focus', () => {
+    expect(familyJumpTarget([session('a'), session('b')], 'a')).toBeNull()
+    expect(familyJumpTarget([parent, child('c')], 'missing')).toBeNull()
+    expect(familyJumpTarget([parent, child('c')], null)).toBeNull()
+    expect(familyJumpTarget([parent, child('c')], undefined)).toBeNull()
+  })
+
+  it('goes nowhere from a parent whose children have all ended', () => {
+    expect(familyJumpTarget([parent, child('a', { lastStatus: 'gone' }), child('b', { lastStatus: 'gone' })], 'parent')).toBeNull()
+  })
+
+  it('round-trips parent → child → parent → the same active child', () => {
+    let sessions = [
+      parent,
+      child('a', { status: 'working', startedAt: '2026-10-05T09:00:00.000Z', lastFocusedAt: '2026-10-05T10:00:00.000Z' }),
+      child('b', { status: 'working', startedAt: '2026-10-05T11:00:00.000Z' }),
+    ]
+    let clock = Date.parse('2026-10-05T12:00:00.000Z')
+    const visit = (id: string) => {
+      const at = new Date((clock += 60_000)).toISOString()
+      sessions = sessions.map((s) => (s.id === id ? { ...s, lastFocusedAt: at } : s))
+      return id
+    }
+    const jump = (from: string) => visit(familyJumpTarget(sessions, from)!.id)
+    const first = jump(visit('parent'))
+    expect(first).toBe('a') // won by lastFocusedAt over the later-started b
+    expect(jump(first)).toBe('parent')
+    expect(jump('parent')).toBe(first)
   })
 })

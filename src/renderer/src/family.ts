@@ -48,3 +48,10 @@ export function familyOf(sessions: Session[], id: string): Family {
   const done = mine.filter(isEnded).sort((a, b) => later(a.startedAt, b.startedAt))
   return { parent, children: [...running, ...done], active: running[0] ?? null }
 }
+
+// ⌘⇧J: a child goes to its parent, a parent to its active child, anything else nowhere.
+export function familyJumpTarget(sessions: Session[], focusedId: string | null | undefined): Session | null {
+  if (!focusedId) return null
+  const f = familyOf(sessions, focusedId)
+  return f.parent ?? f.active
+}
