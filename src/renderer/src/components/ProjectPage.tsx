@@ -1,4 +1,4 @@
-import type { ArtifactRef, Feature, Project, Session, UiState } from '@shared/types'
+import type { ArtifactRef, CanvasView, Feature, Project, Session, UiState } from '@shared/types'
 import { openCard, pageClusters } from '../artifactsBoard'
 import { unionFeatures } from '../featureUnion'
 import { repoGroups, repoProjectIds } from '../repoGroups'
@@ -13,7 +13,7 @@ import s from './ProjectPage.module.css'
 // a copy of it (design D3). The artifacts board clusters those features' files; an open one replaces
 // the board full page. A worktree's page is that checkout's sessions and nothing else: the features
 // and artifacts boards are repo-scoped, so they live on the parent checkout's page, and ⌘B goes there.
-export function ProjectPage({ project, projects, board, stages, features, sessions, artifactsOpen, onOpenFeature, onFocusSession, onOpenArtifact }: {
+export function ProjectPage({ project, projects, board, stages, features, sessions, artifactsOpen, artifactsView, onOpenFeature, onFocusSession, onOpenArtifact, onArtifactsViewChange }: {
   project: Project
   projects: Project[]
   board: UiState['board']
@@ -21,9 +21,11 @@ export function ProjectPage({ project, projects, board, stages, features, sessio
   features: Feature[] // all features; scoped to the repo here
   sessions: Session[] // all sessions; scoped to the repo here
   artifactsOpen: ArtifactRef | null // the artifact shown full page on the artifacts board
+  artifactsView: CanvasView | undefined // the artifacts board's saved pan and zoom
   onOpenFeature(f: Feature): void
   onFocusSession(id: string): void
   onOpenArtifact(ref: ArtifactRef | null): void
+  onArtifactsViewChange(view: CanvasView): void
 }) {
   const worktree = !!project.worktreeOf
   const scope = worktree ? new Set([project.id]) : repoProjectIds(projects, project.id)
@@ -36,7 +38,9 @@ export function ProjectPage({ project, projects, board, stages, features, sessio
     const open = openCard({ board, artifacts: { [project.id]: { open: artifactsOpen } } }, project, projects, stages, features)
     return open
       ? <ArtifactPage projectId={open.cluster.feature.projectId} card={open.card} onBack={() => onOpenArtifact(null)} />
-      : <ArtifactsBoard clusters={pageClusters(project, projects, stages, features)} stages={stages}
+      // keyed: another page's board starts from that page's saved view, and this one's is saved on the way out
+      : <ArtifactsBoard key={project.id} clusters={pageClusters(project, projects, stages, features)} stages={stages}
+        view={artifactsView} onViewChange={onArtifactsViewChange}
         onOpen={(c, card) => onOpenArtifact({ projectId: c.feature.projectId, slug: c.feature.slug, name: card.name })} />
   }
   return (

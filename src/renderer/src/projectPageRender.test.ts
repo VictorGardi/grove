@@ -1,7 +1,7 @@
 import { createElement } from 'react'
 import { renderToStaticMarkup } from 'react-dom/server'
 import { describe, expect, it, vi } from 'vitest'
-import type { ArtifactRef, Feature, Project, Session, UiState } from '@shared/types'
+import type { ArtifactRef, CanvasView, Feature, Project, Session, UiState } from '@shared/types'
 import { ProjectPage } from './components/ProjectPage'
 
 // Rendered with react-dom/server: no jsdom here, and the page is a pure function of its props.
@@ -22,9 +22,10 @@ const feature = (projectId: string, over: Partial<Feature> = {}): Feature => ({
 const session = (id: string, projectId: string, label = id): Session =>
   ({ id, projectId, kind: 'terminal', label, feature: null, lastStatus: 'running', startedAt: '2026-10-05T10:00:00.000Z' } as Session)
 
-const page = (project: Project, board: UiState['board'], features: Feature[], sessions: Session[], artifactsOpen: ArtifactRef | null = null) =>
+const page = (project: Project, board: UiState['board'], features: Feature[], sessions: Session[], artifactsOpen: ArtifactRef | null = null, artifactsView?: CanvasView) =>
   renderToStaticMarkup(createElement(ProjectPage, {
-    project, projects, board, stages, features, sessions, artifactsOpen, onOpenFeature: vi.fn(), onFocusSession: vi.fn(), onOpenArtifact: vi.fn(),
+    project, projects, board, stages, features, sessions, artifactsOpen, artifactsView,
+    onOpenFeature: vi.fn(), onFocusSession: vi.fn(), onOpenArtifact: vi.fn(), onArtifactsViewChange: vi.fn(),
   }))
 
 const sessionsPage = (project: Project, features: Feature[], sessions: Session[]) => page(project, 'sessions', features, sessions)
@@ -73,6 +74,13 @@ describe('ProjectPage, the artifacts board', () => {
     expect(html).toContain('03-design.md')
     expect(html).not.toContain('03-design.html') // folded into its markdown's card
     expect(html).not.toContain('<iframe')
+  })
+
+  it('draws the board at its saved pan and zoom, or the default view without one', () => {
+    expect(page(projects[0], 'artifacts', features, [], null, { x: 120, y: -40, scale: 0.5 })).toContain('style="--x:120px;--y:-40px;--scale:0.5"')
+    const html = page(projects[0], 'artifacts', features, [])
+    expect(html).toContain('style="--x:0px;--y:0px;--scale:1"')
+    expect(html).toContain('100%')
   })
 
   it('shows the open artifact full page in place of the board', () => {

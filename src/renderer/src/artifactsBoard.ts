@@ -1,5 +1,5 @@
 import { isViewable } from '@shared/artifactUrl'
-import type { ArtifactRef, Feature, Project, UiState } from '@shared/types'
+import type { ArtifactRef, CanvasView, Feature, Project, UiState } from '@shared/types'
 import { unionFeatures, type UnionFeature } from './featureUnion'
 import { openBoard, type Crumb } from './navigation'
 import { repoGroups, repoProjectIds } from './repoGroups'
@@ -62,6 +62,10 @@ export function openCard(ui: Pick<UiState, 'board' | 'artifacts'>, project: Proj
 
 export const artifactsTo = (ui: UiState, projectId: string, open: ArtifactRef | null): Partial<UiState> =>
   ({ artifacts: { ...ui.artifacts, [projectId]: { ...ui.artifacts?.[projectId], open } } })
+
+// The board's saved pan and zoom on one page; the page's open artifact stays as it is.
+export const boardViewTo = (ui: UiState, projectId: string, view: CanvasView): Partial<UiState> =>
+  ({ artifacts: { ...ui.artifacts, [projectId]: { open: ui.artifacts?.[projectId]?.open ?? null, view } } })
 
 // project > Artifacts > feature > artifact; "Artifacts" closes the full page back to the board.
 export function artifactCrumbs(project: Project, feature: Feature, card: ArtifactCard, ui: UiState): Crumb[] {

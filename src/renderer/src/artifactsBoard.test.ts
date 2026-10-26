@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import { DEFAULT_UI, type Feature, type Project, type UiState } from '@shared/types'
-import { artifactClusters, artifactCrumbs, artifactsTo, findCard, openCard, pageClusters } from './artifactsBoard'
+import { artifactClusters, artifactCrumbs, artifactsTo, boardViewTo, findCard, openCard, pageClusters } from './artifactsBoard'
 import { unionFeatures } from './featureUnion'
 import { repoGroups } from './repoGroups'
 import { boardColumns } from './tree'
@@ -103,6 +103,15 @@ describe('artifactsTo, artifactCrumbs', () => {
   it("sets one page's open artifact and leaves the others", () => {
     expect(artifactsTo(ui, 'p', ref)).toEqual({ artifacts: { q: { open: null }, p: { open: ref } } })
     expect(artifactsTo(DEFAULT_UI, 'p', null)).toEqual({ artifacts: { p: { open: null } } })
+  })
+
+  it("keeps a page's saved view when its open artifact changes, and its open artifact when its view does", () => {
+    const view = { x: 10, y: -20, scale: 0.5 }
+    const withView: UiState = { ...ui, artifacts: { ...ui.artifacts, p: { open: null, view } } }
+    expect(artifactsTo(withView, 'p', ref)).toEqual({ artifacts: { q: { open: null }, p: { open: ref, view } } })
+    const opened: UiState = { ...ui, artifacts: { ...ui.artifacts, p: { open: ref } } }
+    expect(boardViewTo(opened, 'p', view)).toEqual({ artifacts: { q: { open: null }, p: { open: ref, view } } })
+    expect(boardViewTo(DEFAULT_UI, 'p', view)).toEqual({ artifacts: { p: { open: null, view } } })
   })
 
   it('reads project > Artifacts > feature > artifact, each up-link going where it says', () => {

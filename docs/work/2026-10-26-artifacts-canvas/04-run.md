@@ -69,4 +69,50 @@ Pass, 0 blocking, 0 fix rounds. Non-blocking left: (a) an open ref whose file di
 - check the breadcrumb: Artifacts returns to the board;
 - check that the Feature page Files list and right-hand viewer still open and behave as before.
 
+## Slice 2
+
+Session: artifacts-canvas-slice-2-a1
+Status: done
+Commit: this commit (see git log)
+
+### Slice plan
+
+Found in the code: `ArtifactsBoard.tsx` is a vertically scrolling list of clusters (`.board` with `overflow-y: auto`) with title-card buttons; `ProjectPage.tsx` mounts it only while no artifact is open, so opening a card unmounts the board. `UiState.artifacts[projectId]` is `ArtifactsView { open }`; `artifactsTo` writes the whole `artifacts` record built from the renderer's `get().ui`, and core's `uiSet` merges partials only at the top level, so two writes built from a stale `ui` clobber each other (a debounced view write landing after the open, or the open built before a pending view write). `loadState` resets only `open` on load, so a `view` field survives restart with no store change. `noInlineStyles.test.ts` allows only `--*` keys in `style=`. No pan/zoom code or dependency exists; the only debounce idiom is a `setTimeout` timer ref (`ScratchpadOverlay.tsx`, `TerminalView.tsx`). `setSessionOrder` in `slices.ts` is the existing optimistic pattern (set local `ui`, then `ui:set`).
+
+Implementer 1:
+- [x] `src/shared/types.ts`: `CanvasView { x; y; scale }`; `ArtifactsView` gains `view?: CanvasView` (absent: the default view)
+- [x] `src/renderer/src/canvasView.ts`: pure `DEFAULT_VIEW`, `SCALE` bounds, `clampScale`, `zoomAt(view, factor, point)` keeping the point under the cursor fixed, `wheelFactor(deltaY, pinch)`, `panBy`, `clampPan(view, viewport, content)` keeping part of the content on screen, `fitView(viewport, content, pad)` (never above 1, centred), `zoomStep(view, dir, viewport)` around the viewport centre; `viewWriter(write, delayMs)` with `schedule(view)`, `flush()` and `cancel()` (debounced, flush writes the pending view once, then nothing)
+- [x] `src/renderer/src/canvasView.test.ts`: zoom-around-cursor, scale and pan clamping, fit (larger and smaller content, centring), pan, zoom step, write scheduling with fake timers (debounce, flush on unmount writes once, flush with nothing pending is a no-op, cancel)
+- [x] `src/renderer/src/artifactsBoard.ts`: `boardViewTo(ui, projectId, view)` returning the `ui:set` partial that keeps `open`; test in `artifactsBoard.test.ts`
+- [x] `src/renderer/src/stores/slices.ts`: `setBoardView(projectId, view)`, optimistic (set local `ui`, then `ui:set`) so a following `openBoardArtifact` builds on the new view; `openBoardArtifact` made optimistic the same way so a late view write keeps the open ref
+- [x] `components/ArtifactsBoard.tsx` + `.module.css`: a viewport (`overflow: hidden`) holding a fixed-width plane transformed through `--x`, `--y`, `--scale`; view kept in component state initialised from the saved view, written through `viewWriter` on gesture end and flushed before opening a card and on unmount; drag to pan with a small threshold (a drag never opens a card); wheel and trackpad pinch (`ctrlKey` wheel) zoom around the cursor with `preventDefault` on a non-passive listener; zoom controls (−, percentage that resets to 100 %, +, Fit) in a corner
+- [x] `components/ProjectPage.tsx`, `App.tsx`: pass the saved view and `onViewChange` (`setBoardView`) through; `projectPageRender.test.ts`: board still renders its clusters and cards, and the saved view lands in the plane's `--x`/`--y`/`--scale`
+
+Models passed: implementer: inherit, reviewer: inherit
+
+### Review rounds
+
+Round 1: 0 blocking. Non-blocking applied: a press released outside the viewport (over the zoom controls) no longer pans with no button held (`e.buttons === 0` clears it); `user-select: none` on the viewport; a restored view is re-clamped once on mount (local only, written by the next gesture); the 100 % reset moved into `canvasView` as `zoomTo`, with a test.
+
+Pass, 0 blocking, 0 fix rounds. Non-blocking left: (a) a `state:ui` echo of an earlier unrelated write landing between a debounced view write and a card click can drop the view from the open write (needs a click within milliseconds of the 300 ms wheel debounce; flush-then-open is unaffected); core merging `artifacts[projectId]` per field would close it; (b) a wheel zoom during a drag is undone by the next pointer move; (c) every wheel event zooms, including a plain two-finger trackpad scroll, and horizontal scroll is ignored, as the slice text says ("wheel or pinch to zoom"); "wheel pans, pinch zooms" may feel more natural on a Mac; (d) the plane is a fixed 1280 px wide.
+
+### Deviations
+
+- `stores/slices.ts`: a small `setUi(partial)` helper (set local `ui`, then `ui:set`) used by the new `setBoardView` and by `openBoardArtifact`, which is now optimistic so a view write and an open write never replace each other.
+- `ProjectPage` keys the board on `project.id`, so switching project pages saves the old page's view and starts the new one from its own.
+- The flush on unmount and before open is tested at the `viewWriter` level (`canvasView.test.ts`); the component calling it is not unit-tested (no DOM test environment).
+
+### Verification
+
+`npm test`: 97 files, 1159 tests pass, existing expectations unchanged (existing test helpers only gained the new props). New tests: `canvasView.test.ts` (zoom around cursor, scale and pan clamping, fit, pan, zoom step, `zoomTo`, write scheduling with fake timers: debounce, flush once, no-op flush, cancel), `artifactsBoard.test.ts` (`boardViewTo` and `artifactsTo` keep each other's field), `projectPageRender.test.ts` (saved view lands in `--x`/`--y`/`--scale`, default 100 %), `stateStore.test.ts` (`view` survives load while `open` resets). `npm run typecheck` passes for node and web. Models requested: implementer: inherit, reviewer: inherit.
+
+### Left for the human
+
+`npm run dev`, to be run by the human:
+- on the Artifacts board, drag to pan, wheel and pinch to zoom around the cursor, use −, %, + and Fit;
+- open a card and press Back: the view is unchanged;
+- pan quickly, then immediately open a card or leave the page and come back: the view is kept;
+- restart the app: the view is restored;
+- judge whether a two-finger scroll should pan instead of zoom.
+
 ## Open questions

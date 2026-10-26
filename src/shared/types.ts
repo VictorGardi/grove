@@ -94,7 +94,11 @@ export interface GridState {
   tracks?: Record<string, GridTracks> // by layout shape, e.g. "2x2"
 }
 export interface ArtifactRef { projectId: string; slug: string; name: string } // a card on the artifacts board: the feature's own checkout, its slug, the card's name
-export interface ArtifactsView { open: ArtifactRef | null } // the artifact shown full page; never reopened on restart
+export interface CanvasView { x: number; y: number; scale: number } // a pan/zoom canvas's offset in px and its zoom
+export interface ArtifactsView {
+  open: ArtifactRef | null // the artifact shown full page; never reopened on restart
+  view?: CanvasView        // the board's pan and zoom, kept across restarts (absent: the default view)
+}
 export interface DiffPrefs { mode: DiffMode; base: string | null } // a session's picked view and compare branch; base null: the auto-detected main branch
 export interface UiState {
   sidebarWidth: number

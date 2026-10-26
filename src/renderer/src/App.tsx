@@ -39,7 +39,7 @@ import { longestWaiting } from './sessionStatus'
 import s from './App.module.css'
 
 export default function App() {
-  const { projects, sessions, ui, features, opencode, diff, errors, hydrate, setFocused, focusFeature, openProject, toggleGrid, addFocusedToGrid, toggleSidebar, clearGrid, go, setBoard, openBoardArtifact,
+  const { projects, sessions, ui, features, opencode, diff, errors, hydrate, setFocused, focusFeature, openProject, toggleGrid, addFocusedToGrid, toggleSidebar, clearGrid, go, setBoard, openBoardArtifact, setBoardView,
     openArtifact, openDiff, backToDiff, openRendered, closeViewer, setViewerWidth, toggleViewerExpanded, reloadViewer } = useSlices()
   const [quickNew, setQuickNew] = useState<{ projectId?: string } | null>(null) // ⌘T: the new-session palette
   const repoRefs = useRepoRefs(projects)
@@ -208,7 +208,9 @@ export default function App() {
             {shown.kind === 'project' ? (
               <ProjectPage project={shown.project} projects={projects} board={ui.board} stages={features.stages}
                 features={features.items} sessions={sessions} artifactsOpen={ui.artifacts?.[shown.project.id]?.open ?? null}
-                onOpenFeature={openFeature} onFocusSession={setFocused} onOpenArtifact={(r) => openBoardArtifact(shown.project.id, r)} />
+                artifactsView={ui.artifacts?.[shown.project.id]?.view}
+                onOpenFeature={openFeature} onFocusSession={setFocused} onOpenArtifact={(r) => openBoardArtifact(shown.project.id, r)}
+                onArtifactsViewChange={(v) => setBoardView(shown.project.id, v)} />
             ) : shown.kind === 'feature' ? (
               <FeaturePage feature={shown.feature}
                 parent={features.items.find((f) => f.projectId === shown.feature.projectId && f.slug === shown.feature.parent) ?? null}
