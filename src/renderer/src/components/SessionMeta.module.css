@@ -66,6 +66,27 @@
   color: var(--text-2);
 }
 
+/* the parent's active child: a jump button, styled as a quiet chip */
+.child {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--sp-1);
+  flex: 0 2 auto;
+  min-width: 0;
+  max-width: 24ch;
+  padding: 0;
+  border: 0;
+  background: none;
+  font: inherit;
+  color: var(--text-2);
+  cursor: pointer;
+}
+
+.child:hover {
+  color: inherit;
+  text-decoration: underline;
+}
+
 .spacer {
   flex: 1;
 }

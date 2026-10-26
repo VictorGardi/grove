@@ -27,6 +27,7 @@ import { useRepoRefs } from './useRepoRefs'
 import { DEFAULT_GRID_VIEW, gridShown, visibleMembers, type GridView } from './gridView'
 import { contextView } from './contextGauge'
 import { boardKey, childrenOf, content, crumbs, currentProjectId, focusTarget } from './navigation'
+import { familyOf } from './family'
 import { serviceBanners } from './sessionStatus'
 import { sessionDiffShortcut, type HiddenRenderedViewer } from './sessionDiffShortcut'
 import { useSlices } from './stores/slices'
@@ -193,7 +194,8 @@ export default function App() {
               meta={shown.kind === 'session'
                 ? <SessionMeta lead={<Crumbs crumbs={header} />} session={shown.session}
                     feature={linked} featureInLead tagIndex={linkedIndex}
-                    context={context ? <ContextPopover view={context} /> : undefined} />
+                    context={context ? <ContextPopover view={context} /> : undefined}
+                    family={{ active: familyOf(sessions, shown.session.id).active, onJump: setFocused }} />
                 : undefined}
               right={shown.kind === 'project' && !shown.project.worktreeOf ? <BoardSwitch board={ui.board} onChange={setBoard} />
                 : shown.kind === 'session' ? (
