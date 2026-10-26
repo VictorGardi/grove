@@ -36,8 +36,8 @@ export interface InvokeMap {
   'session:focusLast': [void, { id: string }]
   'viewer:reload': [void, void]
   'pty:attach': [{ sessionId: string; cols: number; rows: number }, { attachId: string }]
-  'notes:read': [{ sessionId?: string } | void, string]
-  'notes:write': [{ content: string; sessionId?: string }, void]
+  'notes:read': [void, string]
+  'notes:write': [{ content: string }, void]
 }
 // fire-and-forget renderer → main
 export interface SendMap {

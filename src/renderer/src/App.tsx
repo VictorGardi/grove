@@ -51,7 +51,6 @@ export default function App() {
   const [paletteOpen, setPaletteOpen] = useState(false)
   const [gridView, setGridView] = useState<GridView>(DEFAULT_GRID_VIEW) // toolbar settings, view-only
   const [scratchpadOpen, setScratchpadOpen] = useState(false) // ⌘N: global notes, not persisted
-  const [noteSession, setNoteSession] = useState<{ id: string; label: string } | null>(null) // a session card's note
   const hiddenRendered = useRef<HiddenRenderedViewer | null>(null)
   const tags = colorTags(projects, features.items)
 
@@ -187,7 +186,7 @@ export default function App() {
   // keys the human is typing into a form. This was two lists — the grid's `overlayOpen` and the
   // terminal's `active` — and they had already drifted, each missing an overlay the other had. One
   // value now, with `active` as its negation, so there is nothing left to keep in step.
-  const overlayOpen = paletteOpen || !!quickNew || !!launchNew || !!confirmRemove || scratchpadOpen || !!noteSession
+  const overlayOpen = paletteOpen || !!quickNew || !!launchNew || !!confirmRemove || scratchpadOpen
 
   return (
     <>
@@ -197,7 +196,7 @@ export default function App() {
           ...(features.workflowError ? [<Banner key="workflow">Workflow: {features.workflowError}</Banner>] : []),
           ...serviceBanners(opencode, sessions).map((b) => <Banner key={b.text} tone={b.tone}>{b.text}</Banner>),
         ]}
-        sidebar={ui.sidebarCollapsed ? undefined : <Sidebar onNew={(projectId) => setQuickNew({ projectId })} onRemove={(ids) => void removeSessions(ids)} onNote={(s) => setNoteSession({ id: s.id, label: s.label })} />}
+        sidebar={ui.sidebarCollapsed ? undefined : <Sidebar onNew={(projectId) => setQuickNew({ projectId })} onRemove={(ids) => void removeSessions(ids)} />}
         content={
           <>
             <ContentHeader crumbs={header} strip={ui.sidebarCollapsed ? <SessionStrip /> : undefined}
@@ -295,7 +294,6 @@ export default function App() {
         <NewSessionDialog projectId={launchNew.projectId} onClose={() => setLaunchNew(null)} onStart={startLaunch} />
       )}
       {scratchpadOpen && <ScratchpadOverlay onClose={() => setScratchpadOpen(false)} />}
-      {noteSession && <ScratchpadOverlay session={noteSession} onClose={() => setNoteSession(null)} />}
     </>
   )
 }

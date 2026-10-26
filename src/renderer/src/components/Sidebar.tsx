@@ -41,7 +41,7 @@ function DoneStackRow({ stack, holdsFocus, onToggle }: { stack: DoneStack; holds
   )
 }
 
-function SessionCard({ s, feature, worktree, focused, picked, compact, inGrid, gridOn, gridFull, onToggleGrid, onFocus, onOpenFeature, onToggleCompact, onLink, onRemove, onContextMenu, kids }: {
+function SessionCard({ s, feature, worktree, focused, picked, compact, inGrid, gridOn, gridFull, onToggleGrid, onFocus, onOpenFeature, onToggleCompact, onRemove, onContextMenu, kids }: {
   s: Session
   feature: Feature | null // the linked feature, if it exists
   focused: boolean // a focused card shows selected
@@ -55,7 +55,6 @@ function SessionCard({ s, feature, worktree, focused, picked, compact, inGrid, g
   onFocus: (e: MouseEvent) => void
   onOpenFeature: () => void
   onToggleCompact: () => void
-  onLink: () => void
   onRemove: () => void
   onContextMenu: (e: MouseEvent) => void
   kids?: { list: Session[]; collapsed: boolean; holdsFocus: boolean; onToggle: () => void } // set on a parent: its children, for the toggle and the roll-up; holdsFocus when a hidden child is the focused session
@@ -126,7 +125,6 @@ function SessionCard({ s, feature, worktree, focused, picked, compact, inGrid, g
             <Button variant="ghost" size="sm" round icon="folder" aria-label="Open feature" title="Open feature"
               onClick={onOpenFeature} />
           )}
-          <Button variant="ghost" size="sm" round icon="link" aria-label="Link…" title="Link…" onClick={onLink} />
           {s.lastStatus === 'gone' && s.kind !== 'terminal' && (
             <Button variant="ghost" size="sm" round icon="resume" aria-label="Resume session" title="Resume"
               onClick={() => void window.api.invoke('session:resume', { id: s.id })} />
@@ -253,7 +251,7 @@ function OptionRow({ label, checked, onSelect }: { label: string; checked: boole
   )
 }
 
-export function Sidebar({ onNew, onNote, onRemove }: { onNew: (projectId?: string) => void; onNote: (s: Session) => void; onRemove: (ids: string[]) => void }) {
+export function Sidebar({ onNew, onRemove }: { onNew: (projectId?: string) => void; onRemove: (ids: string[]) => void }) {
   const { projects, sessions, ui, features, setFocused, toggleCollapsed, toggleCompact, toggleProjectVisibility, toggleHideDone, focusFeature, openProject, setSidebarTab, setGroupBy, setSessionSort, setSessionOrder, toggleGrid, toggleGridMember, waitingSince } = useSlices()
   const waitingCount = sessions.filter((x) => shownStatus(x) === 'waiting').length
   const [refused, setRefused] = useState<string | null>(null)
@@ -264,7 +262,7 @@ export function Sidebar({ onNew, onNote, onRemove }: { onNew: (projectId?: strin
   const [anchor, setAnchor] = useState<string | null>(null) // where a shift-click range starts
   const [menu, setMenu] = useState<{ x: number; y: number; ids: string[] } | null>(null)
   const hidden = ui.hiddenProjects ?? []
-  const noteTarget = menu?.ids.length === 1 ? sessions.find((x) => x.id === menu.ids[0]) : undefined // a note belongs to one session
+  const one = menu?.ids.length === 1 ? sessions.find((x) => x.id === menu.ids[0]) : undefined // linking and parenting act on one session
   // what the options panel shows and hides: one row per repo, its worktrees counted in, since
   // the repo is the unit rather than the checkout
   const rows = repoRows(projects, sessions)
@@ -536,7 +534,6 @@ export function Sidebar({ onNew, onNote, onRemove }: { onNew: (projectId?: strin
         onFocus={(e) => clickCard(s.id, e)}
         onOpenFeature={() => f && focusFeature({ projectId: f.projectId, slug: f.slug })}
         onToggleCompact={() => toggleCompact(s.id)}
-        onLink={() => setLinking(s)}
         onRemove={() => removeSessions([s.id])}
         onContextMenu={(e) => openMenu(s.id, e)}
         kids={kids && { list: kids, collapsed: ui.collapsed.includes(kidsKey(s.id)), holdsFocus: ui.collapsed.includes(kidsKey(s.id)) && kids.some((k) => k.id === ui.focusedSessionId), onToggle: () => toggleCollapsed(kidsKey(s.id)) }}
@@ -678,11 +675,11 @@ export function Sidebar({ onNew, onNote, onRemove }: { onNew: (projectId?: strin
       {menu && (
         <ContextMenu x={menu.x} y={menu.y} onClose={() => setMenu(null)}
           items={[
-            ...(noteTarget ? [{ label: 'Note', icon: 'note' as const, onSelect: () => onNote(noteTarget) }] : []),
+            ...(one ? [{ label: 'Link to feature…', icon: 'link' as const, onSelect: () => setLinking(one) }] : []),
             // a session that leads a group cannot become a child (groups are one level deep)
-            ...(noteTarget && !hasChildren(sessions, noteTarget.id) && sessions.some((x) => canParent(sessions, noteTarget.id, x))
-              ? [{ label: 'Set parent…', icon: 'link' as const, onSelect: () => setParenting(noteTarget) }] : []),
-            ...(noteTarget?.parentId ? [{ label: 'Clear parent', icon: 'minus' as const, onSelect: () => void window.api.invoke('session:setParent', { id: noteTarget.id, parent: null }) }] : []),
+            ...(one && !hasChildren(sessions, one.id) && sessions.some((x) => canParent(sessions, one.id, x))
+              ? [{ label: 'Set parent…', icon: 'corner-left-up' as const, onSelect: () => setParenting(one) }] : []),
+            ...(one?.parentId ? [{ label: 'Clear parent', icon: 'minus' as const, onSelect: () => void window.api.invoke('session:setParent', { id: one.id, parent: null }) }] : []),
             // the card's own status button covers a single card; the menu is for a selection
             ...(menu.ids.length > 1
               ? WORKFLOW_STATUSES.map((v) => ({ label: `Set ${v.label}`, glyph: <StatusMark view={v} />, onSelect: () => setStatuses(menu.ids, v.value) }))

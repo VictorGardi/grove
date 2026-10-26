@@ -70,26 +70,21 @@ export function registerIpc(core: Core, getWindow: () => BrowserWindow | null, g
     for (const f of win.webContents.mainFrame.framesInSubtree) if (f.url.split('#')[0] === url) f.reload()
   })
 
-  // ⌘N notes are one global file; a session's note is its own file beside it, named by the session id.
-  const notesPath = (sessionId?: string) => {
-    if (!sessionId) return path.join(app.getPath('userData'), 'notes.md')
-    if (!/^[\w-]+$/.test(sessionId)) throw new Error('invalid session id')
-    return path.join(app.getPath('userData'), 'session-notes', `${sessionId}.md`)
-  }
+  // ⌘N notes: one global file
+  const notesPath = path.join(app.getPath('userData'), 'notes.md')
 
-  handle('notes:read', (a) => {
+  handle('notes:read', () => {
     try {
-      return fs.readFileSync(notesPath(a?.sessionId), 'utf8')
+      return fs.readFileSync(notesPath, 'utf8')
     } catch (e) {
       if ((e as NodeJS.ErrnoException).code === 'ENOENT') return ''
       throw e
     }
   })
 
-  handle('notes:write', ({ content, sessionId }) => {
-    const file = notesPath(sessionId)
-    fs.mkdirSync(path.dirname(file), { recursive: true })
-    atomicWrite(file, content)
+  handle('notes:write', ({ content }) => {
+    fs.mkdirSync(path.dirname(notesPath), { recursive: true })
+    atomicWrite(notesPath, content)
   })
 
   const attaches = new Map<string, AttachHandle>()
