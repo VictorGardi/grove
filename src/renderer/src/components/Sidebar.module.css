@@ -228,9 +228,7 @@
   color: var(--text-3);
 }
 
-.worktreeMark {
-  display: inline-flex;
-  flex-shrink: 0;
+.worktreeBranch {
   color: var(--worktree);
 }
 
@@ -282,9 +280,19 @@
 }
 
 .branchName {
+  display: flex;
+  min-width: 0;
+  white-space: nowrap;
+}
+
+.branchHead {
+  min-width: 0;
   overflow: hidden;
   text-overflow: ellipsis;
-  white-space: nowrap;
+}
+
+.branchTail {
+  flex-shrink: 0;
 }
 
 
@@ -443,9 +451,21 @@
   cursor: default;
 }
 
-/* a parent's children, one step in under it */
+/* a parent's children, full width under it: a thin line down the left margin ties them to it */
 .kids {
-  margin-left: var(--sp-4);
+  position: relative;
+}
+
+.kids::before {
+  content: '';
+  position: absolute;
+  left: 2px;
+  top: 4px;
+  bottom: 4px;
+  width: 1px;
+  border-radius: 1px;
+  background: var(--glass-border-strong);
+  pointer-events: none;
 }
 
 /* the handle on a parent's bottom edge: the count and, collapsed, the most urgent child's dot */
@@ -543,10 +563,20 @@
   margin-left: auto;
 }
 
-/* an opened stack's cards, ruled off from their siblings */
+/* an opened stack's cards, ruled off from their siblings by a line of their own beside the kids' */
 .stackOpen {
-  padding-left: var(--sp-2);
-  border-left: 2px solid color-mix(in srgb, var(--status-finished) 35%, transparent);
+  position: relative;
+}
+
+.stackOpen::before {
+  content: '';
+  position: absolute;
+  left: 5px;
+  top: 4px;
+  bottom: 4px;
+  width: 1px;
+  background: color-mix(in srgb, var(--status-finished) 45%, transparent);
+  pointer-events: none;
 }
 
 /* opened, a parent's children (or a stack's) slide out from nothing: the row's height runs

@@ -111,7 +111,7 @@ specific meaning, so humans and agents stay consistent.
   in `src/shared/theme.ts` (ADR 0012).
 - **Session card**: a session's row in the sidebar (`SessionRow`), borderless on a grid shared
   by every row: workflow status over the grid mark on the left, title and **time in status** on
-  line one, branch on line two, the live dot on the right edge. It can be **compacted** to one line.
+  line one, branch on line two (purple in a worktree), the live dot on the right edge. It can be **compacted** to one line.
 - **Time in status**: how long a session has shown its current status, from `statusAt`, which core
   stamps on every sessions publish (never saved). Idle and finished agent sessions count from the
   end of their last turn, so a relaunch keeps the time. The `status-age` sort orders by it, sessions

@@ -9,6 +9,7 @@ import { selectRange } from '../selection'
 import { GROUP_BY_OPTIONS, SORT_OPTIONS, canDrop, dropSession, groupSize, kidRows, kidsGroup, listGroups, visibleSessions, type DoneStack, type DropAt, type ListGroup } from '../sessionList'
 import { repoRows } from '../repoGroups'
 import { colorTags } from '../tags'
+import { branchCut } from '../branchCut'
 import { linkedFeature } from '../tree'
 import { workflowStatusOf, WORKFLOW_STATUSES } from '../workflowStatus'
 import { Badge } from './ui/Badge'
@@ -86,8 +87,15 @@ function SessionCard({ s, feature, worktree, focused, picked, compact, since, no
             </button>
           )}
           {s.kind === 'terminal' && <span className={css.kindMark} title={KIND_LABEL.terminal} aria-label={KIND_LABEL.terminal}><Icon name="terminal" size={12} /></span>}
-          {s.branch && <><BranchMark pr={s.pr} /><span className={css.branchName}>{s.branch}</span></>}
-          {worktree && <span className={css.worktreeMark} title={`Worktree: ${worktree.path}`} aria-label={`Worktree: ${worktree.path}`}><Icon name="worktree" size={12} /></span>}
+          {/* a worktree's branch is purple instead of carrying a worktree icon */}
+          {s.branch && (() => {
+            // cut in the middle: the head shrinks, the tail that tells branches apart stays
+            const { head, tail } = branchCut(s.branch)
+            return <><BranchMark pr={s.pr} /><span className={cx(css.branchName, worktree && css.worktreeBranch)}
+              title={worktree ? `${s.branch}\nWorktree: ${worktree.path}` : s.branch}>
+              <span className={css.branchHead}>{head}</span>{tail && <span className={css.branchTail}>{tail}</span>}
+            </span></>
+          })()}
         </div>
       )}
       slot={(

@@ -38,19 +38,19 @@ export function kidsGroup(g: ListGroup, parent: Session): ListGroup {
   return { key, label: parent.label, project: null, status: null, collapsed: g.nest.collapsed.has(key), sessions: g.nest.kids.get(parent.id) ?? [], nest: g.nest }
 }
 
-// A parent's done children, once there are two or more, fold into one stack. The stack takes
-// the first done child's place among its siblings and holds every done one in their order;
-// a lone done child stays a row of its own.
+// A parent's done children sit below the rest, and once there are two or more they fold into
+// one stack at the bottom holding every done one in their order; a lone done child stays a row
+// of its own, last.
 export interface DoneStack { key: string; list: Session[]; open: boolean }
 export type KidRow = { session: Session } | { stack: DoneStack }
 
 export function kidRows(nest: Nest, parentId: string): KidRow[] {
   const list = nest.kids.get(parentId) ?? []
   const done = list.filter((s) => s.workflowStatus === 'done')
-  if (done.length < 2) return list.map((session) => ({ session }))
+  const rest: KidRow[] = list.filter((s) => s.workflowStatus !== 'done').map((session) => ({ session }))
+  if (done.length < 2) return [...rest, ...done.map((session) => ({ session }))]
   const key = openedKey(doneKey(parentId))
-  const stack: DoneStack = { key, list: done, open: nest.collapsed.has(key) }
-  return list.flatMap((session): KidRow[] => session.workflowStatus !== 'done' ? [{ session }] : session === done[0] ? [{ stack }] : [])
+  return [...rest, { stack: { key, list: done, open: nest.collapsed.has(key) } }]
 }
 
 // A parent's children as the list shows them: none while the parent is collapsed, and a

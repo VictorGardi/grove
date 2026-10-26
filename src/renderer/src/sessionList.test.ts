@@ -425,23 +425,23 @@ describe('done stacks', () => {
   const rows = (collapsed: string[] = []) => kidRows(listGroups(PROJECTS, sessions, ui({ collapsed })).find((g) => g.key === 'p:p')!.nest, 'r')
     .map((r) => 'session' in r ? r.session.id : `[${r.stack.list.map((s) => s.id).join(' ')}${r.stack.open ? ' open' : ''}]`)
 
-  it('folds two or more done children into one stack, in the first one\'s place', () => {
-    expect(rows()).toEqual(['k0', '[d1 d2]', 'k1'])
+  it('folds two or more done children into one stack, below the rest', () => {
+    expect(rows()).toEqual(['k0', 'k1', '[d1 d2]'])
   })
 
-  it('leaves a lone done child as a row of its own', () => {
+  it('leaves a lone done child as a row of its own, last', () => {
     const g = listGroups(PROJECTS, sessions.slice(0, 4), ui())
-    expect(kidRows(g[1].nest, 'r').map((r) => 'session' in r && r.session.id)).toEqual(['k0', 'd1', 'k1'])
+    expect(kidRows(g[1].nest, 'r').map((r) => 'session' in r && r.session.id)).toEqual(['k0', 'k1', 'd1'])
   })
 
   it('starts folded and opens by its opened key', () => {
-    expect(rows(['o:d:r'])).toEqual(['k0', '[d1 d2 open]', 'k1'])
+    expect(rows(['o:d:r'])).toEqual(['k0', 'k1', '[d1 d2 open]'])
   })
 
   it('counts a stack\'s children through Cmd+1..9 and a range only while it is open', () => {
     expect(orderedSessions(listGroups(PROJECTS, sessions, ui())).map((s) => s.id)).toEqual(['r', 'k0', 'k1'])
     expect(visibleSessions(listGroups(PROJECTS, sessions, ui())).map((s) => s.id)).toEqual(['r', 'k0', 'k1'])
-    expect(orderedSessions(listGroups(PROJECTS, sessions, ui({ collapsed: ['o:d:r'] }))).map((s) => s.id)).toEqual(['r', 'k0', 'd1', 'd2', 'k1'])
+    expect(orderedSessions(listGroups(PROJECTS, sessions, ui({ collapsed: ['o:d:r'] }))).map((s) => s.id)).toEqual(['r', 'k0', 'k1', 'd1', 'd2'])
     expect(orderedSessions(listGroups(PROJECTS, sessions, ui({ collapsed: ['o:d:r', 'k:r'] }))).map((s) => s.id)).toEqual(['r'])
   })
 

@@ -20,7 +20,6 @@
 .selected,
 .selected:hover {
   background: var(--glass-selected);
-  box-shadow: inset 2px 0 0 var(--card-selected-border);
 }
 
 .waiting,
@@ -44,8 +43,9 @@
   grid-row: 1;
   align-self: start;
   display: flex;
-  /* the icon's button is 18px around a 14px glyph: centre the glyph on the title's first line */
-  margin: -2px 0 0 -2px;
+  /* the icon's button is 18px around a 14px glyph in a 16px column: pull it left by half the
+     overhang so the glyph centres over the grid mark below, and up onto the title's first line */
+  margin: -2px 0 0 -1px;
 }
 
 .title {
