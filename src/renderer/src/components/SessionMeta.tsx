@@ -1,8 +1,10 @@
 import type { ReactNode } from 'react'
 import type { Feature, Session } from '@shared/types'
+import type { Family } from '../family'
 import { featureStage } from '../featureLabels'
 import { statusTone, statusView } from '../sessionStatus'
 import { BranchMark, showsPr } from './BranchMark'
+import { ChildrenPopover } from './ChildrenPopover'
 import { StatusDot } from './ui/StatusDot'
 import { Tag } from './ui/Tag'
 import s from './SessionMeta.module.css'
@@ -10,8 +12,8 @@ import s from './SessionMeta.module.css'
 // The row that names a session, shared by the content header and a grid pane header so the two
 // cannot drift: same facts, same order, same type. `lead` is whatever identifies it — the
 // breadcrumb when the session is focused, "project / label" in a pane — and everything after it
-// is the same in both. `family` adds chips: "↑ parent" on a child (running or ended) and the
-// active child on a parent; a click focuses it.
+// is the same in both. `family` adds chips: "↑ parent" on a child (running or ended), and on a
+// parent its active child plus "N children", which lists them all; a click focuses one.
 export function SessionMeta({ lead, session, feature, featureInLead, tagIndex, context, actions, family }: {
   lead: ReactNode
   session: Session
@@ -20,7 +22,7 @@ export function SessionMeta({ lead, session, feature, featureInLead, tagIndex, c
   tagIndex?: number | null
   context?: ReactNode // ContextPopover in a header, ContextGauge in a pane: a density, not a difference
   actions?: ReactNode
-  family?: { parent: Session | null; active: Session | null; onJump: (id: string) => void }
+  family?: Family & { onJump: (id: string) => void }
 }) {
   const status = statusView(session)
   const parent = family?.parent ?? null
@@ -58,6 +60,7 @@ export function SessionMeta({ lead, session, feature, featureInLead, tagIndex, c
           <span className={s.truncate}>{child.label}</span>
         </button>
       )}
+      {family && family.children.length > 0 && <ChildrenPopover kids={family.children} onJump={family.onJump} />}
       <span className={s.spacer} />
       {context}
       {actions}

@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import type { Session } from '@shared/types'
-import { familyOf } from './family'
+import { childrenCount, familyOf } from './family'
 
 const session = (id: string, over: Partial<Session> = {}): Session =>
   ({ id, projectId: 'p', kind: 'claude', label: id, lastStatus: 'running', startedAt: '2026-10-05T10:00:00.000Z', ...over } as Session)
@@ -82,5 +82,31 @@ describe('familyOf', () => {
 
   it('still finds an ended parent', () => {
     expect(familyOf([session('parent', { lastStatus: 'gone' }), child('c')], 'c').parent?.id).toBe('parent')
+  })
+})
+
+describe('childrenCount', () => {
+  it('says "1 child" and "N children"', () => {
+    expect(childrenCount(1)).toBe('1 child')
+    expect(childrenCount(3)).toBe('3 children')
+  })
+})
+
+describe('familyOf children list', () => {
+  it('lists running children by rank, then ended ones', () => {
+    const f = familyOf([
+      parent,
+      child('ended', { lastStatus: 'gone' }),
+      child('idle', { status: 'idle' }),
+      child('waiting', { status: 'waiting', waitingFor: 'question' }),
+      child('working', { status: 'working' }),
+    ], 'parent')
+    expect(ids(f.children)).toEqual(['waiting', 'working', 'idle', 'ended'])
+  })
+
+  it('still lists children that have all ended, with none active', () => {
+    const f = familyOf([parent, child('a', { lastStatus: 'gone' }), child('b', { lastStatus: 'gone' })], 'parent')
+    expect(f.active).toBeNull()
+    expect(ids(f.children).sort()).toEqual(['a', 'b'])
   })
 })

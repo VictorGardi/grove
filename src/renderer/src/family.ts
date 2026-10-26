@@ -8,10 +8,13 @@ export interface Family {
 }
 
 // A child is ended once its pane is gone or its start failed: it can't be the one to jump to.
-const ended = (s: Session) => {
+export const isEnded = (s: Session) => {
   const shown = shownStatus(s)
   return shown === 'gone' || shown === 'failed'
 }
+
+// "1 child", "3 children": the parent's count chip.
+export const childrenCount = (n: number) => (n === 1 ? '1 child' : `${n} children`)
 
 // Running children, most worth a look first. waiting covers every waitingFor, 'done' included;
 // running is a live pane with no agent status (a terminal); starting has nothing to show yet.
@@ -41,7 +44,7 @@ export function familyOf(sessions: Session[], id: string): Family {
   const self = sessions.find((s) => s.id === id)
   const parent = self?.parentId ? sessions.find((s) => s.id === self.parentId) ?? null : null
   const mine = sessions.filter((s) => s.parentId === id)
-  const running = mine.filter((s) => !ended(s)).sort(byRunning)
-  const done = mine.filter(ended).sort((a, b) => later(a.startedAt, b.startedAt))
+  const running = mine.filter((s) => !isEnded(s)).sort(byRunning)
+  const done = mine.filter(isEnded).sort((a, b) => later(a.startedAt, b.startedAt))
   return { parent, children: [...running, ...done], active: running[0] ?? null }
 }

@@ -94,4 +94,42 @@ The active-child chip's `.child` class is now a shared `.chip` class used by bot
 
 none
 
+## Slice 3
+
+Session: parent-child-jump-slice-3-a1
+Status: done
+Commit: this commit (see git log)
+
+### Slice plan
+
+Found in the code: `familyOf` (src/renderer/src/family.ts) already returns `children` ordered running-by-rank then ended (newest first); the `ended` predicate is module-private. `SessionMeta` declares `family?: { parent; active; onJump }` and App.tsx:198 / SessionGrid.tsx:145 already spread the whole `familyOf` result in, so `children` reaches it undeclared. `ContextPopover` (components/ContextGauge.tsx:23) is the pattern: a wrapping div ref, a button trigger with `aria-expanded`, the position computed from the trigger rect on click into CSS variables `--top`/`--left`, a `createPortal` popover on `document.body` with `position: fixed`, and document `mousedown`-outside and `Escape` listeners while open. `noInlineStyles.test.ts` allows only CSS-variable style objects.
+
+Implementer 1:
+- [x] `src/renderer/src/family.ts`: export the ended predicate as `isEnded(s)`; add `childrenCount(n)` → "1 child" / "N children"
+- [x] New `src/renderer/src/components/ChildrenPopover.tsx` + `ChildrenPopover.module.css` following `ContextPopover`: trigger `<button>` with the `childrenCount` text and `aria-expanded`, portal popover (`role="dialog"`, aria-label "Children") positioned through `--top`/`--left`, outside `mousedown` and `Escape` close; one `<button>` row per child with `StatusDot tone={statusTone(c)}`, truncated label, and "ended" when `isEnded(c)`; a row click calls `onJump(c.id)` and closes
+- [x] `src/renderer/src/components/SessionMeta.tsx`: type `family` as `Family & { onJump }`; render `<ChildrenPopover children onJump />` after the active-child chip when `children` is non-empty
+- [x] App.tsx and SessionGrid.tsx already pass `children` via the spread; no change unless typecheck says so
+- [x] Extend `src/renderer/src/family.test.ts`: `childrenCount(1)`, `childrenCount(3)`; mixed running/ended order (running by rank, then ended); a parent whose children all ended has `active: null`
+- [x] Extend `src/renderer/src/sessionMetaRender.test.ts`: the trigger renders "1 child" / "3 children"; the list body is not rendered while closed; a parent with only ended children renders "2 children" and no active chip; no trigger without children
+
+Models passed: implementer: inherit; reviewer: inherit
+
+### Review rounds
+
+Round 1: 0 blocking; non-blocking applied: Escape is caught in the capture phase and swallowed so a focused terminal does not take it; the list's max-height accounts for its top so a low pane header cannot push rows off-screen; the trigger's hover colour matches the other chips; the trigger has a title.
+
+Approved, 0 blocking, 0 fix rounds. Non-blocking left: the open list (row order, the "ended" mark) is not render-tested, since static markup cannot open it; covered by `familyOf` order tests and the manual check below. With one child the header shows both the active-child chip and "1 child", as the outcome specifies.
+
+### Deviations
+
+The popover prop is `kids`, not `children` (React reserves `children`). `family.ts` exports `isEnded` (the former private `ended`) for the "ended" mark. The list is 260px wide, scrolls past a max height, and the trigger stays underlined while open. App.tsx and SessionGrid.tsx are unchanged: they already spread the whole `familyOf` result.
+
+### Verification
+
+`npm test`: 97 files, 1149 tests pass, including the new cases in `family.test.ts` (count label for 1 and 3; running-by-rank then ended order; all-ended parent has no active child) and `sessionMetaRender.test.ts` ("1 child" / "3 children"; no list while closed; an all-ended parent renders "2 children" and no active chip; no trigger without children), and `noInlineStyles.test.ts`. `npm run typecheck`: passes (node and web). Models requested: implementer: inherit; reviewer: inherit.
+
+### Left for the human
+
+Manual check with `npm run dev`: open "N children" on a parent (header and grid pane), confirm running children come first and ended ones are marked, a row click focuses that child and closes the list, and an outside click or Escape closes it (also with a terminal focused in a grid pane).
+
 ## Open questions
