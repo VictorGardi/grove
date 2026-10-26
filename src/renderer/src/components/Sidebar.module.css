@@ -8,7 +8,7 @@
   display: flex;
   align-items: center;
   gap: var(--sp-2);
-  padding: var(--sp-3) var(--sp-3) 0;
+  padding: var(--sp-3);
 }
 
 .tab,
@@ -16,10 +16,10 @@
   display: flex;
   align-items: center;
   gap: var(--sp-2);
-  padding: 0 0 6px;
+  position: relative;
+  padding: 0;
   background: none;
   border: none;
-  border-bottom: 2px solid var(--accent-strong);
   color: var(--text);
   font: inherit;
   font-size: var(--fs-xl);
@@ -27,8 +27,18 @@
   cursor: pointer;
 }
 
+/* the underline hangs below the label so the row centres on the text, not text + underline */
+.tab::after {
+  content: '';
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: -6px;
+  height: 2px;
+  background: var(--accent-strong);
+}
+
 .tabInactive {
-  border-bottom-color: transparent;
   color: var(--text-3);
 }
 
@@ -207,13 +217,17 @@
 .bottomBar {
   display: flex;
   align-items: center;
+  gap: var(--sp-1);
+  min-height: 40px;
   padding: var(--sp-2);
-  justify-content: space-between;
   border-top: 1px solid var(--divider);
 }
 
-.waiting {
-  color: var(--text);
+/* a tinted pill, the one thing in the bar that asks for attention */
+.bottomBar .waiting {
+  background: var(--glass-waiting);
+  border-color: var(--card-waiting-border);
+  color: var(--status-waiting);
 }
 
 .visibilityWrapper {

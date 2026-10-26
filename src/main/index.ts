@@ -140,7 +140,10 @@ app.whenReady().then(async () => {
     width: 1200,
     height: 800,
     titleBarStyle: 'hidden',
-    backgroundColor: chromeBackground,
+    // macOS: a vibrancy layer behind a transparent page, so the chrome around the terminals is frosted glass
+    ...(process.platform === 'darwin'
+      ? { vibrancy: 'under-window' as const, visualEffectState: 'active' as const, backgroundColor: '#00000000' }
+      : { backgroundColor: chromeBackground }),
     show: false,
     webPreferences: { preload: path.join(__dirname, '../preload/index.js'), contextIsolation: true },
   })

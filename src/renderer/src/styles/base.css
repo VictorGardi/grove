@@ -10,11 +10,16 @@ body,
   margin: 0;
   height: 100%;
   overflow: hidden;
-  background: var(--chrome-bg);
+  background: transparent;
   color: var(--text);
   font: var(--fs-md) / 1.4 var(--font-ui);
   color-scheme: dark;
   -webkit-font-smoothing: antialiased;
+}
+
+/* one glass layer only; stacking it on body and #root would compound the alpha */
+html {
+  background: var(--chrome-glass);
 }
 
 ::-webkit-scrollbar {

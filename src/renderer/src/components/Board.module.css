@@ -36,19 +36,20 @@
   flex-direction: column;
   gap: var(--sp-2);
   padding: var(--sp-3);
-  background: var(--card-bg);
-  border: 1px solid var(--card-border);
+  background: var(--glass-fill);
+  border: 1px solid var(--glass-border);
   border-radius: var(--r-card);
   cursor: pointer;
 }
 
 .card:hover {
-  border-color: var(--text-3);
+  background: var(--glass-fill-hover);
+  border-color: var(--glass-border-strong);
 }
 
 .waiting,
 .waiting:hover {
-  background: var(--card-waiting-bg);
+  background: var(--glass-waiting);
   border-color: var(--card-waiting-border);
   box-shadow: 0 0 var(--card-glow) var(--card-waiting-border);
 }

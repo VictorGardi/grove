@@ -6,6 +6,17 @@
   --panel-bg: #121212;
   --card-bg: #1f1f1f;
   --raised-bg: #232324;
+  /* translucent shell surfaces: the macOS window vibrancy shows through them */
+  --chrome-glass: rgba(18, 18, 20, 0.3);
+  --panel-glass: rgba(24, 24, 26, 0.45);
+  /* fills and edges for things that sit on a glass panel: white/tinted alpha, so the blur shows through */
+  --glass-fill: rgba(255, 255, 255, 0.05);
+  --glass-fill-hover: rgba(255, 255, 255, 0.09);
+  --glass-selected: rgba(251, 146, 60, 0.16);
+  --glass-waiting: rgba(251, 192, 36, 0.1);
+  --glass-finished: rgba(36, 211, 239, 0.09);
+  --glass-border: rgba(255, 255, 255, 0.09);
+  --glass-border-strong: rgba(255, 255, 255, 0.2);
   --muted-badge-bg: #16161a;
   --terminal-bg: #1e1e2e;
   --terminal-fg: #cdd6f4;
@@ -14,8 +25,8 @@
 
   /* borders */
   --card-border: #292929;
-  --divider: #212123;
-  --header-divider: #303035;
+  --divider: rgba(255, 255, 255, 0.07);
+  --header-divider: rgba(255, 255, 255, 0.1);
   --scrollbar-thumb: #38383c;
 
   /* text */
@@ -92,7 +103,7 @@
   --sp-4: 16px;
   --sp-5: 20px;
   --sp-6: 24px;
-  --gutter: 8px;
+  --gutter: 4px;
 
   /* radius */
   --r-card: 5px;

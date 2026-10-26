@@ -22,7 +22,7 @@
 }
 
 .gridBtn:hover:not(:disabled) {
-  background: var(--raised-bg);
+  background: var(--glass-fill-hover);
   color: var(--text);
 }
 
@@ -32,7 +32,7 @@
 }
 
 .gridBtn.on {
-  background: var(--raised-bg);
+  background: var(--glass-fill-hover);
   color: var(--text);
 }
 
@@ -97,13 +97,13 @@
   place-items: center;
   border: 0;
   border-radius: var(--r-md);
-  background: var(--raised-bg);
+  background: var(--glass-fill);
   color: var(--text);
   cursor: pointer;
 }
 
 .newBtn:hover {
-  background: var(--header-divider);
+  background: var(--glass-fill-hover);
 }
 
 /* the group's colour, as a bar running down the left of its tiles */
@@ -174,7 +174,7 @@
   place-items: center;
   border: 1px solid transparent;
   border-radius: var(--r-md);
-  background: var(--raised-bg);
+  background: var(--glass-fill);
   color: var(--text-2);
   cursor: pointer;
   transition: background 120ms, color 120ms;
@@ -182,7 +182,7 @@
 
 .tile:hover {
   color: var(--text);
-  background: var(--header-divider);
+  background: var(--glass-fill-hover);
 }
 
 /* focus reads exactly as it does on the sidebar's focused card: the same orange edge and
@@ -190,7 +190,7 @@
 .focused,
 .focused:hover {
   color: var(--text);
-  background: var(--card-selected-bg);
+  background: var(--glass-selected);
   border-color: var(--card-selected-border);
 }
 
@@ -254,7 +254,7 @@
   height: 28px;
   border: 0;
   border-radius: var(--r-md);
-  background: var(--raised-bg);
+  background: var(--glass-fill);
   color: var(--text-2);
   font: inherit;
   font-size: var(--fs-sm);

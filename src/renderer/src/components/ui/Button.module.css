@@ -69,11 +69,12 @@
 
 .ghost:hover {
   color: var(--text);
+  background: var(--glass-fill);
 }
 
 .ghost[aria-pressed='true'] {
   color: var(--text);
-  background: var(--raised-bg);
+  background: var(--glass-fill-hover);
 }
 
 .danger {

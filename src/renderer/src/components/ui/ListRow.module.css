@@ -4,15 +4,15 @@
   flex-direction: column;
   gap: 1px;
   padding: 7px 10px 7px 6px;
-  background: var(--card-bg);
-  border: 1px solid var(--card-border);
+  background: var(--glass-fill);
+  border: 1px solid var(--glass-border);
   border-radius: var(--r-card);
   cursor: pointer;
 }
 
 .row:hover {
-  background: var(--raised-bg);
-  border-color: var(--text-3);
+  background: var(--glass-fill-hover);
+  border-color: var(--glass-border-strong);
 }
 
 /* the live-status dot sits in the bottom-right corner; a card with no meta line has its title
@@ -59,28 +59,28 @@
 
 .selected,
 .selected:hover {
-  background: var(--card-selected-bg);
+  background: var(--glass-selected);
   border-color: var(--card-selected-border);
 }
 
 .waiting,
 .waiting:hover {
-  background: var(--card-waiting-bg);
+  background: var(--glass-waiting);
   border-color: var(--card-waiting-border);
   box-shadow: 0 0 var(--card-glow) var(--card-waiting-border);
 }
 
 .finished,
 .finished:hover {
-  background: var(--card-finished-bg);
+  background: var(--glass-finished);
   border-color: var(--card-finished-border);
   box-shadow: 0 0 var(--card-glow) var(--card-finished-border);
 }
 
 .picked,
 .picked:hover {
-  background: var(--card-selected-bg);
-  border-color: var(--text-3);
+  background: var(--glass-selected);
+  border-color: var(--glass-border-strong);
   box-shadow: none;
 }
 
