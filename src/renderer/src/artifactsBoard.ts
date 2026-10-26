@@ -1,4 +1,4 @@
-import { isViewable } from '@shared/artifactUrl'
+import { IMAGE_EXTS, artifactUrl, extOf, isViewable } from '@shared/artifactUrl'
 import type { ArtifactRef, CanvasView, Feature, Project, UiState } from '@shared/types'
 import { unionFeatures, type UnionFeature } from './featureUnion'
 import { openBoard, type Crumb } from './navigation'
@@ -75,4 +75,29 @@ export function artifactCrumbs(project: Project, feature: Feature, card: Artifac
     { label: feature.title, to: { focusedFeature: { projectId: feature.projectId, slug: feature.slug } } },
     { label: card.name },
   ]
+}
+
+// A card's preview: images draw as an <img>, everything else (html, markdown rendered by the protocol) as a page.
+export function previewKind(path: string): 'image' | 'page' {
+  const ext = extOf(path)
+  return ext !== undefined && IMAGE_EXTS.includes(ext) ? 'image' : 'page'
+}
+
+// The preview's source. Chromium reuses a loaded image with the same URL, so an image's carries the
+// mtime (the protocol reads only the path); a page keeps the plain URL and reloads by remounting.
+export function previewSrc(projectId: string, card: ArtifactCard): string {
+  const url = artifactUrl({ kind: 'file', projectId, path: card.path, hash: null, fromDiff: null })
+  return previewKind(card.path) === 'image' ? `${url}?v=${card.mtimeMs}` : url
+}
+
+// "5m ago" on a card, a short date ("12 Oct") once it is a week old.
+export function modifiedAgo(mtimeMs: number, now: number): string {
+  const min = Math.floor((now - mtimeMs) / 60_000)
+  if (min < 1) return 'just now'
+  if (min < 60) return `${min}m ago`
+  const h = Math.floor(min / 60)
+  if (h < 24) return `${h}h ago`
+  const d = Math.floor(h / 24)
+  if (d < 7) return `${d}d ago`
+  return new Date(mtimeMs).toLocaleDateString('en-GB', { day: 'numeric', month: 'short' })
 }

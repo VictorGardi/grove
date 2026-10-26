@@ -1,3 +1,4 @@
+import { useMemo } from 'react'
 import type { ArtifactRef, CanvasView, Feature, Project, Session, UiState } from '@shared/types'
 import { openCard, pageClusters } from '../artifactsBoard'
 import { unionFeatures } from '../featureUnion'
@@ -33,13 +34,16 @@ export function ProjectPage({ project, projects, board, stages, features, sessio
   const ownSessions = sessions.filter((x) => scope.has(x.projectId))
   const shown = worktree ? 'sessions' : board
   const union = () => unionFeatures(own, repoGroups(projects))
+  // stable across unrelated re-renders, so the board's memoised cards and its observer survive them
+  const clusters = useMemo(() => shown === 'artifacts' ? pageClusters(project, projects, stages, features) : [],
+    [shown, project, projects, stages, features])
   const artifacts = () => {
     // the same decision App's header crumbs make, so the page and its crumbs never disagree
     const open = openCard({ board, artifacts: { [project.id]: { open: artifactsOpen } } }, project, projects, stages, features)
     return open
       ? <ArtifactPage projectId={open.cluster.feature.projectId} card={open.card} onBack={() => onOpenArtifact(null)} />
       // keyed: another page's board starts from that page's saved view, and this one's is saved on the way out
-      : <ArtifactsBoard key={project.id} clusters={pageClusters(project, projects, stages, features)} stages={stages}
+      : <ArtifactsBoard key={project.id} clusters={clusters} stages={stages}
         view={artifactsView} onViewChange={onArtifactsViewChange}
         onOpen={(c, card) => onOpenArtifact({ projectId: c.feature.projectId, slug: c.feature.slug, name: card.name })} />
   }

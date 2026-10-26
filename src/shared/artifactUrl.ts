@@ -2,11 +2,14 @@ import type { DocTarget } from './types'
 
 export const ARTIFACT_SCHEME = 'grove-artifact'
 export const ASSETS_HOST = 'assets' // bundled viewer assets; project ids are UUIDs, so no clash
-export const VIEWABLE = ['.html', '.htm', '.md', '.png', '.jpg', '.jpeg', '.gif', '.webp', '.svg']
+export const IMAGE_EXTS = ['.png', '.jpg', '.jpeg', '.gif', '.webp', '.svg']
+export const VIEWABLE = ['.html', '.htm', '.md', ...IMAGE_EXTS]
 
 // By extension only; no node:path here, shared is compiled for the renderer too.
+export const extOf = (name: string): string | undefined => /\.[^./]+$/.exec(name)?.[0].toLowerCase()
+
 export function isViewable(name: string): boolean {
-  const ext = /\.[^./]+$/.exec(name)?.[0].toLowerCase()
+  const ext = extOf(name)
   return ext !== undefined && VIEWABLE.includes(ext)
 }
 

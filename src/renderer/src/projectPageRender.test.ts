@@ -2,6 +2,7 @@ import { createElement } from 'react'
 import { renderToStaticMarkup } from 'react-dom/server'
 import { describe, expect, it, vi } from 'vitest'
 import type { ArtifactRef, CanvasView, Feature, Project, Session, UiState } from '@shared/types'
+import { modifiedAgo } from './artifactsBoard'
 import { ProjectPage } from './components/ProjectPage'
 
 // Rendered with react-dom/server: no jsdom here, and the page is a pure function of its props.
@@ -74,6 +75,14 @@ describe('ProjectPage, the artifacts board', () => {
     expect(html).toContain('03-design.md')
     expect(html).not.toContain('03-design.html') // folded into its markdown's card
     expect(html).not.toContain('<iframe')
+  })
+
+  it("dates each card, and mounts no preview before it has measured where the cards are", () => {
+    const html = page(projects[0], 'artifacts', features, [])
+    const when = modifiedAgo(1, Date.now()) // mtime 1: long ago, a short date
+    expect(html.split(`>${when}</span>`)).toHaveLength(3)
+    expect(html).not.toContain('<iframe')
+    expect(html).not.toContain('<img')
   })
 
   it('draws the board at its saved pan and zoom, or the default view without one', () => {

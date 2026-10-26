@@ -2,7 +2,7 @@ import { randomUUID } from 'node:crypto'
 import fs from 'node:fs'
 import path from 'node:path'
 import { app, BrowserWindow, dialog, ipcMain } from 'electron'
-import { ARTIFACT_SCHEME } from '@shared/artifactUrl'
+import { artifactUrl } from '@shared/artifactUrl'
 import type { InvokeMap, PushMap, Result, SendMap } from '@shared/ipc'
 import type { Slices } from '@shared/types'
 import type { AttachHandle } from '../core/backend/types'
@@ -59,11 +59,14 @@ export function registerIpc(core: Core, getWindow: () => BrowserWindow | null, g
   handle('diff:refs', (a) => core.commands.diffRefs(a), true)
   handle('session:focusLast', () => core.commands.sessionFocusLast(), true)
   handle('ui:set', (a) => core.commands.uiSet(a), true)
-  // Reload the viewer frame in place; Chromium restores scroll where it can.
+  // Reload the viewer frame in place; Chromium restores scroll where it can. Only frames showing the
+  // viewer's doc (hash aside): board card previews reload themselves through their mtime keys.
   handle('viewer:reload', () => {
     const win = getWindow()
-    if (!win || win.isDestroyed()) return
-    for (const f of win.webContents.mainFrame.framesInSubtree) if (f.url.startsWith(`${ARTIFACT_SCHEME}:`)) f.reload()
+    const viewer = core.getSlices().ui.viewer
+    if (!win || win.isDestroyed() || !viewer || viewer.kind !== 'file') return
+    const url = artifactUrl({ ...viewer, hash: null })
+    for (const f of win.webContents.mainFrame.framesInSubtree) if (f.url.split('#')[0] === url) f.reload()
   })
 
   // ⌘N notes are one global file; a session's note is its own file beside it, named by the session id.

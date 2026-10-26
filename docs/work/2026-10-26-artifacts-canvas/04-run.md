@@ -115,4 +115,90 @@ Pass, 0 blocking, 0 fix rounds. Non-blocking left: (a) a `state:ui` echo of an e
 - restart the app: the view is restored;
 - judge whether a two-finger scroll should pan instead of zoom.
 
+## Slice 3
+
+Session: artifacts-canvas-slice-3-a1
+Status: done
+Commit: this commit (see git log)
+
+### Slice plan
+
+Found in the code: `ArtifactsBoard.tsx` draws title-card `<button>`s inside a fixed 1280 px plane transformed by `--x`, `--y`, `--scale`; cards sit in a `minmax(180px, 1fr)` grid, so their size depends on the column count. The view lives in component state (`viewRef`) during gestures. `ArtifactCard` (in `artifactsBoard.ts`) already carries `path`, `stage` and the opened file's `mtimeMs`; markdown is rendered to html by the `grove-artifact://` protocol in main (`src/main/artifacts.ts`), so one sandboxed iframe serves both html and markdown, and images can be `<img>` of the same URL. `ArtifactPage.tsx` remounts its iframe on `url + mtimeMs`, the existing reload idiom. `projectPageRender.test.ts` renders to a string and asserts the board has no `<iframe>`; offset sizes ignore the transform, so card rects measured with `offsetLeft/offsetTop` against the plane are in plane coordinates. No relative-time helper exists in the renderer.
+
+Implementer 1:
+- [x] `src/renderer/src/previewGate.ts`: pure `PREVIEW` constants (`minScale`, `margin` in screen px around the viewport, `maxLive` cap); `Rect { x; y; width; height }` in plane coordinates; `screenRect(rect, view)`; `livePreviews(rects: Map<string, Rect>, view, viewport): Set<string>` returning the keys to mount: none below `minScale`, else those whose screen rect meets the viewport grown by `margin`, nearest the viewport centre first, at most `maxLive`
+- [x] `src/renderer/src/previewGate.test.ts`: in range vs far off, margin edge, below minimum zoom mounts none, cap with 60 cards in range keeps `maxLive` nearest the centre, pan moves the set, empty viewport
+- [x] `src/renderer/src/artifactsBoard.ts`: `previewKind(path): 'image' | 'page'` and `modifiedAgo(mtimeMs, now)` ("just now", "5m ago", "3h ago", "2d ago", then a short date); tests in `artifactsBoard.test.ts`
+- [x] `src/renderer/src/components/ArtifactCard.tsx` + `ArtifactCard.module.css`: fixed-size card (preview box on top, then stage, name, modified time); `live` prop: page kinds mount a non-interactive opaque sandboxed iframe (`sandbox="allow-scripts"`, `tabIndex={-1}`, `aria-hidden`, `pointer-events: none`) of `artifactUrl(...)` at a fixed large size scaled down in CSS, images an `<img>` of the same URL; keyed on `url + mtimeMs` so a changed file refreshes; not live: a title-card face (stage and name large)
+- [x] `src/renderer/src/components/ArtifactsBoard.tsx` + `.module.css`: cards become `ArtifactCard` in a fixed-width column grid; card rects measured against the plane (`offsetLeft/Top` of each card, keyed by `path`) in a layout effect on clusters change and on viewport resize (`ResizeObserver`); `livePreviews` recomputed from the current view (pan, zoom, controls) and stored only when the set changes; while not measured no previews mount (keeps `projectPageRender.test.ts` asserting no board `<iframe>`)
+- [x] `projectPageRender.test.ts`: the board shows each card's modified time and still mounts no iframe before measurement
+
+Models passed: implementer: inherit, reviewer: inherit
+
+### Review rounds
+
+Round 1: 1 blocking. Image cards would not refresh on a file change, because Chromium reuses a loaded image with the same URL. Fix: `previewSrc` adds `?v=<mtime>` to image sources, and the protocol ignores the query (tested). Non-blocking also applied:
+- `memo` cards with stable callbacks, and `now` refreshed each minute;
+- on-screen cards ranked ahead of margin cards, with `maxLive` 24;
+- the ResizeObserver also watches the plane;
+- an `inert` preview wrapper;
+- the title face shows only the name;
+- `IMAGE_EXTS` shared from `artifactUrl.ts`;
+- one card key.
+
+Round 2: 2 blocking.
+- The renderer CSP `img-src` refused `grove-artifact:` images. Fix: added `grove-artifact:` to `img-src` in `src/renderer/index.html`.
+- `guardNavigation` cancelled every sub-frame artifact load that was not `ui.viewer` and pointed the viewer at it. That broke the previews and hijacked the side viewer, and the slice-1 full page was affected the same way. Fix: a sub-frame `grove-artifact:` navigation whose initiator is the main frame (matched by `frameTreeNodeId`) goes through. Links clicked inside a sandboxed frame keep the old handling. New `src/main/artifacts.test.ts`.
+
+Non-blocking also applied in round 2:
+- `useMemo` for clusters in `ProjectPage`;
+- `ArtifactCard` render tests;
+- an exact modified-time assertion.
+
+Round 3: 0 blocking. Non-blocking applied:
+- `viewer:reload` reloads only frames that show the viewer's doc, not every preview;
+- main-frame guard tests;
+- a `clusterKey` helper;
+- cross-referencing comments on the two 240 px card widths.
+
+Pass, 0 blocking in the last round, 2 fix rounds. Non-blocking left:
+- (a) The `sameDoc` pass-through in `guardNavigation` is now mostly dead. A link clicked in the full page whose target is the doc open in the side viewer navigates the full-page frame in place. Every other link in the full page opens in the side viewer through `uiSet`, which is new behaviour for the full page. The plan does not say where full-page links should go.
+- (b) The iframe sits inside a `<button>`, which the HTML spec does not allow for interactive content. It is made inert (`inert`, `pointer-events: none`).
+- (c) Title cards show the name twice: on the face and in the meta row.
+- (d) The cap values are untuned by hand: `minScale` 0.4, `margin` 400 px, `maxLive` 24.
+
+### Deviations
+
+- `src/main/artifacts.ts` (`guardNavigation`) and `src/renderer/index.html` (CSP) changed. Neither file is in the slice's file list, but previews could not load without these changes. The security model is unchanged: frames are still opaque and sandboxed, and links clicked inside a frame are handled as before.
+- `src/main/ipc.ts`: `viewer:reload` is narrowed to the viewer's doc.
+- `src/shared/artifactUrl.ts`: exports `IMAGE_EXTS` and `extOf`.
+- `previewKind`, `previewSrc` and `modifiedAgo` live in `artifactsBoard.ts`.
+- Constants: `minScale` 0.4, `margin` 400 px, `maxLive` 24.
+
+### Verification
+
+- `npm test`: 100 files, 1183 tests pass, existing expectations unchanged.
+- New tests:
+  - `previewGate.test.ts`: range, margin edge, minimum zoom, the 60-card cap keeping the cards nearest the centre, on-screen before margin, pan, empty viewport;
+  - `artifactsBoard.test.ts`: `previewKind`, `previewSrc`, `modifiedAgo`;
+  - `artifactCardRender.test.ts`: live page iframe sandboxed inside `inert`, live image with `?v=`, title face;
+  - `projectPageRender.test.ts`: modified time shown, no preview before measurement;
+  - `artifactUrl.test.ts`: the query is ignored;
+  - `src/main/artifacts.test.ts`: navigation guard.
+- `npm run typecheck` passes for node and web.
+- Models requested: implementer: inherit, reviewer: inherit.
+
+### Left for the human
+
+`npm run dev`, to be run by the human:
+- previews show real content for html, markdown and images;
+- far-off or tiny cards fall back to title cards;
+- on a project with 50+ artifacts, no more than 24 live iframes are mounted while panning (check in DevTools);
+- editing an artifact file refreshes its card, including an image;
+- opening cards and the full page does not move the right-hand viewer;
+- the slice-1 full page now loads (it was previously cancelled by the navigation guard);
+- the right-hand viewer still follows links and reloads;
+- tune `PREVIEW` in `previewGate.ts` by feel;
+- decide where links clicked in the full page should go (they currently open in the side viewer).
+
 ## Open questions

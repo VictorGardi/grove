@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import { DEFAULT_UI, type Feature, type Project, type UiState } from '@shared/types'
-import { artifactClusters, artifactCrumbs, artifactsTo, boardViewTo, findCard, openCard, pageClusters } from './artifactsBoard'
+import { artifactClusters, artifactCrumbs, artifactsTo, boardViewTo, findCard, modifiedAgo, openCard, pageClusters, previewKind, previewSrc } from './artifactsBoard'
 import { unionFeatures } from './featureUnion'
 import { repoGroups } from './repoGroups'
 import { boardColumns } from './tree'
@@ -123,5 +123,44 @@ describe('artifactsTo, artifactCrumbs', () => {
       { label: 'Ta', to: { focusedFeature: { projectId: 'p', slug: 'a' } } },
       { label: 'x.md' },
     ])
+  })
+})
+
+describe('previewKind', () => {
+  it('draws images as images and everything else as a page', () => {
+    expect(['a.png', 'a.JPG', 'a.jpeg', 'a.gif', 'a.webp', 'd/a.svg'].map(previewKind)).toEqual(Array(6).fill('image'))
+    expect(['a.html', 'a.htm', 'a.md', 'png.md'].map(previewKind)).toEqual(Array(4).fill('page'))
+  })
+})
+
+describe('previewSrc', () => {
+  const card = (path: string, mtimeMs: number) => ({ name: path, path, stage: null, mtimeMs })
+
+  it('busts an image by its mtime, so a changed file is fetched again', () => {
+    expect(previewSrc('p1', card('d/a b.png', 5))).toBe('grove-artifact://p1/d/a%20b.png?v=5')
+    expect(previewSrc('p1', card('d/a b.png', 6))).not.toBe(previewSrc('p1', card('d/a b.png', 5)))
+  })
+
+  it('gives a page the plain URL', () => {
+    expect(previewSrc('p1', card('d/03-design.html', 5))).toBe('grove-artifact://p1/d/03-design.html')
+    expect(previewSrc('p1', card('d/03-design.html', 6))).toBe('grove-artifact://p1/d/03-design.html')
+  })
+})
+
+describe('modifiedAgo', () => {
+  const now = new Date(2026, 9, 26, 12, 0).getTime()
+  const ago = (ms: number) => modifiedAgo(now - ms, now)
+  const MIN = 60_000
+
+  it('reads minutes, hours and days, then a short date', () => {
+    expect(ago(30_000)).toBe('just now')
+    expect(ago(-5 * MIN)).toBe('just now') // a clock ahead of ours
+    expect(ago(5 * MIN)).toBe('5m ago')
+    expect(ago(59 * MIN)).toBe('59m ago')
+    expect(ago(60 * MIN)).toBe('1h ago')
+    expect(ago(3 * 60 * MIN + 59 * MIN)).toBe('3h ago')
+    expect(ago(24 * 60 * MIN)).toBe('1d ago')
+    expect(ago(6 * 24 * 60 * MIN)).toBe('6d ago')
+    expect(modifiedAgo(new Date(2026, 9, 12, 9, 0).getTime(), now)).toBe('12 Oct')
   })
 })
