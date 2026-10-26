@@ -1,0 +1,1 @@
+i want to update the artifacts page in grove to feel and look a lot more like how the artifacts page work in claude. in claude i get like a whiteboard with assets/artifacts and i can move around, zoom in, out and open full page. do you understand how i want it?
