@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import { DEFAULT_UI, type Feature, type Project, type UiState } from '@shared/types'
-import { artifactClusters, artifactCrumbs, artifactsTo, boardViewTo, filterClusters, filterTo, findCard, modifiedAgo, neighbours, openCard, pageClusters, previewKind, previewSrc, stepKey } from './artifactsBoard'
+import { artifactClusters, artifactCrumbs, commentCard, artifactsTo, boardViewTo, filterClusters, filterTo, findCard, modifiedAgo, neighbours, openCard, pageClusters, previewKind, previewSrc, stepKey } from './artifactsBoard'
 import { unionFeatures } from './featureUnion'
 import { repoGroups } from './repoGroups'
 import { boardColumns } from './tree'
@@ -30,16 +30,17 @@ describe('artifactClusters', () => {
     expect(names([f])).toEqual([['a', ['00-ticket.md', '01-questions.md', '03-design.md', 'notes.md']]])
   })
 
-  it('folds an html review into its markdown: the card keeps the name and opens the html', () => {
+  it('folds an html review into its markdown: the card keeps the name, opens the html, and carries the markdown', () => {
     const f = feature('a', { artifacts: [md('02-research.md', 'research', 5), html('02-research.html', 'research', 9)] })
-    expect(clusters([f])[0].cards).toEqual([{ name: '02-research.md', path: 'docs/work/a/02-research.html', stage: 'research', mtimeMs: 9 }])
+    expect(clusters([f])[0].cards).toEqual([{ name: '02-research.md', path: 'docs/work/a/02-research.html', stage: 'research', mtimeMs: 9,
+      source: { path: 'docs/work/a/02-research.md', mtimeMs: 5 } }])
   })
 
   it('opens the markdown itself when it has no html, and keeps an html with no markdown as its own card', () => {
     const f = feature('a', { artifacts: [md('01-questions.md', 'questions'), html('mockup.html', 'design')] })
-    expect(clusters([f])[0].cards.map((c) => [c.name, c.path])).toEqual([
-      ['01-questions.md', 'docs/work/a/01-questions.md'],
-      ['mockup.html', 'docs/work/a/mockup.html'],
+    expect(clusters([f])[0].cards.map((c) => [c.name, c.path, c.source])).toEqual([
+      ['01-questions.md', 'docs/work/a/01-questions.md', null],
+      ['mockup.html', 'docs/work/a/mockup.html', null],
     ])
   })
 
@@ -130,7 +131,7 @@ describe('artifactsTo, artifactCrumbs', () => {
 
   it('reads project > Artifacts > feature > artifact, each up-link going where it says', () => {
     const f = feature('a')
-    const card = { name: 'x.md', path: 'docs/work/a/x.md', stage: null, mtimeMs: 1 }
+    const card = { name: 'x.md', path: 'docs/work/a/x.md', stage: null, mtimeMs: 1, source: null }
     expect(artifactCrumbs(projects[0], f, card, ui)).toEqual([
       { label: 'grove', to: { focusedProject: 'p', board: 'sessions' } },
       { label: 'Artifacts', to: { artifacts: { q: { open: null }, p: { open: null } } } },
@@ -220,7 +221,7 @@ describe('previewKind', () => {
 })
 
 describe('previewSrc', () => {
-  const card = (path: string, mtimeMs: number) => ({ name: path, path, stage: null, mtimeMs })
+  const card = (path: string, mtimeMs: number) => ({ name: path, path, stage: null, mtimeMs, source: null })
 
   it('busts an image by its mtime, so a changed file is fetched again', () => {
     expect(previewSrc('p1', card('d/a b.png', 5))).toBe('grove-artifact://p1/d/a%20b.png?v=5')
@@ -248,5 +249,23 @@ describe('modifiedAgo', () => {
     expect(ago(24 * 60 * MIN)).toBe('1d ago')
     expect(ago(6 * 24 * 60 * MIN)).toBe('6d ago')
     expect(modifiedAgo(new Date(2026, 9, 12, 9, 0).getTime(), now)).toBe('12 Oct')
+  })
+})
+
+describe('commentCard', () => {
+  const f = { projectId: 'p', slug: 'a' }
+  const cards = [
+    { name: '01-questions.md', path: 'docs/work/a/01-questions.md', stage: null, mtimeMs: 1, source: null },
+    { name: '03-design.md', path: 'docs/work/a/03-design.html', stage: null, mtimeMs: 2, source: { path: 'docs/work/a/03-design.md', mtimeMs: 1 } },
+  ]
+
+  it('finds the card that opens the file, or the one whose markdown it is', () => {
+    expect(commentCard(cards, f, { projectId: 'p', path: 'docs/work/a/01-questions.md' })).toMatchObject({ ref: { projectId: 'p', slug: 'a', name: '01-questions.md' }, markdown: false })
+    expect(commentCard(cards, f, { projectId: 'p', path: 'docs/work/a/03-design.md' })).toMatchObject({ ref: { projectId: 'p', slug: 'a', name: '03-design.md' }, markdown: true })
+  })
+
+  it('finds nothing for a file no card shows, or another checkout\'s', () => {
+    expect(commentCard(cards, f, { projectId: 'p', path: 'CONTEXT.md' })).toBeNull()
+    expect(commentCard(cards, f, { projectId: 'q', path: 'docs/work/a/01-questions.md' })).toBeNull()
   })
 })

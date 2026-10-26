@@ -13,8 +13,11 @@ const v1ToV2 = (f: { comments?: { state: string; anchor: { kind: string; slug?: 
   }),
 })
 
+// v2 → v3 (D3): a draft may be kept on its feature with a null session; existing comments pass through.
+const v2ToV3 = (f: object) => f
+
 export function loadComments(file: string, onBad?: (msg: string) => void): CommentsFile {
-  return readVersioned<CommentsFile>(file, 2, { schemaVersion: 2, comments: [] }, onBad, { 1: v1ToV2 })
+  return readVersioned<CommentsFile>(file, 3, { schemaVersion: 3, comments: [] }, onBad, { 1: v1ToV2, 2: v2ToV3 })
 }
 
 export function saveComments(file: string, f: CommentsFile): void {

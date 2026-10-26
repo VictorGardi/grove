@@ -6,7 +6,7 @@ import type { ArtifactCard as Card } from './artifactsBoard'
 
 // Rendered with react-dom/server, like the project page: what a card mounts, live or not.
 
-const card = (path: string, mtimeMs = 42): Card => ({ name: path.split('/').pop()!, path, stage: 'design', mtimeMs })
+const card = (path: string, mtimeMs = 42): Card => ({ name: path.split('/').pop()!, path, stage: 'design', mtimeMs, source: null })
 const render = (c: Card, live: boolean) => renderToStaticMarkup(createElement(ArtifactCard, {
   id: 'c', projectId: 'p', card: c, stage: 'Design', live, now: 42 + 5 * 60_000, onOpen: vi.fn(), register: vi.fn(),
 }))

@@ -2,7 +2,7 @@ import { randomUUID } from 'node:crypto'
 import fs from 'node:fs'
 import os from 'node:os'
 import path from 'node:path'
-import type { Comment, CommentAnchor, Project, PullRequest, Session, SessionDiff, SessionKind, Slices, UiState, WorkflowStatus } from '@shared/types'
+import type { Comment, CommentAnchor, FeatureKey, Project, PullRequest, Session, SessionDiff, SessionKind, Slices, UiState, WorkflowStatus } from '@shared/types'
 import { DEFAULT_UI, EMPTY_FEATURES, OPENCODE_CONNECTING } from '@shared/types'
 import { keyProjectId } from '@shared/groups'
 import { opencodeCliConfig, opencodeModelEnv } from '@shared/opencodeSession'
@@ -20,7 +20,7 @@ import { createDiffWatch } from './diff/watch'
 import { reanchorDiff, reanchorFile } from './comments/anchor'
 import { slugFor } from './autolink'
 import { formatReview } from './comments/format'
-import { addComment, draftsOf, dropSession, markSent, removeComment, updateComment } from './comments/model'
+import { addComment, draftsOf, dropFeatureProject, dropSession, markSent, removeComment, updateComment } from './comments/model'
 import { loadComments, saveComments } from './comments/store'
 import type { TurnResult } from '@shared/cli'
 import { isDirectory, paneStable, realOrSelf, resolveProject, waitTurn } from './cliOps'
@@ -99,7 +99,7 @@ export interface Commands {
   sessionSetParent(a: { id: string; parent: string | null }): Promise<Result<Session>> // null: out of its group
   uiSet(partial: Partial<UiState>): Promise<Result<UiState>>
   sessionFocusLast(): Promise<Result<{ id: string }>> // the latest earlier session still valid; ⌃Tab
-  commentAdd(a: { sessionId: string; anchor: CommentAnchor; body: string }): Promise<Result<Comment>>
+  commentAdd(a: { sessionId: string | null; feature?: FeatureKey; anchor: CommentAnchor; body: string }): Promise<Result<Comment>> // null: kept on a listed feature
   commentUpdate(a: { id: string; body: string }): Promise<Result<Comment>>
   commentDelete(a: { id: string }): Promise<Result<{ id: string }>>
   diffLines(a: { sessionId: string; path: string; from: number; to: number }): Promise<Result<string[]>> // lines of a changed file in the open diff, 1-based inclusive
@@ -240,7 +240,7 @@ export function createCore(opts: CoreOptions): Core {
       ) // live-only
       saveState(opts.statePath, { schemaVersion: 10, sessions, ui: slices.ui })
     }
-    else if (k === 'comments') saveComments(opts.commentsPath, { schemaVersion: 2, comments: slices.comments })
+    else if (k === 'comments') saveComments(opts.commentsPath, { schemaVersion: 3, comments: slices.comments })
     if (k === 'sessions') publish() // card state reads linked sessions
   }
 
@@ -741,6 +741,8 @@ export function createCore(opts: CoreOptions): Core {
     set('projects', slices.projects.filter((p) => p.id !== id))
     const gone = slices.sessions.filter((s) => s.projectId === id)
     dropSessions((s) => s.projectId !== id)
+    const kept = dropFeatureProject(slices.comments, id)
+    if (kept.length !== slices.comments.length) set('comments', kept)
     forgetAgents(gone)
     forgetProjectUi((x) => x === id)
     syncProjects(false)
@@ -1068,9 +1070,14 @@ export function createCore(opts: CoreOptions): Core {
       return { ok: false, error: 'not-found' }
     },
 
-    async commentAdd({ sessionId, anchor, body }) {
-      if (!findSession(sessionId)) return { ok: false, error: 'not-found' }
-      const r = addComment(slices.comments, { id: randomUUID(), sessionId, anchor, body, now: now().toISOString() })
+    async commentAdd({ sessionId, feature, anchor, body }) {
+      let owner: { feature: { projectId: string; slug: string } } | {} = {}
+      if (sessionId === null) {
+        if (!feature || !slices.features.items.some((f) => f.projectId === feature.projectId && f.slug === feature.slug)) return { ok: false, error: 'not-found' }
+        if (anchor.kind === 'file' && anchor.projectId !== feature.projectId) return { ok: false, error: 'bad-owner' }
+        owner = { feature: { projectId: feature.projectId, slug: feature.slug } }
+      } else if (!findSession(sessionId)) return { ok: false, error: 'not-found' }
+      const r = addComment(slices.comments, { id: randomUUID(), sessionId, ...owner, anchor, body, now: now().toISOString() })
       if (!r.ok) return r
       set('comments', r.comments)
       return { ok: true, data: r.comment }

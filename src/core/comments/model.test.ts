@@ -1,10 +1,17 @@
 import { describe, expect, it } from 'vitest'
 import type { Comment } from '@shared/types'
-import { addComment, draftsOf, dropSession, markSent, MAX_SENT, removeComment, updateComment } from './model'
+import { addComment, draftsOf, dropFeatureProject, dropSession, markSent, MAX_SENT, removeComment, updateComment } from './model'
 
 const T = '2026-10-07T10:00:00.000Z'
 const add = (cs: Comment[], id: string, body = 'x', sessionId = 's') => {
   const r = addComment(cs, { id, sessionId, anchor: { kind: 'note' }, body, now: T })
+  if (!r.ok) throw new Error(r.error)
+  return r.comments
+}
+const fileAnchor = { kind: 'file' as const, projectId: 'p', path: 'docs/work/f/03-design.md', exact: 'q', prefix: '', suffix: '', start: 1, end: 1 }
+const F = { projectId: 'p', slug: 'f' }
+const addKept = (cs: Comment[], id: string, feature = F) => {
+  const r = addComment(cs, { id, sessionId: null, feature, anchor: fileAnchor, body: id, now: T })
   if (!r.ok) throw new Error(r.error)
   return r.comments
 }
@@ -28,6 +35,23 @@ describe('addComment', () => {
   })
 })
 
+describe('addComment kept on a feature', () => {
+  it('stores the feature only when there is no session', () => {
+    expect(addKept([], 'a')[0]).toMatchObject({ sessionId: null, feature: F, state: 'draft' })
+    const r = addComment([], { id: 'b', sessionId: 's', feature: F, anchor: fileAnchor, body: 'x', now: T })
+    expect(r.ok && 'feature' in r.comment).toBe(false)
+  })
+  it('refuses a null owner on a note or diff anchor, or without a feature', () => {
+    const diff = { kind: 'diff' as const, root: '/r', path: 'a', side: 'new' as const, start: 1, end: 1, lines: ['x'] }
+    expect(addComment([], { id: 'a', sessionId: null, feature: F, anchor: { kind: 'note' }, body: 'x', now: T })).toEqual({ ok: false, error: 'bad-owner' })
+    expect(addComment([], { id: 'a', sessionId: null, feature: F, anchor: diff, body: 'x', now: T })).toEqual({ ok: false, error: 'bad-owner' })
+    expect(addComment([], { id: 'a', sessionId: null, anchor: fileAnchor, body: 'x', now: T })).toEqual({ ok: false, error: 'bad-owner' })
+  })
+  it('is never a session draft', () => {
+    expect(draftsOf(addKept(add([], 'a'), 'k'), 's').map((c) => c.id)).toEqual(['a'])
+  })
+})
+
 describe('updateComment', () => {
   it('changes a draft body', () => {
     const r = updateComment(add([], 'a'), 'a', ' new ', '2026-10-07T11:00:00.000Z')
@@ -47,6 +71,11 @@ describe('remove and drop', () => {
     expect(removeComment(cs, 'a').map((c) => c.id)).toEqual(['b'])
     expect(dropSession(cs, 'other').map((c) => c.id)).toEqual(['a'])
   })
+  it('drops the drafts kept on features of one checkout only', () => {
+    const cs = addKept(addKept(add([], 'a'), 'k'), 'q', { projectId: 'q', slug: 'f' })
+    expect(dropFeatureProject(cs, 'p').map((c) => c.id)).toEqual(['a', 'q'])
+    expect(dropSession(cs, 's').map((c) => c.id)).toEqual(['k', 'q'])
+  })
 })
 
 describe('markSent', () => {
@@ -65,5 +94,11 @@ describe('markSent', () => {
     expect(ids).toHaveLength(MAX_SENT)
     expect(ids).not.toContain('c0')
     expect(ids).toContain(`c${MAX_SENT + 1}`)
+  })
+  it('does not prune drafts kept on a feature', () => {
+    let cs: Comment[] = []
+    for (let i = 0; i < MAX_SENT + 2; i++) cs = addKept(cs, `k${i}`)
+    cs = markSent(cs, cs.map((c) => c.id), T)
+    expect(cs).toHaveLength(MAX_SENT + 2)
   })
 })

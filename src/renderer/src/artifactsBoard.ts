@@ -1,5 +1,5 @@
 import { IMAGE_EXTS, artifactUrl, extOf, isViewable } from '@shared/artifactUrl'
-import type { ArtifactRef, CanvasView, Feature, Project, UiState } from '@shared/types'
+import type { ArtifactRef, CanvasView, Feature, FeatureKey, Project, UiState } from '@shared/types'
 import { unionFeatures, type UnionFeature } from './featureUnion'
 import { openBoard, type Crumb } from './navigation'
 import { repoGroups, repoProjectIds } from './repoGroups'
@@ -11,6 +11,7 @@ export interface ArtifactCard {
   path: string          // project-relative path the card opens: the html companion when there is one
   stage: string | null
   mtimeMs: number       // of the file it opens, so the full page reloads when that changes
+  source: { path: string; mtimeMs: number } | null // the markdown behind an html companion, to comment on; null otherwise
 }
 export interface ArtifactCluster<T extends Feature = UnionFeature> { feature: T; cards: ArtifactCard[] }
 
@@ -26,7 +27,8 @@ function cardsOf(f: Feature, dir: string, stages: { id: string }[]): ArtifactCar
   const rank = (stage: string | null) => { const i = stages.findIndex((s) => s.id === stage); return i < 0 ? stages.length : i }
   return files.filter((a) => !folded.has(a.name)).map((a) => {
     const open = isMd(a.name) ? companion(a.name) ?? a : a
-    return { name: a.name, path: dir + open.name, stage: a.stage, mtimeMs: open.mtimeMs }
+    const source = open === a ? null : { path: dir + a.name, mtimeMs: a.mtimeMs }
+    return { name: a.name, path: dir + open.name, stage: a.stage, mtimeMs: open.mtimeMs, source }
   }).sort((a, b) => rank(a.stage) - rank(b.stage) || a.name.localeCompare(b.name))
 }
 
@@ -88,6 +90,14 @@ export function neighbours(clusters: ArtifactCluster<Feature>[], ref: ArtifactRe
   const index = all.findIndex((r) => r.projectId === ref.projectId && r.slug === ref.slug && r.name === ref.name)
   if (index < 0) return { prev: null, next: null, index, total: all.length }
   return { prev: all[index - 1] ?? null, next: all[index + 1] ?? null, index, total: all.length }
+}
+
+// Where a feature's file comment lives on the full page: the card that opens its file, or the card
+// whose markdown it is (then shown as markdown). None for a file no card of the feature shows.
+export function commentCard(cards: ArtifactCard[], feature: FeatureKey, at: { projectId: string; path: string }): { ref: ArtifactRef; card: ArtifactCard; markdown: boolean } | null {
+  if (at.projectId !== feature.projectId) return null
+  const card = cards.find((c) => c.path === at.path) ?? cards.find((c) => c.source?.path === at.path)
+  return card ? { ref: { projectId: feature.projectId, slug: feature.slug, name: card.name }, card, markdown: card.path !== at.path } : null
 }
 
 // The step an arrow key asks for on the full page: none with a modifier (the system's own

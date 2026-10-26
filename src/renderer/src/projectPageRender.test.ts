@@ -101,6 +101,19 @@ describe('ProjectPage, the artifacts board', () => {
     expect(html).not.toContain('01-questions.md')
   })
 
+  it('offers the feature\'s comments, and the markdown behind an html face to comment on', () => {
+    const html = page(projects[0], 'artifacts', features, [], ref)
+    expect(html).toContain('Comments (0)')
+    expect(html).toMatch(/<button[^>]*aria-pressed="false"[^>]*>Markdown<\/button>/)
+  })
+
+  it('offers no Markdown toggle on a card that is its own markdown', () => {
+    const html = page(projects[0], 'artifacts', features, [], { ...ref, name: '01-questions.md' })
+    expect(html).toContain('Comments (0)')
+    expect(html).not.toContain('>Markdown<')
+    expect(html).toContain('src="grove-artifact://p/docs/work/f/01-questions.md"')
+  })
+
   it('falls back to the board when the open artifact is gone', () => {
     const html = page(projects[0], 'artifacts', features, [], { ...ref, name: 'gone.md' })
     expect(html).not.toContain('<iframe')

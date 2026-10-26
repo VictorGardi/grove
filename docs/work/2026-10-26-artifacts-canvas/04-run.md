@@ -264,4 +264,87 @@ Pass, 0 blocking, 0 fix rounds. Non-blocking left:
 - press Back: the board is still filtered at the same pan and zoom;
 - restart the app: the filter is restored.
 
+## Slice 5
+
+Session: artifacts-canvas-slice-5-a1
+Status: done
+Commit: this commit (see git log)
+
+### Slice plan
+
+Found in the code: `Comment.sessionId` is a required string and `CommentsFile` is schema 2 (`types.ts`); `addComment`/`draftsOf`/`markSent`/`dropSession` in `src/core/comments/model.ts` key everything on it, and `addComment` allows one draft note per session. `commentAdd` in `core.ts` refuses an unknown session; `reviewSend` sends `draftsOf(session)` and marks those sent. The file re-anchor loop (`reanchorFiles`, `reanchorFile` in `anchor.ts`) keys on the anchor's `projectId`/`path` only, so it already covers any owner. `loadComments` reads through `readVersioned` with a migrations map (`migrations[n]` turns n into n+1); core saves with a literal `schemaVersion: 2`. Removing a project drops its sessions' comments through `dropSession`. The renderer cannot import `src/core`, only `@shared`. `ArtifactViewer.tsx` holds the frame bridge (message listener accepted only from its frame, `config`/`highlights` sync, `CommentEditor` panel, add/update/delete) keyed on `target.fromDiff ?? focusedSessionId`; `ReviewMenu({ sessionId })` in `ReviewTray.tsx` is the tray, also used by `DiffViewer`. `ArtifactPage` shows `card.path`, which is the html companion when the markdown has one (slice 1 card rule), and html is not commentable (`isCommentable`: `.md` only). A `Session` has `projectId` and `feature` (slug); checkouts of one repo share `worktreeOf ?? id`.
+
+Implementer 1 (shared types and core):
+- [x] `src/shared/types.ts`: `FeatureKey { projectId; slug }`; `Comment.sessionId: string | null` and `Comment.feature?: FeatureKey` (set exactly when `sessionId` is null); `CommentsFile.schemaVersion: 3`
+- [x] `src/shared/comments.ts` (+ `comments.test.ts`): `sameFeature`, `featureDrafts(cs, feature)`, `linkedDrafts(cs, session, projects)` (the session's own drafts, then drafts owned by the feature with the session's slug in the same repo; none for an unlinked session)
+- [x] `src/core/comments/model.ts` (+ test): `addComment` takes `sessionId: string | null` and `feature?`; null owner without a `file` anchor or without a feature is `bad-owner`; `draftsOf` stays session-owned only (what Send sends until slice 6 re-owns); `markSent` prunes only real sessions; `dropFeatureProject(cs, projectId)`
+- [x] `src/core/comments/store.ts` (+ test): schema 3, `2 → 3` no-op migration; v1 chains through; `core.ts` saves schema 3
+- [x] `src/shared/ipc.ts` `comment:add` takes `sessionId: string | null` and `feature?`; `core.ts` `commentAdd`: null owner needs a listed feature (`not-found`) and a file anchor (`bad-owner`); project removal drops feature-owned drafts of that project
+- [x] core tests (`src/core/comments/core.test.ts`, `reanchor.test.ts`): add, update, delete of a feature-owned draft with no session; diff and note anchors rejected with a null owner; persists across restart; schema 2 file loads unchanged; a feature-owned draft re-anchors after an mtime change and orphans when its text is gone; `reviewSend` of a session never sends feature-owned drafts
+
+Implementer 2 (renderer):
+- [x] `src/renderer/src/artifactComments.ts` (+ test): `CommentOwner` (session or feature); `draftsForFile(cs, owner | null, target)`; `ownerArgs(owner)` for `comment:add`
+- [x] `src/renderer/src/components/ArtifactComments.tsx`: the frame bridge extracted from `ArtifactViewer` as `useArtifactComments({ frame, target, owner, commentable })` plus its editor panel; Send-from-editor only for a session owner
+- [x] `ArtifactViewer.tsx` uses it with the session owner, behaviour unchanged
+- [x] `artifactsBoard.ts` (+ test): a folded card carries `source: { path; mtimeMs } | null`, its markdown
+- [x] `ArtifactPage.tsx` + css: feature owner (the cluster's feature), the bridge on its frame, a "Markdown" toggle when the card has a source so it can be commented, and a feature tray in the header; `ProjectPage.tsx` passes the feature
+- [x] `ReviewTray.tsx`: `FeatureReviewMenu({ feature, onJump })` (feature-owned drafts, edit and delete, Send disabled with a note that they are kept until sent); `ReviewMenu` lists `linkedDrafts` with feature-owned ones marked, Send counting the session's own drafts only
+- [x] render tests: full page has the tray and the toggle; existing viewer tests unchanged
+
+Models passed: implementer: inherit, reviewer: inherit
+
+### Review rounds
+
+Round 1: 0 blocking. Non-blocking applied:
+- `commentAdd` refuses a feature-owned file anchor in another project than the feature (`bad-owner`, tested), with no non-null assertions;
+- a session's tray explains that feature-owned drafts it lists are not sent by its Send;
+- the "on the feature" tag has a neutral `.kept` style instead of the orphan warning style;
+- a comment on the `drafts` memo's deps in `ArtifactComments.tsx`.
+
+Pass, 0 blocking, 0 fix rounds. Non-blocking left:
+- (a) Jumping to a feature-owned draft from a session's tray opens the side viewer with a session owner, so that draft is not highlighted there.
+- (b) The full-page tray matches the feature's exact `projectId`, while `linkedDrafts` matches across the repo's checkouts. Drafts written on the main checkout's board do not show on a worktree page's board for the same slug. This follows D3 as written. Slice 6's re-own and Send should collect the repo-wide set the session tray shows.
+- (c) Feature-owned drafts are cleaned up only when their project is removed. A deleted or renamed feature folder leaves them in `comments.json`. They still show in a linked session's tray while the slug matches.
+- (d) A session's `Comments (n)` counts feature-owned drafts, but its Send sends only the session's own. A hint explains this until slice 6.
+
+### Deviations
+
+- The merge rule (`linkedDrafts`, `featureDrafts`, `sameFeature`) lives in `src/shared/comments.ts`, not `model.ts`, because the renderer cannot import `src/core`. `draftsOf` stays session-owned only, so `reviewSend` never sends a feature-owned draft before slice 6 re-owns it.
+- A folded card carries `source` (its markdown), and the full page has a "Markdown" toggle. Without it, a markdown file with an html companion would open only as html, which cannot be commented.
+- `ArtifactPage` also takes the cluster's `cards`, so a jump from the feature tray can step to the commented card. `commentCard` in `artifactsBoard.ts` resolves it.
+- The full page always uses the feature as the owner, even with a session focused.
+- Removing a project drops the feature-owned drafts of that project (`dropFeatureProject`).
+- `commentAdd` with a null owner needs a listed feature (`not-found`) and an anchor in the feature's project (`bad-owner`).
+- While the full page's Comments popover is open, the arrow keys do not step (the existing dialog rule).
+
+### Verification
+
+- `npm test`: 101 files, 1226 tests pass, existing expectations unchanged except the comments store's schema number (2 → 3).
+- New tests:
+  - `src/shared/comments.test.ts`: the merge rule (own drafts only; same feature merged; same slug in another repo, another feature, and sent drafts excluded; a worktree checkout of the same repo included; no merge for an unlinked session).
+  - `model.test.ts`: `bad-owner` for note, diff or a missing feature; `feature` stored only when feature-owned; never in `draftsOf`; `dropFeatureProject`; `dropSession` and `markSent` leave feature-owned drafts alone.
+  - `store.test.ts`: a schema 2 file loads unchanged at schema 3; v1 chains through; a feature-owned draft round-trips.
+  - `core.test.ts`:
+    - add, update and delete with no session, kept across a restart;
+    - `bad-owner` for a null owner with a note, a diff or a file in another project;
+    - `not-found` for an unknown feature;
+    - `reviewSend` of a session linked to the feature never sends a feature-owned draft;
+    - removing the session keeps the draft, and removing the project drops it.
+  - `reanchor.test.ts`: a feature-owned draft follows an mtime change and orphans when its quote is gone.
+  - `artifactComments.test.ts`: a session owner never sees feature drafts; a feature owner sees only its own on the file; `ownerArgs`.
+  - `artifactsBoard.test.ts`: `source` on folded cards; `commentCard`.
+  - `projectPageRender.test.ts`: the full page shows the Comments tray; the Markdown toggle appears only for a card with a source.
+- Existing side-viewer and diff comment tests pass unchanged.
+- `npm run typecheck` passes for node and web.
+- Models requested: implementer: inherit, reviewer: inherit.
+
+### Left for the human
+
+`npm run dev`, to be run by the human:
+- open an artifact full page with no session running, select text in a markdown artifact (use the Markdown toggle on an html-backed card), and save a comment;
+- step away and back, press Back and reopen: the highlight and the tray entry are still there;
+- restart the app: the comment is still there;
+- a session linked to that feature lists the draft in its tray, tagged "on the feature", with Send counting only its own drafts;
+- the Feature page Files list, the right-hand viewer and diff comments behave as before.
+
 ## Open questions

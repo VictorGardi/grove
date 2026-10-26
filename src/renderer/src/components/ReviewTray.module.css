@@ -163,3 +163,14 @@
   color: var(--text-2);
   font-size: var(--fs-xs);
 }
+
+.kept {
+  flex: none;
+  color: var(--text-3);
+  font-size: var(--fs-xs);
+}
+
+.hint {
+  color: var(--text-2);
+  font-size: var(--fs-sm);
+}

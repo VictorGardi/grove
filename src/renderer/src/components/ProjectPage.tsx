@@ -46,7 +46,8 @@ export function ProjectPage({ project, projects, board, stages, features, sessio
       // previous and next walk the cards the board draws, so they stay inside its filter
       const ref = { projectId: open.cluster.feature.projectId, slug: open.cluster.feature.slug, name: open.card.name }
       const near = neighbours(filterClusters(clusters, artifactsFilter), ref)
-      return <ArtifactPage projectId={open.cluster.feature.projectId} card={open.card} {...near}
+      const feature = { projectId: open.cluster.feature.projectId, slug: open.cluster.feature.slug }
+      return <ArtifactPage projectId={feature.projectId} feature={feature} cards={open.cluster.cards} card={open.card} {...near}
         onBack={() => onOpenArtifact(null)} onStep={onOpenArtifact} />
     }
     return (
