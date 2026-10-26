@@ -39,6 +39,19 @@ pre.mermaid { background: none; text-align: center; }
 img { max-width: 100%; }
 hr { border: 0; border-top: 1px solid var(--border); }
 
+/* Outline (renderOutline): only on wide frames, so preview cards and the side viewer look as before. */
+nav.toc { display: none; }
+@media (min-width: 900px) {
+  body:has(> nav.toc) { display: grid; grid-template-columns: minmax(0, 860px) 220px; justify-content: center; }
+  nav.toc { display: block; position: sticky; top: 0; align-self: start; max-height: 100vh; overflow-y: auto; box-sizing: border-box; padding: 32px 16px 32px 0; font-size: 12.5px; line-height: 1.4; }
+  nav.toc ul { list-style: none; margin: 0; padding: 0; }
+  nav.toc ul ul { padding-left: 12px; }
+  nav.toc li { margin: 0; }
+  nav.toc a { display: block; padding: 3px 0 3px 10px; border-left: 2px solid transparent; color: var(--muted); text-decoration: none; overflow-wrap: anywhere; }
+  nav.toc a:hover { color: var(--fg); }
+  nav.toc a.active { color: var(--link); border-left-color: var(--link); }
+}
+
 ::highlight(grove-comment) { background: rgba(255, 200, 0, .35); }
 .grove-pop { position: absolute; z-index: 10; }
 .grove-pop button { font: 12px system-ui, sans-serif; padding: 3px 10px; color: var(--fg); background: var(--subtle); border: 1px solid var(--border); border-radius: 6px; cursor: pointer; box-shadow: 0 2px 8px rgba(0, 0, 0, .25); }

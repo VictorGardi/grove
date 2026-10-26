@@ -7,6 +7,45 @@ import { MERMAID_SCRIPTS } from './html'
 // Raw HTML in the source is escaped (`html: false`); links are checked by markdown-it's validateLink.
 const md = new MarkdownIt('default', { html: false })
 const esc = md.utils.escapeHtml
+const OUTLINED = new Set(['h2', 'h3'])
+const OUTLINE_MIN = 3 // fewer headings than this is not worth an outline
+
+function slug(text: string): string {
+  return text.toLowerCase().replace(/[^\p{L}\p{N}]+/gu, '-').replace(/^-+|-+$/g, '')
+}
+
+// A heading's visible text: markdown syntax dropped, inline code kept.
+function headingText(inline: Token): string {
+  return (inline.children ?? []).filter((c) => c.type === 'text' || c.type === 'code_inline').map((c) => c.content).join('')
+}
+
+// Links to the h2/h3 sections, h3 nested under the h2 before it; '' when there are too few.
+// Outside `<main>`, so the comment script never indexes or comments on it.
+export function renderOutline(tokens: Token[]): string {
+  const items: { level: number; id: string; text: string }[] = []
+  for (let i = 0; i < tokens.length - 1; i++) {
+    const id = tokens[i].type === 'heading_open' ? String(tokens[i].attrGet('id') ?? '') : ''
+    if (id && OUTLINED.has(tokens[i].tag)) items.push({ level: tokens[i].tag === 'h2' ? 2 : 3, id, text: headingText(tokens[i + 1]) })
+  }
+  if (items.length < OUTLINE_MIN) return ''
+  let html = ''
+  let open = false // an h2's nested list is open
+  let h2 = false // an h2 came before; leading h3s stay top level
+  items.forEach((it, i) => {
+    const link = `<a href="#${esc(it.id)}">${esc(it.text)}</a>`
+    if (it.level === 3 && h2) {
+      html += open ? '' : '<ul>'
+      open = true
+      html += `<li>${link}</li>`
+      return
+    }
+    html += (open ? '</ul>' : '') + (i > 0 ? '</li>' : '') + `<li>${link}`
+    open = false
+    h2 ||= it.level === 2
+  })
+  html += (open ? '</ul>' : '') + '</li>'
+  return `<nav class="toc" aria-label="Outline"><ul>${html}</ul></nav>`
+}
 
 // `- [ ] x` / `- [x] x` → a disabled checkbox; runs last, after text tokens are joined.
 md.core.ruler.push('task_lists', (state) => {
@@ -30,6 +69,20 @@ md.core.ruler.push('data_lines', (state) => {
   for (const t of state.tokens) {
     if (!t.map || !t.block || t.nesting === -1 || t.type === 'inline') continue
     t.attrSet('data-line', `${t.map[0] + 1 + offset}-${t.map[1] + offset}`)
+  }
+})
+
+// h2/h3 get a unique slug id, the outline's link targets.
+md.core.ruler.push('heading_ids', (state) => {
+  const used = new Set<string>()
+  const t = state.tokens
+  for (let i = 0; i < t.length - 1; i++) {
+    if (t[i].type !== 'heading_open' || !OUTLINED.has(t[i].tag)) continue
+    const base = slug(headingText(t[i + 1])) || 'section'
+    let id = base
+    for (let n = 2; used.has(id); n++) id = `${base}-${n}`
+    used.add(id)
+    t[i].attrSet('id', id)
   }
 })
 
@@ -66,10 +119,12 @@ export function renderMarkdown(source: string, name: string): string {
       + entries.map(([k, v]) => `<tr><th>${esc(k)}</th><td>${esc(fmValue(v))}</td></tr>`).join('')
       + '</tbody></table>'
   const mermaid = tokens.some((t) => t.type === 'fence' && t.info.trim() === 'mermaid')
+  const outline = renderOutline(tokens)
   return '<!doctype html><html><head><meta charset="utf-8">'
     + `<title>${esc(name)}</title>`
     + `<link rel="stylesheet" href="${ARTIFACT_SCHEME}://${ASSETS_HOST}/markdown.css">`
     + (mermaid ? MERMAID_SCRIPTS : '')
     + `<script src="${ARTIFACT_SCHEME}://${ASSETS_HOST}/comments.js" defer></script>`
-    + `</head><body><main class="markdown-body">${table}${md.renderer.render(tokens, md.options, env)}</main></body></html>`
+    + (outline ? `<script src="${ARTIFACT_SCHEME}://${ASSETS_HOST}/outline.js" defer></script>` : '')
+    + `</head><body><main class="markdown-body">${table}${md.renderer.render(tokens, md.options, env)}</main>${outline}</body></html>`
 }

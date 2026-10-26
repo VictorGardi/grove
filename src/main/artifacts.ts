@@ -41,6 +41,7 @@ export function handleArtifacts(core: Core): void {
     ['mermaid-init.js', path.join(app.getAppPath(), 'resources', 'viewer', 'mermaid-init.js')],
     ['comments.js', path.join(app.getAppPath(), 'resources', 'viewer', 'comments.js')],
     ['markdown.css', path.join(app.getAppPath(), 'resources', 'viewer', 'markdown.css')],
+    ['outline.js', path.join(app.getAppPath(), 'resources', 'viewer', 'outline.js')],
   ])
 
   protocol.handle(ARTIFACT_SCHEME, async (req) => {

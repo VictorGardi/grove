@@ -68,3 +68,45 @@ describe('renderMarkdown', () => {
     expect(renderMarkdown('# T\n', 'a.md')).toContain('<h1 data-line="1-1">')
   })
 })
+
+describe('outline', () => {
+  const doc = '# Title\n\n## Scope & goals\n\ntext\n\n### Open `questions`?\n\n### Open questions\n\n## Scope & goals\n\n## Next\n'
+
+  it('gives h2 and h3 unique slug ids, keeping data-line', () => {
+    const out = renderMarkdown(doc, 'a.md')
+    expect(out).toContain('<h1 data-line="1-1">Title</h1>')
+    expect(out).toContain('<h2 data-line="3-3" id="scope-goals">Scope &amp; goals</h2>')
+    expect(out).toContain('<h3 data-line="7-7" id="open-questions">')
+    expect(out).toContain('<h3 data-line="9-9" id="open-questions-2">')
+    expect(out).toContain('<h2 data-line="11-11" id="scope-goals-2">')
+    expect(out).toContain('<p data-line="5-5">text</p>')
+  })
+
+  it('nests h3 under the h2 before it and leaves out h1', () => {
+    expect(renderMarkdown(doc, 'a.md')).toContain('<nav class="toc" aria-label="Outline"><ul>'
+      + '<li><a href="#scope-goals">Scope &amp; goals</a><ul>'
+      + '<li><a href="#open-questions">Open questions?</a></li>'
+      + '<li><a href="#open-questions-2">Open questions</a></li></ul></li>'
+      + '<li><a href="#scope-goals-2">Scope &amp; goals</a></li>'
+      + '<li><a href="#next">Next</a></li></ul></nav>')
+  })
+
+  it('keeps leading h3s top level', () => {
+    expect(renderMarkdown('### a\n\n### b\n\n## c\n', 'a.md'))
+      .toContain('<ul><li><a href="#a">a</a></li><li><a href="#b">b</a></li><li><a href="#c">c</a></li></ul>')
+  })
+
+  it('sits outside <main class="markdown-body">, with its script', () => {
+    const out = renderMarkdown(doc, 'a.md')
+    expect(out).toMatch(/<\/main><nav class="toc"[^]*<\/nav><\/body>/)
+    expect(out.slice(out.indexOf('<main'), out.indexOf('</main>'))).not.toContain('class="toc"')
+    expect(out).toContain('<script src="grove-artifact://assets/outline.js" defer></script>')
+  })
+
+  it('is left out with fewer than 3 h2/h3 headings', () => {
+    const out = renderMarkdown('# T\n\n## a\n\n### b\n\n#### c\n', 'a.md')
+    expect(out).not.toContain('<nav')
+    expect(out).not.toContain('outline.js')
+    expect(out).toContain('<h2 data-line="3-3" id="a">')
+  })
+})
