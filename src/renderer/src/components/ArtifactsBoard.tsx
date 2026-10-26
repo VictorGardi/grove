@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, type CSSProperties, type MouseEvent, type PointerEvent } from 'react'
 import type { CanvasView } from '@shared/types'
-import type { ArtifactCard, ArtifactCluster } from '../artifactsBoard'
+import { filterClusters, type ArtifactCard, type ArtifactCluster } from '../artifactsBoard'
 import { DEFAULT_VIEW, clampPan, fitView, panBy, viewWriter, wheelFactor, zoomAt, zoomStep, zoomTo, type Size } from '../canvasView'
 import { livePreviews, sameSet, type Rect } from '../previewGate'
 import { ArtifactCard as CardView } from './ArtifactCard'
@@ -14,10 +14,12 @@ const FIT_PAD = 32
 const CLOCK_MS = 60_000 // how often the cards' "5m ago" moves on
 
 interface Props {
-  clusters: ArtifactCluster[]
+  clusters: ArtifactCluster[] // every feature's; the filter picks which the canvas draws
   stages: { id: string; label: string }[]
   view: CanvasView | undefined // the saved pan and zoom; absent: the default view
   onViewChange(view: CanvasView): void
+  filter: string | null // the slug of the one feature drawn; null: all
+  onFilterChange(slug: string | null, view: CanvasView): void // the view the new clusters start at, saved with the filter
   onOpen(cluster: ArtifactCluster, card: ArtifactCard): void
 }
 
@@ -32,7 +34,10 @@ export function ArtifactsBoard(props: Props) {
 const cardKey = (c: ArtifactCluster, card: ArtifactCard) => c.feature.projectId + '/' + card.path
 const clusterKey = (c: ArtifactCluster) => c.feature.projectId + '/' + c.feature.slug
 
-function Canvas({ clusters, stages, view: saved, onViewChange, onOpen }: Props) {
+function Canvas({ clusters: all, stages, view: saved, onViewChange, filter, onFilterChange, onOpen }: Props) {
+  // memoised: the measuring effect below re-runs when, and only when, the drawn clusters change
+  const clusters = useMemo(() => filterClusters(all, filter), [all, filter])
+  const active = all.some((c) => c.feature.slug === filter) ? filter : null // a stale filter draws all, so the picker says so
   // live in component state while the gesture runs, saved behind it (design D1); the prop only seeds it
   const [view, setView] = useState(saved ?? DEFAULT_VIEW)
   const [panning, setPanning] = useState(false)
@@ -173,6 +178,13 @@ function Canvas({ clusters, stages, view: saved, onViewChange, onOpen }: Props) 
   const step = (dir: 1 | -1) => commit(zoomStep(viewRef.current, dir, sizes().port))
   const actualSize = () => commit(zoomTo(viewRef.current, 1, sizes().port))
   const fit = () => { const { port, content } = sizes(); commit(fitView(port, content, FIT_PAD)) }
+  // another set of clusters starts at the plane's top-left, at the zoom the human chose
+  // one write with the filter, and none pending behind it: a separate view write would echo the old filter
+  const pick = (slug: string | null) => {
+    const v = show({ ...DEFAULT_VIEW, scale: viewRef.current.scale })
+    writer.cancel()
+    onFilterChange(slug, v)
+  }
   // stable, so the memoised cards skip a re-render when only the view changes
   const open = useCallback((key: string) => {
     const hit = byKey.current.get(key)
@@ -205,6 +217,13 @@ function Canvas({ clusters, stages, view: saved, onViewChange, onOpen }: Props) 
             </section>
           ))}
         </div>
+      </div>
+      <div className={s.filter}>
+        <select className={s.select} aria-label="Feature" value={active ?? ''} onChange={(e) => pick(e.target.value || null)}>
+          <option value="">All features</option>
+          {all.map((c) => <option key={clusterKey(c)} value={c.feature.slug}>{c.feature.title}</option>)}
+        </select>
+        {active && <Button variant="ghost" size="sm" aria-label="Clear filter" onClick={() => pick(null)}>×</Button>}
       </div>
       <div className={s.controls}>
         <Button variant="ghost" size="sm" aria-label="Zoom out" onClick={() => step(-1)}>−</Button>

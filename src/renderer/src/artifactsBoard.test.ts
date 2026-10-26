@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import { DEFAULT_UI, type Feature, type Project, type UiState } from '@shared/types'
-import { artifactClusters, artifactCrumbs, artifactsTo, boardViewTo, findCard, modifiedAgo, openCard, pageClusters, previewKind, previewSrc } from './artifactsBoard'
+import { artifactClusters, artifactCrumbs, artifactsTo, boardViewTo, filterClusters, filterTo, findCard, modifiedAgo, neighbours, openCard, pageClusters, previewKind, previewSrc, stepKey } from './artifactsBoard'
 import { unionFeatures } from './featureUnion'
 import { repoGroups } from './repoGroups'
 import { boardColumns } from './tree'
@@ -114,6 +114,20 @@ describe('artifactsTo, artifactCrumbs', () => {
     expect(boardViewTo(DEFAULT_UI, 'p', view)).toEqual({ artifacts: { p: { open: null, view } } })
   })
 
+  it("keeps a page's filter when its open artifact or view changes, and both when its filter does, unless a view comes with it", () => {
+    const view = { x: 10, y: -20, scale: 0.5 }
+    const full: UiState = { ...ui, artifacts: { ...ui.artifacts, p: { open: ref, view, filter: 'a' } } }
+    expect(artifactsTo(full, 'p', null)).toEqual({ artifacts: { q: { open: null }, p: { open: null, view, filter: 'a' } } })
+    expect(boardViewTo(full, 'p', { x: 0, y: 0, scale: 1 })).toEqual({ artifacts: { q: { open: null }, p: { open: ref, view: { x: 0, y: 0, scale: 1 }, filter: 'a' } } })
+    expect(filterTo(full, 'p', 'b')).toEqual({ artifacts: { q: { open: null }, p: { open: ref, view, filter: 'b' } } })
+    expect(filterTo(full, 'p', null)).toEqual({ artifacts: { q: { open: null }, p: { open: ref, view, filter: null } } })
+    expect(filterTo(DEFAULT_UI, 'p', 'a')).toEqual({ artifacts: { p: { open: null, filter: 'a' } } })
+    // with a view, the filter and the view it starts at land in one write; the open artifact and other pages stay
+    const start = { x: 0, y: 0, scale: 0.5 }
+    expect(filterTo(full, 'p', 'b', start)).toEqual({ artifacts: { q: { open: null }, p: { open: ref, view: start, filter: 'b' } } })
+    expect(filterTo(DEFAULT_UI, 'p', null, start)).toEqual({ artifacts: { p: { open: null, view: start, filter: null } } })
+  })
+
   it('reads project > Artifacts > feature > artifact, each up-link going where it says', () => {
     const f = feature('a')
     const card = { name: 'x.md', path: 'docs/work/a/x.md', stage: null, mtimeMs: 1 }
@@ -123,6 +137,78 @@ describe('artifactsTo, artifactCrumbs', () => {
       { label: 'Ta', to: { focusedFeature: { projectId: 'p', slug: 'a' } } },
       { label: 'x.md' },
     ])
+  })
+})
+
+describe('filterClusters', () => {
+  const list = clusters([feature('a', { artifacts: [md('x.md', null)] }), feature('b', { artifacts: [md('y.md', null)] })])
+  const slugs = (filter: string | null | undefined) => filterClusters(list, filter).map((c) => c.feature.slug)
+
+  it('shows the filtered feature alone, and all without a filter or with a stale one', () => {
+    expect(slugs('b')).toEqual(['b'])
+    expect(slugs(null)).toEqual(['a', 'b'])
+    expect(slugs(undefined)).toEqual(['a', 'b'])
+    expect(slugs('gone')).toEqual(['a', 'b'])
+  })
+})
+
+describe('neighbours', () => {
+  const list = clusters([
+    feature('a', { artifacts: [md('1.md', null), md('2.md', null)] }),
+    feature('b', { artifacts: [md('3.md', null)] }),
+    feature('c', { artifacts: [md('4.md', null), md('5.md', null)] }),
+  ])
+  const ref = (slug: string, name: string) => ({ projectId: 'p', slug, name })
+
+  it('steps within a cluster', () => {
+    expect(neighbours(list, ref('a', '1.md'))).toEqual({ prev: null, next: ref('a', '2.md'), index: 0, total: 5 })
+    expect(neighbours(list, ref('c', '4.md')).next).toEqual(ref('c', '5.md'))
+  })
+
+  it('crosses cluster edges both ways', () => {
+    expect(neighbours(list, ref('a', '2.md'))).toEqual({ prev: ref('a', '1.md'), next: ref('b', '3.md'), index: 1, total: 5 })
+    expect(neighbours(list, ref('b', '3.md'))).toEqual({ prev: ref('a', '2.md'), next: ref('c', '4.md'), index: 2, total: 5 })
+  })
+
+  it('stops at the first and last cards', () => {
+    expect(neighbours(list, ref('a', '1.md')).prev).toBeNull()
+    expect(neighbours(list, ref('c', '5.md'))).toEqual({ prev: ref('c', '4.md'), next: null, index: 4, total: 5 })
+  })
+
+  it("walks the filtered feature's cards only", () => {
+    const only = filterClusters(list, 'c')
+    expect(neighbours(only, ref('c', '4.md'))).toEqual({ prev: null, next: ref('c', '5.md'), index: 0, total: 2 })
+    expect(neighbours(only, ref('c', '5.md'))).toEqual({ prev: ref('c', '4.md'), next: null, index: 1, total: 2 })
+  })
+
+  it('gives an unknown ref no neighbours', () => {
+    expect(neighbours(list, ref('a', 'gone.md'))).toEqual({ prev: null, next: null, index: -1, total: 5 })
+    expect(neighbours(list, { projectId: 'wt', slug: 'a', name: '1.md' }).index).toBe(-1)
+  })
+})
+
+describe('stepKey', () => {
+  const body = { tagName: 'BODY', isContentEditable: false } as unknown as EventTarget
+  const key = (k: string, over: Partial<Parameters<typeof stepKey>[0]> = {}) =>
+    stepKey({ key: k, altKey: false, ctrlKey: false, metaKey: false, shiftKey: false, target: body, ...over })
+
+  it('steps back on ArrowLeft and on ArrowRight', () => {
+    expect(key('ArrowLeft')).toBe(-1)
+    expect(key('ArrowRight')).toBe(1)
+    expect(key('ArrowRight', { target: null })).toBe(1)
+  })
+
+  it('ignores an arrow with any modifier', () => {
+    for (const m of ['altKey', 'ctrlKey', 'metaKey', 'shiftKey'] as const) expect(key('ArrowRight', { [m]: true })).toBeNull()
+  })
+
+  it('ignores an arrow typed into a field', () => {
+    for (const tagName of ['INPUT', 'TEXTAREA', 'SELECT']) expect(key('ArrowLeft', { target: { tagName, isContentEditable: false } as unknown as EventTarget })).toBeNull()
+    expect(key('ArrowLeft', { target: { tagName: 'DIV', isContentEditable: true } as unknown as EventTarget })).toBeNull()
+  })
+
+  it('ignores other keys', () => {
+    for (const k of ['ArrowUp', 'ArrowDown', 'Enter', 'a', ' ']) expect(key(k)).toBeNull()
   })
 })
 

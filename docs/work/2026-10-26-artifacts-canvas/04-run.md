@@ -201,4 +201,67 @@ Pass, 0 blocking in the last round, 2 fix rounds. Non-blocking left:
 - tune `PREVIEW` in `previewGate.ts` by feel;
 - decide where links clicked in the full page should go (they currently open in the side viewer).
 
+## Slice 4
+
+Session: artifacts-canvas-slice-4-a1
+Status: done
+Commit: this commit (see git log)
+
+### Slice plan
+
+Found in the code: `ArtifactsView` is `{ open, view? }` per project page; `artifactsTo` spreads the page's entry but `boardViewTo` rebuilds it as `{ open, view }`, so a third field would be dropped by a view write. `pageClusters` gives the page's clusters in board order (features-board columns, then stage, then name), the order step-through must follow. `ProjectPage` decides the open card through `openCard` (shared with App's header crumbs) and renders `ArtifactPage` (header with Back and the name, one sandboxed iframe) or the `ArtifactsBoard` canvas, which keeps its view in local state and saves it through `viewWriter`. Writes to `ui.artifacts` go through the optimistic `setUi` in `slices.ts`. `loadState` resets only `open`, so a `filter` field survives restart with no store change. Window keydown listeners are the idiom for shortcuts (`DiffViewer`, `Modal`); no shared "is a text input focused" helper exists. The side viewer uses a native `<select>` as its file switcher (`ArtifactViewer.tsx`). Features in a page's clusters are unioned by repo, so a slug names one cluster on a page.
+
+Implementer 1:
+- [x] `src/shared/types.ts`: `ArtifactsView.filter?: string | null`, the slug of the one feature the board shows (absent or null: all)
+- [x] `src/renderer/src/artifactsBoard.ts`: `boardViewTo` keeps every other field of the page's entry; `filterTo(ui, projectId, slug | null)`; `filterClusters(clusters, filter)` (a filter naming no cluster shows all); `neighbours(clusters, ref)` returning `{ prev, next }` as `ArtifactRef | null` in board order across clusters (null at the ends); `stepKey(key, target, modifiers)` returning `-1 | 1 | null` for ArrowLeft/ArrowRight, null with any modifier or when the target is an input, textarea, select or contenteditable
+- [x] `src/renderer/src/artifactsBoard.test.ts`: `filterTo` and `boardViewTo`/`artifactsTo` keep each other's fields; `filterClusters` (match, null, stale slug); `neighbours` inside a cluster, across cluster edges, at the first and last card, with a filter, unknown ref; `stepKey` (arrows, modifiers, input/textarea/select/contenteditable ignored)
+- [x] `src/core/store/stateStore.test.ts`: `filter` survives load while `open` resets
+- [x] `stores/slices.ts`: `setBoardFilter(projectId, slug | null)` through `setUi`
+- [x] `components/ArtifactsBoard.tsx` + css: props `filter` and `onFilterChange`; a feature filter (native `<select>` "All features" + one option per cluster, from the unfiltered clusters) and a clear button when set, in a top-left overlay like the zoom controls; the canvas draws `filterClusters(...)`; a filter change moves the pan back to the plane's top-left at the same zoom and saves it
+- [x] `components/ArtifactPage.tsx` + css: Previous and Next buttons in the header (disabled at the ends) with "i of n"; window keydown ArrowLeft/ArrowRight through `stepKey`, skipped while a dialog is open
+- [x] `components/ProjectPage.tsx`, `App.tsx`: pass `artifactsFilter`, `onArtifactsFilterChange` (`setBoardFilter`); step-through uses the filtered clusters; `projectPageRender.test.ts`: filtered board shows one cluster, full page shows Previous/Next with the right disabled state
+
+Models passed: implementer: inherit, reviewer: inherit
+
+### Review rounds
+
+Round 1: 0 blocking. Non-blocking applied:
+- a filter change writes the view and the filter in one `setUi` (`filterTo(ui, projectId, filter, view?)`, `setBoardFilter(projectId, slug, view?)`); before, two writes went out and the first echo briefly redrew the old clusters;
+- the full page's keydown listener attaches once, reading prev, next and onStep through a ref;
+- the handler ignores keys already handled (`defaultPrevented`) and keys typed during IME composition;
+- a test-name typo;
+- the filter select's px sizes are kept, with comments (the repo has no size tokens; 24 px matches the sm buttons beside it).
+
+Pass, 0 blocking, 0 fix rounds. Non-blocking left:
+- (a) No DOM test covers the pan reset on a filter change or the keydown listener's dialog skip and cleanup. The repo has no DOM test environment; `stepKey`'s pure tests cover the key rules.
+- (b) If the open artifact is outside the filtered set, the full page shows no position and both step buttons are disabled. Today only the board opens cards, so the open card is always inside the filter.
+- (c) Holding an arrow key repeats the step, and each step remounts the iframe.
+
+### Deviations
+
+- `stepKey` takes an event-shaped object (`key`, modifiers, `target`), not separate arguments.
+- `neighbours` also returns `index` and `total`, which drive the "i of n" label.
+- When the saved filter names no feature (stale), the board draws every cluster, the select shows "All features" and Clear is hidden. The stale slug stays in state.
+- The step buttons read "Previous" and "Next" with aria-labels "Previous artifact" and "Next artifact". "i of n" is hidden when the open card is outside the filtered set.
+- A filter change moves the pan to the plane's top-left at the same zoom, and that view is saved with the filter.
+
+### Verification
+
+- `npm test`: 100 files, 1198 tests pass, existing expectations unchanged.
+- New tests:
+  - `artifactsBoard.test.ts`: `filterTo` (with and without a view), with `boardViewTo` and `artifactsTo` keeping each other's fields; `filterClusters` (match, none, stale slug); `neighbours` (inside a cluster, across cluster edges both ways, first and last card, with a filter, unknown ref); `stepKey` (arrows, each modifier, input/textarea/select/contenteditable ignored, other keys).
+  - `stateStore.test.ts`: `filter` survives load while `open` resets.
+  - `projectPageRender.test.ts`: a filtered board draws one cluster with the select listing all features and Clear shown; no Clear unfiltered; the full page reads "1 of 3" with Previous disabled at the first card, and "2 of 2" with Next disabled at the filtered end.
+- `npm run typecheck` passes for node and web.
+- Models requested: implementer: inherit, reviewer: inherit.
+
+### Left for the human
+
+`npm run dev`, to be run by the human:
+- filter the board to one feature, then clear it;
+- open a card and step with Previous and Next, and with the arrow keys, across feature edges;
+- arrow keys do nothing while a text input or the filter select is focused; keys pressed inside the artifact frame do not reach the page, so click the header first;
+- press Back: the board is still filtered at the same pan and zoom;
+- restart the app: the filter is restored.
+
 ## Open questions

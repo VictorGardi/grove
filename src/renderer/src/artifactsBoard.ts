@@ -63,9 +63,41 @@ export function openCard(ui: Pick<UiState, 'board' | 'artifacts'>, project: Proj
 export const artifactsTo = (ui: UiState, projectId: string, open: ArtifactRef | null): Partial<UiState> =>
   ({ artifacts: { ...ui.artifacts, [projectId]: { ...ui.artifacts?.[projectId], open } } })
 
-// The board's saved pan and zoom on one page; the page's open artifact stays as it is.
+// The board's saved pan and zoom on one page; the page's open artifact and filter stay as they are.
 export const boardViewTo = (ui: UiState, projectId: string, view: CanvasView): Partial<UiState> =>
-  ({ artifacts: { ...ui.artifacts, [projectId]: { open: ui.artifacts?.[projectId]?.open ?? null, view } } })
+  ({ artifacts: { ...ui.artifacts, [projectId]: { ...ui.artifacts?.[projectId], open: ui.artifacts?.[projectId]?.open ?? null, view } } })
+
+// The one feature the board shows on one page (null: all), and the view it starts at if given, in one
+// write: two would each echo the whole ui back and briefly undo the other. The open artifact stays.
+export const filterTo = (ui: UiState, projectId: string, filter: string | null, view?: CanvasView): Partial<UiState> =>
+  ({ artifacts: { ...ui.artifacts, [projectId]: { ...ui.artifacts?.[projectId], open: ui.artifacts?.[projectId]?.open ?? null, filter, ...(view && { view }) } } })
+
+// The clusters the board draws: the filtered feature's alone. A filter naming no cluster (its feature
+// gone, or its last file) is stale, and shows all rather than an empty board.
+export function filterClusters<T extends Feature>(clusters: ArtifactCluster<T>[], filter: string | null | undefined): ArtifactCluster<T>[] {
+  const hit = filter ? clusters.filter((c) => c.feature.slug === filter) : []
+  return hit.length > 0 ? hit : clusters
+}
+
+const refOf = (c: ArtifactCluster<Feature>, card: ArtifactCard): ArtifactRef => ({ projectId: c.feature.projectId, slug: c.feature.slug, name: card.name })
+
+// The full page's previous and next artifacts, in board order: clusters in order, cards in order,
+// across cluster edges. An unknown ref has neither, at index -1.
+export function neighbours(clusters: ArtifactCluster<Feature>[], ref: ArtifactRef): { prev: ArtifactRef | null; next: ArtifactRef | null; index: number; total: number } {
+  const all = clusters.flatMap((c) => c.cards.map((card) => refOf(c, card)))
+  const index = all.findIndex((r) => r.projectId === ref.projectId && r.slug === ref.slug && r.name === ref.name)
+  if (index < 0) return { prev: null, next: null, index, total: all.length }
+  return { prev: all[index - 1] ?? null, next: all[index + 1] ?? null, index, total: all.length }
+}
+
+// The step an arrow key asks for on the full page: none with a modifier (the system's own
+// shortcuts), or while typing in a field.
+export function stepKey(e: { key: string; altKey: boolean; ctrlKey: boolean; metaKey: boolean; shiftKey: boolean; target: EventTarget | null }): -1 | 1 | null {
+  if (e.altKey || e.ctrlKey || e.metaKey || e.shiftKey) return null
+  const t = e.target as { tagName?: string; isContentEditable?: boolean } | null
+  if (t && (['INPUT', 'TEXTAREA', 'SELECT'].includes(t.tagName?.toUpperCase() ?? '') || t.isContentEditable)) return null
+  return e.key === 'ArrowLeft' ? -1 : e.key === 'ArrowRight' ? 1 : null
+}
 
 // project > Artifacts > feature > artifact; "Artifacts" closes the full page back to the board.
 export function artifactCrumbs(project: Project, feature: Feature, card: ArtifactCard, ui: UiState): Crumb[] {

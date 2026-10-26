@@ -46,6 +46,37 @@
   border-radius: var(--r-card);
 }
 
+/* the feature filter, top-left across from the zoom controls; outside the viewport, so it never pans */
+.filter {
+  position: absolute;
+  left: var(--sp-3);
+  top: var(--sp-3);
+  display: flex;
+  align-items: center;
+  gap: var(--sp-1);
+  padding: var(--sp-1);
+  background: var(--panel-glass);
+  border: 1px solid var(--glass-border);
+  border-radius: var(--r-card);
+}
+
+.select {
+  max-width: 280px; /* long feature titles ellipsize; the repo has no width tokens */
+  height: 24px; /* the sm Buttons' height beside it */
+  padding: 0 var(--sp-2);
+  background: var(--chrome-bg);
+  border: 1px solid var(--card-border);
+  border-radius: var(--r-md);
+  color: var(--text);
+  font: inherit;
+  font-size: var(--fs-sm);
+  outline: none;
+}
+
+.select:focus {
+  border-color: var(--focus-border);
+}
+
 .percent {
   min-width: 52px;
   font-variant-numeric: tabular-nums;

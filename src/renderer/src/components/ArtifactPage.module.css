@@ -24,6 +24,20 @@
   color: var(--text-2);
 }
 
+.step {
+  margin-left: auto;
+  flex-shrink: 0;
+  display: flex;
+  align-items: center;
+  gap: var(--sp-1);
+}
+
+.position {
+  font-size: var(--fs-sm);
+  color: var(--text-3);
+  font-variant-numeric: tabular-nums;
+}
+
 .frame {
   flex: 1;
   width: 100%;

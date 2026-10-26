@@ -4,7 +4,7 @@ import { DEFAULT_UI, EMPTY_FEATURES, OPENCODE_CONNECTING } from '@shared/types'
 import { focusAfterRemove, gridShown, swapMembers, withMember, withoutArrangement, withSpan, withTracks, type GridLayout } from '../gridView'
 import { pushRecentBase } from '../diffBases'
 import { diffTargetFor, pickDiffPrefs } from '../diffView'
-import { artifactsTo, boardViewTo } from '../artifactsBoard'
+import { artifactsTo, boardViewTo, filterTo } from '../artifactsBoard'
 import { openBoard } from '../navigation'
 import { trackWaiting } from '../sessionStatus'
 
@@ -30,6 +30,7 @@ interface SlicesState {
   setBoard(board: UiState['board']): void
   openBoardArtifact(projectId: string, ref: ArtifactRef | null): void // the artifacts board's full page on that project page; null closes it
   setBoardView(projectId: string, view: CanvasView): void // the artifacts board's pan and zoom on that project page
+  setBoardFilter(projectId: string, slug: string | null, view?: CanvasView): void // the one feature the artifacts board shows on that project page (null: all), and the view it starts at
   setSidebarTab(tab: UiState['sidebarTab']): void
   setGroupBy(groupBy: UiState['groupBy']): void
   setSessionSort(sessionSort: UiState['sessionSort']): void
@@ -112,10 +113,11 @@ export const useSlices = create<SlicesState>((set, get) => {
     openProject: (id) => { void window.api.invoke('ui:set', openBoard(id)) },
     go: (to) => { void window.api.invoke('ui:set', to) },
     setBoard: (board) => { void window.api.invoke('ui:set', { board }) },
-    // Both write the whole artifacts record from the local ui (core merges top-level keys only), so
+    // All three write the whole artifacts record from the local ui (core merges top-level keys only), so
     // each lands locally at once: a view write right before or after an open then builds on it.
     openBoardArtifact: (projectId, ref) => { setUi(artifactsTo(get().ui, projectId, ref)) },
     setBoardView: (projectId, view) => { setUi(boardViewTo(get().ui, projectId, view)) },
+    setBoardFilter: (projectId, slug, view) => { setUi(filterTo(get().ui, projectId, slug, view)) },
     toggleSidebar: () => { void window.api.invoke('ui:set', { sidebarCollapsed: !get().ui.sidebarCollapsed }) },
     setSidebarTab: (tab) => { void window.api.invoke('ui:set', { sidebarTab: tab }) },
     setGroupBy: (groupBy) => { void window.api.invoke('ui:set', { groupBy }) },

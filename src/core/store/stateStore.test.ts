@@ -56,12 +56,14 @@ describe('stateStore', () => {
     expect(loadState(file).ui.diffPrefs).toBeUndefined()
   })
 
-  it('never reopens an artifact full page on launch but keeps the board view, and loads an old file without any', () => {
+  it('never reopens an artifact full page on launch but keeps the board view and filter, and loads an old file without any', () => {
     const file = tmpFile()
     const view = { x: 120, y: -40, scale: 0.5 }
     const artifacts = { p: { open: { projectId: 'p', slug: 'f', name: '03-design.md' }, view }, q: { open: null } }
     saveState(file, { schemaVersion: 10, sessions: [], ui: { ...DEFAULT_UI, artifacts } })
     expect(loadState(file).ui.artifacts).toEqual({ p: { open: null, view }, q: { open: null } })
+    saveState(file, { schemaVersion: 10, sessions: [], ui: { ...DEFAULT_UI, artifacts: { p: { ...artifacts.p, filter: 'f' } } } })
+    expect(loadState(file).ui.artifacts).toEqual({ p: { open: null, view, filter: 'f' } }) // the filter survives, like the view
     saveState(file, { schemaVersion: 10, sessions: [], ui: DEFAULT_UI })
     expect(loadState(file).ui.artifacts).toBeUndefined()
   })

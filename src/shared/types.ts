@@ -98,6 +98,7 @@ export interface CanvasView { x: number; y: number; scale: number } // a pan/zoo
 export interface ArtifactsView {
   open: ArtifactRef | null // the artifact shown full page; never reopened on restart
   view?: CanvasView        // the board's pan and zoom, kept across restarts (absent: the default view)
+  filter?: string | null   // the slug of the one feature the board shows (absent or null: all); a page's features are unioned by repo, so a slug names one cluster
 }
 export interface DiffPrefs { mode: DiffMode; base: string | null } // a session's picked view and compare branch; base null: the auto-detected main branch
 export interface UiState {

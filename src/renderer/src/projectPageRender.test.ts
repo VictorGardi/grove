@@ -23,10 +23,10 @@ const feature = (projectId: string, over: Partial<Feature> = {}): Feature => ({
 const session = (id: string, projectId: string, label = id): Session =>
   ({ id, projectId, kind: 'terminal', label, feature: null, lastStatus: 'running', startedAt: '2026-10-05T10:00:00.000Z' } as Session)
 
-const page = (project: Project, board: UiState['board'], features: Feature[], sessions: Session[], artifactsOpen: ArtifactRef | null = null, artifactsView?: CanvasView) =>
+const page = (project: Project, board: UiState['board'], features: Feature[], sessions: Session[], artifactsOpen: ArtifactRef | null = null, artifactsView?: CanvasView, artifactsFilter: string | null = null) =>
   renderToStaticMarkup(createElement(ProjectPage, {
-    project, projects, board, stages, features, sessions, artifactsOpen, artifactsView,
-    onOpenFeature: vi.fn(), onFocusSession: vi.fn(), onOpenArtifact: vi.fn(), onArtifactsViewChange: vi.fn(),
+    project, projects, board, stages, features, sessions, artifactsOpen, artifactsView, artifactsFilter,
+    onOpenFeature: vi.fn(), onFocusSession: vi.fn(), onOpenArtifact: vi.fn(), onArtifactsViewChange: vi.fn(), onArtifactsFilterChange: vi.fn(),
   }))
 
 const sessionsPage = (project: Project, features: Feature[], sessions: Session[]) => page(project, 'sessions', features, sessions)
@@ -105,6 +105,42 @@ describe('ProjectPage, the artifacts board', () => {
     const html = page(projects[0], 'artifacts', features, [], { ...ref, name: 'gone.md' })
     expect(html).not.toContain('<iframe')
     expect(html).toContain('01-questions.md')
+  })
+
+  describe('filtered, and stepped through', () => {
+    const other = feature('p', { slug: 'g', title: 'Session notes', path: '/src/p/docs/work/g', artifacts: [art('00-ticket.md', 'questions')] })
+    const two = [...features, other]
+
+    it('draws only the filtered feature, with every feature in the picker', () => {
+      const html = page(projects[0], 'artifacts', two, [], null, undefined, 'g')
+      expect(html).toContain('00-ticket.md')
+      expect(html).not.toContain('01-questions.md')
+      expect(html).toContain('aria-label="Feature"')
+      expect(html).toContain('<option value="">All features</option>')
+      expect(html).toContain('<option value="f">Worktree support</option>')
+      expect(html).toContain('<option value="g" selected="">Session notes</option>')
+      expect(html).toContain('aria-label="Clear filter"')
+    })
+
+    it('draws every feature without a filter, and offers no clear', () => {
+      const html = page(projects[0], 'artifacts', two, [])
+      expect(html).toContain('00-ticket.md')
+      expect(html).toContain('01-questions.md')
+      expect(html).not.toContain('aria-label="Clear filter"')
+    })
+
+    it('steps from the first card: no previous, a next, and its place on the board', () => {
+      const html = page(projects[0], 'artifacts', two, [], { ...ref, name: '01-questions.md' })
+      expect(html).toMatch(/<button[^>]*aria-label="Previous artifact"[^>]*disabled=""/)
+      expect(html).not.toMatch(/<button[^>]*aria-label="Next artifact"[^>]*disabled=""/)
+      expect(html).toContain('1 of 3')
+    })
+
+    it('counts only the filtered feature\'s cards on the full page', () => {
+      const html = page(projects[0], 'artifacts', two, [], ref, undefined, 'f')
+      expect(html).toContain('2 of 2')
+      expect(html).toMatch(/<button[^>]*aria-label="Next artifact"[^>]*disabled=""/)
+    })
   })
 
   it("still shows a worktree page's sessions", () => {
