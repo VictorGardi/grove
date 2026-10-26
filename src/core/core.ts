@@ -30,7 +30,7 @@ import { hasLiveSessions, newProject, parentCheckout } from './projects'
 import { readBranch } from './git'
 import type { PrLookup } from './pr'
 import * as worktrees from './worktrees'
-import { kidsKey } from '@shared/groups'
+import { doneKey, kidsKey, openedKey } from '@shared/groups'
 import { orphanChildren, resolveParent, withParent } from '@shared/sessionGroups'
 import { type AgentEvent, type AgentKind, type AgentSource } from './agents/types'
 import { createTerminalActivity } from './terminalActivity'
@@ -689,7 +689,8 @@ export function createCore(opts: CoreOptions): Core {
     if (grid !== ui.grid) ui = { ...ui, grid }
     if (ui.compact?.some((id) => !findSession(id))) ui = { ...ui, compact: ui.compact.filter((id) => !!findSession(id)) }
     if (ui.sessionOrder.some((id) => !findSession(id))) ui = { ...ui, sessionOrder: ui.sessionOrder.filter((id) => !!findSession(id)) }
-    if (removed.some((s) => ui.collapsed.includes(kidsKey(s.id)))) ui = { ...ui, collapsed: ui.collapsed.filter((k) => !removed.some((s) => k === kidsKey(s.id))) }
+    const gone = new Set(removed.flatMap((s) => [kidsKey(s.id), openedKey(doneKey(s.id))]))
+    if (ui.collapsed.some((k) => gone.has(k))) ui = { ...ui, collapsed: ui.collapsed.filter((k) => !gone.has(k)) }
     if (ui !== slices.ui) set('ui', ui)
     syncDiff()
   }

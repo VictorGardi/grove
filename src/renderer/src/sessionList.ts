@@ -1,4 +1,4 @@
-import { kidsKey, projectKey } from '@shared/groups'
+import { doneKey, kidsKey, openedKey, projectKey } from '@shared/groups'
 import type { Project, Session, UiState, WorkflowStatus } from '@shared/types'
 import { repoGroups } from './repoGroups'
 import { WORKFLOW_STATUSES } from './workflowStatus'
@@ -35,6 +35,28 @@ export const groupSize = (g: ListGroup): number => g.sessions.reduce((n, s) => n
 export function kidsGroup(g: ListGroup, parent: Session): ListGroup {
   const key = kidsKey(parent.id)
   return { key, label: parent.label, project: null, status: null, collapsed: g.nest.collapsed.has(key), sessions: g.nest.kids.get(parent.id) ?? [], nest: g.nest }
+}
+
+// A parent's done children, once there are two or more, fold into one stack. The stack takes
+// the first done child's place among its siblings and holds every done one in their order;
+// a lone done child stays a row of its own.
+export interface DoneStack { key: string; list: Session[]; open: boolean }
+export type KidRow = { session: Session } | { stack: DoneStack }
+
+export function kidRows(nest: Nest, parentId: string): KidRow[] {
+  const list = nest.kids.get(parentId) ?? []
+  const done = list.filter((s) => s.workflowStatus === 'done')
+  if (done.length < 2) return list.map((session) => ({ session }))
+  const key = openedKey(doneKey(parentId))
+  const stack: DoneStack = { key, list: done, open: nest.collapsed.has(key) }
+  return list.flatMap((session): KidRow[] => session.workflowStatus !== 'done' ? [{ session }] : session === done[0] ? [{ stack }] : [])
+}
+
+// A parent's children as the list shows them: none while the parent is collapsed, and a
+// folded stack's left out.
+function shownKids(nest: Nest, parentId: string): Session[] {
+  if (nest.collapsed.has(kidsKey(parentId))) return []
+  return kidRows(nest, parentId).flatMap((r) => 'session' in r ? [r.session] : r.stack.open ? r.stack.list : [])
 }
 
 export const GROUP_BY_OPTIONS: { value: GroupBy; label: string }[] = [
@@ -131,18 +153,18 @@ export function listGroups(
 }
 
 // Every visible session once, in group order, collapsed groups included but a collapsed
-// parent's children left out: what Cmd+1..9 and the rail's tiles count through, so the number
+// parent's children and a folded done stack left out: what Cmd+1..9 and the rail's tiles count through, so the number
 // the human counts is the session they get. A shift-click range uses visibleSessions below
 // instead, so a range that spans a collapsed group can't select — and so delete — sessions the
 // human cannot see.
 export function orderedSessions(groups: ListGroup[]): Session[] {
-  return groups.flatMap((g) => g.sessions.flatMap((s) => [s, ...(g.nest.collapsed.has(kidsKey(s.id)) ? [] : g.nest.kids.get(s.id) ?? [])]))
+  return groups.flatMap((g) => g.sessions.flatMap((s) => [s, ...shownKids(g.nest, s.id)]))
 }
 
 // The same order, minus sessions inside collapsed groups: what a shift-click range runs over.
 export function visibleSessions(groups: ListGroup[]): Session[] {
   return groups.filter((g) => !g.collapsed).flatMap((g) =>
-    g.sessions.flatMap((s) => [s, ...(g.nest.collapsed.has(kidsKey(s.id)) ? [] : g.nest.kids.get(s.id) ?? [])]))
+    g.sessions.flatMap((s) => [s, ...shownKids(g.nest, s.id)]))
 }
 
 // Where a dragged card lands: beside `target` in `to`, before or after it.

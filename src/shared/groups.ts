@@ -10,6 +10,10 @@ export const openedKey = (key: string) => 'o:' + key
 // expanded until this key is in `ui.collapsed`.
 export const kidsKey = (id: string) => 'k:' + id
 
+// A parent's done children, folded into one stack: `d:` plus the parent's id. Stacks start
+// folded, so what `ui.collapsed` holds is the one the human opened, `openedKey(doneKey(id))`.
+export const doneKey = (id: string) => 'd:' + id
+
 // Every `ui.collapsed` key that can name one project. Removing a project has to drop these,
 // or the list keeps a key for a checkout that is no longer there, forever.
 export const projectKeys = (id: string) => [projectKey(id), worktreeKey(id), openedKey(worktreeKey(id))]

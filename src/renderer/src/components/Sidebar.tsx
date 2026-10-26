@@ -6,7 +6,7 @@ import { kidsKey } from '@shared/groups'
 import { canParent, hasChildren } from '@shared/sessionGroups'
 import { longestWaiting, mostUrgent, shownStatus, statusTone, statusView } from '../sessionStatus'
 import { selectRange } from '../selection'
-import { GROUP_BY_OPTIONS, SORT_OPTIONS, canDrop, dropSession, groupSize, kidsGroup, listGroups, visibleSessions, type DropAt, type ListGroup } from '../sessionList'
+import { GROUP_BY_OPTIONS, SORT_OPTIONS, canDrop, dropSession, groupSize, kidRows, kidsGroup, listGroups, visibleSessions, type DoneStack, type DropAt, type ListGroup } from '../sessionList'
 import { repoGroups, repoRows } from '../repoGroups'
 import { colorTags } from '../tags'
 import { linkedFeature } from '../tree'
@@ -26,6 +26,20 @@ import { WorkflowStatusButton, Glyph, StatusMark } from './ui/WorkflowStatusPick
 import css from './Sidebar.module.css'
 
 const KIND_LABEL: Record<Session['kind'], string> = { claude: 'Claude', opencode: 'OpenCode', copilot: 'Copilot', terminal: 'Terminal' }
+
+// Done children folded together: a card with the count and their names, and the edges of the
+// cards it holds peeking out below while folded.
+function DoneStackRow({ stack, holdsFocus, onToggle }: { stack: DoneStack; holdsFocus: boolean; onToggle: () => void }) {
+  return (
+    <button type="button" className={cx(css.stack, !stack.open && css.stackFolded, holdsFocus && css.stackHolding)} aria-expanded={stack.open}
+      title={stack.open ? 'Fold done children' : stack.list.map((s) => s.label).join('\n')} onClick={onToggle}>
+      <Icon name="check" size={12} className={css.stackCheck} />
+      <span className={css.stackCount}>{stack.list.length} done</span>
+      {!stack.open && <span className={css.stackNames}>{stack.list.map((s) => s.label).join(' · ')}</span>}
+      <Icon name={stack.open ? 'chevron-down' : 'chevron-right'} size={10} className={css.stackChevron} />
+    </button>
+  )
+}
 
 function SessionCard({ s, feature, worktree, focused, picked, compact, inGrid, gridOn, gridFull, onToggleGrid, onFocus, onOpenFeature, onToggleCompact, onLink, onRemove, onContextMenu, kids }: {
   s: Session
@@ -482,8 +496,10 @@ export function Sidebar({ onNew, onNote, onRemove }: { onNew: (projectId?: strin
             <div key={s.id} className={css.cards}>
               {slot(s, g, list)}
               {list.length > 0 && !kg.collapsed && (
-                <div className={cx(css.cards, css.kids, drag && css.cardsDragging)} data-cards={kg.key}>
-                  {list.map((k) => slot(k, kg))}
+                <div className={css.grow}>
+                  <div className={cx(css.cards, css.kids, drag && css.cardsDragging)} data-cards={kg.key}>
+                    {kidRows(g.nest, s.id).map((r) => 'session' in r ? slot(r.session, kg) : doneStack(r.stack, kg))}
+                  </div>
                 </div>
               )}
             </div>
@@ -492,6 +508,15 @@ export function Sidebar({ onNew, onNote, onRemove }: { onNew: (projectId?: strin
       </div>
     )
   }
+
+  // a parent's done children, folded into one row; opened, they unfold under it and still
+  // reorder among all their siblings
+  const doneStack = (st: DoneStack, kg: ListGroup) => (
+    <div key={st.key} className={css.stackRun}>
+      <DoneStackRow stack={st} holdsFocus={!st.open && st.list.some((k) => k.id === ui.focusedSessionId)} onToggle={() => toggleCollapsed(st.key)} />
+      {st.open && <div className={css.grow}><div className={cx(css.cards, css.stackOpen)}>{st.list.map((k) => slot(k, kg))}</div></div>}
+    </div>
+  )
 
   const sessionCard = (s: Session, kids?: Session[]) => {
     const f = linkedFeature(s, features.items)

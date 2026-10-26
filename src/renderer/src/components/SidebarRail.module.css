@@ -294,3 +294,90 @@
   padding-top: var(--sp-2);
   border-top: 1px solid var(--divider);
 }
+
+/* an open parent and its children in one frame. The negative margin keeps the run 36px wide,
+   so the colour bar stays where it hangs for every other tile */
+.family {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 5px;
+  margin: 0 -4px;
+  padding: 3px 3px 5px;
+  border: 1px solid var(--glass-border);
+  border-radius: calc(var(--r-md) + 3px);
+  background: color-mix(in srgb, var(--glass-fill) 50%, transparent);
+}
+
+/* a child inside its parent's frame, a size down */
+.child {
+  width: 30px;
+  height: 30px;
+}
+
+.child .dot {
+  right: 3px;
+  bottom: 3px;
+  width: 6px;
+  height: 6px;
+}
+
+/* a parent's done children folded into one tile, the tiles it holds stacked behind it */
+.stack {
+  width: 30px;
+  height: 26px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 2px;
+  padding: 0;
+  border: 1px solid transparent;
+  border-radius: var(--r-md);
+  background: var(--glass-fill);
+  color: var(--status-finished);
+  font: inherit;
+  font-size: 10px;
+  font-weight: var(--fw-bold);
+  cursor: pointer;
+}
+
+.stack span {
+  color: var(--text-2);
+}
+
+.stack:hover {
+  background: var(--glass-fill-hover);
+}
+
+.stackFolded {
+  margin-bottom: 4px;
+  box-shadow:
+    0 3px 0 -1px var(--panel-bg), 0 3px 0 0 var(--glass-fill-hover),
+    0 6px 0 -2px var(--panel-bg), 0 6px 0 -1px var(--glass-fill);
+}
+
+/* opened, a parent's children (or a stack's) slide out from nothing: the row's height runs
+   0fr to 1fr, so the frame and the colour bar stretch along with it */
+.grow {
+  display: grid;
+  grid-template-rows: 1fr;
+  animation: grow 200ms ease-out;
+}
+
+.grow > .tiles {
+  min-height: 0;
+  overflow: hidden;
+  animation: fade 200ms ease-out;
+}
+
+@keyframes grow {
+  from { grid-template-rows: 0fr; }
+}
+
+@keyframes fade {
+  from { opacity: 0; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .grow, .grow > .tiles { animation: none; }
+}

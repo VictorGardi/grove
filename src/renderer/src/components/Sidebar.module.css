@@ -403,3 +403,108 @@
   border-color: var(--card-selected-border);
   color: var(--text);
 }
+
+/* a parent's done children, folded into one row: the stack and, open, its cards under it */
+.stackRun {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.stack {
+  position: relative;
+  display: flex;
+  align-items: center;
+  gap: var(--sp-1);
+  min-width: 0;
+  height: 26px;
+  padding: 0 10px 0 8px;
+  background: var(--glass-fill);
+  border: 1px solid var(--glass-border);
+  border-radius: var(--r-card);
+  color: var(--text-2);
+  font: inherit;
+  font-size: var(--fs-sm);
+  text-align: left;
+  cursor: pointer;
+}
+
+.stack:hover {
+  color: var(--text);
+  background: var(--glass-fill-hover);
+  border-color: var(--glass-border-strong);
+}
+
+/* folded, the edges of two more cards show under it, a little narrower each */
+.stackFolded {
+  margin-bottom: 6px;
+  box-shadow:
+    0 3px 0 -1px var(--panel-bg), 0 3px 0 0 var(--glass-border),
+    0 6px 0 -2px var(--panel-bg), 0 6px 0 -1px var(--glass-border);
+}
+
+.stackHolding,
+.stackHolding:hover {
+  background: var(--card-selected-bg);
+  border-color: var(--card-selected-border);
+  color: var(--text);
+}
+
+.stackCheck {
+  flex-shrink: 0;
+  color: var(--status-finished);
+}
+
+.stackCount {
+  flex-shrink: 0;
+  color: var(--text);
+}
+
+.stackNames {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+  color: var(--text-3);
+}
+
+.stackChevron {
+  flex-shrink: 0;
+  margin-left: auto;
+}
+
+/* an opened stack's cards, ruled off from their siblings */
+.stackOpen {
+  padding-left: var(--sp-2);
+  border-left: 2px solid color-mix(in srgb, var(--status-finished) 35%, transparent);
+}
+
+/* opened, a parent's children (or a stack's) slide out from nothing: the row's height runs
+   0fr to 1fr, pushing the cards below down as it goes. The clip reaches past the edge, so a
+   drop line above the first card still shows */
+.grow {
+  display: grid;
+  grid-template-rows: 1fr;
+  grid-template-columns: minmax(0, 1fr); /* the column is the sidebar's width, not its longest title's */
+  animation: grow 200ms ease-out;
+}
+
+.grow > * {
+  min-height: 0;
+  overflow: clip;
+  overflow-clip-margin: 6px;
+  animation: fade 200ms ease-out;
+}
+
+@keyframes grow {
+  from { grid-template-rows: 0fr; }
+}
+
+@keyframes fade {
+  from { opacity: 0; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .grow, .grow > * { animation: none; }
+}
