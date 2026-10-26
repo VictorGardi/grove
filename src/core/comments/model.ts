@@ -37,6 +37,13 @@ export const dropSession = (cs: Comment[], sessionId: string) => cs.filter((c) =
 // Forgets the drafts kept on features of this checkout.
 export const dropFeatureProject = (cs: Comment[], projectId: string) => cs.filter((c) => c.sessionId !== null || c.feature?.projectId !== projectId)
 
+// Gives these drafts to a session; a draft kept on a feature leaves its feature (D3).
+export const reown = (cs: Comment[], ids: string[], sessionId: string): Comment[] => cs.map((c) => {
+  if (!ids.includes(c.id) || c.state !== 'draft') return c
+  const { feature: _, ...rest } = c
+  return { ...rest, sessionId }
+})
+
 // Marks these drafts sent; keeps the newest MAX_SENT sent comments of each affected session.
 export function markSent(cs: Comment[], ids: string[], now: string): Comment[] {
   const marked = cs.map((c) => (ids.includes(c.id) && c.state === 'draft' ? { ...c, state: 'sent' as const, sentAt: now } : c))

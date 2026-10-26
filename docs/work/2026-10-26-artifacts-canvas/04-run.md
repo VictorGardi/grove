@@ -347,4 +347,129 @@ Pass, 0 blocking, 0 fix rounds. Non-blocking left:
 - a session linked to that feature lists the draft in its tray, tagged "on the feature", with Send counting only its own drafts;
 - the Feature page Files list, the right-hand viewer and diff comments behave as before.
 
+## Slice 6
+
+Session: artifacts-canvas-slice-6-a1
+Status: done
+Commit: this commit (see git log)
+
+### Slice plan
+
+Found in the code: `reviewSend` (`src/core/core.ts`) sends `draftsOf(session)` (session-owned only) through `sendToSession`, which resumes a gone agent session, guards with a `sending` set (`busy`) and marks sent with `markSent` after the paste. `sessionCreate` takes `projectId`, `kind`, `prompt` (the launch prompt, ADR 0029) and `feature` (refused with `no-feature` unless that checkout lists the slug). `linkedDrafts` in `src/shared/comments.ts` already collects a session's own drafts plus the drafts kept on its feature in any checkout of its repo. The full page's `FeatureReviewMenu` (`ReviewTray.tsx`) lists `featureDrafts` for the exact `projectId`, and Send is disabled. The session tray `ReviewMenu` shows the linked drafts with a hint that Send sends only its own. `usualKind` (`usualKind.ts`) already picks the kind of the repo's most recent agent session, and `LAUNCH_KINDS` (`launchKinds.ts`) lists the kinds with labels. `repoProjectIds` (`repoGroups.ts`) gives a repo's checkouts.
+
+Implementer 1 (shared, core, ipc):
+- [x] `src/shared/comments.ts` (+ test): `repoFeatureDrafts(cs, feature, projects)`, the drafts kept on this slug in any checkout of the feature's repo; `linkedDrafts` uses it
+- [x] `src/core/comments/model.ts` (+ test): `reown(cs, ids, sessionId)` sets the owner to the session and drops `feature`, for drafts only
+- [x] `src/core/core.ts` `reviewSend`: sends `linkedDrafts(session)`, the session's own plus its feature's; after a successful paste, re-owns the feature-owned ones to the session and marks all sent; a failed send (`busy`, `not-ready`, a throw) changes nothing, so they stay feature-owned
+- [x] `src/core/core.ts` `reviewStartAndSend({ feature, kind, cols, rows })`: refuses `terminal` (`bad-kind`), an unlisted feature (`not-found`), no drafts (`empty`), and a second call for the same feature while one runs (`busy`). Formats `repoFeatureDrafts` as one message and calls `sessionCreate({ projectId: feature.projectId, kind, prompt, feature: slug, cols, rows })`. Only after create succeeds, re-owns those drafts to the new session and marks them sent. A failed create (error or throw) leaves them feature-owned. Returns `{ sessionId, sent }`.
+- [x] `src/shared/ipc.ts` `'review:start-and-send': [{ feature: FeatureKey; kind: SessionKind; cols: number; rows: number }, { sessionId: string; sent: number }]`; wire it in `src/main/ipc.ts` like `review:send`
+- [x] core tests (`src/core/comments/core.test.ts`): re-own then send delivers the formatted text and marks drafts sent, owned by the session; `busy` and a failed paste leave drafts feature-owned; start-and-send creates a session linked to the feature in its project with the comments as its prompt, and marks drafts sent only then; a failed create leaves them feature-owned; terminal refused
+
+Implementer 2 (renderer):
+- [x] `src/renderer/src/sendTarget.ts` (+ `sendTarget.test.ts`): `resolveTarget(feature, sessions, projects)` returns `{ kind: 'one' | 'many' | 'none'; default: Session | null; candidates: Session[] }`. Candidates are sessions with `feature === slug` in a checkout of the feature's repo, never terminals, running, or gone with an `agentSessionId`, and never a failed start. They are ordered most recently active first (`lastFocusedAt`, else `startedAt`). `defaultKind(sessions, projects, projectId)` uses `usualKind`. Tests: one, many (most recent default, resumable gone included, terminal and unresumable gone excluded), none, other feature or repo excluded, default kind.
+- [x] `src/renderer/src/components/SendTargetChip.tsx` + css: "Sending to: <label>"; for several candidates it opens a menu to switch; for none it reads "Sending to: new session" with an agent-kind menu (`LAUNCH_KINDS` without terminal)
+- [x] `ReviewTray.tsx` `FeatureReviewMenu`: lists `repoFeatureDrafts`, shows the chip. Send goes to the picked or default session through `review:send`. With no session, "Start a session and send" goes through `review:start-and-send` with the picked kind (cols 120, rows 40). Errors are shown as in `ReviewMenu`, with "Resuming…" for a gone target.
+- [x] `ReviewTray.tsx` `ReviewMenu`: Send counts the listed drafts (own plus feature's); drop the "Send sends this session's own" hint
+- [x] render test: the full-page tray shows the chip and the right button for one, many and none
+
+Models passed: implementer: inherit, reviewer: inherit
+
+### Review rounds
+
+Round 1: 0 blocking, 7 non-blocking. Applied:
+- `not-found` from `review:send` now reads as a missing session; the feature text is shown only for start-and-send.
+- No double send of one feature's drafts. `reviewSend` also holds the `feature:<projectId>:<slug>` busy key of every feature among the drafts it sends, and start-and-send holds them too; tested for two sessions and for a second start-and-send.
+- A session still starting is no longer a send target (tested).
+- The button label is fixed at click time, so it stays "Starting…" during start-and-send.
+- The switch menu marks the current choice.
+
+Pass, 0 blocking, 0 fix rounds. Non-blocking left:
+- (a) The full page's Send goes through `review:send`, so it also sends the picked session's own drafts (its diff comments and general note), which the full-page tray does not list. This follows D3 ("through the existing `reviewSend`").
+- (b) The full-page tray now lists drafts from every checkout of the repo (slice 5 note (b)). The page's highlights and the jump to a card still match the exact `projectId`, so clicking a draft written in another checkout does nothing. Edit and Delete still work.
+- (c) `ReviewMenu` still lists the viewed session's linked drafts but sends to the focused session (behaviour from before this feature).
+- (d) Test gaps: no `not-ready` case for a feature-draft send; no test that a draft added during a send stays feature-owned; no start-and-send test that collects a worktree's drafts; no render test of the "Resuming…" label.
+- (e) `defaultKind` is a thin alias of `usualKind`.
+
+### Deviations
+
+- The order is send, then re-own, not re-own, then send. After a successful paste, `reviewSend` re-owns and marks sent in one write, so a failed send never touches the drafts. The plan's outcome (feature-owned on failure) is kept.
+- `reviewSend` now sends a session's own drafts plus its feature's (`linkedDrafts`) from every tray. The session tray's "Send sends this session's own" hint is removed.
+- The full-page tray lists `repoFeatureDrafts` (the slug in any checkout of the repo), so what is sent is what is listed.
+- New core command `reviewStartAndSend` and channel `review:start-and-send`, instead of the renderer calling `session:create` and then re-owning. This keeps "mark sent only after create succeeds" atomic in core. It refuses `bad-kind` (terminal), `not-found`, `busy` and `empty`.
+- Send targets also exclude sessions whose start failed or is still starting.
+- `FeatureReviewPanel` takes `sessions` and `projects` as props so it can be render-tested; the render test is a new file, `featureReviewRender.test.ts`.
+- The chip menus reuse `ui/ContextMenu`. Starting a session does not move focus away from the full page.
+
+### Verification
+
+- `npm test`: 103 files, 1247 tests pass.
+- `npm run typecheck`: passes for node and web.
+- New tests:
+  - `sendTarget.test.ts`: one; many (most recent by `lastFocusedAt`, else `startedAt`; resumable gone sessions included; terminals and unresumable gone excluded); starting and failed starts excluded; none; another slug or repo excluded; the default agent kind.
+  - `core.test.ts`:
+    - re-own then send delivers the formatted text and leaves the drafts sent and owned by the session;
+    - a failed paste and `busy` leave the drafts feature-owned;
+    - start-and-send creates a session in the feature's project, linked to it, with the comments as the launch prompt, and marks the drafts sent only after create;
+    - a failed create (preflight or backend throw) leaves them feature-owned;
+    - `bad-kind`, `not-found`, `empty`, and `busy` for overlapping sends.
+  - `comments.test.ts`: `repoFeatureDrafts`.
+  - `model.test.ts`: `reown`.
+  - `featureReviewRender.test.ts`: the chip and button for one session, several and none, and Send disabled with no drafts.
+- Models requested: implementer: inherit, reviewer: inherit.
+
+### Left for the human
+
+`npm run dev`, to be run by the human:
+- with one linked session, the full-page tray shows "Sending to: <session>" and Send delivers there;
+- with several, the chip switches the target;
+- with none, "Start a session and send" starts a session (agent kind from the chip menu) whose first message is the comments, and the drafts move to its Sent list;
+- a session's own tray Send now also sends its feature's drafts;
+- the Feature page and right-hand viewer behave as before.
+
+## Final summary
+
+- Slice 1: `2026-10-26-artifacts-canvas: slice 1 — Artifacts view with full page and Back`. A third project view, Artifacts, shows clusters of title cards per feature. A card opens full page, with Back and a breadcrumb; the open card is kept in `UiState.artifacts` and reset on restart. Review: pass, 0 fix rounds. Deviations: `ArtifactPage` has its own iframe until slice 5; extra helpers `pageClusters` and `openCard`.
+- Slice 2: `2026-10-26-artifacts-canvas: slice 2 — Pan and zoom the board`. Hand-written pan and zoom (`canvasView.ts`) through CSS variables, with − / % / + / Fit, and a debounced view write flushed before open and on unmount. Review: pass, 0 fix rounds. Deviations: a `setUi` helper; the board is keyed per project.
+- Slice 3: `2026-10-26-artifacts-canvas: slice 3 — Live preview cards`. Cards show live sandboxed previews (html, markdown, images), gated by visibility and zoom, with at most 24 live at once. Review: pass, 2 fix rounds. Deviations: navigation guard and CSP changes so previews load; `viewer:reload` narrowed.
+- Slice 4: `2026-10-26-artifacts-canvas: slice 4 — Feature filter and step-through`. A feature filter, kept with the view, and Previous/Next plus arrow keys on the full page in board order. Review: pass, 0 fix rounds. Deviations: a stale filter shows all; a filter change resets the pan.
+- Slice 5: `2026-10-26-artifacts-canvas: slice 5 — Comment on artifacts without a session`. Markdown comments on the full page with no session, kept on the feature (`comments.json` schema 3, no-op migration). The frame bridge is extracted from `ArtifactViewer`, and a Markdown toggle covers html-backed cards. Review: pass, 0 fix rounds. Deviations: merge rule in `src/shared/comments.ts`; project removal drops its feature drafts.
+- Slice 6: `2026-10-26-artifacts-canvas: slice 6 — Send target chip and start-and-send`. A "Sending to" chip resolved per D4, Send re-owning a feature's drafts on success, and "Start a session and send" through a new core command. Review: pass, 0 fix rounds. Deviations: send then re-own; a new `review:start-and-send` command; busy keys per feature.
+
+### Left for the human
+
+Run `npm run dev` and work through each slice's `### Left for the human` list. In short:
+- Artifacts view, full page, Back and breadcrumb;
+- pan, zoom and Fit kept across Back and restart, and whether a two-finger scroll should pan;
+- live previews refresh on change, with at most 24 iframes;
+- filter and step-through;
+- commenting with no session, kept across restart;
+- the send chip in its three cases, and start-and-send;
+- the Feature page and right-hand viewer unchanged.
+
+Known gaps:
+- the full page's Send also sends the target session's own drafts;
+- a draft from another checkout cannot be jumped to or highlighted on the full page;
+- links clicked in the full page open in the side viewer.
+
+### PR description
+
+Artifacts canvas: a project whiteboard of live artifact previews, with comments sent to the right session
+
+Adds an **Artifacts** view on a project, beside Board and Sessions.
+- Every feature's artifacts are live preview cards, in labelled clusters in stage order.
+- You can pan and zoom the board, filter it to one feature, open a card full page with Back and Previous/Next, and comment on markdown with no session running.
+- The comment tray shows "Sending to: <session>": the linked session, a switchable chip when there are several, or "Start a session and send" when there is none.
+
+Per slice:
+1. The Artifacts view and full page with Back. The open card is kept in `UiState.artifacts` and never reopened on restart.
+2. Pan and zoom (`canvasView.ts`, CSS variables only). The view is debounced and kept across Back and restart.
+3. Live previews in opaque sandboxed iframes over `grove-artifact://` (ADR 0007 unchanged), gated by visibility and zoom, at most 24 at once.
+4. A feature filter and step-through in board order.
+5. Comments kept on a feature when no session owns them (`comments.json` schema 3, a no-op migration), and the frame bridge extracted from `ArtifactViewer`.
+6. Send target resolution (`sendTarget.ts`). Send re-owns the feature's drafts only after a successful paste. `review:start-and-send` creates a session linked to the feature, with the comments as its launch prompt, and marks them sent only after create succeeds.
+
+Verified with `npm test` (1247 tests), `npm run typecheck`, and per-slice unit and render tests. The Feature page Files list, right-hand viewer and diff comments are unchanged.
+
+Left for the human: the `npm run dev` checks listed in `04-run.md`. The known gaps: the full page's Send includes the target session's own drafts; a draft from another checkout cannot be jumped to on the full page; links in the full page open in the side viewer. `comments.json` schema 3 cannot be read by older Grove versions.
+
 ## Open questions

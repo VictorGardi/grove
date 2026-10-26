@@ -29,6 +29,7 @@ export interface InvokeMap {
   'comment:update': [{ id: string; body: string }, Comment]
   'comment:delete': [{ id: string }, { id: string }]
   'review:send': [{ sessionId: string }, { sent: number }]
+  'review:start-and-send': [{ feature: FeatureKey; kind: SessionKind; cols: number; rows: number }, { sessionId: string; sent: number }]
   'diff:lines': [{ sessionId: string; path: string; from: number; to: number }, string[]]
   'diff:refs': [{ sessionId: string }, { branches: string[]; current: string | null; default: string | null }]
   'ui:set': [Partial<UiState>, UiState]

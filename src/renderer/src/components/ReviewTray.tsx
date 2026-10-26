@@ -1,9 +1,11 @@
 import { useEffect, useRef, useState, type ReactNode } from 'react'
-import { featureDrafts, linkedDrafts } from '@shared/comments'
-import type { Comment, FeatureKey } from '@shared/types'
+import { linkedDrafts, repoFeatureDrafts } from '@shared/comments'
+import type { Comment, FeatureKey, Project, Session, SessionKind } from '@shared/types'
 import { groupForTray } from '../reviewView'
+import { defaultKind, resolveTarget } from '../sendTarget'
 import { useSlices } from '../stores/slices'
 import { CommentEditor } from './CommentEditor'
+import { SendTargetChip } from './SendTargetChip'
 import { Button } from './ui/Button'
 import s from './ReviewTray.module.css'
 
@@ -12,7 +14,12 @@ const SEND_ERRORS: Record<string, string> = {
   'not-ready': 'The session did not become ready. Try again.',
   gone: 'This session has ended and cannot be resumed.',
   busy: 'A send is already running.',
+  'bad-kind': 'A terminal cannot take comments. Pick an agent.',
+  'not-found': 'This session no longer exists.',
+  'no-feature': 'This feature is no longer listed.',
 }
+
+const SENDING_LABEL = { send: 'Sending…', resume: 'Resuming…', start: 'Starting…' } as const
 
 const sentAt = (iso: string | null) => (iso ? new Date(iso).toLocaleString([], { dateStyle: 'short', timeStyle: 'short' }) : '')
 
@@ -96,7 +103,7 @@ function TrayGroups({ drafts, marked = false, onJump }: { drafts: Comment[]; mar
 }
 
 // Comments (n) in the diff and artifact viewers' headers: its tray of drafts, a general note, Send, and the Sent list.
-// The tray lists the session's own drafts and those kept on its feature (design D3); Send sends the session's own.
+// The tray lists the session's own drafts and those kept on its feature (design D3); Send sends them all.
 // SAVE uses the session whose content is being viewed (sessionId prop); SEND uses focusedSessionId.
 export function ReviewMenu({ sessionId }: { sessionId: string }) {
   const all = useSlices((x) => x.comments)
@@ -150,13 +157,12 @@ export function ReviewMenu({ sessionId }: { sessionId: string }) {
       <TrayGroups drafts={listed} marked onJump={(c) => (c.anchor.kind === 'file'
         ? openArtifact({ kind: 'file', projectId: c.anchor.projectId, path: c.anchor.path, hash: null, fromDiff: null })
         : openDiff(sessionId))} />
-      {listed.some((c) => c.sessionId === null) && <div className={s.hint}>Comments on the feature stay there; Send sends this session's own.</div>}
       <label className={s.label} htmlFor={`note-${sessionId}`}>General note</label>
       <textarea id={`note-${sessionId}`} className={s.note} rows={4} value={text} placeholder="Anything for the agent…"
         onChange={(e) => setText(e.target.value)} onBlur={() => void saveNote()} />
       {error && <div className={s.error}>{error}</div>}
       <div className={s.actions}>
-        <Button variant="primary" size="sm" disabled={sending || (drafts.length === 0 && !text.trim())} onClick={() => void send()}>
+        <Button variant="primary" size="sm" disabled={sending || (listed.length === 0 && !text.trim())} onClick={() => void send()}>
           {sending ? (resuming ? 'Resuming…' : 'Sending…') : 'Send'}
         </Button>
       </div>
@@ -177,17 +183,62 @@ export function ReviewMenu({ sessionId }: { sessionId: string }) {
   )
 }
 
-// Comments (n) on an artifact's full page, with no session: the drafts kept on the feature, to edit or
-// delete. No general note (a note is a session's). They wait on the feature until sent.
+// Comments (n) on an artifact's full page, with no session: the drafts kept on the feature in any checkout
+// of its repo, to edit, delete or send. No general note (a note is a session's).
 export function FeatureReviewMenu({ feature, onJump }: { feature: FeatureKey; onJump: (c: Comment) => void }) {
-  const drafts = featureDrafts(useSlices((x) => x.comments), feature)
+  const projects = useSlices((x) => x.projects)
+  const sessions = useSlices((x) => x.sessions)
+  const drafts = repoFeatureDrafts(useSlices((x) => x.comments), feature, projects)
   return (
     <TrayPopover count={drafts.length}>
+      <FeatureReviewPanel feature={feature} drafts={drafts} sessions={sessions} projects={projects} onJump={onJump} />
+    </TrayPopover>
+  )
+}
+
+// The popover's body: the drafts, where Send goes (D4), and Send. Sending leaves focus on the full page.
+export function FeatureReviewPanel({ feature, drafts, sessions, projects, onJump }: {
+  feature: FeatureKey; drafts: Comment[]; sessions: Session[]; projects: Project[]; onJump: (c: Comment) => void
+}) {
+  const target = resolveTarget(feature, sessions, projects)
+  const [pickedId, setPickedId] = useState<string | null>(null)
+  const [kind, setKind] = useState<SessionKind | null>(null)
+  // the mode Send ran in, fixed at the click so its label holds while it runs; null: idle
+  const [sending, setSending] = useState<'send' | 'resume' | 'start' | null>(null)
+  const [error, setError] = useState<string | null>(null)
+  // a pick that is no longer a candidate falls back to the default
+  const picked = target.candidates.find((c) => c.id === pickedId) ?? target.default
+  const startKind = kind ?? defaultKind(sessions, projects, feature.projectId)
+  const resuming = picked?.lastStatus === 'gone'
+
+  async function send() {
+    setError(null)
+    setSending(picked ? (resuming ? 'resume' : 'send') : 'start')
+    try {
+      if (picked) {
+        const res = await window.api.invoke('review:send', { sessionId: picked.id })
+        if (!res.ok) setError(SEND_ERRORS[res.error] ?? res.error)
+      } else {
+        const res = await window.api.invoke('review:start-and-send', { feature, kind: startKind, cols: 120, rows: 40 })
+        // here a missing target is the feature, not a session
+        if (!res.ok) setError(res.error === 'not-found' ? 'This feature is no longer listed.' : SEND_ERRORS[res.error] ?? res.error)
+      }
+    } finally {
+      setSending(null)
+    }
+  }
+
+  return (
+    <>
       <TrayGroups drafts={drafts} onJump={onJump} />
       <div className={s.hint}>Comments are kept on this feature until they are sent to a session.</div>
+      <SendTargetChip target={target} picked={picked} onPick={setPickedId} kind={startKind} onKind={setKind} />
+      {error && <div className={s.error}>{error}</div>}
       <div className={s.actions}>
-        <Button variant="primary" size="sm" disabled>Send</Button>
+        <Button variant="primary" size="sm" disabled={!!sending || drafts.length === 0} onClick={() => void send()}>
+          {sending ? SENDING_LABEL[sending] : picked ? 'Send' : 'Start a session and send'}
+        </Button>
       </div>
-    </TrayPopover>
+    </>
   )
 }

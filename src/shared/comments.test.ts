@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import type { Comment, Project } from './types'
-import { featureDrafts, linkedDrafts, sameFeature } from './comments'
+import { featureDrafts, linkedDrafts, repoFeatureDrafts, sameFeature } from './comments'
 
 const T = '2026-10-07T10:00:00.000Z'
 const anchor = { kind: 'file' as const, projectId: 'p', path: 'docs/work/f/03-design.md', exact: 'q', prefix: '', suffix: '', start: 1, end: 1 }
@@ -28,6 +28,15 @@ describe('featureDrafts', () => {
   it('lists the drafts kept on this feature only', () => {
     const cs = [c('own', 's'), c('a', { projectId: 'p', slug: 'f' }), c('b', { projectId: 'p', slug: 'g' }), c('c', { projectId: 'q', slug: 'f' }), c('d', { projectId: 'p', slug: 'f' }, 'sent')]
     expect(ids(featureDrafts(cs, { projectId: 'p', slug: 'f' }))).toEqual(['a'])
+  })
+})
+
+describe('repoFeatureDrafts', () => {
+  it('lists drafts kept on the slug in any checkout of the repo', () => {
+    const cs = [c('a', { projectId: 'p', slug: 'f' }), c('w', { projectId: 'wt', slug: 'f' }), c('q', { projectId: 'q', slug: 'f' }),
+      c('g', { projectId: 'p', slug: 'g' }), c('s', { projectId: 'p', slug: 'f' }, 'sent'), c('own', 's')]
+    expect(ids(repoFeatureDrafts(cs, { projectId: 'p', slug: 'f' }, projects))).toEqual(['a', 'w'])
+    expect(ids(repoFeatureDrafts(cs, { projectId: 'wt', slug: 'f' }, projects))).toEqual(['a', 'w'])
   })
 })
 

@@ -174,20 +174,119 @@ describe('core drafts kept on a feature', () => {
     expect(core.getSlices().comments).toEqual([])
   })
 
-  it('is never sent by a session, even one linked to its feature, and outlives the session', async () => {
+  it('outlives a session that is not linked to its feature', async () => {
     const { core, fake } = await setup()
     const session = await create(core)
-    await core.commands.sessionLink({ id: session.id, feature: 'a' })
     await core.commands.commentAdd({ sessionId: null, feature: F, anchor, body: 'kept' })
     expect(await core.commands.reviewSend({ sessionId: session.id })).toEqual({ ok: false, error: 'empty' })
-    await core.commands.commentAdd({ sessionId: session.id, anchor: { kind: 'note' }, body: 'mine' })
-    expect(await core.commands.reviewSend({ sessionId: session.id })).toEqual({ ok: true, data: { sent: 1 } })
-    expect(fake.pastes[0].text).not.toContain('kept')
-    expect(core.getSlices().comments.map((c) => [c.body, c.state])).toEqual([['kept', 'draft'], ['mine', 'sent']])
     fake.live.clear()
     await core.checkLiveness()
     await core.commands.sessionRemove({ id: session.id })
     expect(core.getSlices().comments).toMatchObject([{ sessionId: null, body: 'kept', state: 'draft' }])
+  })
+
+  it('is sent by a session linked to its feature and re-owned to it', async () => {
+    const { core, fake } = await setup()
+    const session = await create(core)
+    await core.commands.sessionLink({ id: session.id, feature: 'a' })
+    await core.commands.commentAdd({ sessionId: null, feature: F, anchor, body: 'kept' })
+    await core.commands.commentAdd({ sessionId: session.id, anchor: { kind: 'note' }, body: 'mine' })
+    expect(await core.commands.reviewSend({ sessionId: session.id })).toEqual({ ok: true, data: { sent: 2 } })
+    expect(fake.pastes[0].text).toContain('kept')
+    expect(fake.pastes[0].text).toContain('mine')
+    const cs = core.getSlices().comments
+    expect(cs.map((c) => [c.body, c.state, c.sessionId])).toEqual([['kept', 'sent', session.id], ['mine', 'sent', session.id]])
+    expect('feature' in cs[0]).toBe(false)
+  })
+
+  it('stays kept on its feature when the send fails or is busy', async () => {
+    const { core, fake } = await setup()
+    const session = await create(core)
+    await core.commands.sessionLink({ id: session.id, feature: 'a' })
+    await core.commands.commentAdd({ sessionId: null, feature: F, anchor, body: 'kept' })
+    fake.paste = async () => { throw new Error('boom') }
+    expect(await core.commands.reviewSend({ sessionId: session.id })).toEqual({ ok: false, error: 'boom' })
+    expect(core.getSlices().comments).toMatchObject([{ sessionId: null, feature: F, state: 'draft' }])
+    let release = () => {}
+    fake.paste = () => new Promise<void>((r) => { release = r })
+    const first = core.commands.reviewSend({ sessionId: session.id })
+    expect(await core.commands.reviewSend({ sessionId: session.id })).toEqual({ ok: false, error: 'busy' })
+    expect(core.getSlices().comments).toMatchObject([{ sessionId: null, feature: F, state: 'draft' }])
+    release()
+    expect((await first).ok).toBe(true)
+  })
+
+  it('is not sent to a second session while a send of it to another is in flight', async () => {
+    const { core, fake } = await setup()
+    const a = await create(core)
+    const b = await create(core)
+    await core.commands.sessionLink({ id: a.id, feature: 'a' })
+    await core.commands.sessionLink({ id: b.id, feature: 'a' })
+    await core.commands.commentAdd({ sessionId: null, feature: F, anchor, body: 'kept' })
+    let release = () => {}
+    fake.paste = () => new Promise<void>((r) => { release = r })
+    const first = core.commands.reviewSend({ sessionId: a.id })
+    expect(await core.commands.reviewSend({ sessionId: b.id })).toEqual({ ok: false, error: 'busy' })
+    expect(await core.commands.reviewStartAndSend({ feature: F, kind: 'claude', cols: 80, rows: 24 })).toEqual({ ok: false, error: 'busy' })
+    release()
+    expect(await first).toEqual({ ok: true, data: { sent: 1 } })
+    expect(core.getSlices().comments).toMatchObject([{ sessionId: a.id, state: 'sent' }])
+    expect(core.getSlices().sessions.filter((x) => x.kind === 'claude')).toEqual([])
+  })
+
+  it('starts a session on its feature with the drafts as its launch prompt', async () => {
+    const { core, fake } = await setup()
+    await core.commands.commentAdd({ sessionId: null, feature: F, anchor, body: 'kept' })
+    const r = await core.commands.reviewStartAndSend({ feature: F, kind: 'claude', cols: 80, rows: 24 })
+    if (!r.ok) throw new Error(r.error)
+    expect(r.data.sent).toBe(1)
+    const session = core.getSlices().sessions.find((x) => x.id === r.data.sessionId)
+    expect(session).toMatchObject({ projectId: 'p', feature: 'a', kind: 'claude' })
+    const create = fake.calls.find((c) => c.method === 'create')!.args[0] as { argv: string[] }
+    expect(create.argv.join(' ')).toContain('Review comments from Grove (1).')
+    expect(create.argv.join(' ')).toContain('kept')
+    expect(fake.pastes).toEqual([])
+    const cs = core.getSlices().comments
+    expect(cs).toMatchObject([{ sessionId: r.data.sessionId, state: 'sent', body: 'kept' }])
+    expect('feature' in cs[0]).toBe(false)
+  })
+
+  it('refuses a second start for the same feature while the first is in flight', async () => {
+    const { core, fake } = await setup()
+    await core.commands.commentAdd({ sessionId: null, feature: F, anchor, body: 'kept' })
+    let release = () => {}
+    const gate = new Promise<void>((r) => { release = r })
+    const real = fake.create.bind(fake)
+    fake.create = async (o) => { await gate; return real(o) }
+    const first = core.commands.reviewStartAndSend({ feature: F, kind: 'claude', cols: 80, rows: 24 })
+    expect(await core.commands.reviewStartAndSend({ feature: F, kind: 'claude', cols: 80, rows: 24 })).toEqual({ ok: false, error: 'busy' })
+    release()
+    const r = await first
+    if (!r.ok) throw new Error(r.error)
+    expect(core.getSlices().sessions).toHaveLength(1)
+    expect(core.getSlices().comments).toMatchObject([{ sessionId: r.data.sessionId, state: 'sent' }])
+  })
+
+  it('keeps the drafts on the feature when the start fails', async () => {
+    const { core, claude, fake } = await setup()
+    await core.commands.commentAdd({ sessionId: null, feature: F, anchor, body: 'kept' })
+    claude.missing = 'no claude'
+    expect(await core.commands.reviewStartAndSend({ feature: F, kind: 'claude', cols: 80, rows: 24 })).toEqual({ ok: false, error: 'no claude' })
+    expect(core.getSlices().comments).toMatchObject([{ sessionId: null, feature: F, state: 'draft' }])
+    claude.missing = null
+    fake.create = async () => { throw new Error('tmux down') }
+    expect(await core.commands.reviewStartAndSend({ feature: F, kind: 'claude', cols: 80, rows: 24 })).toEqual({ ok: false, error: 'tmux down' })
+    expect(core.getSlices().comments).toMatchObject([{ sessionId: null, feature: F, state: 'draft' }])
+  })
+
+  it('refuses a terminal, an unknown feature and a feature with no drafts', async () => {
+    const { core } = await setup()
+    expect(await core.commands.reviewStartAndSend({ feature: F, kind: 'claude', cols: 80, rows: 24 })).toEqual({ ok: false, error: 'empty' })
+    await core.commands.commentAdd({ sessionId: null, feature: F, anchor, body: 'kept' })
+    expect(await core.commands.reviewStartAndSend({ feature: F, kind: 'terminal', cols: 80, rows: 24 })).toEqual({ ok: false, error: 'bad-kind' })
+    expect(await core.commands.reviewStartAndSend({ feature: { projectId: 'p', slug: 'nope' }, kind: 'claude', cols: 80, rows: 24 })).toEqual({ ok: false, error: 'not-found' })
+    expect(core.getSlices().sessions).toEqual([])
+    expect(core.getSlices().comments).toMatchObject([{ sessionId: null, state: 'draft' }])
   })
 
   it('goes with its project when the project is removed', async () => {

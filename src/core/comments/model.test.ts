@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import type { Comment } from '@shared/types'
-import { addComment, draftsOf, dropFeatureProject, dropSession, markSent, MAX_SENT, removeComment, updateComment } from './model'
+import { addComment, draftsOf, dropFeatureProject, dropSession, markSent, MAX_SENT, removeComment, reown, updateComment } from './model'
 
 const T = '2026-10-07T10:00:00.000Z'
 const add = (cs: Comment[], id: string, body = 'x', sessionId = 's') => {
@@ -75,6 +75,18 @@ describe('remove and drop', () => {
     const cs = addKept(addKept(add([], 'a'), 'k'), 'q', { projectId: 'q', slug: 'f' })
     expect(dropFeatureProject(cs, 'p').map((c) => c.id)).toEqual(['a', 'q'])
     expect(dropSession(cs, 's').map((c) => c.id)).toEqual(['k', 'q'])
+  })
+})
+
+describe('reown', () => {
+  it('gives the given drafts to a session and drops their feature', () => {
+    const cs = reown(addKept(addKept(add([], 'a', 'x', 'other'), 'k'), 'j'), ['k', 'a'], 's')
+    expect(cs.map((c) => [c.id, c.sessionId, 'feature' in c])).toEqual([['a', 's', false], ['k', 's', false], ['j', null, true]])
+    expect(draftsOf(cs, 's').map((c) => c.id)).toEqual(['a', 'k'])
+  })
+  it('leaves sent comments alone', () => {
+    const cs = markSent(add([], 'a'), ['a'], T)
+    expect(reown(cs, ['a'], 'z')).toEqual(cs)
   })
 })
 
