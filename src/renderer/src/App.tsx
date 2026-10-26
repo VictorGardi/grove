@@ -10,7 +10,6 @@ import { FeaturePage } from './components/FeaturePage'
 import { ProjectPage } from './components/ProjectPage'
 import { SessionGrid } from './components/SessionGrid'
 import { SessionMeta } from './components/SessionMeta'
-import { SessionStrip } from './components/SessionStrip'
 import { Sidebar } from './components/Sidebar'
 import { TerminalView } from './components/TerminalView'
 import { AppShell, SIDEBAR_MAX, SIDEBAR_MIN } from './components/shell/AppShell'
@@ -199,7 +198,7 @@ export default function App() {
         sidebar={ui.sidebarCollapsed ? undefined : <Sidebar onNew={(projectId) => setQuickNew({ projectId })} onRemove={(ids) => void removeSessions(ids)} />}
         content={
           <>
-            <ContentHeader crumbs={header} strip={ui.sidebarCollapsed ? <SessionStrip /> : undefined}
+            <ContentHeader crumbs={header}
               meta={shown.kind === 'session'
                 ? <SessionMeta lead={header.at(-1)?.label ?? shown.session.label} trail={<Crumbs crumbs={header.slice(0, -1)} ancestors />} session={shown.session}
                     feature={linked} featureInLead tagIndex={linkedIndex}

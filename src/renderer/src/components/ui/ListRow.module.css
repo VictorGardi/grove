@@ -190,9 +190,8 @@
   padding-right: 12px;
 }
 
-/* the live-status dot, in the card's bottom-right corner: the same mark and pulse the
-   session strip's dot uses, so a session reads the same in the sidebar and the strip. It takes its colour
-   from the .s-* classes below via currentColor. */
+/* the live-status dot, in the card's bottom-right corner. It takes its colour from the .s-*
+   classes below via currentColor. */
 .statusDot {
   position: absolute;
   right: 6px;
@@ -204,7 +203,7 @@
   box-shadow: 0 0 0 2px var(--card-bg);
 }
 
-/* the dot's tones, mirroring the strip dot's: one StatusTone, one colour, in both views */
+/* the dot's tones: one StatusTone, one colour */
 .s-running { color: var(--status-running); }
 .s-working { color: var(--status-working); }
 .s-waiting { color: var(--status-waiting); }
@@ -232,7 +231,7 @@
   .statusDot.s-starting { animation-duration: 2s; }
 }
 
-/* waiting pulses on a card exactly as it does on a strip dot */
+/* waiting pulses */
 .statusDot.s-waiting {
   animation: statusPulse 1.6s ease-in-out infinite;
 }

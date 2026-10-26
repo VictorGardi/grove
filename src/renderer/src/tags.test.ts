@@ -36,7 +36,7 @@ describe('colorTags', () => {
     const before = colorTags(plain, [])
     const after = colorTags(withWorktrees, [])
     expect([after.project('p'), after.project('q'), after.project('r')]).toEqual([before.project('p'), before.project('q'), 2])
-    expect(after.project('wt1')).toBe(after.project('p')) // the repo's colour, so its strip monogram still has a colour
+    expect(after.project('wt1')).toBe(after.project('p')) // the repo's colour
     expect(after.project('wt2')).toBe(after.project('p'))
   })
 

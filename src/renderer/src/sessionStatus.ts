@@ -18,8 +18,8 @@ export function statusView(s: Session): { label: string; tone: StatusTone } {
 }
 
 // The colour a live-status dot draws. An agent that finished and nobody has looked reads as
-// finished rather than waiting, so it stops pulsing. The strip's dot and the session card both
-// go through this, so the two views can't drift apart.
+// finished rather than waiting, so it stops pulsing. Every status dot goes through this, so no
+// two views can drift apart.
 export function statusTone(s: Session): StatusTone {
   const shown = shownStatus(s)
   return shown === 'waiting' && s.waitingFor === 'done' ? 'finished' : shown

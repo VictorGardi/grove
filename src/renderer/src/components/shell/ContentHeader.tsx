@@ -26,12 +26,10 @@ export function Crumbs({ crumbs, ancestors }: { crumbs: HeaderCrumb[]; ancestors
 }
 
 // `meta` replaces the crumb trail for a session, so the header draws the same row a grid pane
-// does. `strip` leads it while the sidebar is hidden (⌘B). `right` stays for the header's own
-// actions, which are not session facts.
-export function ContentHeader({ crumbs, meta, strip, right }: { crumbs: HeaderCrumb[]; meta?: ReactNode; strip?: ReactNode; right?: ReactNode }) {
+// does. `right` stays for the header's own actions, which are not session facts.
+export function ContentHeader({ crumbs, meta, right }: { crumbs: HeaderCrumb[]; meta?: ReactNode; right?: ReactNode }) {
   return (
     <header className={`${s.header} app-drag`}>
-      {strip && <div className={`${s.strip} app-no-drag`}>{strip}</div>}
       <div className={`${s.left} app-no-drag`}>{meta ?? <Crumbs crumbs={crumbs} />}</div>
       {right && <div className={`${s.right} app-no-drag`}>{right}</div>}
     </header>

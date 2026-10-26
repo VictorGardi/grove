@@ -7,15 +7,6 @@
   border-bottom: 1px solid var(--header-divider);
 }
 
-/* the session strip, while the sidebar is hidden: it gives way to the title, down to a few dots */
-.strip {
-  display: flex;
-  flex: 0 1 auto;
-  min-width: 96px;
-  max-width: 40%;
-  margin-right: var(--sp-3);
-}
-
 /* carries the breadcrumb when there is no session, and the session's own row when there is */
 .left {
   flex: 1;
