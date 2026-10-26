@@ -1,12 +1,10 @@
-import { useEffect, useRef, useState, type CSSProperties } from 'react'
+import { useEffect, useLayoutEffect, useRef, useState, type CSSProperties } from 'react'
 import { createPortal } from 'react-dom'
 import type { Session } from '@shared/types'
 import { childrenCount, isEnded } from '../family'
 import { statusTone, statusView } from '../sessionStatus'
 import { StatusDot } from './ui/StatusDot'
 import s from './ChildrenPopover.module.css'
-
-const POPOVER_W = 260 // matches .popover's width in the stylesheet
 
 // A parent's "N children" chip: clicking lists every child (running first, by rank; ended ones
 // last), and clicking one focuses it. Rows are buttons, so the grid's drag handler leaves them
@@ -16,6 +14,13 @@ export function ChildrenPopover({ kids, onJump }: { kids: Session[]; onJump: (id
   const ref = useRef<HTMLDivElement>(null)
   const popRef = useRef<HTMLDivElement>(null)
   const [at, setAt] = useState({ top: 0, left: 0 })
+  // the list sizes to its longest label, so keep it on-screen once its width is known
+  useLayoutEffect(() => {
+    const w = popRef.current?.offsetWidth
+    if (!open || !w) return
+    const left = Math.max(8, Math.min(at.left, window.innerWidth - w - 8))
+    if (left !== at.left) setAt({ ...at, left })
+  }, [open, at])
   useEffect(() => {
     if (!open) return
     const away = (e: MouseEvent) => {
@@ -35,7 +40,7 @@ export function ChildrenPopover({ kids, onJump }: { kids: Session[]; onJump: (id
     <div className={s.wrap} ref={ref}>
       <button type="button" className={s.trigger} aria-expanded={open} aria-haspopup="dialog" title="Show all children" onClick={() => {
         const r = ref.current?.getBoundingClientRect()
-        if (r) setAt({ top: r.bottom + 8, left: Math.max(8, Math.min(r.left, window.innerWidth - POPOVER_W - 8)) })
+        if (r) setAt({ top: r.bottom + 8, left: Math.max(8, r.left) })
         setOpen(!open)
       }}>
         {childrenCount(kids.length)}
