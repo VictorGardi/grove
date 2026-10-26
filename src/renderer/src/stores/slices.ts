@@ -31,7 +31,6 @@ interface SlicesState {
   openBoardArtifact(projectId: string, ref: ArtifactRef | null): void // the artifacts board's full page on that project page; null closes it
   setBoardView(projectId: string, view: CanvasView): void // the artifacts board's pan and zoom on that project page
   setBoardFilter(projectId: string, slug: string | null, view?: CanvasView): void // the one feature the artifacts board shows on that project page (null: all), and the view it starts at
-  setSidebarTab(tab: UiState['sidebarTab']): void
   setGroupBy(groupBy: UiState['groupBy']): void
   setSessionSort(sessionSort: UiState['sessionSort']): void
   setSessionOrder(order: UiState['sessionOrder']): void // shown at once, saved behind it: a drop must not wait for the main process
@@ -119,7 +118,6 @@ export const useSlices = create<SlicesState>((set, get) => {
     setBoardView: (projectId, view) => { setUi(boardViewTo(get().ui, projectId, view)) },
     setBoardFilter: (projectId, slug, view) => { setUi(filterTo(get().ui, projectId, slug, view)) },
     toggleSidebar: () => { void window.api.invoke('ui:set', { sidebarCollapsed: !get().ui.sidebarCollapsed }) },
-    setSidebarTab: (tab) => { void window.api.invoke('ui:set', { sidebarTab: tab }) },
     setGroupBy: (groupBy) => { void window.api.invoke('ui:set', { groupBy }) },
     setSessionSort: (sessionSort) => { void window.api.invoke('ui:set', { sessionSort }) },
     setSessionOrder: (sessionOrder) => {

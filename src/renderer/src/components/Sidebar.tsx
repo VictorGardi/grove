@@ -4,10 +4,10 @@ import { useSlices } from '../stores/slices'
 import { gridShown } from '../gridView'
 import { kidsKey } from '@shared/groups'
 import { canParent, hasChildren } from '@shared/sessionGroups'
-import { longestWaiting, mostUrgent, shownStatus, statusTone, statusView } from '../sessionStatus'
+import { longestWaiting, mostUrgent, shownStatus, statusAge, statusTone, statusView } from '../sessionStatus'
 import { selectRange } from '../selection'
 import { GROUP_BY_OPTIONS, SORT_OPTIONS, canDrop, dropSession, groupSize, kidRows, kidsGroup, listGroups, visibleSessions, type DoneStack, type DropAt, type ListGroup } from '../sessionList'
-import { repoGroups, repoRows } from '../repoGroups'
+import { repoRows } from '../repoGroups'
 import { colorTags } from '../tags'
 import { linkedFeature } from '../tree'
 import { workflowStatusOf, WORKFLOW_STATUSES } from '../workflowStatus'
@@ -18,7 +18,7 @@ import { cx } from './ui/cx'
 import { Icon } from './ui/Icon'
 import { LinkPicker } from './LinkPicker'
 import { ParentPicker } from './ParentPicker'
-import { ListRow } from './ui/ListRow'
+import { SessionRow } from './ui/SessionRow'
 import { BranchMark } from './BranchMark'
 import { StatusDot } from './ui/StatusDot'
 import { tagClass } from './ui/Tag'
@@ -41,15 +41,16 @@ function DoneStackRow({ stack, holdsFocus, onToggle }: { stack: DoneStack; holds
   )
 }
 
-function SessionCard({ s, feature, worktree, focused, picked, compact, inGrid, gridOn, gridFull, onToggleGrid, onFocus, onOpenFeature, onToggleCompact, onRemove, onContextMenu, kids }: {
+function SessionCard({ s, feature, worktree, focused, picked, compact, since, now, inGrid, gridFull, onToggleGrid, onFocus, onOpenFeature, onToggleCompact, onRemove, onContextMenu, kids }: {
   s: Session
   feature: Feature | null // the linked feature, if it exists
   focused: boolean // a focused card shows selected
   picked: boolean // in the shift-click multi-selection
   compact: boolean
   worktree?: Project // set when the session runs in a git worktree
+  since: number | undefined // when it entered its current status (ms)
+  now: number
   inGrid: boolean // a member of the session grid
-  gridOn: boolean // the grid is showing: members keep their check visible
   gridFull: boolean // the grid has its nine
   onToggleGrid: () => void
   onFocus: (e: MouseEvent) => void
@@ -63,40 +64,41 @@ function SessionCard({ s, feature, worktree, focused, picked, compact, inGrid, g
   const shown = shownStatus(s)
   const done = shown === 'waiting' && s.waitingFor === 'done' // the agent finished and nobody has looked
   const needsYou = shown === 'waiting' && !done
+  const status = { ...statusView(s), tone: statusTone(s) }
+  const age = since === undefined ? '' : statusAge(since, now)
 
   return (
-    <ListRow
+    <SessionRow
       title={s.label}
-      corner={
-        <Button variant="ghost" size="sm" round icon={inGrid ? 'check' : 'plus'} aria-pressed={inGrid}
-          disabled={!inGrid && gridFull}
-          aria-label={inGrid ? 'Remove from grid' : 'Add to grid'}
-          title={inGrid ? 'Remove from grid' : gridFull ? `The grid holds ${GRID_MAX} sessions` : 'Add to grid'}
-          onClick={onToggleGrid} />
-      }
-      cornerPinned={inGrid && gridOn}
-      tab={kids && kids.list.length > 0 && (
-        <button type="button" className={cx(css.kidsToggle, kids.holdsFocus && css.kidsToggleHolding)} aria-expanded={!kids.collapsed}
-          title={kids.collapsed ? 'Show children' : 'Hide children'}
-          onClick={(e) => { e.stopPropagation(); kids.onToggle() }}>
-          {/* collapsed, the most urgent child shows through: a waiting child is never hidden */}
-          {kids.collapsed && (() => { const u = mostUrgent(kids.list); return u && <StatusDot tone={statusTone(u)} /> })()}
-          <Icon name={kids.collapsed ? 'chevron-right' : 'chevron-down'} size={10} />
-          {kids.list.length}
-        </button>
-      )}
       icon={<WorkflowStatusButton session={s} />}
-      meta={s.branch && (
-        <div className={css.cardInfo}>
-          <div className={css.branchLine}>
-            <BranchMark pr={s.pr} />
-            <span className={css.branchName}>{s.branch}</span>
-          </div>
+      time={{ label: age, title: `${status.label} for ${age}` }}
+      status={status}
+      meta={(
+        <div className={css.branchLine}>
+          {kids && kids.list.length > 0 && (
+            <button type="button" className={cx(css.kidsToggle, kids.holdsFocus && css.kidsToggleHolding)} aria-expanded={!kids.collapsed}
+              title={kids.collapsed ? 'Show children' : 'Hide children'}
+              onClick={(e) => { e.stopPropagation(); kids.onToggle() }}>
+              {/* collapsed, the most urgent child shows through: a waiting child is never hidden */}
+              {kids.collapsed && (() => { const u = mostUrgent(kids.list); return u && <StatusDot tone={statusTone(u)} /> })()}
+              <Icon name={kids.collapsed ? 'chevron-right' : 'chevron-down'} size={10} />
+              {kids.list.length}
+            </button>
+          )}
+          {s.kind === 'terminal' && <span className={css.kindMark} title={KIND_LABEL.terminal} aria-label={KIND_LABEL.terminal}><Icon name="terminal" size={12} /></span>}
+          {s.branch && <><BranchMark pr={s.pr} /><span className={css.branchName}>{s.branch}</span></>}
+          {worktree && <span className={css.worktreeMark} title={`Worktree: ${worktree.path}`} aria-label={`Worktree: ${worktree.path}`}><Icon name="worktree" size={12} /></span>}
         </div>
       )}
-      mark={worktree && { icon: <Icon name="worktree" size={14} />, label: `Worktree: ${worktree.path}` }}
-      kind={s.kind === 'terminal' ? { icon: <Icon name="terminal" size={12} />, label: KIND_LABEL.terminal } : undefined}
-      status={{ ...statusView(s), tone: statusTone(s) }}
+      slot={(
+        <button type="button" className={cx(css.gridSlot, inGrid && css.gridSlotOn)} aria-pressed={inGrid}
+          disabled={!inGrid && gridFull}
+          aria-label={inGrid ? 'Remove from grid' : 'Add to grid'}
+          title={inGrid ? 'In the grid: click to remove' : gridFull ? `The grid holds ${GRID_MAX} sessions` : 'Add to grid'}
+          onClick={onToggleGrid}>
+          <Icon name={inGrid ? 'grid' : 'plus'} size={10} />
+        </button>
+      )}
       tone={focused ? 'selected' : needsYou ? 'waiting' : 'default'}
       picked={picked}
       compact={compact}
@@ -143,62 +145,28 @@ function SessionCard({ s, feature, worktree, focused, picked, compact, inGrid, g
   )
 }
 
-// Projects tab: one row per project; clicking opens its page (ADR 0018).
-function ProjectRow({ project: p, tag, live, waiting, focused, refused, onOpen, onRemove, onNew }: {
+// A project's heading: its name in the project colour, then a faint rule of the same colour.
+// The count shows only while collapsed, so a folded project still says what it hides.
+function ProjectHeader({ project: p, tag, count, collapsed, refused, onToggle, onOpen, onRemove, onNew }: {
   project: Project
   tag: number | null
-  live: number // running sessions
-  waiting: number
-  focused: boolean
-  refused: boolean
-  onOpen: () => void
-  onRemove: () => void
-  onNew: () => void
-}) {
-  return (
-    <>
-      <ListRow
-        title={p.name}
-        icon={<Icon name="folder" size={13} className={tagClass(tag, 'fg')} />}
-        meta={
-          <div className={css.projectMeta}>
-            <span>{live} live</span>
-            {waiting > 0 && <Badge tone="waiting">{waiting} waiting</Badge>}
-          </div>
-        }
-        tone={focused ? 'selected' : 'default'}
-        onClick={onOpen}
-        actions={
-          <>
-            <Button variant="ghost" size="sm" round icon="plus" aria-label="New session in project" title="New session"
-              onClick={onNew} />
-            <Button variant="ghost" size="sm" round icon="trash" aria-label="Remove project" title="Remove project"
-              onClick={onRemove} />
-          </>
-        }
-      />
-      {refused && <div className={css.refused}>Can't remove: project has running sessions</div>}
-    </>
-  )
-}
-
-function ProjectHeader({ project: p, tag, count, refused, onToggle, onRemove, onNew }: {
-  project: Project
-  tag: number | null
-  count: number // sessions under this project, shown even while collapsed
+  count: number
+  collapsed: boolean
   refused: boolean
   onToggle: () => void
+  onOpen: () => void // the project page
   onRemove: () => void
   onNew: () => void
 }) {
   const [menuAt, setMenuAt] = useState<{ x: number; y: number } | null>(null)
   return (
     <>
-      <div className={cx(css.folder, menuAt && css.folderMenuOpen)} title={p.path} onClick={onToggle}>
-        <Icon name="folder" size={16} className={tagClass(tag, 'fg')} />
-        <span className={css.folderName}>{p.name}</span>
+      <div className={cx(css.folder, css.projectRule, tagClass(tag, 'fg'), collapsed && css.projectCollapsed, menuAt && css.folderMenuOpen)}
+        title={p.path} onClick={onToggle}>
+        <span className={css.projectName}>{p.name}</span>
+        <span className={css.projectLine} />
         <div className={css.folderEnd} onClick={(e) => e.stopPropagation()}>
-          {count > 0 && <span className={css.folderCount}><Badge tone="muted">{count}</Badge></span>}
+          {collapsed && count > 0 && <span className={css.folderCount}><Badge tone="muted">{count}</Badge></span>}
           <Button variant="ghost" size="sm" round icon="more-vertical" aria-label="Project options" aria-haspopup="menu"
             className={css.folderMore}
             onClick={(e) => { const r = e.currentTarget.getBoundingClientRect(); setMenuAt({ x: r.right, y: r.bottom + 4 }) }} />
@@ -208,6 +176,7 @@ function ProjectHeader({ project: p, tag, count, refused, onToggle, onRemove, on
         <ContextMenu x={menuAt.x - 150} y={menuAt.y} onClose={() => setMenuAt(null)}
           items={[
             { label: 'Add session', icon: 'plus', onSelect: onNew },
+            { label: 'Open project page', icon: 'folder', onSelect: onOpen },
             { label: 'Remove project', icon: 'trash', danger: true, onSelect: onRemove },
           ]} />
       )}
@@ -251,8 +220,19 @@ function OptionRow({ label, checked, onSelect }: { label: string; checked: boole
   )
 }
 
+// The clock the time-in-status column reads, a tick a minute (the column shows minutes at best).
+function useMinuteTick(): number {
+  const [now, setNow] = useState(() => Date.now())
+  useEffect(() => {
+    const t = setInterval(() => setNow(Date.now()), 30_000)
+    return () => clearInterval(t)
+  }, [])
+  return now
+}
+
 export function Sidebar({ onNew, onRemove }: { onNew: (projectId?: string) => void; onRemove: (ids: string[]) => void }) {
-  const { projects, sessions, ui, features, setFocused, toggleCollapsed, toggleCompact, toggleProjectVisibility, toggleHideDone, focusFeature, openProject, setSidebarTab, setGroupBy, setSessionSort, setSessionOrder, toggleGrid, toggleGridMember, waitingSince } = useSlices()
+  const { projects, sessions, ui, features, setFocused, toggleCollapsed, toggleCompact, toggleProjectVisibility, toggleHideDone, focusFeature, openProject, setGroupBy, setSessionSort, setSessionOrder, toggleGrid, toggleGridMember, waitingSince } = useSlices()
+  const now = useMinuteTick()
   const waitingCount = sessions.filter((x) => shownStatus(x) === 'waiting').length
   const [refused, setRefused] = useState<string | null>(null)
   const compact = new Set(ui.compact ?? [])
@@ -277,8 +257,8 @@ export function Sidebar({ onNew, onRemove }: { onNew: (projectId?: string) => vo
   const statusId = `${optionsId}-status`
   const tags = colorTags(projects, features.items)
 
-  // the session list, grouped and sorted as the panel says (the Projects tab doesn't draw it)
-  const groups = ui.sidebarTab === 'sessions' ? listGroups(projects, sessions, ui) : []
+  // the session list, grouped and sorted as the panel says
+  const groups = listGroups(projects, sessions, ui)
 
   // Close the options panel on outside click
   useEffect(() => {
@@ -306,7 +286,7 @@ export function Sidebar({ onNew, onRemove }: { onNew: (projectId?: string) => vo
 
   // the cards on screen, top to bottom: what a shift-click range runs over. Collapsed groups are
   // left out, so a range can't reach sessions that aren't on screen to be deleted.
-  const order = ui.sidebarTab === 'sessions' ? visibleSessions(groups).map((x) => x.id) : []
+  const order = visibleSessions(groups).map((x) => x.id)
 
   function clickCard(id: string, e: MouseEvent) {
     if (e.shiftKey) {
@@ -527,8 +507,9 @@ export function Sidebar({ onNew, onRemove }: { onNew: (projectId?: string) => vo
         focused={s.id === ui.focusedSessionId}
         picked={picked.has(s.id)}
         compact={compact.has(s.id)}
+        since={s.statusAt ? Date.parse(s.statusAt) : undefined}
+        now={now}
         inGrid={ui.grid.members.includes(s.id)}
-        gridOn={gridShown(ui)}
         gridFull={ui.grid.members.length >= GRID_MAX}
         onToggleGrid={() => toggleGridMember(s.id)}
         onFocus={(e) => clickCard(s.id, e)}
@@ -542,8 +523,8 @@ export function Sidebar({ onNew, onRemove }: { onNew: (projectId?: string) => vo
   }
 
   const projectHeader = (p: Project, count: number, g: ListGroup) => (
-    <ProjectHeader project={p} tag={tags.project(p.id)} count={count} refused={refused === p.id}
-      onToggle={() => toggleCollapsed(g.key)} onRemove={() => void removeProject(p.id)} onNew={() => onNew(p.id)} />
+    <ProjectHeader project={p} tag={tags.project(p.id)} count={count} collapsed={g.collapsed} refused={refused === p.id}
+      onToggle={() => toggleCollapsed(g.key)} onOpen={() => openProject(p.id)} onRemove={() => void removeProject(p.id)} onNew={() => onNew(p.id)} />
   )
 
   // a project's heading when there is a project; a status or plain one when there isn't
@@ -559,37 +540,26 @@ export function Sidebar({ onNew, onRemove }: { onNew: (projectId?: string) => vo
     </div>
   )
 
-  const projectRow = (p: Project) => (
-    <ProjectRow key={p.id} project={p} tag={tags.project(p.id)}
-      live={sessions.filter((x) => x.projectId === p.id && x.lastStatus === 'running').length}
-      waiting={sessions.filter((x) => x.projectId === p.id && shownStatus(x) === 'waiting').length}
-      focused={ui.focusedProject === p.id} refused={refused === p.id}
-      onOpen={() => openProject(p.id)} onRemove={() => void removeProject(p.id)} onNew={() => onNew(p.id)} />
-  )
-
-  const tabs = [
-    { id: 'sessions' as const, label: 'Sessions', badge: <Badge>{sessions.length}</Badge> },
-    { id: 'projects' as const, label: 'Projects', badge: null },
-  ]
-
   return (
     <div className={css.sidebar}>
       <div className={css.header}>
-        {tabs.map((tab) => (
-          <button key={tab.id} type="button" className={ui.sidebarTab === tab.id ? css.tab : css.tabInactive}
-            aria-pressed={ui.sidebarTab === tab.id} onClick={() => setSidebarTab(tab.id)}>
-            {tab.label} {tab.badge}
-          </button>
-        ))}
+        <h2 className={css.heading}>Sessions</h2>
         <Button variant="ghost" size="sm" round icon="folder-plus" aria-label="Add project" title="Add project"
           className={css.add} onClick={() => void window.api.invoke('project:add')} />
       </div>
+      {projects.length > 0 && (
+        <div className={css.columns}>
+          <span className={css.columnName}>session</span>
+          <button type="button" className={css.sortHead} aria-pressed={ui.sessionSort === 'status-age'}
+            title={ui.sessionSort === 'status-age' ? 'Back to your own order' : 'Sort by time in status, longest wait first'}
+            onClick={() => setSessionSort(ui.sessionSort === 'status-age' ? 'custom' : 'status-age')}>
+            for{ui.sessionSort === 'status-age' && ' ↓'}
+          </button>
+        </div>
+      )}
       <div className={css.list}>
         {projects.length === 0 && <div className={css.hint}>Add a project with the folder ＋ above</div>}
-        {ui.sidebarTab === 'sessions'
-          ? groups.map(groupBlock)
-          // the Projects tab lists repos only; a worktree is reached through its sessions
-          : repoGroups(projects).map(({ project }) => projectRow(project))}
+        {groups.map(groupBlock)}
       </div>
       <div className={css.bottomBar}>
         <Button variant="ghost" size="sm" icon="grid" aria-pressed={gridShown(ui)} disabled={ui.grid.members.length === 0}

@@ -1,10 +1,11 @@
 import { doneKey, kidsKey, openedKey, projectKey } from '@shared/groups'
 import type { Project, Session, UiState, WorkflowStatus } from '@shared/types'
 import { repoGroups } from './repoGroups'
+import { statusTone } from './sessionStatus'
 import { WORKFLOW_STATUSES } from './workflowStatus'
 
 export type GroupBy = 'project' | 'status' | 'none'
-export type SessionSort = 'custom' | 'viewed-desc' | 'viewed-asc' | 'created-desc' | 'created-asc'
+export type SessionSort = UiState['sessionSort']
 
 // A run of rows under one heading. Exactly one of project/status is set; `none`
 // grouping sets neither and labels the whole list. A project's group carries its
@@ -71,6 +72,7 @@ export const SORT_OPTIONS: { value: SessionSort; label: string }[] = [
   { value: 'viewed-asc', label: 'Last viewed ↑' },
   { value: 'created-desc', label: 'Created ↓' },
   { value: 'created-asc', label: 'Created ↑' },
+  { value: 'status-age', label: 'Time in status' },
 ]
 
 const byStarted = (a: Session, b: Session) => a.startedAt.localeCompare(b.startedAt)
@@ -99,7 +101,18 @@ const byCustom = (order: string[]) => {
   }
 }
 
-const COMPARATORS: Record<Exclude<SessionSort, 'custom'>, (a: Session, b: Session) => number> = {
+// Longest in its status first (core's statusAt), with the sessions that are your move (waiting,
+// finished, failed) ahead of the rest, so the top row is the one that has waited on you longest.
+// A session not stamped yet sorts as if it just changed.
+const NEEDS_YOU = new Set(['waiting', 'finished', 'failed'])
+const statusTime = (s: Session) => (s.statusAt ? Date.parse(s.statusAt) : Infinity)
+const byStatusAge = (a: Session, b: Session) => {
+  const na = NEEDS_YOU.has(statusTone(a)), nb = NEEDS_YOU.has(statusTone(b))
+  if (na !== nb) return na ? -1 : 1
+  return statusTime(a) - statusTime(b) || byStarted(a, b)
+}
+
+const COMPARATORS: Record<Exclude<SessionSort, 'custom' | 'status-age'>, (a: Session, b: Session) => number> = {
   'viewed-desc': byViewed(true),
   'viewed-asc': byViewed(false),
   'created-desc': (a, b) => byStarted(b, a),
@@ -124,7 +137,7 @@ export function listGroups(
   const hidden = new Set(groups.filter((g) => named.has(g.project.id)).map((g) => g.project.id))
   const repoOf = new Map(groups.flatMap((g) => [g.project, ...g.worktrees].map((p) => [p.id, g.project.id] as const)))
   const visible = sessions.filter((s) => !hidden.has(repoOf.get(s.projectId) ?? s.projectId) && !(ui.hideDone && s.workflowStatus === 'done'))
-  const sort = ui.sessionSort === 'custom' ? byCustom(ui.sessionOrder ?? []) : COMPARATORS[ui.sessionSort] ?? byStarted
+  const sort = ui.sessionSort === 'custom' ? byCustom(ui.sessionOrder ?? []) : ui.sessionSort === 'status-age' ? byStatusAge : COMPARATORS[ui.sessionSort] ?? byStarted
   // A session is a child only when its parent is on screen and is not itself a child, so a
   // hidden or missing parent never hides the child with it.
   const byId = new Map(visible.map((s) => [s.id, s] as const))

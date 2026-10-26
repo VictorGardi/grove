@@ -56,10 +56,9 @@ const v9ToV10 = (s: { sessions?: (Session & { sandboxed?: boolean })[] }) => {
 export function loadState(file: string, onBad?: (msg: string) => void): StateFile {
   const s = readVersioned<StateFile>(file, 10, { schemaVersion: 10, sessions: [], ui: DEFAULT_UI }, onBad, { 1: v1ToV2, 2: v2ToV3, 3: v3ToV4, 4: v4ToV5, 5: v5ToV6, 6: v6ToV7, 7: v7ToV8, 8: v8ToV9, 9: v9ToV10 })
   const sessions = (s.sessions ?? []).map((x) => ({ ...x, seenAt: x.seenAt ?? null })) // seenAt: added after v1 shipped
-  // v1 files from before ADR 0018 carry `view` and may have the old features tab
-  const { view: _view, ...saved } = (s.ui ?? {}) as Partial<UiState> & { view?: unknown }
+  // v1 files from before ADR 0018 carry `view`; files from before the sidebar lost its Projects tab carry `sidebarTab`
+  const { view: _view, sidebarTab: _sidebarTab, ...saved } = (s.ui ?? {}) as Partial<UiState> & { view?: unknown; sidebarTab?: unknown }
   const ui = { ...DEFAULT_UI, ...saved }
-  if ((ui.sidebarTab as string) === 'features') ui.sidebarTab = 'projects'
   // the old "Default" sort was created-asc under another name; custom order reads the same until a card is dragged (ADR 0041)
   if ((ui.sessionSort as string) === 'none') ui.sessionSort = 'custom'
   // a diff, or "← Diff", of a session that's no longer listed

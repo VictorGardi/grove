@@ -36,6 +36,7 @@ export interface Session {
   contextWindow?: number | null    // size of the context window in tokens; never saved
   model?: string | null            // the model in use; never saved
   startup?: { phase: 'starting'; since: string } | { phase: 'failed'; reason: string } // a session whose pane is being made, until its first status (or gone); ISO since; never saved
+  statusAt?: string               // when it entered its current status (ISO), stamped by core on every sessions publish; never saved
   lastContext: ContextReading | null // the last known reading (pct known); persisted
   parentId?: string | null         // the group this session is in: its parent's id. Groups are one level deep, so a parent never has a parent; persisted
 }
@@ -107,14 +108,13 @@ export interface UiState {
   focusedSessionId: string | null
   focusedFeature: { projectId: string; slug: string } | null
   focusedProject: string | null // the project page; the three focuses are exclusive (ADR 0018)
-  sidebarTab: 'sessions' | 'projects'
   board: 'features' | 'sessions' | 'artifacts' // what the project page's board shows
   collapsed: string[] // collapsed project folders on the Sessions tab: p:<projectId>
   hiddenProjects: string[] // project IDs hidden from the Sessions tab
   compact?: string[] // session IDs whose card is compacted to one line (absent reads as none)
   hideDone?: boolean // sessions whose workflow status is done are left out of the list (absent reads as false)
   groupBy: 'project' | 'status' | 'none' // what the Sessions tab groups rows under
-  sessionSort: 'custom' | 'viewed-desc' | 'viewed-asc' | 'created-desc' | 'created-asc' // order of the rows inside a group
+  sessionSort: 'custom' | 'viewed-desc' | 'viewed-asc' | 'created-desc' | 'created-asc' | 'status-age' // order of the rows inside a group; status-age: longest in its status first, sessions waiting on you ahead
   sessionOrder: string[] // the dragged order of every session, one list for all groupings; used while sessionSort is custom
   viewer: ViewerTarget | null // what the right-hand panel shows
   viewerWidth: number | null // null uses the responsive default; a number is a user-resized pixel width
@@ -178,6 +178,6 @@ export type Slices = { projects: Project[]; sessions: Session[]; ui: UiState; fe
 export interface ConfigFile { schemaVersion: 1; projects: Project[]; workflow?: string }
 export interface StateFile { schemaVersion: 10; sessions: Session[]; ui: UiState }
 export const SIDEBAR_WIDTH = 220 // the default; drag the sidebar's edge to resize, double-click it to come back here
-export const DEFAULT_UI: UiState = { sidebarWidth: SIDEBAR_WIDTH, sidebarCollapsed: false, focusedSessionId: null, focusedFeature: null, focusedProject: null, sidebarTab: 'sessions', board: 'sessions', collapsed: [], hiddenProjects: [], groupBy: 'project', sessionSort: 'custom', sessionOrder: [], viewer: null, viewerWidth: null, viewerExpanded: false, grid: { open: false, members: [] } }
+export const DEFAULT_UI: UiState = { sidebarWidth: SIDEBAR_WIDTH, sidebarCollapsed: false, focusedSessionId: null, focusedFeature: null, focusedProject: null, board: 'sessions', collapsed: [], hiddenProjects: [], groupBy: 'project', sessionSort: 'custom', sessionOrder: [], viewer: null, viewerWidth: null, viewerExpanded: false, grid: { open: false, members: [] } }
 export const EMPTY_FEATURES: FeaturesSlice = { workflowError: null, stages: [], items: [] }
 export const OPENCODE_CONNECTING: OpenCodeSlice = { state: 'connecting', version: null }

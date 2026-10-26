@@ -7,8 +7,8 @@ specific meaning, so humans and agents stay consistent.
 
 - **Project**: a folder registered in the app (`{id, name, path}` in app
   config). One path ↔ one id: a project's path is always a working directory,
-  whether a checkout or a **worktree project**. Groups the Sessions tab and lists
-  in the Projects tab. May host sessions without any features.
+  whether a checkout or a **worktree project**. Groups the sessions sidebar under a
+  **project folder**, shown even with no sessions. May host sessions without any features.
 - **Worktree project**: a project whose path is a `git worktree` root, carrying
   `worktreeOf` for its parent. Files, diffs and viewer targets are per-checkout, so
   a session in one resolves everything against that worktree (ADR 0037). Made by
@@ -109,12 +109,16 @@ specific meaning, so humans and agents stay consistent.
 - **Token**: a named design value (colour, type, spacing, radius, size) as a
   CSS custom property in `styles/tokens.css`; terminal and window colours live
   in `src/shared/theme.ts` (ADR 0012).
-- **Session card**: a session's row in the sidebar (`ListRow`), bordered, with
-  kind icon, title and status line; it can be **compacted** to one line.
-- **Project folder**: a project's one-line header on the Sessions tab; it can
-  be **collapsed** to hide its sessions.
-- **Projects tab**: the sidebar tab listing projects, each with its live
-  session count and a waiting badge; clicking one opens its project page.
+- **Session card**: a session's row in the sidebar (`SessionRow`), borderless on a grid shared
+  by every row: workflow status over the grid mark on the left, title and **time in status** on
+  line one, branch on line two, the live dot on the right edge. It can be **compacted** to one line.
+- **Time in status**: how long a session has shown its current status, from `statusAt`, which core
+  stamps on every sessions publish (never saved). Idle and finished agent sessions count from the
+  end of their last turn, so a relaunch keeps the time. The `status-age` sort orders by it, sessions
+  waiting on you first.
+- **Project folder**: a project's one-line header in the sessions sidebar: its name in the
+  project colour and a rule of the same colour; it can be **collapsed** to hide its sessions,
+  and then shows their count. Its menu adds a session, opens the project page or removes the project.
 - **Focus**: what the content area shows: exactly one of a session, a feature
   page or a project page (`focusedSessionId`, `focusedFeature`,
   `focusedProject`, mutually exclusive). With none, the first project's page

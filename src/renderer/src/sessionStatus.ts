@@ -43,6 +43,15 @@ export function trackWaiting(prev: Record<string, number>, sessions: Session[], 
   return same ? prev : next
 }
 
+// Time in status as a card shows it: "now", then minutes, hours, days.
+export function statusAge(at: number, now: number): string {
+  const min = Math.floor((now - at) / 60_000)
+  if (min < 1) return 'now'
+  if (min < 60) return `${min}m`
+  const h = Math.floor(min / 60)
+  return h < 24 ? `${h}h` : `${Math.floor(h / 24)}d`
+}
+
 // The waiting session seen waiting first; unknown times sort last, ties keep list order.
 export function longestWaiting(sessions: Session[], since: Record<string, number>): Session | null {
   let best: Session | null = null

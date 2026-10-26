@@ -37,6 +37,7 @@ import { createTerminalActivity } from './terminalActivity'
 import { autoLink, clearStarted, expireStarted, link, markGone, markSeen, newSession, reconcile, rename, resume, setWorkflowStatus, withBranches, withPrs } from './sessions'
 import { loadConfig, saveConfig } from './store/configStore'
 import { apply, fromSnapshot, withContext, withStatus, type Tracker } from './status'
+import { withStatusAt } from './statusAt'
 import { loadState, saveState } from './store/stateStore'
 import { deriveFeatures } from './workflow/derive'
 import { parseWorkflow, type Workflow } from './workflow/parse'
@@ -232,6 +233,7 @@ export function createCore(opts: CoreOptions): Core {
   }
 
   function set<K extends keyof Slices>(k: K, v: Slices[K]): void {
+    if (k === 'sessions') v = stampStatusAt(v as Session[]) as Slices[K]
     slices[k] = v
     for (const l of listeners) l(k, v)
     if (k === 'projects') {
@@ -243,7 +245,7 @@ export function createCore(opts: CoreOptions): Core {
     }
     else if (k === 'sessions' || k === 'ui') {
       const sessions = slices.sessions.filter((s) => !unsaved(s.id)).map(
-        ({ startup: _startup, branch: _branch, status: _status, waitingFor: _waitingFor, contextPct: _p, contextTokens: _t, contextWindow: _w, model: _m, pr: _pr, ...s }) => s,
+        ({ startup: _startup, statusAt: _statusAt, branch: _branch, status: _status, waitingFor: _waitingFor, contextPct: _p, contextTokens: _t, contextWindow: _w, model: _m, pr: _pr, ...s }) => s,
       ) // live-only
       saveState(opts.statePath, { schemaVersion: 10, sessions, ui: slices.ui })
     }
@@ -518,6 +520,13 @@ export function createCore(opts: CoreOptions): Core {
     diffWatch.target(id)
     if (id && choice !== lastDiffChoice) diffWatch.poke()
     lastDiffChoice = choice
+  }
+
+  // Time in status for every session published; idle and finished agent sessions count from
+  // their tracker's end of turn.
+  function stampStatusAt(next: Session[]): Session[] {
+    return withStatusAt(slices.sessions, next, now().toISOString(),
+      (s) => (s.kind !== 'terminal' && s.agentSessionId ? states.get(s.kind)?.trackers.get(s.agentSessionId)?.idleAt : null))
   }
 
   // The session the human is looking at: focused window, session focused (the focuses are exclusive).

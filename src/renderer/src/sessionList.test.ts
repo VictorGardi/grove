@@ -43,14 +43,29 @@ describe('options', () => {
     ])
   })
 
-  it('offers the five sorts, custom first', () => {
+  it('offers the six sorts, custom first', () => {
     expect(SORT_OPTIONS).toEqual([
       { value: 'custom', label: 'Custom' },
       { value: 'viewed-desc', label: 'Last viewed ↓' },
       { value: 'viewed-asc', label: 'Last viewed ↑' },
       { value: 'created-desc', label: 'Created ↓' },
       { value: 'created-asc', label: 'Created ↑' },
+      { value: 'status-age', label: 'Time in status' },
     ])
+  })
+})
+
+describe('time-in-status sort', () => {
+  it('puts what waits on you first, longest first, then the rest by time in status', () => {
+    const at = (ms: number) => new Date(ms).toISOString()
+    const list = [
+      session('idle-old', { status: 'idle', statusAt: at(10) }),
+      session('waiting-new', { status: 'waiting', waitingFor: 'permission', statusAt: at(500) }),
+      session('working', { status: 'working', statusAt: at(300) }),
+      session('finished-old', { status: 'waiting', waitingFor: 'done', statusAt: at(200) }),
+    ]
+    expect(ids(listGroups(PROJECTS, list, ui({ groupBy: 'none', sessionSort: 'status-age' }))))
+      .toEqual(['finished-old', 'waiting-new', 'idle-old', 'working'])
   })
 })
 

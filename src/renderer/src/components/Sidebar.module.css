@@ -11,39 +11,11 @@
   padding: var(--sp-3);
 }
 
-.tab,
-.tabInactive {
-  display: flex;
-  align-items: center;
-  gap: var(--sp-2);
-  position: relative;
-  padding: 0;
-  background: none;
-  border: none;
+.heading {
+  margin: 0;
   color: var(--text);
-  font: inherit;
   font-size: var(--fs-xl);
   font-weight: var(--fw-bold);
-  cursor: pointer;
-}
-
-/* the underline hangs below the label so the row centres on the text, not text + underline */
-.tab::after {
-  content: '';
-  position: absolute;
-  left: 0;
-  right: 0;
-  bottom: -6px;
-  height: 2px;
-  background: var(--accent-strong);
-}
-
-.tabInactive {
-  color: var(--text-3);
-}
-
-.tabInactive:hover {
-  color: var(--text-2);
 }
 
 .add {
@@ -89,6 +61,33 @@
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
+}
+
+/* a project heading: the name in its tag colour, then a rule of the same colour to the edge.
+   A project with no tag (no --tag set) falls back to the secondary text colour. */
+.projectRule {
+  color: var(--tag, var(--text-2));
+  margin-top: var(--sp-1);
+}
+
+.projectName {
+  flex-shrink: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.projectLine {
+  flex: 1;
+  min-width: var(--sp-4);
+  height: 1px;
+  background: color-mix(in srgb, var(--tag, var(--text-2)) 30%, transparent);
+}
+
+.projectCollapsed .projectLine {
+  background: none;
+  border-top: 1px dashed color-mix(in srgb, var(--tag, var(--text-2)) 35%, transparent);
 }
 
 .folderEnd {
@@ -143,11 +142,96 @@
 .cards {
   display: flex;
   flex-direction: column;
-  gap: 6px;
 }
 
+/* rows are borderless: a hairline between neighbours keeps the columns reading as one table */
 .slot {
   position: relative;
+  border-top: 1px solid var(--divider);
+}
+
+.project > .cards > :first-child > .slot:first-child {
+  border-top: 0;
+}
+
+/* the column heads over the list, on the rows' own grid (ui/SessionRow.module.css): the
+   time column's head sorts by time in status */
+.columns {
+  display: grid;
+  grid-template-columns: 16px minmax(0, 1fr) 30px 7px;
+  column-gap: var(--sp-2);
+  padding: 0 calc(var(--sp-2) + 10px) var(--sp-1) calc(var(--sp-2) + 8px);
+  border-bottom: 1px solid var(--divider);
+  font-size: var(--fs-xs);
+  color: var(--text-3);
+}
+
+.columnName {
+  grid-column: 2;
+}
+
+.sortHead {
+  grid-column: 3 / 5;
+  justify-self: end;
+  padding: 0;
+  background: none;
+  border: 0;
+  font: inherit;
+  color: inherit;
+  white-space: nowrap;
+  cursor: pointer;
+}
+
+.sortHead:hover,
+.sortHead[aria-pressed='true'] {
+  color: var(--accent);
+}
+
+/* the grid mark under the workflow icon: a grid icon on a member, a + on hover for the rest */
+.gridSlot {
+  display: grid;
+  place-items: center;
+  min-width: 16px;
+  height: 16px;
+  padding: 0 3px;
+  border: 0;
+  border-radius: 4px;
+  background: none;
+  color: var(--text-3);
+  font: inherit;
+  font-size: var(--fs-xs);
+  font-weight: var(--fw-bold);
+  cursor: pointer;
+  opacity: 0;
+}
+
+.slot:hover .gridSlot:not(:disabled),
+.gridSlot:focus-visible {
+  opacity: 1;
+}
+
+.gridSlot:hover:not(:disabled) {
+  color: var(--text);
+  background: var(--glass-fill-hover);
+}
+
+.gridSlotOn,
+.gridSlotOn:hover:not(:disabled) {
+  opacity: 1;
+  color: var(--accent);
+  background: color-mix(in srgb, var(--accent) 14%, transparent);
+}
+
+.kindMark {
+  display: inline-flex;
+  flex-shrink: 0;
+  color: var(--text-3);
+}
+
+.worktreeMark {
+  display: inline-flex;
+  flex-shrink: 0;
+  color: var(--worktree);
 }
 
 .slotDragging {
@@ -167,8 +251,8 @@
   pointer-events: none;
 }
 
-.dropBefore::before { top: calc(var(--sp-2) / -2 - 1px); }
-.dropAfter::after { bottom: calc(var(--sp-2) / -2 - 1px); }
+.dropBefore::before { top: -1px; }
+.dropAfter::after { bottom: -1px; }
 
 /* an empty group still takes a drop while a card is in the air */
 .cardsDragging {
@@ -187,11 +271,6 @@
   font: inherit;
 }
 
-.cardInfo {
-  display: flex;
-  flex-direction: column;
-  gap: 2px;
-}
 
 .branchLine {
   display: flex;
@@ -208,11 +287,6 @@
   white-space: nowrap;
 }
 
-.projectMeta {
-  display: flex;
-  align-items: center;
-  gap: var(--sp-2);
-}
 
 .bottomBar {
   display: flex;
@@ -408,7 +482,7 @@
 .stackRun {
   display: flex;
   flex-direction: column;
-  gap: 6px;
+  border-top: 1px solid var(--divider);
 }
 
 .stack {
@@ -419,8 +493,8 @@
   min-width: 0;
   height: 26px;
   padding: 0 10px 0 8px;
-  background: var(--glass-fill);
-  border: 1px solid var(--glass-border);
+  background: none;
+  border: 0;
   border-radius: var(--r-card);
   color: var(--text-2);
   font: inherit;
@@ -431,22 +505,17 @@
 
 .stack:hover {
   color: var(--text);
-  background: var(--glass-fill-hover);
-  border-color: var(--glass-border-strong);
+  background: var(--glass-fill);
 }
 
-/* folded, the edges of two more cards show under it, a little narrower each */
 .stackFolded {
-  margin-bottom: 6px;
-  box-shadow:
-    0 3px 0 -1px var(--panel-bg), 0 3px 0 0 var(--glass-border),
-    0 6px 0 -2px var(--panel-bg), 0 6px 0 -1px var(--glass-border);
+  color: var(--text-3);
 }
 
 .stackHolding,
 .stackHolding:hover {
-  background: var(--card-selected-bg);
-  border-color: var(--card-selected-border);
+  background: var(--glass-selected);
+  box-shadow: inset 2px 0 0 var(--card-selected-border);
   color: var(--text);
 }
 

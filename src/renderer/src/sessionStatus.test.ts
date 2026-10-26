@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import type { Session } from '@shared/types'
-import { longestWaiting, mostUrgent, serviceBanners, shownStatus, statusTone, statusView, trackWaiting } from './sessionStatus'
+import { longestWaiting, mostUrgent, serviceBanners, shownStatus, statusAge, statusTone, statusView, trackWaiting } from './sessionStatus'
 
 function session(over: Partial<Session> = {}): Session {
   return {
@@ -160,5 +160,14 @@ describe('mostUrgent', () => {
     expect(mostUrgent([gone, running, idle])?.id).toBe('idle')
     expect(mostUrgent([gone, running])?.id).toBe('running')
     expect(mostUrgent([gone])?.id).toBe('gone')
+  })
+})
+
+describe('time in status', () => {
+  it('reads as now, then minutes, hours and days', () => {
+    expect(statusAge(0, 59_000)).toBe('now')
+    expect(statusAge(0, 6 * 60_000)).toBe('6m')
+    expect(statusAge(0, 5 * 3_600_000 + 1)).toBe('5h')
+    expect(statusAge(0, 3 * 86_400_000)).toBe('3d')
   })
 })

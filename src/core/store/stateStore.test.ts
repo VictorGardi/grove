@@ -30,7 +30,7 @@ describe('stateStore', () => {
     const s: StateFile = {
       schemaVersion: 10,
       sessions: [newSession({ projectId: 'p', kind: 'terminal', now: new Date(), id: 'a', agentSessionId: null })],
-      ui: { sidebarWidth: 300, sidebarCollapsed: true, focusedSessionId: null, focusedFeature: null, focusedProject: 'p', sidebarTab: 'projects', board: 'sessions', collapsed: ['p:x'],
+      ui: { sidebarWidth: 300, sidebarCollapsed: true, focusedSessionId: null, focusedFeature: null, focusedProject: 'p', board: 'sessions', collapsed: ['p:x'],
         viewer: { kind: 'file', projectId: 'p', path: 'docs/work/f/03-design.html', hash: 'q1', fromDiff: 'a' }, viewerWidth: 600, viewerExpanded: true, grid: { open: true, members: ['a'] }, hiddenProjects: [], groupBy: 'project', sessionSort: 'custom', sessionOrder: ['a'] },
     }
     saveState(file, s)
@@ -174,18 +174,12 @@ describe('stateStore', () => {
     expect(loadState(file).ui).toEqual({ ...DEFAULT_UI, sidebarWidth: 300 })
   })
 
-  it('loads an old ui without sidebarTab on the sessions tab', () => {
+  it('drops a saved view and the old sidebar tab', () => {
     const file = tmpFile()
-    fs.writeFileSync(file, '{"schemaVersion":1,"sessions":[],"ui":{"sidebarWidth":230,"focusedSessionId":null,"view":"board","collapsed":[]}}')
-    expect(loadState(file).ui.sidebarTab).toBe('sessions')
-  })
-
-  it('drops a saved view and reads the old features tab as projects', () => {
-    const file = tmpFile()
-    fs.writeFileSync(file, '{"schemaVersion":1,"sessions":[],"ui":{"sidebarWidth":230,"focusedSessionId":null,"view":"board","sidebarTab":"features","collapsed":[]}}')
+    fs.writeFileSync(file, '{"schemaVersion":1,"sessions":[],"ui":{"sidebarWidth":230,"focusedSessionId":null,"view":"board","sidebarTab":"projects","collapsed":[]}}')
     const { ui } = loadState(file)
     expect(ui).not.toHaveProperty('view')
-    expect(ui.sidebarTab).toBe('projects')
+    expect(ui).not.toHaveProperty('sidebarTab')
     expect(ui.board).toBe('sessions')
   })
 
