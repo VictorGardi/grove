@@ -60,4 +60,38 @@ Approved, 0 blocking, 0 fix rounds. Non-blocking left: redundant `family &&` gua
 
 Manual check with `npm run dev`: in a session run `grove new claude --child`, focus the parent, click the chip in the header and confirm the child is focused; open both in the grid (⌘⇧G) and do the same from the parent's pane.
 
+## Slice 2
+
+Session: parent-child-jump-slice-2-a1
+Status: done
+Commit: this commit (see git log)
+
+### Slice plan
+
+Found in the code: `familyOf` (src/renderer/src/family.ts) already returns `parent` (the session named by `parentId` while it still exists, else null), so a removed parent already yields null. `SessionMeta` takes `family?: { active; onJump }` and renders the active-child `<button>` chip (`.child` in SessionMeta.module.css) after the status. App.tsx:198 and SessionGrid.tsx:145 pass only `familyOf(...).active`. `statusView`/`statusTone` give an ended parent a gone/failed label and tone, so the chip renders the same for ended parents. Render tests use `renderToStaticMarkup` (sessionMetaRender.test.ts).
+
+Implementer 1:
+- [x] `src/renderer/src/components/SessionMeta.tsx`: `family` gains `parent: Session | null`; when set, render a `<button>` "↑ <parent label>" chip (aria-label `Jump to parent <label>`, title with label and status, `StatusDot` with `statusTone(parent)`), click calls `family.onJump(parent.id)`; reuse the `.child` chip style (rename or share a class in `SessionMeta.module.css`)
+- [x] `src/renderer/src/App.tsx` and `src/renderer/src/components/SessionGrid.tsx`: compute `familyOf` once and pass `{ parent, active, onJump }`
+- [x] Extend `src/renderer/src/sessionMetaRender.test.ts`: a child renders "↑" and the parent's label; an ended (gone) parent still renders the chip; `parent: null` renders no up chip
+- [x] Extend `src/renderer/src/family.test.ts`: a child whose `parentId` names a missing session gets `parent: null`; an ended parent is still returned
+
+Models passed: implementer: inherit; reviewer: inherit
+
+### Review rounds
+
+Round 1: 0 blocking. Approved, 0 fix rounds. Non-blocking left: the `family` prop gets the whole `familyOf` result spread in (so `children` rides along undeclared; slice 3 declares it, typing the prop as `Family & { onJump }` is the cleaner option then); the ended-parent render test checks the aria-label but not the status in the title; the removed-parent `familyOf` test relies on the helper's default `parentId`.
+
+### Deviations
+
+The active-child chip's `.child` class is now a shared `.chip` class used by both chips. App.tsx and SessionGrid.tsx pass `{ ...familyOf(...), onJump }` instead of picking `parent` and `active`. On a session that is both a child and a parent, the up chip comes first, then the active-child chip.
+
+### Verification
+
+`npm test`: 97 files, 1142 tests pass (new cases in `family.test.ts` and `sessionMetaRender.test.ts`: a child renders "↑" and the parent's label; a missing parent gives `parent: null` and no chip; an ended parent still renders the chip). `npm run typecheck`: passes (node and web). Models requested: implementer: inherit; reviewer: inherit.
+
+### Left for the human
+
+none
+
 ## Open questions

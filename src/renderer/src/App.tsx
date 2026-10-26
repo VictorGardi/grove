@@ -195,7 +195,7 @@ export default function App() {
                 ? <SessionMeta lead={<Crumbs crumbs={header} />} session={shown.session}
                     feature={linked} featureInLead tagIndex={linkedIndex}
                     context={context ? <ContextPopover view={context} /> : undefined}
-                    family={{ active: familyOf(sessions, shown.session.id).active, onJump: setFocused }} />
+                    family={{ ...familyOf(sessions, shown.session.id), onJump: setFocused }} />
                 : undefined}
               right={shown.kind === 'project' && !shown.project.worktreeOf ? <BoardSwitch board={ui.board} onChange={setBoard} />
                 : shown.kind === 'session' ? (

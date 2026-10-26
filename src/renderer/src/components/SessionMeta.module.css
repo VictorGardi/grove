@@ -66,8 +66,8 @@
   color: var(--text-2);
 }
 
-/* the parent's active child: a jump button, styled as a quiet chip */
-.child {
+/* the parent and the active child: jump buttons, styled as quiet chips */
+.chip {
   display: inline-flex;
   align-items: center;
   gap: var(--sp-1);
@@ -82,7 +82,7 @@
   cursor: pointer;
 }
 
-.child:hover {
+.chip:hover {
   color: inherit;
   text-decoration: underline;
 }

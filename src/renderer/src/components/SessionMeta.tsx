@@ -10,7 +10,8 @@ import s from './SessionMeta.module.css'
 // The row that names a session, shared by the content header and a grid pane header so the two
 // cannot drift: same facts, same order, same type. `lead` is whatever identifies it — the
 // breadcrumb when the session is focused, "project / label" in a pane — and everything after it
-// is the same in both. `family` adds a chip for a parent's active child: a click focuses it.
+// is the same in both. `family` adds chips: "↑ parent" on a child (running or ended) and the
+// active child on a parent; a click focuses it.
 export function SessionMeta({ lead, session, feature, featureInLead, tagIndex, context, actions, family }: {
   lead: ReactNode
   session: Session
@@ -19,9 +20,10 @@ export function SessionMeta({ lead, session, feature, featureInLead, tagIndex, c
   tagIndex?: number | null
   context?: ReactNode // ContextPopover in a header, ContextGauge in a pane: a density, not a difference
   actions?: ReactNode
-  family?: { active: Session | null; onJump: (id: string) => void }
+  family?: { parent: Session | null; active: Session | null; onJump: (id: string) => void }
 }) {
   const status = statusView(session)
+  const parent = family?.parent ?? null
   const child = family?.active ?? null
   return (
     <div className={s.row}>
@@ -40,9 +42,17 @@ export function SessionMeta({ lead, session, feature, featureInLead, tagIndex, c
         </span>
       )}
       <span className={s.status}><StatusDot tone={status.tone} /><span className={s.secondary}>{status.label}</span></span>
-      {/* a button, so the grid's drag handler leaves it alone */}
+      {/* buttons, so the grid's drag handler leaves them alone */}
+      {family && parent && (
+        <button type="button" className={s.chip} aria-label={`Jump to parent ${parent.label}`}
+          title={`${parent.label} · ${statusView(parent).label}`} onClick={() => family.onJump(parent.id)}>
+          <span>↑</span>
+          <StatusDot tone={statusTone(parent)} />
+          <span className={s.truncate}>{parent.label}</span>
+        </button>
+      )}
       {family && child && (
-        <button type="button" className={s.child} aria-label={`Jump to child ${child.label}`}
+        <button type="button" className={s.chip} aria-label={`Jump to child ${child.label}`}
           title={`${child.label} · ${statusView(child).label}`} onClick={() => family.onJump(child.id)}>
           <StatusDot tone={statusTone(child)} />
           <span className={s.truncate}>{child.label}</span>

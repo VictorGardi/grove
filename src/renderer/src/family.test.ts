@@ -75,4 +75,12 @@ describe('familyOf', () => {
     expect(familyOf([parent, child('c')], 'c').parent?.id).toBe('parent')
     expect(familyOf([child('c')], 'c').parent).toBeNull()
   })
+
+  it('gives a child of a removed parent no parent', () => {
+    expect(familyOf([session('other'), child('c')], 'c').parent).toBeNull()
+  })
+
+  it('still finds an ended parent', () => {
+    expect(familyOf([session('parent', { lastStatus: 'gone' }), child('c')], 'c').parent?.id).toBe('parent')
+  })
 })
