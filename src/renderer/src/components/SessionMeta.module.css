@@ -1,4 +1,7 @@
-/* The grid pane header's row, moved here so the session header and a pane are one thing. */
+/* The grid pane header's row, moved here so the session header and a pane are one thing.
+   one row, never two: the chips shrink fastest, then the feature's title, then the branch; the lead
+   slowest and never below 6ch; the status never shrinks. the pane (or the content header) clips it,
+   so the row itself doesn't and its buttons keep their focus ring */
 .row {
   display: flex;
   align-items: center;
@@ -7,9 +10,15 @@
   font-size: var(--fs-sm);
 }
 
+/* the pane's round action buttons keep their size; the chips are buttons too but must shrink */
+.row > button:not(.chip) {
+  flex: none;
+}
+
+/* shrinks last, and keeps a few characters so the session is still named */
 .lead {
   flex: 0 1 auto;
-  min-width: 0;
+  min-width: 6ch;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
@@ -64,6 +73,32 @@
 
 .secondary {
   color: var(--text-2);
+}
+
+/* the parent and the active child: jump buttons, styled as quiet chips. a chip goes down to its
+   arrow and status dot (1ch + the 6px dot + two gaps); the label ellipsizes */
+.chip {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--sp-1);
+  flex: 0 4 auto;
+  min-width: calc(1ch + 6px + 2 * var(--sp-1));
+  max-width: 24ch;
+  padding: 0;
+  border: 0;
+  background: none;
+  font: inherit;
+  color: var(--text-2);
+  cursor: pointer;
+}
+
+.chip > :not(.truncate) {
+  flex: none;
+}
+
+.chip:hover {
+  color: inherit;
+  text-decoration: underline;
 }
 
 .spacer {

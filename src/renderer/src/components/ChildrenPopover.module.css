@@ -1,0 +1,73 @@
+.wrap {
+  flex: none;
+  display: flex;
+}
+
+/* a quiet chip, like SessionMeta's jump chips */
+.trigger {
+  flex: none;
+  padding: 0;
+  border: 0;
+  background: none;
+  font: inherit;
+  color: var(--text-2);
+  white-space: nowrap;
+  cursor: pointer;
+}
+
+.trigger:hover,
+.trigger[aria-expanded='true'] {
+  color: inherit;
+  text-decoration: underline;
+}
+
+.popover {
+  position: fixed; /* portalled to <body>, placed from the trigger: the header clips overflow */
+  top: var(--top);
+  left: var(--left);
+  z-index: 20;
+  width: 260px;
+  max-height: min(50vh, calc(100vh - var(--top) - 8px)); /* a low pane header must not push rows off-screen */
+  overflow-y: auto;
+  display: flex;
+  flex-direction: column;
+  padding: var(--sp-1);
+  background: var(--card-bg);
+  border: 1px solid var(--card-border);
+  border-radius: var(--r-card);
+  box-shadow: 0 6px 20px rgb(0 0 0 / 0.4);
+  font-size: var(--fs-md);
+}
+
+.item {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-2);
+  min-width: 0;
+  padding: var(--sp-1) var(--sp-2);
+  border: 0;
+  border-radius: var(--r-card);
+  background: none;
+  font: inherit;
+  color: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+
+.item:hover {
+  background: var(--raised-bg);
+}
+
+.label {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.ended {
+  flex: none;
+  color: var(--text-2);
+  font-size: var(--fs-sm);
+}

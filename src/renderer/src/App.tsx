@@ -28,6 +28,7 @@ import { DEFAULT_GRID_VIEW, gridShown, visibleMembers, type GridView } from './g
 import { contextView } from './contextGauge'
 import { artifactCrumbs, openCard } from './artifactsBoard'
 import { boardKey, childrenOf, content, crumbs, currentProjectId, focusTarget } from './navigation'
+import { familyJumpTarget, familyOf } from './family'
 import { serviceBanners } from './sessionStatus'
 import { sessionDiffShortcut, type HiddenRenderedViewer } from './sessionDiffShortcut'
 import { useSlices } from './stores/slices'
@@ -104,6 +105,9 @@ export default function App() {
     } else if (a.type === 'nextWaiting') {
       const w = longestWaiting(sessions, waitingSince)
       if (w) setFocused(w.id)
+    } else if (a.type === 'familyJump') {
+      const t = familyJumpTarget(sessions, ui.focusedSessionId)
+      if (t) setFocused(t.id)
     } else if (a.type === 'focusIndex') {
       const target = focusTarget(ui, projects, sessions, features.items, a.n, gridView)
       if (target) setFocused(target.id)
@@ -196,7 +200,8 @@ export default function App() {
               meta={shown.kind === 'session'
                 ? <SessionMeta lead={<Crumbs crumbs={header} />} session={shown.session}
                     feature={linked} featureInLead tagIndex={linkedIndex}
-                    context={context ? <ContextPopover view={context} /> : undefined} />
+                    context={context ? <ContextPopover view={context} /> : undefined}
+                    family={{ ...familyOf(sessions, shown.session.id), onJump: setFocused }} />
                 : undefined}
               right={shown.kind === 'project' && !shown.project.worktreeOf ? <BoardSwitch board={ui.board} onChange={setBoard} />
                 : shown.kind === 'session' ? (

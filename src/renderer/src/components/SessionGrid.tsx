@@ -5,6 +5,7 @@ import {
   dividers, gridShape, hasArrangement, minTrackFraction, nextSpan, PANE_MIN_PX, paneSpans, paneTitle, placedSpan, placePanes,
   resizeTracks, shapeKey, trackFractions, visibleMembers, type Divider, type GridView,
 } from '../gridView'
+import { familyOf } from '../family'
 import { useSlices } from '../stores/slices'
 import { colorTags } from '../tags'
 import { linkedFeature } from '../tree'
@@ -25,7 +26,7 @@ export function SessionGrid({ sessions, focusedId, view, onViewChange, onFocusPa
   onFocusPane: (id: string) => void // a click or terminal focus inside a pane
   overlayOpen: boolean // a modal or the palette is open: no terminal takes the keyboard
 }) {
-  const { projects, features, ui, toggleGridMember, openAlone, clearGrid, swapGridPanes, setGridSpan, setGridTracks, resetGridArrangement } = useSlices()
+  const { sessions: all, projects, features, ui, toggleGridMember, openAlone, clearGrid, swapGridPanes, setGridSpan, setGridTracks, resetGridArrangement } = useSlices()
   const visible = visibleMembers(sessions, view, projects)
   const root = useRef<HTMLDivElement>(null)
   const grid = useRef<HTMLDivElement>(null)
@@ -141,6 +142,7 @@ export function SessionGrid({ sessions, focusedId, view, onViewChange, onFocusPa
                 <SessionMeta lead={<span className={s.title}>{paneTitle(projects.find((p) => p.id === x.projectId), x)}</span>}
                   session={x} feature={feature} tagIndex={feature ? tags.group(feature.projectId, feature.group ? feature.slug : feature.parent) : null}
                   context={context ? <ContextGauge view={context} /> : undefined}
+                  family={{ ...familyOf(all, x.id), onJump: onFocusPane }}
                   actions={<>
                     <Button variant="ghost" size="sm" round icon={`span-${span}` as const} aria-label={`Span ${span}, change`} title={`Span: ${span} (click for ${nextSpan(span)})`} onClick={() => setGridSpan(x.id, nextSpan(span))} />
                     <Button variant="ghost" size="sm" round icon="maximize" aria-label="Open alone" title="Open alone" onClick={() => openAlone(x.id)} />

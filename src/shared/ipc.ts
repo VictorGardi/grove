@@ -5,7 +5,7 @@ export type MenuAction =
   | { type: 'newSession' } | { type: 'newSessionOptions' } | { type: 'closeSession' } | { type: 'focusIndex'; n: number } | { type: 'projectBoard' }
   | { type: 'sessionDiff' } | { type: 'toggleSidebar' } | { type: 'addToGrid' }
   | { type: 'newTerminal' } | { type: 'lastSession' } | { type: 'palette' } | { type: 'toggleGrid' } | { type: 'clearGrid' }
-  | { type: 'scratchpad' } | { type: 'nextWaiting' }
+  | { type: 'scratchpad' } | { type: 'nextWaiting' } | { type: 'familyJump' }
 // invoke channels: name → [args, result data]
 export interface InvokeMap {
   'state:get': [void, Slices]
