@@ -116,6 +116,28 @@ describe('SessionMeta in a grid pane', () => {
   })
 })
 
+describe('SessionMeta stacked, in the content header', () => {
+  const stacked = (over: Partial<Session> = {}) => renderToStaticMarkup(createElement(SessionMeta, {
+    lead: 'slice-3', trail: createElement('span', null, 'project › feature'),
+    session: session('slice-3', { branch: 'feature/long-branch', status: 'idle', ...over }),
+  }))
+
+  it('names the session and its status on the first line, the trail and branch on the second', () => {
+    const html = stacked()
+    const [lead, status, trail, branch] = ['>slice-3<', '>idle<', '>project › feature<', '>feature/long-branch<'].map((x) => html.indexOf(x))
+    for (const i of [lead, status, trail, branch]) expect(i).toBeGreaterThan(-1)
+    expect(lead).toBeLessThan(status)
+    expect(status).toBeLessThan(trail)
+    expect(trail).toBeLessThan(branch)
+    expect(html.match(/class="[^"]*(?<![a-zA-Z0-9-])line(?![a-zA-Z0-9-])[^"]*"/g)).toHaveLength(2)
+  })
+
+  it('draws one line without a trail, as a grid pane does', () => {
+    const html = renderToStaticMarkup(createElement(SessionMeta, { lead: 'p / slice-3', session: session('slice-3', { branch: 'b' }) }))
+    expect(html).not.toMatch(/(?<![a-zA-Z0-9-])line(?![a-zA-Z0-9-])/)
+  })
+})
+
 describe('SessionMeta row CSS', () => {
   const css = readFileSync(fileURLToPath(new URL('./components/SessionMeta.module.css', import.meta.url)), 'utf8')
   // the body of the first rule whose selector is exactly `selector`

@@ -1,0 +1,178 @@
+/* the strip: a framed run of groups that scrolls sideways, the waiting count pinned at its end */
+.strip {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-1);
+  flex: 0 1 auto;
+  min-width: 0;
+  padding: 0 4px 0 8px;
+  border: 1px solid var(--glass-border);
+  border-radius: var(--r-md);
+  background: var(--glass-fill);
+}
+
+/* no scrollbar: the right edge fades out instead, so a cut-off dot reads as "more this way" */
+.scroller {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  min-width: 0;
+  overflow-x: auto;
+  scrollbar-width: none;
+  /* room for the colour bar under the dots: the scroller clips both ways */
+  padding: 3px 20px 6px 0;
+  -webkit-mask-image: linear-gradient(to right, #000 calc(100% - 24px), transparent);
+  mask-image: linear-gradient(to right, #000 calc(100% - 24px), transparent);
+}
+
+.scroller::-webkit-scrollbar {
+  display: none;
+}
+
+.group {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  flex: none;
+}
+
+/* the project's two letters, in its colour (a tag class sets `color`) */
+.mono {
+  margin-right: 2px;
+  padding: 1px 5px;
+  border: 1px solid color-mix(in srgb, currentColor 35%, transparent);
+  border-radius: var(--r-card);
+  font-size: var(--fs-xs);
+  font-weight: var(--fw-bold);
+  line-height: 1.2;
+}
+
+/* the group's dots; its colour bar hangs under them rather than sitting in the flow */
+.run {
+  position: relative;
+  display: flex;
+  align-items: center;
+  gap: 4px;
+}
+
+/* the group's colour (a tag or tone class sets `color`), as a bar under its run */
+.bar {
+  position: absolute;
+  left: 2px;
+  right: 2px;
+  bottom: -4px;
+  height: 2px;
+  border-radius: var(--r-pill);
+  background: currentColor;
+  opacity: 0.85;
+}
+
+/* a workflow-status group's tone, as its status marker on a card has it */
+.tone-muted { color: var(--text-3); }
+.tone-accent { color: var(--accent); }
+.tone-waiting { color: var(--status-waiting); }
+.tone-working { color: var(--status-working); }
+.tone-finished { color: var(--status-finished); }
+
+.tile {
+  position: relative;
+  flex: none;
+  width: 18px;
+  height: 18px;
+  display: grid;
+  place-items: center;
+  padding: 0;
+  border: 1px solid transparent;
+  border-radius: 5px;
+  background: none;
+  cursor: pointer;
+}
+
+.tile:hover {
+  background: var(--glass-fill-hover);
+}
+
+/* focus reads as it does on the sidebar's focused card: the same orange edge and raised tint */
+.focused,
+.focused:hover {
+  background: var(--glass-selected);
+  border-color: var(--card-selected-border);
+}
+
+/* a child, a size down beside its parent */
+.child {
+  width: 14px;
+}
+
+.ended {
+  opacity: 0.45;
+}
+
+.dot {
+  width: 6px;
+  height: 6px;
+  border-radius: var(--r-pill);
+  background: var(--status-idle);
+}
+
+/* the dot's tones, one StatusTone each: the same mapping ListRow's card dot uses */
+.t-running { background: var(--status-running); }
+.t-working { background: var(--status-working); }
+.t-finished { background: var(--status-finished); }
+.t-gone { background: var(--status-gone); }
+.t-failed { background: var(--danger); }
+/* `idle` has no rule and keeps the default --status-idle */
+
+.t-starting {
+  background: transparent;
+  border: 1.5px solid var(--text-2);
+  border-right-color: transparent;
+  box-sizing: border-box;
+  animation: spin 0.7s linear infinite;
+}
+
+@keyframes spin {
+  to { transform: rotate(360deg); }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .t-starting { animation-duration: 2s; }
+}
+
+.t-waiting {
+  background: var(--status-waiting);
+  animation: pulse 1.6s ease-in-out infinite;
+}
+
+@keyframes pulse {
+  50% { box-shadow: 0 0 0 2px var(--panel-bg), 0 0 0 5px color-mix(in srgb, var(--status-waiting) 35%, transparent); }
+}
+
+/* the "N waiting" count: focuses the longest-waiting session */
+.waiting {
+  flex: none;
+  height: 22px;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 0 8px;
+  border: 0;
+  border-radius: 6px;
+  background: var(--glass-waiting);
+  color: var(--status-waiting);
+  font: inherit;
+  font-weight: var(--fw-bold);
+  cursor: pointer;
+}
+
+.waiting::before {
+  content: '';
+  width: 6px;
+  height: 6px;
+  border-radius: var(--r-pill);
+  background: var(--status-waiting);
+}
+
+.waiting:hover {
+  background: color-mix(in srgb, var(--status-waiting) 18%, transparent);
+}

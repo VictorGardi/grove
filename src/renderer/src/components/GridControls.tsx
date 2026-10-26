@@ -1,10 +1,8 @@
 import { useEffect, useRef, useState } from 'react'
-import type { Project, Session } from '@shared/types'
 import { DIM_RANGE, LAYOUT_MAX, gridShape, layoutLabel, type GridLayout, type GridView } from '../gridView'
-import { repoGroups } from '../repoGroups'
 import { Button } from './ui/Button'
 import { cx } from './ui/cx'
-import s from './GridToolbar.module.css'
+import s from './GridControls.module.css'
 
 // The layout button: opens a popover with a grid of cells; hovering a cell previews cols×rows, clicking picks it.
 function SizePicker({ view, visibleCount, onChange }: { view: GridView; visibleCount: number; onChange: (view: GridView) => void }) {
@@ -46,10 +44,9 @@ function SizePicker({ view, visibleCount, onChange }: { view: GridView; visibleC
   )
 }
 
-// Filter tabs, grid size, reset, dimming slider, eye and Empty grid. The settings are view-only; reset edits the persisted arrangement.
-export function GridToolbar({ members, projects, view, visibleCount, canReset, onChange, onReset, onEmpty }: {
-  members: Session[]
-  projects: Project[]
+// Grid size, reset, eye, dimming slider and Empty grid, on the right of the content header while
+// the grid shows. The settings are view-only; reset edits the persisted arrangement.
+export function GridControls({ view, visibleCount, canReset, onChange, onReset, onEmpty }: {
   view: GridView
   visibleCount: number
   canReset: boolean // some pane has a span or some shape has resized tracks
@@ -57,26 +54,8 @@ export function GridToolbar({ members, projects, view, visibleCount, canReset, o
   onReset: () => void
   onEmpty: () => void
 }) {
-  // One tab per repo, not per checkout (v3): a checkout is not a peer of a repo in a picker, and
-  // a repo's count is every pane in every one of its checkouts.
-  const tabs = repoGroups(projects).flatMap(({ project, worktrees }) => {
-    const count = members.filter((m) => m.projectId === project.id || worktrees.some((w) => w.id === m.projectId)).length
-    return count > 0 ? [{ id: project.id, name: project.name, count }] : []
-  })
-  const filter = tabs.some((t) => t.id === view.filter) ? view.filter : null // a stale filter reads as ALL
-  const tab = (id: string | null, label: string, count: number) => (
-    <button key={id ?? 'all'} type="button" className={cx(s.tab, filter === id && s.active)} aria-pressed={filter === id}
-      onClick={() => onChange({ ...view, filter: id })}>
-      {label} <span className={s.count}>{count}</span>
-    </button>
-  )
   return (
-    <div className={s.toolbar}>
-      <div className={s.tabs}>
-        {tab(null, 'ALL', members.length)}
-        {tabs.map((t) => tab(t.id, t.name, t.count))}
-      </div>
-      <span className={s.spacer} />
+    <div className={s.controls}>
       <SizePicker view={view} visibleCount={visibleCount} onChange={onChange} />
       <Button variant="ghost" size="sm" round icon="resume" disabled={!canReset} aria-label="Reset pane sizes and spans"
         title="Reset pane sizes and spans" onClick={onReset} />

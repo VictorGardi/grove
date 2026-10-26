@@ -2,7 +2,7 @@ import { useEffect, useRef, useState, type CSSProperties, type PointerEvent } fr
 import type { GridTracks, Session } from '@shared/types'
 import { contextView } from '../contextGauge'
 import {
-  dividers, gridShape, hasArrangement, minTrackFraction, nextSpan, PANE_MIN_PX, paneSpans, paneTitle, placedSpan, placePanes,
+  dividers, gridShape, minTrackFraction, nextSpan, PANE_MIN_PX, paneSpans, paneTitle, placedSpan, placePanes,
   resizeTracks, shapeKey, trackFractions, visibleMembers, type Divider, type GridView,
 } from '../gridView'
 import { familyOf } from '../family'
@@ -13,21 +13,19 @@ import { SessionMeta } from './SessionMeta'
 import { Button } from './ui/Button'
 import { cx } from './ui/cx'
 import { ContextGauge } from './ContextGauge'
-import { GridToolbar } from './GridToolbar'
 import { TerminalView } from './TerminalView'
 import s from './SessionGrid.module.css'
 
 // The members side by side. Panes are keyed by session id, so reflow never remounts or re-attaches a terminal.
-export function SessionGrid({ sessions, focusedId, view, onViewChange, onFocusPane, overlayOpen }: {
+export function SessionGrid({ sessions, focusedId, view, onFocusPane, overlayOpen }: {
   sessions: Session[] // every member, in grid order; the view narrows them
-  view: GridView
-  onViewChange: (view: GridView) => void
+  view: GridView // set by GridControls in the content header
   focusedId: string
   onFocusPane: (id: string) => void // a click or terminal focus inside a pane
   overlayOpen: boolean // a modal or the palette is open: no terminal takes the keyboard
 }) {
-  const { sessions: all, projects, features, ui, toggleGridMember, openAlone, clearGrid, swapGridPanes, setGridSpan, setGridTracks, resetGridArrangement } = useSlices()
-  const visible = visibleMembers(sessions, view, projects)
+  const { sessions: all, projects, features, ui, toggleGridMember, openAlone, swapGridPanes, setGridSpan, setGridTracks } = useSlices()
+  const visible = visibleMembers(sessions, view)
   const root = useRef<HTMLDivElement>(null)
   const grid = useRef<HTMLDivElement>(null)
   // the dimming slider sets the unfocused panes' opacity for this grid only
@@ -123,7 +121,6 @@ export function SessionGrid({ sessions, focusedId, view, onViewChange, onFocusPa
   const tags = colorTags(projects, features.items)
   return (
     <div className={s.root} ref={root}>
-      <GridToolbar members={sessions} projects={projects} view={view} visibleCount={visible.length} canReset={hasArrangement(ui.grid)} onChange={onViewChange} onReset={() => { setDraft(null); resetGridArrangement() }} onEmpty={clearGrid} />
       <div className={s.stage}>
       <div className={s.grid} ref={grid}>
         {visible.length === 0 && <div className={s.none}>No sessions match</div>}

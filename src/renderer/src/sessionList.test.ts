@@ -302,7 +302,7 @@ describe('custom order', () => {
     expect(ids(custom(order, { groupBy: 'status' }))).toEqual(['b', 'c', 'a', 'z'])
   })
 
-  it('feeds orderedSessions, which the rail and Cmd+1..9 read', () => {
+  it('feeds orderedSessions, which the session strip and Cmd+1..9 read', () => {
     expect(orderedSessions(custom(['c', 'a', 'b', 'z'])).map((s) => s.id)).toEqual(['c', 'a', 'b', 'z'])
   })
 })
@@ -379,7 +379,7 @@ describe('session groups', () => {
     expect(ids(listGroups(PROJECTS, [session('r'), session('k', { parentId: 'r' }), session('x', { parentId: 'k' })], ui()))).toEqual(['r', 'x'])
   })
 
-  it('counts children through Cmd+1..9 and the rail only while the parent is expanded; a range likewise', () => {
+  it('counts children through Cmd+1..9 and the strip only while the parent is expanded; a range likewise', () => {
     expect(orderedSessions(listGroups(PROJECTS, sessions, ui())).map((s) => s.id)).toEqual(['r', 'k1', 'k2', 's'])
     expect(orderedSessions(listGroups(PROJECTS, sessions, ui({ collapsed: ['k:r'] }))).map((s) => s.id)).toEqual(['r', 's'])
     expect(visibleSessions(listGroups(PROJECTS, sessions, ui({ collapsed: ['k:r'] }))).map((s) => s.id)).toEqual(['r', 's'])
@@ -423,7 +423,7 @@ describe('done stacks', () => {
     expect(rows(['o:d:r'])).toEqual(['k0', '[d1 d2 open]', 'k1'])
   })
 
-  it('counts a stack\'s children through Cmd+1..9, the rail and a range only while it is open', () => {
+  it('counts a stack\'s children through Cmd+1..9, the strip and a range only while it is open', () => {
     expect(orderedSessions(listGroups(PROJECTS, sessions, ui())).map((s) => s.id)).toEqual(['r', 'k0', 'k1'])
     expect(visibleSessions(listGroups(PROJECTS, sessions, ui())).map((s) => s.id)).toEqual(['r', 'k0', 'k1'])
     expect(orderedSessions(listGroups(PROJECTS, sessions, ui({ collapsed: ['o:d:r'] }))).map((s) => s.id)).toEqual(['r', 'k0', 'd1', 'd2', 'k1'])

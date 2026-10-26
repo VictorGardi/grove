@@ -8,11 +8,11 @@ export const SIDEBAR_MAX = 520
 
 export function AppShell({ banners, sidebar, content, viewer, sidebarWidth, onSidebarWidth, viewerWidth, viewerExpanded, onViewerWidth }: {
   banners?: ReactNode
-  sidebar: ReactNode
+  sidebar?: ReactNode // absent while the sidebar is hidden (⌘B)
   content: ReactNode
   viewer?: ReactNode
   sidebarWidth: number
-  onSidebarWidth?: (px: number | null) => void // absent while the sidebar is collapsed to its rail; null resets
+  onSidebarWidth: (px: number | null) => void // null resets
   viewerWidth: number | null
   viewerExpanded: boolean
   onViewerWidth: (px: number) => void
@@ -51,7 +51,7 @@ export function AppShell({ banners, sidebar, content, viewer, sidebarWidth, onSi
     if (sideStart.current) setSideDrag(Math.min(Math.max(e.clientX - sideStart.current.left, SIDEBAR_MIN), SIDEBAR_MAX))
   }
   const sideUp = () => {
-    if (sideStart.current && sideDrag !== null) onSidebarWidth?.(sideDrag)
+    if (sideStart.current && sideDrag !== null) onSidebarWidth(sideDrag)
     sideStart.current = null
     setSideDrag(null)
   }
@@ -61,8 +61,8 @@ export function AppShell({ banners, sidebar, content, viewer, sidebarWidth, onSi
     <div className={s.shell} style={{ '--sidebar-w': `${sideDrag ?? sidebarWidth}px`, '--viewer-w': viewerWidthValue } as CSSProperties}>
       {banners}
       <div className={cx(s.body, !!viewer && viewerExpanded && s.expanded)}>
-        <aside ref={sidebarRef} className={cx(s.sidebar, sideDrag !== null && s.sidebarDragging)}>{sidebar}</aside>
-        {onSidebarWidth && (
+        {sidebar && <aside ref={sidebarRef} className={cx(s.sidebar, sideDrag !== null && s.sidebarDragging)}>{sidebar}</aside>}
+        {sidebar && (
           <div className={s.splitter} role="separator" aria-orientation="vertical" aria-label="Resize sidebar"
             onPointerDown={sideDown} onPointerMove={sideMove} onPointerUp={sideUp} onPointerCancel={sideUp}
             onDoubleClick={() => onSidebarWidth(null)} />

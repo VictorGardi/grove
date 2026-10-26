@@ -153,7 +153,7 @@ export function listGroups(
 }
 
 // Every visible session once, in group order, collapsed groups included but a collapsed
-// parent's children and a folded done stack left out: what Cmd+1..9 and the rail's tiles count through, so the number
+// parent's children and a folded done stack left out: what Cmd+1..9 and the session strip's dots count through, so the number
 // the human counts is the session they get. A shift-click range uses visibleSessions below
 // instead, so a range that spans a collapsed group can't select — and so delete — sessions the
 // human cannot see.

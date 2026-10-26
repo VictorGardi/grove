@@ -103,7 +103,7 @@ export interface ArtifactsView {
 export interface DiffPrefs { mode: DiffMode; base: string | null } // a session's picked view and compare branch; base null: the auto-detected main branch
 export interface UiState {
   sidebarWidth: number
-  sidebarCollapsed: boolean // ⌘B: the sidebar shrinks to a rail of session tiles
+  sidebarCollapsed: boolean // ⌘B: the sidebar is hidden, and a strip of session dots leads the content header
   focusedSessionId: string | null
   focusedFeature: { projectId: string; slug: string } | null
   focusedProject: string | null // the project page; the three focuses are exclusive (ADR 0018)
@@ -177,7 +177,6 @@ export interface CommentsFile { schemaVersion: 3; comments: Comment[] }
 export type Slices = { projects: Project[]; sessions: Session[]; ui: UiState; features: FeaturesSlice; opencode: OpenCodeSlice; diff: SessionDiff | null; comments: Comment[] } // diff: the one on screen, not persisted
 export interface ConfigFile { schemaVersion: 1; projects: Project[]; workflow?: string }
 export interface StateFile { schemaVersion: 10; sessions: Session[]; ui: UiState }
-export const SIDEBAR_RAIL_WIDTH = 56 // the collapsed sidebar
 export const SIDEBAR_WIDTH = 220 // the default; drag the sidebar's edge to resize, double-click it to come back here
 export const DEFAULT_UI: UiState = { sidebarWidth: SIDEBAR_WIDTH, sidebarCollapsed: false, focusedSessionId: null, focusedFeature: null, focusedProject: null, sidebarTab: 'sessions', board: 'sessions', collapsed: [], hiddenProjects: [], groupBy: 'project', sessionSort: 'custom', sessionOrder: [], viewer: null, viewerWidth: null, viewerExpanded: false, grid: { open: false, members: [] } }
 export const EMPTY_FEATURES: FeaturesSlice = { workflowError: null, stages: [], items: [] }

@@ -16,7 +16,7 @@
   font-size: var(--fs-sm);
 }
 
-/* the parent picker: a run of rows per repo, under its name, with the repo's colour as a bar down the left (as in the sidebar rail) */
+/* the parent picker: a run of rows per repo, under its name, with the repo's colour as a bar down the left (as a repo's colour marks it elsewhere) */
 .run {
   display: flex;
   flex-direction: column;

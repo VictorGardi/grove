@@ -2,7 +2,7 @@ import { useCallback, useEffect, useRef, useState } from 'react'
 import type { Feature, Session, ViewerTarget } from '@shared/types'
 import type { MenuAction } from '@shared/ipc'
 import { errorMessage } from '@shared/sessionErrors'
-import { SIDEBAR_RAIL_WIDTH, SIDEBAR_WIDTH } from '@shared/types'
+import { SIDEBAR_WIDTH } from '@shared/types'
 import { ArtifactViewer } from './components/ArtifactViewer'
 import { CommandPalette } from './components/CommandPalette'
 import { DiffViewer } from './components/DiffViewer'
@@ -10,8 +10,8 @@ import { FeaturePage } from './components/FeaturePage'
 import { ProjectPage } from './components/ProjectPage'
 import { SessionGrid } from './components/SessionGrid'
 import { SessionMeta } from './components/SessionMeta'
+import { SessionStrip } from './components/SessionStrip'
 import { Sidebar } from './components/Sidebar'
-import { SidebarRail } from './components/SidebarRail'
 import { TerminalView } from './components/TerminalView'
 import { AppShell, SIDEBAR_MAX, SIDEBAR_MIN } from './components/shell/AppShell'
 import { BoardSwitch } from './components/shell/BoardSwitch'
@@ -24,7 +24,8 @@ import { LaunchPalette } from './components/LaunchPalette'
 import { Button } from './components/ui/Button'
 import { paletteItems } from './paletteItems'
 import { useRepoRefs } from './useRepoRefs'
-import { DEFAULT_GRID_VIEW, gridShown, visibleMembers, type GridView } from './gridView'
+import { DEFAULT_GRID_VIEW, gridShown, hasArrangement, visibleMembers, type GridView } from './gridView'
+import { GridControls } from './components/GridControls'
 import { contextView } from './contextGauge'
 import { artifactCrumbs, openCard } from './artifactsBoard'
 import { artifactsKey, boardKey, childrenOf, content, crumbs, currentProjectId, focusTarget } from './navigation'
@@ -40,7 +41,7 @@ import { longestWaiting } from './sessionStatus'
 import s from './App.module.css'
 
 export default function App() {
-  const { projects, sessions, ui, features, opencode, diff, errors, hydrate, setFocused, focusFeature, openProject, toggleGrid, addFocusedToGrid, toggleSidebar, clearGrid, go, setBoard, openBoardArtifact, setBoardView, setBoardFilter,
+  const { projects, sessions, ui, features, opencode, diff, errors, hydrate, setFocused, focusFeature, openProject, toggleGrid, addFocusedToGrid, toggleSidebar, clearGrid, resetGridArrangement, go, setBoard, openBoardArtifact, setBoardView, setBoardFilter,
     openArtifact, openDiff, backToDiff, openRendered, closeViewer, setViewerWidth, toggleViewerExpanded, reloadViewer } = useSlices()
   const [quickNew, setQuickNew] = useState<{ projectId?: string } | null>(null) // ⌘T: the new-session palette
   const repoRefs = useRepoRefs(projects)
@@ -160,11 +161,11 @@ export default function App() {
     return null
   }, [setFocused])
   const shown = content(ui, projects, sessions, features.items)
-  // a filter or the eye can hide the focused pane: focus the first one still visible
+  // the eye or a smaller layout can hide the focused pane: focus the first one still visible
   const changeGridView = (next: GridView) => {
     setGridView(next)
     if (shown.kind !== 'grid') return
-    const visible = visibleMembers(shown.sessions, next, projects)
+    const visible = visibleMembers(shown.sessions, next)
     if (visible.length > 0 && !visible.some((x) => x.id === shown.focused.id)) setFocused(visible[0].id)
   }
   const openArt = shown.kind === 'project' ? openCard(ui, shown.project, projects, features.stages, features.items) : undefined
@@ -196,17 +197,21 @@ export default function App() {
           ...(features.workflowError ? [<Banner key="workflow">Workflow: {features.workflowError}</Banner>] : []),
           ...serviceBanners(opencode, sessions).map((b) => <Banner key={b.text} tone={b.tone}>{b.text}</Banner>),
         ]}
-        sidebar={ui.sidebarCollapsed ? <SidebarRail onNew={() => setQuickNew({ projectId: currentProjectId(content(ui, projects, sessions, features.items)) ?? undefined })} /> : <Sidebar onNew={(projectId) => setQuickNew({ projectId })} onRemove={(ids) => void removeSessions(ids)} onNote={(s) => setNoteSession({ id: s.id, label: s.label })} />}
+        sidebar={ui.sidebarCollapsed ? undefined : <Sidebar onNew={(projectId) => setQuickNew({ projectId })} onRemove={(ids) => void removeSessions(ids)} onNote={(s) => setNoteSession({ id: s.id, label: s.label })} />}
         content={
           <>
-            <ContentHeader crumbs={header}
+            <ContentHeader crumbs={header} strip={ui.sidebarCollapsed ? <SessionStrip /> : undefined}
               meta={shown.kind === 'session'
-                ? <SessionMeta lead={<Crumbs crumbs={header} />} session={shown.session}
+                ? <SessionMeta lead={header.at(-1)?.label ?? shown.session.label} trail={<Crumbs crumbs={header.slice(0, -1)} ancestors />} session={shown.session}
                     feature={linked} featureInLead tagIndex={linkedIndex}
                     context={context ? <ContextPopover view={context} /> : undefined}
                     family={{ ...familyOf(sessions, shown.session.id), onJump: setFocused }} />
                 : undefined}
               right={shown.kind === 'project' && !shown.project.worktreeOf ? <BoardSwitch board={ui.board} onChange={setBoard} />
+                : shown.kind === 'grid' ? (
+                  <GridControls view={gridView} visibleCount={visibleMembers(shown.sessions, gridView).length} canReset={hasArrangement(ui.grid)}
+                    onChange={changeGridView} onReset={resetGridArrangement} onEmpty={clearGrid} />
+                )
                 : shown.kind === 'session' ? (
                   <div className={s.headerActions}>
                     <Button variant="ghost" size="sm" aria-pressed={diffOpen(shown.session.id)}
@@ -230,7 +235,7 @@ export default function App() {
                   if (dir !== null) openArtifact({ kind: 'file', projectId: shown.feature.projectId, path: dir + name, hash: null, fromDiff: null })
                 }} />
             ) : shown.kind === 'grid' ? (
-              <SessionGrid sessions={shown.sessions} focusedId={shown.focused.id} view={gridView} onViewChange={changeGridView} onFocusPane={setFocused} overlayOpen={overlayOpen} />
+              <SessionGrid sessions={shown.sessions} focusedId={shown.focused.id} view={gridView} onFocusPane={setFocused} overlayOpen={overlayOpen} />
             ) : shown.kind === 'session' && shown.session.lastStatus === 'running' ? (
               <TerminalView key={shown.session.id} sessionId={shown.session.id} active={!overlayOpen} />
             ) : shown.kind === 'session' ? (
@@ -259,8 +264,8 @@ export default function App() {
             onOpen={(path) => openArtifact({ ...v, path, hash: null })}
             onBack={v.fromDiff ? () => backToDiff(v.fromDiff!) : undefined} onClose={closeViewer} />
         ) : undefined}
-        sidebarWidth={ui.sidebarCollapsed ? SIDEBAR_RAIL_WIDTH : Math.min(Math.max(ui.sidebarWidth, SIDEBAR_MIN), SIDEBAR_MAX)}
-        onSidebarWidth={ui.sidebarCollapsed ? undefined : (px) => void window.api.invoke('ui:set', { sidebarWidth: px === null ? SIDEBAR_WIDTH : Math.round(px) })}
+        sidebarWidth={Math.min(Math.max(ui.sidebarWidth, SIDEBAR_MIN), SIDEBAR_MAX)}
+        onSidebarWidth={(px) => void window.api.invoke('ui:set', { sidebarWidth: px === null ? SIDEBAR_WIDTH : Math.round(px) })}
         viewerWidth={ui.viewerWidth}
         viewerExpanded={ui.viewerExpanded}
         onViewerWidth={setViewerWidth}

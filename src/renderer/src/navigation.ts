@@ -47,7 +47,7 @@ const featureCrumb = (f: Feature): Crumb => ({ label: f.title, to: { focusedFeat
 // Breadcrumb up-links; the last crumb is the current page and has no `to`.
 export function crumbs(c: Content, projects: Project[], features: Feature[]): Crumb[] {
   if (c.kind === 'none') return []
-  if (c.kind === 'grid') return [{ label: 'Session grid' }]
+  if (c.kind === 'grid') return [] // the panes name themselves; the header keeps its room for the grid's controls
   if (c.kind === 'project') return [{ label: c.project.name }]
   if (c.kind === 'feature') {
     const f = c.feature
@@ -104,5 +104,5 @@ export function artifactsKey(ui: UiState, projects: Project[], sessions: Session
 // Cmd+1..9: visible pane n while the grid shows, else the nth session in sidebar order.
 export function focusTarget(ui: UiState, projects: Project[], sessions: Session[], features: Feature[], n: number, view: GridView = DEFAULT_GRID_VIEW): Session | undefined {
   const c = content(ui, projects, sessions, features)
-  return c.kind === 'grid' ? visibleMembers(c.sessions, view, projects)[n - 1] : orderedSessions(listGroups(projects, sessions, ui))[n - 1]
+  return c.kind === 'grid' ? visibleMembers(c.sessions, view)[n - 1] : orderedSessions(listGroups(projects, sessions, ui))[n - 1]
 }

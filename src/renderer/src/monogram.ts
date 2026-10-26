@@ -1,4 +1,4 @@
-// The two letters that stand for a project in the collapsed rail: the initials of its first two
+// The two letters that stand for a project in the session strip: the initials of its first two
 // words (`spatial-intelligence` is SI), or its first two letters when it is a single word.
 export function monogram(name: string): string {
   const words = name.split(/[^A-Za-z0-9]+/).filter(Boolean)

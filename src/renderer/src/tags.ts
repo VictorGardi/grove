@@ -7,7 +7,7 @@ export const TAG_COUNT = 8
 // colours after it, by slug, so a group differs from its own project's colour. A worktree
 // takes no slot of its own — there are eight, and a new worktree must not push the projects
 // after it onto a different colour — but it wears its repo's colour, so a repo's checkouts
-// read as one thing and its row in the rail still has a bar (ADR 0037).
+// read as one thing and its run in the session strip still has its colour (ADR 0037).
 export function colorTags(projects: Project[], features: Feature[]) {
   const checkouts = projects.filter((p) => !p.worktreeOf)
   const projectIndex = new Map(checkouts.map((p, i) => [p.id, i]))

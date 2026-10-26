@@ -60,8 +60,8 @@ describe('crumbs', () => {
     expect(of({ focusedProject: 'p' })).toEqual([{ label: 'P' }])
   })
 
-  it('is just "Session grid" on the grid', () => {
-    expect(of({ grid: { open: true, members: ['s'] }, focusedSessionId: 's' })).toEqual([{ label: 'Session grid' }])
+  it('is empty on the grid', () => {
+    expect(of({ grid: { open: true, members: ['s'] }, focusedSessionId: 's' })).toEqual([])
   })
 
   it('goes project › parent › feature, each up-link clickable', () => {
@@ -221,9 +221,8 @@ describe('focusTarget', () => {
     const view = (v: Partial<GridView>) => ({ ...DEFAULT_GRID_VIEW, ...v })
     const hide = focusTarget(ui({ grid, focusedSessionId: 'a' }), projects, ended, features, 1, view({ hideEnded: true }))
     expect(hide?.id).toBe('a') // c is ended and hidden, so a is pane 1
-    expect(focusTarget(ui({ grid, focusedSessionId: 'a' }), projects, many, features, 1, view({ filter: 'p' }))?.id).toBe('a')
     // outside the grid the view does not matter
-    expect(focusTarget(ui(), projects, many, features, 1, view({ filter: 'q' }))?.id).toBe('b')
+    expect(focusTarget(ui(), projects, ended, features, 1, view({ hideEnded: true }))?.id).toBe(focusTarget(ui(), projects, ended, features, 1)?.id)
   })
 
   it('counts sidebar order when the grid is on but hidden', () => {

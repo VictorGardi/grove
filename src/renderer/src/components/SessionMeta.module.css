@@ -11,7 +11,8 @@
 }
 
 /* the pane's round action buttons keep their size; the chips are buttons too but must shrink */
-.row > button:not(.chip) {
+.row > button:not(.chip),
+.line > button:not(.chip) {
   flex: none;
 }
 
@@ -99,6 +100,39 @@
 .chip:hover {
   color: inherit;
   text-decoration: underline;
+}
+
+/* stacked (the content header): two lines in the header's height, each truncating on its own */
+.lines {
+  flex: 1 1 auto;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+}
+
+.line {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-2);
+  min-width: 0;
+}
+
+/* the session's name keeps more of itself than the trail: it is what the human reads first */
+.name {
+  min-width: 8ch;
+  font-weight: var(--fw-semibold);
+}
+
+/* the trail and the branch, smaller and dimmer: the branch gives way before the trail */
+.sub {
+  font-size: var(--fs-xs);
+  color: var(--text-2);
+}
+
+.sub > :first-child {
+  flex: 0 1 auto;
+  min-width: 0;
 }
 
 .spacer {
