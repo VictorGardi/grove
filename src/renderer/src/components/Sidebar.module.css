@@ -451,9 +451,10 @@
   cursor: default;
 }
 
-/* a parent's children, full width under it: a thin line down the left margin ties them to it */
+/* a parent's children, a small step in under it: a thin line down that step ties them to it */
 .kids {
   position: relative;
+  padding-left: 6px;
 }
 
 .kids::before {
