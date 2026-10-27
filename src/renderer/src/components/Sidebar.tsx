@@ -155,7 +155,7 @@ function SessionCard({ s, feature, worktree, focused, picked, compact, since, no
 
 // A project's heading: its name in the project colour, then a faint rule of the same colour.
 // The count shows only while collapsed, so a folded project still says what it hides.
-function ProjectHeader({ project: p, tag, count, collapsed, refused, onToggle, onOpen, onRemove, onNew }: {
+function ProjectHeader({ project: p, tag, count, collapsed, refused, onToggle, onOpen, onHide, onRemove, onNew }: {
   project: Project
   tag: number | null
   count: number
@@ -163,6 +163,7 @@ function ProjectHeader({ project: p, tag, count, collapsed, refused, onToggle, o
   refused: boolean
   onToggle: () => void
   onOpen: () => void // the project page
+  onHide: () => void // the same switch as the project's row in the options panel
   onRemove: () => void
   onNew: () => void
 }) {
@@ -185,6 +186,7 @@ function ProjectHeader({ project: p, tag, count, collapsed, refused, onToggle, o
           items={[
             { label: 'Add session', icon: 'plus', onSelect: onNew },
             { label: 'Open project page', icon: 'folder', onSelect: onOpen },
+            { label: 'Hide project', icon: 'eye-off', onSelect: onHide },
             { label: 'Remove project', icon: 'trash', danger: true, onSelect: onRemove },
           ]} />
       )}
@@ -532,7 +534,7 @@ export function Sidebar({ onNew, onRemove }: { onNew: (projectId?: string) => vo
 
   const projectHeader = (p: Project, count: number, g: ListGroup) => (
     <ProjectHeader project={p} tag={tags.project(p.id)} count={count} collapsed={g.collapsed} refused={refused === p.id}
-      onToggle={() => toggleCollapsed(g.key)} onOpen={() => openProject(p.id)} onRemove={() => void removeProject(p.id)} onNew={() => onNew(p.id)} />
+      onToggle={() => toggleCollapsed(g.key)} onOpen={() => openProject(p.id)} onHide={() => toggleProjectVisibility(p.id)} onRemove={() => void removeProject(p.id)} onNew={() => onNew(p.id)} />
   )
 
   // a project's heading when there is a project; a status or plain one when there isn't
