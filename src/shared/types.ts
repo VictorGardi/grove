@@ -175,7 +175,7 @@ export interface Comment {
 }
 export interface CommentsFile { schemaVersion: 3; comments: Comment[] }
 export type Slices = { projects: Project[]; sessions: Session[]; ui: UiState; features: FeaturesSlice; opencode: OpenCodeSlice; diff: SessionDiff | null; comments: Comment[] } // diff: the one on screen, not persisted
-export interface ConfigFile { schemaVersion: 1; projects: Project[]; workflow?: string }
+export interface ConfigFile { schemaVersion: 1; projects: Project[]; workflow?: string; sounds?: boolean } // sounds: false mutes the waiting sounds
 export interface StateFile { schemaVersion: 10; sessions: Session[]; ui: UiState }
 export const SIDEBAR_WIDTH = 220 // the default; drag the sidebar's edge to resize, double-click it to come back here
 export const DEFAULT_UI: UiState = { sidebarWidth: SIDEBAR_WIDTH, sidebarCollapsed: false, focusedSessionId: null, focusedFeature: null, focusedProject: null, board: 'sessions', collapsed: [], hiddenProjects: [], groupBy: 'project', sessionSort: 'custom', sessionOrder: [], viewer: null, viewerWidth: null, viewerExpanded: false, grid: { open: false, members: [] } }

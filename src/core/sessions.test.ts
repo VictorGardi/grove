@@ -814,3 +814,32 @@ describe('claude cleanup', () => {
     expect([s.oc.forgotten, s.claude.forgotten]).toEqual([[o.agentSessionId], []])
   })
 })
+
+describe('terminal notify', () => {
+  let disposeAll = () => {}
+  afterEach(() => {
+    disposeAll()
+    vi.useRealTimers()
+  })
+
+  it('notifies once when a terminal command finishes off screen, and not on screen', async () => {
+    vi.useFakeTimers({ toFake: ['setInterval', 'clearInterval', 'Date'] })
+    const s = setupCore()
+    disposeAll = s.disposeAll
+    const core = s.make()
+    await core.start()
+    const notified: Session[] = []
+    core.on('notify', (x) => notified.push(x))
+    const a = await create(core)
+    const b = await create(core)
+    core.setWindowFocused(true)
+    await core.commands.uiSet({ focusedSessionId: b.id })
+    s.fake.foreground.set(a.tmuxName, 'sleep')
+    s.fake.foreground.set(b.tmuxName, 'sleep')
+    await vi.advanceTimersByTimeAsync(4000)
+    s.fake.foreground.set(a.tmuxName, 'zsh')
+    s.fake.foreground.set(b.tmuxName, 'zsh')
+    await vi.advanceTimersByTimeAsync(3000)
+    expect(notified.map((x) => [x.id, x.waitingFor])).toEqual([[a.id, 'done']])
+  })
+})

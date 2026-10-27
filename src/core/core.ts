@@ -118,6 +118,7 @@ export interface Core {
   getErrors(): string[]
   on(e: 'slice', cb: SliceListener): () => void
   on(e: 'notify', cb: (s: Session) => void): () => void // a session started waiting while not on screen
+  soundsOn(): boolean // config.json `sounds`, read at start; on unless set to false
   setWindowFocused(f: boolean): void
   checkLiveness(): Promise<void>
   commands: Commands
@@ -150,6 +151,7 @@ export function createCore(opts: CoreOptions): Core {
   const termActivity = createTerminalActivity()
   const watchers = opts.watchers ?? chokidarWatchers
   let configWorkflow: string | undefined
+  let configSounds: boolean | undefined
   let workflow: Workflow | null = null // last valid
   let workflowError: string | null = null
   let workflowWatch: Closer | undefined
@@ -241,6 +243,7 @@ export function createCore(opts: CoreOptions): Core {
         schemaVersion: 1,
         projects: slices.projects,
         ...(configWorkflow !== undefined && { workflow: configWorkflow }),
+        ...(configSounds !== undefined && { sounds: configSounds }),
       })
     }
     else if (k === 'sessions' || k === 'ui') {
@@ -578,20 +581,21 @@ export function createCore(opts: CoreOptions): Core {
     }
     lastOnScreen = id
     if (next !== slices.sessions) set('sessions', next)
-    for (const st of states.values()) if (st.connected && st.queue === null) notifyTransitions(st, id)
+    for (const st of states.values()) if (st.connected && st.queue === null) notifyTransitions(st.source.kind, st.primed, id)
+    notifyTransitions('terminal', true, id) // terminal activity starts blank, so it needs no priming
   }
 
   // Notify on entering waiting (or a new reason) off screen. Disconnected sessions keep their entry.
-  function notifyTransitions(st: SourceState, onScreen: string | null): void {
+  function notifyTransitions(kind: SessionKind, primed: boolean, onScreen: string | null): void {
     for (const s of slices.sessions) {
-      if (s.kind !== st.source.kind || s.lastStatus !== 'running' || !s.status) continue
+      if (s.kind !== kind || s.lastStatus !== 'running' || !s.status) continue
       if (s.status !== 'waiting' || !s.waitingFor) {
         waitKey.delete(s.id)
         continue
       }
       if (waitKey.get(s.id) === s.waitingFor) continue
       waitKey.set(s.id, s.waitingFor)
-      if (st.primed && s.id !== onScreen) for (const cb of notifyListeners) cb(s)
+      if (primed && s.id !== onScreen) for (const cb of notifyListeners) cb(s)
     }
   }
 
@@ -1222,6 +1226,7 @@ export function createCore(opts: CoreOptions): Core {
       const onBad = (m: string) => errors.push(m)
       const config = loadConfig(opts.configPath, onBad)
       configWorkflow = config.workflow
+      configSounds = typeof config.sounds === 'boolean' ? config.sounds : undefined
       // A worktree project whose directory is gone cannot be classified by git — there is no
       // `.git` file left to read — so it would sit in the sidebar ungrouped for good. Drop the
       // row and git's admin entry with it. Only worktrees: an ordinary project's folder may be
@@ -1281,6 +1286,7 @@ export function createCore(opts: CoreOptions): Core {
       bag.add(cb)
       return () => void bag.delete(cb)
     },
+    soundsOn: () => configSounds !== false,
     setWindowFocused(f) {
       windowFocused = f
       refreshStatus()

@@ -17,6 +17,7 @@ import { startCliServer } from './cliServer'
 import { agentSkillsDirs, installAgentSkill, installCommandLineTool, writeLauncher } from './launcher'
 import { buildMenu } from './menu'
 import { installAttachCleanup } from './attachCleanup'
+import { createSoundPlayer } from './sound'
 
 let win: BrowserWindow | null = null
 
@@ -111,7 +112,9 @@ app.whenReady().then(async () => {
   const shown = new Set<Notification>() // held until closed or clicked, or a click may be lost
   let notifyFailed = false
   const BODY = { permission: 'Needs permission', question: 'Has a question', done: 'Finished' }
+  const playSound = createSoundPlayer((file) => execFile('/usr/bin/afplay', [file], () => {}))
   core.on('notify', (s) => {
+    if (process.platform === 'darwin' && core.soundsOn()) playSound(s)
     if (!Notification.isSupported() || !s.waitingFor) return
     const n = new Notification({ title: s.label, body: BODY[s.waitingFor] })
     shown.add(n)
