@@ -1,5 +1,5 @@
 /* The grid pane header's row, moved here so the session header and a pane are one thing.
-   one row, never two: the chips shrink fastest, then the feature's title, then the branch; the lead
+   one row, never two: the chips shrink fastest, then the branch; the lead
    slowest and never below 6ch; the status never shrinks. the pane (or the content header) clips it,
    so the row itself doesn't and its buttons keep their focus ring */
 .row {
@@ -26,7 +26,6 @@
 }
 
 .branch,
-.feature,
 .status {
   display: flex;
   align-items: center;
@@ -51,17 +50,6 @@
   color: var(--text-2);
 }
 
-/* the feature's title is the one fact here that may give way; its stage and the status stay whole */
-.feature {
-  flex: 0 3 auto;
-  max-width: 32ch;
-}
-
-.feature > :first-child {
-  min-width: 0;
-}
-
-.feature .secondary,
 .status {
   white-space: nowrap;
 }
@@ -72,12 +60,17 @@
   white-space: nowrap;
 }
 
+.worktree {
+  color: var(--worktree);
+}
+
 .secondary {
   color: var(--text-2);
 }
 
 /* the parent and the active child: jump buttons, styled as quiet chips. a chip goes down to its
-   arrow and status dot (1ch + the 6px dot + two gaps); the label ellipsizes */
+   mark, the parent's arrow or the child's status dot (room for 1ch + the 6px dot + two gaps); the
+   label ellipsizes */
 .chip {
   display: inline-flex;
   align-items: center;
@@ -124,10 +117,15 @@
   font-weight: var(--fw-semibold);
 }
 
-/* the trail and the branch, smaller and dimmer: the branch gives way before the trail */
+/* the repo and the branch, smaller and dimmer: the branch gives way before the repo, but has the
+   rest of the line, since the branch is what tells two sessions of one repo apart */
 .sub {
   font-size: var(--fs-xs);
   color: var(--text-2);
+}
+
+.sub > .branch {
+  max-width: none;
 }
 
 .sub > :first-child {

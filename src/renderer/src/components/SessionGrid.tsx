@@ -6,9 +6,8 @@ import {
   resizeTracks, shapeKey, trackFractions, visibleMembers, type Divider, type GridView,
 } from '../gridView'
 import { familyOf } from '../family'
+import { repoHead } from '../repoGroups'
 import { useSlices } from '../stores/slices'
-import { colorTags } from '../tags'
-import { linkedFeature } from '../tree'
 import { SessionMeta } from './SessionMeta'
 import { Button } from './ui/Button'
 import { cx } from './ui/cx'
@@ -24,7 +23,7 @@ export function SessionGrid({ sessions, focusedId, view, onFocusPane, overlayOpe
   onFocusPane: (id: string) => void // a click or terminal focus inside a pane
   overlayOpen: boolean // a modal or the palette is open: no terminal takes the keyboard
 }) {
-  const { sessions: all, projects, features, ui, toggleGridMember, openAlone, swapGridPanes, setGridSpan, setGridTracks } = useSlices()
+  const { sessions: all, projects, ui, toggleGridMember, openAlone, swapGridPanes, setGridSpan, setGridTracks } = useSlices()
   const visible = visibleMembers(sessions, view)
   const root = useRef<HTMLDivElement>(null)
   const grid = useRef<HTMLDivElement>(null)
@@ -118,7 +117,6 @@ export function SessionGrid({ sessions, focusedId, view, onFocusPane, overlayOpe
     setHeld(null)
     setOver(null)
   }
-  const tags = colorTags(projects, features.items)
   return (
     <div className={s.root} ref={root}>
       <div className={s.stage}>
@@ -127,7 +125,6 @@ export function SessionGrid({ sessions, focusedId, view, onFocusPane, overlayOpe
         {visible.map((x, i) => {
           const focused = x.id === focusedId
           const focus = () => { if (!focused) onFocusPane(x.id) }
-          const feature = linkedFeature(x, features.items)
           const context = contextView(x)
           const place = places[i]
           const span = ui.grid.spans?.[x.id] ?? placedSpan(place)
@@ -136,8 +133,8 @@ export function SessionGrid({ sessions, focusedId, view, onFocusPane, overlayOpe
               className={cx(s.pane, focused ? s.focused : s.dim, held === x.id && s.held, over === x.id && s.target)}
               style={{ '--col-span': place.cols, '--row-span': place.rows } as CSSProperties}>
               <div className={cx(s.header, held === x.id && s.grabbing)} onPointerDown={(e) => startPick(e, x.id)} onPointerMove={movePick} onPointerUp={endPick} onPointerCancel={endPick}>
-                <SessionMeta lead={<span className={s.title}>{paneTitle(projects.find((p) => p.id === x.projectId), x)}</span>}
-                  session={x} feature={feature} tagIndex={feature ? tags.group(feature.projectId, feature.group ? feature.slug : feature.parent) : null}
+                <SessionMeta lead={<span className={s.title}>{paneTitle(projects.find((p) => p.id === repoHead(projects, x.projectId)), x)}</span>}
+                  session={x} worktree={projects.find((p) => p.id === x.projectId && p.worktreeOf)}
                   context={context ? <ContextGauge view={context} /> : undefined}
                   family={{ ...familyOf(all, x.id), onJump: onFocusPane }}
                   actions={<>

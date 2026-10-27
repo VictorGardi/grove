@@ -54,9 +54,10 @@ export function crumbs(c: Content, projects: Project[], features: Feature[]): Cr
     const parent = findFeature(features, f.projectId, f.parent)
     return [projectCrumb(projects, f.projectId), ...(parent ? [featureCrumb(parent)] : []), { label: f.title }]
   }
+  // a session sits under its repo alone: a worktree's name and the linked feature both repeat the
+  // branch the header already shows beside it
   const s = c.session
-  const linked = findFeature(features, s.projectId, s.feature)
-  return [projectCrumb(projects, s.projectId), ...(linked ? [featureCrumb(linked)] : []), { label: s.label }]
+  return [projectCrumb(projects, repoHead(projects, s.projectId)), { label: s.label }]
 }
 
 // The project page ⌘B opens: the current context's project, else the first project. A worktree

@@ -72,13 +72,16 @@ describe('crumbs', () => {
     ])
   })
 
-  it('goes project › linked feature › session, or project › session', () => {
-    expect(of({ focusedSessionId: 's' })).toEqual([
-      { label: 'P', to: { focusedProject: 'p', board: 'sessions' } },
-      { label: 'Ta', to: { focusedFeature: { projectId: 'p', slug: 'a' } } },
-      { label: 'Ls' },
-    ])
+  it('goes repo › session, leaving out the linked feature', () => {
+    expect(of({ focusedSessionId: 's' })).toEqual([{ label: 'P', to: { focusedProject: 'p', board: 'sessions' } }, { label: 'Ls' }])
     expect(of({ focusedSessionId: 't' })).toEqual([{ label: 'Q', to: { focusedProject: 'q', board: 'sessions' } }, { label: 'Lt' }])
+  })
+
+  it("names a worktree session's repo, not the worktree", () => {
+    const wt = { id: 'w', name: 'P · feature-x', path: '/w', worktreeOf: 'p' }
+    const x = session('x', { projectId: 'w' })
+    expect(crumbs({ kind: 'session', session: x }, [...projects, wt], features))
+      .toEqual([{ label: 'P', to: { focusedProject: 'p', board: 'sessions' } }, { label: 'Lx' }])
   })
 
   it('is empty with nothing to show', () => {

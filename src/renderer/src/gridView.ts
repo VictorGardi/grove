@@ -32,7 +32,8 @@ export function withMember(grid: GridState, id: string): GridState {
   return { ...grid, members: [...grid.members, id] }
 }
 
-// The pane header's title: "project / label", or the label alone when the project is gone.
+// The pane header's title: "project / label", or the label alone when the project is gone. A
+// worktree session is given its repo: the purple branch beside the title already names the worktree.
 export function paneTitle(project: Project | undefined, session: Session): string {
   return project ? `${project.name} / ${session.label}` : session.label
 }

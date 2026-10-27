@@ -132,6 +132,17 @@ describe('SessionMeta stacked, in the content header', () => {
     expect(html.match(/class="[^"]*(?<![a-zA-Z0-9-])line(?![a-zA-Z0-9-])[^"]*"/g)).toHaveLength(2)
   })
 
+  it("colours a worktree's branch and names the worktree in its title", () => {
+    const branch = (html: string) => html.match(/<span class="([^"]*)" title="([^"]*)">feature\/long-branch</)
+    expect(branch(stacked())?.[1]).not.toMatch(/(?<![a-zA-Z0-9-])worktree(?![a-zA-Z0-9-])/)
+    const html = renderToStaticMarkup(createElement(SessionMeta, {
+      lead: 'slice-3', session: session('slice-3', { branch: 'feature/long-branch' }),
+      worktree: { id: 'w', name: 'p · wt', path: '/wt', worktreeOf: 'p' },
+    }))
+    expect(branch(html)?.[1]).toMatch(/(?<![a-zA-Z0-9-])worktree(?![a-zA-Z0-9-])/)
+    expect(branch(html)?.[2]).toContain('Worktree: /wt')
+  })
+
   it('draws one line without a trail, as a grid pane does', () => {
     const html = renderToStaticMarkup(createElement(SessionMeta, { lead: 'p / slice-3', session: session('slice-3', { branch: 'b' }) }))
     expect(html).not.toMatch(/(?<![a-zA-Z0-9-])line(?![a-zA-Z0-9-])/)

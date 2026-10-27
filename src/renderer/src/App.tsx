@@ -33,7 +33,6 @@ import { serviceBanners } from './sessionStatus'
 import { sessionDiffShortcut, type HiddenRenderedViewer } from './sessionDiffShortcut'
 import { useSlices } from './stores/slices'
 import { useSessionRemoval } from './useSessionRemoval'
-import { colorTags } from './tags'
 import { featureDir, featureOfFile, viewableFiles } from './viewerFiles'
 import { ScratchpadOverlay } from './components/ScratchpadOverlay'
 import { longestWaiting } from './sessionStatus'
@@ -51,7 +50,6 @@ export default function App() {
   const [gridView, setGridView] = useState<GridView>(DEFAULT_GRID_VIEW) // toolbar settings, view-only
   const [scratchpadOpen, setScratchpadOpen] = useState(false) // ⌘N: global notes, not persisted
   const hiddenRendered = useRef<HiddenRenderedViewer | null>(null)
-  const tags = colorTags(projects, features.items)
 
   useEffect(() => {
     void hydrate()
@@ -170,11 +168,6 @@ export default function App() {
   const trail = openArt && shown.kind === 'project' ? artifactCrumbs(shown.project, openArt.cluster.feature, openArt.card, ui) : crumbs(shown, projects, features.items)
   const header = trail.map((c) => ({ label: c.label, onClick: c.to && (() => go(c.to!)) }))
   const context = shown.kind === 'session' ? contextView(shown.session) : null
-  // the same tag colour a grid pane gives this session's feature: one rule, two places
-  const linked = shown.kind === 'session'
-    ? features.items.find((f) => f.projectId === shown.session.projectId && f.slug === shown.session.feature) ?? null
-    : null
-  const linkedIndex = linked ? tags.group(linked.projectId, linked.group ? linked.slug : linked.parent) : null
   const openFeature = (f: Feature) => focusFeature({ projectId: f.projectId, slug: f.slug })
   const v = ui.viewer
   const viewerHit = v?.kind === 'file' ? featureOfFile(v, features.items, projects) : undefined
@@ -201,7 +194,7 @@ export default function App() {
             <ContentHeader crumbs={header}
               meta={shown.kind === 'session'
                 ? <SessionMeta lead={header.at(-1)?.label ?? shown.session.label} trail={<Crumbs crumbs={header.slice(0, -1)} ancestors />} session={shown.session}
-                    feature={linked} featureInLead tagIndex={linkedIndex}
+                    worktree={projects.find((p) => p.id === shown.session.projectId && p.worktreeOf)}
                     context={context ? <ContextPopover view={context} /> : undefined}
                     family={{ ...familyOf(sessions, shown.session.id), onJump: setFocused }} />
                 : undefined}

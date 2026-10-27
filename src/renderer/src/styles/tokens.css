@@ -7,8 +7,8 @@
   --card-bg: #1f1f1f;
   --raised-bg: #232324;
   /* translucent shell surfaces: the macOS window vibrancy shows through them */
-  --chrome-glass: rgba(18, 18, 20, 0.3);
-  --panel-glass: rgba(24, 24, 26, 0.45);
+  --chrome-glass: rgba(18, 18, 20, 0.4);
+  --panel-glass: rgba(24, 24, 26, 0.55);
   /* fills and edges for things that sit on a glass panel: white/tinted alpha, so the blur shows through */
   --glass-fill: rgba(255, 255, 255, 0.05);
   --glass-fill-hover: rgba(255, 255, 255, 0.09);
