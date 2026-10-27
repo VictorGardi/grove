@@ -120,9 +120,9 @@ esac
 
 - `wait` follows Claude, OpenCode and Copilot sessions. A terminal session has no
   status and fails with `no-status`; use `read` to look at it. A Copilot card shows
-  working and done only (no question attention, no subagent marks), so a Copilot
-  session that asks you something in its pane looks idle: `read` it if a wait
-  seems too quiet.
+  working, done and waiting on a shown permission prompt or question. It has no
+  subagent marks: a background subagent still working after the turn ends shows
+  as done, so `read` a Copilot session if its result looks incomplete.
 - `--wait` first gives the turn up to 30 s to start, then waits for it to end.
 - `send` types into the session even if the human is looking at it, and resumes
   an ended Claude, OpenCode or Copilot session first.

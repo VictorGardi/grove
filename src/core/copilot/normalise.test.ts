@@ -21,7 +21,12 @@ function run(records: SpoolRecord[], from: CopilotFold = emptyFold('S')): { fold
 const CWD = '/w/proj'
 // Shapes captured from copilot 1.0.102 (-p runs); the event name is the one the hook command stamps in.
 const prompt = { hook_event_name: 'userPromptSubmitted', sessionId: 'x', prompt: 'make a file' }
-const perm = { hook_event_name: 'permissionRequest', hookName: 'permissionRequest', toolName: 'edit', toolInput: { file_path: `${CWD}/a.txt` } }
+// A notification payload carries its own hook_event_name, which wins over the stamped one (verified on 1.0.103)
+const perm = { hook_event_name: 'Notification', notification_type: 'permission_prompt', message: 'Allow edit?' }
+const ask = { hook_event_name: 'Notification', notification_type: 'elicitation_dialog', message: 'Pick one' }
+const pre = (toolName: string) => ({ hook_event_name: 'preToolUse', toolName, toolArgs: {} })
+// A subagent's own hooks, as captured on 1.0.103: they carry agentId, the root agent's never do
+const subOf = (e: object) => ({ ...e, sessionId: 'sub-1', agentId: 'sub-1', agentType: 'task', parentAgentId: 'S' })
 const patch = (body: string) => `*** Begin Patch\n${body}\n*** End Patch\n`
 const post = (over: object) => ({ hook_event_name: 'postToolUse', cwd: CWD, toolResult: { resultType: 'success', textResultForLlm: 'Added 1 file(s)' }, ...over })
 const stop = { hook_event_name: 'agentStop', stopReason: 'end_turn' }
@@ -37,7 +42,53 @@ describe('copilot step', () => {
     expect(run([r(stop)]).events).toEqual([{ type: 'exec-ended', sessionId: 'S', at: AT }])
   })
 
-  it('a permission request opens attention once, and a tool result closes it', () => {
+  it('only a shown prompt opens attention: a permissionRequest or other notification does not', () => {
+    const quiet = [{ hook_event_name: 'permissionRequest', toolName: 'bash' }, { hook_event_name: 'notification', notification_type: 'agent_idle' }]
+    expect(run([r(prompt), ...quiet.map((q) => r(q))]).events.map((e) => e.type)).toEqual(['exec-started'])
+  })
+
+  it('an elicitation is a question, and its tool result closes it', () => {
+    const { fold, events } = run([r(prompt), r(ask), r(post({ toolName: 'ask_user', toolArgs: {} }))])
+    expect(events.filter((e) => e.type === 'pending')).toEqual([
+      { type: 'pending', sessionId: 'S', id: 'q:main', kind: 'question', open: true },
+      { type: 'pending', sessionId: 'S', id: 'q:main', kind: 'question', open: false },
+    ])
+    expect(fold.pending.size).toBe(0)
+  })
+
+  it('a subagent\'s prompt, tool calls and stop never start or end the turn', () => {
+    const turn = run([r(prompt), r(pre('task')), r(subOf(prompt)), r(subOf(pre('bash'))), r(subOf(post({ toolName: 'bash' }))), r(subOf(stop))])
+    expect(turn.events.map((e) => e.type)).toEqual(['exec-started'])
+    expect(turn.fold.running).toBe(true)
+    expect(run([r(post({ toolName: 'task' })), r(stop)], turn.fold).events.map((e) => e.type)).toEqual(['exec-ended'])
+    // a background subagent still working after the turn ended leaves the card done
+    const done = run([r(prompt), r(stop), r(subOf(prompt)), r(subOf(pre('bash'))), r(subOf(stop))])
+    expect(done.events.map((e) => e.type)).toEqual(['exec-started', 'exec-ended'])
+  })
+
+  it('a subagent\'s shown permission prompt still opens attention, and its write is still linked', () => {
+    const { events } = run([r(prompt), r(subOf(perm)), r(subOf(post({ toolName: 'apply_patch', toolArgs: patch('*** Add File: s.txt') })))])
+    expect(events.map((e) => e.type)).toEqual(['exec-started', 'pending', 'pending', 'wrote'])
+  })
+
+  it('an abort or shutdown from the session log ends a running turn, unless it is older than the turn', () => {
+    const t0 = 1793131008419
+    const started = run([r({ ...prompt, timestamp: t0 })]).fold
+    for (const type of ['abort', 'session.shutdown']) {
+      const { fold, events } = run([r(perm), r({ hook_event_name: type }, '2026-10-27T19:57:09.598Z')], started)
+      expect(events.map((e) => e.type)).toEqual(['pending', 'pending', 'exec-ended'])
+      expect(fold).toMatchObject({ running: false, idleAt: '2026-10-27T19:57:09.598Z' })
+    }
+    const stale = new Date(t0 - 1).toISOString()
+    expect(run([r({ hook_event_name: 'abort' }, stale)], started).fold.running).toBe(true)
+    expect(run([r({ hook_event_name: 'abort' })]).events).toEqual([])
+  })
+
+  it('the turn ends at Copilot\'s own millisecond timestamp when the payload has one', () => {
+    expect(run([r(prompt), r({ ...stop, timestamp: 1792698805842 })]).fold.idleAt).toBe(new Date(1792698805842).toISOString())
+  })
+
+  it('a permission prompt opens attention once, and a tool result closes it', () => {
     const { fold, events } = run([r(prompt), r(perm), r(perm), r(post({ toolName: 'bash', toolArgs: { command: 'ls' } }))])
     expect(events.filter((e) => e.type === 'pending')).toEqual([
       { type: 'pending', sessionId: 'S', id: 'perm:main', kind: 'permission', open: true },
@@ -47,7 +98,7 @@ describe('copilot step', () => {
   })
 
   it('a denied request (no tool result) closes at the end of the turn, a new prompt or a new session start; a parallel tool call does not close it', () => {
-    expect(run([r(prompt), r(perm), r({ hook_event_name: 'preToolUse', toolName: 'bash' })]).fold.pending.size).toBe(1)
+    expect(run([r(prompt), r(perm), r(pre('bash'))]).fold.pending.size).toBe(1)
     for (const next of [stop, prompt, { hook_event_name: 'sessionStart', source: 'resume' }]) {
       const { fold } = run([r(prompt), r(perm), r(next)])
       expect(fold.pending.size).toBe(0)

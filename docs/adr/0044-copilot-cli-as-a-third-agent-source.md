@@ -43,8 +43,18 @@ and how a subagent role gets its model. The plan is `03-plan.md` in that folder.
 
 ## Consequences
 
-- Copilot shows working, done and permission attention, and links files it writes. No
-  question attention, subagent marks or context gauge: Copilot gave no verified signal.
+- Copilot shows working, done, and permission and question attention, and links files it writes. No
+  subagent marks or context gauge: Copilot gave no verified signal.
+- Amended 2026-10-27 (verified on 1.0.103 in `-p` runs and an interactive tmux pane):
+  - Attention comes from the `notification` hook (`permission_prompt`, `elicitation_dialog`), which
+    fires only for a prompt actually shown; `permissionRequest` fired for auto-approved calls too and
+    flickered the card.
+  - A subagent's hooks land in the same spool, its own `userPromptSubmitted` and `agentStop` included
+    (copilot-cli#3894), and carry `agentId`; the root agent's never do. They no longer start or end
+    the turn, which flipped the card done and back to working mid-turn.
+  - An interrupted turn (Esc) fires no hook. Grove reads `abort`, and `session.shutdown` as a backup
+    for a `sessionEnd` hook that failed to spawn, from Copilot's own
+    `~/.copilot/session-state/<id>/events.jsonl`: an undocumented format, read only for running turns.
 - Unverified: every check ran in `-p` runs, not in an interactive tmux pane (resume after a
   dead pane, hooks and permission attention in a pane); file-write paths are seen only
   for `apply_patch` and `bash`, `edit` and `create` are handled but unseen; the D4

@@ -1,15 +1,18 @@
 import { execFile } from 'node:child_process'
 import { randomUUID } from 'node:crypto'
 import fs from 'node:fs'
+import os from 'node:os'
 import path from 'node:path'
 import type { AgentEvent, AgentSource, SessionSnapshot } from '../agents/types'
 import { SpoolTail, type SpoolRecord } from '../claude/spool'
+import { CopilotEventLog } from './events'
 import { hooksJson, pluginJson } from './hooks'
 import { emptyFold, step, type CopilotFold } from './normalise'
 
 // GitHub Copilot CLI sessions (D1 = A): a per-launch plugin (`--plugin-dir`) whose hooks append to <dir>/<id>.jsonl,
 // tailed and folded like Claude's spool. A card has status only once its spool has a record (statusNeedsEvent).
-// Signals: working/done, permission attention, write paths. Not signalled (unverified or absent): questions, subagents, context.
+// Signals: working/done, permission and question attention, write paths; a running turn's Esc or shutdown comes from
+// Copilot's own events.jsonl (events.ts). Not signalled: subagents, context.
 // Verified on copilot 1.0.102: `--session-id <uuid>` sets the id of a new session; `--resume=<id>` resumes it.
 const PROBE_TIMEOUT_MS = 5_000
 
@@ -29,12 +32,16 @@ export class CopilotSource implements AgentSource {
   readonly statusNeedsEvent = true
   private readonly folds = new Map<string, CopilotFold>()
   private readonly tail: SpoolTail
+  private readonly log: CopilotEventLog
+  private timer: ReturnType<typeof setInterval> | undefined
   private onEvent: ((e: AgentEvent) => void) | null = null
   private found = false // a positive probe is kept: the login-shell start-up costs time on every create
 
-  // `dir` holds the spools and one plugin folder per session. `onPath` is injected for tests; the default asks the login shell.
-  constructor(private readonly opts: { dir: string; shell?: string; onPath?: () => Promise<boolean> }) {
+  // `dir` holds the spools and one plugin folder per session. `home` is Copilot's own dir (default $COPILOT_HOME or
+  // ~/.copilot). `onPath` is injected for tests; the default asks the login shell.
+  constructor(private readonly opts: { dir: string; home?: string; shell?: string; onPath?: () => Promise<boolean> }) {
     this.tail = new SpoolTail(opts.dir, (id, records, initial) => this.fold(id, records, initial))
+    this.log = new CopilotEventLog(opts.home ?? process.env.COPILOT_HOME ?? path.join(os.homedir(), '.copilot'))
   }
 
   mintId(): string {
@@ -60,6 +67,12 @@ export class CopilotSource implements AgentSource {
     this.onEvent = onEvent
     this.tail.start() // records already there are folded without events
     onEvent({ type: 'connected', version: 'spool' })
+    this.timer = setInterval(() => this.pollLog(), 1000)
+  }
+
+  // Only a running turn can be ended by an abort or shutdown, so only those logs are read.
+  pollLog(): void {
+    for (const [id, f] of this.folds) if (f.running) this.fold(id, this.log.read(id), false)
   }
 
   async snapshot(ids: string[]): Promise<Map<string, SessionSnapshot>> {
@@ -80,12 +93,14 @@ export class CopilotSource implements AgentSource {
   forget(id: string): void {
     this.folds.delete(id)
     this.tail.forget(id)
+    this.log.forget(id)
     fs.rmSync(this.spool(id), { force: true })
     fs.rmSync(this.pluginDir(id), { recursive: true, force: true })
   }
 
   stop(): void {
     this.tail.stop()
+    clearInterval(this.timer)
   }
 
   private spool(id: string): string {
