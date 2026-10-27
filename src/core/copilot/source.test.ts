@@ -82,6 +82,31 @@ describe('CopilotSource', () => {
     s.stop()
   })
 
+  it('reads the context gauge from Copilot\'s usage records, also just after the turn ends and after a restart', async () => {
+    const s = new CopilotSource({ dir, home, onPath: async () => true })
+    const id = s.mintId()
+    const events: AgentEvent[] = []
+    s.start((e) => events.push(e))
+    const hook = (e: object) => fs.appendFileSync(path.join(dir, `${id}.jsonl`), JSON.stringify({ t: '2026-10-27T19:57:00Z', e }) + '\n')
+    hook({ hook_event_name: 'userPromptSubmitted', timestamp: Date.now() })
+    await vi.waitFor(async () => expect((await s.snapshot([id])).get(id)).toMatchObject({ running: true }), { timeout: 4000 })
+    hook({ hook_event_name: 'agentStop', timestamp: Date.now() }) // reported before the poll reads the last usage record
+    await vi.waitFor(async () => expect((await s.snapshot([id])).get(id)).toMatchObject({ running: false }), { timeout: 4000 })
+    const log = path.join(home, 'session-state', id, 'events.jsonl')
+    fs.mkdirSync(path.dirname(log), { recursive: true })
+    const usage = { model: 'gpt-6-luna', inputTokens: 68000, maxPromptTokens: 272000 }
+    fs.writeFileSync(log, JSON.stringify({ type: 'session.usage_record', agentId: null, data: { usage }, timestamp: new Date().toISOString() }) + '\n')
+    const context = { pct: 25, tokens: 68000, window: 272000, model: 'gpt-6-luna' }
+    await vi.waitFor(async () => expect((await s.snapshot([id])).get(id)?.context).toEqual(context), { timeout: 4000 })
+    expect(events.map((e) => e.type)).toEqual(['connected', 'exec-started', 'exec-ended', 'context'])
+    s.stop()
+    const again = new CopilotSource({ dir, home, onPath: async () => true })
+    again.start(() => {})
+    expect((await again.snapshot([id])).get(id)?.context).toEqual(context)
+    again.forget(id)
+    again.stop()
+  })
+
   it('refuses a create with no-copilot when the binary is not on the login shell PATH', async () => {
     expect(await new CopilotSource({ dir, onPath: async () => false }).preflight()).toBe('no-copilot')
     expect(await source.preflight()).toBeNull()

@@ -1,5 +1,5 @@
 import path from 'node:path'
-import type { AgentEvent } from '../agents/types'
+import type { AgentEvent, ContextUsage } from '../agents/types'
 import type { SpoolRecord } from '../claude/spool'
 
 // One Copilot spool's live state; also its snapshot. `id` is the spool's file id, every event's sessionId.
@@ -10,9 +10,10 @@ export interface CopilotFold {
   startedAt: string | null // when the current turn started: an abort or shutdown read from before it is stale
   pending: Map<string, 'permission' | 'question'> // perm:main and q:main, from shown prompts only
   lastWrite: string[] // paths of the latest successful write; [] if none
+  context: ContextUsage | null // the latest root-agent usage record's reading
 }
 
-export const emptyFold = (id: string): CopilotFold => ({ id, running: false, idleAt: null, startedAt: null, pending: new Map(), lastWrite: [] })
+export const emptyFold = (id: string): CopilotFold => ({ id, running: false, idleAt: null, startedAt: null, pending: new Map(), lastWrite: [], context: null })
 
 interface Hook {
   hook_event_name?: unknown
@@ -23,6 +24,7 @@ interface Hook {
   toolName?: unknown
   toolArgs?: unknown
   toolResult?: unknown
+  usage?: unknown
 }
 
 const str = (v: unknown): string | null => (typeof v === 'string' ? v : null)
@@ -54,6 +56,20 @@ function writePaths(e: Hook): string[] {
   return []
 }
 
+const num = (v: unknown) => (typeof v === 'number' && Number.isFinite(v) ? v : null)
+
+// A usage record's reading (verified on 1.0.103): `inputTokens` is the whole prompt, cache included; `maxPromptTokens`
+// is the prompt budget the CLI itself tracks (below the model's raw window). Copilot reports no percentage of its own.
+function readContext(e: Hook): ContextUsage {
+  const u = (typeof e.usage === 'object' && e.usage !== null ? e.usage : {}) as Record<string, unknown>
+  const tokens = num(u.inputTokens)
+  const window = num(u.maxPromptTokens)
+  return { pct: tokens !== null && window ? (tokens / window) * 100 : null, tokens, window, model: str(u.model) }
+}
+
+const sameContext = (a: ContextUsage | null, b: ContextUsage) =>
+  a !== null && a.pct === b.pct && a.tokens === b.tokens && a.window === b.window && a.model === b.model
+
 const succeeded = (r: unknown) => typeof r === 'object' && r !== null && (r as { resultType?: unknown }).resultType === 'success'
 
 // `t` is UTC to the second; seen marks carry milliseconds, and they compare as strings. Copilot's own `timestamp`
@@ -67,7 +83,8 @@ const at = (r: SpoolRecord, e: Hook) => (typeof e.timestamp === 'number' && Numb
 // including its own userPromptSubmitted and agentStop: they never start or end the turn, so a background subagent
 // still working after the turn ends does not flip the card back to working.
 // `abort` (Esc) and `session.shutdown` come from Copilot's events.jsonl (events.ts), as no hook fires for an
-// interrupted turn; one from before the current turn started is stale. Never mutates `f`.
+// interrupted turn; one from before the current turn started is stale. A root-agent usage record from the same log is a
+// new context reading. Never mutates `f`.
 export function step(f: CopilotFold, r: SpoolRecord): { fold: CopilotFold; events: AgentEvent[] } {
   if (typeof r.e !== 'object' || r.e === null) return { fold: f, events: [] }
   const e = r.e as Hook
@@ -144,6 +161,13 @@ export function step(f: CopilotFold, r: SpoolRecord): { fold: CopilotFold; event
       closeAll()
       end()
       break
+    case 'session.usage_record': {
+      const context = readContext(e)
+      if (sub || sameContext(fold.context, context)) break
+      fold = { ...fold, context }
+      events.push({ type: 'context', sessionId, context })
+      break
+    }
   }
   return fold === f ? { fold: f, events } : { fold, events }
 }

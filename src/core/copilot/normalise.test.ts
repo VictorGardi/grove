@@ -145,4 +145,20 @@ describe('copilot step', () => {
     expect(step(f, r({ hook_event_name: 'sessionStart', source: 'new' })).fold).toBe(f)
     expect(step(f, { t: T, e: 'x' }).fold).toBe(f)
   })
+
+  describe('context', () => {
+    const usage = (inputTokens: number, over: object = {}) => ({ hook_event_name: 'session.usage_record', usage: { model: 'gpt-6-luna', inputTokens, outputTokens: 39, maxPromptTokens: 272000 }, ...over })
+
+    it('a root usage record is a reading of the prompt against its budget; an unchanged one is not repeated', () => {
+      const { fold, events } = run([r(usage(27200)), r(usage(27200))])
+      const context = { pct: 10, tokens: 27200, window: 272000, model: 'gpt-6-luna' }
+      expect(events).toEqual([{ type: 'context', sessionId: 'S', context }])
+      expect(fold.context).toEqual(context)
+    })
+
+    it('ignores a subagent\'s usage, and a record without a budget has no percentage', () => {
+      expect(run([r(usage(1000, { agentId: 'sub-1' }))]).events).toEqual([])
+      expect(run([r({ hook_event_name: 'session.usage_record', usage: { inputTokens: 5 } })]).fold.context).toEqual({ pct: null, tokens: 5, window: null, model: null })
+    })
+  })
 })

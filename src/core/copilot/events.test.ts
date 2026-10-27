@@ -25,6 +25,15 @@ describe('CopilotEventLog', () => {
     expect(log.read('s')).toEqual([{ t: shutdown.timestamp, e: { hook_event_name: 'session.shutdown' } }])
   })
 
+  it('reads root-agent usage records with their usage, skipping a subagent\'s', () => {
+    const log = new CopilotEventLog(home)
+    const usage = { model: 'gpt-6-luna', inputTokens: 16159, outputTokens: 39, maxPromptTokens: 272000, parentToolCallId: null }
+    const rec = { type: 'session.usage_record', agentId: null, data: { usage }, id: 'c', timestamp: '2026-10-27T19:55:42.884Z' }
+    fs.mkdirSync(path.dirname(file('u')), { recursive: true })
+    fs.writeFileSync(file('u'), line({ ...rec, agentId: 'sub' }) + line(rec))
+    expect(log.read('u')).toEqual([{ t: rec.timestamp, e: { hook_event_name: 'session.usage_record', usage } }])
+  })
+
   it('a first read of a large log starts near its end, and forget starts over', () => {
     const log = new CopilotEventLog(home)
     fs.mkdirSync(path.dirname(file('big')), { recursive: true })

@@ -31,7 +31,7 @@ export interface Session {
   pr?: PullRequest | null          // live sessions: the PR for that branch, from `gh`; never saved
   status?: 'working' | 'waiting' | 'idle' // agent sessions while their service is connected, terminals from the foreground command; never saved
   waitingFor?: 'permission' | 'question' | 'done' // with status 'waiting'; never saved
-  contextPct?: number | null       // Claude sessions once a reading arrived: % of the context window used; null: not known yet; never saved
+  contextPct?: number | null       // agent sessions once a reading arrived: % of the context window used; null: not known yet; never saved
   contextTokens?: number | null    // tokens in context (input incl. cache); never saved
   contextWindow?: number | null    // size of the context window in tokens; never saved
   model?: string | null            // the model in use; never saved

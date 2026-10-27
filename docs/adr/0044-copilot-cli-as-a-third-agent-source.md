@@ -55,6 +55,12 @@ and how a subagent role gets its model. The plan is `03-plan.md` in that folder.
   - An interrupted turn (Esc) fires no hook. Grove reads `abort`, and `session.shutdown` as a backup
     for a `sessionEnd` hook that failed to spawn, from Copilot's own
     `~/.copilot/session-state/<id>/events.jsonl`: an undocumented format, read only for running turns.
+- Amended 2026-10-27 (verified on 1.0.103 against real session logs): the context gauge comes from the
+  same log. Each root-agent `session.usage_record` (`agentId` null; a subagent's names it) gives
+  `data.usage.inputTokens` (the whole prompt, cache included) against `maxPromptTokens` (the prompt
+  budget the CLI tracks, below the model's raw window), and the model. The log is also read for a few
+  seconds after a turn ends, since its last usage record can trail the `agentStop` hook, and once at
+  start so a restart keeps the last reading.
 - Unverified: every check ran in `-p` runs, not in an interactive tmux pane (resume after a
   dead pane, hooks and permission attention in a pane); file-write paths are seen only
   for `apply_patch` and `bash`, `edit` and `create` are handled but unseen; the D4

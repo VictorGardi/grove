@@ -12,9 +12,10 @@ import { emptyFold, step, type CopilotFold } from './normalise'
 // GitHub Copilot CLI sessions (D1 = A): a per-launch plugin (`--plugin-dir`) whose hooks append to <dir>/<id>.jsonl,
 // tailed and folded like Claude's spool. A card has status only once its spool has a record (statusNeedsEvent).
 // Signals: working/done, permission and question attention, write paths; a running turn's Esc or shutdown comes from
-// Copilot's own events.jsonl (events.ts). Not signalled: subagents, context.
+// Copilot's own events.jsonl (events.ts), as is the context gauge (its usage records). Not signalled: subagents.
 // Verified on copilot 1.0.102: `--session-id <uuid>` sets the id of a new session; `--resume=<id>` resumes it.
 const PROBE_TIMEOUT_MS = 5_000
+const DRAIN_MS = 5_000 // a turn's last usage record lands just before its end, which the agentStop hook can report first
 
 // Whether `copilot` is on the PATH of the login shell the pane is built on (`loginShellArgv`), never a throw:
 // a probe that fails to run counts as missing, so the human is told rather than left with a dead pane. A probe
@@ -66,13 +67,16 @@ export class CopilotSource implements AgentSource {
   start(onEvent: (e: AgentEvent) => void): void {
     this.onEvent = onEvent
     this.tail.start() // records already there are folded without events
+    for (const id of this.folds.keys()) this.fold(id, this.log.read(id), true) // the last context reading, after a restart
     onEvent({ type: 'connected', version: 'spool' })
     this.timer = setInterval(() => this.pollLog(), 1000)
   }
 
-  // Only a running turn can be ended by an abort or shutdown, so only those logs are read.
-  pollLog(): void {
-    for (const [id, f] of this.folds) if (f.running) this.fold(id, this.log.read(id), false)
+  // Only a running turn logs usage or can be ended by an abort or shutdown, so only its log is read, plus that of a turn
+  // that just ended (its last usage record).
+  pollLog(now = Date.now()): void {
+    for (const [id, f] of this.folds)
+      if (f.running || (f.idleAt !== null && now - Date.parse(f.idleAt) < DRAIN_MS)) this.fold(id, this.log.read(id), false)
   }
 
   async snapshot(ids: string[]): Promise<Map<string, SessionSnapshot>> {
@@ -80,7 +84,7 @@ export class CopilotSource implements AgentSource {
     for (const id of ids) {
       const f = this.folds.get(id)
       if (!f) continue // no record yet: no status (live gate)
-      out.set(id, { running: f.running, idleAt: f.idleAt, pending: [...f.pending].map(([id, kind]) => ({ id, kind })), children: [] })
+      out.set(id, { running: f.running, idleAt: f.idleAt, pending: [...f.pending].map(([id, kind]) => ({ id, kind })), children: [], ...(f.context && { context: f.context }) })
     }
     return out
   }
