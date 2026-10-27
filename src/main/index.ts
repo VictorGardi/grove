@@ -1,7 +1,7 @@
 import os from 'node:os'
 import path from 'node:path'
 import { execFile } from 'node:child_process'
-import { app, BrowserWindow, dialog, Notification } from 'electron'
+import { app, BrowserWindow, dialog, nativeTheme, Notification } from 'electron'
 import { chromeBackground } from '@shared/theme'
 import { TmuxBackend } from '../core/backend/tmux'
 import { createCore } from '../core/core'
@@ -67,6 +67,8 @@ async function installSkill(): Promise<void> {
 
 app.whenReady().then(async () => {
   if (!gotLock) return
+  // the UI is dark-only; pin the appearance so the window vibrancy is the dark material even in system Light mode
+  nativeTheme.themeSource = 'dark'
   const errors: string[] = []
   const tmuxPath = findTmux(process.env)
   if (!tmuxPath) errors.push('tmux not found (looked in PATH, /opt/homebrew/bin, /usr/local/bin)')
