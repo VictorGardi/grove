@@ -451,20 +451,35 @@
   cursor: default;
 }
 
-/* a parent's children, a small step in under it: a thin line down that step ties them to it */
+/* A clear step from the parent, with a branch rail through the child rows. */
 .kids {
   position: relative;
-  padding-left: 6px;
+  padding-left: 18px;
 }
 
 .kids::before {
   content: '';
   position: absolute;
-  left: 2px;
+  left: 8px;
   top: 4px;
   bottom: 4px;
   width: 1px;
   border-radius: 1px;
+  background: var(--glass-border-strong);
+  pointer-events: none;
+}
+
+.kids > .slot {
+  border-top: 0;
+}
+
+.kids > .slot > div::before {
+  content: '';
+  position: absolute;
+  left: -10px;
+  top: 13px;
+  width: 9px;
+  height: 1px;
   background: var(--glass-border-strong);
   pointer-events: none;
 }
@@ -474,15 +489,17 @@
   display: inline-flex;
   align-items: center;
   gap: 3px;
-  padding: 0 6px 0 4px;
-  height: 14px;
+  flex-shrink: 0;
+  padding: 0 7px 0 5px;
+  height: 18px;
   line-height: 1;
   border: 1px solid var(--card-border);
   border-radius: var(--r-pill);
   background: var(--chrome-bg);
   color: var(--text-2);
   font: inherit;
-  font-size: 10px;
+  font-size: 11px;
+  white-space: nowrap;
   cursor: pointer;
 }
 
@@ -506,6 +523,10 @@
   border-top: 1px solid var(--divider);
 }
 
+.kids > .stackRun {
+  border-top: 0;
+}
+
 .stack {
   position: relative;
   display: flex;
@@ -522,6 +543,17 @@
   font-size: var(--fs-sm);
   text-align: left;
   cursor: pointer;
+}
+
+.kids > .stackRun > .stack::before {
+  content: '';
+  position: absolute;
+  left: -10px;
+  top: 12px;
+  width: 9px;
+  height: 1px;
+  background: var(--glass-border-strong);
+  pointer-events: none;
 }
 
 .stack:hover {

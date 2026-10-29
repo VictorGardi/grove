@@ -132,8 +132,15 @@ describe('SessionMeta stacked, in the content header', () => {
     expect(html.match(/class="[^"]*(?<![a-zA-Z0-9-])line(?![a-zA-Z0-9-])[^"]*"/g)).toHaveLength(2)
   })
 
+  it('renders the branch as a copy button', () => {
+    const html = stacked()
+    expect(html).toContain('aria-label="Copy branch feature/long-branch"')
+    expect(html).toContain('title="Copy branch: feature/long-branch"')
+    expect(html).toContain('aria-live="polite"')
+  })
+
   it("colours a worktree's branch and names the worktree in its title", () => {
-    const branch = (html: string) => html.match(/<span class="([^"]*)" title="([^"]*)">feature\/long-branch</)
+    const branch = (html: string) => html.match(/<button type="button" class="([^"]*)" aria-label="Copy branch feature\/long-branch" title="([^"]*)"/)
     expect(branch(stacked())?.[1]).not.toMatch(/(?<![a-zA-Z0-9-])worktree(?![a-zA-Z0-9-])/)
     const html = renderToStaticMarkup(createElement(SessionMeta, {
       lead: 'slice-3', session: session('slice-3', { branch: 'feature/long-branch' }),

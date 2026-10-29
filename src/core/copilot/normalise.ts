@@ -113,6 +113,15 @@ export function step(f: CopilotFold, r: SpoolRecord): { fold: CopilotFold; event
   }
 
   switch (e.hook_event_name) {
+    case 'assistant.turn_start':
+      if (sub || fold.running) break
+      begin()
+      break
+    case 'assistant.turn_end':
+      if (sub) break
+      closeAll()
+      end()
+      break
     case 'userPromptSubmitted':
       if (sub) break
       closeAll()

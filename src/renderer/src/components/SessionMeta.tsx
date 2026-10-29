@@ -1,12 +1,56 @@
-import type { ReactNode } from 'react'
+import { useEffect, useRef, useState, type MouseEvent, type ReactNode } from 'react'
 import type { Project, Session } from '@shared/types'
 import type { Family } from '../family'
 import { statusTone, statusView } from '../sessionStatus'
 import { BranchMark, showsPr } from './BranchMark'
 import { ChildrenPopover } from './ChildrenPopover'
+import { Icon } from './ui/Icon'
 import { StatusDot } from './ui/StatusDot'
 import { cx } from './ui/cx'
 import s from './SessionMeta.module.css'
+
+function BranchCopyButton({ branch, worktree }: { branch: string; worktree?: Project }) {
+  const [copyState, setCopyState] = useState<'idle' | 'copied' | 'failed'>('idle')
+  const reset = useRef<number | null>(null)
+
+  useEffect(() => () => {
+    if (reset.current !== null) window.clearTimeout(reset.current)
+  }, [])
+
+  async function copy(e: MouseEvent<HTMLButtonElement>) {
+    e.stopPropagation()
+    if (reset.current !== null) window.clearTimeout(reset.current)
+    try {
+      await navigator.clipboard.writeText(branch)
+      setCopyState('copied')
+    } catch (error) {
+      console.error(`Failed to copy branch "${branch}" to the clipboard`, error)
+      setCopyState('failed')
+    }
+    reset.current = window.setTimeout(() => {
+      setCopyState('idle')
+      reset.current = null
+    }, 1400)
+  }
+
+  const detail = worktree ? `\nWorktree: ${worktree.path}` : ''
+  const title = copyState === 'copied' ? `Copied branch: ${branch}`
+    : copyState === 'failed' ? `Could not copy branch: ${branch}`
+      : `Copy branch: ${branch}${detail}`
+  const announcement = copyState === 'copied' ? 'Branch copied to clipboard'
+    : copyState === 'failed' ? 'Could not copy branch to clipboard'
+      : ''
+
+  return (
+    <button type="button" className={cx(s.truncate, s.branchCopy, worktree && s.worktree)}
+      aria-label={`Copy branch ${branch}`} title={title} onClick={(e) => void copy(e)}>
+      <span className={s.truncate}>{branch}</span>
+      {copyState === 'copied' && <Icon name="check" size={12} className={s.copySuccess} />}
+      {copyState === 'failed' && <Icon name="info" size={12} className={s.copyFailed} />}
+      <span className={s.srOnly} aria-live="polite">{announcement}</span>
+    </button>
+  )
+}
 
 // The row that names a session, shared by the content header and a grid pane header so the two
 // cannot drift: same facts, same order, same type. `lead` is whatever identifies it — the
@@ -31,8 +75,7 @@ export function SessionMeta({ lead, trail, session, worktree, context, actions, 
     <span className={s.branch}>
       <BranchMark pr={session.pr} />
       {session.pr && showsPr(session.pr) && <a className={s.pr} href={session.pr.url} target="_blank" rel="noreferrer" title={`Pull request #${session.pr.number} (${session.pr.state})`}>#{session.pr.number}</a>}
-      <span className={cx(s.truncate, worktree && s.worktree)}
-        title={worktree ? `${session.branch}\nWorktree: ${worktree.path}` : session.branch}>{session.branch}</span>
+      <BranchCopyButton branch={session.branch} worktree={worktree} />
     </span>
   )
   const facts = (

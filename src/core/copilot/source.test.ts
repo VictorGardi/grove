@@ -66,6 +66,31 @@ describe('CopilotSource', () => {
     source.stop()
   })
 
+  it('restores and polls root turn status from Copilot events when the hook spool is empty', async () => {
+    const s = new CopilotSource({ dir, home, onPath: async () => true })
+    const id = s.mintId()
+    s.argv(id, 'start')
+    const events: AgentEvent[] = []
+    s.start((e) => events.push(e))
+    const log = path.join(home, 'session-state', id, 'events.jsonl')
+    fs.mkdirSync(path.dirname(log), { recursive: true })
+    const record = (type: string, timestamp: string) => JSON.stringify({ type, id: `${type}-${timestamp}`, timestamp }) + '\n'
+    fs.writeFileSync(log, record('assistant.turn_start', '2026-10-29T08:00:00.000Z'))
+    expect((await s.snapshot([id])).get(id)).toMatchObject({ running: true, idleAt: null })
+    expect(events.map((e) => e.type)).toEqual(['connected'])
+
+    fs.appendFileSync(log, record('assistant.turn_end', '2026-10-29T08:00:09.000Z'))
+    s.pollLog()
+    expect((await s.snapshot([id])).get(id)).toMatchObject({ running: false, idleAt: '2026-10-29T08:00:09.000Z' })
+    fs.appendFileSync(log, record('assistant.turn_start', '2026-10-29T08:01:00.000Z'))
+    s.pollLog()
+    expect((await s.snapshot([id])).get(id)).toMatchObject({ running: true })
+    expect(events.map((e) => e.type)).toEqual(['connected', 'exec-ended', 'exec-started'])
+
+    s.forget(id)
+    s.stop()
+  })
+
   it('ends a running turn when Copilot logs an abort, which no hook reports', async () => {
     const s = new CopilotSource({ dir, home, onPath: async () => true })
     const id = s.mintId()

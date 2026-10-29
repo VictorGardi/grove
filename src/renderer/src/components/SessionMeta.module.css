@@ -50,6 +50,59 @@
   color: var(--text-2);
 }
 
+.branchCopy {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--sp-1);
+  flex: 0 2 auto;
+  min-width: 0;
+  max-width: 100%;
+  padding: 0;
+  border: 0;
+  background: none;
+  color: inherit;
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+
+.branchCopy:hover {
+  color: var(--text);
+  text-decoration: underline;
+}
+
+.branchCopy:focus-visible {
+  border-radius: 2px;
+  outline: 1px solid var(--focus-border);
+  outline-offset: 2px;
+}
+
+.branchCopy > .truncate {
+  min-width: 0;
+}
+
+.copySuccess {
+  flex: none;
+  color: var(--status-working);
+}
+
+.copyFailed {
+  flex: none;
+  color: var(--danger);
+}
+
+.srOnly {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  margin: -1px;
+  overflow: hidden;
+  clip: rect(0, 0, 0, 0);
+  white-space: nowrap;
+  border: 0;
+}
+
 .status {
   white-space: nowrap;
 }

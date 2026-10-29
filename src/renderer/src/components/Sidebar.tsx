@@ -10,6 +10,7 @@ import { GROUP_BY_OPTIONS, SORT_OPTIONS, canDrop, dropSession, groupSize, kidRow
 import { repoRows } from '../repoGroups'
 import { colorTags } from '../tags'
 import { branchCut } from '../branchCut'
+import { childrenCount } from '../family'
 import { linkedFeature } from '../tree'
 import { workflowStatusOf, WORKFLOW_STATUSES } from '../workflowStatus'
 import { Badge } from './ui/Badge'
@@ -83,7 +84,7 @@ function SessionCard({ s, feature, worktree, focused, picked, compact, since, no
               {/* collapsed, the most urgent child shows through: a waiting child is never hidden */}
               {kids.collapsed && (() => { const u = mostUrgent(kids.list); return u && <StatusDot tone={statusTone(u)} /> })()}
               <Icon name={kids.collapsed ? 'chevron-right' : 'chevron-down'} size={10} />
-              {kids.list.length}
+              {childrenCount(kids.list.length)}
             </button>
           )}
           {s.kind === 'terminal' && <span className={css.kindMark} title={KIND_LABEL.terminal} aria-label={KIND_LABEL.terminal}><Icon name="terminal" size={12} /></span>}

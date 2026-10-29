@@ -8,16 +8,22 @@ describe('CopilotEventLog', () => {
   const home = fs.mkdtempSync(path.join(os.tmpdir(), 'grove-copilot-home-'))
   const file = (id: string) => path.join(home, 'session-state', id, 'events.jsonl')
   const line = (o: object) => JSON.stringify(o) + '\n'
-  // shapes as Copilot 1.0.103 writes them
+  // Shapes captured from Copilot 1.0.105.
   const abort = { type: 'abort', data: { reason: 'user_abort' }, id: 'a', timestamp: '2026-10-27T19:57:09.598Z', parentId: 'p' }
   const shutdown = { type: 'session.shutdown', data: { shutdownType: 'routine' }, id: 'b', timestamp: '2026-10-27T19:57:22.509Z', parentId: 'a' }
 
-  it('reads root-agent abort and shutdown records once each, skipping other types and a subagent\'s', () => {
+  it('reads root turn boundaries, abort and shutdown once each, skipping other types and a subagent\'s', () => {
     const log = new CopilotEventLog(home)
     expect(log.read('none')).toEqual([])
     fs.mkdirSync(path.dirname(file('s')), { recursive: true })
-    fs.writeFileSync(file('s'), line({ type: 'assistant.turn_end', data: { turnId: '0' }, timestamp: 'x' }) + line({ ...abort, agentId: 'sub' }) + line(abort))
-    expect(log.read('s')).toEqual([{ t: abort.timestamp, e: { hook_event_name: 'abort' } }])
+    const turnStart = { type: 'assistant.turn_start', data: { turnId: '0' }, timestamp: '2026-10-27T19:57:00.000Z' }
+    const turnEnd = { type: 'assistant.turn_end', data: { turnId: '0' }, timestamp: '2026-10-27T19:57:09.000Z' }
+    fs.writeFileSync(file('s'), line(turnStart) + line({ ...turnStart, agentId: 'sub' }) + line(turnEnd) + line({ ...abort, agentId: 'sub' }) + line(abort))
+    expect(log.read('s')).toEqual([
+      { t: turnStart.timestamp, e: { hook_event_name: 'assistant.turn_start' } },
+      { t: turnEnd.timestamp, e: { hook_event_name: 'assistant.turn_end' } },
+      { t: abort.timestamp, e: { hook_event_name: 'abort' } },
+    ])
     expect(log.read('s')).toEqual([])
     fs.appendFileSync(file('s'), line(shutdown).slice(0, 20)) // a line still being written waits
     expect(log.read('s')).toEqual([])

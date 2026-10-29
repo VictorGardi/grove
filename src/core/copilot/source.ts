@@ -9,14 +9,11 @@ import { CopilotEventLog } from './events'
 import { hooksJson, pluginJson } from './hooks'
 import { emptyFold, step, type CopilotFold } from './normalise'
 
-// GitHub Copilot CLI sessions (D1 = A): a per-launch plugin (`--plugin-dir`) whose hooks append to <dir>/<id>.jsonl,
-// tailed and folded like Claude's spool. A card has status only once its spool has a record (statusNeedsEvent).
-// Signals: working/done, permission and question attention, write paths; a running turn's Esc or shutdown comes from
-// Copilot's own events.jsonl (events.ts), as is the context gauge (its usage records). Not signalled: subagents.
+// GitHub Copilot CLI sessions: a per-launch plugin (`--plugin-dir`) whose hooks append to <dir>/<id>.jsonl, tailed
+// and folded like Claude's spool. Copilot's own events.jsonl also supplies root turn boundaries, abort/shutdown and
+// context readings when hooks are unavailable. Hooks supply attention and write paths. Not signalled: subagents.
 // Verified on copilot 1.0.102: `--session-id <uuid>` sets the id of a new session; `--resume=<id>` resumes it.
 const PROBE_TIMEOUT_MS = 5_000
-const DRAIN_MS = 5_000 // a turn's last usage record lands just before its end, which the agentStop hook can report first
-
 // Whether `copilot` is on the PATH of the login shell the pane is built on (`loginShellArgv`), never a throw:
 // a probe that fails to run counts as missing, so the human is told rather than left with a dead pane. A probe
 // killed by its timeout (a slow rc file) proves nothing, so it does not refuse: the pane shows any real error.
@@ -32,6 +29,7 @@ export class CopilotSource implements AgentSource {
   readonly kind = 'copilot' as const
   readonly statusNeedsEvent = true
   private readonly folds = new Map<string, CopilotFold>()
+  private readonly watched = new Set<string>()
   private readonly tail: SpoolTail
   private readonly log: CopilotEventLog
   private timer: ReturnType<typeof setInterval> | undefined
@@ -51,6 +49,7 @@ export class CopilotSource implements AgentSource {
 
   // `--interactive=<prompt>` (`-i`) starts the interactive UI and runs the prompt; the `=` form keeps a prompt that starts with `-` from reading as a flag.
   argv(id: string, mode: 'start' | 'resume', opts?: { prompt?: string; name?: string; model?: string }): string[] {
+    this.watched.add(id)
     const session = mode === 'start' ? ['--session-id', id] : [`--resume=${id}`]
     const prompt = mode === 'start' && opts?.prompt ? [`--interactive=${opts.prompt}`] : []
     return ['copilot', ...session, '--plugin-dir', this.writePlugin(id), ...(opts?.model ? ['--model', opts.model] : []), ...prompt]
@@ -67,21 +66,21 @@ export class CopilotSource implements AgentSource {
   start(onEvent: (e: AgentEvent) => void): void {
     this.onEvent = onEvent
     this.tail.start() // records already there are folded without events
-    for (const id of this.folds.keys()) this.fold(id, this.log.read(id), true) // the last context reading, after a restart
+    for (const id of new Set([...this.watched, ...this.folds.keys()])) this.fold(id, this.log.read(id), true)
     onEvent({ type: 'connected', version: 'spool' })
     this.timer = setInterval(() => this.pollLog(), 1000)
   }
 
-  // Only a running turn logs usage or can be ended by an abort or shutdown, so only its log is read, plus that of a turn
-  // that just ended (its last usage record).
-  pollLog(now = Date.now()): void {
-    for (const [id, f] of this.folds)
-      if (f.running || (f.idleAt !== null && now - Date.parse(f.idleAt) < DRAIN_MS)) this.fold(id, this.log.read(id), false)
+  // Keep watching idle sessions too: their next turn can start without another hook or resync.
+  pollLog(): void {
+    for (const id of this.watched) this.fold(id, this.log.read(id), false)
   }
 
   async snapshot(ids: string[]): Promise<Map<string, SessionSnapshot>> {
     const out = new Map<string, SessionSnapshot>()
     for (const id of ids) {
+      this.watched.add(id)
+      this.fold(id, this.log.read(id), !this.folds.has(id))
       const f = this.folds.get(id)
       if (!f) continue // no record yet: no status (live gate)
       out.set(id, { running: f.running, idleAt: f.idleAt, pending: [...f.pending].map(([id, kind]) => ({ id, kind })), children: [], ...(f.context && { context: f.context }) })
@@ -95,6 +94,7 @@ export class CopilotSource implements AgentSource {
 
   // The session was removed: its spool and plugin folder go with it.
   forget(id: string): void {
+    this.watched.delete(id)
     this.folds.delete(id)
     this.tail.forget(id)
     this.log.forget(id)

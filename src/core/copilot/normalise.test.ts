@@ -32,6 +32,16 @@ const post = (over: object) => ({ hook_event_name: 'postToolUse', cwd: CWD, tool
 const stop = { hook_event_name: 'agentStop', stopReason: 'end_turn' }
 
 describe('copilot step', () => {
+  it('uses native root turn boundaries when they are available', () => {
+    const { fold, events } = run([r({ hook_event_name: 'assistant.turn_start' }), r({ hook_event_name: 'assistant.turn_end' })])
+    expect(events).toEqual([
+      { type: 'exec-started', sessionId: 'S' },
+      { type: 'exec-ended', sessionId: 'S', at: AT },
+    ])
+    expect(fold).toMatchObject({ running: false, idleAt: AT })
+    expect(run([r(subOf({ hook_event_name: 'assistant.turn_start' })), r(subOf({ hook_event_name: 'assistant.turn_end' }))]).events).toEqual([])
+  })
+
   it('a prompt starts the turn and agentStop ends it', () => {
     const { fold, events } = run([r(prompt), r(stop)])
     expect(events).toEqual([{ type: 'exec-started', sessionId: 'S' }, { type: 'exec-ended', sessionId: 'S', at: AT }])

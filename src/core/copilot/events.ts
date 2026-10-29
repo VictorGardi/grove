@@ -2,22 +2,20 @@ import fs from 'node:fs'
 import path from 'node:path'
 import type { SpoolRecord } from '../claude/spool'
 
-const TYPES = new Set(['abort', 'session.shutdown', 'session.usage_record'])
+const TYPES = new Set(['abort', 'assistant.turn_start', 'assistant.turn_end', 'session.shutdown', 'session.usage_record'])
 const FIRST_READ_MAX = 1 << 20
 
-// The turn ends no hook reports, read from Copilot's own session log <home>/session-state/<id>/events.jsonl (one JSON
-// object per line; an internal format, verified on 1.0.103). An interrupted turn (Esc) fires no hook but logs
-// {"type":"abort"}; `session.shutdown` backs up a sessionEnd hook that failed to spawn. Tailed by byte offset; a first read
-// starts at most 1 MiB before the end, as the log also carries whole model snapshots.
-// `session.usage_record` (one per model call, written just before the turn ends) carries the prompt size and budget: the
-// context gauge. A subagent's records name it in `agentId`; the root agent's have it null or missing.
+// Copilot's own session log <home>/session-state/<id>/events.jsonl (one JSON object per line) supplies root turn
+// boundaries when hooks are unavailable, plus abort/shutdown and context readings. Tailed by byte offset; a first read
+// starts at most 1 MiB before the end, as the log also carries whole model snapshots. Root turn events have no agentId;
+// subagent events do and are ignored here.
 export class CopilotEventLog {
   private offsets = new Map<string, number>()
 
   constructor(private readonly home: string) {}
 
-  // Root-agent abort, shutdown and usage records appended since the last read, as spool records named by their type;
-  // a usage record keeps its `data.usage` as `usage`.
+  // Root-agent turn, abort, shutdown and usage records appended since the last read, as spool records named by their
+  // type; a usage record keeps its `data.usage` as `usage`.
   read(id: string): SpoolRecord[] {
     let buf: Buffer
     let offset = this.offsets.get(id)
@@ -40,7 +38,8 @@ export class CopilotEventLog {
     this.offsets.set(id, offset + end + 1)
     const out: SpoolRecord[] = []
     for (const line of buf.toString('utf8', 0, end).split('\n')) {
-      if (!line.includes('"abort"') && !line.includes('"session.shutdown"') && !line.includes('"session.usage_record"')) continue
+      if (!line.includes('"abort"') && !line.includes('"assistant.turn_start"') && !line.includes('"assistant.turn_end"')
+        && !line.includes('"session.shutdown"') && !line.includes('"session.usage_record"')) continue
       try {
         const j = JSON.parse(line) as { type?: unknown; timestamp?: unknown; agentId?: unknown; data?: { usage?: unknown } }
         if (typeof j.type !== 'string' || !TYPES.has(j.type) || typeof j.timestamp !== 'string' || j.agentId != null) continue
