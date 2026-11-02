@@ -1,6 +1,6 @@
 import fs from 'node:fs'
 import path from 'node:path'
-import { app, type BrowserWindow, protocol, shell } from 'electron'
+import { app, type BrowserWindow, protocol } from 'electron'
 import mermaidJs from 'mermaid/dist/mermaid.min.js?asset'
 import { ARTIFACT_SCHEME, ASSETS_HOST, isViewable, parseArtifactUrl } from '@shared/artifactUrl'
 import { rewriteHtml } from '../core/artifacts/html'
@@ -76,7 +76,6 @@ const scheme = (url: string) => {
     return ''
   }
 }
-const web = (url: string) => scheme(url) === 'http:' || scheme(url) === 'https:'
 
 const sameDoc = (a: DocTarget, b: ViewerTarget | null) => b !== null && b.kind === 'file' && a.projectId === b.projectId
   && a.path === b.path && a.hash === b.hash
@@ -84,7 +83,9 @@ const sameDoc = (a: DocTarget, b: ViewerTarget | null) => b !== null && b.kind =
 // Artifact frames follow the app: a load the renderer starts by setting an iframe's src (the viewer,
 // a board card's preview, the full-page artifact) has the main frame as initiator and goes through, as
 // does the current ui.viewer. Anything else in a sub-frame is a link clicked inside a sandboxed artifact:
-// artifact links go through uiSet, http(s) to the browser, everything else is denied.
+// artifact links go through uiSet, everything else is denied. Electron 44 gives navigation and window-open
+// events no user-activation signal, so a hostile artifact could not be told from a click: web links in an
+// artifact never reach the browser (D4 fallback).
 export function guardNavigation(win: BrowserWindow, core: Core): void {
   const wc = win.webContents
   wc.on('will-frame-navigate', (e) => {
@@ -105,10 +106,6 @@ export function guardNavigation(win: BrowserWindow, core: Core): void {
       return
     }
     e.preventDefault()
-    if (web(e.url)) void shell.openExternal(e.url)
   })
-  wc.setWindowOpenHandler(({ url }) => {
-    if (web(url)) void shell.openExternal(url)
-    return { action: 'deny' }
-  })
+  wc.setWindowOpenHandler(() => ({ action: 'deny' }))
 }

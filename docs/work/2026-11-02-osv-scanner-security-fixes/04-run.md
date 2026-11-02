@@ -171,4 +171,43 @@ The planner session wrote the files itself instead of delegating to an implement
 
 The first GitHub PR run confirms the pinned action's `--config` handling and the spikes step; a throwaway PR with an expired entry would prove expiry through the action.
 
+## Slice 5
+
+Session: osv-scanner-security-fixes-slice-5-a1
+Status: done
+Commit: this commit (see git log)
+
+### Slice plan
+
+Found in the code: `guardNavigation` in `src/main/artifacts.ts` called `shell.openExternal` for any sub-frame http(s) navigation and from `setWindowOpenHandler`; the `BrowserWindow` in `src/main/index.ts` set only `preload` and `contextIsolation`; no permission handler existed; the renderer CSP had no `base-uri`, `form-action` or `object-src`. Electron 44's `WebContentsWillFrameNavigateEventParams` (url, isSameDocument, isMainFrame, frame, initiator) and `HandlerDetails` (url, frameName, features, disposition, referrer, postBody) carry no user-activation field, so D4 falls back to B.
+
+Implementer 1:
+- [x] `src/main/artifacts.ts`: drop `openExternal` from `will-frame-navigate` and `setWindowOpenHandler` (window.open denied); `artifacts.test.ts` updated
+- [x] `src/main/windowGuard.ts` (new, so it is unit-testable): D5 allow-list, `media` for the file:// or dev-server origin of the main window only, on both the request and the check handler; `will-attach-webview` denied; `windowGuard.test.ts`
+- [x] `src/main/index.ts`: explicit `sandbox: true`, `nodeIntegration: false`, `webSecurity: true`, call `guardWindow`
+- [x] `src/renderer/index.html`: `base-uri 'none'; form-action 'none'; object-src 'none'`
+
+Models passed: implementer: inherit (done directly by the planner session), reviewer: inherit
+
+### Review rounds
+
+Round 1: no blocking findings; non-blocking: the dev-server origin comes from `ELECTRON_RENDERER_URL`, so in dev the handler trusts whatever that variable names; the permission handler is per-session, which is the default session shared by all of Grove's webContents, and it also checks `contents === wc`.
+
+approved, 0 blocking, 0 fix rounds. Non-blocking left: both above.
+
+### Deviations
+
+The planner session wrote the code itself and reviewed the diff itself rather than through subagents. A new file `src/main/windowGuard.ts` (and test) was added beyond the plan's file list. D4 shipped as fallback B: links and `window.open` in artifacts no longer open the browser, noted in the commit message.
+
+### Verification
+
+- `npm test` (110 files, 1335 tests pass), `npm run typecheck` and `npm run build` pass.
+- Tests: `artifacts.test.ts` shows `openExternal` is never called from sub-frame navigation or `window.open`; `windowGuard.test.ts` shows `media` is allowed for the main window and `geolocation` denied, plus artifact, foreign and other-port origins denied and webview attach prevented.
+- The built app was launched (`electron .`, isolated `--user-data-dir`, over CDP, both with the file:// renderer and once picking up an existing dev server URL): `typeof window.api` is `object`, `typeof process` is `undefined` (sandboxed), the board rendered (15 elements under `#root`). The built preload only requires `electron`.
+- Models requested: reviewer inherit.
+
+### Left for the human
+
+Open an artifact in the viewer once and confirm it renders (the artifact protocol and its CSP were not changed, but this was not clicked through in the launched app); links in artifacts no longer open the browser.
+
 ## Open questions

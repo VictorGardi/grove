@@ -11,6 +11,7 @@ import { ghLookup } from '../core/pr'
 import { SpoolClaude } from '../core/claude/source'
 import { CopilotSource } from '../core/copilot/source'
 import { HttpOpenCode, serviceFilePath } from '../core/opencode/client'
+import { guardWindow } from './windowGuard'
 import { guardNavigation, handleArtifacts, registerArtifactScheme } from './artifacts'
 import { registerIpc } from './ipc'
 import { startCliServer } from './cliServer'
@@ -150,10 +151,17 @@ app.whenReady().then(async () => {
       ? { vibrancy: 'under-window' as const, visualEffectState: 'active' as const, backgroundColor: '#00000000' }
       : { backgroundColor: chromeBackground }),
     show: false,
-    webPreferences: { preload: path.join(__dirname, '../preload/index.js'), contextIsolation: true },
+    webPreferences: {
+      preload: path.join(__dirname, '../preload/index.js'),
+      contextIsolation: true,
+      sandbox: true,
+      nodeIntegration: false,
+      webSecurity: true,
+    },
   })
   win.setWindowButtonVisibility(false)
   guardNavigation(win, core)
+  guardWindow(win, process.env.ELECTRON_RENDERER_URL)
   win.once('ready-to-show', () => {
     win?.show()
     core.setWindowFocused(win?.isFocused() ?? false)
