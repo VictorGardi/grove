@@ -8,11 +8,24 @@ export class GitError extends Error {
   }
 }
 
+// The calls Grove makes on its own, on whatever repo the user opens: they never write, and a cloned
+// repo's config must not run code through them (D6). `worktree add`, `submodule update` and the
+// rest are explicit user actions and keep the repo's hooks.
+const READ_ONLY = new Set(['status', 'diff', 'ls-files', 'rev-parse', 'for-each-ref', 'symbolic-ref', 'merge-base'])
+const HARDENING = ['-c', 'core.fsmonitor=false', '-c', 'core.hooksPath=/dev/null']
+
+// The argv after the git binary: hardening flags only in front of a read-only subcommand. Callers
+// pass the subcommand first; a leading `-C` or `-c` would skip the hardening.
+export function gitArgv(args: string[]): string[] {
+  const readOnly = READ_ONLY.has(args[0]) || (args[0] === 'worktree' && args[1] === 'list')
+  return ['-c', 'core.quotePath=false', ...(readOnly ? HARDENING : []), ...args]
+}
+
 // Runs the system git (ADR 0021). GIT_OPTIONAL_LOCKS=0: never take the index lock from under the agent.
 export function gitRunner(gitPath: string, env: NodeJS.ProcessEnv): GitRun {
   const runEnv = { ...env, GIT_OPTIONAL_LOCKS: '0', LC_ALL: 'C' }
   return (args, cwd) => new Promise((resolve, reject) => {
-    execFile(gitPath, ['-c', 'core.quotePath=false', ...args],
+    execFile(gitPath, gitArgv(args),
       { cwd, env: runEnv, timeout: 10_000, maxBuffer: 64 * 1024 * 1024, encoding: 'utf8' },
       (err, stdout, stderr) => {
         if (!err) return resolve(stdout)
@@ -72,7 +85,7 @@ export async function resolveDefaultBase(git: GitRun, root: string): Promise<{ n
   if (!name) return null
   for (const ref of [name, `origin/${name}`]) {
     try {
-      await git(['rev-parse', '--verify', '-q', `${ref}^{commit}`], root)
+      await git(['rev-parse', '--verify', '-q', '--end-of-options', `${ref}^{commit}`], root)
       return { name, ref }
     } catch { /* try the next spelling */ }
   }

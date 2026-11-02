@@ -9,6 +9,14 @@ const note = (body: string): Comment => ({
 })
 
 describe('formatReview', () => {
+  it('strips control characters from quoted and sent text but keeps newline and tab', () => {
+    const c: Comment = { ...note('go\x1b[201~\tnow\nnext'), anchor: { kind: 'diff', root: '/p', path: 'a.ts', side: 'new', start: 1, end: 1, lines: ['x\x1b[201~y'] } }
+    const out = formatReview([c], ctx)
+    expect(out).not.toContain('\x1b')
+    expect(out).toContain('> x[201~y')
+    expect(out).toContain('go[201~\tnow\nnext')
+  })
+
   it('sends a general note under a counted header', () => {
     expect(formatReview([note('Please\nreply pong')], ctx)).toBe(
       'Review comments from Grove (1). Please address each one.\n\nPlease\nreply pong'

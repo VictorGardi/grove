@@ -119,6 +119,38 @@ npm run build
 
 Architecture decisions are in [`docs/adr/`](docs/adr), and the domain vocabulary is in [`CONTEXT.md`](CONTEXT.md).
 
+### Discovery roots
+
+A workflow's discovery root (the `default` or the `key` read from its `from_file`)
+must resolve inside the project, symlinks included. A root that points outside it
+(for example `../shared-notes`) is refused and the project shows no features.
+
+### Dependency scan
+
+CI runs the OSV scanner on pull requests, weekly (Mondays) and on demand
+("Run workflow" in GitHub Actions); it does not run on push to master. Pull
+requests also run tests, typecheck and build as separate checks. The scan fails
+on any advisory in the root `package-lock.json` unless it is listed in
+[`osv-scanner.toml`](osv-scanner.toml). The `spikes/electron` lockfile is
+scanned too, but its findings never fail the check.
+
+To accept a finding, add an entry with an id, an expiry and a reason:
+
+```toml
+[[IgnoredVulns]]
+id = "GHSA-xxxx-xxxx-xxxx"
+ignoreUntil = 2027-01-31
+reason = "No fixed version exists; not reachable from Grove"
+```
+
+Prefer upgrading to a fixed version; use an entry only when none exists or the
+risk is judged acceptable. Once `ignoreUntil` passes, the scan fails on that
+advisory again. `scripts/check-osv-ignores.mjs` (a CI step, with its own test) fails when an
+entry lacks `ignoreUntil` or `reason`. Failures of the weekly and manual runs
+arrive only as a failed Actions run and GitHub's email. The control socket's
+missing authentication is a recorded accepted risk, not an ignore entry; see
+[the note beside ADR 0027](docs/adr/0027-grove-cli-over-unix-socket-accepted-risk.md).
+
 ## Tech
 
 Electron, React, Zustand, xterm.js, node-pty, tmux, CodeMirror.
