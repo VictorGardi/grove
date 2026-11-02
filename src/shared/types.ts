@@ -8,6 +8,9 @@ export interface ContextReading { pct: number; tokens: number | null; window: nu
 // docs/work/2026-10-09-session-workflow-status.
 export type WorkflowStatus = 'backlog' | 'in-progress' | 'blocked' | 'in-review' | 'cancelled' | 'done' | 'pinned'
 
+// Where a session's row is shown in the zones sidebar.
+export type Zone = 'needs-you' | 'review' | 'running'
+
 export interface Session {
   id: string
   projectId: string
@@ -31,6 +34,8 @@ export interface Session {
   pr?: PullRequest | null          // live sessions: the PR for that branch, from `gh`; never saved
   status?: 'working' | 'waiting' | 'idle' // agent sessions while their service is connected, terminals from the foreground command; never saved
   waitingFor?: 'permission' | 'question' | 'done' // with status 'waiting'; never saved
+  zone?: Zone | null               // derived by core from the live state and the override on every sessions publish (shared/zones.ts); never saved
+  zoneOverride?: Zone              // set by the human: only moves where the row is shown, never counts or popups; persisted; absent: none
   contextPct?: number | null       // agent sessions once a reading arrived: % of the context window used; null: not known yet; never saved
   contextTokens?: number | null    // tokens in context (input incl. cache); never saved
   contextWindow?: number | null    // size of the context window in tokens; never saved

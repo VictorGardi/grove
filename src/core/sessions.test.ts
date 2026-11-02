@@ -594,6 +594,41 @@ describe('core claude status', () => {
     expect(notified.map((x) => [x.id, x.waitingFor])).toEqual([[c.id, 'permission']])
   })
 
+  it('stamps a zone on each session, never saving it, and sets an override that keeps and persists', async () => {
+    const { core, claude, statePath, make } = await connected()
+    const c = await createClaude(core)
+    expect(find(core, c.id)?.zone ?? null).toBeNull()
+    claude.emit({ type: 'exec-started', sessionId: c.agentSessionId! })
+    expect(find(core, c.id)?.zone).toBe('running')
+    claude.emit({ type: 'pending', sessionId: c.agentSessionId!, id: 'perm:main', kind: 'permission', open: true })
+    expect(find(core, c.id)?.zone).toBe('needs-you')
+    expect(fs.readFileSync(statePath, 'utf8')).not.toContain('"zone"')
+
+    const res = await core.commands.sessionSetZone({ id: c.id, zone: 'review' })
+    expect(res.ok && res.data.zoneOverride).toBe('review')
+    expect(find(core, c.id)).toMatchObject({ zone: 'review', status: 'waiting', waitingFor: 'permission' })
+    expect(fs.readFileSync(statePath, 'utf8')).toContain('"zoneOverride": "review"')
+    expect(fs.readFileSync(statePath, 'utf8')).not.toContain('"zone"')
+
+    core.dispose()
+    const again = make()
+    await again.start()
+    expect(again.getSlices().sessions.find((x) => x.id === c.id)?.zoneOverride).toBe('review')
+
+    await again.commands.sessionSetZone({ id: c.id, zone: null })
+    expect(again.getSlices().sessions.find((x) => x.id === c.id)?.zoneOverride).toBeUndefined()
+    expect(await again.commands.sessionSetZone({ id: 'x', zone: 'review' })).toEqual({ ok: false, error: 'not-found' })
+    again.dispose()
+  })
+
+  it('does not notify differently when a zone override is set', async () => {
+    const { core, claude, notified } = await connected()
+    const c = await createClaude(core)
+    await core.commands.sessionSetZone({ id: c.id, zone: 'running' })
+    claude.emit({ type: 'pending', sessionId: c.agentSessionId!, id: 'perm:main', kind: 'permission', open: true })
+    expect(notified.map((x) => [x.id, x.waitingFor])).toEqual([[c.id, 'permission']])
+  })
+
   it('keeps Claude status when the OpenCode service disconnects', async () => {
     const { core, claude, oc } = await connected()
     oc.emit({ type: 'connected', version: '2.0.20' })
