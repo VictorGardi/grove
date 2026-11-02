@@ -34,8 +34,10 @@ speech code, and already spawns external binaries with `execFile` (tmux, git, gh
 - **Delivery through a `dictate` core command (D5 B):** `dictate({id, text})` pastes
   with `submit: false` at once, with no stability wait and no resume; a gone session
   is an error the renderer ignores. The target session is locked at key press.
-- **No runtime network:** a tripwire test (added in the offline-guarantee slice) fails if the dictation modules import
-  network modules or the CSP gains `connect-src`.
+- **No runtime network:** `src/core/stt/noNetwork.test.ts` is a tripwire, not proof. It fails if a dictation
+  module imports `http`, `https`, `http2`, `net`, `dgram`, `tls` or `dns`, or uses `fetch`, `XMLHttpRequest`,
+  `WebSocket`, `EventSource` or `sendBeacon`, or if the renderer CSP gains `connect-src`. The evidence is the
+  Wi-Fi-off and `lsof -i` checks in the run log.
 
 ## Consequences
 
@@ -44,9 +46,10 @@ speech code, and already spawns external binaries with `execFile` (tmux, git, gh
   a proxy.
 - The Homebrew binary is a supply-chain item the user's organisation may need to
   approve. A locally built binary on the PATH works the same.
-- Packaged builds will need `NSMicrophoneUsageDescription` and the audio-input
-  entitlement. No packaging pipeline exists, so this is documented, not built. In
-  dev mode the microphone prompt is attributed to the host app or terminal.
+- Packaged builds will need `NSMicrophoneUsageDescription` in `Info.plist` and, for a
+  hardened-runtime signed build, the `com.apple.security.device.audio-input` entitlement;
+  without them macOS silently denies the microphone. No signing or entitlements config exists, so this
+  is documented, not built. In dev mode the microphone prompt is attributed to the host app or terminal.
 - Dictation works only while the Grove window is focused, and a terminal program
   that binds Ctrl+Shift+Space never sees it.
 - `base.en` may need light edits on technical words; a larger English model is a

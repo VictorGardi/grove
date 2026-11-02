@@ -186,4 +186,64 @@ The script test lives at `src/core/stt/fetchModelScript.test.ts` because vitest 
 
 Seeing "setup needed" turn into the shortcut label in the running app's Session menu (menu is only unit-tested).
 
+## Slice 5
+
+Session: stt-voice-input-slice-5-a1
+Status: done
+Commit: this commit (see git log)
+
+### Slice plan
+
+Found in the code: the dictation modules are `src/core/dictate.ts`, `src/core/stt/whisper.ts` (Node built-ins `crypto`, `fs`, `path` only; `execFile` is injected from `src/main/index.ts`) and the non-test files of `src/renderer/src/dictation/`. The renderer CSP is a meta tag in `src/renderer/index.html` with `default-src 'self'` and no `connect-src`. ADR 0046 already named the tripwire as coming in this slice and noted the entitlements briefly.
+
+Implementer 1 (planner, directly; a small single-file test and a docs edit):
+- [x] `src/core/stt/noNetwork.test.ts`: scans the dictation modules for network module imports and `fetch`-style calls, checks the CSP, and tests the detector on violating samples
+- [x] `docs/adr/0046-local-whisper-cpp-dictation.md`: tripwire description, packaged-build microphone notes
+
+Models passed: reviewer: inherit (no implementer subagent used)
+
+### Review rounds
+
+Round 1: 0 blocking, 6 non-blocking. Applied: comment stripping no longer lets a `/*` or `//` inside a string hide code (with a detector test for it), the CSP test also requires `default-src 'self'` and no `*`, `http:`, `https:`, `ws:`, `wss:`, the ADR says "no signing or entitlements config exists".
+
+Pass, 0 blocking, 0 fix rounds. Non-blocking left: dynamic or indirect forms (template-literal `import()`, `require(variable)`, `globalThis['fetch']`, `const f = fetch`) are not detected; the scan is not recursive and covers nothing in `src/main` or `src/preload`.
+
+### Deviations
+
+The planner wrote the test and docs itself instead of through an implementer subagent, because the change is one small test file and a docs edit. The manual checks of this slice (offline, `lsof`, accuracy and latency, per-agent dictation) were not run: they need a microphone, a live app and a human.
+
+### Verification
+
+`npm run typecheck` clean; `npm test` 114 files, 1373 tests pass. A mutation check (appending `import https from 'node:https'` to `whisper.ts`) made the tripwire fail on that file, and the file was restored. Models requested: reviewer inherit.
+
+### Left for the human
+
+Everything in this slice's manual verification: with Wi-Fi off dictate a sentence and confirm it works the same; during a dictation run `lsof -i` for the Grove, Electron and `whisper-cli` processes and confirm no new outbound connection; read five scripted English sentences including `useEffect`, `refactor` and `tmux` (light edits only, release-to-words under 4 s, see `[dictation] release→words`); for each of Claude, Copilot and OpenCode run `grove new <agent>` and dictate once (text in the prompt, unsent). The parity check is not recorded here because it was not run; fill it in when done. If Copilot treats the bracketed paste differently, stop and decide.
+
+## Final summary
+
+- Slice 1: `2026-11-02-stt-voice-input: slice 1 — Hold the shortcut, speak, words appear unsent in the locked pane`: hold Ctrl+Shift+Space, capture, local whisper-cli, paste unsent into the locked pane with a badge. Review: pass, 0 fix rounds. Deviations: plain-JS worklet; microphone spike not run.
+- Slice 2: `2026-11-02-stt-voice-input: slice 2 — Honest failures`: badge messages for microphone, nothing heard, missing binary or model, energy gate, stale WAV cleanup. Review: pass, 0 fix rounds. Deviations: a fifth `failed` kind; gates run in the renderer.
+- Slice 3: `2026-11-02-stt-voice-input: slice 3 — Locked target in grid view and under overlays`: lock at press, closed-pane drop, overlay guard. Review: pass, 0 fix rounds. Deviations: lock was already built, only tested.
+- Slice 4: `2026-11-02-stt-voice-input: slice 4 — Setup script, menu item and docs`: hash-pinned model fetch script, informational menu item, README, ADR 0046, CONTEXT term. Review: approved, 0 fix rounds. Deviations: script test under `src/`.
+- Slice 5: `2026-11-02-stt-voice-input: slice 5 — Offline guarantee and agent parity`: network tripwire test and CSP check, ADR notes on packaged-build microphone entitlements. Review: pass, 0 fix rounds. Deviations: no implementer subagent; manual checks not run.
+
+### Left for the human
+
+Nothing was tried with a real microphone. In a dev build: the microphone prompt spike (`npm run dev`), install `whisper-cpp` and the model (`scripts/stt-fetch-model.mjs`), hold-to-talk in Claude, Copilot and OpenCode panes (unsent text, nothing leaked into the prompt, 4 s release-to-words over 10 runs, half-typed text kept), microphone denied, missing binary and model messages, grid-view lock and closed-pane drop, palette mid-hold, the Session menu label, Wi-Fi off and `lsof -i`, five technical sentences. Per-slice details are in each slice's "Left for the human".
+
+### PR description
+
+Dictation: hold-to-talk speech input for agent sessions, fully local
+
+Hold Ctrl+Shift+Space in Grove, speak, release: the words appear unsent in the prompt of the session that was focused at key press. Recognition runs on the human's machine with whisper.cpp (`whisper-cli`, `ggml-base.en.bin`); no audio or text leaves it.
+
+- Slice 1: renderer capture (AudioWorklet, 16 kHz mono), IPC, whisper runner, `dictate` core command (bracketed paste, no submit, no stability wait), per-pane badge.
+- Slice 2: failure badges (microphone, nothing heard, missing binary or model, failed), energy gate, stale temp WAV cleanup.
+- Slice 3: target locked at press, grid view badge only on that pane, closed pane drops the result, overlays block the shortcut.
+- Slice 4: `scripts/stt-fetch-model.mjs` (pinned sha256), informational menu item, README, ADR 0046, CONTEXT term.
+- Slice 5: `noNetwork.test.ts` tripwire and CSP check, ADR notes on packaged-build microphone entitlements.
+
+Verified with `npm run typecheck` and `npm test` (1373 tests). Not verified: anything needing a microphone, a live app or a network capture (offline and `lsof` checks, accuracy and latency, Claude, Copilot and OpenCode parity). The shortcut works only while the Grove window is focused.
+
 ## Open questions
