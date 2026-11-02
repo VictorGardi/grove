@@ -1,0 +1,7 @@
+# OSV scanner ignore list. Every entry needs a reason and an expiry date;
+# once ignoreUntil passes, the scan fails on that advisory again.
+#
+# [[IgnoredVulns]]
+# id = "GHSA-xxxx-xxxx-xxxx"
+# ignoreUntil = 2027-01-31
+# reason = "No fixed version exists; not reachable from Grove"
