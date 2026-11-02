@@ -4,6 +4,7 @@ import { FitAddon } from '@xterm/addon-fit'
 import { WebglAddon } from '@xterm/addon-webgl'
 import { terminalTheme } from '@shared/theme'
 import s from './TerminalView.module.css'
+import { isDictationKey } from '../dictation/swallow'
 import { DictationBadge } from '../dictation/DictationBadge'
 import type { DictationState } from '../dictation/machine'
 
@@ -24,7 +25,7 @@ export function TerminalView({ sessionId, active, onFocus, dictation }: { sessio
       lineHeight: 1.35,
     })
     // ⌃Tab is the Last Session menu accelerator: xterm would otherwise send it to the shell and swallow it.
-    term.attachCustomKeyEventHandler((e) => !(e.ctrlKey && e.key === 'Tab') && !(e.ctrlKey && e.shiftKey && e.code === 'Space')) // the latter is dictation's chord
+    term.attachCustomKeyEventHandler((e) => !(e.ctrlKey && e.key === 'Tab') && !(e.ctrlKey && e.shiftKey && e.code === 'Space') && !isDictationKey(e)) // the latter two are dictation's chord and its held keys
     // tmux has the mouse, so a drag selects in tmux and it copies with OSC 52 ("52;c;<base64>").
     term.parser.registerOscHandler(52, (data) => {
       const b64 = data.slice(data.indexOf(';') + 1)

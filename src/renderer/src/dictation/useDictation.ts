@@ -1,7 +1,8 @@
 import { useEffect, useRef, useState } from 'react'
 import { start, type Recorder } from './capture'
-import { judgeAudio } from './audio'
-import { errorKind, IDLE, isChord, isChordKey, step, type DictationEffect, type DictationInput, type DictationState } from './machine'
+import { judgeAudio, MAX_RECORDING_MS } from './audio'
+import { setDictationHold, swallowStep } from './swallow'
+import { errorKind, IDLE, isChord, step, type DictationEffect, type DictationInput, type DictationState } from './machine'
 
 const TIMEOUT_MS = 30_000
 const ERROR_MS = 6000
@@ -30,8 +31,12 @@ export function useDictation(o: { getTargetId: () => string | null; overlayOpen:
     // bumped on every start and abort, so a late result from a cancelled run is dropped
     let run = 0
     let released0 = 0
+    let held = false // a dictation hold: chord pressed, Space not yet released
+    let capTimer: ReturnType<typeof setTimeout> | undefined
+    const setHeld = (v: boolean) => { held = v; setDictationHold(v) }
 
     const abort = () => {
+      clearTimeout(capTimer)
       run++
       void recorder?.then((r) => r.cancel(), () => {})
       recorder = null
@@ -46,8 +51,12 @@ export function useDictation(o: { getTargetId: () => string | null; overlayOpen:
         // permission denied or no device: back to idle, nothing typed
         rec.catch(() => { if (mine === run) send({ type: 'failed', kind: 'mic' }) })
         // a run superseded or aborted while the permission prompt was open must not leave the mic open
-        void rec.then((r) => { if (mine !== run) void r.cancel() }, () => {})
+        void rec.then((r) => {
+          if (mine !== run) void r.cancel()
+          else capTimer = setTimeout(() => { if (mine === run) send({ type: 'capReached' }) }, MAX_RECORDING_MS)
+        }, () => {})
       } else if (effect.type === 'stop') {
+        clearTimeout(capTimer)
         const mine = run
         const rec = recorder!
         const released = performance.now()
@@ -83,6 +92,8 @@ export function useDictation(o: { getTargetId: () => string | null; overlayOpen:
     }
     let errorTimer: ReturnType<typeof setTimeout> | undefined
     const send = (input: DictationInput) => {
+      // a lost key-up must not leave Space swallowed
+      if (input.type === 'blur' || input.type === 'visibilityHidden' || input.type === 'cancel' || input.type === 'overlayOpened') setHeld(false)
       const r = step(state, input)
       const changed = r.state !== state // an ignored input (typing key-ups) must not re-arm the error timer
       state = r.state
@@ -96,35 +107,38 @@ export function useDictation(o: { getTargetId: () => string | null; overlayOpen:
 
     sendRef.current = send
 
+    // swallow the hold's keys in the capture phase so neither xterm nor the pty sees them
+    const swallow = (e: KeyboardEvent) => {
+      const r = swallowStep(held, { type: e.type as 'keydown' | 'keypress' | 'keyup', key: e.key, code: e.code, chord: isChord({ ctrl: e.ctrlKey, shift: e.shiftKey, alt: e.altKey, meta: e.metaKey, code: e.code }) })
+      if (r.held !== held) setHeld(r.held)
+      if (r.swallow) { e.preventDefault(); e.stopPropagation() }
+    }
     const onDown = (e: KeyboardEvent) => {
       if (overlay.current) return
-      const input = { ctrl: e.ctrlKey, shift: e.shiftKey, alt: e.altKey, meta: e.metaKey, code: e.code }
-      if (!isChord(input)) return
-      // the terminal and the pty must never see the chord
-      e.preventDefault()
-      e.stopPropagation()
-      send({ type: 'keyDown', ...input, repeat: e.repeat, id: target.current() })
+      swallow(e)
+      if (!isChord({ ctrl: e.ctrlKey, shift: e.shiftKey, alt: e.altKey, meta: e.metaKey, code: e.code })) return
+      send({ type: 'keyDown', ctrl: e.ctrlKey, shift: e.shiftKey, alt: e.altKey, meta: e.metaKey, code: e.code, repeat: e.repeat, id: target.current() })
     }
     const onUp = (e: KeyboardEvent) => {
-      if (state.phase === 'listening' && isChordKey(e.key, e.code)) {
-        e.preventDefault()
-        e.stopPropagation()
-      }
+      swallow(e)
       send({ type: 'keyUp', key: e.key, code: e.code })
     }
     const onBlur = () => send({ type: 'blur' })
     const onVisibility = () => { if (document.hidden) send({ type: 'visibilityHidden' }) }
 
     window.addEventListener('keydown', onDown, true)
+    window.addEventListener('keypress', swallow, true)
     window.addEventListener('keyup', onUp, true)
     window.addEventListener('blur', onBlur)
     document.addEventListener('visibilitychange', onVisibility)
     return () => {
       window.removeEventListener('keydown', onDown, true)
+      window.removeEventListener('keypress', swallow, true)
       window.removeEventListener('keyup', onUp, true)
       window.removeEventListener('blur', onBlur)
       document.removeEventListener('visibilitychange', onVisibility)
       clearTimeout(errorTimer)
+      setHeld(false)
       abort()
     }
   }, [])

@@ -1,6 +1,9 @@
 // Judges captured 16 kHz mono s16le before it is worth sending to whisper.
 export const SAMPLE_RATE = 16000
 export const MIN_MS = 300
+// main rejects audio over a minute; the cap stays safely below it so a long hold is transcribed, not lost
+export const MAX_RECORDING_MS = 55_000
+export const MAX_RECORDING_BYTES = (SAMPLE_RATE * MAX_RECORDING_MS) / 1000 * 2
 export const MIN_BYTES = (SAMPLE_RATE * MIN_MS) / 1000 * 2 // 9600
 export const FRAME_SAMPLES = 320 // 20 ms
 export const RMS_GATE = 0.008

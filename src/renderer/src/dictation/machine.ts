@@ -15,6 +15,7 @@ export type DictationInput =
   | { type: 'blur' }
   | { type: 'visibilityHidden' }
   | { type: 'cancel' }
+  | { type: 'capReached' } // the recording hit MAX_RECORDING_MS while keys are still held
   | { type: 'transcribed'; text: string }
   | { type: 'failed'; kind: DictationError }
   | { type: 'clearError' }
@@ -66,6 +67,9 @@ export function step(state: DictationState, input: DictationInput): { state: Dic
     case 'keyUp':
       if (state.phase !== 'listening' || !isChordKey(input.key, input.code)) return { state }
       return { state: { phase: 'transcribing', id: state.id }, effect: { type: 'stop', id: state.id } }
+    case 'capReached':
+      // transcribe what was captured; the held keys cannot start another recording (auto-repeat is ignored)
+      return state.phase === 'listening' ? { state: { phase: 'transcribing', id: state.id }, effect: { type: 'stop', id: state.id } } : { state }
     case 'blur':
     case 'visibilityHidden':
       // a lost key-up must not leave the microphone open; transcribing has no microphone to close

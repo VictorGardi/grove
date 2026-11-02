@@ -33,6 +33,15 @@ describe('dictation machine', () => {
     expect(step(IDLE, { type: 'keyUp', key: 'Shift', code: 'ShiftLeft' })).toEqual({ state: IDLE })
   })
 
+  it('transcribes what was captured when the recording cap is reached, and ignores it otherwise', () => {
+    expect(step(listening, { type: 'capReached' })).toEqual({
+      state: { phase: 'transcribing', id: 'a' }, effect: { type: 'stop', id: 'a' },
+    })
+    expect(step(IDLE, { type: 'capReached' })).toEqual({ state: IDLE })
+    // keys still held: auto-repeat must not start a new recording
+    expect(step({ phase: 'transcribing', id: 'a' }, down({ repeat: true })).effect).toBeUndefined()
+  })
+
   it('cancels while listening on blur, hidden and explicit cancel', () => {
     for (const type of ['blur', 'visibilityHidden', 'cancel'] as const) {
       expect(step(listening, { type })).toEqual({ state: IDLE, effect: { type: 'abort' } })

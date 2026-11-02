@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest'
-import { judgeAudio, MIN_BYTES, SAMPLE_RATE } from './audio'
+import { MAX_PCM_BYTES } from '../../../core/stt/whisper'
+import { judgeAudio, MAX_RECORDING_BYTES, MAX_RECORDING_MS, MIN_BYTES, SAMPLE_RATE } from './audio'
 
 function pcm(seconds: number, sample: (i: number) => number): ArrayBuffer {
   const n = Math.round(seconds * SAMPLE_RATE)
@@ -31,5 +32,12 @@ describe('judgeAudio', () => {
   it('accepts speech-like audio: bursts of voiced frames between pauses', () => {
     const speech = (i: number) => ((Math.floor(i / 3200) % 2 === 0) ? 0.1 * Math.sin((2 * Math.PI * 200 * i) / SAMPLE_RATE) : 0.001)
     expect(judgeAudio(pcm(1, speech))).toBe('ok')
+  })
+})
+
+describe('recording cap', () => {
+  it('stays below what main accepts', () => {
+    expect(MAX_RECORDING_MS).toBe(55_000)
+    expect(MAX_RECORDING_BYTES).toBeLessThan(MAX_PCM_BYTES)
   })
 })
