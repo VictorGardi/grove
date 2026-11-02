@@ -36,4 +36,31 @@ describe('dictate', () => {
     backend.paste = async () => { throw new Error('no server running') }
     expect(await dictate(deps, { id: 'a', text: 'x' })).toEqual({ ok: false, error: 'no server running' })
   })
+
+  it('sanitizes text: control characters, whitespace and length', async () => {
+    const { deps, backend } = setup()
+    await dictate(deps, { id: 'a', text: 'ls\r\n\x1b[31m  -la\x7f\tnow' })
+    expect(backend.pastes[0].text).toBe('ls [31m -la now')
+    await dictate(deps, { id: 'a', text: 'x'.repeat(5000) })
+    expect(backend.pastes[1].text.length).toBe(4000)
+  })
+
+  it('rejects empty, control-only and non-string text without pasting', async () => {
+    const { deps, backend } = setup()
+    for (const text of ['', ' \r\n\x1b ', 42 as unknown as string]) {
+      expect((await dictate(deps, { id: 'a', text })).ok).toBe(false)
+    }
+    expect(backend.pastes).toEqual([])
+  })
+
+  it('maps a paste failure to gone or not-found when the session vanished meanwhile', async () => {
+    const backend = new FakeBackend()
+    let session: typeof live | undefined = live
+    backend.paste = async () => { session = { ...live, lastStatus: 'gone' }; throw new Error('can\'t find session') }
+    const deps = { find: () => session, backend }
+    expect(await dictate(deps, { id: 'a', text: 'x' })).toEqual({ ok: false, error: 'gone' })
+    session = live
+    backend.paste = async () => { session = undefined; throw new Error('boom') }
+    expect(await dictate(deps, { id: 'a', text: 'x' })).toEqual({ ok: false, error: 'not-found' })
+  })
 })

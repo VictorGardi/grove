@@ -182,7 +182,10 @@ export default function App() {
   const overlayOpen = paletteOpen || !!quickNew || !!launchNew || !!confirmRemove || scratchpadOpen
   // the pane that has the keyboard: the one session, or the grid's focused pane
   const dictation = useDictation({
-    getTargetId: () => (shown.kind === 'session' ? shown.session.id : shown.kind === 'grid' ? shown.focused.id : null),
+    getTargetId: () => {
+      const t = shown.kind === 'session' ? shown.session : shown.kind === 'grid' ? shown.focused : null
+      return t && t.lastStatus === 'running' ? t.id : null // an ended session has no live pane to type into
+    },
     overlayOpen,
     sessionIds: sessions.map((x) => x.id),
   })

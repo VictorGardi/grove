@@ -16,7 +16,7 @@ import { CopilotSource } from '../core/copilot/source'
 import { HttpOpenCode, serviceFilePath } from '../core/opencode/client'
 import { guardNavigation, handleArtifacts, registerArtifactScheme } from './artifacts'
 import { registerIpc } from './ipc'
-import { cleanStaleWavs, type WhisperDeps } from '../core/stt/whisper'
+import { cleanStaleWavs, MODEL_BYTES, type WhisperDeps } from '../core/stt/whisper'
 import { startCliServer } from './cliServer'
 import { agentSkillsDirs, installAgentSkill, installCommandLineTool, writeLauncher } from './launcher'
 import { buildMenu } from './menu'
@@ -162,7 +162,8 @@ app.whenReady().then(async () => {
   rebuildMenu()
   void cachedLoginPath().then((p) => {
     whisperBin = findBin('whisper-cli', { PATH: p })
-    dictationReady = whisperBin !== null && fs.existsSync(sttDeps.modelPath)
+    const modelSize = (() => { try { return fs.statSync(sttDeps.modelPath).size } catch { return -1 } })()
+    dictationReady = whisperBin !== null && modelSize === MODEL_BYTES
     rebuildMenu()
   })
 

@@ -24,4 +24,12 @@ describe('judgeAudio', () => {
   it('accepts a loud tone', () => {
     expect(judgeAudio(pcm(1, tone(0.3)))).toBe('ok')
   })
+  it('rejects a click-only sample: one loud 20 ms frame in silence', () => {
+    const click = (i: number) => (i >= 8000 && i < 8320 ? 0.5 * Math.sin((2 * Math.PI * 440 * i) / SAMPLE_RATE) : 0)
+    expect(judgeAudio(pcm(1, click))).toBe('silent')
+  })
+  it('accepts speech-like audio: bursts of voiced frames between pauses', () => {
+    const speech = (i: number) => ((Math.floor(i / 3200) % 2 === 0) ? 0.1 * Math.sin((2 * Math.PI * 200 * i) / SAMPLE_RATE) : 0.001)
+    expect(judgeAudio(pcm(1, speech))).toBe('ok')
+  })
 })

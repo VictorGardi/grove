@@ -1,7 +1,7 @@
 import fs from 'node:fs'
 import os from 'node:os'
 import path from 'node:path'
-import { afterEach, beforeEach, describe, expect, it } from 'vitest'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { cleanStaleWavs, parseWhisperOutput, pcmToWav, transcribe, type ExecFile } from './whisper'
 
 describe('pcmToWav', () => {
@@ -38,7 +38,11 @@ describe('parseWhisperOutput', () => {
     expect(parseWhisperOutput(' [BLANK_AUDIO]\n')).toBe('')
     expect(parseWhisperOutput('(keyboard clicking)')).toBe('')
     expect(parseWhisperOutput('[ Silence ]\n(music)')).toBe('')
-    expect(parseWhisperOutput('hello [BLANK_AUDIO] world')).toBe('hello world')
+    expect(parseWhisperOutput('hello\n[BLANK_AUDIO]\nworld')).toBe('hello world')
+  })
+  it('keeps bracketed words inside real speech', () => {
+    expect(parseWhisperOutput('call foo (bar) now')).toBe('call foo (bar) now')
+    expect(parseWhisperOutput('see [1] here')).toBe('see [1] here')
   })
 })
 
@@ -82,6 +86,35 @@ describe('transcribe', () => {
 
   it('rejects on failure and still deletes the wav', async () => {
     await expect(transcribe(deps(async () => { throw new Error('exit 1') }), new Uint8Array(2))).rejects.toThrow('exit 1')
+    expect(fs.readdirSync(tmpDir())).toEqual([])
+  })
+
+  it('rejects invalid audio arguments', async () => {
+    const exec: ExecFile = async () => ({ stdout: 'x' })
+    await expect(transcribe(deps(exec), new Uint8Array(0))).rejects.toThrow(/invalid audio/)
+    await expect(transcribe(deps(exec), new Uint8Array(3))).rejects.toThrow(/invalid audio/)
+    await expect(transcribe(deps(exec), new Uint8Array(16000 * 2 * 60 + 2))).rejects.toThrow(/invalid audio/)
+    await expect(transcribe(deps(exec), 'nope')).rejects.toThrow(/invalid audio/)
+    await expect(transcribe(deps(exec), { byteLength: 4 })).rejects.toThrow(/invalid audio/)
+    expect(await transcribe(deps(exec), new Uint8Array(4).buffer)).toBe('x')
+  })
+
+  it('rejects a second transcription while one is in flight', async () => {
+    let release!: () => void
+    const exec: ExecFile = () => new Promise((res) => { release = () => res({ stdout: 'a' }) })
+    const first = transcribe(deps(exec), new Uint8Array(2))
+    await expect(transcribe(deps(exec), new Uint8Array(2))).rejects.toThrow(/busy/)
+    release()
+    expect(await first).toBe('a')
+    expect(await transcribe(deps(async () => ({ stdout: 'b' })), new Uint8Array(2))).toBe('b')
+  })
+
+  it('removes a partial wav when writing fails', async () => {
+    const real = fs.writeFileSync
+    const spy = vi.spyOn(fs, 'writeFileSync').mockImplementation((f) => { real(f, 'part'); throw new Error('ENOSPC') })
+    try {
+      await expect(transcribe(deps(async () => ({ stdout: 'x' })), new Uint8Array(2))).rejects.toThrow('ENOSPC')
+    } finally { spy.mockRestore() }
     expect(fs.readdirSync(tmpDir())).toEqual([])
   })
 

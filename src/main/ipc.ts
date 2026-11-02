@@ -63,7 +63,7 @@ export function registerIpc(core: Core, getWindow: () => BrowserWindow | null, g
   handle('dictation:transcribe', async ({ pcm }) => {
     if (!sttDeps) throw new Error('dictation unavailable')
     const t0 = Date.now()
-    const text = await transcribe(sttDeps, new Uint8Array(pcm))
+    const text = await transcribe(sttDeps, pcm)
     console.log(`[dictation] transcribed in ${Date.now() - t0}ms`)
     return { text }
   })

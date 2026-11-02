@@ -33,6 +33,8 @@ function findNetworkUse(src: string): string[] {
   if (/\bWebSocket\b/.test(code)) hits.push('WebSocket')
   if (/\bEventSource\b/.test(code)) hits.push('EventSource')
   if (/\bsendBeacon\b/.test(code)) hits.push('sendBeacon')
+  if (/\bRTCPeerConnection\b/.test(code)) hits.push('RTCPeerConnection')
+  if (/\b(?:globalThis|window|self)\s*(?:\[\s*['"]fetch['"]\s*\]|\.fetch\b)/.test(code)) hits.push('global fetch')
   return hits
 }
 
@@ -56,6 +58,12 @@ describe('dictation makes no network use', () => {
     expect(findNetworkUse(`const d = await import('dgram')`)).toEqual(['import dgram'])
     expect(findNetworkUse(`await fetch('https://x')`)).toEqual(['fetch('])
     expect(findNetworkUse(`new WebSocket('wss://x')`)).toEqual(['WebSocket'])
+    expect(findNetworkUse(`new RTCPeerConnection()`)).toEqual(['RTCPeerConnection'])
+    expect(findNetworkUse(`new XMLHttpRequest()`)).toEqual(['XMLHttpRequest'])
+    expect(findNetworkUse(`new EventSource('/x')`)).toEqual(['EventSource'])
+    expect(findNetworkUse(`navigator.sendBeacon('/x')`)).toEqual(['sendBeacon'])
+    expect(findNetworkUse(`globalThis['fetch']`)).toEqual(['global fetch'])
+    expect(findNetworkUse(`window["fetch"]`)).toEqual(['global fetch'])
     expect(findNetworkUse(`// import https from 'https'\nconst a = 1`)).toEqual([])
     expect(findNetworkUse(`const g = 'src/**/*.ts'\nimport https from 'https'\nconst h = 'a */'`)).toEqual(['import https'])
     expect(findNetworkUse(`import fs from 'node:fs'`)).toEqual([])

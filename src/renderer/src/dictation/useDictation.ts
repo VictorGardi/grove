@@ -45,6 +45,8 @@ export function useDictation(o: { getTargetId: () => string | null; overlayOpen:
         recorder = rec
         // permission denied or no device: back to idle, nothing typed
         rec.catch(() => { if (mine === run) send({ type: 'failed', kind: 'mic' }) })
+        // a run superseded or aborted while the permission prompt was open must not leave the mic open
+        void rec.then((r) => { if (mine !== run) void r.cancel() }, () => {})
       } else if (effect.type === 'stop') {
         const mine = run
         const rec = recorder!
@@ -52,19 +54,22 @@ export function useDictation(o: { getTargetId: () => string | null; overlayOpen:
         recorder = null
         void (async () => {
           try {
-            const res = await withTimeout((async () => {
-              let pcm: ArrayBuffer
-              try { pcm = await (await rec).stop() } catch { return 'reported' as const } // start() rejection already reported
-              if (judgeAudio(pcm) !== 'ok') return 'nothing' as const
-              return window.api.invoke('dictation:transcribe', { pcm })
-            })(), TIMEOUT_MS)
-            if (mine !== run || res === 'reported') return
+            // the timeout covers the transcription only, never a pending permission prompt
+            let pcm: ArrayBuffer
+            try { pcm = await (await rec).stop() } catch { return } // start() rejection already reported
+            const res = judgeAudio(pcm) !== 'ok'
+              ? ('nothing' as const)
+              : await withTimeout(window.api.invoke('dictation:transcribe', { pcm }), TIMEOUT_MS)
+            if (mine !== run) return
             if (res === 'nothing') return send({ type: 'failed', kind: 'nothing' })
             if (!res.ok) return send({ type: 'failed', kind: errorKind(res.error) })
             released0 = released // read by the dictate effect that send() runs
             send({ type: 'transcribed', text: res.data.text })
           } catch {
             if (mine === run) send({ type: 'failed', kind: 'failed' })
+          } finally {
+            // however the run ended, the recorder must be released (cancel after stop is a no-op)
+            void rec.then((r) => r.cancel(), () => {})
           }
         })()
       } else {

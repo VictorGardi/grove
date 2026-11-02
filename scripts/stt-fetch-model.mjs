@@ -1,8 +1,8 @@
 // Developer-run: fetch the whisper model used by dictation into Grove's userData, verified against a pinned hash.
 //   node scripts/stt-fetch-model.mjs            download ggml-base.en.bin
 //   node scripts/stt-fetch-model.mjs --from F   verify and install a hand-copied file instead
-// STT_MODEL_DIR overrides the target directory. Test hook: STT_MODEL_SHA256 overrides the pinned hash,
-// honoured only when STT_MODEL_DIR is also set.
+// Test hooks, honoured only when STT_TEST=1 is set: STT_MODEL_DIR overrides the target directory and
+// STT_MODEL_SHA256 the pinned hash. Without STT_TEST=1 both are ignored.
 import crypto from 'node:crypto'
 import fs from 'node:fs'
 import os from 'node:os'
@@ -13,15 +13,16 @@ import { pipeline } from 'node:stream/promises'
 const URL_ = 'https://huggingface.co/ggerganov/whisper.cpp/resolve/main/ggml-base.en.bin'
 const FILE = 'ggml-base.en.bin'
 const PINNED = 'a03779c86df3323075f5e796cb2ce5029f00ec8869eee3fdfb897afe36c6d002' // size 147964211
-const testHook = Boolean(process.env.STT_MODEL_DIR)
+const testHook = process.env.STT_TEST === '1'
 const expected = (testHook && process.env.STT_MODEL_SHA256) || PINNED
+const FETCH_TIMEOUT_MS = 10 * 60_000 // generous for 148 MB
 
 // Electron's userData is <appData>/<app name>; the app name is package.json's productName/name, "grove".
 const appData =
   process.platform === 'darwin' ? path.join(os.homedir(), 'Library', 'Application Support')
   : process.platform === 'win32' ? (process.env.APPDATA ?? path.join(os.homedir(), 'AppData', 'Roaming'))
   : (process.env.XDG_CONFIG_HOME ?? path.join(os.homedir(), '.config'))
-const dir = process.env.STT_MODEL_DIR ?? path.join(appData, 'grove', 'stt')
+const dir = (testHook && process.env.STT_MODEL_DIR) || path.join(appData, 'grove', 'stt')
 const target = path.join(dir, FILE)
 
 const fail = (msg) => { console.error(msg); process.exit(1) }
@@ -45,16 +46,17 @@ if (fromIdx >= 0 && !from) fail('--from needs a file path')
 fs.mkdirSync(dir, { recursive: true })
 const tmp = path.join(dir, `${FILE}.${process.pid}.part`)
 const hash = crypto.createHash('sha256')
+for (const sig of ['SIGINT', 'SIGTERM']) process.on(sig, () => { fs.rmSync(tmp, { force: true }); process.exit(130) })
 try {
   let source
   if (from) source = fs.createReadStream(from)
   else {
-    const res = await fetch(URL_, { redirect: 'follow' })
+    const res = await fetch(URL_, { redirect: 'follow', signal: AbortSignal.timeout(FETCH_TIMEOUT_MS) })
     if (!res.ok || !res.body) fail(`download failed: HTTP ${res.status}`)
     source = Readable.fromWeb(res.body)
   }
   source.on('data', (c) => hash.update(c))
-  await pipeline(source, fs.createWriteStream(tmp))
+  await pipeline(source, fs.createWriteStream(tmp, { flags: 'wx' }))
 } catch (e) {
   fs.rmSync(tmp, { force: true })
   fail(`failed: ${e instanceof Error ? e.message : e}`)
