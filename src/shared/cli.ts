@@ -9,7 +9,7 @@ export interface CliMethods {
     params: { kind: SessionKind; cwd: string; prompt?: string; label?: string; feature?: string; parent?: string; worktree?: boolean; branch?: string; base?: string; model?: string; wait?: boolean; timeoutS?: number }
     data: CliSession & { turn?: TurnResult }
   }
-  'sessions.send': { params: { ref: string; text: string; submit: boolean; wait?: boolean; timeoutS?: number }; data: { id: string; turn?: TurnResult } }
+  'sessions.send': { params: { ref: string; text: string; submit: boolean; wait?: boolean; timeoutS?: number; from?: string }; data: { id: string; turn?: TurnResult } }
   'sessions.wait': { params: { ref: string; timeoutS?: number }; data: { id: string } & TurnResult }
   'sessions.focus': { params: { ref: string }; data: { id: string } }
   'sessions.kill': { params: { ref: string }; data: { id: string } }

@@ -8,6 +8,7 @@ export function shownStatus(s: Session): ShownStatus {
   if (s.startup?.phase === 'failed') return 'failed' // the start failed: an error card, even over a resumable gone session
   if (s.lastStatus === 'gone') return 'gone'
   if (s.startup?.phase === 'starting') return 'starting' // no status yet: the card shows a spinner
+  if (s.held && s.status === 'waiting') return 'working' // a prompt held for the grace window: not asking for the human yet
   return s.status ?? 'running'
 }
 

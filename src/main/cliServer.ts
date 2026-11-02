@@ -115,7 +115,12 @@ async function dispatch(core: Core, raise: () => void, line: string): Promise<Cl
       if (typeof ref !== 'string' || typeof text !== 'string' || !ref) return fail(id, 'bad-params', 'ref and text are required')
       const found = resolveSessionRef(core.getSlices().sessions, ref)
       if (!found.ok) return failFrom(id, found.error)
-      const res = await core.commands.sendToSession({ id: found.data.id, text, submit: params.submit !== false })
+      let from: string | undefined
+      if (typeof params.from === 'string' && params.from) {
+        const caller = resolveSessionRef(core.getSlices().sessions, params.from)
+        if (caller.ok) from = caller.data.id // an unknown caller is just not a parent
+      }
+      const res = await core.commands.sendToSession({ id: found.data.id, text, submit: params.submit !== false, from })
       if (!res.ok) return failFrom(id, res.error)
       if (params.wait !== true) return { id, ok: true, data: res.data }
       const turn = await waitAfter(core, id, params, found.data.id)

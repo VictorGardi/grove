@@ -23,7 +23,7 @@ async function run(cmd: Exclude<Command, { cmd: 'skill' }>, socket: string): Pro
     return reply.ok ? { ...reply, print: formatLs(reply.data as CliMethods['sessions.list']['data'], process.env.GROVE_SESSION_ID ?? null, cmd.json) } : reply
   }
   if (cmd.cmd === 'send') {
-    const reply = await call(socket, 'sessions.send', { ref: cmd.ref, text: text(cmd.text) ?? '', submit: cmd.submit, wait: cmd.wait, timeoutS: cmd.timeoutS })
+    const reply = await call(socket, 'sessions.send', { ref: cmd.ref, text: text(cmd.text) ?? '', submit: cmd.submit, wait: cmd.wait, timeoutS: cmd.timeoutS, from: process.env.GROVE_SESSION_ID || undefined })
     return reply.ok ? { ...reply, print: undefined, exit: turnOf(reply) } : reply
   }
   if (cmd.cmd === 'focus' || cmd.cmd === 'kill') {

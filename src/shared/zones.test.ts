@@ -11,6 +11,11 @@ function session(over: Partial<Session> = {}): Session {
 }
 
 describe('zoneOf', () => {
+  it('puts a held child prompt in running, unless escalated', () => {
+    expect(zoneOf(session({ status: 'waiting', waitingFor: 'permission', parentId: 'p1', held: true }))).toBe('running')
+    expect(zoneOf(session({ status: 'waiting', waitingFor: 'permission', parentId: 'p1', held: true, attention: { reason: 'x', waitingFor: 'permission' } }))).toBe('needs-you')
+  })
+
   it('puts an escalated waiting child in needs-you', () => {
     expect(zoneOf(session({ status: 'waiting', waitingFor: 'permission', parentId: 'p', attention: { reason: 'x', waitingFor: 'permission' } }))).toBe('needs-you')
   })

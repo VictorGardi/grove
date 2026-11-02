@@ -46,6 +46,7 @@ describe('parseCommand', () => {
 
   it('parses send and read', () => {
     expect(parseCommand(['send', 'abc', 'hi'])).toEqual({ cmd: 'send', ref: 'abc', text: 'hi', submit: true, wait: false, timeoutS: undefined })
+    expect(parseCommand(['send', 'abc', 'hi'])).not.toHaveProperty('from') // the caller comes from the env, in index.ts
     expect(parseCommand(['send', 'abc', '-', '--no-enter'])).toEqual({ cmd: 'send', ref: 'abc', text: '-', submit: false, wait: false, timeoutS: undefined })
     expect(parseCommand(['read', 'abc'])).toEqual({ cmd: 'read', ref: 'abc', lines: 100 })
     expect(parseCommand(['read', 'abc', '--lines', '40'])).toEqual({ cmd: 'read', ref: 'abc', lines: 40 })

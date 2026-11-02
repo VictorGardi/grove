@@ -201,3 +201,30 @@ describe('countsAsWaiting and zones', () => {
     expect(countsAsWaiting({ ...done, zoneOverride: 'needs-you' })).toBe(false)
   })
 })
+
+describe('held prompts', () => {
+  const kid = (over: Partial<Session> = {}) => session({ id: 'k', parentId: 'p1', status: 'waiting', waitingFor: 'permission', ...over })
+
+  it('looks working and is not counted or visited while held', () => {
+    const k = kid({ held: true })
+    expect(shownStatus(k)).toBe('working')
+    expect(statusTone(k)).toBe('working')
+    expect(countsAsWaiting(k)).toBe(false)
+    expect(longestWaiting([k], { k: 1 })).toBeNull()
+    expect(trackWaiting({}, [k], 5)).toEqual({})
+    expect(mostUrgent([k, session({ id: 'i', status: 'idle' })])?.id).toBe('k')
+    expect(shownStatus(mostUrgent([k])!)).toBe('working')
+  })
+
+  it('the same child unheld counts', () => {
+    const k = kid()
+    expect(shownStatus(k)).toBe('waiting')
+    expect(countsAsWaiting(k)).toBe(true)
+    expect(longestWaiting([k], { k: 1 })?.id).toBe('k')
+    expect(trackWaiting({}, [k], 5)).toEqual({ k: 5 })
+  })
+
+  it('gone still wins over held', () => {
+    expect(shownStatus(kid({ held: true, lastStatus: 'gone' }))).toBe('gone')
+  })
+})

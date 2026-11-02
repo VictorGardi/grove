@@ -185,4 +185,47 @@ Approved, 0 blocking, 0 fix rounds. Cheap non-blocking applied: escalate now als
 
 Run the app: `grove escalate <child> "asks to drop the table"` on a child waiting on a permission shows that text in Needs you (one popup in total for that prompt) and exits non-zero on a working child; `grove progress <parent> 4/8` shows the bar in both views. Not checked: the look of the bar in the project-tree card.
 
+## Slice 5
+
+Session: attention-ownership-slice-5-a1
+Status: done
+Commit: this commit (see git log)
+
+### Slice plan
+
+Found in the code: `notifyTransitions` (`src/core/core.ts:611`) pops on first sight of a waiting status and records `waitKey`/`notified`; `sessionEscalate` (~:1090) sets the live `attention` and relies on `notified`/`waitKey`. `set('sessions')` runs `withZones(dropStaleAttention(...))` and strips live fields before save (:256). `countsAsWaiting` and `shownStatus` live in `src/renderer/src/sessionStatus.ts`; `zoneOf` in `src/shared/zones.ts`. `grove send` goes CLI (`src/cli/index.ts:25`) -> `sessions.send` (`src/shared/cli.ts:12`, `src/main/cliServer.ts:113`) -> `commands.sendToSession`, with no caller identity. `ConfigFile` is rewritten at `core.ts:247` from `configWorkflow`/`configSounds`, so a new field must be kept there. `ZoneSection.tsx` renders parent cards with a children line and `RunProgress`.
+
+Implementer 1 (core, CLI, config, shared; no renderer files):
+- [x] `src/shared/types.ts`: `ConfigFile.escalateAfterSec?: number`; live `Session.held?: boolean`; live `Session.handled?: HandledPrompt[]` with `HandledPrompt = { childId, at (ISO), kind: 'permission' | 'question', screen (last 8 lines), sent }`
+- [x] `src/core/core.ts`: read `escalateAfterSec` at start (default 60, 0 = off), keep it in the config rewrite; in `notifyTransitions` hold a child's (has `parentId`) permission or question: set `held`, capture the last 8 lines of the pane, start one timer per child; on expiry, if still on that wait, clear `held` and notify as before (unless escalated); a top-level session and `escalateAfterSec` 0 notify at once; `held` and `handled` stripped before save; held cleared when the wait ends
+- [x] `src/core/core.ts`: a note-send hook (`noteSend(id, text, fromSessionId)`): when the target is held and the caller id equals its `parentId`, remember the text; when the wait then clears inside the window, append a `handled` entry to the parent (when, kind, screen, text); a clear with no such send adds nothing; `sessionEscalate` ends the hold and notifies at once
+- [x] `src/shared/zones.ts`: a held child is `running`, not needs-you
+- [x] `src/shared/cli.ts`, `src/cli/index.ts`, `src/main/cliServer.ts`: `grove send` passes `process.env.GROVE_SESSION_ID` as `from`; the server resolves it and passes it to core
+- [x] tests in `src/core/sessions.test.ts` (fake timers) and `src/shared/zones.test.ts`, plus CLI arg or server tests where they exist
+
+Implementer 2 (renderer; types from implementer 1 as above):
+- [x] `src/renderer/src/sessionStatus.ts`: `shownStatus` returns `working` for a held session, so `countsAsWaiting`, cmd+., the dots and `mostUrgent` follow
+- [x] `src/renderer/src/components/ZoneSection.tsx` (+ css): a parent card shows a handled badge with `handled.length`; opening it lists time, kind, the screen tail and the sent text per entry; Running (handled) heading counts working sessions as before
+- [x] tests in `src/renderer/src/sessionStatus.test.ts` (and a component test if the folder has them)
+
+Models passed: implementer: inherit, reviewer: inherit
+
+### Review rounds
+
+Round 1: fresh reviewer found no blocking findings; no fix needed.
+
+Approved, 0 blocking, 0 fix rounds. Non-blocking left: `zoneList.ts` `rowLine` and `workflow/derive.ts` read raw `status === 'waiting'`, so a held child shows its prompt subtitle and turns a feature card to waiting for up to the window; the expiry notify lacks the `id !== lastOnScreen` check that escalate has; only the last text of several sends in one hold is recorded; `dropSessions` does not end a hold early (bounded by the window); `escalateAfterSec` above the `setTimeout` 32-bit limit fires at once; `handled` is live-only and unbounded; the screen capture is asynchronous, so a very fast clear can record an empty screen.
+
+### Deviations
+
+`commands.sendToSession` takes an optional `from` instead of a separate `core.noteSend`. The hold is skipped when the child is on screen or not primed (neither notified before). `handled` and `held` are live only. The handled list opens as an inline list, not a floating popover. No component test for the badge: the repo has no `.test.tsx` and vitest only includes `src/**/*.test.ts`. The existing child-permission test now advances fake timers past the window.
+
+### Verification
+
+`npm test` (110 files, 1374 tests) and `npm run typecheck` pass. New fake-timer tests: a send from the parent within the window gives no notify and one handled entry with screen tail and text; a clear with no send adds none; an unanswered prompt notifies once after the window and not before; a send from a non-parent adds none; escalate still notifies at once; held and handled are not saved; `escalateAfterSec` survives a config rewrite; 0 turns the hold off. Plus zones, `sessionStatus`, args and cliServer tests. Models requested: implementer inherit, reviewer inherit.
+
+### Left for the human
+
+Observable check: with a child on a permission prompt, it shows in Needs you with a popup only after the window passes; and a parent's `grove send` answer inside the window shows in its handled badge. Not run here (needs the app).
+
 ## Open questions

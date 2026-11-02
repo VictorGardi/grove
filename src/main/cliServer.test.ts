@@ -184,6 +184,7 @@ describe('cli server', () => {
     expect(t.fake.pastes).toEqual([{ name: s.tmuxName, text: 'hi', submit: false }])
     await request(socketPath, req('sessions.send', { ref: s.id, text: 'yo', submit: true }))
     expect(t.fake.pastes[1]).toMatchObject({ text: 'yo', submit: true })
+    expect(await request(socketPath, req('sessions.send', { ref: s.id, text: 'who', submit: false, from: 'unknown-caller' }))).toMatchObject({ ok: true }) // an unknown caller is just not a parent
     expect(await request(socketPath, req('sessions.send', { ref: 'nope', text: 'x', submit: true }))).toMatchObject({ ok: false, error: { code: 'not-found' } })
     expect(await request(socketPath, req('sessions.send', { ref: s.id }))).toMatchObject({ ok: false, error: { code: 'bad-params' } })
     t.fake.captured.set(s.tmuxName, 'line1\nline2\n')

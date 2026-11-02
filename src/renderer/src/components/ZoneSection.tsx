@@ -27,6 +27,7 @@ export function ZoneSection({ title, sessions, kids, collapsed, onToggleKids, fo
   onContextMenu: (id: string, e: MouseEvent) => void
 }) {
   const [open, setOpen] = useState(false)
+  const [handledFor, setHandledFor] = useState<string | null>(null) // the parent whose handled list is open
   const shown = !collapsible || open
   if (sessions.length === 0) return null
   return (
@@ -65,6 +66,25 @@ export function ZoneSection({ title, sessions, kids, collapsed, onToggleKids, fo
                     <Icon name={kidsOpen ? 'chevron-down' : 'chevron-right'} size={10} />
                     {childrenSummary(list)}
                   </button>
+                )}
+                {s.handled && s.handled.length > 0 && (
+                  <div className={css.handled} onClick={(e) => e.stopPropagation()}>
+                    <button type="button" className={css.handledBtn} aria-expanded={handledFor === s.id}
+                      title="Prompts answered for you" onClick={() => setHandledFor(handledFor === s.id ? null : s.id)}>
+                      <Badge tone="muted">{`${s.handled.length} handled`}</Badge>
+                    </button>
+                    {handledFor === s.id && (
+                      <ul className={css.handledList} aria-label="Handled prompts">
+                        {s.handled.map((h, i) => (
+                          <li key={`${h.childId}-${h.at}-${i}`} className={css.handledItem}>
+                            <div className={css.handledHead}><time dateTime={h.at}>{new Date(h.at).toLocaleTimeString()}</time> · {h.kind}</div>
+                            <pre className={css.handledScreen}>{h.screen}</pre>
+                            <div className={css.handledSent}>Sent: <code>{h.sent}</code></div>
+                          </li>
+                        ))}
+                      </ul>
+                    )}
+                  </div>
                 )}
                 {progress && <div className={css.progress}><RunProgress progress={progress} /></div>}
                 {urgent && kidsOpen && (
