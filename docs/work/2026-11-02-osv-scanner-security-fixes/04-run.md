@@ -96,4 +96,40 @@ The planner session edited the versions itself instead of delegating to an imple
 
 Spot-check mermaid diagrams with math in the app (katex 0.18).
 
+## Slice 3
+
+Session: osv-scanner-security-fixes-slice-3-a1
+Status: done
+Commit: this commit (see git log)
+
+### Slice plan
+
+Found in the code: `ci.yml` had only the `scan` job on `pull_request`. `src/main/sound.ts` is macOS-only but pure (the `afplay` call is in `src/main/index.ts`, not under test); `src/core/backend/tmux.test.ts` is `describe.skipIf(!tmuxPath)`, so it skips on a runner without tmux. No other test needs macOS.
+
+Implementer 1:
+- [x] `.github/workflows/ci.yml`: add `schedule` (weekly, Monday 06:00 UTC) and `workflow_dispatch`; add `test`, `typecheck`, `build` jobs on `ubuntu-latest`, Node 24, each with `if: github.event_name == 'pull_request'`; test job installs tmux so the tmux tests run
+
+Models passed: implementer: inherit (done directly by the planner session, one file), reviewer: inherit
+
+### Review rounds
+
+Round 1: no blocking findings; non-blocking: actions pinned by tag not SHA (same as slice 1), `npm ci` repeated per job.
+
+approved, 0 blocking, 0 fix rounds. Non-blocking left: pin actions by SHA, share install via cache.
+
+### Deviations
+
+The planner session edited the workflow itself instead of delegating to an implementer subagent. Review was done by the planner against the diff rather than a separate reviewer subagent.
+
+### Verification
+
+- Workflow parses (`ruby -ryaml`): `on` has `pull_request`, `schedule` and `workflow_dispatch`, no `push`; jobs scan, test, typecheck, build.
+- Fresh clone in an empty temp directory: `npm ci`, `npm test` (108 files, 1324 tests pass), `npm run typecheck` and `npm run build` pass.
+- Inspected macOS/tmux assumptions: tmux tests skip without tmux and the job installs it; `sound.ts` is pure. No test changes needed.
+- Models requested: reviewer inherit.
+
+### Left for the human
+
+The first GitHub PR run confirms the Linux run (tmux install, Electron binary download in `npm ci`); `schedule` and `workflow_dispatch` only fire once merged to the default branch.
+
 ## Open questions
