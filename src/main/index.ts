@@ -1,3 +1,4 @@
+import fs from 'node:fs'
 import os from 'node:os'
 import path from 'node:path'
 import { execFile } from 'node:child_process'
@@ -144,7 +145,6 @@ app.whenReady().then(async () => {
 
   // whisper-cli lives on the login shell's PATH (e.g. Homebrew), which a GUI launch lacks. Resolved once, off the startup path.
   let whisperBin: string | null = null
-  void cachedLoginPath().then((p) => { whisperBin = findBin('whisper-cli', { PATH: p }) })
   const sttDir = path.join(app.getPath('userData'), 'stt')
   const sttDeps = {
     execFile: promisify(execFile) as unknown as WhisperDeps['execFile'],
@@ -154,9 +154,17 @@ app.whenReady().then(async () => {
   }
   cleanStaleWavs(sttDeps.tmpDir)
   const { killAttaches } = registerIpc(core, () => win, () => [...errors, ...core.getErrors()], sttDeps)
-  buildMenu((a) => {
+  // The dictation hint reflects whisper-cli + model presence, checked at launch only, never polled.
+  let dictationReady = false
+  const rebuildMenu = (): void => buildMenu((a) => {
     if (win && !win.isDestroyed()) win.webContents.send('menu:action', a)
-  }, () => void installCli(launcher), () => void installSkill())
+  }, () => void installCli(launcher), () => void installSkill(), { ready: dictationReady })
+  rebuildMenu()
+  void cachedLoginPath().then((p) => {
+    whisperBin = findBin('whisper-cli', { PATH: p })
+    dictationReady = whisperBin !== null && fs.existsSync(sttDeps.modelPath)
+    rebuildMenu()
+  })
 
   win = new BrowserWindow({
     width: 1200,

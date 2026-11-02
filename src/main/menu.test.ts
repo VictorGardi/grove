@@ -13,10 +13,10 @@ import { buildMenu } from './menu'
 const items = (xs: MenuItemConstructorOptions[]): MenuItemConstructorOptions[] =>
   xs.flatMap((x) => [x, ...(Array.isArray(x.submenu) ? items(x.submenu) : [])])
 
-function menu() {
+function menu(ready = true) {
   const send = vi.fn<(a: MenuAction) => void>()
   setApplicationMenu.mockClear()
-  buildMenu(send, () => {}, () => {})
+  buildMenu(send, () => {}, () => {}, { ready })
   const all = items(setApplicationMenu.mock.calls[0][0] as MenuItemConstructorOptions[])
   return { send, all, accelerators: all.flatMap((x) => (x.accelerator ? [String(x.accelerator)] : [])) }
 }
@@ -40,5 +40,22 @@ describe('buildMenu', () => {
     ]
     for (const a of earlier) expect(accelerators).toContain(a)
     expect(new Set(accelerators).size).toBe(accelerators.length)
+  })
+
+  it('shows a disabled, accelerator-free dictation hint when ready', () => {
+    const { all } = menu(true)
+    const item = all.find((x) => x.label?.startsWith('Dictation:'))!
+    expect(item.label).toBe('Dictation: hold ⌃⇧Space')
+    expect(item.enabled).toBe(false)
+    expect(item.accelerator).toBeUndefined()
+    expect(item.click).toBeUndefined()
+  })
+
+  it('says setup is needed when dictation is not ready', () => {
+    const { all } = menu(false)
+    const item = all.find((x) => x.label?.startsWith('Dictation:'))!
+    expect(item.label).toBe('Dictation: setup needed (see README)')
+    expect(item.enabled).toBe(false)
+    expect(item.accelerator).toBeUndefined()
   })
 })

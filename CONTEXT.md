@@ -168,3 +168,9 @@ specific meaning, so humans and agents stay consistent.
   path relative to the project folder (POSIX), as in
   `grove-artifact://<projectId>/<path>`. A feature's artifact is just a file
   target inside its folder. Review comments on markdown anchor on it too.
+- **Dictation**: hold-to-talk speech input (`⌃⇧Space`, held in the Grove
+  window). The target session is locked at key press; on release the audio is
+  transcribed locally by `whisper-cli` (whisper.cpp, English `base.en` model)
+  and the words are pasted, unsent, into that session through the `dictate`
+  core command (no stability wait, no resume). Local-only: no network code,
+  the temporary WAV is deleted right after (ADR 0046).

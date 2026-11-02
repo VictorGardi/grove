@@ -145,4 +145,45 @@ Pass, 0 blocking, 0 fix rounds. Non-blocking left: the overlay cancel runs in a 
 
 Manually in grid view: press in pane A, click pane B while holding, release: words in A, badge only on A. Close A mid-talk and while transcribing: nothing appears, no error. Open the command palette mid-hold: recording cancels, microphone closes. Dictate into a Claude pane waiting on a permission prompt: text sits in the prompt, nothing approved.
 
+## Slice 4
+
+Session: stt-voice-input-slice-4-a1
+Status: done
+Commit: this commit (see git log)
+
+### Slice plan
+
+Found in the code: `src/main/menu.ts` exports `buildMenu(send, installCli, installSkill)` and is called once in `src/main/index.ts` right after `sttDeps` is built; `whisperBin` resolves asynchronously from the login-shell PATH and the model path is `<userData>/stt/ggml-base.en.bin`. `scripts/` holds only `fix-spawn-helper.mjs` (plain Node ESM). The newest ADR is 0045 (0032 is duplicated). The pinned sha256 was read from the Hugging Face LFS pointer for `ggml-base.en.bin` (`a03779c8…d002`, 147964211 bytes).
+
+Implementer 1 (script, menu):
+- [x] `scripts/stt-fetch-model.mjs`: download, pinned sha256, atomic write to `<userData>/stt/`, `--from`, tamper refusal
+- [x] script test (tampered file exits non-zero and writes nothing; matching file installs)
+- [x] `src/main/menu.ts` + `index.ts`: informational Dictation item (shortcut or setup needed), rebuilt once after the login PATH resolves
+- [x] `src/main/menu.test.ts`
+
+Implementer 2 (docs):
+- [x] `README.md`: dictation setup, bank notes, shortcut row
+- [x] `docs/adr/0046-local-whisper-cpp-dictation.md`
+- [x] `CONTEXT.md`: Dictation term
+
+Models passed: implementer: inherit, reviewer: inherit
+
+### Review rounds
+
+Round 1: 0 blocking, 5 non-blocking; applied the ADR wording (tripwire arrives in slice 5) and the README restart note.
+
+Approved, 0 blocking, 0 fix rounds. Non-blocking left: the hash is computed in a `data` listener beside `pipeline` rather than in a Transform; an interrupted download leaves a `.part` file in the model folder (the target is never corrupted).
+
+### Deviations
+
+The script test lives at `src/core/stt/fetchModelScript.test.ts` because vitest only includes `src/**`. The script reads `STT_MODEL_DIR` and, only with it set, `STT_MODEL_SHA256` as test hooks. The default path is the macOS userData folder `~/Library/Application Support/grove/stt` (productName `grove`); APPDATA and XDG paths were added for other platforms.
+
+### Verification
+
+`npm run typecheck` clean; `npm test` 113 files, 1362 tests pass. The real script run (into a temp dir) wrote a 147964211 byte file whose `shasum -a 256` equals the pinned `a03779c8…d002`; `--from` a random 1000-byte file exited 1 and left no directory or file. Menu tests cover both labels, disabled, no accelerator. Models requested: implementer inherit, reviewer inherit.
+
+### Left for the human
+
+Seeing "setup needed" turn into the shortcut label in the running app's Session menu (menu is only unit-tested).
+
 ## Open questions
