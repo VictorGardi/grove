@@ -1,9 +1,10 @@
 import { describe, expect, it } from 'vitest'
-import { IDLE, step, type DictationInput, type DictationState } from './machine'
+import { dictationMessage, errorKind, IDLE, step, type DictationInput, type DictationState } from './machine'
 
 const down = (o: Partial<Extract<DictationInput, { type: 'keyDown' }>> = {}): DictationInput =>
   ({ type: 'keyDown', ctrl: true, shift: true, alt: false, meta: false, code: 'Space', repeat: false, id: 'a', ...o })
 const listening: DictationState = { phase: 'listening', id: 'a' }
+const err: DictationState = { phase: 'error', id: 'a', kind: 'failed' }
 
 describe('dictation machine', () => {
   it('starts on the chord and locks the id', () => {
@@ -45,12 +46,44 @@ describe('dictation machine', () => {
     expect(step(t, down({ id: 'b' }))).toEqual({ state: t })
   })
 
-  it('dictates the text into the locked id, and types nothing on empty text or failure', () => {
+  it('dictates the text into the locked id', () => {
     const t: DictationState = { phase: 'transcribing', id: 'a' }
     expect(step(t, { type: 'transcribed', text: 'hello' })).toEqual({ state: IDLE, effect: { type: 'dictate', id: 'a', text: 'hello' } })
-    expect(step(t, { type: 'transcribed', text: '  ' })).toEqual({ state: IDLE })
-    expect(step(t, { type: 'failed' })).toEqual({ state: IDLE, effect: undefined })
-    expect(step(listening, { type: 'failed' }).effect).toEqual({ type: 'abort' })
     expect(step(IDLE, { type: 'transcribed', text: 'late' })).toEqual({ state: IDLE })
+  })
+
+  it('shows an error and types nothing on blank text or failure', () => {
+    const t: DictationState = { phase: 'transcribing', id: 'a' }
+    expect(step(t, { type: 'transcribed', text: '  ' })).toEqual({ state: { phase: 'error', id: 'a', kind: 'nothing' } })
+    expect(step(t, { type: 'failed', kind: 'model' })).toEqual({ state: { phase: 'error', id: 'a', kind: 'model' }, effect: undefined })
+    expect(step(listening, { type: 'failed', kind: 'mic' })).toEqual({
+      state: { phase: 'error', id: 'a', kind: 'mic' }, effect: { type: 'abort' },
+    })
+    expect(step(IDLE, { type: 'failed', kind: 'failed' })).toEqual({ state: IDLE })
+    expect(step(err, { type: 'failed', kind: 'mic' })).toEqual({ state: err })
+  })
+
+  it('replaces an error on a new press, but not while busy', () => {
+    expect(step(err, down({ id: 'b' }))).toEqual({ state: { phase: 'listening', id: 'b' }, effect: { type: 'start' } })
+    expect(step(err, down({ repeat: true })).state).toEqual(err)
+  })
+
+  it('clears an error on cancel or clearError only, and error ignores other inputs', () => {
+    expect(step(err, { type: 'cancel' })).toEqual({ state: IDLE })
+    expect(step(err, { type: 'clearError' })).toEqual({ state: IDLE })
+    expect(step(listening, { type: 'clearError' })).toEqual({ state: listening })
+    expect(step(IDLE, { type: 'clearError' })).toEqual({ state: IDLE })
+    for (const input of [{ type: 'blur' }, { type: 'visibilityHidden' }, { type: 'keyUp', key: 'Shift', code: 'ShiftLeft' }] as DictationInput[]) {
+      expect(step(err, input)).toEqual({ state: err })
+    }
+  })
+
+  it('maps ipc errors and messages', () => {
+    expect(errorKind('no-binary')).toBe('binary')
+    expect(errorKind('no-binary: whisper-cli')).toBe('binary')
+    expect(errorKind('no-model')).toBe('model')
+    expect(errorKind('exit 1')).toBe('failed')
+    expect(dictationMessage('nothing')).toBe('Nothing heard')
+    expect(dictationMessage('model')).toContain('ggml-base.en.bin')
   })
 })

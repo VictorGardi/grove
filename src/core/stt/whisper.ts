@@ -25,7 +25,22 @@ export function pcmToWav(pcm: Uint8Array): Buffer {
 
 // whisper-cli -nt prints one segment per line; join them into a single line of text.
 export function parseWhisperOutput(stdout: string): string {
-  return stdout.split('\n').map((l) => l.trim()).filter(Boolean).join(' ')
+  return stdout
+    .split('\n')
+    .map((l) => l.trim().replace(/\[[^\]]*\]|\([^)]*\)/g, '').replace(/\s+/g, ' ').trim()) // drop [BLANK_AUDIO], (music) noise tokens
+    .filter(Boolean)
+    .join(' ')
+}
+
+// Removes wavs left behind by a crash mid-transcription. Never throws.
+export function cleanStaleWavs(tmpDir: string): void {
+  try {
+    for (const f of fs.readdirSync(tmpDir)) {
+      if (f.endsWith('.wav')) fs.rmSync(path.join(tmpDir, f), { force: true })
+    }
+  } catch {
+    // missing dir or unreadable: nothing to clean
+  }
 }
 
 export type ExecFile = (file: string, args: string[], opts: { timeout: number; maxBuffer: number }) => Promise<{ stdout: string; stderr?: string }>
@@ -42,8 +57,8 @@ export interface WhisperDeps {
 // exit or a timeout; an empty transcription resolves to ''. The temporary wav is always deleted.
 export async function transcribe(deps: WhisperDeps, pcm: Uint8Array): Promise<string> {
   const bin = deps.whisperBin()
-  if (!bin) throw new Error('whisper-cli not found')
-  if (!fs.existsSync(deps.modelPath)) throw new Error(`whisper model missing: ${deps.modelPath}`)
+  if (!bin) throw new Error('no-binary: whisper-cli not found on PATH')
+  if (!fs.existsSync(deps.modelPath)) throw new Error(`no-model: ${deps.modelPath}`)
   fs.mkdirSync(deps.tmpDir, { recursive: true })
   const wav = path.join(deps.tmpDir, `${randomUUID()}.wav`)
   fs.writeFileSync(wav, pcmToWav(pcm))

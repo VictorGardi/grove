@@ -1,8 +1,10 @@
 import { useEffect, useRef, useState } from 'react'
 import { start, type Recorder } from './capture'
-import { IDLE, isChord, isChordKey, step, type DictationEffect, type DictationInput, type DictationState } from './machine'
+import { judgeAudio } from './audio'
+import { errorKind, IDLE, isChord, isChordKey, step, type DictationEffect, type DictationInput, type DictationState } from './machine'
 
 const TIMEOUT_MS = 30_000
+const ERROR_MS = 6000
 
 function withTimeout<T>(p: Promise<T>, ms: number): Promise<T> {
   return new Promise((resolve, reject) => {
@@ -37,7 +39,7 @@ export function useDictation(getTargetId: () => string | null): DictationState {
         const rec = start()
         recorder = rec
         // permission denied or no device: back to idle, nothing typed
-        rec.catch(() => { if (mine === run) send({ type: 'failed' }) })
+        rec.catch(() => { if (mine === run) send({ type: 'failed', kind: 'mic' }) })
       } else if (effect.type === 'stop') {
         const mine = run
         const rec = recorder!
@@ -46,15 +48,18 @@ export function useDictation(getTargetId: () => string | null): DictationState {
         void (async () => {
           try {
             const res = await withTimeout((async () => {
-              const pcm = await (await rec).stop()
+              let pcm: ArrayBuffer
+              try { pcm = await (await rec).stop() } catch { return 'reported' as const } // start() rejection already reported
+              if (judgeAudio(pcm) !== 'ok') return 'nothing' as const
               return window.api.invoke('dictation:transcribe', { pcm })
             })(), TIMEOUT_MS)
-            if (mine !== run) return
-            if (!res.ok) return send({ type: 'failed' })
+            if (mine !== run || res === 'reported') return
+            if (res === 'nothing') return send({ type: 'failed', kind: 'nothing' })
+            if (!res.ok) return send({ type: 'failed', kind: errorKind(res.error) })
             released0 = released // read by the dictate effect that send() runs
             send({ type: 'transcribed', text: res.data.text })
           } catch {
-            if (mine === run) send({ type: 'failed' })
+            if (mine === run) send({ type: 'failed', kind: 'failed' })
           }
         })()
       } else {
@@ -66,10 +71,16 @@ export function useDictation(getTargetId: () => string | null): DictationState {
         )
       }
     }
+    let errorTimer: ReturnType<typeof setTimeout> | undefined
     const send = (input: DictationInput) => {
       const r = step(state, input)
+      const changed = r.state !== state // an ignored input (typing key-ups) must not re-arm the error timer
       state = r.state
       setView(r.state)
+      if (changed) {
+        clearTimeout(errorTimer)
+        if (r.state.phase === 'error') errorTimer = setTimeout(() => send({ type: 'clearError' }), ERROR_MS)
+      }
       if (r.effect) perform(r.effect)
     }
 
@@ -100,6 +111,7 @@ export function useDictation(getTargetId: () => string | null): DictationState {
       window.removeEventListener('keyup', onUp, true)
       window.removeEventListener('blur', onBlur)
       document.removeEventListener('visibilitychange', onVisibility)
+      clearTimeout(errorTimer)
       abort()
     }
   }, [])

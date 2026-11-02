@@ -231,7 +231,7 @@ export default function App() {
             ) : shown.kind === 'grid' ? (
               <SessionGrid sessions={shown.sessions} focusedId={shown.focused.id} view={gridView} onFocusPane={setFocused} overlayOpen={overlayOpen} dictation={dictation} />
             ) : shown.kind === 'session' && shown.session.lastStatus === 'running' ? (
-              <TerminalView key={shown.session.id} sessionId={shown.session.id} active={!overlayOpen} dictation={dictation.phase !== 'idle' && dictation.id === shown.session.id ? dictation.phase : undefined} />
+              <TerminalView key={shown.session.id} sessionId={shown.session.id} active={!overlayOpen} dictation={dictation.phase !== 'idle' && dictation.id === shown.session.id ? dictation : undefined} />
             ) : shown.kind === 'session' ? (
               <div className={s.ended}>
                 <div className={s.endedTitle}>Session ended</div>

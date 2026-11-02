@@ -5,9 +5,10 @@ import { WebglAddon } from '@xterm/addon-webgl'
 import { terminalTheme } from '@shared/theme'
 import s from './TerminalView.module.css'
 import { DictationBadge } from '../dictation/DictationBadge'
+import type { DictationState } from '../dictation/machine'
 
 // active: this terminal should hold the keyboard (it is the focused pane and no overlay is open)
-export function TerminalView({ sessionId, active, onFocus, dictation }: { sessionId: string; active: boolean; onFocus?: () => void; dictation?: 'listening' | 'transcribing' }) {
+export function TerminalView({ sessionId, active, onFocus, dictation }: { sessionId: string; active: boolean; onFocus?: () => void; dictation?: Exclude<DictationState, { phase: 'idle' }> }) {
   const ref = useRef<HTMLDivElement>(null)
   const termRef = useRef<Terminal | null>(null)
 
@@ -106,7 +107,7 @@ export function TerminalView({ sessionId, active, onFocus, dictation }: { sessio
   return (
     <div className={s.frame}>
       <div ref={ref} className={s.term} onFocus={onFocus} />
-      {dictation && <DictationBadge phase={dictation} />}
+      {dictation && <DictationBadge state={dictation} />}
     </div>
   )
 }

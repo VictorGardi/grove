@@ -146,7 +146,7 @@ export function SessionGrid({ sessions, focusedId, view, onFocusPane, overlayOpe
                   </>} />
               </div>
               {x.lastStatus === 'running'
-                ? <TerminalView sessionId={x.id} active={focused && !overlayOpen} onFocus={focus} dictation={dictation.phase !== 'idle' && dictation.id === x.id ? dictation.phase : undefined} />
+                ? <TerminalView sessionId={x.id} active={focused && !overlayOpen} onFocus={focus} dictation={dictation.phase !== 'idle' && dictation.id === x.id ? dictation : undefined} />
                 : (
                   <div className={s.ended}>
                     <div>Session ended</div>

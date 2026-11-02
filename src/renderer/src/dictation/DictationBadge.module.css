@@ -12,3 +12,12 @@
   font-weight: var(--fw-bold);
   pointer-events: none;
 }
+
+.error {
+  max-width: 28rem;
+  background: var(--danger-bg);
+  color: var(--danger);
+  border: 1px solid var(--danger-border);
+  white-space: normal;
+  overflow-wrap: anywhere;
+}

@@ -15,7 +15,7 @@ import { CopilotSource } from '../core/copilot/source'
 import { HttpOpenCode, serviceFilePath } from '../core/opencode/client'
 import { guardNavigation, handleArtifacts, registerArtifactScheme } from './artifacts'
 import { registerIpc } from './ipc'
-import type { WhisperDeps } from '../core/stt/whisper'
+import { cleanStaleWavs, type WhisperDeps } from '../core/stt/whisper'
 import { startCliServer } from './cliServer'
 import { agentSkillsDirs, installAgentSkill, installCommandLineTool, writeLauncher } from './launcher'
 import { buildMenu } from './menu'
@@ -152,6 +152,7 @@ app.whenReady().then(async () => {
     modelPath: path.join(sttDir, 'ggml-base.en.bin'),
     tmpDir: path.join(sttDir, 'tmp'),
   }
+  cleanStaleWavs(sttDeps.tmpDir)
   const { killAttaches } = registerIpc(core, () => win, () => [...errors, ...core.getErrors()], sttDeps)
   buildMenu((a) => {
     if (win && !win.isDestroyed()) win.webContents.send('menu:action', a)

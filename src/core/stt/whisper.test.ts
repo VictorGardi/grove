@@ -2,7 +2,7 @@ import fs from 'node:fs'
 import os from 'node:os'
 import path from 'node:path'
 import { afterEach, beforeEach, describe, expect, it } from 'vitest'
-import { parseWhisperOutput, pcmToWav, transcribe, type ExecFile } from './whisper'
+import { cleanStaleWavs, parseWhisperOutput, pcmToWav, transcribe, type ExecFile } from './whisper'
 
 describe('pcmToWav', () => {
   it('writes a 44-byte 16 kHz mono 16-bit header before the samples', () => {
@@ -33,6 +33,12 @@ describe('parseWhisperOutput', () => {
   })
   it('is empty for blank output', () => {
     expect(parseWhisperOutput(' \n')).toBe('')
+  })
+  it('drops noise tokens', () => {
+    expect(parseWhisperOutput(' [BLANK_AUDIO]\n')).toBe('')
+    expect(parseWhisperOutput('(keyboard clicking)')).toBe('')
+    expect(parseWhisperOutput('[ Silence ]\n(music)')).toBe('')
+    expect(parseWhisperOutput('hello [BLANK_AUDIO] world')).toBe('hello world')
   })
 })
 
@@ -70,6 +76,10 @@ describe('transcribe', () => {
     expect(await transcribe(deps(async () => ({ stdout: '\n' })), new Uint8Array(2))).toBe('')
   })
 
+  it('returns an empty text for blank-audio output', async () => {
+    expect(await transcribe(deps(async () => ({ stdout: ' [BLANK_AUDIO]\n' })), new Uint8Array(2))).toBe('')
+  })
+
   it('rejects on failure and still deletes the wav', async () => {
     await expect(transcribe(deps(async () => { throw new Error('exit 1') }), new Uint8Array(2))).rejects.toThrow('exit 1')
     expect(fs.readdirSync(tmpDir())).toEqual([])
@@ -77,7 +87,23 @@ describe('transcribe', () => {
 
   it('rejects when the binary or model is missing', async () => {
     const exec: ExecFile = async () => ({ stdout: 'x' })
-    await expect(transcribe({ ...deps(exec), whisperBin: () => null }, new Uint8Array(2))).rejects.toThrow('whisper-cli')
-    await expect(transcribe({ ...deps(exec), modelPath: path.join(dir, 'nope') }, new Uint8Array(2))).rejects.toThrow('model')
+    await expect(transcribe({ ...deps(exec), whisperBin: () => null }, new Uint8Array(2))).rejects.toThrow(/^no-binary: whisper-cli not found on PATH/)
+    await expect(transcribe({ ...deps(exec), modelPath: path.join(dir, 'nope') }, new Uint8Array(2))).rejects.toThrow(`no-model: ${path.join(dir, 'nope')}`)
+  })
+})
+
+describe('cleanStaleWavs', () => {
+  it('removes wavs, keeps other files, and ignores a missing dir', () => {
+    const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'whisper-clean-'))
+    try {
+      fs.writeFileSync(path.join(dir, 'a.wav'), 'x')
+      fs.writeFileSync(path.join(dir, 'b.wav'), 'x')
+      fs.writeFileSync(path.join(dir, 'keep.txt'), 'x')
+      cleanStaleWavs(dir)
+      expect(fs.readdirSync(dir)).toEqual(['keep.txt'])
+      expect(() => cleanStaleWavs(path.join(dir, 'nope'))).not.toThrow()
+    } finally {
+      fs.rmSync(dir, { recursive: true, force: true })
+    }
   })
 })
