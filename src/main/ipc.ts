@@ -7,12 +7,13 @@ import type { InvokeMap, PushMap, Result, SendMap } from '@shared/ipc'
 import type { Slices } from '@shared/types'
 import type { AttachHandle } from '../core/backend/types'
 import type { Core } from '../core/core'
+import { transcribe, type WhisperDeps } from '../core/stt/whisper'
 import { atomicWrite } from '../core/store/jsonFile'
 
 type Handler<K extends keyof InvokeMap> = (arg: InvokeMap[K][0]) => Promise<InvokeMap[K][1] | Result<InvokeMap[K][1]>> | InvokeMap[K][1]
 
 // Returns killAttaches: the window calls it when it reloads or closes, so no client stays attached.
-export function registerIpc(core: Core, getWindow: () => BrowserWindow | null, getErrors: () => string[]): { killAttaches: () => void } {
+export function registerIpc(core: Core, getWindow: () => BrowserWindow | null, getErrors: () => string[], sttDeps?: WhisperDeps): { killAttaches: () => void } {
   const push = <K extends keyof PushMap>(ch: K, payload: PushMap[K]) => {
     const win = getWindow()
     if (win && !win.isDestroyed()) win.webContents.send(ch, payload)
@@ -59,6 +60,14 @@ export function registerIpc(core: Core, getWindow: () => BrowserWindow | null, g
   handle('diff:lines', (a) => core.commands.diffLines(a), true)
   handle('diff:refs', (a) => core.commands.diffRefs(a), true)
   handle('session:focusLast', () => core.commands.sessionFocusLast(), true)
+  handle('dictation:transcribe', async ({ pcm }) => {
+    if (!sttDeps) throw new Error('dictation unavailable')
+    const t0 = Date.now()
+    const text = await transcribe(sttDeps, new Uint8Array(pcm))
+    console.log(`[dictation] transcribed in ${Date.now() - t0}ms`)
+    return { text }
+  })
+  handle('dictation:dictate', (a) => core.commands.dictate(a), true)
   handle('ui:set', (a) => core.commands.uiSet(a), true)
   // Reload the viewer frame in place; Chromium restores scroll where it can. Only frames showing the
   // viewer's doc (hash aside): board card previews reload themselves through their mtime keys.

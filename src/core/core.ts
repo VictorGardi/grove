@@ -25,6 +25,7 @@ import { linkedDrafts, repoFeatureDrafts } from '@shared/comments'
 import { loadComments, saveComments } from './comments/store'
 import type { TurnResult } from '@shared/cli'
 import { isDirectory, paneStable, realOrSelf, resolveProject, waitTurn } from './cliOps'
+import { dictate } from './dictate'
 import { sendToSession } from './send'
 import { hasLiveSessions, newProject, parentCheckout } from './projects'
 import { readBranch } from './git'
@@ -109,6 +110,7 @@ export interface Commands {
   reviewSend(a: { sessionId: string; feature?: FeatureKey }): Promise<Result<{ sent: number }>> // the session's drafts and those kept on its linked feature (or on `feature`, for a session not linked to it) as one message, the latter re-owned to it; none: 'empty'
   reviewStartAndSend(a: { feature: FeatureKey; kind: SessionKind; cols: number; rows: number }): Promise<Result<{ sessionId: string; sent: number }>> // a new agent session linked to the feature, launched with its kept drafts as the prompt (D4)
   sendToSession(a: { id: string; text: string; submit?: boolean }): Promise<Result<{ id: string }>>
+  dictate(a: { id: string; text: string }): Promise<Result<{ id: string }>>
   sessionRead(a: { id: string; lines: number }): Promise<Result<{ text: string }>> // the pane's last lines; empty when it is gone
 }
 
@@ -1214,6 +1216,7 @@ export function createCore(opts: CoreOptions): Core {
     },
 
     sendToSession: (a) => sendToSession(sendDeps, a),
+    dictate: (a) => dictate({ find: findSession, backend }, a),
     async sessionRead({ id, lines }) {
       const session = findSession(id)
       if (!session) return { ok: false, error: 'not-found' }

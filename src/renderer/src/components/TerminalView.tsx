@@ -4,9 +4,10 @@ import { FitAddon } from '@xterm/addon-fit'
 import { WebglAddon } from '@xterm/addon-webgl'
 import { terminalTheme } from '@shared/theme'
 import s from './TerminalView.module.css'
+import { DictationBadge } from '../dictation/DictationBadge'
 
 // active: this terminal should hold the keyboard (it is the focused pane and no overlay is open)
-export function TerminalView({ sessionId, active, onFocus }: { sessionId: string; active: boolean; onFocus?: () => void }) {
+export function TerminalView({ sessionId, active, onFocus, dictation }: { sessionId: string; active: boolean; onFocus?: () => void; dictation?: 'listening' | 'transcribing' }) {
   const ref = useRef<HTMLDivElement>(null)
   const termRef = useRef<Terminal | null>(null)
 
@@ -22,7 +23,7 @@ export function TerminalView({ sessionId, active, onFocus }: { sessionId: string
       lineHeight: 1.35,
     })
     // ⌃Tab is the Last Session menu accelerator: xterm would otherwise send it to the shell and swallow it.
-    term.attachCustomKeyEventHandler((e) => !(e.ctrlKey && e.key === 'Tab'))
+    term.attachCustomKeyEventHandler((e) => !(e.ctrlKey && e.key === 'Tab') && !(e.ctrlKey && e.shiftKey && e.code === 'Space')) // the latter is dictation's chord
     // tmux has the mouse, so a drag selects in tmux and it copies with OSC 52 ("52;c;<base64>").
     term.parser.registerOscHandler(52, (data) => {
       const b64 = data.slice(data.indexOf(';') + 1)
@@ -105,6 +106,7 @@ export function TerminalView({ sessionId, active, onFocus }: { sessionId: string
   return (
     <div className={s.frame}>
       <div ref={ref} className={s.term} onFocus={onFocus} />
+      {dictation && <DictationBadge phase={dictation} />}
     </div>
   )
 }

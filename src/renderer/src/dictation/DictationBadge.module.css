@@ -1,0 +1,14 @@
+/* sits in the top corner of the pane's terminal frame */
+.badge {
+  position: absolute;
+  top: var(--sp-2);
+  right: var(--sp-2);
+  z-index: 20;
+  padding: 2px var(--sp-2);
+  border-radius: var(--r-card);
+  background: var(--accent-badge);
+  color: var(--chrome-bg);
+  font-size: var(--fs-sm);
+  font-weight: var(--fw-bold);
+  pointer-events: none;
+}
