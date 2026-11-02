@@ -4,7 +4,7 @@ import path from 'node:path'
 import { afterEach, describe, expect, it } from 'vitest'
 import { parseArtifactUrl } from '@shared/artifactUrl'
 import { setupCore } from '../testing/setup'
-import { safeArtifactPath } from './path'
+import { readInside, readSafeFile, safeArtifactPath } from './path'
 
 describe('artifact paths', () => {
   let disposeAll = () => {}
@@ -71,5 +71,23 @@ describe('artifact paths', () => {
       const file = t && core.filePath(t.projectId, t.path)
       expect(t === null || file === null, url).toBe(true)
     }
+  })
+
+  it('reads the checked file through one handle', async () => {
+    const { core, folder } = await setup()
+    expect((await readSafeFile(folder, '03-design.html'))?.toString()).toBe('<p>design</p>')
+    expect(await readSafeFile(folder, 'link.html')).toBeNull()
+    expect((await core.readFile('p', 'docs/work/a/03-design.html'))?.toString()).toBe('<p>design</p>')
+  })
+
+  it('a symlink swapped in after the check is not read', async () => {
+    const { folder } = await setup()
+    const file = path.join(folder, 'swap.html')
+    fs.writeFileSync(file, 'inside')
+    const secret = path.join(path.dirname(fs.realpathSync(path.join(folder, 'link.html'))), 'outside.html')
+    expect(safeArtifactPath(folder, 'swap.html')).toBe(fs.realpathSync(file)) // passes the check
+    fs.rmSync(file)
+    fs.symlinkSync(secret, file) // swapped before the read
+    expect(await readInside(folder, 'swap.html')).toBeNull()
   })
 })

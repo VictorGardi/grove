@@ -1,11 +1,18 @@
 import fs from 'node:fs'
+import crypto from 'node:crypto'
 import path from 'node:path'
 
 export function atomicWrite(file: string, data: string): void {
   fs.mkdirSync(path.dirname(file), { recursive: true })
-  const tmp = `${file}.${process.pid}.tmp`
-  fs.writeFileSync(tmp, data)
-  fs.renameSync(tmp, file)
+  // a random name opened with `wx` (O_EXCL): a pre-planted file or symlink at the name is never followed
+  const tmp = `${file}.${crypto.randomBytes(8).toString('hex')}.tmp`
+  try {
+    fs.writeFileSync(tmp, data, { flag: 'wx', mode: 0o600 })
+    fs.renameSync(tmp, file)
+  } catch (e) {
+    fs.rmSync(tmp, { force: true })
+    throw e
+  }
 }
 
 export function readVersioned<T extends { schemaVersion: number }>(

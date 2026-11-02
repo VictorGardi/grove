@@ -15,6 +15,25 @@ describe('atomicWrite', () => {
     expect(fs.readFileSync(file, 'utf8')).toBe('hello')
     expect(fs.readdirSync(path.dirname(file)).filter((f) => f.endsWith('.tmp'))).toEqual([])
   })
+
+  it('overwrites an existing 0600 state file and keeps it private', () => {
+    const file = path.join(tmp(), 'f.json')
+    atomicWrite(file, 'one')
+    atomicWrite(file, 'two')
+    expect(fs.readFileSync(file, 'utf8')).toBe('two')
+    expect(fs.statSync(file).mode & 0o777).toBe(0o600)
+  })
+
+  it('does not follow a symlink planted at a guessable temp name', () => {
+    const dir = tmp()
+    const file = path.join(dir, 'f.json')
+    const victim = path.join(dir, 'victim')
+    fs.writeFileSync(victim, 'keep')
+    fs.symlinkSync(victim, `${file}.${process.pid}.tmp`)
+    atomicWrite(file, 'data')
+    expect(fs.readFileSync(victim, 'utf8')).toBe('keep')
+    expect(fs.readFileSync(file, 'utf8')).toBe('data')
+  })
 })
 
 describe('readVersioned', () => {

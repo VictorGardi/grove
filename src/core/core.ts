@@ -8,7 +8,7 @@ import { keyProjectId } from '@shared/groups'
 import { opencodeCliConfig, opencodeModelEnv } from '@shared/opencodeSession'
 import type { Result } from '@shared/ipc'
 import { pruneGrid } from '@shared/grid'
-import { safeArtifactPath } from './artifacts/path'
+import { readInside, readSafeFile, safeArtifactPath } from './artifacts/path'
 import type { AttachHandle, SessionBackend } from './backend/types'
 import { terminalTheme } from '@shared/theme'
 import { listFolders, readFolder, resolveRoot, type FolderSnapshot } from './discovery/folder'
@@ -125,6 +125,7 @@ export interface Core {
   waitTurn(id: string, o: { expectStart: boolean; timeoutMs: number }): Promise<Result<TurnResult>>
   attach(sessionId: string, cols: number, rows: number): AttachHandle
   filePath(projectId: string, rel: string): string | null // a viewable file of the project (ADR 0032); null: refused
+  readFile(projectId: string, rel: string): Promise<Buffer | null> // its bytes, checked and read through one handle
   gitTop(dir: string): Promise<string | null> // the repo containing `dir`; null: not a repo, or git is missing
   git: GitRun | null // grove's git runner, for the worktree lifecycle; null: git was not found
   cleanupMergedWorktrees(): Promise<Result<{ removed: string[]; failed: { path: string; error: string }[] }>> // 'clean up merged' (Q3)
@@ -1126,10 +1127,9 @@ export function createCore(opts: CoreOptions): Core {
       if (!d?.root || !f || f.status === 'deleted' || f.binary) return { ok: false, error: 'not-found' }
       if (!Number.isInteger(from) || !Number.isInteger(to) || from < 1 || to < from || to - from >= MAX_EXPAND) return { ok: false, error: 'bad-range' }
       try {
-        const root = await fs.promises.realpath(d.root)
-        const file = await fs.promises.realpath(path.join(root, rel))
-        if (!file.startsWith(root + path.sep)) return { ok: false, error: 'not-found' }
-        const text = await fs.promises.readFile(file, 'utf8')
+        const bytes = await readInside(d.root, rel)
+        if (!bytes) return { ok: false, error: 'not-found' }
+        const text = bytes.toString('utf8')
         return { ok: true, data: text.split('\n').slice(from - 1, to).map((l) => l.replace(/\r$/, '')) }
       } catch {
         return { ok: false, error: 'not-found' }
@@ -1320,6 +1320,10 @@ export function createCore(opts: CoreOptions): Core {
       return tracked
     },
     filePath: (projectId, rel) => projectFile(projectId, rel),
+    readFile: async (projectId, rel) => {
+      const p = slices.projects.find((x) => x.id === projectId)
+      return p ? readSafeFile(p.path, rel) : null
+    },
     gitTop,
     git,
     // 'clean up merged' (Q3): a worktree whose branch is already in the repo's checkout holds

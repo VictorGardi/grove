@@ -60,9 +60,11 @@ export function handleArtifacts(core: Core): void {
     if (!t || !file) return respond(REFUSAL, 404)
     const ext = path.extname(t.path).toLowerCase() // the checked name, not a symlink target's
     try {
-      if (ext === '.md') return respond(renderMarkdown(await fs.promises.readFile(file, 'utf8'), path.posix.basename(t.path)), 200)
-      if (ext === '.html' || ext === '.htm') return respond(rewriteHtml(await fs.promises.readFile(file, 'utf8')), 200)
-      return respond(await fs.promises.readFile(file), 200, MIME[ext])
+      const bytes = await core.readFile(t.projectId, t.path)
+      if (!bytes) return respond(REFUSAL, 404)
+      if (ext === '.md') return respond(renderMarkdown(bytes.toString('utf8'), path.posix.basename(t.path)), 200)
+      if (ext === '.html' || ext === '.htm') return respond(rewriteHtml(bytes.toString('utf8')), 200)
+      return respond(new Uint8Array(bytes), 200, MIME[ext])
     } catch {
       return respond(REFUSAL, 404)
     }

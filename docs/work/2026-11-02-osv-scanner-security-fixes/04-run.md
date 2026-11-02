@@ -248,4 +248,42 @@ The planner session wrote the code itself rather than through an implementer sub
 
 none
 
+## Slice 7
+
+Session: osv-scanner-security-fixes-slice-7-a1
+Status: done
+Commit: this commit (see git log)
+
+### Slice plan
+
+Found in the code: `resolveRoot` returned any existing directory under `path.resolve(projectPath, rel)`; `atomicWrite` used `${file}.${pid}.tmp` with a plain `writeFileSync`; the viewer protocol handler in `src/main/artifacts.ts` and `diffLines` in `src/core/core.ts` checked a realpath and then read by path. `atomicWrite` callers are the comment, config and state stores and the notes file.
+
+Implementer 1:
+- [x] `src/core/discovery/folder.ts`: `resolveRoot` returns null when the real path of the root is outside the real project path (behaviour change: out-of-project roots, by `../` or symlink, are refused)
+- [x] `src/core/store/jsonFile.ts`: random temp name, `wx`, mode `0o600`, temp removed on failure
+- [x] `src/core/artifacts/path.ts`: `readInside` / `readSafeFile` open once with `O_NOFOLLOW`, compare the handle with the path (real path, ino, dev) and read from the handle; `core.readFile` added, used by the artifact protocol handler; `diffLines` uses `readInside`
+- [x] tests in `folder.test.ts`, `jsonFile.test.ts`, `path.test.ts`
+
+Models passed: implementer: inherit (done directly by the planner session), reviewer: inherit
+
+### Review rounds
+
+Round 1: no blocking findings. Non-blocking: the open-and-recheck narrows but cannot eliminate a directory-swap race (Node has no `openat`); comment reworded. Left: the comment re-anchor loop (`reanchorFiles`) still reads by path; the manifest read in `readFolder` follows a symlink; `resolveRoot` returns the unresolved root; stray `*.tmp` after a hard kill; the 0600 mode now applies to every state file; `new Uint8Array(bytes)` copies.
+
+approved, 0 blocking, 0 fix rounds.
+
+### Deviations
+
+The planner session wrote the code itself rather than through an implementer subagent. Added `readFile` to the `Core` interface and changed `src/main/artifacts.ts` to use it. The pre-planted symlink test uses the old guessable name, since the new name is random.
+
+### Verification
+
+- `npm test` (112 files, 1349 tests pass) and `npm run typecheck` pass.
+- Tests show: a root outside the project (`../` or symlink) is rejected and a symlink inside still resolves; overwriting a 0600 state file works and stays 0600; a symlink at the old temp name is not followed; a symlink swapped in after the check is not read.
+- Models requested: reviewer inherit.
+
+### Left for the human
+
+none
+
 ## Open questions

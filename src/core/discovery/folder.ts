@@ -28,7 +28,16 @@ export function resolveRoot(projectPath: string, d: Workflow['discovery']): stri
     }
   }
   const root = path.resolve(projectPath, rel)
-  return isDir(root) ? root : null
+  if (!isDir(root)) return null
+  // a root whose real path leaves the project (a ../ in the config, or a symlink) is refused
+  try {
+    const project = fs.realpathSync(projectPath)
+    const real = fs.realpathSync(root)
+    if (real !== project && !real.startsWith(project + path.sep)) return null
+  } catch {
+    return null
+  }
+  return root
 }
 
 export function listFolders(root: string): string[] {
