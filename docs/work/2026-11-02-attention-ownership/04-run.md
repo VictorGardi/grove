@@ -140,4 +140,49 @@ Approved, 1 blocking in round 1, 1 fix round. Non-blocking left: children are op
 
 Run the app: zones appear in order, the toggle returns to the project tree, a session in Needs you is not also under Where you were, a default-named session shows its last-prompt line as title and keeps it across a reload, after a restart the same five sessions and lines show, "Move to zone" changes a row and keeps it after restart, and the children line opens to the children. Not checked: the look of the new CSS.
 
+## Slice 4
+
+Session: attention-ownership-slice-4-a1
+Status: done
+Commit: this commit (see git log)
+
+### Slice plan
+
+Found in the code: `grove` commands go CLI (`src/cli/args.ts`, `index.ts`) -> `CliMethods` (`src/shared/cli.ts`) -> `dispatch` in `src/main/cliServer.ts` -> `core.commands`. Live fields (`status`, `waitingFor`, `zone`) are stripped in `core.ts` `set()` before save. `notifyTransitions` records `waitKey` and fires the `notify` listeners; `src/main/index.ts:118` builds the popup body from `BODY[waitingFor]`. `zoneOf` already puts a permission or question wait in needs-you. `rowLine` (`zoneList.ts`) is the row's second line; `childrenSummary` (`family.ts`) is the parent's children line, rendered in `ZoneSection.tsx` and the `SessionCard` meta in `Sidebar.tsx`. `Session.attention` and `Session.progress` (live) are added to `types.ts` up front. An escalation records the `waitingFor` it was made on and is dropped in `set()` once the session is not waiting on that.
+
+Implementer 1 (core and CLI):
+- [x] `src/cli/args.ts`: `escalate <ref> <reason>` and `progress <ref> <done>/<total>` (non-empty reason; integers, total >= 1, done <= total), usage text; `src/cli/args.test.ts`
+- [x] `src/shared/cli.ts`: `sessions.escalate`, `sessions.progress`; `src/cli/index.ts` calls them; `src/shared/sessionErrors.ts`: `not-waiting`
+- [x] `src/core/core.ts`: commands `sessionEscalate` (only a session waiting on a permission or question, else `not-waiting`; reason first line, cut at 200; no popup if one already fired for that wait, otherwise fire `notify` once with the reason on the session unless it is on screen) and `sessionProgress`; `attention` and `progress` stripped before save; `attention` dropped in `set()` when the session stops waiting or waits on something else
+- [x] `src/main/cliServer.ts`: dispatch both (`bad-params`, `not-found`, `not-waiting`); `src/main/index.ts`: popup body is `s.attention?.reason` when set
+- [x] `src/shared/zones.ts`: a waiting session with an attention reason is in needs-you
+- [x] tests: `src/main/cliServer.test.ts`, `src/core/sessions.test.ts`, `src/shared/zones.test.ts`
+
+Implementer 2 (renderer):
+- [x] `src/renderer/src/zoneList.ts`: `rowLine` of a waiting session is its attention reason, else "Needs permission" / "Has a question"
+- [x] `src/renderer/src/family.ts`: `runProgress(parent, kids)` (the declared progress and the children marked done, null when none declared) and its label ("4 of 8 slices done, 3 children done")
+- [x] `src/renderer/src/components/RunProgress.tsx` (+ css module): a bar and label, used in `ZoneSection.tsx` rows and the `Sidebar.tsx` `SessionCard` meta for a parent with `progress`
+- [x] tests: `src/renderer/src/zoneList.test.ts`, `src/renderer/src/family.test.ts`
+
+Models passed: implementer: inherit, reviewer: inherit
+
+### Review rounds
+
+Round 1: fresh reviewer found no blocking findings; no fix round.
+
+Approved, 0 blocking, 0 fix rounds. Cheap non-blocking applied: escalate now also sets `waitKey`, so a later `notifyTransitions` cannot pop a second time for the same wait. Left: the progress bar in the project-tree card shares the nowrap `branchLine` row with the kids toggle and branch (may be cramped; not seen in the app); a reason starting with `-` needs `--`; `notified` entries of a session removed while waiting linger; a child going straight from one permission prompt to another keeps the old reason; `grove progress` is accepted on any session and stays until restart.
+
+### Deviations
+
+- The progress bar shows only when a parent declared progress; the children-done-out-of-children-seen fallback is not built (it would put a bar on every ordinary parent). The label is "N of M slices done" (plus ", K children done"), not "Slice N of M".
+- The `zoneOf` attention rule is a no-op today (permission and question waits are already needs-you); kept as the plan lists it.
+
+### Verification
+
+`npm test` (110 files, 1364 tests) and `npm run typecheck` pass. New tests: CLI parsing for both commands; `sessions.escalate` (not-waiting, not-found, bad params) and `sessions.progress` (valid, and 5/4, 0 total, negative, fractional rejected); core: an escalation after a popup adds the reason with no second notify, an away child gets exactly one notify, an on-screen child none, the escalation clears when the wait ends and a later prompt notifies without the old reason, neither field is saved, a working session cannot be escalated; `zoneOf` for an escalated child; `rowLine` reason and both fallbacks; `runProgress`. Models requested: implementer inherit, reviewer inherit.
+
+### Left for the human
+
+Run the app: `grove escalate <child> "asks to drop the table"` on a child waiting on a permission shows that text in Needs you (one popup in total for that prompt) and exits non-zero on a working child; `grove progress <parent> 4/8` shows the bar in both views. Not checked: the look of the bar in the project-tree card.
+
 ## Open questions

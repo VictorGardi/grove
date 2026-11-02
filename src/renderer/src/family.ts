@@ -61,3 +61,16 @@ export function familyJumpTarget(sessions: Session[], focusedId: string | null |
   const f = familyOf(sessions, focusedId)
   return f.parent ?? f.active
 }
+
+export interface RunProgress { done: number; total: number; kidsDone: number; label: string; pct: number }
+
+// A run's progress bar: `grove progress` slices done of total, and how many children are marked done.
+export function runProgress(parent: Session, kids: Session[]): RunProgress | null {
+  const p = parent.progress
+  if (!p) return null
+  const kidsDone = kids.filter((k) => k.workflowStatus === 'done').length
+  const base = `${p.done} of ${p.total} slices done`
+  const label = kidsDone > 0 ? `${base}, ${kidsDone} ${kidsDone === 1 ? 'child' : 'children'} done` : base
+  const pct = p.total > 0 ? Math.min(100, Math.max(0, Math.round((100 * p.done) / p.total))) : 0
+  return { done: p.done, total: p.total, kidsDone, label, pct }
+}

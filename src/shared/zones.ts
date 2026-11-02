@@ -12,6 +12,7 @@ export function zoneOf(s: Session): Zone | null {
   if (s.zoneOverride && isZone(s.zoneOverride)) return s.zoneOverride
   if (s.lastStatus === 'gone' || s.startup) return null
   if (s.status === 'waiting') {
+    if (s.attention) return 'needs-you' // a parent escalated this wait to the human
     if (s.waitingFor === 'done') return s.parentId ? null : 'review'
     return 'needs-you' // permission, question, or anything unsure
   }

@@ -1,11 +1,12 @@
 import { useState, type MouseEvent } from 'react'
 import type { Session } from '@shared/types'
 import { kidsKey } from '@shared/groups'
-import { childrenSummary } from '../family'
+import { childrenSummary, runProgress } from '../family'
 import { mostUrgent, statusTone } from '../sessionStatus'
 import { rowLine, rowTitle } from '../zoneList'
 import { Badge } from './ui/Badge'
 import { cx } from './ui/cx'
+import { RunProgress } from './RunProgress'
 import { Icon } from './ui/Icon'
 import { StatusDot } from './ui/StatusDot'
 import css from './ZoneSection.module.css'
@@ -48,6 +49,7 @@ export function ZoneSection({ title, sessions, kids, collapsed, onToggleKids, fo
           {sessions.map((s) => {
             const list = kids.get(s.id) ?? []
             const urgent = list.length > 0 ? mostUrgent(list) : null
+            const progress = runProgress(s, list)
             const kidsOpen = !collapsed.includes(kidsKey(s.id))
             return (
               <div key={s.id} className={cx(css.row, s.id === focusedId && css.selected, picked.has(s.id) && css.picked)}
@@ -64,6 +66,7 @@ export function ZoneSection({ title, sessions, kids, collapsed, onToggleKids, fo
                     {childrenSummary(list)}
                   </button>
                 )}
+                {progress && <div className={css.progress}><RunProgress progress={progress} /></div>}
                 {urgent && kidsOpen && (
                   <div className={css.kidRows}>
                     {list.map((k) => (

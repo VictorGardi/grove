@@ -35,6 +35,14 @@ async function run(cmd: Exclude<Command, { cmd: 'skill' }>, socket: string): Pro
     const reply = await call(socket, 'sessions.status', { ref: cmd.ref ?? process.env.GROVE_SESSION_ID, status: cmd.value })
     return reply.ok ? { ...reply, print: undefined } : reply
   }
+  if (cmd.cmd === 'escalate') {
+    const reply = await call(socket, 'sessions.escalate', { ref: cmd.ref, reason: cmd.reason })
+    return reply.ok ? { ...reply, print: undefined } : reply
+  }
+  if (cmd.cmd === 'progress') {
+    const reply = await call(socket, 'sessions.progress', { ref: cmd.ref, done: cmd.done, total: cmd.total })
+    return reply.ok ? { ...reply, print: undefined } : reply
+  }
   if (cmd.cmd === 'wait') {
     const reply = await call(socket, 'sessions.wait', { ref: cmd.ref, timeoutS: cmd.timeoutS })
     return reply.ok ? { ...reply, print: undefined, exit: turnExit(reply.data as TurnResult) } : reply

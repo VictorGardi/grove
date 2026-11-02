@@ -34,8 +34,11 @@ export function rowTitle(s: Session): string {
   return s.lastLine && DEFAULT_LABEL.test(s.label) ? s.lastLine : s.label
 }
 
-// The row's second line: what it was doing, else its name and status.
+// The row's second line: a waiting permission/question says what it needs (the escalated reason
+// first), else what it was doing, else its name and status.
 export function rowLine(s: Session): string {
+  if (s.status === 'waiting' && s.waitingFor === 'permission') return s.attention?.reason || 'Needs permission'
+  if (s.status === 'waiting' && s.waitingFor === 'question') return s.attention?.reason || 'Has a question'
   const named = `${s.label} · ${statusView(s).label}`
   return s.lastLine && s.lastLine !== rowTitle(s) ? s.lastLine : named
 }

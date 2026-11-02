@@ -11,7 +11,8 @@ import { repoRows } from '../repoGroups'
 import { colorTags } from '../tags'
 import { rowTitle, zoneSections, zonesFor } from '../zoneList'
 import { branchCut } from '../branchCut'
-import { childrenSummary } from '../family'
+import { childrenSummary, runProgress } from '../family'
+import { RunProgress } from './RunProgress'
 import { linkedFeature } from '../tree'
 import { workflowStatusOf, WORKFLOW_STATUSES } from '../workflowStatus'
 import { Badge } from './ui/Badge'
@@ -96,6 +97,7 @@ function SessionCard({ s, feature, worktree, focused, picked, compact, since, no
               {childrenSummary(kids.list)}
             </button>
           )}
+          {(() => { const pr = runProgress(s, kids?.list ?? []); return pr && <RunProgress progress={pr} /> })()}
           {s.kind === 'terminal' && <span className={css.kindMark} title={KIND_LABEL.terminal} aria-label={KIND_LABEL.terminal}><Icon name="terminal" size={12} /></span>}
           {/* a worktree's branch is purple instead of carrying a worktree icon */}
           {s.branch && (() => {

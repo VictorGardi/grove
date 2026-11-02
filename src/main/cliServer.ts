@@ -153,6 +153,24 @@ async function dispatch(core: Core, raise: () => void, line: string): Promise<Cl
       const res = await core.commands.sessionWorkflowStatus({ id: found.data.id, status: status as WorkflowStatus })
       return res.ok ? { id, ok: true, data: { id: found.data.id } } : failFrom(id, res.error)
     }
+    case 'sessions.escalate': {
+      const { ref, reason } = params
+      if (typeof ref !== 'string' || !ref || typeof reason !== 'string' || !reason.trim()) return fail(id, 'bad-params', 'ref and a reason are required')
+      const found = resolveSessionRef(core.getSlices().sessions, ref)
+      if (!found.ok) return failFrom(id, found.error)
+      const res = await core.commands.sessionEscalate({ id: found.data.id, reason })
+      return res.ok ? { id, ok: true, data: { id: found.data.id } } : failFrom(id, res.error)
+    }
+    case 'sessions.progress': {
+      const { ref, done, total } = params
+      if (typeof ref !== 'string' || !ref || typeof done !== 'number' || typeof total !== 'number' || !Number.isInteger(done) || !Number.isInteger(total) || done < 0 || total < 1 || done > total) {
+        return fail(id, 'bad-params', 'ref, done and total are required (0 <= done <= total, total >= 1)')
+      }
+      const found = resolveSessionRef(core.getSlices().sessions, ref)
+      if (!found.ok) return failFrom(id, found.error)
+      const res = await core.commands.sessionProgress({ id: found.data.id, done, total })
+      return res.ok ? { id, ok: true, data: { id: found.data.id } } : failFrom(id, res.error)
+    }
     case 'sessions.read': {
       const { ref, lines } = params
       if (typeof ref !== 'string' || !ref || typeof lines !== 'number' || !Number.isInteger(lines) || lines < 1) {

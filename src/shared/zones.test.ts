@@ -11,6 +11,10 @@ function session(over: Partial<Session> = {}): Session {
 }
 
 describe('zoneOf', () => {
+  it('puts an escalated waiting child in needs-you', () => {
+    expect(zoneOf(session({ status: 'waiting', waitingFor: 'permission', parentId: 'p', attention: { reason: 'x', waitingFor: 'permission' } }))).toBe('needs-you')
+  })
+
   it('puts a permission or question in needs-you, children included', () => {
     expect(zoneOf(session({ status: 'waiting', waitingFor: 'permission' }))).toBe('needs-you')
     expect(zoneOf(session({ status: 'waiting', waitingFor: 'question' }))).toBe('needs-you')

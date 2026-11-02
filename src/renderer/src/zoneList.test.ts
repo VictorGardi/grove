@@ -12,6 +12,21 @@ function session(over: Partial<Session> = {}): Session {
 
 const ids = (l: Session[]) => l.map((s) => s.id)
 
+describe('rowLine attention', () => {
+  const waiting = (over: Partial<Session>) => session({ status: 'waiting', lastLine: 'did a thing', ...over })
+  it('says the escalated reason over lastLine', () => {
+    expect(rowLine(waiting({ waitingFor: 'permission', attention: { reason: 'Run rm -rf?', waitingFor: 'permission' } }))).toBe('Run rm -rf?')
+  })
+  it('falls back per wait kind', () => {
+    expect(rowLine(waiting({ waitingFor: 'permission' }))).toBe('Needs permission')
+    expect(rowLine(waiting({ waitingFor: 'question' }))).toBe('Has a question')
+  })
+  it('leaves other sessions alone', () => {
+    expect(rowLine(session({ status: 'working', lastLine: 'did a thing', attention: { reason: 'x', waitingFor: 'question' } }))).toBe('did a thing')
+    expect(rowLine(waiting({ waitingFor: 'done' }))).toBe('did a thing')
+  })
+})
+
 describe('zoneSections', () => {
   it('groups rows by zone; a child is a row only in needs you', () => {
     const z = zoneSections([

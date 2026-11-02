@@ -99,6 +99,8 @@ export interface Commands {
   sessionRename(a: { id: string; label: string }): Promise<Result<Session>>
   sessionWorkflowStatus(a: { id: string; status: WorkflowStatus }): Promise<Result<Session>>
   sessionSetZone(a: { id: string; zone: Zone | null }): Promise<Result<Session>> // null resets the override
+  sessionEscalate(a: { id: string; reason: string }): Promise<Result<Session>> // a parent says this waiting child needs the human; error not-waiting unless it waits on a permission or question
+  sessionProgress(a: { id: string; done: number; total: number }): Promise<Result<Session>> // a parent's run progress, shown on its row
   sessionLink(a: { id: string; feature: string | null }): Promise<Result<Session>>
   sessionSetParent(a: { id: string; parent: string | null }): Promise<Result<Session>> // null: out of its group
   uiSet(partial: Partial<UiState>): Promise<Result<UiState>>
@@ -190,6 +192,7 @@ export function createCore(opts: CoreOptions): Core {
         : !!f.focusedProject && slices.projects.some((p) => p.id === f.focusedProject)
   let lastOnScreen: string | null = null
   const waitKey = new Map<string, string>() // session id → waitingFor it was last seen waiting with
+  const notified = new Map<string, string>() // session id → waitingFor a notify was fired for (so an escalation never pops a second time)
   const held = new Map<string, string>() // session id → slug it wrote to that discovery hasn't listed yet
   let lastCwds = new Map<string, string>() // tmux name → pane cwd, from the last refresh
   const sending = new Set<string>() // sessions, and `feature:` keys, with a review send in flight
@@ -237,7 +240,7 @@ export function createCore(opts: CoreOptions): Core {
   }
 
   function set<K extends keyof Slices>(k: K, v: Slices[K]): void {
-    if (k === 'sessions') v = withZones(stampStatusAt(v as Session[])) as Slices[K]
+    if (k === 'sessions') v = withZones(dropStaleAttention(stampStatusAt(v as Session[]))) as Slices[K]
     slices[k] = v
     for (const l of listeners) l(k, v)
     if (k === 'projects') {
@@ -250,7 +253,7 @@ export function createCore(opts: CoreOptions): Core {
     }
     else if (k === 'sessions' || k === 'ui') {
       const sessions = slices.sessions.filter((s) => !unsaved(s.id)).map(
-        ({ startup: _startup, statusAt: _statusAt, branch: _branch, status: _status, waitingFor: _waitingFor, zone: _zone, contextPct: _p, contextTokens: _t, contextWindow: _w, model: _m, pr: _pr, ...s }) => s,
+        ({ startup: _startup, statusAt: _statusAt, branch: _branch, status: _status, waitingFor: _waitingFor, zone: _zone, attention: _attn, progress: _prog, contextPct: _p, contextTokens: _t, contextWindow: _w, model: _m, pr: _pr, ...s }) => s,
       ) // live-only
       saveState(opts.statePath, { schemaVersion: 10, sessions, ui: slices.ui })
     }
@@ -527,6 +530,15 @@ export function createCore(opts: CoreOptions): Core {
     lastDiffChoice = choice
   }
 
+  // An escalation belongs to one wait: it goes when the child is no longer waiting on that.
+  function dropStaleAttention(next: Session[]): Session[] {
+    return next.map((s) => {
+      if (!s.attention || (s.status === 'waiting' && s.waitingFor === s.attention.waitingFor)) return s
+      const { attention: _a, ...rest } = s
+      return rest
+    })
+  }
+
   // The zone of every session, from its live state; same object when unchanged.
   function withZones(next: Session[]): Session[] {
     return next.map((s) => {
@@ -601,12 +613,16 @@ export function createCore(opts: CoreOptions): Core {
       if (s.kind !== kind || s.lastStatus !== 'running' || !s.status) continue
       if (s.status !== 'waiting' || !s.waitingFor) {
         waitKey.delete(s.id)
+        notified.delete(s.id)
         continue
       }
       if (waitKey.get(s.id) === s.waitingFor) continue
       waitKey.set(s.id, s.waitingFor)
       // a finished child stays quiet: its leader owns the attention
-      if (primed && s.id !== onScreen && !(s.parentId && s.waitingFor === 'done')) for (const cb of notifyListeners) cb(s)
+      if (primed && s.id !== onScreen && !(s.parentId && s.waitingFor === 'done')) {
+        notified.set(s.id, s.waitingFor)
+        for (const cb of notifyListeners) cb(s)
+      }
     }
   }
 
@@ -1071,6 +1087,30 @@ export function createCore(opts: CoreOptions): Core {
       const next = zone === null ? rest : { ...rest, zoneOverride: zone }
       replaceSession(next)
       return { ok: true, data: findSession(id) ?? next }
+    },
+
+    async sessionEscalate({ id, reason }) {
+      const session = findSession(id)
+      if (!session) return { ok: false, error: 'not-found' }
+      const waitingFor = session.waitingFor
+      if (session.status !== 'waiting' || (waitingFor !== 'permission' && waitingFor !== 'question')) return { ok: false, error: 'not-waiting' }
+      const line = reason.split('\n').map((l) => l.trim()).find((l) => l) ?? ''
+      replaceSession({ ...session, attention: { reason: line.slice(0, 200), waitingFor } })
+      const next = findSession(id) ?? session
+      // the popup rule: one per wait; a child that already popped only gains the reason
+      if (notified.get(id) !== waitingFor && id !== lastOnScreen) {
+        notified.set(id, waitingFor)
+        waitKey.set(id, waitingFor) // so notifyTransitions does not pop a second time for this wait
+        for (const cb of notifyListeners) cb(next)
+      }
+      return { ok: true, data: next }
+    },
+
+    async sessionProgress({ id, done, total }) {
+      const session = findSession(id)
+      if (!session) return { ok: false, error: 'not-found' }
+      replaceSession({ ...session, progress: { done, total } })
+      return { ok: true, data: findSession(id) ?? session }
     },
 
     async sessionLink({ id, feature }) {

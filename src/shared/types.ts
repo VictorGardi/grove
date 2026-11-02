@@ -36,6 +36,8 @@ export interface Session {
   waitingFor?: 'permission' | 'question' | 'done' // with status 'waiting'; never saved
   zone?: Zone | null               // derived by core from the live state and the override on every sessions publish (shared/zones.ts); never saved
   lastLine?: string                // one line on what the session was doing: the first line of the last prompt the human sent (cut at 120); persisted; absent: none
+  attention?: { reason: string; waitingFor: 'permission' | 'question' } // `grove escalate`: a parent says this waiting child needs the human; clears when the child leaves that wait; live, never saved
+  progress?: { done: number; total: number } // `grove progress`: slices a run has and how many are done; live, never saved
   zoneOverride?: Zone              // set by the human: only moves where the row is shown, never counts or popups; persisted; absent: none
   contextPct?: number | null       // agent sessions once a reading arrived: % of the context window used; null: not known yet; never saved
   contextTokens?: number | null    // tokens in context (input incl. cache); never saved

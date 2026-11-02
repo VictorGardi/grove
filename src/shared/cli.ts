@@ -14,6 +14,8 @@ export interface CliMethods {
   'sessions.focus': { params: { ref: string }; data: { id: string } }
   'sessions.kill': { params: { ref: string }; data: { id: string } }
   'sessions.status': { params: { ref: string; status: WorkflowStatus }; data: { id: string } }
+  'sessions.escalate': { params: { ref: string; reason: string }; data: { id: string } }
+  'sessions.progress': { params: { ref: string; done: number; total: number }; data: { id: string } }
   'sessions.read': { params: { ref: string; lines: number }; data: { text: string } }
 }
 

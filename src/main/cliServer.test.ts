@@ -245,6 +245,21 @@ describe('cli server', () => {
     expect(core.getSlices().sessions.find((x) => x.id === s.id)?.workflowStatus).toBe('blocked')
   })
 
+  it('escalate needs a waiting session; progress validates and sets', async () => {
+    const { core, socketPath } = await start()
+    const s = await createTerminal(core)
+    expect(await request(socketPath, req('sessions.escalate', { ref: s.id, reason: 'why' }))).toMatchObject({ ok: false, error: { code: 'not-waiting' } })
+    expect(await request(socketPath, req('sessions.escalate', { ref: 'nope', reason: 'why' }))).toMatchObject({ ok: false, error: { code: 'not-found' } })
+    expect(await request(socketPath, req('sessions.escalate', { ref: s.id, reason: '  ' }))).toMatchObject({ ok: false, error: { code: 'bad-params' } })
+    expect(await request(socketPath, req('sessions.escalate', { ref: s.id }))).toMatchObject({ ok: false, error: { code: 'bad-params' } })
+    expect(await request(socketPath, req('sessions.progress', { ref: s.id, done: 1, total: 3 }))).toMatchObject({ ok: true, data: { id: s.id } })
+    expect(core.getSlices().sessions.find((x) => x.id === s.id)?.progress).toEqual({ done: 1, total: 3 })
+    for (const p of [{ done: 5, total: 4 }, { done: 0, total: 0 }, { done: -1, total: 2 }, { done: 1.5, total: 2 }]) {
+      expect(await request(socketPath, req('sessions.progress', { ref: s.id, ...p }))).toMatchObject({ ok: false, error: { code: 'bad-params' } })
+    }
+    expect(await request(socketPath, req('sessions.progress', { ref: 'nope', done: 1, total: 2 }))).toMatchObject({ ok: false, error: { code: 'not-found' } })
+  })
+
   it('rejects another protocol version and unknown methods', async () => {
     const { socketPath } = await start()
     expect(await request(socketPath, req('sessions.list', {}, 2))).toMatchObject({ ok: false, error: { code: 'bad-version' } })

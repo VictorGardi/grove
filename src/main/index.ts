@@ -118,7 +118,7 @@ app.whenReady().then(async () => {
   core.on('notify', (s) => {
     if (process.platform === 'darwin' && core.soundsOn()) playSound(s)
     if (!Notification.isSupported() || !s.waitingFor) return
-    const n = new Notification({ title: s.label, body: BODY[s.waitingFor] })
+    const n = new Notification({ title: s.label, body: s.attention?.reason ?? BODY[s.waitingFor] })
     shown.add(n)
     n.on('close', () => shown.delete(n))
     n.on('click', () => {

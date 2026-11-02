@@ -16,6 +16,7 @@ export const ERROR_MESSAGES: Record<string, string> = {
   ambiguous: 'more than one session matches',
   timeout: 'timed out waiting for the session',
   'no-status': 'a terminal session has no status to wait on',
+  'not-waiting': 'that session is not waiting on a permission or a question',
   gone: 'the session has ended and cannot be resumed',
   'not-ready': 'the resumed session did not draw its prompt in time',
   'no-git': 'git was not found, so no worktree could be made',
