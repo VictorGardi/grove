@@ -210,4 +210,42 @@ The planner session wrote the code itself and reviewed the diff itself rather th
 
 Open an artifact in the viewer once and confirm it renders (the artifact protocol and its CSP were not changed, but this was not clicked through in the launched app); links in artifacts no longer open the browser.
 
+## Slice 6
+
+Session: osv-scanner-security-fixes-slice-6-a1
+Status: done
+Commit: this commit (see git log)
+
+### Slice plan
+
+Found in the code: every git call goes through `gitRunner` in `src/core/diff/git.ts`, which prefixed only `-c core.quotePath=false`; `worktrees.add` passed the branch and base to git unchecked (`resolveBase` used a bare `rev-parse --verify`); `computeDiff` passed an explicit base straight to `merge-base` and `diff`; the only path from text to a pane is `TmuxBackend.paste` (herdr throws "not implemented"); `formatReview` built the sent text from quoted lines and comment bodies unchanged. `pr.ts` passes the branch as a separate argv element after `--head`.
+
+Implementer 1:
+- [x] `src/core/diff/git.ts`: `gitArgv` adds `-c core.fsmonitor=false -c core.hooksPath=/dev/null` only for status, diff, ls-files, rev-parse, for-each-ref, symbolic-ref, merge-base and `worktree list`; `--end-of-options` on the default-base `rev-parse`; `git.test.ts`
+- [x] `src/core/worktrees.ts`: branch rejected when it starts with `-` or `git check-ref-format --branch` fails or expands it; base starting with `-` rejected; `--end-of-options` on `resolveBase`; tests in `worktrees.test.ts`
+- [x] `src/core/diff/compute.ts`: explicit base starting with `-` becomes an error state
+- [x] `src/core/controlChars.ts` (`stripControls`: C0 and C1 except newline and tab), used by `formatReview` and `TmuxBackend.paste`; `controlChars.test.ts`, `format.test.ts`
+
+Models passed: implementer: inherit (done directly by the planner session), reviewer: inherit
+
+### Review rounds
+
+Round 1: no blocking findings. Non-blocking applied: `--end-of-options` on `resolveDefaultBase`'s `rev-parse`, a comment that callers pass the subcommand first. Non-blocking left: refs read from a hostile repo (`defaultBranch`) are not checked for a leading `-` before `merge-base` and `diff`; stripping lives in the tmux backend (and `formatReview`), so a future herdr backend must strip too; `core.hooksPath=/dev/null` assumes Unix.
+
+approved, 0 blocking, 0 fix rounds.
+
+### Deviations
+
+The planner session wrote the code itself rather than through an implementer subagent; the review was a fresh reviewer subagent. New files `src/core/controlChars.ts` and tests were added beyond the plan's file list. `src/core/pr.ts` was left unchanged: the branch is a separate argv element after `--head`, which `gh` takes as the value. `stripControls` also removes CR (tmux turns LF into CR itself on paste).
+
+### Verification
+
+- `npm test` (112 files, 1344 tests pass) and `npm run typecheck` pass.
+- Tests show: a branch starting with `-`, containing a space, or `@{-1}` is rejected and nothing is created; a base `--orphan` is rejected; a normal `feat/fine` branch is still created; `ESC[201~` comes out without ESC; the read-only helper includes the hardening flags and `worktree add`, `submodule update` and `worktree remove` do not.
+- Models requested: reviewer inherit.
+
+### Left for the human
+
+none
+
 ## Open questions

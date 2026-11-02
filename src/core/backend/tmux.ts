@@ -2,6 +2,7 @@ import { execFile } from 'node:child_process'
 import os from 'node:os'
 import { promisify } from 'node:util'
 import * as pty from 'node-pty'
+import { stripControls } from '../controlChars'
 import type { AttachHandle, SessionBackend } from './types'
 
 const run = promisify(execFile)
@@ -98,7 +99,7 @@ export class TmuxBackend implements SessionBackend {
   paste(name: string, text: string, submit: boolean): Promise<void> {
     const target = `=${name}:`
     const job = this.pasting.then(async () => {
-      await this.tmux('set-buffer', '-b', 'grove-send', '--', text)
+      await this.tmux('set-buffer', '-b', 'grove-send', '--', stripControls(text))
       await this.tmux('paste-buffer', '-p', '-d', '-b', 'grove-send', '-t', target)
       if (!submit) return
       await new Promise((r) => setTimeout(r, SUBMIT_DELAY_MS)) // a TUI takes Enter inside the paste otherwise

@@ -171,6 +171,34 @@ describe('add', () => {
 
 // The design probes `git worktree list --porcelain` *before* `add`, so a conflict is our
 // sentence rather than git's raw `fatal`.
+describe('add refuses an invalid branch or base', () => {
+  it('rejects a branch starting with - and one git would not create, and creates nothing', async () => {
+    const repo = gitRepo()
+    repo.commit()
+    for (const branch of ['--detach', '-x', 'a b', '@{-1}']) {
+      const at = path.join(home(), 'wt')
+      const res = await add({ repo: repo.dir, branch, path: at, git })
+      expect(res.ok, branch).toBe(false)
+      expect(fs.existsSync(at), branch).toBe(false)
+    }
+    expect(await list(repo.dir, git)).toHaveLength(1)
+  })
+
+  it('rejects a base that would be read as an option', async () => {
+    const repo = gitRepo()
+    repo.commit()
+    const res = await add({ repo: repo.dir, branch: 'ok', base: '--orphan', path: path.join(home(), 'wt'), git })
+    expect(res.ok).toBe(false)
+  })
+
+  it('still creates a normal branch with a hook-running worktree add', async () => {
+    const repo = gitRepo()
+    repo.commit()
+    const res = await add({ repo: repo.dir, branch: 'feat/fine', path: path.join(home(), 'wt'), git })
+    expect(res.ok).toBe(true)
+  })
+})
+
 describe('add refuses a conflict before git runs', () => {
   const created = async (repo: ReturnType<typeof gitRepo>, branch: string) => {
     const at = worktreePath(repo.dir, branch, home())

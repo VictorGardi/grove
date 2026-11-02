@@ -30,6 +30,7 @@ export async function computeDiff(o: { sessionId: string; dir: string; project: 
   const explicitBase = mode === 'branch' ? o.base ?? null : null
   try {
     if (!git) throw new Error('git not found')
+    if (explicitBase?.startsWith('-')) throw new Error(`base ${explicitBase} is not a valid base`)
     let root: string
     try {
       root = (await git(['rev-parse', '--show-toplevel'], o.dir)).trim()

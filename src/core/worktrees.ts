@@ -34,6 +34,9 @@ export function worktreePathIn(root: string, repo: string, branch: string): stri
 // any commit-ish already fetched); without one it forks the checkout's HEAD, as git does.
 export async function add(o: { repo: string; branch: string; path: string; base?: string; git: GitRun | null }): Promise<Result<{ path: string; branch: string }>> {
   if (!o.git) return { ok: false, error: 'no-git' }
+  if (o.base?.startsWith('-')) return { ok: false, error: `base ${o.base} is not a valid base` }
+  const invalid = await invalidBranch(o.repo, o.branch, o.git)
+  if (invalid) return { ok: false, error: invalid }
   const blocked = await conflict(o.repo, o.branch, o.path, o.git)
   if (blocked) return { ok: false, error: blocked }
   let start: string | null = null
@@ -51,13 +54,25 @@ export async function add(o: { repo: string; branch: string; path: string; base?
   return { ok: true, data: { path: o.path, branch: o.branch } }
 }
 
+// Why this is not a branch name git would create, or null. `--branch` also expands shorthand such
+// as `@{-1}`, which is not a name to create; a name starting with `-` would be read as an option.
+async function invalidBranch(repo: string, branch: string, git: GitRun): Promise<string | null> {
+  const bad = `branch ${branch} is not a valid branch name`
+  if (branch.startsWith('-')) return bad
+  try {
+    return (await git(['check-ref-format', '--branch', branch], repo)).trim() === branch ? null : bad
+  } catch {
+    return bad
+  }
+}
+
 // What a base names, or null. A local branch or any commit-ish as typed; failing that the same
 // name on origin, because a default branch that was only ever fetched has no local ref and
 // `origin/HEAD` reports it bare. Nothing is fetched: this is whatever the repo already has.
 async function resolveBase(repo: string, base: string, git: GitRun): Promise<string | null> {
   for (const candidate of [base, `origin/${base}`]) {
     try {
-      await git(['rev-parse', '--verify', '--quiet', `${candidate}^{commit}`], repo)
+      await git(['rev-parse', '--verify', '--quiet', '--end-of-options', `${candidate}^{commit}`], repo)
       return candidate
     } catch {
       // try the next spelling
