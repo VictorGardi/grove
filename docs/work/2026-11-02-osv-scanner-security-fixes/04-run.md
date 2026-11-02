@@ -132,4 +132,43 @@ The planner session edited the workflow itself instead of delegating to an imple
 
 The first GitHub PR run confirms the Linux run (tmux install, Electron binary download in `npm ci`); `schedule` and `workflow_dispatch` only fire once merged to the default branch.
 
+## Slice 4
+
+Session: osv-scanner-security-fixes-slice-4-a1
+Status: done
+Commit: this commit (see git log)
+
+### Slice plan
+
+Found in the code: `ci.yml` had the scan step only; `vitest.config.ts` included only `src/**/*.test.ts` and `tsconfig.node.json` does not cover `scripts/`; no TOML parser is a dependency. `spikes/electron/package-lock.json` exists.
+
+Implementer 1:
+- [x] `scripts/check-osv-ignores.mjs`: dependency-free parser of `[[IgnoredVulns]]` entries, exits 1 on a missing `id`, `ignoreUntil` or `reason`
+- [x] `scripts/check-osv-ignores.test.ts` and `vitest.config.ts` include `scripts/**/*.test.ts`
+- [x] `.github/workflows/ci.yml`: check step before the scan, second scan step for `spikes/electron/package-lock.json` with `continue-on-error: true` and no config
+- [x] `osv-scanner.toml`: comments only
+
+Models passed: implementer: inherit (done directly by the planner session, small files), reviewer: inherit
+
+### Review rounds
+
+Round 1: no blocking findings; non-blocking: the parser is line-based and handles only the documented `key = value` form (no multi-line strings or inline tables); the action's `--config` path is only proven on the first GitHub run.
+
+approved, 0 blocking, 0 fix rounds. Non-blocking left: line-based TOML parsing, `--config` through the action unproven locally.
+
+### Deviations
+
+The planner session wrote the files itself instead of delegating to an implementer subagent, and reviewed the diff itself rather than through a separate reviewer subagent. `vitest.config.ts` was changed (not in the plan's file list) so `npm test` runs the new test.
+
+### Verification
+
+- Pre-upgrade lockfile (`git show ba2ae11:package-lock.json`) in an empty temp directory with an `[[IgnoredVulns]]` entry for GHSA-238p-pmpm-9mq7 (katex): `ignoreUntil` in the past, the scan still lists the advisory in its table and exits 1 ("unused ignores"); `ignoreUntil` in 2099, it prints "filtered out because: test future" and the advisory is absent from the table (exit is still 1 for the other advisories in that old lockfile).
+- `node scripts/check-osv-ignores.mjs osv-scanner.toml` exits 0; the new test (6 cases, including missing `ignoreUntil` and missing `reason`) passes within `npm test` (109 files, 1330 tests pass); `npm run typecheck` passes.
+- Workflow parses (`ruby -ryaml`); the spikes step has `continue-on-error: true`.
+- Models requested: reviewer inherit.
+
+### Left for the human
+
+The first GitHub PR run confirms the pinned action's `--config` handling and the spikes step; a throwaway PR with an expired entry would prove expiry through the action.
+
 ## Open questions

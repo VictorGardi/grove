@@ -1,5 +1,8 @@
 # OSV scanner ignore list. Every entry needs a reason and an expiry date;
 # once ignoreUntil passes, the scan fails on that advisory again.
+# scripts/check-osv-ignores.mjs fails CI on an entry missing id, ignoreUntil or reason.
+# This file applies to the root package-lock.json only; the spikes/electron scan
+# is non-blocking and uses no config.
 #
 # [[IgnoredVulns]]
 # id = "GHSA-xxxx-xxxx-xxxx"
