@@ -12,9 +12,12 @@ const MAX_TEXT = 4000
 // The renderer is untrusted: one line of printable text, so the paste can never submit or carry an escape sequence.
 export function sanitizeDictation(text: unknown): string {
   if (typeof text !== 'string') return ''
-  return text.replace(/[\u0000-\u001f\u007f]/g, ' ').replace(/\s+/g, ' ').trim().slice(0, MAX_TEXT).trim()
+  const flat = text.replace(/[\u0000-\u001f\u007f-\u009f]/g, ' ').replace(/\s+/g, ' ').trim()
+  // Cut by code points so the cap never leaves half of a surrogate pair.
+  return Array.from(flat).slice(0, MAX_TEXT).join('').trim()
 }
 
+// The paste ends in one space so consecutive dictations or half-typed text never glue words together.
 // Dictated text into a session's pane as one bracketed paste, never submitted. Unlike sendToSession it
 // neither resumes a gone session nor waits for the pane: the human is looking at a live terminal.
 export async function dictate(deps: DictateDeps, a: { id: string; text: string }): Promise<Result<{ id: string }>> {
@@ -24,7 +27,7 @@ export async function dictate(deps: DictateDeps, a: { id: string; text: string }
   if (!session) return { ok: false, error: 'not-found' }
   if (session.lastStatus === 'gone') return { ok: false, error: 'gone' }
   try {
-    await deps.backend.paste(session.tmuxName, text, false)
+    await deps.backend.paste(session.tmuxName, text + ' ', false)
   } catch (e) {
     const now = deps.find(a.id)
     if (!now) return { ok: false, error: 'not-found' }

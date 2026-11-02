@@ -28,7 +28,7 @@ describe('dictate', () => {
   it('pastes into a live session without submitting', async () => {
     const { deps, backend } = setup()
     expect(await dictate(deps, { id: 'a', text: 'hello there' })).toEqual({ ok: true, data: { id: 'a' } })
-    expect(backend.pastes).toEqual([{ name: 'grove-a', text: 'hello there', submit: false }])
+    expect(backend.pastes).toEqual([{ name: 'grove-a', text: 'hello there ', submit: false }])
   })
 
   it('reports a backend failure', async () => {
@@ -40,9 +40,29 @@ describe('dictate', () => {
   it('sanitizes text: control characters, whitespace and length', async () => {
     const { deps, backend } = setup()
     await dictate(deps, { id: 'a', text: 'ls\r\n\x1b[31m  -la\x7f\tnow' })
-    expect(backend.pastes[0].text).toBe('ls [31m -la now')
+    expect(backend.pastes[0].text).toBe('ls [31m -la now ')
     await dictate(deps, { id: 'a', text: 'x'.repeat(5000) })
-    expect(backend.pastes[1].text.length).toBe(4000)
+    expect(backend.pastes[1].text.length).toBe(4001)
+  })
+
+  it('strips C1 controls', async () => {
+    const { deps, backend } = setup()
+    await dictate(deps, { id: 'a', text: 'a\u009b31mb\u009dc\u0085d' })
+    expect(backend.pastes[0].text).toBe('a 31mb c d ')
+  })
+
+  it('never splits a surrogate pair at the cap', async () => {
+    const { deps, backend } = setup()
+    await dictate(deps, { id: 'a', text: 'x'.repeat(3999) + '😀' + 'y' })
+    const t = backend.pastes[0].text
+    expect(t).toBe('x'.repeat(3999) + '😀 ')
+    expect(/[\ud800-\udbff](?![\udc00-\udfff])|(?<![\ud800-\udbff])[\udc00-\udfff]/.test(t)).toBe(false)
+  })
+
+  it('ends the paste with a single trailing space', async () => {
+    const { deps, backend } = setup()
+    await dictate(deps, { id: 'a', text: '  one two  ' })
+    expect(backend.pastes[0]).toEqual({ name: 'grove-a', text: 'one two ', submit: false })
   })
 
   it('rejects empty, control-only and non-string text without pasting', async () => {
