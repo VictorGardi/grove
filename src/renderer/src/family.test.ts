@@ -9,6 +9,17 @@ const parent = session('parent')
 const child = (id: string, over: Partial<Session> = {}) => session(id, { parentId: 'parent', ...over })
 const ids = (xs: Session[]) => xs.map((x) => x.id)
 
+describe('familyOf finished and held children', () => {
+  it('ranks a finished or held child as idle or working, below a real wait', () => {
+    const f = familyOf([parent,
+      child('finished', { status: 'waiting', waitingFor: 'done' }),
+      child('held', { status: 'waiting', waitingFor: 'permission', held: true }),
+      child('idle', { status: 'idle' }),
+      child('ask', { status: 'waiting', waitingFor: 'permission' })], 'parent')
+    expect(ids(f.children)).toEqual(['ask', 'held', 'finished', 'idle'])
+  })
+})
+
 describe('familyOf', () => {
   it('ranks waiting over working over idle', () => {
     const f = familyOf([parent, child('idle', { status: 'idle' }), child('working', { status: 'working' }), child('waiting', { status: 'waiting', waitingFor: 'question' })], 'parent')
@@ -47,9 +58,9 @@ describe('familyOf', () => {
     expect(f.active?.id).toBe('new')
   })
 
-  it('ranks a finished (waiting · done) child over a working one', () => {
+  it('ranks a finished (waiting · done) child below a working one: it is not asking the human', () => {
     const f = familyOf([parent, child('working', { status: 'working' }), child('done', { status: 'waiting', waitingFor: 'done' })], 'parent')
-    expect(f.active?.id).toBe('done')
+    expect(f.active?.id).toBe('working')
   })
 
   it('orders ended children by later startedAt, after running ones', () => {

@@ -1,5 +1,5 @@
 import type { Session } from '@shared/types'
-import { shownStatus, type ShownStatus } from './sessionStatus'
+import { queueStatus, shownStatus, type ShownStatus } from './sessionStatus'
 
 export interface Family {
   parent: Session | null
@@ -22,7 +22,7 @@ export function childrenSummary(kids: Session[]): string {
   return done > 0 ? `${childrenCount(kids.length)}, ${done} done` : childrenCount(kids.length)
 }
 
-// Running children, most worth a look first. waiting covers every waitingFor, 'done' included;
+// Running children, most worth a look first. waiting is a wait that asks the human (a finished child ranks as idle);
 // running is a live pane with no agent status (a terminal); starting has nothing to show yet.
 const RANK: ShownStatus[] = ['waiting', 'working', 'idle', 'running', 'starting']
 
@@ -39,7 +39,7 @@ const later = (a: string | null | undefined, b: string | null | undefined) => {
 }
 
 function byRunning(a: Session, b: Session): number {
-  const ra = RANK.indexOf(shownStatus(a)), rb = RANK.indexOf(shownStatus(b))
+  const ra = RANK.indexOf(queueStatus(a)), rb = RANK.indexOf(queueStatus(b))
   if (ra !== rb) return ra - rb
   return later(a.lastFocusedAt, b.lastFocusedAt) || later(a.startedAt, b.startedAt)
 }

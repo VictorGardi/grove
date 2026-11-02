@@ -69,6 +69,20 @@ describe('time-in-status sort', () => {
   })
 })
 
+describe('time-in-status sort and children', () => {
+  it('does not put a finished or held child among the sessions that wait on you', () => {
+    const at = (ms: number) => new Date(ms).toISOString()
+    const list = [
+      session('idle', { status: 'idle', statusAt: at(300) }),
+      session('kid-done', { parentId: 'x', status: 'waiting', waitingFor: 'done', statusAt: at(100) }),
+      session('kid-held', { parentId: 'x', status: 'waiting', waitingFor: 'permission', held: true, statusAt: at(50) }),
+      session('kid-ask', { parentId: 'x', status: 'waiting', waitingFor: 'question', statusAt: at(400) }),
+    ]
+    expect(ids(listGroups(PROJECTS, list, ui({ groupBy: 'none', sessionSort: 'status-age' }))).slice(0, 1)).toEqual(['kid-ask'])
+    expect(ids(listGroups(PROJECTS, list, ui({ groupBy: 'none', sessionSort: 'status-age' })))).toEqual(['kid-ask', 'kid-held', 'kid-done', 'idle'])
+  })
+})
+
 describe('listGroups by project', () => {
   it('makes one group per project in config order, with the project set and no status', () => {
     expect(shape(listGroups(PROJECTS, SESSIONS, ui()))).toEqual([

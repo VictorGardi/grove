@@ -1152,3 +1152,146 @@ describe('terminal notify', () => {
     expect(notified).toEqual([])
   })
 })
+
+describe('small model classifier', () => {
+  let disposeAll = () => {}
+  afterEach(() => disposeAll())
+
+  const flush = () => new Promise((r) => setImmediate(r))
+  const ENDED = '2026-10-05T09:59:00.000Z'
+  const find = (core: { getSlices(): { sessions: Session[] } }, id: string) => core.getSlices().sessions.find((x) => x.id === id)
+
+  async function classifying(out: string, config: Record<string, unknown> = {}) {
+    const s = setupCore()
+    disposeAll = s.disposeAll
+    if (Object.keys(config).length) {
+      const { loadConfig, saveConfig } = await import('./store/configStore')
+      saveConfig(s.configPath, { ...loadConfig(s.configPath), ...config })
+    }
+    const run = vi.fn(async (_a: { model: string; input: string }) => out)
+    const core = s.make(NOW, { classifierRun: run })
+    await core.start()
+    s.oc.emit({ type: 'connected', version: '2.0.20' })
+    await flush()
+    const finish = (sessionId: string) => {
+      s.oc.emit({ type: 'exec-started', sessionId })
+      s.oc.emit({ type: 'exec-ended', sessionId, at: ENDED })
+    }
+    return { ...s, core, run, finish }
+  }
+
+  it('moves a finished top-level session that asks something to needs-you, with its summary as lastLine', async () => {
+    const { core, fake, run, finish } = await classifying('VERDICT: needs-you\nSUMMARY: Asks which database to use')
+    const o = await createOpenCode(core)
+    fake.captured.set(o.tmuxName, 'Which database?\n')
+    finish(o.agentSessionId!)
+    expect(find(core, o.id)).toMatchObject({ status: 'waiting', waitingFor: 'done', zone: 'review' })
+    await flush()
+    await flush()
+    expect(run).toHaveBeenCalledTimes(1)
+    expect(run.mock.calls[0][0]).toMatchObject({ model: 'haiku' })
+    expect(run.mock.calls[0][0].input).toContain('Which database?')
+    expect(find(core, o.id)).toMatchObject({ zone: 'needs-you', lastLine: 'Asks which database to use', classified: { verdict: 'needs-you', at: ENDED } })
+  })
+
+  it('asks once per finish, and drops the verdict when the session leaves it', async () => {
+    const { core, oc, run, finish } = await classifying('VERDICT: done\nSUMMARY: All fixed') as Awaited<ReturnType<typeof classifying>> & { oc: { emit(e: AgentEvent): void } }
+    const o = await createOpenCode(core)
+    finish(o.agentSessionId!)
+    await flush()
+    await flush()
+    expect(find(core, o.id)).toMatchObject({ zone: 'review', classified: { verdict: 'done' } })
+    core.setWindowFocused(true)
+    await core.commands.uiSet({ focusedSessionId: o.id })
+    expect(find(core, o.id)).not.toHaveProperty('classified')
+    await flush()
+    expect(run).toHaveBeenCalledTimes(1)
+    oc.emit({ type: 'exec-started', sessionId: o.agentSessionId! })
+    expect(find(core, o.id)).not.toHaveProperty('classified')
+  })
+
+  it('never classifies a child', async () => {
+    const { core, run, finish } = await classifying('VERDICT: needs-you')
+    const top = await createOpenCode(core)
+    const kid = await createOpenCode(core)
+    await core.commands.sessionSetParent({ id: kid.id, parent: top.id })
+    finish(kid.agentSessionId!)
+    await flush()
+    await flush()
+    expect(find(core, kid.id)).toMatchObject({ waitingFor: 'done' })
+    expect(run).not.toHaveBeenCalled()
+  })
+
+  it('enabled: false never calls the runner, and the classifier config survives a config rewrite', async () => {
+    const { core, run, finish, configPath } = await classifying('VERDICT: needs-you', { classifier: { enabled: false, model: 'sonnet' } })
+    const o = await createOpenCode(core)
+    finish(o.agentSessionId!)
+    await flush()
+    await flush()
+    expect(run).not.toHaveBeenCalled()
+    await core.commands.projectRemove({ id: 'nope' })
+    const { loadConfig } = await import('./store/configStore')
+    expect(loadConfig(configPath).classifier).toEqual({ enabled: false, model: 'sonnet' })
+  })
+
+  it('uses the configured model', async () => {
+    const { core, run, finish } = await classifying('VERDICT: done', { classifier: { model: 'sonnet' } })
+    const o = await createOpenCode(core)
+    finish(o.agentSessionId!)
+    await flush()
+    await flush()
+    expect(run.mock.calls[0][0].model).toBe('sonnet')
+  })
+
+  it('abandons a slow runner at the cap, then classifies the next session', async () => {
+    vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout'] })
+    try {
+      const s = setupCore()
+      disposeAll = s.disposeAll
+      const run = vi.fn(async (_a: { model: string; input: string; signal: AbortSignal }): Promise<string> => 'VERDICT: done\nSUMMARY: Second')
+      run.mockImplementationOnce(() => new Promise(() => {})) // never settles
+      const core = s.make(NOW, { classifierRun: run })
+      await core.start()
+      s.oc.emit({ type: 'connected', version: '2.0.20' })
+      const a = await createOpenCode(core)
+      const b = await createOpenCode(core)
+      for (const o of [a, b]) {
+        s.oc.emit({ type: 'exec-started', sessionId: o.agentSessionId! })
+        s.oc.emit({ type: 'exec-ended', sessionId: o.agentSessionId!, at: ENDED })
+      }
+      s.fake.captured.set(a.tmuxName, 'a\n')
+      s.fake.captured.set(b.tmuxName, 'b\n')
+      await vi.advanceTimersByTimeAsync(100)
+      expect(run).toHaveBeenCalledTimes(1) // one in flight
+      await vi.advanceTimersByTimeAsync(20_000)
+      expect(run).toHaveBeenCalledTimes(2)
+      expect(run.mock.calls[0][0].signal.aborted).toBe(true)
+      expect(find(core, a.id)).not.toHaveProperty('classified')
+      expect(find(core, b.id)).toMatchObject({ classified: { verdict: 'done' }, lastLine: 'Second' })
+    } finally {
+      vi.useRealTimers()
+    }
+  })
+
+  it('ignores a non-boolean enabled and a model that looks like a flag', async () => {
+    const odd = await classifying('VERDICT: done', { classifier: { enabled: 'no', model: '--dangerously' } })
+    const o = await createOpenCode(odd.core)
+    odd.finish(o.agentSessionId!)
+    await flush()
+    await flush()
+    expect(odd.run).toHaveBeenCalledTimes(1)
+    expect(odd.run.mock.calls[0][0].model).toBe('haiku')
+  })
+
+  it('does not save classified', async () => {
+    const { core, statePath, finish } = await classifying('VERDICT: needs-you\nSUMMARY: Asks')
+    const o = await createOpenCode(core)
+    finish(o.agentSessionId!)
+    await flush()
+    await flush()
+    expect(find(core, o.id)?.classified).toBeDefined()
+    const saved = fs.readFileSync(statePath, 'utf8')
+    expect(saved).not.toContain('"classified"')
+    expect(saved).toContain('"lastLine": "Asks"')
+  })
+})

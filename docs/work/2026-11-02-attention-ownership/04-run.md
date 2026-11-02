@@ -264,4 +264,79 @@ The slice was built directly by the planner session rather than through an `impl
 
 Install the copied `grove-run` text, then the real run in a scratch repo with a two-slice plan (routine permission answered by the parent and counted as handled with no popup; destructive one in Needs you with the parent's reason and a popup).
 
+## Slice 7
+
+Session: attention-ownership-slice-7-a1
+Status: done
+Commit: this commit (see git log)
+
+### Slice plan
+
+Found in the code: `zoneOf` (`src/shared/zones.ts`) sends a top-level `waitingFor: 'done'` session to review; `set('sessions')` in `core.ts` runs `withZones(dropStaleAttention(stampStatusAt(..)))`, so a live field tied to one idle period can be dropped there, keyed on `statusAt`. `Session.lastLine` is persisted and already shown by `rowTitle`/`rowLine` in `zoneList.ts`. The config is held as written (`configEscalate`) and re-saved in `set('projects')`; `ConfigFile` lacked `classifier`. `backend.capture(name, lines)` gives the screen tail. `src/main/index.ts` builds the core options (`prLookup` via `ghLookup`/`findBin`); `src/core/pr.ts` is the model for an `execFile` runner. No classifier existed.
+
+Implementer 1:
+- [x] `src/core/classifier.ts` (new): prompt builder, `parseVerdict` (garbled or empty -> needs-you), injectable `Runner`, `createClassifier` (missing binary -> off, over the cap -> abandoned), `claudeRunner`
+- [x] `src/shared/types.ts`: `ConfigFile.classifier`, live `Session.classified`
+- [x] `src/shared/zones.ts`: a classified needs-you top-level finished session is needs-you
+- [x] `src/core/core.ts`: `classifierRun` option, config read and kept, `classified` stripped before save and dropped with its idle period, `pumpClassifier` (one in flight, tried map), summary into `lastLine`
+- [x] `src/main/index.ts`: pass the runner when `claude` is found
+- [x] `src/renderer/src/zoneList.ts`: "May need an answer" fallback line
+- [x] Tests: `classifier.test.ts`, `zones.test.ts`, `zoneList.test.ts`, `sessions.test.ts`
+
+Models passed: implementer: inherit, reviewer: inherit
+
+### Review rounds
+
+Round 1: 1 blocking: `claude -p` ran with the user's tools and settings, so screen text was not only data. Fixed with `--tools "" --no-session-persistence --setting-sources ""` (argv test added). Also fixed from the same review: fence markers neutralised in the screen tail, the tmux capture put under the 20 s cap, config validated (boolean `enabled`, safe `model`), `classifyTried` pruned on session removal, tests for `rowLine` and a hung runner.
+Round 2: fresh reviewer: no blocking findings.
+Round 3 (header fix, after the slice was reported): the sidebar header did not fit at a narrow width, so the "Sessions" heading was replaced by a 20 px accent tree logo (`role="img"`, `aria-label="Grove"`) and the logo, toggle and add button made non-shrinking (about 198 px of 220 px at the minimum). Fresh reviewer: no blocking findings. Not checked in the running app.
+Round 4 (quiet children, after the slice was reported): several screens still read the raw waiting status, so a finished child or a held child prompt looked waiting. A shared `asksHuman` (`src/shared/attention.ts`) now backs `countsAsWaiting`, with a `queueStatus` helper; routed through it: Board feature card, palette `waiting`, `family.ts` ranking, session board columns (`tree.ts`), `sessionList.ts` status-age sort, `workflow/derive.ts` card state and `zoneList.ts` `rowLine`. Finished children keep their look (`statusView`/`statusTone` untouched). Tests added for each consumer. Fresh reviewer: no blocking findings; cheap non-blocking applied (`rowLine` keeps strict old behaviour for top-level sessions, stale `family.ts` comment). Behaviour change to know: a finished child now ranks with idle in `familyOf`, so the jump target is a working child first. No `Board.tsx` component test exists; its check is covered through `countsAsWaiting`.
+Both fixes landed in slice 7's commit (amended; still one commit per slice).
+
+Approved, 1 blocking in round 1, 1 fix round before the report (rounds 3 and 4 were fixes after review). Non-blocking left: a quoted `"enabled": "false"` still counts as on (D3 says default on); the 20 s cap applies per phase (capture, then model), so about 40 s worst case; a failed or timed-out call is not retried within one finish; after a restart every finished-unseen top-level session is classified again, one at a time; a prompt-injected screen can still steer the model to `done` (residual risk named in the plan). Cheap ones applied: summary control characters stripped, env comment corrected.
+
+### Deviations
+
+none. `ZoneSection.tsx` and `configStore.ts` were not changed: the summary reaches the row through `rowLine` (which `ZoneSection` renders) and `configStore` passes `classifier` through.
+
+### Verification
+
+`npm test` (112 files, 1412 tests) and `npm run typecheck` pass. The classifier flags with empty values were run once against the real `claude` and accepted. Models requested: implementer inherit, reviewer inherit.
+
+### Left for the human
+
+Observable check in the app: end a Claude session on "which of these two do you want?" and see it in Needs you with a summary line; with `classifier.enabled: false` or no `claude` on the path, nothing is sent, no error shows and rows keep their last-prompt line.
+
+### Fix after review
+
+Comment: the sidebar header did not fit at a narrow width (the add-folder button was clipped); replace the "Sessions" heading with a small logo mark so the logo, the Zones/Projects toggle and the add button always fit on one row down to the minimum sidebar width.
+Changed: `Sidebar.tsx` swaps the `<h2>Sessions</h2>` for a 20 px one-colour inline SVG tree (`role="img"`, `aria-label="Grove"`, accent colour); `Sidebar.module.css` replaces `.heading` with `.logo` and makes the logo, toggle and add button non-shrinking (toggle no-wrap). Width at the 220 px minimum: 24 padding + 20 logo + 114 toggle + 24 button + 16 gaps = 198 px, so about 22 px spare.
+Verification re-run: `npm test` (1398 tests) and `npm run typecheck` pass; a fresh reviewer found no blocking findings. Not checked in the running app (computed from the tokens and the monospace font width).
+
+Comment 2: finished children must read as quiet everywhere, not only in the count, popup and cmd+; a held child prompt must not make a feature card or the Board show waiting.
+Changed: see Review rounds, round 4 (`asksHuman`, `queueStatus`, eight consumers rerouted, tests for each).
+Verification re-run: `npm test` (112 files, 1412 tests) and `npm run typecheck` pass; a fresh reviewer found no blocking findings. Both fixes are in this one slice commit.
+
+## Final summary
+
+- Slice 1: `2026-11-02-attention-ownership: slice 1 — Clean-finished children go quiet`: a finished child gives no popup, sound or count; top-level behaves as before. Review: approved, 0 fix rounds. Deviations: none.
+- Slice 2: `2026-11-02-attention-ownership: slice 2 — Zone derivation and manual override`: one `zoneOf` rule set, persisted override, `zone` in `grove ls --json`. Review: approved, 0 fix rounds. Deviations: none.
+- Slice 3: `2026-11-02-attention-ownership: slice 3 — Zones sidebar with a Projects toggle`: zones view, toggle, recent list, row titles and `lastLine`, move to zone. Review: approved, 1 fix round. Deviations: `viewed-desc` default sits in `DEFAULT_UI`.
+- Slice 4: `2026-11-02-attention-ownership: slice 4 — Parent declarations: escalate and progress`: `grove escalate` and `grove progress`, reasons on rows, progress bar. Review: approved, 0 fix rounds. Deviations: the children-seen progress fallback is not built; label is "N of M slices done".
+- Slice 5: `2026-11-02-attention-ownership: slice 5 — Grace window and the handled record`: 60 s hold for child prompts, handled audit. Review: approved, 0 fix rounds. Deviations: `sendToSession` takes `from`; hold skipped when on screen or not primed.
+- Slice 6: `2026-11-02-attention-ownership: slice 6 — Parents answer routine prompts`: routine and never-answer lists and the wait-read-decide-send loop in the skill texts. Review: approved, 1 fix round. Deviations: built directly by the planner; the `grove-run` copy must be installed by the human.
+- Slice 7: `2026-11-02-attention-ownership: slice 7 — Small model: ambiguous sessions and one-line summaries`: a finished unseen top-level agent session is read once by `claude -p` (no tools, no persistence, no settings); a question verdict moves it to Needs you and its summary becomes the row line. Review: approved, 1 fix round, plus the header and quiet-children fixes (all in this commit). Deviations: none.
+
+### Left for the human
+
+The in-app observable checks listed per slice (none run in the app here), install the copied `grove-run` text and do the two-slice scratch-repo run from slice 6, and the slice 7 check: a session ended on a question appears in Needs you with a summary; with `classifier.enabled: false` or no `claude`, nothing is sent.
+
+### PR description
+
+Attention ownership and sidebar zones
+
+Children no longer pull the human's attention when their parent owns it. Slice 1: finished children are quiet. Slice 2-3: zones (Needs you, Ready to review, Running) with a manual override, a Zones/Projects toggle and readable row titles. Slice 4: `grove escalate` and `grove progress`. Slice 5: a 60 s grace window for child prompts and a handled audit. Slice 6: parents answer routine prompts under a written list and escalate the rest. Slice 7: a small model (`claude -p`, no tools) reads finished unseen top-level sessions, moves ones that stopped on a question to Needs you, and supplies a one-line summary; `classifier.enabled: false` turns it off.
+
+Verified with `npm test` and `npm run typecheck`. Left for the human: the in-app checks per slice and the real two-slice run from slice 6.
+
 ## Open questions

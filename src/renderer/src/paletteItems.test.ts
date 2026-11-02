@@ -16,6 +16,17 @@ const features = [feature('p1', 'grid')]
 const actions = () => ({ focusSession: vi.fn(), focusFeature: vi.fn(), openProject: vi.fn(), runAction: vi.fn() })
 const items = (a = actions()) => paletteItems({ projects, sessions, features }, a)
 
+describe('paletteItems waiting flag', () => {
+  const waitingOf = (extra: Partial<Session>) =>
+    paletteItems({ projects, sessions: [session('k', 'kid', { parentId: 'p', status: 'waiting', ...extra })], features: [] }, actions()).find((i) => i.kind === 'session')?.waiting
+  it('is quiet for a finished or held child, and set for a real child wait or a top-level finish', () => {
+    expect(waitingOf({ waitingFor: 'done' })).toBe(false)
+    expect(waitingOf({ waitingFor: 'permission', held: true })).toBe(false)
+    expect(waitingOf({ waitingFor: 'permission' })).toBe(true)
+    expect(waitingOf({ waitingFor: 'done', parentId: undefined })).toBe(true)
+  })
+})
+
 describe('paletteItems', () => {
   it('lists sessions, features and projects with kind, label and detail', () => {
     const all = items()

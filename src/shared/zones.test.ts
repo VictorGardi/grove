@@ -11,6 +11,14 @@ function session(over: Partial<Session> = {}): Session {
 }
 
 describe('zoneOf', () => {
+  it('puts a finished top-level session the small model judged to be asking in needs-you', () => {
+    const done = { status: 'waiting', waitingFor: 'done' } as const
+    expect(zoneOf(session({ ...done }))).toBe('review')
+    expect(zoneOf(session({ ...done, classified: { verdict: 'done', at: 'x' } }))).toBe('review')
+    expect(zoneOf(session({ ...done, classified: { verdict: 'needs-you', at: 'x' } }))).toBe('needs-you')
+    expect(zoneOf(session({ ...done, parentId: 'p1', classified: { verdict: 'needs-you', at: 'x' } }))).toBeNull()
+  })
+
   it('puts a held child prompt in running, unless escalated', () => {
     expect(zoneOf(session({ status: 'waiting', waitingFor: 'permission', parentId: 'p1', held: true }))).toBe('running')
     expect(zoneOf(session({ status: 'waiting', waitingFor: 'permission', parentId: 'p1', held: true, attention: { reason: 'x', waitingFor: 'permission' } }))).toBe('needs-you')

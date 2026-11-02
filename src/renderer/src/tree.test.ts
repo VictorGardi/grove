@@ -99,6 +99,21 @@ describe('boardColumns', () => {
   })
 })
 
+describe('sessionColumns finished and held children', () => {
+  it('files a finished child under Idle and a held one under Working; real waits stay in Waiting', () => {
+    const cols = sessionColumns([
+      session('fin', { parentId: 'x', status: 'waiting', waitingFor: 'done' }),
+      session('held', { parentId: 'x', status: 'waiting', waitingFor: 'permission', held: true }),
+      session('ask', { parentId: 'x', status: 'waiting', waitingFor: 'question' }),
+      session('top', { status: 'waiting', waitingFor: 'done' }),
+    ])
+    const col = (id: string) => cols.find((c) => c.id === id)!.sessions.map((s) => s.id)
+    expect(col('waiting').sort()).toEqual(['ask', 'top'])
+    expect(col('idle')).toEqual(['fin'])
+    expect(col('working')).toEqual(['held'])
+  })
+})
+
 describe('sessionColumns', () => {
   it('sorts sessions into Waiting, Working, Idle and Ended by start time', () => {
     const cols = sessionColumns([

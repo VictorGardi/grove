@@ -29,6 +29,7 @@ import { sendToSession } from './send'
 import { hasLiveSessions, newProject, parentCheckout } from './projects'
 import { readBranch } from './git'
 import type { PrLookup } from './pr'
+import { CLASSIFIER_TIMEOUT_MS, createClassifier, type Runner } from './classifier'
 import * as worktrees from './worktrees'
 import { doneKey, kidsKey, openedKey } from '@shared/groups'
 import { orphanChildren, resolveParent, withParent } from '@shared/sessionGroups'
@@ -53,6 +54,7 @@ export interface CoreOptions {
   sources?: AgentSource[] // one per agent kind; none: tmux-only
   now?: () => Date // tests inject this
   prLookup?: PrLookup // the PR of a branch, for the marker on a session; none: no markers
+  classifierRun?: Runner // the small model for finished top-level sessions; none: the classifier is off, nothing is ever spawned
   git?: string | null // path to git; undefined: 'git' from PATH, null: not found
   sessionEnv?: { socketPath: string; binDir: string } // the grove CLI's socket and launcher dir; none: sessions get no CLI env
   worktreeAdd?: typeof worktrees.add // the git worktree add `worktreeCreate` and a worktree launch run; tests hold it open to watch the card meanwhile
@@ -159,6 +161,11 @@ export function createCore(opts: CoreOptions): Core {
   let configSounds: boolean | undefined
   let configEscalate: number | undefined // config.json `escalateAfterSec` as written; the grace window in use is escalateAfterSec()
   const escalateAfterSec = () => configEscalate ?? 60
+  let configClassifier: { enabled?: boolean; model?: string } | undefined // config.json `classifier` as written
+  let classifier: ReturnType<typeof createClassifier> | null = null // null: no runner given, or enabled: false
+  let classifying = false // one model call at a time
+  let disposed = false
+  const classifyTried = new Map<string, string>() // session id -> the statusAt it was asked for, so an idle period is asked once
   let workflow: Workflow | null = null // last valid
   let workflowError: string | null = null
   let workflowWatch: Closer | undefined
@@ -246,7 +253,7 @@ export function createCore(opts: CoreOptions): Core {
   }
 
   function set<K extends keyof Slices>(k: K, v: Slices[K]): void {
-    if (k === 'sessions') v = withZones(dropStaleAttention(stampStatusAt(v as Session[]))) as Slices[K]
+    if (k === 'sessions') v = withZones(dropStaleClassified(dropStaleAttention(stampStatusAt(v as Session[])))) as Slices[K]
     slices[k] = v
     for (const l of listeners) l(k, v)
     if (k === 'projects') {
@@ -256,11 +263,12 @@ export function createCore(opts: CoreOptions): Core {
         ...(configWorkflow !== undefined && { workflow: configWorkflow }),
         ...(configSounds !== undefined && { sounds: configSounds }),
         ...(configEscalate !== undefined && { escalateAfterSec: configEscalate }),
+        ...(configClassifier !== undefined && { classifier: configClassifier }),
       })
     }
     else if (k === 'sessions' || k === 'ui') {
       const sessions = slices.sessions.filter((s) => !unsaved(s.id)).map(
-        ({ startup: _startup, statusAt: _statusAt, branch: _branch, status: _status, waitingFor: _waitingFor, zone: _zone, held: _held, handled: _handled, attention: _attn, progress: _prog, contextPct: _p, contextTokens: _t, contextWindow: _w, model: _m, pr: _pr, ...s }) => s,
+        ({ startup: _startup, statusAt: _statusAt, branch: _branch, status: _status, waitingFor: _waitingFor, zone: _zone, held: _held, handled: _handled, attention: _attn, classified: _cl, progress: _prog, contextPct: _p, contextTokens: _t, contextWindow: _w, model: _m, pr: _pr, ...s }) => s,
       ) // live-only
       saveState(opts.statePath, { schemaVersion: 10, sessions, ui: slices.ui })
     }
@@ -546,6 +554,44 @@ export function createCore(opts: CoreOptions): Core {
     })
   }
 
+  // A verdict belongs to one idle period: it goes when the session moves on from that finish.
+  function dropStaleClassified(next: Session[]): Session[] {
+    return next.map((s) => {
+      if (!s.classified || (s.status === 'waiting' && s.waitingFor === 'done' && s.statusAt === s.classified.at)) return s
+      const { classified: _c, ...rest } = s
+      return rest
+    })
+  }
+
+  // A finished top-level agent session the human has not looked at is read once by the small model:
+  // a prose question moves it to Needs you, and its summary becomes the row's line. Children and
+  // terminals are never sent; one call runs at a time, and a failed or slow one is not retried.
+  function pumpClassifier(): void {
+    if (!classifier || classifying || disposed) return
+    const s = slices.sessions.find((x) => !x.parentId && x.kind !== 'terminal' && x.status === 'waiting' && x.waitingFor === 'done'
+      && x.lastStatus === 'running' && x.statusAt !== undefined && (x.seenAt === null || x.seenAt < x.statusAt)
+      && classifyTried.get(x.id) !== x.statusAt)
+    if (!s || s.statusAt === undefined) return
+    const { id, statusAt } = s
+    classifyTried.set(id, statusAt)
+    classifying = true
+    let capTimer: ReturnType<typeof setTimeout> | undefined
+    const capped = new Promise<null>((resolve) => { capTimer = setTimeout(() => resolve(null), CLASSIFIER_TIMEOUT_MS) }) // a hung capture must not hold the one slot
+    void Promise.race([backend.capture(s.tmuxName, 40), capped])
+      .finally(() => clearTimeout(capTimer))
+      .then((text) => (text === null ? null : classifier!.classify(text.replace(/\s+$/, ''))))
+      .catch(() => null)
+      .then((v) => {
+        classifying = false
+        if (disposed) return
+        const cur = findSession(id)
+        if (v && cur && cur.status === 'waiting' && cur.waitingFor === 'done' && cur.statusAt === statusAt) {
+          replaceSession({ ...cur, classified: { verdict: v.verdict, at: statusAt }, ...(v.summary && { lastLine: v.summary }) })
+        }
+        pumpClassifier()
+      })
+  }
+
   // The zone of every session, from its live state; same object when unchanged.
   function withZones(next: Session[]): Session[] {
     return next.map((s) => {
@@ -612,6 +658,7 @@ export function createCore(opts: CoreOptions): Core {
     if (next !== slices.sessions) set('sessions', next)
     for (const st of states.values()) if (st.connected && st.queue === null) notifyTransitions(st.source.kind, st.primed, id)
     notifyTransitions('terminal', true, id) // terminal activity starts blank, so it needs no priming
+    pumpClassifier()
   }
 
   // End a child's hold (timer, captured screen, remembered send). Returns the session without `held`.
@@ -770,6 +817,7 @@ export function createCore(opts: CoreOptions): Core {
   function dropSessions(keep: (s: Session) => boolean): void {
     const focused = slices.ui.focusedSessionId ? findSession(slices.ui.focusedSessionId) : undefined
     const removed = slices.sessions.filter((s) => !keep(s))
+    for (const s of removed) classifyTried.delete(s.id)
     set('sessions', orphanChildren(slices.sessions.filter(keep), removed.map((s) => s.id)))
     let comments = slices.comments
     for (const s of removed) comments = dropSession(comments, s.id)
@@ -1359,6 +1407,13 @@ export function createCore(opts: CoreOptions): Core {
       configWorkflow = config.workflow
       configSounds = typeof config.sounds === 'boolean' ? config.sounds : undefined
       configEscalate = typeof config.escalateAfterSec === 'number' && Number.isFinite(config.escalateAfterSec) && config.escalateAfterSec >= 0 ? config.escalateAfterSec : undefined
+      configClassifier = config.classifier && typeof config.classifier === 'object' ? config.classifier : undefined
+      // enabled counts only as a boolean (else on); a model must look like an alias or id, never a flag
+      const model = configClassifier?.model
+      const modelOk = typeof model === 'string' && /^[\w.\-[\]]+$/.test(model) && !model.startsWith('-')
+      classifier = opts.classifierRun && configClassifier?.enabled !== false
+        ? createClassifier({ run: opts.classifierRun, model: modelOk ? model : 'haiku' })
+        : null
       // A worktree project whose directory is gone cannot be classified by git — there is no
       // `.git` file left to read — so it would sit in the sidebar ungrouped for good. Drop the
       // row and git's admin entry with it. Only worktrees: an ordinary project's folder may be
@@ -1485,6 +1540,9 @@ export function createCore(opts: CoreOptions): Core {
       clearInterval(poll)
       clearInterval(termPoll)
       clearTimeout(unreachableTimer)
+      disposed = true
+      classifier = null
+      classifyTried.clear()
       for (const t of holdTimers.values()) clearTimeout(t)
       holdTimers.clear()
       diffWatch.dispose()

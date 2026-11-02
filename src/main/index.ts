@@ -8,6 +8,7 @@ import { createCore } from '../core/core'
 import { findBin, findTmux, minimalEnv } from '../core/env'
 import { runLegacySandboxCleanup } from '../core/legacySandboxCleanup'
 import { ghLookup } from '../core/pr'
+import { claudeRunner } from '../core/classifier'
 import { SpoolClaude } from '../core/claude/source'
 import { CopilotSource } from '../core/copilot/source'
 import { HttpOpenCode, serviceFilePath } from '../core/opencode/client'
@@ -73,6 +74,7 @@ app.whenReady().then(async () => {
   const tmuxPath = findTmux(process.env)
   if (!tmuxPath) errors.push('tmux not found (looked in PATH, /opt/homebrew/bin, /usr/local/bin)')
   const ghPath = findBin('gh', process.env) // null: no PR markers, no banner
+  const claudePath = findBin('claude', process.env) // null: finished sessions are not read by a small model
   const gitPath = findBin('git', process.env) // null: the diff viewer says so, no banner
 
   const socketPath = path.join(app.getPath('userData'), 'grove.sock')
@@ -96,6 +98,7 @@ app.whenReady().then(async () => {
     }),
     sources: [new HttpOpenCode({ serviceFile: serviceFilePath(process.env, home) }), new SpoolClaude({ dir: spoolDir }), new CopilotSource({ dir: copilotDir })],
     git: gitPath,
+    classifierRun: claudePath ? claudeRunner(claudePath, minimalEnv(process.env)) : undefined,
     prLookup: ghPath ? ghLookup(ghPath, minimalEnv(process.env)) : undefined,
   })
   await core.start()

@@ -569,7 +569,9 @@ export function Sidebar({ onNew, onRemove }: { onNew: (projectId?: string) => vo
   return (
     <div className={css.sidebar}>
       <div className={css.header}>
-        <h2 className={css.heading}>Sessions</h2>
+        <svg className={css.logo} viewBox="0 0 20 20" role="img" aria-label="Grove" fill="currentColor">
+          <path d="M10 1 4 8h3l-4 6h5v5h4v-5h5l-4-6h3z" />
+        </svg>
         <div className={css.viewToggle} role="group" aria-label="Sidebar view">
           {(['zones', 'projects'] as const).map((v) => (
             <button key={v} type="button" className={css.viewOption} aria-pressed={(ui.sidebarView ?? 'zones') === v}

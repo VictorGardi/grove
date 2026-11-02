@@ -1,4 +1,5 @@
 import type { OpenCodeSlice, Session } from '@shared/types'
+import { asksHuman } from '@shared/attention'
 import type { StatusTone } from './components/ui/StatusDot'
 
 export type ShownStatus = 'running' | 'gone' | 'working' | 'waiting' | 'idle' | 'starting' | 'failed'
@@ -29,14 +30,21 @@ export function statusTone(s: Session): StatusTone {
 // Whether a session counts toward "N waiting" and cmd+. A finished child keeps its finished look
 // but doesn't ask for attention; its leader does.
 export function countsAsWaiting(s: Session): boolean {
-  return shownStatus(s) === 'waiting' && !(s.parentId && s.waitingFor === 'done')
+  return asksHuman(s)
+}
+
+// The status a queue (column, ranking) files a session under: shownStatus, except a wait that
+// is not asking the human (a finished child) is idle there.
+export function queueStatus(s: Session): ShownStatus {
+  const shown = shownStatus(s)
+  return shown === 'waiting' && !asksHuman(s) ? 'idle' : shown
 }
 
 // What a collapsed group shows for its children: the one that most needs the human, so a waiting
 // child is never hidden behind its parent. null for no children.
 const URGENCY: ShownStatus[] = ['failed', 'waiting', 'working', 'idle', 'starting', 'running', 'gone']
 export function mostUrgent(sessions: Session[]): Session | null {
-  const rank = (s: Session) => URGENCY.indexOf(shownStatus(s) === 'waiting' && !countsAsWaiting(s) ? 'idle' : shownStatus(s))
+  const rank = (s: Session) => URGENCY.indexOf(queueStatus(s))
   let best: Session | null = null
   for (const s of sessions) if (!best || rank(s) < rank(best)) best = s
   return best

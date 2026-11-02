@@ -1,5 +1,5 @@
 import type { Feature, Session } from '@shared/types'
-import { shownStatus, type ShownStatus } from './sessionStatus'
+import { queueStatus, type ShownStatus } from './sessionStatus'
 
 // The group keys live in @shared/groups: core has to recognise a project's keys when the
 // project goes away and the renderer draws them, so the format is defined once.
@@ -55,5 +55,5 @@ const SESSION_COLUMNS: { id: SessionColumn['id']; label: string; shown: ShownSta
 // Sessions board: one column per shown status, sessions by start time.
 export function sessionColumns(sessions: Session[]): SessionColumn[] {
   const sorted = [...sessions].sort(byStart)
-  return SESSION_COLUMNS.map(({ id, label, shown }) => ({ id, label, sessions: sorted.filter((s) => shown.includes(shownStatus(s))) }))
+  return SESSION_COLUMNS.map(({ id, label, shown }) => ({ id, label, sessions: sorted.filter((s) => shown.includes(queueStatus(s))) }))
 }

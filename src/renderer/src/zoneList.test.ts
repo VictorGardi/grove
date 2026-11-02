@@ -12,6 +12,27 @@ function session(over: Partial<Session> = {}): Session {
 
 const ids = (l: Session[]) => l.map((s) => s.id)
 
+describe('rowLine finished and held children', () => {
+  const kid = (over: Partial<Session>) => session({ parentId: 'p', status: 'waiting', label: 'kid', ...over })
+  it('a held or finished child reads by its named line; a real child wait still says what it needs', () => {
+    expect(rowLine(kid({ waitingFor: 'permission', held: true }))).toBe('kid · working')
+    expect(rowLine(kid({ waitingFor: 'done' }))).toBe('kid · waiting · done')
+    expect(rowLine(kid({ waitingFor: 'permission' }))).toBe('Needs permission')
+    expect(rowLine(kid({ waitingFor: 'question' }))).toBe('Has a question')
+    expect(rowLine(kid({ waitingFor: 'permission', held: true, attention: { reason: 'Need prod key', waitingFor: 'permission' } }))).toBe('Need prod key')
+    expect(rowLine(session({ status: 'waiting', waitingFor: 'permission' }))).toBe('Needs permission')
+  })
+})
+
+describe('rowLine classified', () => {
+  const done = (over: Partial<Session>) => session({ status: 'waiting', waitingFor: 'done', ...over })
+  it('says it may need an answer when the small model said so and there is no summary', () => {
+    expect(rowLine(done({ classified: { verdict: 'needs-you', at: 'x' } }))).toBe('May need an answer')
+    expect(rowLine(done({ classified: { verdict: 'needs-you', at: 'x' }, lastLine: 'Asks which one' }))).toBe('Asks which one')
+    expect(rowLine(done({ classified: { verdict: 'done', at: 'x' } }))).not.toBe('May need an answer')
+  })
+})
+
 describe('rowLine attention', () => {
   const waiting = (over: Partial<Session>) => session({ status: 'waiting', lastLine: 'did a thing', ...over })
   it('says the escalated reason over lastLine', () => {

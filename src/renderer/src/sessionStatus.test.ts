@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import type { Session } from '@shared/types'
-import { countsAsWaiting, longestWaiting, mostUrgent, serviceBanners, shownStatus, statusAge, statusTone, statusView, trackWaiting } from './sessionStatus'
+import { countsAsWaiting, longestWaiting, mostUrgent, queueStatus, serviceBanners, shownStatus, statusAge, statusTone, statusView, trackWaiting } from './sessionStatus'
 
 function session(over: Partial<Session> = {}): Session {
   return {
@@ -9,6 +9,31 @@ function session(over: Partial<Session> = {}): Session {
     startedAt: '2026-10-05T10:00:00.000Z', endedAt: null, lastStatus: 'running', seenAt: null, lastContext: null, workflowStatus: 'in-progress', ...over,
   }
 }
+
+describe('queueStatus', () => {
+  it('files a finished or held child as idle or working, and real waits as waiting', () => {
+    expect(queueStatus(session({ status: 'waiting', waitingFor: 'done', parentId: 'p' }))).toBe('idle')
+    expect(queueStatus(session({ status: 'waiting', waitingFor: 'permission', parentId: 'p', held: true }))).toBe('working')
+    expect(queueStatus(session({ status: 'waiting', waitingFor: 'permission', parentId: 'p' }))).toBe('waiting')
+    expect(queueStatus(session({ status: 'waiting', waitingFor: 'done' }))).toBe('waiting')
+    expect(queueStatus(session({ status: 'working' }))).toBe('working')
+  })
+
+  it('keeps the finished look for the child itself', () => {
+    const kid = session({ status: 'waiting', waitingFor: 'done', parentId: 'p' })
+    expect(statusTone(kid)).toBe('finished')
+    expect(countsAsWaiting(kid)).toBe(false)
+    expect(countsAsWaiting(session({ status: 'waiting', waitingFor: 'permission', parentId: 'p', held: true }))).toBe(false)
+    expect(countsAsWaiting(session({ status: 'waiting', waitingFor: 'question', parentId: 'p' }))).toBe(true)
+    expect(countsAsWaiting(session({ status: 'waiting', waitingFor: 'done' }))).toBe(true)
+  })
+
+  it('anyWaiting-style checks (the board card) follow countsAsWaiting', () => {
+    const kids = [session({ id: 'f', status: 'waiting', waitingFor: 'done', parentId: 'p' }), session({ id: 'h', status: 'waiting', parentId: 'p', held: true })]
+    expect(kids.some(countsAsWaiting)).toBe(false)
+    expect([...kids, session({ id: 'q', status: 'waiting', waitingFor: 'question', parentId: 'p' })].some(countsAsWaiting)).toBe(true)
+  })
+})
 
 describe('shownStatus', () => {
   it('prefers gone, then the live status, then tmux running', () => {
