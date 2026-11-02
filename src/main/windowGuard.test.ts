@@ -21,14 +21,14 @@ describe('permissionAllowed', () => {
 describe('guardWindow', () => {
   const setup = () => {
     let request!: (c: unknown, p: string, cb: (ok: boolean) => void, d: { requestingUrl: string }) => void
-    let check!: (c: unknown, p: string, origin: string) => boolean
+    let check!: (c: unknown, p: string, origin: string, d?: { requestingUrl?: string; isMainFrame?: boolean }) => boolean
     let attach!: (e: { preventDefault: () => void }) => void
     const wc = {
       session: {
         setPermissionRequestHandler: (fn: typeof request) => { request = fn },
         setPermissionCheckHandler: (fn: typeof check) => { check = fn },
       },
-      on: (_: string, fn: typeof attach) => { attach = fn },
+      on: (event: string, fn: typeof attach) => { if (event === 'will-attach-webview') attach = fn },
     }
     guardWindow({ webContents: wc } as unknown as BrowserWindow)
     return { wc, request, check, attach }
@@ -38,11 +38,22 @@ describe('guardWindow', () => {
     const { wc, request, check } = setup()
     const cb = vi.fn()
     request(wc, 'media', cb, { requestingUrl: 'file:///app/index.html' })
+    expect(cb).toHaveBeenLastCalledWith(true)
     request(wc, 'geolocation', cb, { requestingUrl: 'file:///app/index.html' })
     request({}, 'media', cb, { requestingUrl: 'file:///app/index.html' })
     expect(cb.mock.calls).toEqual([[true], [false], [false]])
     expect(check(wc, 'media', 'file:///')).toBe(true)
     expect(check(wc, 'clipboard-read', 'file:///')).toBe(false)
+  })
+
+  it('refuses video capture and sub-frames', () => {
+    expect(permissionAllowed('media', 'file:///app/index.html', undefined, ['audio'])).toBe(true)
+    expect(permissionAllowed('media', 'file:///app/index.html', undefined, ['audio', 'video'])).toBe(false)
+    const { wc, request, check } = setup()
+    const cb = vi.fn()
+    request(wc, 'media', cb, { requestingUrl: 'file:///app/index.html', isMainFrame: false } as never)
+    expect(cb).toHaveBeenCalledWith(false)
+    expect(check(wc, 'media', 'file:///', { requestingUrl: 'file:///x', isMainFrame: false } as never)).toBe(false)
   })
 
   it('denies webview attachment', () => {

@@ -12,16 +12,17 @@ export const isOwnOrigin = (url: string, devUrl?: string): boolean => {
   }
 }
 
-export const permissionAllowed = (permission: string, url: string, devUrl?: string): boolean =>
-  permission === 'media' && isOwnOrigin(url, devUrl)
+export const permissionAllowed = (permission: string, url: string, devUrl?: string, mediaTypes?: string[]): boolean =>
+  permission === 'media' && isOwnOrigin(url, devUrl) && (mediaTypes === undefined || mediaTypes.every((t) => t === 'audio'))
 
 export function guardWindow(win: BrowserWindow, devUrl?: string): void {
   const wc = win.webContents
   const ses = wc.session
   ses.setPermissionRequestHandler((contents, permission, callback, details) => {
-    callback(contents === wc && permissionAllowed(permission, details.requestingUrl, devUrl))
+    const mediaTypes = (details as { mediaTypes?: string[] }).mediaTypes
+    callback(contents === wc && details.isMainFrame !== false && permissionAllowed(permission, details.requestingUrl, devUrl, mediaTypes))
   })
-  ses.setPermissionCheckHandler((contents, permission, origin) =>
-    contents === wc && permissionAllowed(permission, origin, devUrl))
+  ses.setPermissionCheckHandler((contents, permission, origin, details) =>
+    contents === wc && details?.isMainFrame !== false && permissionAllowed(permission, details?.requestingUrl ?? origin, devUrl))
   wc.on('will-attach-webview', (e) => e.preventDefault())
 }

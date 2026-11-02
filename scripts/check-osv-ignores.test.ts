@@ -50,4 +50,22 @@ id = "GHSA-2"
     const file = path.resolve(__dirname, "..", "osv-scanner.toml");
     expect(checkIgnores(fs.readFileSync(file, "utf8"))).toEqual([]);
   });
+  it("still checks an entry whose header has a trailing comment or inner spaces", () => {
+    expect(checkIgnores(`[[IgnoredVulns]] # why
+id = "GHSA-aaaa-bbbb-cccc"
+reason = "No fix exists"
+`)).toEqual(["[[IgnoredVulns]] GHSA-aaaa-bbbb-cccc: missing ignoreUntil"]);
+    expect(checkIgnores(`[[ IgnoredVulns ]]
+id = "GHSA-aaaa-bbbb-cccc"
+reason = "No fix exists"
+`)).toEqual(["[[IgnoredVulns]] GHSA-aaaa-bbbb-cccc: missing ignoreUntil"]);
+  });
+
+  it("accepts a reason containing a hash and single-quoted values", () => {
+    expect(checkIgnores(`[[IgnoredVulns]]
+id = 'GHSA-aaaa-bbbb-cccc'
+ignoreUntil = 2027-01-31 # renew
+reason = "see issue #12"
+`)).toEqual([]);
+  });
 });

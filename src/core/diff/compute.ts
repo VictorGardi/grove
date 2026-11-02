@@ -56,7 +56,7 @@ export async function computeDiff(o: { sessionId: string; dir: string; project: 
     const against = target ? fork ?? target : head
     const scope = projectScope(root, o.project.path) // a project can be a subtree of its repo (e.g. a monorepo package): scope the diff to it
     if (target && !compared.onDefault && head === 'HEAD') compared.noOwnCommits = fork !== null && fork === (await git(['rev-parse', 'HEAD'], root)).trim()
-    const diffArgs = ['-M', '--no-color', '--no-ext-diff', '--no-relative', '--src-prefix=a/', '--dst-prefix=b/', ...scope]
+    const diffArgs = ['-M', '--no-color', '--no-ext-diff', '--no-textconv', '--no-relative', '--src-prefix=a/', '--dst-prefix=b/', ...scope]
     if (mode === 'last-commit') {
       compared.base = null
       const parent = head === 'HEAD' && !compared.noOwnCommits ? await git(['rev-parse', '--verify', '-q', 'HEAD~1'], root).then(() => 'HEAD~1', () => EMPTY_TREE) : null

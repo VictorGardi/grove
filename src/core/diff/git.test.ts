@@ -18,6 +18,8 @@ describe('gitArgv', () => {
   })
 
   it('puts the flags before the subcommand', () => {
-    expect(gitArgv(['status']).slice(-1)).toEqual(['status'])
+    const argv = gitArgv(['status'])
+    expect(argv.slice(-1)).toEqual(['status'])
+    expect(argv.join(' ')).toContain(HARDENING.join(' ') + ' status')
   })
 })

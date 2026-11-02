@@ -119,6 +119,12 @@ npm run build
 
 Architecture decisions are in [`docs/adr/`](docs/adr), and the domain vocabulary is in [`CONTEXT.md`](CONTEXT.md).
 
+### Discovery roots
+
+A workflow's discovery root (the `default` or the `key` read from its `from_file`)
+must resolve inside the project, symlinks included. A root that points outside it
+(for example `../shared-notes`) is refused and the project shows no features.
+
 ### Dependency scan
 
 CI runs the OSV scanner on pull requests, weekly (Mondays) and on demand

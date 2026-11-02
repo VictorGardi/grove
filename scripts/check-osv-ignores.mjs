@@ -4,6 +4,13 @@ import fs from 'node:fs'
 import path from 'node:path'
 import { fileURLToPath } from 'node:url'
 
+// A basic or literal string followed by an optional comment, else the bare value without its comment.
+function tomlString(raw) {
+  const quoted = raw.match(/^\s*(?:"((?:[^"\\]|\\.)*)"|'([^']*)')\s*(?:#.*)?$/)
+  if (quoted) return (quoted[1] ?? quoted[2]).trim()
+  return raw.replace(/\s+#.*$/, '').trim()
+}
+
 export function checkIgnores(text) {
   const problems = []
   let entry = null
@@ -20,15 +27,14 @@ export function checkIgnores(text) {
     if (!line || line.startsWith('#')) continue
     if (line.startsWith('[')) {
       finish()
-      entry = line === '[[IgnoredVulns]]' ? {} : null
+      entry = line.replace(/\s+#.*$/, '').replace(/\s+/g, '') === '[[IgnoredVulns]]' ? {} : null
       if (entry) n++
       continue
     }
     if (!entry) continue
     const m = line.match(/^([A-Za-z]+)\s*=\s*(.*)$/)
     if (!m) continue
-    const value = m[2].replace(/\s+#.*$/, '').replace(/^"(.*)"$/, '$1').trim()
-    entry[m[1]] = value
+    entry[m[1]] = tomlString(m[2])
   }
   finish()
   return problems
