@@ -286,4 +286,72 @@ The planner session wrote the code itself rather than through an implementer sub
 
 none
 
+## Slice 8
+
+Session: osv-scanner-security-fixes-slice-8-a1
+Status: done
+Commit: this commit (see git log)
+
+### Slice plan
+
+Found in the code: ADR 0027 is `docs/adr/0027-grove-cli-over-unix-socket.md` (the next free number is 0046); the README has no section on the scan and `osv-scanner.toml` carries only a comment on the entry format; `CONTEXT.md` needs no new term.
+
+Implementer 1:
+- [x] `docs/adr/0027-grove-cli-over-unix-socket-accepted-risk.md`: the accepted risk, why, when to revisit, follow-ups (unauthenticated `sessions.create`, IPC allowlist and sender validation), and that weekly and manual scan failures arrive only as the failed-run email
+- [x] `README.md`: "Dependency scan" section with the `[[IgnoredVulns]]` format (`id`, `ignoreUntil`, `reason`), triggers and the expiry behaviour
+
+Models passed: implementer: inherit (done directly by the planner session), reviewer: inherit
+
+### Review rounds
+
+Round 1: reviewed by the planner session against the diff (docs only, no code). No blocking findings; one claim about the preload's `invoke` surface was reworded to point at the research instead of asserting detail.
+
+approved, 0 blocking, 0 fix rounds.
+
+### Deviations
+
+The planner session wrote the text itself and reviewed it itself rather than through subagents. The note is a new file beside ADR 0027 (not a new numbered ADR) so the 0027 file stays unchanged. `CONTEXT.md` not touched.
+
+### Verification
+
+- `ls docs/adr` shows `0027-grove-cli-over-unix-socket-accepted-risk.md` beside ADR 0027; the plan's greps for `accepted risk|revisit|IPC allowlist|sessions.create` in `docs/adr/*0027*` and `ignoreUntil` in `README.md` and `docs/adr/*` find the new text.
+- `npm test` passes (112 files, 1349 tests).
+- Models requested: reviewer inherit.
+
+### Left for the human
+
+none
+
+## Final summary
+
+- Slice 1: `2026-11-02-osv-scanner-security-fixes: slice 1 — The OSV scan exists as a PR check`: OSV composite action on pull requests with `osv-scanner.toml`. Review: approved, 0 fix rounds. Deviations: none of substance.
+- Slice 2: `slice 2 — Dependencies upgraded, scan clean`: the 9 advisories fixed by exact bumps and transitive updates; scan reports no issues. Review: approved, 0 fix rounds. Deviations: katex and nested commander moved as a consequence of the mermaid pin.
+- Slice 3: `slice 3 — All four checks, weekly and manual triggers`: scan, test, typecheck, build on PRs, weekly schedule and manual dispatch, no push trigger. Review: approved, 0 fix rounds. Deviations: none.
+- Slice 4: `slice 4 — Failure modes proven and spikes lockfile non-blocking`: expiry proven against the old lockfile, `scripts/check-osv-ignores.mjs` with tests, spikes scan non-blocking. Review: approved, 0 fix rounds. Deviations: `vitest.config.ts` changed to include the script test.
+- Slice 5: `slice 5 — Artifact frame, window and CSP hardening (findings 1, 4, 5)`: artifacts no longer open the browser (D4 fallback B), sandboxed window, permission allow-list (D5). Review: approved, 0 fix rounds. Deviations: new `src/main/windowGuard.ts`.
+- Slice 6: `slice 6 — Git and paste hardening (findings 6, 7, 8)`: fsmonitor and hooks disabled on read-only git calls, branch and base validation, control characters stripped from pasted text. Review: approved, 0 fix rounds. Deviations: new `src/core/controlChars.ts`; `pr.ts` unchanged.
+- Slice 7: `slice 7 — File-handling hardening (findings 9, 10, 11)`: out-of-project discovery roots refused, random 0600 temp files, single-open reads. Review: approved, 0 fix rounds. Deviations: `readFile` added to `Core`.
+- Slice 8: `slice 8 — Documentation of accepted risk and follow-ups`: note beside ADR 0027 and a README section on the ignore list. Review: approved, 0 fix rounds. Deviations: note is a new file beside 0027.
+
+### Left for the human
+
+- First GitHub PR run: confirms the pinned action, `--config` handling, permissions, the Linux run (tmux install, Electron download in `npm ci`) and the non-blocking spikes step. `schedule` and `workflow_dispatch` only fire once merged to the default branch. A throwaway PR with an expired entry would prove expiry through the action.
+- Set GitHub branch protection to require the four checks (outside this plan).
+- Spot-check mermaid diagrams with math in the app (katex 0.18), and open an artifact once in the viewer; links in artifacts no longer open the browser.
+- Follow-ups not done: socket authentication, IPC allowlist and sender validation (finding 3).
+
+### PR description
+
+OSV scanner in CI and security fixes
+
+Adds Grove's first CI: an OSV dependency scan (PRs, weekly, manual) with a reviewed ignore list (`osv-scanner.toml`, reason and expiry per entry, validated by `scripts/check-osv-ignores.mjs`), plus separate test, typecheck and build checks on PRs.
+
+- Dependencies: the 9 reported advisories fixed by non-major bumps; the scan is clean.
+- Artifact frame, window and CSP: artifact navigation never opens the browser; sandboxed window; permission allow-list (`media` for Grove's own window only).
+- Git and paste: fsmonitor and hooks disabled on read-only git calls, branch and base validated, control characters stripped from pasted text.
+- Files: discovery roots outside the project refused, random 0600 temp files, single-open reads.
+- Docs: control-socket risk recorded beside ADR 0027; README section on the ignore list.
+
+Verified: `npm test` (112 files, 1349 tests), typecheck and build pass; the built app launched with the sandbox on. Left for the human: first PR run on GitHub, branch protection, a manual check of mermaid math and artifact viewing.
+
 ## Open questions
