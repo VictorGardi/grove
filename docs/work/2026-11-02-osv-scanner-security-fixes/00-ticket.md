@@ -1,0 +1,1 @@
+i want to add an osv scanner check to ci/cd pipeline. also use a subagent to review grove app with security focus in mind - are there any issues? also - this feature should fix potential issues found by agent and osv scanner and add that scanner to ci/cd
