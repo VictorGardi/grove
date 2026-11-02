@@ -595,7 +595,8 @@ export function createCore(opts: CoreOptions): Core {
       }
       if (waitKey.get(s.id) === s.waitingFor) continue
       waitKey.set(s.id, s.waitingFor)
-      if (primed && s.id !== onScreen) for (const cb of notifyListeners) cb(s)
+      // a finished child stays quiet: its leader owns the attention
+      if (primed && s.id !== onScreen && !(s.parentId && s.waitingFor === 'done')) for (const cb of notifyListeners) cb(s)
     }
   }
 

@@ -677,6 +677,23 @@ describe('core seen and notify', () => {
     expect(notified.map((x) => [x.id, x.waitingFor])).toEqual([[b.id, 'question']])
   })
 
+  it('keeps a finished child quiet, while its permission and a top-level finish still notify', async () => {
+    const { core, oc, notified } = await setup()
+    const top = await createOpenCode(core)
+    const kid = await createOpenCode(core)
+    expect(await core.commands.sessionSetParent({ id: kid.id, parent: top.id })).toMatchObject({ ok: true })
+    await connect(oc)
+    oc.emit({ type: 'exec-started', sessionId: kid.agentSessionId! })
+    oc.emit({ type: 'exec-ended', sessionId: kid.agentSessionId!, at: ENDED })
+    expect(find(core, kid.id)).toMatchObject({ status: 'waiting', waitingFor: 'done' })
+    expect(notified).toEqual([])
+    oc.emit({ type: 'exec-started', sessionId: top.agentSessionId! })
+    oc.emit({ type: 'exec-ended', sessionId: top.agentSessionId!, at: ENDED })
+    expect(notified.map((x) => [x.id, x.waitingFor])).toEqual([[top.id, 'done']])
+    oc.emit({ type: 'pending', sessionId: kid.agentSessionId!, id: 'per_1', kind: 'permission', open: true })
+    expect(notified.map((x) => [x.id, x.waitingFor])).toEqual([[top.id, 'done'], [kid.id, 'permission']])
+  })
+
   it('notifies on reconnect only for real changes', async () => {
     const { core, oc, notified } = await setup()
     const a = await createOpenCode(core)
@@ -841,5 +858,24 @@ describe('terminal notify', () => {
     s.fake.foreground.set(b.tmuxName, 'zsh')
     await vi.advanceTimersByTimeAsync(3000)
     expect(notified.map((x) => [x.id, x.waitingFor])).toEqual([[a.id, 'done']])
+  })
+
+  it('keeps a finished child terminal quiet', async () => {
+    vi.useFakeTimers({ toFake: ['setInterval', 'clearInterval', 'Date'] })
+    const s = setupCore()
+    disposeAll = s.disposeAll
+    const core = s.make()
+    await core.start()
+    const notified: Session[] = []
+    core.on('notify', (x) => notified.push(x))
+    const lead = await create(core)
+    const res = await core.commands.sessionCreate({ projectId: lead.projectId, kind: 'terminal', parent: lead.id, cols: 80, rows: 24 })
+    if (!res.ok) throw new Error(res.error)
+    s.fake.foreground.set(res.data.tmuxName, 'sleep')
+    await vi.advanceTimersByTimeAsync(4000)
+    s.fake.foreground.set(res.data.tmuxName, 'zsh')
+    await vi.advanceTimersByTimeAsync(3000)
+    expect(core.getSlices().sessions.find((x) => x.id === res.data.id)).toMatchObject({ status: 'waiting', waitingFor: 'done' })
+    expect(notified).toEqual([])
   })
 })

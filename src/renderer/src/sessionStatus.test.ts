@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import type { Session } from '@shared/types'
-import { longestWaiting, mostUrgent, serviceBanners, shownStatus, statusAge, statusTone, statusView, trackWaiting } from './sessionStatus'
+import { countsAsWaiting, longestWaiting, mostUrgent, serviceBanners, shownStatus, statusAge, statusTone, statusView, trackWaiting } from './sessionStatus'
 
 function session(over: Partial<Session> = {}): Session {
   return {
@@ -169,5 +169,25 @@ describe('time in status', () => {
     expect(statusAge(0, 6 * 60_000)).toBe('6m')
     expect(statusAge(0, 5 * 3_600_000 + 1)).toBe('5h')
     expect(statusAge(0, 3 * 86_400_000)).toBe('3d')
+  })
+})
+
+describe('finished child', () => {
+  const kid = session({ id: 'kid', parentId: 'lead', status: 'waiting', waitingFor: 'done' })
+
+  it('keeps its finished look but does not count as waiting', () => {
+    expect(shownStatus(kid)).toBe('waiting')
+    expect(statusTone(kid)).toBe('finished')
+    expect(countsAsWaiting(kid)).toBe(false)
+    expect(countsAsWaiting({ ...kid, parentId: null })).toBe(true)
+    expect(countsAsWaiting({ ...kid, waitingFor: 'permission' })).toBe(true)
+  })
+
+  it('is skipped by longestWaiting and trackWaiting, and loses to a working sibling', () => {
+    const top = session({ id: 'top', status: 'waiting', waitingFor: 'done' })
+    expect(longestWaiting([kid, top], { kid: 1, top: 2 })?.id).toBe('top')
+    expect(longestWaiting([kid], {})).toBeNull()
+    expect(trackWaiting({}, [kid, top], 5)).toEqual({ top: 5 })
+    expect(mostUrgent([kid, session({ id: 'w', status: 'working' })])?.id).toBe('w')
   })
 })

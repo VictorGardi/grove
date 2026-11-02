@@ -25,19 +25,26 @@ export function statusTone(s: Session): StatusTone {
   return shown === 'waiting' && s.waitingFor === 'done' ? 'finished' : shown
 }
 
+// Whether a session counts toward "N waiting" and cmd+. A finished child keeps its finished look
+// but doesn't ask for attention; its leader does.
+export function countsAsWaiting(s: Session): boolean {
+  return shownStatus(s) === 'waiting' && !(s.parentId && s.waitingFor === 'done')
+}
+
 // What a collapsed group shows for its children: the one that most needs the human, so a waiting
 // child is never hidden behind its parent. null for no children.
 const URGENCY: ShownStatus[] = ['failed', 'waiting', 'working', 'idle', 'starting', 'running', 'gone']
 export function mostUrgent(sessions: Session[]): Session | null {
+  const rank = (s: Session) => URGENCY.indexOf(shownStatus(s) === 'waiting' && !countsAsWaiting(s) ? 'idle' : shownStatus(s))
   let best: Session | null = null
-  for (const s of sessions) if (!best || URGENCY.indexOf(shownStatus(s)) < URGENCY.indexOf(shownStatus(best))) best = s
+  for (const s of sessions) if (!best || rank(s) < rank(best)) best = s
   return best
 }
 
 // When the renderer first saw each session waiting (ms). Same object when unchanged.
 export function trackWaiting(prev: Record<string, number>, sessions: Session[], now: number): Record<string, number> {
   const next: Record<string, number> = {}
-  for (const s of sessions) if (shownStatus(s) === 'waiting') next[s.id] = prev[s.id] ?? now
+  for (const s of sessions) if (countsAsWaiting(s)) next[s.id] = prev[s.id] ?? now
   const keys = Object.keys(next)
   const same = keys.length === Object.keys(prev).length && keys.every((k) => prev[k] === next[k])
   return same ? prev : next
@@ -56,7 +63,7 @@ export function statusAge(at: number, now: number): string {
 export function longestWaiting(sessions: Session[], since: Record<string, number>): Session | null {
   let best: Session | null = null
   for (const s of sessions) {
-    if (shownStatus(s) !== 'waiting') continue
+    if (!countsAsWaiting(s)) continue
     if (!best || (since[s.id] ?? Infinity) < (since[best.id] ?? Infinity)) best = s
   }
   return best

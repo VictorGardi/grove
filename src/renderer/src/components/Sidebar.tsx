@@ -4,7 +4,7 @@ import { useSlices } from '../stores/slices'
 import { gridShown } from '../gridView'
 import { kidsKey } from '@shared/groups'
 import { canParent, hasChildren } from '@shared/sessionGroups'
-import { longestWaiting, mostUrgent, shownStatus, statusAge, statusTone, statusView } from '../sessionStatus'
+import { countsAsWaiting, longestWaiting, mostUrgent, shownStatus, statusAge, statusTone, statusView } from '../sessionStatus'
 import { selectRange } from '../selection'
 import { GROUP_BY_OPTIONS, SORT_OPTIONS, canDrop, dropSession, groupSize, kidRows, kidsGroup, listGroups, visibleSessions, type DoneStack, type DropAt, type ListGroup } from '../sessionList'
 import { repoRows } from '../repoGroups'
@@ -244,7 +244,7 @@ function useMinuteTick(): number {
 export function Sidebar({ onNew, onRemove }: { onNew: (projectId?: string) => void; onRemove: (ids: string[]) => void }) {
   const { projects, sessions, ui, features, setFocused, toggleCollapsed, toggleCompact, toggleProjectVisibility, toggleHideDone, focusFeature, openProject, setGroupBy, setSessionSort, setSessionOrder, toggleGrid, toggleGridMember, waitingSince } = useSlices()
   const now = useMinuteTick()
-  const waitingCount = sessions.filter((x) => shownStatus(x) === 'waiting').length
+  const waitingCount = sessions.filter(countsAsWaiting).length
   const [refused, setRefused] = useState<string | null>(null)
   const compact = new Set(ui.compact ?? [])
   const [linking, setLinking] = useState<Session | null>(null)
