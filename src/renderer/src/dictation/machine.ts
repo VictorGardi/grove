@@ -18,6 +18,8 @@ export type DictationInput =
   | { type: 'transcribed'; text: string }
   | { type: 'failed'; kind: DictationError }
   | { type: 'clearError' }
+  | { type: 'overlayOpened' }
+  | { type: 'sessions'; ids: string[] } // the live session ids
 
 export type DictationEffect =
   | { type: 'start' }
@@ -82,6 +84,13 @@ export function step(state: DictationState, input: DictationInput): { state: Dic
         state: { phase: 'error', id: state.id, kind: input.kind },
         effect: state.phase === 'listening' ? { type: 'abort' } : undefined,
       }
+    case 'overlayOpened':
+      // only the open microphone is cancelled; words already on their way still land
+      return state.phase === 'listening' ? { state: IDLE, effect: { type: 'abort' } } : { state }
+    case 'sessions':
+      // the locked pane closed: drop silently, no error
+      if (state.phase === 'idle' || input.ids.includes(state.id)) return { state }
+      return state.phase === 'error' ? { state: IDLE } : { state: IDLE, effect: { type: 'abort' } }
     case 'clearError':
       return state.phase === 'error' ? { state: IDLE } : { state }
   }

@@ -175,13 +175,17 @@ export default function App() {
   const viewerFeature = viewerHit?.feature
   const viewerDir = viewerHit?.dir ?? ''
   const diffOpen = (id: string) => v?.kind === 'diff' && v.sessionId === id
-  // the pane that has the keyboard: the one session, or the grid's focused pane
-  const dictation = useDictation(() => (shown.kind === 'session' ? shown.session.id : shown.kind === 'grid' ? shown.focused.id : null))
   // Every modal over the content has to take the keyboard from it, or a focused terminal keeps the
   // keys the human is typing into a form. This was two lists — the grid's `overlayOpen` and the
   // terminal's `active` — and they had already drifted, each missing an overlay the other had. One
   // value now, with `active` as its negation, so there is nothing left to keep in step.
   const overlayOpen = paletteOpen || !!quickNew || !!launchNew || !!confirmRemove || scratchpadOpen
+  // the pane that has the keyboard: the one session, or the grid's focused pane
+  const dictation = useDictation({
+    getTargetId: () => (shown.kind === 'session' ? shown.session.id : shown.kind === 'grid' ? shown.focused.id : null),
+    overlayOpen,
+    sessionIds: sessions.map((x) => x.id),
+  })
 
   return (
     <>

@@ -86,4 +86,30 @@ describe('dictation machine', () => {
     expect(dictationMessage('nothing')).toBe('Nothing heard')
     expect(dictationMessage('model')).toContain('ggml-base.en.bin')
   })
+
+  it('keeps the id locked at press through transcribing too', () => {
+    const r = step(step(IDLE, down({ id: 'a' })).state, down({ id: 'b' }))
+    expect(step(r.state, { type: 'keyUp', key: ' ', code: 'Space' }).effect).toEqual({ type: 'stop', id: 'a' })
+  })
+
+  it('drops silently when the locked session disappears', () => {
+    expect(step(listening, { type: 'sessions', ids: ['b'] })).toEqual({ state: IDLE, effect: { type: 'abort' } })
+    expect(step({ phase: 'transcribing', id: 'a' }, { type: 'sessions', ids: [] })).toEqual({ state: IDLE, effect: { type: 'abort' } })
+    expect(step(err, { type: 'sessions', ids: ['b'] })).toEqual({ state: IDLE })
+  })
+
+  it('ignores other sessions closing and idle', () => {
+    expect(step(listening, { type: 'sessions', ids: ['a', 'b'] })).toEqual({ state: listening })
+    expect(step({ phase: 'transcribing', id: 'a' }, { type: 'sessions', ids: ['a'] }).effect).toBeUndefined()
+    expect(step(err, { type: 'sessions', ids: ['a'] })).toEqual({ state: err })
+    expect(step(IDLE, { type: 'sessions', ids: [] })).toEqual({ state: IDLE })
+  })
+
+  it('an overlay cancels listening only', () => {
+    expect(step(listening, { type: 'overlayOpened' })).toEqual({ state: IDLE, effect: { type: 'abort' } })
+    const transcribing: DictationState = { phase: 'transcribing', id: 'a' }
+    expect(step(transcribing, { type: 'overlayOpened' })).toEqual({ state: transcribing })
+    expect(step(err, { type: 'overlayOpened' })).toEqual({ state: err })
+    expect(step(IDLE, { type: 'overlayOpened' })).toEqual({ state: IDLE })
+  })
 })

@@ -14,10 +14,15 @@ function withTimeout<T>(p: Promise<T>, ms: number): Promise<T> {
 }
 
 // Hold Ctrl+Shift+Space to dictate into the focused session. `getTargetId` is read at key press only.
-export function useDictation(getTargetId: () => string | null): DictationState {
+// An open overlay owns the keyboard: it ignores the chord and cancels a recording in progress.
+// A locked session that disappears drops the run silently.
+export function useDictation(o: { getTargetId: () => string | null; overlayOpen: boolean; sessionIds: string[] }): DictationState {
   const [view, setView] = useState<DictationState>(IDLE)
-  const target = useRef(getTargetId)
-  target.current = getTargetId
+  const target = useRef(o.getTargetId)
+  target.current = o.getTargetId
+  const overlay = useRef(o.overlayOpen)
+  overlay.current = o.overlayOpen
+  const sendRef = useRef<(input: DictationInput) => void>(() => {})
 
   useEffect(() => {
     let state: DictationState = IDLE
@@ -84,7 +89,10 @@ export function useDictation(getTargetId: () => string | null): DictationState {
       if (r.effect) perform(r.effect)
     }
 
+    sendRef.current = send
+
     const onDown = (e: KeyboardEvent) => {
+      if (overlay.current) return
       const input = { ctrl: e.ctrlKey, shift: e.shiftKey, alt: e.altKey, meta: e.metaKey, code: e.code }
       if (!isChord(input)) return
       // the terminal and the pty must never see the chord
@@ -115,6 +123,10 @@ export function useDictation(getTargetId: () => string | null): DictationState {
       abort()
     }
   }, [])
+
+  useEffect(() => { if (o.overlayOpen) sendRef.current({ type: 'overlayOpened' }) }, [o.overlayOpen])
+  const idsKey = o.sessionIds.join('\n')
+  useEffect(() => { sendRef.current({ type: 'sessions', ids: idsKey === '' ? [] : idsKey.split('\n') }) }, [idsKey])
 
   return view
 }

@@ -108,4 +108,41 @@ Pass, 0 blocking, 0 fix rounds. Non-blocking left: every `start()` rejection sho
 
 Manually deny the microphone permission in System Settings and confirm the badge message; hold the shortcut with no `whisper-cli` and with no model file and confirm each message; a quick tap and a silent hold show "Nothing heard".
 
+## Slice 3
+
+Session: stt-voice-input-slice-3-a1
+Status: done
+Commit: this commit (see git log)
+
+### Slice plan
+
+Found in the code: the target id is already locked at press (`keyDown` carries `id`, the machine keeps it) and the badge shows only on the pane whose id it holds (`App.tsx`, `SessionGrid.tsx`), so lock-at-press needs tests, not new code. Missing: `useDictation` never learns that the session list changed (a pane closed mid-talk or mid-transcription keeps its state; the late result then calls `dictate`, whose gone error is swallowed, but the badge and microphone linger) and never learns that an overlay opened (`App.tsx` computes `overlayOpen`; the chord still starts a recording and is swallowed over a form). `cancel` already aborts and drops late results by bumping `run`.
+
+Implementer 1 (renderer):
+- [x] `src/renderer/src/dictation/machine.ts`: inputs `overlayOpened` (listening to idle with `abort`; transcribing and error unchanged) and `sessions {ids}` (a state whose id is not in `ids` goes to idle, with `abort` unless in `error`; no message), exported pure `pressBlocked(overlayOpen)` is not needed: the hook returns before `preventDefault` when an overlay is open
+- [x] `src/renderer/src/dictation/machine.test.ts`: lock-at-press kept when focus moves, closed pane while listening, transcribing and error drops with no error state, overlay opened cancels only listening, other panes' closing ignored
+- [x] `src/renderer/src/dictation/useDictation.ts`: options `{ getTargetId, overlayOpen, sessionIds }`; a press while an overlay is open is ignored and not intercepted; effects send `overlayOpened` when it turns true and `sessions` when ids change
+- [x] `src/renderer/src/App.tsx`: pass `overlayOpen` (moved above the hook) and `sessions.map(id)`
+
+Models passed: implementer: inherit, reviewer: inherit
+
+### Review rounds
+
+Round 1: 0 blocking, 5 non-blocking, nothing applied.
+
+Pass, 0 blocking, 0 fix rounds. Non-blocking left: the overlay cancel runs in a `useEffect`, so the chord can still be handled for one frame after an overlay opens; after an overlay cancel the key-up of the cancelled hold reaches the overlay or terminal (inert); any `sessions` list lacking the locked id drops the run, which assumes the shown session is always in `sessions` (`content()` not traced by the reviewer); hiding the locked pane in grid view (eye toggle) or navigating away keeps recording and delivers to the right pane but shows no badge; no hook-level test for the overlay gate, the `sessions` effect or the `run` race.
+
+### Deviations
+
+- Lock-at-press and the per-pane badge were already built in slice 1, so this slice only added tests for them. The overlay guard and closed-pane drop are two new machine inputs (`overlayOpened`, `sessions`) fed by `useDictation`, which now takes an options object; the rules are pure in `machine.ts` as planned.
+- `SessionGrid.tsx` needed no change.
+
+### Verification
+
+`npm run typecheck` clean; `npm test` 112 files, 1358 tests pass, including: id locked at press kept through a later press with another id, a closed locked pane dropping listening, transcribing and error silently (no error state, no dictate), other panes closing ignored, an overlay cancelling only listening. Models requested: implementer inherit, reviewer inherit.
+
+### Left for the human
+
+Manually in grid view: press in pane A, click pane B while holding, release: words in A, badge only on A. Close A mid-talk and while transcribing: nothing appears, no error. Open the command palette mid-hold: recording cancels, microphone closes. Dictate into a Claude pane waiting on a permission prompt: text sits in the prompt, nothing approved.
+
 ## Open questions
