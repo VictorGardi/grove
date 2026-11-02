@@ -38,6 +38,7 @@ export function normalise(raw: unknown, version: string): AgentEvent | null {
   }
   const sessionId = data?.sessionID
   if (typeof sessionId !== 'string') return null
+  // OpenCode's events carry no prompt text, so it never emits a 'prompt' event.
   if (e.type === 'session.execution.started') return { type: 'exec-started', sessionId }
   if (ENDED.has(e.type)) return { type: 'exec-ended', sessionId, at: toIso(e.created) }
   return null

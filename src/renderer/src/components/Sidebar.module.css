@@ -22,6 +22,34 @@
   margin-left: auto;
 }
 
+.viewToggle {
+  display: inline-flex;
+  gap: 2px;
+  padding: 2px;
+  border: 1px solid var(--card-border);
+  border-radius: 6px;
+}
+
+.viewOption {
+  padding: 1px 7px;
+  background: none;
+  border: 0;
+  border-radius: 4px;
+  font: inherit;
+  font-size: var(--fs-sm);
+  color: var(--text-3);
+  cursor: pointer;
+}
+
+.viewOption:hover {
+  color: var(--text);
+}
+
+.viewOption[aria-pressed='true'] {
+  background: var(--card-selected-bg);
+  color: var(--text);
+}
+
 .list {
   flex: 1;
   overflow-y: auto;

@@ -621,6 +621,26 @@ describe('core claude status', () => {
     again.dispose()
   })
 
+  it('keeps the first line of the last prompt as lastLine, saved and kept after a reload', async () => {
+    const { core, claude, statePath, make } = await connected()
+    const c = await createClaude(core)
+    const id = c.agentSessionId!
+    claude.emit({ type: 'prompt', sessionId: id, text: '  \n  fix the bug  \nsecret=hunter2' })
+    expect(find(core, c.id)?.lastLine).toBe('fix the bug')
+    claude.emit({ type: 'prompt', sessionId: id, text: ' \n\t ' })
+    expect(find(core, c.id)?.lastLine).toBe('fix the bug')
+    const state = fs.readFileSync(statePath, 'utf8')
+    expect(state).toContain('"lastLine": "fix the bug"')
+    expect(state).not.toContain('hunter2')
+    claude.emit({ type: 'prompt', sessionId: id, text: 'x'.repeat(200) })
+    expect(find(core, c.id)?.lastLine).toBe('x'.repeat(120))
+    core.dispose()
+    const again = make()
+    await again.start()
+    expect(again.getSlices().sessions.find((x) => x.id === c.id)?.lastLine).toBe('x'.repeat(120))
+    again.dispose()
+  })
+
   it('does not notify differently when a zone override is set', async () => {
     const { core, claude, notified } = await connected()
     const c = await createClaude(core)

@@ -16,6 +16,12 @@ export const isEnded = (s: Session) => {
 // "1 child", "3 children": the parent's count chip.
 export const childrenCount = (n: number) => (n === 1 ? '1 child' : `${n} children`)
 
+// "3 children, 2 done": the count chip with how many are marked done, when any are.
+export function childrenSummary(kids: Session[]): string {
+  const done = kids.filter((k) => k.workflowStatus === 'done').length
+  return done > 0 ? `${childrenCount(kids.length)}, ${done} done` : childrenCount(kids.length)
+}
+
 // Running children, most worth a look first. waiting covers every waitingFor, 'done' included;
 // running is a live pane with no agent status (a terminal); starting has nothing to show yet.
 const RANK: ShownStatus[] = ['waiting', 'working', 'idle', 'running', 'starting']

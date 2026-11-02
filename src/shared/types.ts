@@ -35,6 +35,7 @@ export interface Session {
   status?: 'working' | 'waiting' | 'idle' // agent sessions while their service is connected, terminals from the foreground command; never saved
   waitingFor?: 'permission' | 'question' | 'done' // with status 'waiting'; never saved
   zone?: Zone | null               // derived by core from the live state and the override on every sessions publish (shared/zones.ts); never saved
+  lastLine?: string                // one line on what the session was doing: the first line of the last prompt the human sent (cut at 120); persisted; absent: none
   zoneOverride?: Zone              // set by the human: only moves where the row is shown, never counts or popups; persisted; absent: none
   contextPct?: number | null       // agent sessions once a reading arrived: % of the context window used; null: not known yet; never saved
   contextTokens?: number | null    // tokens in context (input incl. cache); never saved
@@ -118,6 +119,7 @@ export interface UiState {
   hiddenProjects: string[] // project IDs hidden from the Sessions tab
   compact?: string[] // session IDs whose card is compacted to one line (absent reads as none)
   hideDone?: boolean // sessions whose workflow status is done are left out of the list (absent reads as false)
+  sidebarView?: 'zones' | 'projects' // what the sidebar shows; absent reads as zones
   groupBy: 'project' | 'status' | 'none' // what the Sessions tab groups rows under
   sessionSort: 'custom' | 'viewed-desc' | 'viewed-asc' | 'created-desc' | 'created-asc' | 'status-age' // order of the rows inside a group; status-age: longest in its status first, sessions waiting on you ahead
   sessionOrder: string[] // the dragged order of every session, one list for all groupings; used while sessionSort is custom
@@ -183,6 +185,6 @@ export type Slices = { projects: Project[]; sessions: Session[]; ui: UiState; fe
 export interface ConfigFile { schemaVersion: 1; projects: Project[]; workflow?: string; sounds?: boolean } // sounds: false mutes the waiting sounds
 export interface StateFile { schemaVersion: 10; sessions: Session[]; ui: UiState }
 export const SIDEBAR_WIDTH = 220 // the default; drag the sidebar's edge to resize, double-click it to come back here
-export const DEFAULT_UI: UiState = { sidebarWidth: SIDEBAR_WIDTH, sidebarCollapsed: false, focusedSessionId: null, focusedFeature: null, focusedProject: null, board: 'sessions', collapsed: [], hiddenProjects: [], groupBy: 'project', sessionSort: 'custom', sessionOrder: [], viewer: null, viewerWidth: null, viewerExpanded: false, grid: { open: false, members: [] } }
+export const DEFAULT_UI: UiState = { sidebarWidth: SIDEBAR_WIDTH, sidebarCollapsed: false, focusedSessionId: null, focusedFeature: null, focusedProject: null, board: 'sessions', collapsed: [], hiddenProjects: [], groupBy: 'project', sessionSort: 'viewed-desc', sessionOrder: [], viewer: null, viewerWidth: null, viewerExpanded: false, grid: { open: false, members: [] } }
 export const EMPTY_FEATURES: FeaturesSlice = { workflowError: null, stages: [], items: [] }
 export const OPENCODE_CONNECTING: OpenCodeSlice = { state: 'connecting', version: null }

@@ -59,7 +59,7 @@ export interface CoreOptions {
   worktreeRoot?: string // where `worktreeCreate` puts new checkouts; none: ~/.grove. Tests point it elsewhere, so a test never writes into the real home.
 }
 
-type Change = Exclude<AgentEvent, { type: 'connected' | 'disconnected' | 'wrote' }>
+type Change = Exclude<AgentEvent, { type: 'connected' | 'disconnected' | 'wrote' | 'prompt' }>
 
 // Live state per agent source (D1, ADR 0019): one source reconnecting never touches another's.
 interface SourceState {
@@ -638,6 +638,11 @@ export function createCore(opts: CoreOptions): Core {
         set('opencode', OPENCODE_CONNECTING)
         armUnreachable()
       }
+    } else if (e.type === 'prompt') {
+      const session = sessionOf(st, e.sessionId)
+      const line = e.text.split('\n').map((l) => l.trim()).find(Boolean)?.slice(0, 120)
+      if (session && line && session.lastLine !== line) set('sessions', slices.sessions.map((s) => (s === session ? { ...s, lastLine: line } : s)))
+      return
     } else if (e.type === 'wrote') {
       const session = sessionOf(st, st.roots.get(e.sessionId) ?? e.sessionId)
       if (session) st.wroteSince.add(session.id)

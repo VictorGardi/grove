@@ -24,6 +24,7 @@ interface Hook {
   session_id?: unknown
   model?: unknown
   context_window?: unknown
+  prompt?: unknown
 }
 
 const WRITE_TOOLS = new Set(['Write', 'Edit', 'MultiEdit', 'NotebookEdit'])
@@ -92,6 +93,7 @@ export function step(f: ClaudeFold, r: SpoolRecord): { fold: ClaudeFold; events:
       }
       fold = { ...fold, running: true }
       events.push({ type: 'exec-started', sessionId })
+      if (typeof e.prompt === 'string') events.push({ type: 'prompt', sessionId, text: e.prompt })
       break
     case 'SubagentStart':
     case 'SubagentStop': {

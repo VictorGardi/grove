@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import type { Session } from '@shared/types'
-import { childrenCount, familyJumpTarget, familyOf } from './family'
+import { childrenCount, childrenSummary, familyJumpTarget, familyOf } from './family'
 
 const session = (id: string, over: Partial<Session> = {}): Session =>
   ({ id, projectId: 'p', kind: 'claude', label: id, lastStatus: 'running', startedAt: '2026-10-05T10:00:00.000Z', ...over } as Session)
@@ -148,5 +148,14 @@ describe('familyJumpTarget', () => {
     expect(first).toBe('a') // won by lastFocusedAt over the later-started b
     expect(jump(first)).toBe('parent')
     expect(jump('parent')).toBe(first)
+  })
+})
+
+describe('childrenSummary', () => {
+  const kid = (workflowStatus: Session['workflowStatus']) => ({ workflowStatus }) as Session
+  it('adds the done count only when some are done', () => {
+    expect(childrenSummary([kid('in-progress'), kid('in-progress')])).toBe('2 children')
+    expect(childrenSummary([kid('done'), kid('done'), kid('in-progress')])).toBe('3 children, 2 done')
+    expect(childrenSummary([kid('done')])).toBe('1 child, 1 done')
   })
 })

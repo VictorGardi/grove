@@ -18,6 +18,7 @@ export type AgentEvent =
   | { type: 'child'; sessionId: string; parentId: string } // a subagent session and its parent
   | { type: 'busy'; sessionId: string; id: string; open: boolean } // a background subagent (id) started or ended in the session
   | { type: 'context'; sessionId: string; context: ContextUsage } // a new reading
+  | { type: 'prompt'; sessionId: string; text: string } // the human sent a prompt; the full text, the consumer keeps one line
   | { type: 'wrote'; sessionId: string; paths: string[] } // a write/edit/patch succeeded; raw paths
 
 // A session's state as read on (re)connect; pending items are its own, children listed separately.

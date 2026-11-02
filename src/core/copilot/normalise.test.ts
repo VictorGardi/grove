@@ -7,13 +7,13 @@ const T = '2026-10-22T10:17:30Z'
 const AT = '2026-10-22T10:17:30.000Z'
 const r = (e: object, t = T): SpoolRecord => ({ t, e })
 
-function run(records: SpoolRecord[], from: CopilotFold = emptyFold('S')): { fold: CopilotFold; events: AgentEvent[] } {
+function run(records: SpoolRecord[], from: CopilotFold = emptyFold('S'), keepPrompts = false): { fold: CopilotFold; events: AgentEvent[] } {
   let fold = from
   const events: AgentEvent[] = []
   for (const rec of records) {
     const out = step(fold, rec)
     fold = out.fold
-    events.push(...out.events)
+    events.push(...out.events.filter((e) => keepPrompts || e.type !== 'prompt')) // prompt events are asserted in their own test
   }
   return { fold, events }
 }
@@ -40,6 +40,12 @@ describe('copilot step', () => {
     ])
     expect(fold).toMatchObject({ running: false, idleAt: AT })
     expect(run([r(subOf({ hook_event_name: 'assistant.turn_start' })), r(subOf({ hook_event_name: 'assistant.turn_end' }))]).events).toEqual([])
+  })
+
+  it('a prompt emits its text after exec-started; a subagent prompt or a non-string one emits none', () => {
+    expect(run([r(prompt)], emptyFold('S'), true).events).toEqual([{ type: 'exec-started', sessionId: 'S' }, { type: 'prompt', sessionId: 'S', text: 'make a file' }])
+    expect(run([r({ ...prompt, prompt: undefined })], emptyFold('S'), true).events).toEqual([{ type: 'exec-started', sessionId: 'S' }])
+    expect(run([r(subOf(prompt))], emptyFold('S'), true).events).toEqual([])
   })
 
   it('a prompt starts the turn and agentStop ends it', () => {

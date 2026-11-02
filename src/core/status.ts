@@ -16,7 +16,7 @@ const blank = (): Tracker => ({ running: false, pending: new Map(), idleAt: null
 // Returns the same map for events that change no tracker; never mutates its input.
 // A child's pending items count for its root; its own turns count as busy marks (it may outlive the parent's turn).
 export function apply(t: Map<string, Tracker>, roots: Map<string, string>, e: AgentEvent): Map<string, Tracker> {
-  if (e.type === 'connected' || e.type === 'disconnected' || e.type === 'wrote') return t
+  if (e.type === 'connected' || e.type === 'disconnected' || e.type === 'wrote' || e.type === 'prompt') return t
   if ((e.type === 'exec-started' || e.type === 'exec-ended') && roots.has(e.sessionId)) {
     return apply(t, roots, { type: 'busy', sessionId: roots.get(e.sessionId)!, id: e.sessionId, open: e.type === 'exec-started' })
   }

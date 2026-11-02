@@ -70,6 +70,11 @@ describe('step', () => {
     expect(fold).toMatchObject({ running: true, pending: new Map() })
   })
 
+  it('UserPromptSubmit emits the prompt text after exec-started, only when it is a string', () => {
+    expect(run([r({ hook_event_name: 'UserPromptSubmit', prompt: 'hej\nmer' })]).events).toEqual([started, { type: 'prompt', sessionId: 'S', text: 'hej\nmer' }])
+    expect(run([r({ hook_event_name: 'UserPromptSubmit', prompt: 5 })]).events).toEqual([started])
+  })
+
   it('SubagentStart and SubagentStop mark a running subagent, which a Stop leaves in place', () => {
     const busy = (id: string, open: boolean): AgentEvent => ({ type: 'busy', sessionId: 'S', id, open })
     const out = run([r({ hook_event_name: 'UserPromptSubmit' }), r({ hook_event_name: 'SubagentStart', agent_id: 'a1' }), r({ hook_event_name: 'Stop' })])
@@ -190,10 +195,19 @@ const short = (e: AgentEvent) => e.type === 'exec-started' ? 'start'
 
 function replay(fixture: string): { fold: ClaudeFold; events: AgentEvent[] } {
   const text = fs.readFileSync(new URL(`./fixtures/${fixture}`, import.meta.url), 'utf8')
-  return run(scanRecords(text).records)
+  const out = run(scanRecords(text).records)
+  return { ...out, events: out.events.filter((e) => e.type !== 'prompt') } // the turn structure is asserted here; prompts below
 }
 
 describe('fixture replay', () => {
+  it('capture-2.1.285: each UserPromptSubmit carries its prompt text', () => {
+    const text = fs.readFileSync(new URL('./fixtures/capture-2.1.285.jsonl', import.meta.url), 'utf8')
+    const prompts = run(scanRecords(text).records).events.filter((e) => e.type === 'prompt')
+    expect(prompts.length).toBeGreaterThan(0)
+    expect(prompts[0]).toEqual({ type: 'prompt', sessionId: 'S', text: 'hej' })
+  })
+
+
   it('capture-2.1.285: turns, and a rejected question shown as a question, closed by the next prompt', () => {
     const { fold, events } = replay('capture-2.1.285.jsonl')
     expect(events.map(short)).toEqual([
