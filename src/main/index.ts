@@ -1,7 +1,10 @@
+import fs from 'node:fs'
 import os from 'node:os'
 import path from 'node:path'
 import { execFile } from 'node:child_process'
+import { promisify } from 'node:util'
 import { app, BrowserWindow, dialog, nativeTheme, Notification } from 'electron'
+import { ARTIFACT_SCHEME } from '@shared/artifactUrl'
 import { chromeBackground } from '@shared/theme'
 import { TmuxBackend } from '../core/backend/tmux'
 import { createCore } from '../core/core'
@@ -14,6 +17,7 @@ import { HttpOpenCode, serviceFilePath } from '../core/opencode/client'
 import { guardWindow } from './windowGuard'
 import { guardNavigation, handleArtifacts, registerArtifactScheme } from './artifacts'
 import { registerIpc } from './ipc'
+import { cleanStaleWavs, MODEL_BYTES, type WhisperDeps } from '../core/stt/whisper'
 import { startCliServer } from './cliServer'
 import { agentSkillsDirs, installAgentSkill, installCommandLineTool, writeLauncher } from './launcher'
 import { buildMenu } from './menu'
@@ -40,6 +44,9 @@ app.on('second-instance', raise)
 const loginPath = () => new Promise<string>((resolve) => {
   execFile(process.env.SHELL || '/bin/zsh', ['-ilc', 'printf %s "$PATH"'], { timeout: 5000 }, (err, out) => resolve(err ? process.env.PATH ?? '' : out))
 })
+
+let loginPathCache: Promise<string> | null = null
+const cachedLoginPath = () => (loginPathCache ??= loginPath())
 
 async function installCli(launcher: string): Promise<void> {
   const targetDir = path.join(os.homedir(), '.local', 'bin')
@@ -137,10 +144,29 @@ app.whenReady().then(async () => {
   })
   handleArtifacts(core)
 
-  const { killAttaches } = registerIpc(core, () => win, () => [...errors, ...core.getErrors()])
-  buildMenu((a) => {
+  // whisper-cli lives on the login shell's PATH (e.g. Homebrew), which a GUI launch lacks. Resolved once, off the startup path.
+  let whisperBin: string | null = null
+  const sttDir = path.join(app.getPath('userData'), 'stt')
+  const sttDeps = {
+    execFile: promisify(execFile) as unknown as WhisperDeps['execFile'],
+    whisperBin: () => whisperBin ?? findBin('whisper-cli', process.env),
+    modelPath: path.join(sttDir, 'ggml-base.en.bin'),
+    tmpDir: path.join(sttDir, 'tmp'),
+  }
+  cleanStaleWavs(sttDeps.tmpDir)
+  const { killAttaches } = registerIpc(core, () => win, () => [...errors, ...core.getErrors()], sttDeps)
+  // The dictation hint reflects whisper-cli + model presence, checked at launch only, never polled.
+  let dictationReady = false
+  const rebuildMenu = (): void => buildMenu((a) => {
     if (win && !win.isDestroyed()) win.webContents.send('menu:action', a)
-  }, () => void installCli(launcher), () => void installSkill())
+  }, () => void installCli(launcher), () => void installSkill(), { ready: dictationReady })
+  rebuildMenu()
+  void cachedLoginPath().then((p) => {
+    whisperBin = findBin('whisper-cli', { PATH: p })
+    const modelSize = (() => { try { return fs.statSync(sttDeps.modelPath).size } catch { return -1 } })()
+    dictationReady = whisperBin !== null && modelSize === MODEL_BYTES
+    rebuildMenu()
+  })
 
   win = new BrowserWindow({
     width: 1200,
@@ -160,6 +186,17 @@ app.whenReady().then(async () => {
     },
   })
   win.setWindowButtonVisibility(false)
+  // Dictation needs the microphone, for Grove's own page only: artifact iframes and any other frame are denied.
+  // Every other permission keeps Electron's default (granted), so the clipboard copy in the terminal still works.
+  const ownPage = (wc: Electron.WebContents | null, url: string, isMainFrame: boolean) =>
+    wc === win?.webContents && isMainFrame && !url.startsWith(`${ARTIFACT_SCHEME}:`)
+  win.webContents.session.setPermissionRequestHandler((wc, permission, callback, details) => {
+    const types = (details as { mediaTypes?: string[] }).mediaTypes ?? []
+    if (permission !== 'media') return callback(true)
+    callback(types.includes('audio') && !types.includes('video') && ownPage(wc, details.requestingUrl, details.isMainFrame))
+  })
+  win.webContents.session.setPermissionCheckHandler((wc, permission, requestingOrigin, details) =>
+    permission !== 'media' || ((details as { mediaType?: string }).mediaType === 'audio' && ownPage(wc, details.requestingUrl ?? requestingOrigin, details.isMainFrame)))
   guardNavigation(win, core)
   guardWindow(win, process.env.ELECTRON_RENDERER_URL)
   win.once('ready-to-show', () => {

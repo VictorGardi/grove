@@ -32,6 +32,9 @@ Isolation beyond git worktrees is left to each agent provider's own features.
 - Stages, kinds and next actions come from a single `workflow.yaml`. The default is the `grove-*` workflow: questions → research → design → structure → plan → implement, with a human approving each gate.
 - Features are plain folders (`docs/work/<slug>/`) of markdown artifacts, so they live in git and review like code.
 
+**Dictation**
+- Hold `⌃⇧Space` in a session pane, speak, release: the words appear in that session's prompt, unsent. Local only (whisper.cpp), English only. See [Dictation](#dictation).
+
 **Grove CLI**
 - Drive the running app from any terminal, or let agents orchestrate other agents:
 
@@ -68,6 +71,26 @@ npm run build && npm start
 
 To get the `grove` command in your terminal, choose **Grove → Install Command Line Tool…** in the app. It links `grove` into `~/.local/bin`. Make sure that directory is on your `PATH`.
 
+## Dictation
+
+Dictation is optional and needs a one-time setup. Nothing is downloaded by the app.
+
+1. Install `whisper-cli` from [`ggml-org/whisper.cpp`](https://github.com/ggml-org/whisper.cpp), either with `brew install whisper-cpp` or by building it yourself. It must be on the `PATH` of your login shell. Do not use the unrelated `vatsalaggarwal/whisper-cli`: it sends audio to OpenAI's cloud and must not be used.
+2. Fetch the model: `node scripts/stt-fetch-model.mjs`. It downloads `ggml-base.en.bin` from the [whisper.cpp Hugging Face repository](https://huggingface.co/ggerganov/whisper.cpp), checks its sha256 and writes it to `~/Library/Application Support/grove/stt/ggml-base.en.bin`. If the machine cannot reach Hugging Face, copy the file there yourself (the app only checks its size, 147964211 bytes) or run `node scripts/stt-fetch-model.mjs --from <file>`, which verifies the sha256.
+3. Restart Grove. The first time you dictate, macOS asks for microphone access. When running from source (`npm run dev`), the prompt is attributed to the host app or terminal that launched Grove (Electron or your terminal), and that app is the one to allow in System Settings → Privacy & Security → Microphone.
+4. Check that it is ready: the dictation item in the **Session** menu shows the shortcut when setup is complete and "setup needed" otherwise. It is checked once at launch, so restart Grove after changing the setup.
+
+Use: hold `⌃⇧Space` while a Grove pane is focused, speak, release. The target pane is fixed when you press. The words are pasted into its prompt and never submitted. It works only while the Grove window is focused, records at most while the keys are held, and gives up after 30 seconds of transcription.
+
+**For a security review**
+
+- The dictation code has no network code. Audio never leaves the machine; whisper.cpp runs as a local child process.
+- The audio is written to a temporary WAV under `~/Library/Application Support/grove/stt/tmp` and deleted straight after transcription. Stale files are removed at the next start.
+- The model is an ordinary file, so it can be scanned and approved like any other.
+- The fetch script is the only step that touches the network. You run it yourself, outside the app, and it refuses a file whose sha256 does not match.
+- The `whisper-cli` binary (for example from Homebrew) is a supply-chain item your organisation may need to approve. A locally built binary from a reviewed tag works the same.
+- Packaged builds will need `NSMicrophoneUsageDescription` and the audio-input entitlement. No packaging exists yet, so this is documented, not built.
+
 ## Getting started
 
 1. Open Grove and add a project: any folder, usually a git checkout.
@@ -90,6 +113,7 @@ To get the `grove` command in your terminal, choose **Grove → Install Command 
 | `⌘⌥B` | Session diff |
 | `⌘G` / `⌘⇧G` | Session grid / add session to grid |
 | `⌘W` | Remove session |
+| `⌃⇧Space` (hold) | Dictate into the focused pane |
 
 ## The workflow
 
