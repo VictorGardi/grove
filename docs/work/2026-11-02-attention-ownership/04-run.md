@@ -228,4 +228,40 @@ Approved, 0 blocking, 0 fix rounds. Non-blocking left: `zoneList.ts` `rowLine` a
 
 Observable check: with a child on a permission prompt, it shows in Needs you with a popup only after the window passes; and a parent's `grove send` answer inside the window shows in its handled badge. Not run here (needs the app).
 
+## Slice 6
+
+Session: attention-ownership-slice-6-a1
+Status: done
+Commit: this commit (see git log)
+
+### Slice plan
+
+Found in the code: `resources/skills/grove/SKILL.md` documented `wait` exit 4 as "report and wait for the human" and had no `escalate`/`progress`. The grove-run skill lives at `~/.claude/skills/grove-run` outside the repo. `core.waitTurn` reads status directly (so exit 4 is not delayed by the hold), and slice 4/5 already give `sessionEscalate`, `sessionRead`, `sendToSession({from})` and the `handled` record; `sessions.test.ts` has the grace-window harness.
+
+Implementer 1:
+- [x] `resources/skills/grove/SKILL.md`: `escalate` and `progress` commands, the wait-read-decide-re-read-send loop, routine list, never-answer list, unsure means escalate
+- [x] `resources/skills/grove-run/` (copy of the skill), step 3: bounded `grove wait`, exit 4 handling pointing at the grove skill, `grove progress` after each slice, exceptions to the never-`send` rules
+- [x] `src/core/sessions.test.ts`: scripted parent loop (wait returns blocked at once while held, routine answered and recorded as handled, destructive escalated with a reason, one popup) and a non-routine-sends-nothing case
+
+Models passed: implementer: inherit, reviewer: inherit
+
+### Review rounds
+
+Round 1: 2 blocking (grove-run text contradicted itself on "no wait loop" and "never send into a waiting child"; routine list too loose: no argument, secrets or path guards). Fixed in the skill texts, test regex tightened to whole-command matches.
+Round 2: fresh reviewer confirmed both fixed, 0 blocking.
+
+Approved, 0 blocking, 1 fix round. Non-blocking left: grove-run still names the branch `feature/<slug>-<profile>` while AGENTS.md says `run/...` (pre-existing); "End the turn" step heading ordering is loose; the in-repo grove-run copy and `~/.claude/skills/grove-run` (a symlink to a separate repo) are now two sources; the tests use a regex stand-in for the parent's judgement, so they cover the plumbing, not the safety text; the re-read mismatch branch is not exercised.
+
+### Deviations
+
+The slice was built directly by the planner session rather than through an `implementer` subagent (text edits and one test). The `grove-run` copy in `resources/skills/` is a copy only: it has to be installed by the human before a real run uses it.
+
+### Verification
+
+`npm test` (110 files, 1376 tests) and `npm run typecheck` pass, including the scripted parent loop. Models requested: reviewer inherit.
+
+### Left for the human
+
+Install the copied `grove-run` text, then the real run in a scratch repo with a two-slice plan (routine permission answered by the parent and counted as handled with no popup; destructive one in Needs you with the parent's reason and a popup).
+
 ## Open questions

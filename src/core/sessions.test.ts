@@ -893,6 +893,50 @@ describe('core seen and notify', () => {
       expect(notified).toHaveLength(1)
     })
 
+    it('scripted parent loop: wait returns blocked at once, routine is answered and handled, destructive is escalated', async () => {
+      const { core, notified, parent, kid, ask, fake } = await held()
+      // plumbing stand-in for the parent's judgement: the safety rules live in the skill text, a model applies them
+      const routine = (screen: string) => /^(npm test|npm run typecheck|npm run build|git status|git diff|git log)$/.test(screen.trim().split('\n').pop()!.replace(/^run: /, ''))
+      // the parent's loop from the grove skill: wait, read, decide, re-read, send or escalate
+      const handle = async (answer: string) => {
+        const turn = await core.waitTurn(kid.id, { expectStart: false, timeoutMs: 1000 })
+        expect(turn).toEqual({ ok: true, data: { status: 'waiting', waitingFor: 'permission' } }) // exit 4, though the child is held
+        const first = await core.commands.sessionRead({ id: kid.id, lines: 40 })
+        const text = first.ok ? first.data.text : ''
+        if (!routine(text)) return core.commands.sessionEscalate({ id: kid.id, reason: 'asks to ' + text.trim().split('\n').pop()!.replace(/^run: /, '') })
+        const again = await core.commands.sessionRead({ id: kid.id, lines: 40 })
+        if (!again.ok || again.data.text !== text) return core.commands.sessionEscalate({ id: kid.id, reason: 'prompt changed' })
+        return core.commands.sendToSession({ id: kid.id, text: answer, from: parent.id })
+      }
+      fake.captured.set(kid.tmuxName, 'Allow?\nrun: npm test\n')
+      ask(true)
+      expect(await handle('y')).toMatchObject({ ok: true })
+      ask(false)
+      expect(find(core, parent.id)?.handled).toEqual([
+        expect.objectContaining({ childId: kid.id, kind: 'permission', sent: 'y', screen: 'Allow?\nrun: npm test' }),
+      ])
+      expect(notified).toEqual([])
+      fake.captured.set(kid.tmuxName, 'Allow?\nrun: rm -rf build\n')
+      ask(true)
+      expect(await handle('y')).toMatchObject({ ok: true })
+      expect(find(core, kid.id)).toMatchObject({ zone: 'needs-you', attention: { reason: 'asks to rm -rf build' } })
+      expect(notified.map((x) => x.attention?.reason)).toEqual(['asks to rm -rf build'])
+      expect(find(core, parent.id)?.handled).toHaveLength(1)
+      await vi.advanceTimersByTimeAsync(120_000)
+      expect(notified).toHaveLength(1)
+    })
+
+    it('scripted parent loop: a changed screen between reads, or a non-routine one, sends nothing', async () => {
+      const { core, parent, kid, ask, fake } = await held()
+      ask(true)
+      fake.captured.set(kid.tmuxName, 'Allow?\nrun: cat .env\n')
+      const t = (await core.commands.sessionRead({ id: kid.id, lines: 40 })) as { data: { text: string } }
+      expect(t.data.text).toContain('cat .env')
+      await core.commands.sessionEscalate({ id: kid.id, reason: 'reads .env' })
+      ask(false)
+      expect(find(core, parent.id)?.handled).toBeUndefined()
+    })
+
     it('never saves held or handled', async () => {
       const { core, statePath, parent, kid, ask } = await held()
       ask(true)
