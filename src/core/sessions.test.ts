@@ -937,6 +937,42 @@ describe('core seen and notify', () => {
       expect(find(core, parent.id)?.handled).toBeUndefined()
     })
 
+    it('a child held past the window while on screen ends the hold without a popup', async () => {
+      const { core, notified, kid, ask } = await held()
+      ask(true)
+      expect(find(core, kid.id)?.held).toBe(true)
+      core.setWindowFocused(true)
+      await core.commands.uiSet({ focusedSessionId: kid.id })
+      await vi.advanceTimersByTimeAsync(61_000)
+      expect(find(core, kid.id)).toMatchObject({ status: 'waiting', waitingFor: 'permission' })
+      expect(find(core, kid.id)?.held).toBeUndefined()
+      expect(notified).toEqual([])
+    })
+
+    it('clamps a huge escalateAfterSec to the timer maximum, still holding', async () => {
+      const { core, notified, kid, ask } = await held({ escalateAfterSec: 1e10 })
+      ask(true)
+      await vi.advanceTimersByTimeAsync(2_147_483_646)
+      expect(find(core, kid.id)?.held).toBe(true)
+      expect(notified).toEqual([])
+      await vi.advanceTimersByTimeAsync(2)
+      expect(find(core, kid.id)?.held).toBeUndefined()
+      expect(notified.map((x) => x.id)).toEqual([kid.id])
+    })
+
+    it('keeps only the newest 50 handled prompts per parent', async () => {
+      const { core, parent, kid, ask } = await held()
+      for (let i = 0; i < 55; i++) {
+        ask(true)
+        await core.commands.sendToSession({ id: kid.id, text: `a${i}`, from: parent.id })
+        ask(false)
+      }
+      const list = find(core, parent.id)?.handled ?? []
+      expect(list).toHaveLength(50)
+      expect(list[0].sent).toBe('a5')
+      expect(list[49].sent).toBe('a54')
+    })
+
     it('never saves held or handled', async () => {
       const { core, statePath, parent, kid, ask } = await held()
       ask(true)
@@ -1164,10 +1200,9 @@ describe('small model classifier', () => {
   async function classifying(out: string, config: Record<string, unknown> = {}) {
     const s = setupCore()
     disposeAll = s.disposeAll
-    if (Object.keys(config).length) {
-      const { loadConfig, saveConfig } = await import('./store/configStore')
-      saveConfig(s.configPath, { ...loadConfig(s.configPath), ...config })
-    }
+    const { loadConfig, saveConfig } = await import('./store/configStore')
+    // these tests use OpenCode sessions, so they opt that kind in; a test passes `kinds` to override
+    saveConfig(s.configPath, { ...loadConfig(s.configPath), ...config, classifier: { kinds: ['opencode'], ...(config.classifier as object) } })
     const run = vi.fn(async (_a: { model: string; input: string }) => out)
     const core = s.make(NOW, { classifierRun: run })
     await core.start()
@@ -1231,7 +1266,7 @@ describe('small model classifier', () => {
     expect(run).not.toHaveBeenCalled()
     await core.commands.projectRemove({ id: 'nope' })
     const { loadConfig } = await import('./store/configStore')
-    expect(loadConfig(configPath).classifier).toEqual({ enabled: false, model: 'sonnet' })
+    expect(loadConfig(configPath).classifier).toEqual({ kinds: ['opencode'], enabled: false, model: 'sonnet' })
   })
 
   it('uses the configured model', async () => {
@@ -1243,11 +1278,69 @@ describe('small model classifier', () => {
     expect(run.mock.calls[0][0].model).toBe('sonnet')
   })
 
+  it('sends only claude screens by default: an OpenCode finish is not sent', async () => {
+    const { core, run, finish } = await classifying('VERDICT: done', { classifier: { kinds: undefined } })
+    const o = await createOpenCode(core)
+    finish(o.agentSessionId!)
+    await flush()
+    await flush()
+    expect(run).not.toHaveBeenCalled()
+  })
+
+  it('sends an OpenCode screen when kinds lists it, and a claude one by default', async () => {
+    const on = await classifying('VERDICT: done', { classifier: { kinds: ['opencode'] } })
+    const o = await createOpenCode(on.core)
+    on.finish(o.agentSessionId!)
+    await flush()
+    await flush()
+    expect(on.run).toHaveBeenCalledTimes(1)
+    on.disposeAll()
+    const def = await classifying('VERDICT: done', { classifier: { kinds: undefined } })
+    def.claude.emit({ type: 'connected', version: 'spool' })
+    await flush()
+    const c = await createClaude(def.core)
+    def.claude.emit({ type: 'exec-started', sessionId: c.agentSessionId! })
+    def.claude.emit({ type: 'exec-ended', sessionId: c.agentSessionId!, at: ENDED })
+    await flush()
+    await flush()
+    expect(def.run).toHaveBeenCalledTimes(1)
+  })
+
+  it('validates kinds: garbage means the default, an empty list means none, and it survives a rewrite', async () => {
+    for (const kinds of ['opencode', 5, [1, 'nope', {}], { a: 1 }]) {
+      const t = await classifying('VERDICT: done', { classifier: { kinds } })
+      const o = await createOpenCode(t.core)
+      t.finish(o.agentSessionId!)
+      await flush()
+      await flush()
+      expect(t.run).not.toHaveBeenCalled()
+      t.disposeAll()
+    }
+    const mixed = await classifying('VERDICT: done', { classifier: { kinds: ['nope', 'opencode'] } })
+    const o = await createOpenCode(mixed.core)
+    mixed.finish(o.agentSessionId!)
+    await flush()
+    await flush()
+    expect(mixed.run).toHaveBeenCalledTimes(1)
+    await mixed.core.commands.projectRemove({ id: 'nope' })
+    const { loadConfig } = await import('./store/configStore')
+    expect(loadConfig(mixed.configPath).classifier?.kinds).toEqual(['nope', 'opencode'])
+    mixed.disposeAll()
+    const none = await classifying('VERDICT: done', { classifier: { kinds: [] } })
+    const p = await createOpenCode(none.core)
+    none.finish(p.agentSessionId!)
+    await flush()
+    await flush()
+    expect(none.run).not.toHaveBeenCalled()
+  })
+
   it('abandons a slow runner at the cap, then classifies the next session', async () => {
     vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout'] })
     try {
       const s = setupCore()
       disposeAll = s.disposeAll
+      const { loadConfig, saveConfig } = await import('./store/configStore')
+      saveConfig(s.configPath, { ...loadConfig(s.configPath), classifier: { kinds: ['opencode'] } })
       const run = vi.fn(async (_a: { model: string; input: string; signal: AbortSignal }): Promise<string> => 'VERDICT: done\nSUMMARY: Second')
       run.mockImplementationOnce(() => new Promise(() => {})) // never settles
       const core = s.make(NOW, { classifierRun: run })

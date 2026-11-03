@@ -2,7 +2,7 @@ import { randomUUID } from 'node:crypto'
 import fs from 'node:fs'
 import os from 'node:os'
 import path from 'node:path'
-import type { Comment, CommentAnchor, FeatureKey, HandledPrompt, Project, PullRequest, Session, SessionDiff, SessionKind, Slices, UiState, WorkflowStatus, Zone } from '@shared/types'
+import type { Comment, CommentAnchor, ConfigFile, FeatureKey, HandledPrompt, Project, PullRequest, Session, SessionDiff, SessionKind, Slices, UiState, WorkflowStatus, Zone } from '@shared/types'
 import { DEFAULT_UI, EMPTY_FEATURES, OPENCODE_CONNECTING } from '@shared/types'
 import { keyProjectId } from '@shared/groups'
 import { opencodeCliConfig, opencodeModelEnv } from '@shared/opencodeSession'
@@ -164,8 +164,9 @@ export function createCore(opts: CoreOptions): Core {
   let configSounds: boolean | undefined
   let configEscalate: number | undefined // config.json `escalateAfterSec` as written; the grace window in use is escalateAfterSec()
   const escalateAfterSec = () => configEscalate ?? 60
-  let configClassifier: { enabled?: boolean; model?: string } | undefined // config.json `classifier` as written
+  let configClassifier: ConfigFile['classifier'] // config.json `classifier` as written
   let classifier: ReturnType<typeof createClassifier> | null = null // null: no runner given, or enabled: false
+  let classifyKinds: SessionKind[] = ['claude'] // the agent kinds whose screens may be sent; claude by default
   let classifying = false // one model call at a time
   let disposed = false
   const classifyTried = new Map<string, string>() // session id -> the statusAt it was asked for, so an idle period is asked once
@@ -566,12 +567,14 @@ export function createCore(opts: CoreOptions): Core {
     })
   }
 
-  // A finished top-level agent session the human has not looked at is read once by the small model:
-  // a prose question moves it to Needs you, and its summary becomes the row's line. Children and
-  // terminals are never sent; one call runs at a time, and a failed or slow one is not retried.
+  // A finished top-level Claude session the human has not looked at is read once by the small model:
+  // a prose question moves it to Needs you, and its summary becomes the row's line. Only kinds in
+  // `classifier.kinds` are sent (default claude: its content already goes to that provider; OpenCode
+  // and Copilot only when listed). Children and terminals are never sent; one call runs at a time,
+  // and a failed or slow one is not retried.
   function pumpClassifier(): void {
     if (!classifier || classifying || disposed) return
-    const s = slices.sessions.find((x) => !x.parentId && x.kind !== 'terminal' && x.status === 'waiting' && x.waitingFor === 'done'
+    const s = slices.sessions.find((x) => !x.parentId && classifyKinds.includes(x.kind) && x.status === 'waiting' && x.waitingFor === 'done'
       && x.lastStatus === 'running' && x.statusAt !== undefined && (x.seenAt === null || x.seenAt < x.statusAt)
       && classifyTried.get(x.id) !== x.statusAt)
     if (!s || s.statusAt === undefined) return
@@ -679,6 +682,7 @@ export function createCore(opts: CoreOptions): Core {
 
   // A child's prompt cleared inside the window: if its parent answered it with `grove send`, the
   // parent's audit gains the entry. A clear with no such send (the human, or the child) adds nothing.
+  const HANDLED_MAX = 50
   function settleHold(s: Session): void {
     const sent = holdSent.get(s.id)
     const screen = holdScreen.get(s.id) ?? ''
@@ -687,9 +691,10 @@ export function createCore(opts: CoreOptions): Core {
     const parent = s.parentId ? findSession(s.parentId) : undefined
     if (sent === undefined || !parent || (kind !== 'permission' && kind !== 'question')) return
     const entry: HandledPrompt = { childId: s.id, at: now().toISOString(), kind, screen, sent }
-    replaceSession({ ...parent, handled: [...(parent.handled ?? []), entry] })
+    replaceSession({ ...parent, handled: [...(parent.handled ?? []), entry].slice(-HANDLED_MAX) }) // the newest only
   }
 
+  const MAX_TIMER_MS = 2_147_483_647 // setTimeout fires at once above this
   function startHold(s: Session, waitingFor: 'permission' | 'question'): void {
     endHold(s.id)
     replaceSession({ ...(findSession(s.id) ?? s), held: true })
@@ -701,10 +706,10 @@ export function createCore(opts: CoreOptions): Core {
       const cur = findSession(s.id)
       if (!cur?.held || cur.status !== 'waiting' || cur.waitingFor !== waitingFor) return endHold(s.id)
       endHold(s.id)
-      if (notified.get(s.id) === waitingFor) return
+      if (notified.get(s.id) === waitingFor || s.id === lastOnScreen) return // on screen: no popup, as in notifyTransitions
       notified.set(s.id, waitingFor)
       for (const cb of notifyListeners) cb(findSession(s.id) ?? cur)
-    }, escalateAfterSec() * 1000))
+    }, Math.min(escalateAfterSec() * 1000, MAX_TIMER_MS)))
   }
 
   // Notify on entering waiting (or a new reason) off screen. Disconnected sessions keep their entry.
@@ -1411,6 +1416,10 @@ export function createCore(opts: CoreOptions): Core {
       configSounds = typeof config.sounds === 'boolean' ? config.sounds : undefined
       configEscalate = typeof config.escalateAfterSec === 'number' && Number.isFinite(config.escalateAfterSec) && config.escalateAfterSec >= 0 ? config.escalateAfterSec : undefined
       configClassifier = config.classifier && typeof config.classifier === 'object' ? config.classifier : undefined
+      const kinds: unknown = configClassifier?.kinds
+      classifyKinds = Array.isArray(kinds)
+        ? (kinds as unknown[]).filter((k): k is SessionKind => k === 'claude' || k === 'opencode' || k === 'copilot')
+        : ['claude']
       // enabled counts only as a boolean (else on); a model must look like an alias or id, never a flag
       const model = configClassifier?.model
       const modelOk = typeof model === 'string' && /^[\w.\-[\]]+$/.test(model) && !model.startsWith('-')
