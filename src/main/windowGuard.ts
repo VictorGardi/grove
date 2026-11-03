@@ -1,7 +1,8 @@
 import type { BrowserWindow } from 'electron'
 
-// Only the main window's own origin may hold permissions, and only `media` (the planned voice input
-// needs getUserMedia); artifact frames, other origins and every other permission are refused.
+// Only the main window's own origin may hold permissions, and only `media` (voice input needs
+// getUserMedia) and `clipboard-sanitized-write` (the terminal's copy via navigator.clipboard.writeText);
+// artifact frames, other origins and every other permission are refused.
 export const isOwnOrigin = (url: string, devUrl?: string): boolean => {
   try {
     const u = new URL(url)
@@ -13,7 +14,9 @@ export const isOwnOrigin = (url: string, devUrl?: string): boolean => {
 }
 
 export const permissionAllowed = (permission: string, url: string, devUrl?: string, mediaTypes?: string[]): boolean =>
-  permission === 'media' && isOwnOrigin(url, devUrl) && (mediaTypes === undefined || mediaTypes.every((t) => t === 'audio'))
+  isOwnOrigin(url, devUrl) &&
+  (permission === 'clipboard-sanitized-write' ||
+    (permission === 'media' && (mediaTypes === undefined || mediaTypes.every((t) => t === 'audio'))))
 
 export function guardWindow(win: BrowserWindow, devUrl?: string): void {
   const wc = win.webContents

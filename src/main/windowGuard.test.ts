@@ -15,6 +15,12 @@ describe('permissionAllowed', () => {
   it('denies every other permission', () => {
     expect(permissionAllowed('geolocation', 'file:///app/index.html')).toBe(false)
     expect(permissionAllowed('notifications', 'file:///app/index.html')).toBe(false)
+    expect(permissionAllowed('clipboard-read', 'file:///app/index.html')).toBe(false)
+  })
+
+  it('allows the terminal to write the clipboard from the main window only', () => {
+    expect(permissionAllowed('clipboard-sanitized-write', 'file:///app/index.html')).toBe(true)
+    expect(permissionAllowed('clipboard-sanitized-write', 'grove-artifact://p/a.html')).toBe(false)
   })
 })
 

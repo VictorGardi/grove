@@ -4,7 +4,6 @@ import path from 'node:path'
 import { execFile } from 'node:child_process'
 import { promisify } from 'node:util'
 import { app, BrowserWindow, dialog, nativeTheme, Notification } from 'electron'
-import { ARTIFACT_SCHEME } from '@shared/artifactUrl'
 import { chromeBackground } from '@shared/theme'
 import { TmuxBackend } from '../core/backend/tmux'
 import { createCore } from '../core/core'
@@ -189,17 +188,7 @@ app.whenReady().then(async () => {
     },
   })
   win.setWindowButtonVisibility(false)
-  // Dictation needs the microphone, for Grove's own page only: artifact iframes and any other frame are denied.
-  // Every other permission keeps Electron's default (granted), so the clipboard copy in the terminal still works.
-  const ownPage = (wc: Electron.WebContents | null, url: string, isMainFrame: boolean) =>
-    wc === win?.webContents && isMainFrame && !url.startsWith(`${ARTIFACT_SCHEME}:`)
-  win.webContents.session.setPermissionRequestHandler((wc, permission, callback, details) => {
-    const types = (details as { mediaTypes?: string[] }).mediaTypes ?? []
-    if (permission !== 'media') return callback(true)
-    callback(types.includes('audio') && !types.includes('video') && ownPage(wc, details.requestingUrl, details.isMainFrame))
-  })
-  win.webContents.session.setPermissionCheckHandler((wc, permission, requestingOrigin, details) =>
-    permission !== 'media' || ((details as { mediaType?: string }).mediaType === 'audio' && ownPage(wc, details.requestingUrl ?? requestingOrigin, details.isMainFrame)))
+  // Permissions (microphone for dictation, clipboard write for terminal copy) are decided in guardWindow.
   guardNavigation(win, core)
   guardWindow(win, process.env.ELECTRON_RENDERER_URL)
   win.once('ready-to-show', () => {
