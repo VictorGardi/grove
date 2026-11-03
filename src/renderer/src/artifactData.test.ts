@@ -15,9 +15,9 @@ const md = (name: string, stage: string | null, mtimeMs = 1): A => ({ name, stag
 const html = (name: string, stage: string | null, mtimeMs = 2): A => ({ name, stage, role: 'review', mtimeMs })
 
 const feature = (slug: string, over: Partial<Feature> = {}): Feature => ({
-  projectId: 'p', slug, path: '/src/p/docs/work/' + slug, title: 'T' + slug, kind: 'feature', group: false,
-  parent: null, flow: null, stages: stages.map((st) => ({ ...st, artifact: st.id + '.md', review: null, state: 'upcoming' as const })),
-  currentStage: 'questions', cardState: 'ready', progress: null, flags: [], warnings: [], artifacts: [], ...over,
+  projectId: 'p', slug, path: '/src/p/docs/work/' + slug, title: 'T' + slug, kind: 'feature',
+  flow: null, stages: stages.map((st) => ({ ...st, artifact: st.id + '.md', review: null, state: 'upcoming' as const })),
+  currentStage: 'questions', cardState: 'ready', flags: [], warnings: [], artifacts: [], ...over,
 })
 
 const clusters = (features: Feature[]) => artifactClusters(stages, features, projects)
@@ -49,10 +49,9 @@ describe('artifactClusters', () => {
     expect(names([f, empty, feature('c')])).toEqual([['a', ['01-questions.md']]])
   })
 
-  it('skips a feature outside its project folder, and group features', () => {
+  it('skips a feature outside its project folder', () => {
     const outside = feature('a', { path: '/elsewhere/a', artifacts: [md('x.md', null)] })
-    const group = feature('g', { group: true, artifacts: [md('x.md', null)] })
-    expect(clusters([outside, group])).toEqual([])
+    expect(clusters([outside])).toEqual([])
   })
 
   it('orders clusters by stage, earliest first, then in the given order', () => {

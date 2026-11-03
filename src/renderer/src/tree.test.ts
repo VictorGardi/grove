@@ -4,8 +4,7 @@ import { linkedFeature } from './tree'
 
 function baseFeature(slug: string, over: Partial<Feature> = {}): Feature {
   return {
-    projectId: 'p', slug, path: '/p/' + slug, title: slug, kind: 'feature', group: false,
-    parent: null, flow: null, stages: [], currentStage: 'questions', cardState: 'ready', progress: null, flags: [], warnings: [], artifacts: [], ...over,
+    projectId: 'p', slug, path: '/p/' + slug, title: slug, kind: 'feature', flow: null, stages: [], currentStage: 'questions', cardState: 'ready', flags: [], warnings: [], artifacts: [], ...over,
   }
 }
 

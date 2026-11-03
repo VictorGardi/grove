@@ -17,6 +17,11 @@ describe('parseWorkflow', () => {
     expect(parseWorkflow(bundled).ok).toBe(true)
   })
 
+  it('still parses a workflow file carrying the retired `group` and `parent_field`', () => {
+    const res = edited((w) => { w.kinds.parent_field = 'parent'; w.kinds.values.epic = { group: true, stages: ['questions'] } })
+    expect(res.ok).toBe(true)
+  })
+
   it('defines the legacy, auto and global stage orders', () => {
     const res = parseWorkflow(bundled)
     if (!res.ok) throw new Error(res.error)
@@ -31,7 +36,7 @@ describe('parseWorkflow', () => {
   })
 
   it.each<[string, (w: Record<string, any>) => void, string]>([
-    ['an unknown stage in a kind', (w) => { w.kinds.values.epic.stages.push('nope') }, 'kinds.values.epic.stages: unknown stage "nope"'],
+    ['an unknown stage in a kind', (w) => { w.kinds.values.feature.stages = ['nope'] }, 'kinds.values.feature.stages: unknown stage "nope"'],
     ['an unknown stage in a flow', (w) => { w.flows.values.small.stages.push('nope') }, 'flows.values.small.stages: unknown stage "nope"'],
     ['an unknown predicate', (w) => { w.stages[0].complete_when = { field: 'status', matches: 'x' } }, 'stages[0].complete_when: unknown predicate'],
     ['{repo} in a template', (w) => { w.actions.start.prompt = 'cd {repo}' }, 'actions.start.prompt: {repo} is reserved'],

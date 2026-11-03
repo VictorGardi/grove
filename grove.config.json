@@ -15,8 +15,6 @@
   "limits": {
     "maxOneWayDecisions": 8,
     "maxSlices": 8,
-    "designMaxLines": 220,
-    "epicMaxOneWayDecisions": 10,
-    "epicMaxChildren": 8
+    "designMaxLines": 220
   }
 }

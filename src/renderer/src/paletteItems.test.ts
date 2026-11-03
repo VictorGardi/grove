@@ -8,8 +8,8 @@ const session = (id: string, label: string, extra: Partial<Session> = {}) =>
 const sessions = [session('s1', 'fix sidebar'), session('s2', 'write docs', { status: 'waiting' }), session('s3', 'terminal', { kind: 'terminal' })]
 // A complete Feature: unionFeatures reads the whole record, as core sends it.
 const feature = (projectId: string, slug: string, over: Partial<Feature> = {}): Feature => ({
-  projectId, slug, path: '/g/' + slug, title: 'Session grid', kind: 'feature', group: false, parent: null,
-  flow: null, stages: [], currentStage: null, cardState: 'done', progress: null, flags: [], warnings: [], artifacts: [], ...over,
+  projectId, slug, path: '/g/' + slug, title: 'Session grid', kind: 'feature',
+  flow: null, stages: [], currentStage: null, cardState: 'done', flags: [], warnings: [], artifacts: [], ...over,
 })
 const features = [feature('p1', 'grid')]
 
@@ -73,7 +73,7 @@ describe('paletteItems', () => {
   it('lists a feature once per repo, not once per checkout, and opens the checkout\'s copy', () => {
     const wt = { id: 'p1b', name: 'grove · fix-auth', path: '/g/fix-auth', worktreeOf: 'p1' }
     const withWorktree = [...projects, wt] as Project[]
-    const copies = [feature('p1', 'grid'), feature('p1b', 'grid', { currentStage: 'design', cardState: 'active' })]
+    const copies = [feature('p1', 'grid'), feature('p1b', 'grid', { currentStage: 'design', cardState: 'waiting' })]
     const a = actions()
     const list = paletteItems({ projects: withWorktree, sessions, features: copies }, a)
     const feats = list.filter((i) => i.kind === 'feature')

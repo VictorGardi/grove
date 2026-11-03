@@ -1,6 +1,6 @@
 import { isViewable } from '@shared/artifactUrl'
 import type { Feature, Project, Session } from '@shared/types'
-import { CARD_STATE_LABELS, featureStage, progressLabel } from '../featureLabels'
+import { CARD_STATE_LABELS } from '../featureLabels'
 import { repoHead, repoProjectIds } from '../repoGroups'
 import { statusView } from '../sessionStatus'
 import { reviewTarget } from '../viewerFiles'
@@ -10,14 +10,11 @@ import { cx } from './ui/cx'
 import { ListRow } from './ui/ListRow'
 import s from './FeaturePage.module.css'
 
-export function FeaturePage({ feature: f, parent, children, sessions, projects, onFocusSession, onOpenFeature, onOpenArtifact }: {
+export function FeaturePage({ feature: f, sessions, projects, onFocusSession, onOpenArtifact }: {
   feature: Feature
-  parent: Feature | null
-  children: Feature[] // features whose parent is this one (navigation.childrenOf)
   sessions: Session[]
   projects: Project[] // the feature is the repo's, so a worktree's session is one of its sessions
   onFocusSession: (id: string) => void
-  onOpenFeature: (f: Feature) => void
   onOpenArtifact: (name: string) => void
 }) {
   // One card per (repo, slug), so the page behind it counts the whole repo's linked sessions.
@@ -37,15 +34,8 @@ export function FeaturePage({ feature: f, parent, children, sessions, projects, 
         <div className={s.meta}>
           <span>{f.slug} · {f.kind} · {f.flow ?? 'default'}</span>
           <Badge>{CARD_STATE_LABELS[f.cardState]}</Badge>
-          {f.progress && <span>{progressLabel(f)}</span>}
           {f.flags.map((fl) => <Badge key={fl.id} tone="muted">{fl.label}</Badge>)}
         </div>
-        {parent && (
-          <div className={s.meta}>
-            Parent:
-            <button type="button" className={s.fileLink} onClick={() => onOpenFeature(parent)}>{parent.title}</button>
-          </div>
-        )}
         {f.warnings.length > 0 && <div className={s.warning}>{f.warnings.join(' · ')}</div>}
       </header>
 
@@ -75,19 +65,6 @@ export function FeaturePage({ feature: f, parent, children, sessions, projects, 
           ))}
         </ul>
       </section>
-
-      {children.length > 0 && (
-        <section className={s.section}>
-          <h2 className={s.heading}>Children</h2>
-          <div className={s.sessions}>
-            {children.map((c) => (
-              <ListRow key={c.slug} title={c.title} meta={featureStage(c)}
-                status={{ label: CARD_STATE_LABELS[c.cardState], tone: 'idle' }}
-                onClick={() => onOpenFeature(c)} />
-            ))}
-          </div>
-        </section>
-      )}
 
       <section className={s.section}>
         <h2 className={s.heading}>Sessions</h2>

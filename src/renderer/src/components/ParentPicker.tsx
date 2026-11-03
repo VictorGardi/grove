@@ -13,10 +13,10 @@ import s from './LinkPicker.module.css'
 // Puts a session in another's group (taking it out is the card menu's Clear parent). Groups are one level deep, so only
 // sessions that lead no group of their own and are not children themselves are offered.
 export function ParentPicker({ session, onClose }: { session: Session; onClose: () => void }) {
-  const { projects, sessions, features } = useSlices()
+  const { projects, sessions } = useSlices()
   const [error, setError] = useState<string | null>(null)
   const runs = parentOptions(projects, sessions, session)
-  const tags = colorTags(projects, features.items)
+  const tags = colorTags(projects)
 
   async function pick(parent: string) {
     const res = await window.api.invoke('session:setParent', { id: session.id, parent })

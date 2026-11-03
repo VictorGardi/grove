@@ -25,10 +25,6 @@ specific meaning, so humans and agents stay consistent.
   results show **one entry per (repo group, slug)**: the parent checkout's copy is
   canonical, and a worktree copy at a different stage gets a chip rather than a
   second entry (ADR 0037).
-- **Group feature**: a feature whose kind has `group: true` (grove's epic);
-  its children are found via `parent_field`. Not a card of its own: reached from
-  a child's **parent tag** or breadcrumb, and its feature page lists its
-  children. The app never names the kind (ADR 0018).
 - **Stage**: a feature's current step, derived from artifact frontmatter by
   workflow rules: the first incomplete stage, unless a later artifact exists.
 - **Flow**: a second manifest field (grove's `flow`) whose value, via the
@@ -134,7 +130,7 @@ specific meaning, so humans and agents stay consistent.
   a new-session button and a ⌘K hint. Features and artifacts are not listed
   there; they are found in the command palette (⌘K), which opens a feature page
   or an artifact page.
-- **Breadcrumb**: the content header's trail (project › parent › feature, or
+- **Breadcrumb**: the content header's trail (project › feature, or
   project › linked feature › session); every segment but the last is an
   up-link. There is no back history.
 - **Effective stages**: the stages a feature uses: those in both its kind's
@@ -143,7 +139,7 @@ specific meaning, so humans and agents stay consistent.
 - **Unapproved pass**: a stage counted as passed because a later effective
   stage's artifact exists, although its own `complete_when` is not met.
 - **Feature page**: the content area for one feature: stage timeline, card
-  state and flags, its parent link, its children, its artifacts listed, its
+  state and flags, its artifacts listed, its
   linked sessions.
 - **Artifact viewer**: the right-hand panel showing one viewer target (a
   project file or a session diff), next to the main area or

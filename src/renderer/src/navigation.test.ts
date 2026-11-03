@@ -1,14 +1,13 @@
 import { describe, expect, it } from 'vitest'
 import { DEFAULT_UI, type Feature, type Project, type Session, type UiState } from '@shared/types'
 import { DEFAULT_GRID_VIEW, type GridView } from './gridView'
-import { childrenOf, content, crumbs, currentProjectId, focusTarget } from './navigation'
+import { content, crumbs, currentProjectId, focusTarget } from './navigation'
 
 const project = (id: string): Project => ({ id, name: id.toUpperCase(), path: '/' + id })
 
 function feature(slug: string, over: Partial<Feature> = {}): Feature {
   return {
-    projectId: 'p', slug, path: '/p/' + slug, title: 'T' + slug, kind: 'feature', group: false,
-    parent: null, flow: null, stages: [], currentStage: 'questions', cardState: 'ready', progress: null, flags: [], warnings: [], artifacts: [], ...over,
+    projectId: 'p', slug, path: '/p/' + slug, title: 'T' + slug, kind: 'feature', flow: null, stages: [], currentStage: 'questions', cardState: 'ready', flags: [], warnings: [], artifacts: [], ...over,
   }
 }
 
@@ -22,7 +21,7 @@ function session(id: string, over: Partial<Session> = {}): Session {
 
 const ui = (over: Partial<UiState> = {}): UiState => ({ ...DEFAULT_UI, ...over })
 const projects = [project('p'), project('q')]
-const features = [feature('e', { group: true }), feature('a', { parent: 'e' }), feature('z', { projectId: 'q' })]
+const features = [feature('e'), feature('a'), feature('z', { projectId: 'q' })]
 const sessions = [session('s', { feature: 'a' }), session('t', { projectId: 'q' })]
 
 describe('content', () => {
@@ -53,7 +52,7 @@ describe('content', () => {
     const fs = [feature('a', { artifacts: [art] })]
     const c = content(ui({ focusedArtifact: { projectId: 'p', slug: 'a', name: 'x.md' } }), projects, sessions, fs)
     expect(c).toMatchObject({ kind: 'artifact', project: projects[0], card: { name: 'x.md', path: 'a/x.md' }, cluster: { feature: { slug: 'a' } } })
-    expect(crumbs(c, projects, fs)).toEqual([
+    expect(crumbs(c, projects)).toEqual([
       { label: 'P', to: { focusedProject: 'p' } },
       { label: 'Ta', to: { focusedFeature: { projectId: 'p', slug: 'a' } } },
       { label: 'x.md' },
@@ -68,7 +67,7 @@ describe('content', () => {
 })
 
 describe('crumbs', () => {
-  const of = (u: Partial<UiState>) => crumbs(content(ui(u), projects, sessions, features), projects, features)
+  const of = (u: Partial<UiState>) => crumbs(content(ui(u), projects, sessions, features), projects)
 
   it('is the project alone on its page', () => {
     expect(of({ focusedProject: 'p' })).toEqual([{ label: 'P' }])
@@ -78,10 +77,9 @@ describe('crumbs', () => {
     expect(of({ grid: { open: true, members: ['s'] }, focusedSessionId: 's' })).toEqual([])
   })
 
-  it('goes project › parent › feature, each up-link clickable', () => {
+  it('goes project › feature, the project up-link clickable', () => {
     expect(of({ focusedFeature: { projectId: 'p', slug: 'a' } })).toEqual([
       { label: 'P', to: { focusedProject: 'p' } },
-      { label: 'Te', to: { focusedFeature: { projectId: 'p', slug: 'e' } } },
       { label: 'Ta' },
     ])
   })
@@ -94,25 +92,12 @@ describe('crumbs', () => {
   it("names a worktree session's repo, not the worktree", () => {
     const wt = { id: 'w', name: 'P · feature-x', path: '/w', worktreeOf: 'p' }
     const x = session('x', { projectId: 'w' })
-    expect(crumbs({ kind: 'session', session: x }, [...projects, wt], features))
+    expect(crumbs({ kind: 'session', session: x }, [...projects, wt]))
       .toEqual([{ label: 'P', to: { focusedProject: 'p' } }, { label: 'Lx' }])
   })
 
   it('is empty with nothing to show', () => {
-    expect(crumbs({ kind: 'none' }, [], [])).toEqual([])
-  })
-})
-
-describe('childrenOf', () => {
-  it('lists children in the same project by slug, done last', () => {
-    const fs = [
-      feature('e', { group: true }),
-      feature('c', { parent: 'e', cardState: 'done' }),
-      feature('b', { parent: 'e' }),
-      feature('d', { parent: 'e' }),
-      feature('x', { parent: 'e', projectId: 'q' }),
-    ]
-    expect(childrenOf(fs[0], fs).map((f) => f.slug)).toEqual(['b', 'd', 'c'])
+    expect(crumbs({ kind: 'none' }, [])).toEqual([])
   })
 })
 

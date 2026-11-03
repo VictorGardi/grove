@@ -133,20 +133,17 @@ export interface FeatureStage {
   review: string | null
   state: 'complete' | 'current' | 'unapproved' | 'upcoming'
 }
-export type CardState = 'backlog' | 'running' | 'waiting' | 'needs-review' | 'ready' | 'active' | 'done'
+export type CardState = 'backlog' | 'running' | 'waiting' | 'needs-review' | 'ready' | 'done'
 export interface Feature {
   projectId: string
   slug: string
   path: string
   title: string
   kind: string
-  group: boolean
-  parent: string | null
   flow: string | null
   stages: FeatureStage[]          // effective stages only
   currentStage: string | null     // null when done
   cardState: CardState
-  progress: { done: number; total: number } | null // group kinds with children only
   flags: { id: string; label: string }[]
   warnings: string[]              // e.g. 'flow?', 'frontmatter?: 03-design.md'
   artifacts: { name: string; stage: string | null; role: 'artifact' | 'review' | null; mtimeMs: number }[]

@@ -32,13 +32,12 @@ function cardsOf(f: Feature, dir: string, stages: { id: string }[]): ArtifactCar
 }
 
 // Every feature's cards, clustered by workflow stage (earliest first; a done feature sits at the last
-// stage of its own flow), then in the given order. Group features have no cards of their own.
+// stage of its own flow), then in the given order.
 export function artifactClusters<T extends Feature>(stages: { id: string; label: string }[], features: T[], projects: Project[]): ArtifactCluster<T>[] {
-  const shown = features.filter((f) => !f.group)
-  const used = stages.filter((s) => shown.some((f) => f.stages.some((fs) => fs.id === s.id)))
+  const used = stages.filter((s) => features.some((f) => f.stages.some((fs) => fs.id === s.id)))
   const last = used[used.length - 1]?.id
   const column = (f: T) => { const i = used.findIndex((s) => s.id === (f.currentStage ?? f.stages[f.stages.length - 1]?.id ?? last)); return i < 0 ? used.length : i }
-  const ordered = shown.map((feature, i) => ({ feature, i, c: column(feature) })).sort((a, b) => a.c - b.c || a.i - b.i)
+  const ordered = features.map((feature, i) => ({ feature, i, c: column(feature) })).sort((a, b) => a.c - b.c || a.i - b.i)
   return ordered.flatMap(({ feature }) => {
     const dir = featureDir(feature, projects)
     const cards = dir === null ? [] : cardsOf(feature, dir, stages)

@@ -255,7 +255,7 @@ export function Sidebar({ onNew, onRemove }: { onNew: (projectId?: string) => vo
   const sidebarId = `${optionsId}-sidebar`
   const sortId = `${optionsId}-sort`
   const statusId = `${optionsId}-status`
-  const tags = colorTags(projects, features.items)
+  const tags = colorTags(projects)
 
   // the session list, grouped and sorted as the panel says
   const groups = listGroups(projects, sessions, ui)

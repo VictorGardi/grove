@@ -13,12 +13,12 @@ export interface Stage {
   review?: string
   complete_when: Predicate
 }
-export interface AxisValue { stages: 'all' | string[]; group?: boolean }
+export interface AxisValue { stages: 'all' | string[] }
 export interface Axis { field: string; default: string; values: Record<string, AxisValue> }
 
 export interface Workflow {
   discovery: { manifest: string; root: { from_file?: string; key?: string; default: string } }
-  kinds: Axis & { parent_field?: string }
+  kinds: Axis
   flows?: Axis
   stages: Stage[]
   flags: { id: string; label: string; when: Predicate }[]
@@ -79,10 +79,10 @@ function validate(w: unknown): string[] {
     if (!ok) err(at, 'unknown predicate')
   }
 
-  function axis(at: string, a: unknown, withKind: boolean): void {
+  function axis(at: string, a: unknown): void {
     if (!isMapping(a)) return void err(at, 'expected a mapping')
     if (!isString(a.field)) err(`${at}.field`, 'expected a string')
-    if (withKind && a.parent_field !== undefined && !isString(a.parent_field)) err(`${at}.parent_field`, 'expected a string')
+    // Old workflow files may still carry `group` (per kind) and `parent_field` (epic parents); both are ignored.
     if (!isMapping(a.values) || Object.keys(a.values).length === 0) return void err(`${at}.values`, 'expected a non-empty mapping')
     if (!isString(a.default) || !Object.hasOwn(a.values, a.default)) err(`${at}.default`, 'not a key of values')
     for (const [name, v] of Object.entries(a.values)) {
@@ -92,11 +92,10 @@ function validate(w: unknown): string[] {
         if (!Array.isArray(v.stages)) err(`${vAt}.stages`, 'expected "all" or a list')
         else for (const id of v.stages) if (!stageIds.includes(id)) err(`${vAt}.stages`, `unknown stage "${id}"`)
       }
-      if (withKind && v.group !== undefined && typeof v.group !== 'boolean') err(`${vAt}.group`, 'expected a boolean')
     }
   }
-  axis('kinds', w.kinds, true)
-  if (w.flows !== undefined) axis('flows', w.flows, false)
+  axis('kinds', w.kinds)
+  if (w.flows !== undefined) axis('flows', w.flows)
 
   if (w.flags !== undefined) {
     if (!Array.isArray(w.flags)) err('flags', 'expected a list')

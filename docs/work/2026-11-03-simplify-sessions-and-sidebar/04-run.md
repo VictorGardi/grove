@@ -138,4 +138,37 @@ New `ui.focusedArtifact` focus (exclusive with the other three, never restored o
 
 `npm run dev` visual check: menu has no Project Board or Artifacts entry, a project click shows the header, New session and the cmd+K hint, cmd+K finds a feature and an artifact by name and opens its page, a session's linked-feature tag opens `FeaturePage`.
 
+## Slice 4
+
+Session: simplify-sessions-and-sidebar-slice-4-a1
+Status: done
+Commit: this commit (see git log)
+
+### Slice plan
+
+Found in the code: `Feature.group`/`parent`/`progress` come from `derive.ts` (`withGroups`) and `parse.ts` validates `group` and `parent_field`; readers are `FeaturePage.tsx` (Parent/Children), `App.tsx`, `navigation.ts` (`childrenOf`, feature crumbs), `tags.ts` (group colours, used by `Sidebar.tsx` and `ParentPicker.tsx`) and `artifactData.ts`. Epic text also sits in the two synced skill references, `AGENTS.md`, `grove.config.json` and `CONTEXT.md`.
+
+Implementer A (code):
+- [x] Drop `group`, `parent`, `progress` and the `active` card state; remove `withGroups`, `childrenOf`, `tags.group`; parser ignores `group` and `parent_field`; `resources/workflow.yaml` loses `epic` and `parent_field`; tests
+Implementer B (docs):
+- [x] Epic text out of `contract.md`, `gates.md`, `AGENTS.md`, `grove.config.json`, `CONTEXT.md`; new ADR 0048; superseded-in-part notes on ADR 0002 and 0018
+
+Models passed: implementer: inherit, reviewer: inherit
+
+### Review rounds
+
+Round 1: fresh reviewer found 0 blocking. Applied cheap non-blocking: a mangled comment in `artifactData.ts`, and the "starting a child while an earlier sibling..." soft gate in `AGENTS.md` (an epic-child rule whose counterpart left `gates.md`). Approved, 0 blocking, 0 fix rounds. Non-blocking left: ADR 0002 still describes group completion (covered by the supersession note); `contract.md` could say how an old `kind: epic` manifest loads, which belongs in the upstream tooling.
+
+### Deviations
+
+`CardState` lost `active` (only group completion produced it); `colorTags` takes only projects; `crumbs()` takes `(c, projects)`; feature breadcrumbs are project > feature. A `kind: epic` manifest falls back to the default kind and gets the existing `kind?` warning. The sync source of `contract.md` and `gates.md` (the grove-skills checkout, outside this repo) was not edited. `docs/skills-changes.md` line 28 keeps its historical "epic" mention.
+
+### Verification
+
+`npm run typecheck`, `npm test` (118 files, 1406 tests) pass. `grep -rIni epic` over `src resources AGENTS.md grove.config.json CONTEXT.md README.md` returns only the parser comment and the two tolerance tests; `grep -rIn childrenOf src` is empty; `resources/workflow.yaml` has no `group:` or `parent_field`. Parse test loads a file with `group: true` and `parent_field: parent`; derive test loads `kind: epic` as an ordinary feature. Models requested: implementer inherit, reviewer inherit.
+
+### Left for the human
+
+Make the same epic-text edits to `contract.md` and `gates.md` in the grove-skills repo that syncs them, or the next sync restores them.
+
 ## Open questions

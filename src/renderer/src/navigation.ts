@@ -45,31 +45,21 @@ export const openProject = (id: string): Partial<UiState> => ({ focusedProject: 
 
 const projectCrumb = (projects: Project[], id: string): Crumb =>
   ({ label: projects.find((p) => p.id === id)?.name ?? id, to: openProject(id) })
-const featureCrumb = (f: Feature): Crumb => ({ label: f.title, to: { focusedFeature: { projectId: f.projectId, slug: f.slug } } })
 
 // Breadcrumb up-links; the last crumb is the current page and has no `to`.
-export function crumbs(c: Content, projects: Project[], features: Feature[]): Crumb[] {
+export function crumbs(c: Content, projects: Project[]): Crumb[] {
   if (c.kind === 'none') return []
   if (c.kind === 'grid') return [] // the panes name themselves; the header keeps its room for the grid's controls
   if (c.kind === 'project') return [{ label: c.project.name }]
   if (c.kind === 'feature') {
     const f = c.feature
-    const parent = findFeature(features, f.projectId, f.parent)
-    return [projectCrumb(projects, f.projectId), ...(parent ? [featureCrumb(parent)] : []), { label: f.title }]
+    return [projectCrumb(projects, f.projectId), { label: f.title }]
   }
   if (c.kind === 'artifact') return artifactCrumbs(c.project, c.cluster.feature, c.card)
   // a session sits under its repo alone: a worktree's name and the linked feature both repeat the
   // branch the header already shows beside it
   const s = c.session
   return [projectCrumb(projects, repoHead(projects, s.projectId)), { label: s.label }]
-}
-
-const bySlugDoneLast = (a: Feature, b: Feature) =>
-  Number(a.cardState === 'done') - Number(b.cardState === 'done') || a.slug.localeCompare(b.slug)
-
-// A feature's children: same project, `parent` naming it (generic group kinds, ADR 0002).
-export function childrenOf(feature: Feature, features: Feature[]): Feature[] {
-  return features.filter((f) => f.projectId === feature.projectId && f.parent === feature.slug).sort(bySlugDoneLast)
 }
 
 // Cmd+1..9: visible pane n while the grid shows, else the nth session in sidebar order.

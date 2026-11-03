@@ -28,7 +28,7 @@ import { DEFAULT_GRID_VIEW, gridShown, hasArrangement, visibleMembers, type Grid
 import { GridControls } from './components/GridControls'
 import { contextView } from './contextGauge'
 import { neighbours } from './artifactData'
-import { childrenOf, content, crumbs, currentProjectId, focusTarget } from './navigation'
+import { content, crumbs, currentProjectId, focusTarget } from './navigation'
 import { familyJumpTarget, familyOf } from './family'
 import { serviceBanners } from './sessionStatus'
 import { sessionDiffShortcut, type HiddenRenderedViewer } from './sessionDiffShortcut'
@@ -159,7 +159,7 @@ export default function App() {
     const visible = visibleMembers(shown.sessions, next)
     if (visible.length > 0 && !visible.some((x) => x.id === shown.focused.id)) setFocused(visible[0].id)
   }
-  const trail = crumbs(shown, projects, features.items)
+  const trail = crumbs(shown, projects)
   const header = trail.map((c) => ({ label: c.label, onClick: c.to && (() => go(c.to!)) }))
   const context = shown.kind === 'session' ? contextView(shown.session) : null
   const openFeature = (f: Feature) => focusFeature({ projectId: f.projectId, slug: f.slug })
@@ -219,10 +219,8 @@ export default function App() {
                 {...neighbours([shown.cluster], { projectId: shown.cluster.feature.projectId, slug: shown.cluster.feature.slug, name: shown.card.name })}
                 onBack={() => openFeature(shown.cluster.feature)} onStep={focusArtifact} />
             ) : shown.kind === 'feature' ? (
-              <FeaturePage feature={shown.feature}
-                parent={features.items.find((f) => f.projectId === shown.feature.projectId && f.slug === shown.feature.parent) ?? null}
-                children={childrenOf(shown.feature, features.items)} sessions={sessions} projects={projects}
-                onFocusSession={setFocused} onOpenFeature={openFeature}
+              <FeaturePage feature={shown.feature} sessions={sessions} projects={projects}
+                onFocusSession={setFocused}
                 onOpenArtifact={(name) => {
                   const dir = featureDir(shown.feature, projects)
                   if (dir !== null) openArtifact({ kind: 'file', projectId: shown.feature.projectId, path: dir + name, hash: null, fromDiff: null })
