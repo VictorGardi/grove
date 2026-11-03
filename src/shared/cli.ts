@@ -1,4 +1,4 @@
-import type { Session, SessionKind, WorkflowStatus, Zone } from './types'
+import type { Session, SessionKind, WorkflowStatus } from './types'
 
 // The grove CLI's wire protocol (ADR 0027): one JSON line per connection, over a Unix socket.
 export const PROTOCOL = 1
@@ -51,5 +51,4 @@ export interface CliSession {
   feature: string | null
   workflowStatus: WorkflowStatus
   parent: string | null // id of the session whose group this one is in
-  zone?: Zone // where its row is shown; absent: in no zone
 }

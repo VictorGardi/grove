@@ -15,7 +15,7 @@ Grove runs [OpenCode](https://opencode.ai), [Claude Code](https://claude.com/cla
 - Live status on every session: *working*, *waiting* (a permission, a question, or a finished turn you haven't seen), *idle* or *gone*.
 - Sessions live in tmux, so closing the app or a pane never kills an agent. Resume a gone session with its id, label and link intact.
 - Session grid (`⌘G`): up to nine live terminals tiled on one screen.
-- Drag to reorder, group by project or status, and jump anywhere with the command palette (`⌘K`).
+- Drag to reorder, group by project, and jump anywhere with the command palette (`⌘K`).
 
 **Isolation**
 - **Git worktrees:** launch a session in a fresh worktree on a new branch, so parallel agents never share a working tree.

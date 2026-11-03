@@ -652,33 +652,6 @@ describe('core claude status', () => {
     expect(saved).not.toContain('"attention"')
   })
 
-  it('stamps a zone on each session, never saving it, and sets an override that keeps and persists', async () => {
-    const { core, claude, statePath, make } = await connected()
-    const c = await createClaude(core)
-    expect(find(core, c.id)?.zone ?? null).toBeNull()
-    claude.emit({ type: 'exec-started', sessionId: c.agentSessionId! })
-    expect(find(core, c.id)?.zone).toBe('running')
-    claude.emit({ type: 'pending', sessionId: c.agentSessionId!, id: 'perm:main', kind: 'permission', open: true })
-    expect(find(core, c.id)?.zone).toBe('needs-you')
-    expect(fs.readFileSync(statePath, 'utf8')).not.toContain('"zone"')
-
-    const res = await core.commands.sessionSetZone({ id: c.id, zone: 'review' })
-    expect(res.ok && res.data.zoneOverride).toBe('review')
-    expect(find(core, c.id)).toMatchObject({ zone: 'review', status: 'waiting', waitingFor: 'permission' })
-    expect(fs.readFileSync(statePath, 'utf8')).toContain('"zoneOverride": "review"')
-    expect(fs.readFileSync(statePath, 'utf8')).not.toContain('"zone"')
-
-    core.dispose()
-    const again = make()
-    await again.start()
-    expect(again.getSlices().sessions.find((x) => x.id === c.id)?.zoneOverride).toBe('review')
-
-    await again.commands.sessionSetZone({ id: c.id, zone: null })
-    expect(again.getSlices().sessions.find((x) => x.id === c.id)?.zoneOverride).toBeUndefined()
-    expect(await again.commands.sessionSetZone({ id: 'x', zone: 'review' })).toEqual({ ok: false, error: 'not-found' })
-    again.dispose()
-  })
-
   it('keeps the first line of the last prompt as lastLine, saved and kept after a reload', async () => {
     const { core, claude, statePath, make } = await connected()
     const c = await createClaude(core)
@@ -697,14 +670,6 @@ describe('core claude status', () => {
     await again.start()
     expect(again.getSlices().sessions.find((x) => x.id === c.id)?.lastLine).toBe('x'.repeat(120))
     again.dispose()
-  })
-
-  it('does not notify differently when a zone override is set', async () => {
-    const { core, claude, notified } = await connected()
-    const c = await createClaude(core)
-    await core.commands.sessionSetZone({ id: c.id, zone: 'running' })
-    claude.emit({ type: 'pending', sessionId: c.agentSessionId!, id: 'perm:main', kind: 'permission', open: true })
-    expect(notified.map((x) => [x.id, x.waitingFor])).toEqual([[c.id, 'permission']])
   })
 
   it('keeps Claude status when the OpenCode service disconnects', async () => {
@@ -842,7 +807,7 @@ describe('core seen and notify', () => {
     it('a send from the parent that clears the prompt in the window is handled, silently', async () => {
       const { core, notified, parent, kid, ask } = await held()
       ask(true)
-      expect(find(core, kid.id)).toMatchObject({ held: true, zone: 'running' })
+      expect(find(core, kid.id)).toMatchObject({ held: true })
       await vi.advanceTimersByTimeAsync(10_000)
       expect(await core.commands.sendToSession({ id: kid.id, text: 'y', from: parent.id })).toMatchObject({ ok: true })
       ask(false)
@@ -877,7 +842,6 @@ describe('core seen and notify', () => {
       expect(notified).toEqual([])
       await vi.advanceTimersByTimeAsync(2_000)
       expect(notified.map((x) => [x.id, x.waitingFor])).toEqual([[kid.id, 'permission']])
-      expect(find(core, kid.id)).toMatchObject({ zone: 'needs-you' })
       expect(find(core, kid.id)?.held).toBeUndefined()
       await vi.advanceTimersByTimeAsync(120_000)
       expect(notified).toHaveLength(1)
@@ -888,7 +852,6 @@ describe('core seen and notify', () => {
       ask(true)
       await core.commands.sessionEscalate({ id: kid.id, reason: 'drop table' })
       expect(notified.map((x) => x.attention?.reason)).toEqual(['drop table'])
-      expect(find(core, kid.id)).toMatchObject({ zone: 'needs-you' })
       await vi.advanceTimersByTimeAsync(120_000)
       expect(notified).toHaveLength(1)
     })
@@ -919,7 +882,7 @@ describe('core seen and notify', () => {
       fake.captured.set(kid.tmuxName, 'Allow?\nrun: rm -rf build\n')
       ask(true)
       expect(await handle('y')).toMatchObject({ ok: true })
-      expect(find(core, kid.id)).toMatchObject({ zone: 'needs-you', attention: { reason: 'asks to rm -rf build' } })
+      expect(find(core, kid.id)).toMatchObject({ attention: { reason: 'asks to rm -rf build' } })
       expect(notified.map((x) => x.attention?.reason)).toEqual(['asks to rm -rf build'])
       expect(find(core, parent.id)?.handled).toHaveLength(1)
       await vi.advanceTimersByTimeAsync(120_000)
@@ -1220,13 +1183,13 @@ describe('small model classifier', () => {
     const o = await createOpenCode(core)
     fake.captured.set(o.tmuxName, 'Which database?\n')
     finish(o.agentSessionId!)
-    expect(find(core, o.id)).toMatchObject({ status: 'waiting', waitingFor: 'done', zone: 'review' })
+    expect(find(core, o.id)).toMatchObject({ status: 'waiting', waitingFor: 'done' })
     await flush()
     await flush()
     expect(run).toHaveBeenCalledTimes(1)
     expect(run.mock.calls[0][0]).toMatchObject({ model: 'haiku' })
     expect(run.mock.calls[0][0].input).toContain('Which database?')
-    expect(find(core, o.id)).toMatchObject({ zone: 'needs-you', lastLine: 'Asks which database to use', classified: { verdict: 'needs-you', at: ENDED } })
+    expect(find(core, o.id)).toMatchObject({ lastLine: 'Asks which database to use', classified: { verdict: 'needs-you', at: ENDED } })
   })
 
   it('asks once per finish, and drops the verdict when the session leaves it', async () => {
@@ -1235,7 +1198,7 @@ describe('small model classifier', () => {
     finish(o.agentSessionId!)
     await flush()
     await flush()
-    expect(find(core, o.id)).toMatchObject({ zone: 'review', classified: { verdict: 'done' } })
+    expect(find(core, o.id)).toMatchObject({ classified: { verdict: 'done' } })
     core.setWindowFocused(true)
     await core.commands.uiSet({ focusedSessionId: o.id })
     expect(find(core, o.id)).not.toHaveProperty('classified')

@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import type { Project, Session } from '@shared/types'
-import { GROUP_BY_OPTIONS, canDrop, dropSession, groupSize, kidRows, kidsGroup, listGroups, orderedSessions, SORT_OPTIONS, visibleSessions, type ListGroup } from './sessionList'
+import { canDrop, dropSession, groupSize, kidRows, kidsGroup, listGroups, orderedSessions, SORT_OPTIONS, visibleSessions, type ListGroup } from './sessionList'
 
 const project = (id: string, name = id, worktreeOf?: string): Project => ({ id, name, path: '/' + id, ...(worktreeOf && { worktreeOf }) })
 
@@ -26,23 +26,15 @@ const SESSIONS = [
 ]
 
 const ui = (over: Partial<Parameters<typeof listGroups>[2]> = {}) => ({
-  collapsed: [] as string[], hiddenProjects: [] as string[], groupBy: 'project' as const, sessionSort: 'custom' as const, sessionOrder: [] as string[], ...over,
+  collapsed: [] as string[], hiddenProjects: [] as string[], sessionSort: 'custom' as const, sessionOrder: [] as string[], ...over,
 })
 
 const shape = (groups: ListGroup[]) =>
-  groups.map((g) => [g.key, g.label, g.project?.id ?? null, g.status, g.sessions.map((s) => s.id)])
+  groups.map((g) => [g.key, g.label, g.project?.id ?? null, g.sessions.map((s) => s.id)])
 
 const ids = (groups: ListGroup[]) => groups.flatMap((g) => g.sessions.map((s) => s.id))
 
 describe('options', () => {
-  it('offers the three groupings, project first', () => {
-    expect(GROUP_BY_OPTIONS).toEqual([
-      { value: 'project', label: 'Project' },
-      { value: 'status', label: 'Workflow status' },
-      { value: 'none', label: 'None' },
-    ])
-  })
-
   it('offers the six sorts, custom first', () => {
     expect(SORT_OPTIONS).toEqual([
       { value: 'custom', label: 'Custom' },
@@ -64,7 +56,7 @@ describe('time-in-status sort', () => {
       session('working', { status: 'working', statusAt: at(300) }),
       session('finished-old', { status: 'waiting', waitingFor: 'done', statusAt: at(200) }),
     ]
-    expect(ids(listGroups(PROJECTS, list, ui({ groupBy: 'none', sessionSort: 'status-age' }))))
+    expect(ids(listGroups(PROJECTS, list, ui({ sessionSort: 'status-age' }))))
       .toEqual(['finished-old', 'waiting-new', 'idle-old', 'working'])
   })
 })
@@ -78,16 +70,16 @@ describe('time-in-status sort and children', () => {
       session('kid-held', { parentId: 'x', status: 'waiting', waitingFor: 'permission', held: true, statusAt: at(50) }),
       session('kid-ask', { parentId: 'x', status: 'waiting', waitingFor: 'question', statusAt: at(400) }),
     ]
-    expect(ids(listGroups(PROJECTS, list, ui({ groupBy: 'none', sessionSort: 'status-age' }))).slice(0, 1)).toEqual(['kid-ask'])
-    expect(ids(listGroups(PROJECTS, list, ui({ groupBy: 'none', sessionSort: 'status-age' })))).toEqual(['kid-ask', 'kid-held', 'kid-done', 'idle'])
+    expect(ids(listGroups(PROJECTS, list, ui({ sessionSort: 'status-age' }))).slice(0, 1)).toEqual(['kid-ask'])
+    expect(ids(listGroups(PROJECTS, list, ui({ sessionSort: 'status-age' })))).toEqual(['kid-ask', 'kid-held', 'kid-done', 'idle'])
   })
 })
 
 describe('listGroups by project', () => {
-  it('makes one group per project in config order, with the project set and no status', () => {
+  it('makes one group per project in config order, with the project set', () => {
     expect(shape(listGroups(PROJECTS, SESSIONS, ui()))).toEqual([
-      ['p:q', 'Project Q', 'q', null, ['c']],
-      ['p:p', 'Project P', 'p', null, ['z', 'a', 'b']],
+      ['p:q', 'Project Q', 'q', ['c']],
+      ['p:p', 'Project P', 'p', ['z', 'a', 'b']],
     ])
   })
 
@@ -96,48 +88,17 @@ describe('listGroups by project', () => {
   })
 })
 
-describe('listGroups by status', () => {
-  it('makes every status group in workflow order, with the status set and no project', () => {
-    const groups = listGroups(PROJECTS, SESSIONS, ui({ groupBy: 'status' }))
-    expect(shape(groups)).toEqual([
-      ['s:backlog', 'Backlog', null, 'backlog', []],
-      ['s:in-progress', 'In Progress', null, 'in-progress', ['z', 'a', 'c', 'b']],
-      ['s:blocked', 'Blocked', null, 'blocked', []],
-      ['s:in-review', 'In Review', null, 'in-review', []],
-      ['s:cancelled', 'Cancelled', null, 'cancelled', []],
-      ['s:done', 'Done', null, 'done', []],
-      ['s:pinned', 'Pinned', null, 'pinned', []],
-    ])
-  })
-
-  it('keeps empty status groups so rows do not jump as statuses change', () => {
-    const groups = listGroups(PROJECTS, [session('a', { workflowStatus: 'done' })], ui({ groupBy: 'status' }))
-    expect(groups).toHaveLength(7)
-    expect(groups.filter((g) => g.sessions.length > 0).map((g) => [g.key, g.sessions.map((s) => s.id)])).toEqual([['s:done', ['a']]])
-  })
-})
-
-describe('listGroups ungrouped', () => {
-  it('makes one "All sessions" group with neither project nor status', () => {
-    expect(shape(listGroups(PROJECTS, SESSIONS, ui({ groupBy: 'none' })))).toEqual([
-      ['all', 'All sessions', null, null, ['z', 'a', 'c', 'b']],
-    ])
-  })
-})
-
 describe('hidden projects', () => {
-  it('drops a hidden project and its sessions from every grouping mode', () => {
+  it('drops a hidden project and its sessions ', () => {
     const hideQ = ui({ hiddenProjects: ['q'] })
     expect(shape(listGroups(PROJECTS, SESSIONS, hideQ))).toEqual([
-      ['p:p', 'Project P', 'p', null, ['z', 'a', 'b']],
+      ['p:p', 'Project P', 'p', ['z', 'a', 'b']],
     ])
-    expect(ids(listGroups(PROJECTS, SESSIONS, { ...hideQ, groupBy: 'status' }))).not.toContain('c')
-    expect(ids(listGroups(PROJECTS, SESSIONS, { ...hideQ, groupBy: 'none' }))).toEqual(['z', 'a', 'b'])
+    expect(ids(listGroups(PROJECTS, SESSIONS, hideQ))).not.toContain('c')
   })
 
-  it('hides every project when they are all hidden, grouping by status or not', () => {
+  it('hides every project when they are all hidden', () => {
     expect(listGroups(PROJECTS, SESSIONS, ui({ hiddenProjects: ['p', 'q'] }))).toEqual([])
-    expect(ids(listGroups(PROJECTS, SESSIONS, ui({ hiddenProjects: ['p', 'q'], groupBy: 'none' })))).toEqual([])
   })
 })
 
@@ -152,7 +113,7 @@ describe('sessionSort', () => {
     session('n2', { startedAt: at(5, 8) }),
   ]
   const bySort = (sessionSort: Parameters<typeof listGroups>[2]['sessionSort'], list = VIEWED) =>
-    ids(listGroups(PROJECTS, list, ui({ groupBy: 'none', sessionSort })))
+    ids(listGroups(PROJECTS, list, ui({ sessionSort })))
 
   it('sorts by start time under created-asc, and under custom with nothing placed', () => {
     expect(bySort('custom')).toEqual(['n2', 'a', 'c', 'b', 'n1'])
@@ -195,17 +156,9 @@ describe('sessionSort', () => {
       session('c', { projectId: 'q' }),
     ], ui({ sessionSort: 'created-desc' }))
     expect(shape(groups)).toEqual([
-      ['p:q', 'Project Q', 'q', null, ['c']],
-      ['p:p', 'Project P', 'p', null, ['b', 'a']],
+      ['p:q', 'Project Q', 'q', ['c']],
+      ['p:p', 'Project P', 'p', ['b', 'a']],
     ])
-  })
-
-  it('sorts each status group on its own', () => {
-    const groups = listGroups(PROJECTS, [
-      session('b', { workflowStatus: 'done', startedAt: at(5, 12), lastFocusedAt: at(6, 8) }),
-      session('a', { workflowStatus: 'done', startedAt: at(5, 10), lastFocusedAt: at(6, 12) }),
-    ], ui({ groupBy: 'status', sessionSort: 'viewed-desc' }))
-    expect(groups.find((g) => g.key === 's:done')?.sessions.map((s) => s.id)).toEqual(['a', 'b'])
   })
 })
 
@@ -213,15 +166,6 @@ describe('collapsed', () => {
   it('reads project keys off the ui by group key', () => {
     const groups = listGroups(PROJECTS, SESSIONS, ui({ collapsed: ['p:q'] }))
     expect(groups.map((g) => [g.key, g.collapsed])).toEqual([['p:q', true], ['p:p', false]])
-  })
-
-  it('reads status keys off the ui by group key', () => {
-    const groups = listGroups(PROJECTS, SESSIONS, ui({ groupBy: 'status', collapsed: ['s:done'] }))
-    expect(groups.filter((g) => g.collapsed).map((g) => g.key)).toEqual(['s:done'])
-  })
-
-  it('reads the single ungrouped key off the ui', () => {
-    expect(listGroups(PROJECTS, SESSIONS, ui({ groupBy: 'none', collapsed: ['all'] }))[0].collapsed).toBe(true)
   })
 
   it('does not let one key shape collapse another', () => {
@@ -242,8 +186,8 @@ const REPO_ALL = [project('p', 'Project P'), project('wt1', 'Project P · a', 'p
 describe('listGroups for worktrees', () => {
   it('puts a worktree\'s sessions in its repo\'s group, sorted with the repo\'s own', () => {
     expect(shape(listGroups(REPO_ALL, REPO_SESSIONS, ui()))).toEqual([
-      ['p:p', 'Project P', 'p', null, ['main', 'inWt', 'inWt2']],
-      ['p:q', 'Project Q', 'q', null, ['other']],
+      ['p:p', 'Project P', 'p', ['main', 'inWt', 'inWt2']],
+      ['p:q', 'Project Q', 'q', ['other']],
     ])
   })
 
@@ -252,11 +196,6 @@ describe('listGroups for worktrees', () => {
     expect(groups.map((g) => [g.key, g.collapsed])).toEqual([['p:p', true], ['p:q', false]])
     expect(visibleSessions(groups).map((s) => s.id)).toEqual(['other'])
     expect(orderedSessions(groups).map((s) => s.id)).toEqual(['main', 'inWt', 'inWt2', 'other'])
-  })
-
-  it('lists every session once by status or none', () => {
-    for (const groupBy of ['status', 'none'] as const)
-      expect(ids(listGroups(REPO_ALL, REPO_SESSIONS, ui({ groupBy }))).sort()).toEqual(['inWt', 'inWt2', 'main', 'other'])
   })
 
   it('hides a repo and its worktrees together; a worktree is not a hide key of its own', () => {
@@ -272,63 +211,48 @@ describe('listGroups for worktrees', () => {
 
 describe('orderedSessions', () => {
   it('returns every visible session once, in group order, collapsed groups included', () => {
-    for (const groupBy of ['project', 'status', 'none'] as const) {
-      const groups = listGroups(PROJECTS, SESSIONS, ui({ groupBy, collapsed: ['p:p', 's:in-progress'] }))
-      const order = orderedSessions(groups).map((s) => s.id)
-      expect(new Set(order).size).toBe(SESSIONS.length)
-      expect(order.sort()).toEqual(['a', 'b', 'c', 'z'])
-    }
+    const groups = listGroups(PROJECTS, SESSIONS, ui({ collapsed: ['p:p'] }))
+    const order = orderedSessions(groups).map((s) => s.id)
+    expect(new Set(order).size).toBe(SESSIONS.length)
+    expect(order.sort()).toEqual(['a', 'b', 'c', 'z'])
   })
 
-  it('follows group order: status order, then config order', () => {
-    expect(orderedSessions(listGroups(PROJECTS, SESSIONS, ui({ groupBy: 'status' }))).map((s) => s.id)).toEqual(['z', 'a', 'c', 'b'])
+  it('follows group order: config order', () => {
     expect(orderedSessions(listGroups(PROJECTS, SESSIONS, ui())).map((s) => s.id)).toEqual(['c', 'z', 'a', 'b'])
   })
 
   it('skips sessions in hidden projects', () => {
-    const groups = listGroups(PROJECTS, SESSIONS, ui({ groupBy: 'none', hiddenProjects: ['q'] }))
+    const groups = listGroups(PROJECTS, SESSIONS, ui({ hiddenProjects: ['q'] }))
     expect(orderedSessions(groups).map((s) => s.id)).toEqual(['z', 'a', 'b'])
   })
 })
 
 describe('visibleSessions', () => {
   it('drops collapsed groups, which is what a shift-click range runs over', () => {
-    // p:p and s:in-progress collapsed: those groups' sessions are off screen, so a range must not
+    // p:p collapsed: those groups' sessions are off screen, so a range must not
     // reach them — right-click then delete would otherwise remove sessions the human can't see.
-    const byProject = listGroups(PROJECTS, SESSIONS, ui({ groupBy: 'project', collapsed: ['p:p'] }))
+    const byProject = listGroups(PROJECTS, SESSIONS, ui({ collapsed: ['p:p'] }))
     expect(orderedSessions(byProject).map((s) => s.id)).toEqual(['c', 'z', 'a', 'b'])
     expect(visibleSessions(byProject).map((s) => s.id)).toEqual(['c'])
-
-    // status keys collapse too. Groups come in WORKFLOW_STATUSES order, where in-progress
-    // (index 1) comes before done (index 5): 'a' and 'c' are in-progress, 'b' is done.
-    const mixed = [session('a', { workflowStatus: 'in-progress' }), session('b', { workflowStatus: 'done' }), session('c', { projectId: 'q' })]
-    const byStatus = listGroups(PROJECTS, mixed, ui({ groupBy: 'status', collapsed: ['s:in-progress'] }))
-    expect(orderedSessions(byStatus).map((s) => s.id)).toEqual(['a', 'c', 'b'])
-    expect(visibleSessions(byStatus).map((s) => s.id)).toEqual(['b'])
   })
 
   it('is orderedSessions when nothing is collapsed', () => {
-    const groups = listGroups(PROJECTS, SESSIONS, ui({ groupBy: 'project' }))
+    const groups = listGroups(PROJECTS, SESSIONS, ui())
     expect(visibleSessions(groups)).toEqual(orderedSessions(groups))
   })
 })
+
 describe('custom order', () => {
   const custom = (sessionOrder: string[], over: Partial<Parameters<typeof listGroups>[2]> = {}, list = SESSIONS) =>
-    listGroups(PROJECTS, list, ui({ groupBy: 'none', sessionSort: 'custom', sessionOrder, ...over }))
+    listGroups(PROJECTS, list, ui({ sessionSort: 'custom', sessionOrder, ...over }))
 
-  it('reads in the saved order', () => {
-    expect(ids(custom(['b', 'a', 'z', 'c']))).toEqual(['b', 'a', 'z', 'c'])
+  it('reads in the saved order inside each project group', () => {
+    expect(ids(custom(['b', 'a', 'z', 'c']))).toEqual(['c', 'b', 'a', 'z'])
   })
 
   it('sinks sessions missing from the order below the placed ones, in creation order', () => {
-    expect(ids(custom(['b']))).toEqual(['b', 'z', 'a', 'c'])
-    expect(ids(custom(['a', 'gone']))).toEqual(['a', 'z', 'c', 'b'])
-  })
-
-  it('shares one order across every grouping', () => {
-    const order = ['b', 'c', 'a', 'z']
-    expect(ids(custom(order, { groupBy: 'project' }))).toEqual(['c', 'b', 'a', 'z'])
-    expect(ids(custom(order, { groupBy: 'status' }))).toEqual(['b', 'c', 'a', 'z'])
+    expect(ids(custom(['b']))).toEqual(['c', 'b', 'z', 'a'])
+    expect(ids(custom(['a', 'gone']))).toEqual(['c', 'a', 'z', 'b'])
   })
 
   it('feeds orderedSessions, which Cmd+1..9 reads', () => {
@@ -344,37 +268,24 @@ describe('dropSession', () => {
 
   it('moves a card before and after a neighbour in its group', () => {
     const [, p] = group()
-    expect(dropSession('project', SESSIONS, ORDER, byId('b'), p, p, { target: 'z', after: false })?.order).toEqual(['b', 'z', 'a', 'c'])
-    expect(dropSession('project', SESSIONS, ORDER, byId('z'), p, p, { target: 'b', after: true })?.order).toEqual(['a', 'b', 'z', 'c'])
+    expect(dropSession(SESSIONS, ORDER, byId('b'), p, p, { target: 'z', after: false })?.order).toEqual(['b', 'z', 'a', 'c'])
+    expect(dropSession(SESSIONS, ORDER, byId('z'), p, p, { target: 'b', after: true })?.order).toEqual(['a', 'b', 'z', 'c'])
   })
 
   it('does nothing for a drop that leaves the order as it was', () => {
     const [, p] = group()
-    expect(dropSession('project', SESSIONS, ORDER, byId('a'), p, p, { target: 'a', after: false })).toBeNull()
-    expect(dropSession('project', SESSIONS, ORDER, byId('z'), p, p, { target: 'a', after: false })).toBeNull()
+    expect(dropSession(SESSIONS, ORDER, byId('a'), p, p, { target: 'a', after: false })).toBeNull()
+    expect(dropSession(SESSIONS, ORDER, byId('z'), p, p, { target: 'a', after: false })).toBeNull()
   })
 
   it('refuses another project', () => {
     const [q, p] = group()
-    expect(dropSession('project', SESSIONS, ORDER, byId('a'), p, q, { target: 'c', after: false })).toBeNull()
+    expect(dropSession(SESSIONS, ORDER, byId('a'), p, q, { target: 'c', after: false })).toBeNull()
   })
 
-  it('sets the status of a card dropped into another status group, at the drop position', () => {
-    const groups = group({ groupBy: 'status' })
-    const inProgress = groups.find((g) => g.status === 'in-progress')!
-    const done = groups.find((g) => g.status === 'done')!
-    const sessions = SESSIONS.map((s) => (s.id === 'c' ? { ...s, workflowStatus: 'done' as const } : s))
-    const doneGroup = listGroups(PROJECTS, sessions, ui({ groupBy: 'status', sessionOrder: ORDER })).find((g) => g.status === 'done')!
-    const r = dropSession('status', sessions, ORDER, sessions.find((s) => s.id === 'z')!, inProgress, doneGroup, { target: 'c', after: false })
-    expect(r).toEqual({ order: ['a', 'b', 'z', 'c'], status: 'done' })
-    // an empty group has no neighbour: only the status changes
-    expect(done.sessions).toEqual([])
-    expect(dropSession('status', SESSIONS, ORDER, byId('a'), inProgress, done, null)).toEqual({ order: ORDER, status: 'done' })
-  })
-
-  it('does not set a status outside status grouping', () => {
-    const [p] = group({ groupBy: 'none' })
-    expect(dropSession('none', SESSIONS, ORDER, byId('b'), p, p, { target: 'z', after: false })?.status).toBeNull()
+  it('moves a card to the end of its group when dropped on no neighbour', () => {
+    const [, p] = group()
+    expect(dropSession(SESSIONS, ORDER, byId('a'), p, p, null)?.order).toEqual(['z', 'b', 'a', 'c'])
   })
 })
 
@@ -389,14 +300,9 @@ describe('session groups', () => {
 
   it('draws a child under its parent, wherever it runs, and not as a row of its own', () => {
     const g = listGroups(PROJECTS, sessions, ui())
-    expect(shape(g)).toEqual([['p:q', 'Project Q', 'q', null, []], ['p:p', 'Project P', 'p', null, ['r', 's']]])
+    expect(shape(g)).toEqual([['p:q', 'Project Q', 'q', []], ['p:p', 'Project P', 'p', ['r', 's']]])
     expect(g[0].nest.kids.get('r')?.map((s) => s.id)).toEqual(['k1', 'k2'])
     expect(groupSize(g[1])).toBe(4)
-  })
-
-  it('groups children by status under their parent only', () => {
-    const g = listGroups(PROJECTS, [...sessions.slice(0, 2), session('s', { workflowStatus: 'done' })], ui({ groupBy: 'status' }))
-    expect(g.flatMap((x) => x.sessions.map((s) => s.id)).sort()).toEqual(['r', 's'])
   })
 
   it('keeps a child whose parent is hidden or missing as a row of its own', () => {
@@ -418,11 +324,10 @@ describe('session groups', () => {
     const g = listGroups(PROJECTS, sessions, ui())
     const p = g[1]
     const kg = kidsGroup(p, p.sessions[0])
-    expect(canDrop('project', kg, p)).toBe(false)
-    expect(canDrop('status', kg, p)).toBe(false)
-    expect(canDrop('status', p, kg)).toBe(false)
-    expect(canDrop('project', kg, kg)).toBe(true)
-    const moved = dropSession('project', sessions, [], sessions[1], kg, kg, { target: 'k2', after: true })
+    expect(canDrop(kg, p)).toBe(false)
+    expect(canDrop(p, kg)).toBe(false)
+    expect(canDrop(kg, kg)).toBe(true)
+    const moved = dropSession(sessions, [], sessions[1], kg, kg, { target: 'k2', after: true })
     expect(moved?.order.filter((id) => id.startsWith('k'))).toEqual(['k2', 'k1'])
   })
 })
@@ -466,10 +371,8 @@ describe('done stacks', () => {
 
 describe('hideDone', () => {
   const sessions = [session('a'), session('b', { workflowStatus: 'done' })]
-  it('leaves done sessions out of every grouping, and keeps them when off', () => {
-    for (const groupBy of ['project', 'status', 'none'] as const) {
-      expect(ids(listGroups(PROJECTS, sessions, ui({ groupBy, hideDone: true })))).toEqual(['a'])
-      expect(ids(listGroups(PROJECTS, sessions, ui({ groupBy })))).toEqual(expect.arrayContaining(['a', 'b']))
-    }
+  it('leaves done sessions out, and keeps them when off', () => {
+    expect(ids(listGroups(PROJECTS, sessions, ui({ hideDone: true })))).toEqual(['a'])
+    expect(ids(listGroups(PROJECTS, sessions, ui()))).toEqual(expect.arrayContaining(['a', 'b']))
   })
 })

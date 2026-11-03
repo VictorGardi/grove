@@ -23,36 +23,6 @@
   flex-shrink: 0;
 }
 
-.viewToggle {
-  flex-shrink: 0;
-  white-space: nowrap;
-  display: inline-flex;
-  gap: 2px;
-  padding: 2px;
-  border: 1px solid var(--card-border);
-  border-radius: 6px;
-}
-
-.viewOption {
-  padding: 1px 7px;
-  background: none;
-  border: 0;
-  border-radius: 4px;
-  font: inherit;
-  font-size: var(--fs-sm);
-  color: var(--text-3);
-  cursor: pointer;
-}
-
-.viewOption:hover {
-  color: var(--text);
-}
-
-.viewOption[aria-pressed='true'] {
-  background: var(--card-selected-bg);
-  color: var(--text);
-}
-
 .list {
   flex: 1;
   overflow-y: auto;
@@ -150,19 +120,6 @@
 .folderMore:focus-visible {
   opacity: 1;
 }
-
-/* the workflow-status glyph on a group heading that has no project behind it: the same mark
-   the status button draws on a card, so a heading and its cards read as one thing */
-.groupGlyph {
-  flex-shrink: 0;
-}
-
-/* the status's tone, the same live-status palette the marker on a card uses */
-.tone-muted { color: var(--text-3); }
-.tone-accent { color: var(--accent); }
-.tone-waiting { color: var(--status-waiting); }
-.tone-working { color: var(--status-working); }
-.tone-finished { color: var(--status-finished); }
 
 .refused {
   padding: 0 var(--sp-1);

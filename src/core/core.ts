@@ -2,7 +2,7 @@ import { randomUUID } from 'node:crypto'
 import fs from 'node:fs'
 import os from 'node:os'
 import path from 'node:path'
-import type { Comment, CommentAnchor, ConfigFile, FeatureKey, HandledPrompt, Project, PullRequest, Session, SessionDiff, SessionKind, Slices, UiState, WorkflowStatus, Zone } from '@shared/types'
+import type { Comment, CommentAnchor, ConfigFile, FeatureKey, HandledPrompt, Project, PullRequest, Session, SessionDiff, SessionKind, Slices, UiState, WorkflowStatus } from '@shared/types'
 import { DEFAULT_UI, EMPTY_FEATURES, OPENCODE_CONNECTING } from '@shared/types'
 import { keyProjectId } from '@shared/groups'
 import { opencodeCliConfig, opencodeModelEnv } from '@shared/opencodeSession'
@@ -36,7 +36,6 @@ import { doneKey, kidsKey, openedKey } from '@shared/groups'
 import { orphanChildren, resolveParent, withParent } from '@shared/sessionGroups'
 import { type AgentEvent, type AgentKind, type AgentSource } from './agents/types'
 import { createTerminalActivity } from './terminalActivity'
-import { zoneOf } from '@shared/zones'
 import { autoLink, clearStarted, expireStarted, link, markGone, markSeen, newSession, reconcile, rename, resume, setWorkflowStatus, withBranches, withPrs } from './sessions'
 import { loadConfig, saveConfig } from './store/configStore'
 import { apply, fromSnapshot, withContext, withStatus, type Tracker } from './status'
@@ -101,7 +100,6 @@ export interface Commands {
   sessionResume(a: { id: string }): Promise<Result<Session>> // gone agent sessions only
   sessionRename(a: { id: string; label: string }): Promise<Result<Session>>
   sessionWorkflowStatus(a: { id: string; status: WorkflowStatus }): Promise<Result<Session>>
-  sessionSetZone(a: { id: string; zone: Zone | null }): Promise<Result<Session>> // null resets the override
   sessionEscalate(a: { id: string; reason: string }): Promise<Result<Session>> // a parent says this waiting child needs the human; error not-waiting unless it waits on a permission or question
   sessionProgress(a: { id: string; done: number; total: number }): Promise<Result<Session>> // a parent's run progress, shown on its row
   sessionLink(a: { id: string; feature: string | null }): Promise<Result<Session>>
@@ -257,7 +255,7 @@ export function createCore(opts: CoreOptions): Core {
   }
 
   function set<K extends keyof Slices>(k: K, v: Slices[K]): void {
-    if (k === 'sessions') v = withZones(dropStaleClassified(dropStaleAttention(stampStatusAt(v as Session[])))) as Slices[K]
+    if (k === 'sessions') v = dropStaleClassified(dropStaleAttention(stampStatusAt(v as Session[]))) as Slices[K]
     slices[k] = v
     for (const l of listeners) l(k, v)
     if (k === 'projects') {
@@ -272,7 +270,7 @@ export function createCore(opts: CoreOptions): Core {
     }
     else if (k === 'sessions' || k === 'ui') {
       const sessions = slices.sessions.filter((s) => !unsaved(s.id)).map(
-        ({ startup: _startup, statusAt: _statusAt, branch: _branch, status: _status, waitingFor: _waitingFor, zone: _zone, held: _held, handled: _handled, attention: _attn, classified: _cl, progress: _prog, contextPct: _p, contextTokens: _t, contextWindow: _w, model: _m, pr: _pr, ...s }) => s,
+        ({ startup: _startup, statusAt: _statusAt, branch: _branch, status: _status, waitingFor: _waitingFor, held: _held, handled: _handled, attention: _attn, classified: _cl, progress: _prog, contextPct: _p, contextTokens: _t, contextWindow: _w, model: _m, pr: _pr, ...s }) => s,
       ) // live-only
       saveState(opts.statePath, { schemaVersion: 10, sessions, ui: slices.ui })
     }
@@ -596,14 +594,6 @@ export function createCore(opts: CoreOptions): Core {
         }
         pumpClassifier()
       })
-  }
-
-  // The zone of every session, from its live state; same object when unchanged.
-  function withZones(next: Session[]): Session[] {
-    return next.map((s) => {
-      const zone = zoneOf(s)
-      return (s.zone ?? null) === zone ? s : { ...s, zone }
-    })
   }
 
   // Time in status for every session published; idle and finished agent sessions count from
@@ -1191,15 +1181,6 @@ export function createCore(opts: CoreOptions): Core {
       const next = setWorkflowStatus(session, status)
       replaceSession(next)
       return { ok: true, data: next }
-    },
-
-    async sessionSetZone({ id, zone }) {
-      const session = findSession(id)
-      if (!session) return { ok: false, error: 'not-found' }
-      const { zoneOverride: _old, ...rest } = session
-      const next = zone === null ? rest : { ...rest, zoneOverride: zone }
-      replaceSession(next)
-      return { ok: true, data: findSession(id) ?? next }
     },
 
     async sessionEscalate({ id, reason }) {

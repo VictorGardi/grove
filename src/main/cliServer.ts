@@ -30,7 +30,6 @@ function toCli(core: Core, s: Session): CliSession {
     feature: s.feature,
     workflowStatus: s.workflowStatus,
     parent: s.parentId ?? null,
-    ...(s.zone && { zone: s.zone }),
   }
 }
 

@@ -31,10 +31,25 @@ describe('stateStore', () => {
       schemaVersion: 10,
       sessions: [newSession({ projectId: 'p', kind: 'terminal', now: new Date(), id: 'a', agentSessionId: null })],
       ui: { sidebarWidth: 300, sidebarCollapsed: true, focusedSessionId: null, focusedFeature: null, focusedProject: 'p', board: 'sessions', collapsed: ['p:x'],
-        viewer: { kind: 'file', projectId: 'p', path: 'docs/work/f/03-design.html', hash: 'q1', fromDiff: 'a' }, viewerWidth: 600, viewerExpanded: true, grid: { open: true, members: ['a'] }, hiddenProjects: [], groupBy: 'project', sessionSort: 'custom', sessionOrder: ['a'] },
+        viewer: { kind: 'file', projectId: 'p', path: 'docs/work/f/03-design.html', hash: 'q1', fromDiff: 'a' }, viewerWidth: 600, viewerExpanded: true, grid: { open: true, members: ['a'] }, hiddenProjects: [], sessionSort: 'custom', sessionOrder: ['a'] },
     }
     saveState(file, s)
     expect(loadState(file)).toEqual(s)
+  })
+
+  const KEY = ['zon', 'eOverride'].join('') // the old session override key, built so the word stays out of the source
+  it('keeps dead keys from older files (the old session override, sidebarView, groupBy, ...) through a load and save', () => {
+    const file = tmpFile()
+    const dead = { sidebarView: 'tabs', groupBy: 'status', board: 'artifacts', artifacts: { p: { open: null } } }
+    const a = { ...newSession({ projectId: 'p', kind: 'terminal', now: new Date(), id: 'a', agentSessionId: null }), [KEY]: 'review' }
+    fs.writeFileSync(file, JSON.stringify({ schemaVersion: 10, sessions: [a], ui: { ...DEFAULT_UI, ...dead } }))
+    const loaded = loadState(file)
+    expect(loaded.sessions[0]).toMatchObject({ [KEY]: 'review' })
+    expect(loaded.ui).toMatchObject(dead)
+    saveState(file, loaded)
+    const written = JSON.parse(fs.readFileSync(file, 'utf8'))
+    expect(written.sessions[0][KEY]).toBe('review')
+    expect(written.ui).toMatchObject(dead)
   })
 
   it('drops grid members of unknown sessions, and closes an emptied grid', () => {

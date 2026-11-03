@@ -1,20 +1,20 @@
 import { useEffect, useId, useRef, useState, type MouseEvent, type PointerEvent as ReactPointerEvent, type ReactNode } from 'react'
-import { GRID_MAX, type Feature, type Project, type Session, type WorkflowStatus, type Zone } from '@shared/types'
+import { GRID_MAX, type Feature, type Project, type Session, type WorkflowStatus } from '@shared/types'
 import { useSlices } from '../stores/slices'
 import { gridShown } from '../gridView'
 import { kidsKey } from '@shared/groups'
 import { canParent, hasChildren } from '@shared/sessionGroups'
 import { countsAsWaiting, longestWaiting, mostUrgent, shownStatus, statusAge, statusTone, statusView } from '../sessionStatus'
 import { selectRange } from '../selection'
-import { GROUP_BY_OPTIONS, SORT_OPTIONS, canDrop, dropSession, groupSize, kidRows, kidsGroup, listGroups, visibleSessions, type DoneStack, type DropAt, type ListGroup } from '../sessionList'
+import { SORT_OPTIONS, canDrop, dropSession, groupSize, kidRows, kidsGroup, listGroups, visibleSessions, type DoneStack, type DropAt, type ListGroup } from '../sessionList'
 import { repoRows } from '../repoGroups'
 import { colorTags } from '../tags'
-import { rowTitle, zoneSections, zonesFor } from '../zoneList'
+import { rowTitle } from '../rowText'
 import { branchCut } from '../branchCut'
 import { childrenSummary, runProgress } from '../family'
 import { RunProgress } from './RunProgress'
 import { linkedFeature } from '../tree'
-import { workflowStatusOf, WORKFLOW_STATUSES } from '../workflowStatus'
+import { WORKFLOW_STATUSES } from '../workflowStatus'
 import { Badge } from './ui/Badge'
 import { Button } from './ui/Button'
 import { ContextMenu } from './ui/ContextMenu'
@@ -22,20 +22,12 @@ import { cx } from './ui/cx'
 import { Icon } from './ui/Icon'
 import { LinkPicker } from './LinkPicker'
 import { ParentPicker } from './ParentPicker'
-import { ZoneSection } from './ZoneSection'
 import { SessionRow } from './ui/SessionRow'
 import { BranchMark } from './BranchMark'
 import { StatusDot } from './ui/StatusDot'
 import { tagClass } from './ui/Tag'
-import { WorkflowStatusButton, Glyph, StatusMark } from './ui/WorkflowStatusPicker'
+import { WorkflowStatusButton, StatusMark } from './ui/WorkflowStatusPicker'
 import css from './Sidebar.module.css'
-
-// The "Move to zone" choices; Reset hands the row back to the derived zone.
-const ZONE_CHOICES: { zone: Zone; label: string }[] = [
-  { zone: 'needs-you', label: 'Needs you' },
-  { zone: 'review', label: 'Ready to review' },
-  { zone: 'running', label: 'Running (handled)' },
-]
 
 const KIND_LABEL: Record<Session['kind'], string> = { claude: 'Claude', opencode: 'OpenCode', copilot: 'Copilot', terminal: 'Terminal' }
 
@@ -207,19 +199,6 @@ function ProjectHeader({ project: p, tag, count, collapsed, refused, onToggle, o
   )
 }
 
-// The heading for a group with no project behind it (grouped by workflow status, or by none):
-// the status's own glyph, the label, the count. Clicking it collapses the group, as on a folder.
-function GroupHeading({ group, onToggle }: { group: ListGroup; onToggle: () => void }) {
-  const view = group.status ? workflowStatusOf(group.status) : null
-  return (
-    <div className={css.folder} title={group.label} onClick={onToggle}>
-      {view && <Glyph view={view} size={13} className={cx(css.groupGlyph, css[`tone-${view.tone}`])} />}
-      <span className={css.folderName}>{group.label}</span>
-      {group.sessions.length > 0 && <Badge tone="muted">{group.sessions.length}</Badge>}
-    </div>
-  )
-}
-
 // A titled group of rows in the options panel. `role="group"` is what a menu may contain
 // besides menuitems, and `aria-labelledby` names it from the heading that is already on screen.
 function OptionSection({ headingId, label, children }: { headingId: string; label: string; children: ReactNode }) {
@@ -253,7 +232,7 @@ function useMinuteTick(): number {
 }
 
 export function Sidebar({ onNew, onRemove }: { onNew: (projectId?: string) => void; onRemove: (ids: string[]) => void }) {
-  const { projects, sessions, ui, features, setFocused, toggleCollapsed, toggleCompact, toggleProjectVisibility, toggleHideDone, focusFeature, openProject, setGroupBy, setSessionSort, setSessionOrder, toggleGrid, toggleGridMember, waitingSince } = useSlices()
+  const { projects, sessions, ui, features, setFocused, toggleCollapsed, toggleCompact, toggleProjectVisibility, toggleHideDone, focusFeature, openProject, setSessionSort, setSessionOrder, toggleGrid, toggleGridMember, waitingSince } = useSlices()
   const now = useMinuteTick()
   const waitingCount = sessions.filter(countsAsWaiting).length
   const [refused, setRefused] = useState<string | null>(null)
@@ -274,7 +253,6 @@ export function Sidebar({ onNew, onRemove }: { onNew: (projectId?: string) => vo
   const anchorAt = useRef<{ left: number; bottom: number } | null>(null) // the button rect, captured on open
   const optionsId = useId()
   const sidebarId = `${optionsId}-sidebar`
-  const groupById = `${optionsId}-group-by`
   const sortId = `${optionsId}-sort`
   const statusId = `${optionsId}-status`
   const tags = colorTags(projects, features.items)
@@ -308,11 +286,7 @@ export function Sidebar({ onNew, onRemove }: { onNew: (projectId?: string) => vo
 
   // the cards on screen, top to bottom: what a shift-click range runs over. Collapsed groups are
   // left out, so a range can't reach sessions that aren't on screen to be deleted.
-  const zones = zoneSections(sessions)
-  const zonesView = ui.sidebarView !== 'projects'
-  const kidsOf = new Map<string, Session[]>()
-  for (const x of sessions) if (x.parentId) kidsOf.set(x.parentId, [...(kidsOf.get(x.parentId) ?? []), x])
-  const order = zonesView ? [...zones.needsYou, ...zones.review, ...zones.recent].map((x) => x.id) : visibleSessions(groups).map((x) => x.id)
+  const order = visibleSessions(groups).map((x) => x.id)
 
   function clickCard(id: string, e: MouseEvent) {
     if (e.shiftKey) {
@@ -367,7 +341,7 @@ export function Sidebar({ onNew, onRemove }: { onNew: (projectId?: string) => vo
     const slotEl = el?.closest<HTMLElement>('[data-slot]')
     const hit = slotEl ? slotAt.current.get(slotEl.dataset.slot!) : undefined
     if (slotEl && hit) {
-      if (!canDrop(ui.groupBy, d.from, hit.grp)) return null
+      if (!canDrop(d.from, hit.grp)) return null
       const r = slotEl.getBoundingClientRect()
       return { group: hit.grp, at: { target: hit.s.id, after: y > r.top + r.height / 2 } }
     }
@@ -375,14 +349,14 @@ export function Sidebar({ onNew, onRemove }: { onNew: (projectId?: string) => vo
     const g = cardsEl ? cardsAt.current.get(cardsEl.dataset.cards!) : undefined
     if (!g) return null
     if (g.sessions.length > 0) return undefined
-    return canDrop(ui.groupBy, d.from, g) ? { group: g, at: null } : null
+    return canDrop(d.from, g) ? { group: g, at: null } : null
   }
 
   // the drop an aim would make, or null when it would change nothing
   function outcome(a: Aim | null) {
     const d = press.current
     const moved = d && sessions.find((x) => x.id === d.id)
-    return a && d && moved ? dropSession(ui.groupBy, sessions, ui.sessionOrder, moved, d.from, a.group, a.at) : null
+    return a && d && moved ? dropSession(sessions, ui.sessionOrder, moved, d.from, a.group, a.at) : null
   }
 
   // follow the pointer; render only when the line moves
@@ -404,7 +378,6 @@ export function Sidebar({ onNew, onRemove }: { onNew: (projectId?: string) => vo
     const result = outcome(a)
     const moved = d && sessions.find((s) => s.id === d.id)
     if (!result || !moved) return
-    if (result.status) void window.api.invoke('session:workflowStatus', { id: moved.id, status: result.status })
     setSessionOrder(result.order)
   }
 
@@ -553,15 +526,10 @@ export function Sidebar({ onNew, onRemove }: { onNew: (projectId?: string) => vo
       onToggle={() => toggleCollapsed(g.key)} onOpen={() => openProject(p.id)} onHide={() => toggleProjectVisibility(p.id)} onRemove={() => void removeProject(p.id)} onNew={() => onNew(p.id)} />
   )
 
-  // a project's heading when there is a project; a status or plain one when there isn't
-  const groupHeading = (g: ListGroup) =>
-    g.project ? projectHeader(g.project, groupSize(g), g)
-      : <GroupHeading group={g} onToggle={() => toggleCollapsed(g.key)} />
-
   // One group: its heading, then its rows. A worktree's sessions sit among the repo's own (ADR 0037).
   const groupBlock = (g: ListGroup) => (
     <div key={g.key} className={css.project}>
-      {groupHeading(g)}
+      {projectHeader(g.project!, groupSize(g), g)}
       {!g.collapsed && cardList(g)}
     </div>
   )
@@ -572,18 +540,10 @@ export function Sidebar({ onNew, onRemove }: { onNew: (projectId?: string) => vo
         <svg className={css.logo} viewBox="0 0 20 20" role="img" aria-label="Grove" fill="currentColor">
           <path d="M10 1 4 8h3l-4 6h5v5h4v-5h5l-4-6h3z" />
         </svg>
-        <div className={css.viewToggle} role="group" aria-label="Sidebar view">
-          {(['zones', 'projects'] as const).map((v) => (
-            <button key={v} type="button" className={css.viewOption} aria-pressed={(ui.sidebarView ?? 'zones') === v}
-              onClick={() => void window.api.invoke('ui:set', { sidebarView: v })}>
-              {v === 'zones' ? 'Zones' : 'Projects'}
-            </button>
-          ))}
-        </div>
         <Button variant="ghost" size="sm" round icon="folder-plus" aria-label="Add project" title="Add project"
           className={css.add} onClick={() => void window.api.invoke('project:add')} />
       </div>
-      {!zonesView && projects.length > 0 && (
+      {projects.length > 0 && (
         <div className={css.columns}>
           <span className={css.columnName}>session</span>
           <button type="button" className={css.sortHead} aria-pressed={ui.sessionSort === 'status-age'}
@@ -595,18 +555,7 @@ export function Sidebar({ onNew, onRemove }: { onNew: (projectId?: string) => vo
       )}
       <div className={css.list}>
         {projects.length === 0 && <div className={css.hint}>Add a project with the folder ＋ above</div>}
-        {zonesView ? (
-          <>
-            {([['Needs you', zones.needsYou], ['Ready to review', zones.review]] as const).map(([title, list]) => (
-              <ZoneSection key={title} title={title} sessions={list} kids={kidsOf} collapsed={ui.collapsed} onToggleKids={(id) => toggleCollapsed(kidsKey(id))} focusedId={ui.focusedSessionId} picked={picked}
-                onFocus={clickCard} onContextMenu={openMenu} />
-            ))}
-            <ZoneSection title="Running (handled)" sessions={zones.runningRows} kids={kidsOf} collapsed={ui.collapsed} onToggleKids={(id) => toggleCollapsed(kidsKey(id))} focusedId={ui.focusedSessionId} picked={picked} collapsible
-              onFocus={clickCard} onContextMenu={openMenu} />
-            <ZoneSection title="Where you were" sessions={zones.recent} kids={kidsOf} collapsed={ui.collapsed} onToggleKids={(id) => toggleCollapsed(kidsKey(id))} focusedId={ui.focusedSessionId} picked={picked}
-              onFocus={clickCard} onContextMenu={openMenu} />
-          </>
-        ) : groups.map(groupBlock)}
+        {groups.map(groupBlock)}
       </div>
       <div className={css.bottomBar}>
         <Button variant="ghost" size="sm" icon="grid" aria-pressed={gridShown(ui)} disabled={ui.grid.members.length === 0}
@@ -672,12 +621,6 @@ export function Sidebar({ onNew, onRemove }: { onNew: (projectId?: string) => vo
                     <span className={css.visibilityCheck}>{!ui.hideDone && <Icon name="check" size={13} />}</span>
                   </button>
                 </OptionSection>
-                <OptionSection headingId={groupById} label="Group by">
-                  {GROUP_BY_OPTIONS.map((o) => (
-                    <OptionRow key={o.value} label={o.label} checked={ui.groupBy === o.value}
-                      onSelect={() => setGroupBy(o.value)} />
-                  ))}
-                </OptionSection>
                 <OptionSection headingId={sortId} label="Sort">
                   {SORT_OPTIONS.map((o) => (
                     <OptionRow key={o.value} label={o.label} checked={ui.sessionSort === o.value}
@@ -697,11 +640,6 @@ export function Sidebar({ onNew, onRemove }: { onNew: (projectId?: string) => vo
             ...(one && !hasChildren(sessions, one.id) && sessions.some((x) => canParent(sessions, one.id, x))
               ? [{ label: 'Set parent…', icon: 'corner-left-up' as const, onSelect: () => setParenting(one) }] : []),
             ...(one?.parentId ? [{ label: 'Clear parent', icon: 'minus' as const, onSelect: () => void window.api.invoke('session:setParent', { id: one.id, parent: null }) }] : []),
-            // moving a row never changes counts, popups or cmd+.: only where it is shown
-            ...(one ? [
-              ...ZONE_CHOICES.filter((c) => zonesFor(one).includes(c.zone)).map((c) => ({ label: `Move to zone: ${c.label}`, icon: 'corner-left-up' as const, onSelect: () => void window.api.invoke('session:setZone', { id: one.id, zone: c.zone }) })),
-              ...(one.zoneOverride ? [{ label: 'Reset zone', icon: 'minus' as const, onSelect: () => void window.api.invoke('session:setZone', { id: one.id, zone: null }) }] : []),
-            ] : []),
             // the card's own status button covers a single card; the menu is for a selection
             ...(menu.ids.length > 1
               ? WORKFLOW_STATUSES.map((v) => ({ label: `Set ${v.label}`, glyph: <StatusMark view={v} />, onSelect: () => setStatuses(menu.ids, v.value) }))

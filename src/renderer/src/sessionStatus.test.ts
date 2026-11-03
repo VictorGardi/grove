@@ -217,16 +217,6 @@ describe('finished child', () => {
   })
 })
 
-describe('countsAsWaiting and zones', () => {
-  it('is unchanged by a zone override', () => {
-    const s = session({ status: 'waiting', waitingFor: 'permission' })
-    expect(countsAsWaiting({ ...s, zoneOverride: 'running' })).toBe(true)
-    expect(countsAsWaiting({ ...s, zoneOverride: 'running' })).toBe(countsAsWaiting(s))
-    const done = session({ status: 'waiting', waitingFor: 'done', parentId: 'p' })
-    expect(countsAsWaiting({ ...done, zoneOverride: 'needs-you' })).toBe(false)
-  })
-})
-
 describe('held prompts', () => {
   const kid = (over: Partial<Session> = {}) => session({ id: 'k', parentId: 'p1', status: 'waiting', waitingFor: 'permission', ...over })
 

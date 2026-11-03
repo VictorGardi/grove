@@ -1,20 +1,15 @@
 import { doneKey, kidsKey, openedKey, projectKey } from '@shared/groups'
-import type { Project, Session, UiState, WorkflowStatus } from '@shared/types'
+import type { Project, Session, UiState } from '@shared/types'
 import { repoGroups } from './repoGroups'
 import { countsAsWaiting, shownStatus } from './sessionStatus'
-import { WORKFLOW_STATUSES } from './workflowStatus'
 
-export type GroupBy = 'project' | 'status' | 'none'
 export type SessionSort = UiState['sessionSort']
 
-// A run of rows under one heading. Exactly one of project/status is set; `none`
-// grouping sets neither and labels the whole list. A project's group carries its
-
+// A run of rows under one project's heading.
 export interface ListGroup {
-  key: string                      // p:<projectId> by project, s:<status> by status, all when ungrouped
+  key: string                      // p:<projectId>
   label: string
   project: Project | null
-  status: WorkflowStatus | null
   collapsed: boolean
   sessions: Session[]
   nest: Nest                       // the same for every group of one list
@@ -35,7 +30,7 @@ export const groupSize = (g: ListGroup): number => g.sessions.reduce((n, s) => n
 // child reorders among its siblings and goes nowhere else.
 export function kidsGroup(g: ListGroup, parent: Session): ListGroup {
   const key = kidsKey(parent.id)
-  return { key, label: parent.label, project: null, status: null, collapsed: g.nest.collapsed.has(key), sessions: g.nest.kids.get(parent.id) ?? [], nest: g.nest }
+  return { key, label: parent.label, project: null, collapsed: g.nest.collapsed.has(key), sessions: g.nest.kids.get(parent.id) ?? [], nest: g.nest }
 }
 
 // A parent's done children sit below the rest, and once there are two or more they fold into
@@ -59,12 +54,6 @@ function shownKids(nest: Nest, parentId: string): Session[] {
   if (nest.collapsed.has(kidsKey(parentId))) return []
   return kidRows(nest, parentId).flatMap((r) => 'session' in r ? [r.session] : r.stack.open ? r.stack.list : [])
 }
-
-export const GROUP_BY_OPTIONS: { value: GroupBy; label: string }[] = [
-  { value: 'project', label: 'Project' },
-  { value: 'status', label: 'Workflow status' },
-  { value: 'none', label: 'None' },
-]
 
 export const SORT_OPTIONS: { value: SessionSort; label: string }[] = [
   { value: 'custom', label: 'Custom' },
@@ -121,11 +110,11 @@ const COMPARATORS: Record<Exclude<SessionSort, 'custom' | 'status-age'>, (a: Ses
 
 // The Sessions tab as the sidebar draws it: groups under headings, rows in the chosen
 // order inside each. Hidden projects are gone before anything is grouped, so every
-// mode drops them. Grouping by project puts a worktree's sessions in its repo's group.
+// view drops them. Grouping puts a worktree's sessions in its repo's group.
 export function listGroups(
   projects: Project[],
   sessions: Session[],
-  ui: Pick<UiState, 'collapsed' | 'hiddenProjects' | 'hideDone' | 'groupBy' | 'sessionSort' | 'sessionOrder'>,
+  ui: Pick<UiState, 'collapsed' | 'hiddenProjects' | 'hideDone' | 'sessionSort' | 'sessionOrder'>,
 ): ListGroup[] {
   const collapsed = new Set(ui.collapsed)
   // `hiddenProjects` names repos, not checkouts: the repo is what the human shows and hides,
@@ -147,22 +136,13 @@ export function listGroups(
   for (const [id, list] of kids) kids.set(id, list.sort(sort))
   const nest: Nest = { kids, collapsed }
   const roots = visible.filter((s) => !isChild(s))
-  const group = (
-    key: string, label: string, project: Project | null, status: WorkflowStatus | null,
-    members: Session[],
-  ): ListGroup => ({
-    key, label, project, status, sessions: [...members].sort(sort), nest, collapsed: collapsed.has(key),
-  })
-
-  if (ui.groupBy === 'status')
-    // every status keeps its heading, empty ones included, so rows don't jump as statuses change
-    return WORKFLOW_STATUSES.map(({ value, label }) => group('s:' + value, label, null, value, roots.filter((s) => s.workflowStatus === value)))
-  if (ui.groupBy === 'none') return [group('all', 'All sessions', null, null, roots)]
   return groups
     .filter(({ project }) => !hidden.has(project.id))
-    .map(({ project }) => group(
-      projectKey(project.id), project.name, project, null, roots.filter((s) => repoOf.get(s.projectId) === project.id),
-    ))
+    .map(({ project }): ListGroup => {
+      const key = projectKey(project.id)
+      const members = roots.filter((s) => repoOf.get(s.projectId) === project.id)
+      return { key, label: project.name, project, sessions: [...members].sort(sort), nest, collapsed: collapsed.has(key) }
+    })
 }
 
 // Every visible session once, in group order, collapsed groups included but a collapsed
@@ -183,33 +163,31 @@ export function visibleSessions(groups: ListGroup[]): Session[] {
 // Where a dragged card lands: beside `target` in `to`, before or after it.
 export interface DropAt { target: string; after: boolean }
 
-// What a drop changes: the new global order, and the workflow status the card takes when it
-// crossed into another status group (null leaves it alone).
-export interface DropResult { order: string[]; status: WorkflowStatus | null }
+// What a drop changes: the new global order.
+export interface DropResult { order: string[] }
 
 // Whether a card may be dropped from one group into another. A project group is its own
-// bounded list, so only the same group accepts there. Status and ungrouped lists take any group.
-export function canDrop(groupBy: GroupBy, from: ListGroup, to: ListGroup): boolean {
+// bounded list, so only the same group accepts there.
+export function canDrop(from: ListGroup, to: ListGroup): boolean {
   if (from.key.startsWith(kidsKey('')) || to.key.startsWith(kidsKey(''))) return from.key === to.key // children stay among their siblings
-  return groupBy !== 'project' || from.key === to.key
+  return from.key === to.key
 }
 
-// The order and status after dropping `moved` into `to`, or null when the drop is refused or
+// The order after dropping `moved` into `to`, or null when the drop is refused or
 // changes nothing. The order is the whole list of sessions, not just the group's: the card is
 // cut out and put back beside its neighbour in the group, so every group still reads in one
 // shared order. An empty group has no neighbour, and the card keeps its place in the order.
 export function dropSession(
-  groupBy: GroupBy, sessions: Session[], order: string[],
+  sessions: Session[], order: string[],
   moved: Session, from: ListGroup, to: ListGroup, at: DropAt | null,
 ): DropResult | null {
-  if (!canDrop(groupBy, from, to) || at?.target === moved.id) return null
-  const status = groupBy === 'status' && to.status && to.status !== moved.workflowStatus ? to.status : null
+  if (!canDrop(from, to) || at?.target === moved.id) return null
   const all = [...sessions].sort(byCustom(order)).map((s) => s.id)
   const rest = to.sessions.filter((s) => s.id !== moved.id)
   const next = all.filter((id) => id !== moved.id)
   const pos = at ? rest.findIndex((s) => s.id === at.target) + (at.after ? 1 : 0) : rest.length
   const anchor = rest.length === 0 ? -1 : pos < rest.length ? next.indexOf(rest[pos].id) : next.indexOf(rest[rest.length - 1].id) + 1
   next.splice(anchor < 0 ? all.indexOf(moved.id) : anchor, 0, moved.id)
-  if (status === null && next.every((id, i) => id === all[i])) return null
-  return { order: next, status }
+  if (next.every((id, i) => id === all[i])) return null
+  return { order: next }
 }
