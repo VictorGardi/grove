@@ -62,6 +62,22 @@ describe('resolveRoot', () => {
   it('returns null when the directory does not exist', () => {
     expect(resolveRoot(tmp(), wf.discovery)).toBeNull()
   })
+
+  it('rejects a root outside the project, by ../ or by symlink, and keeps one inside', () => {
+    const outside = tmp()
+    const dir = tmp()
+    write(dir, { 'grove.config.json': `{"artifactRoot": "../${path.basename(outside)}"}`, 'docs/work/.keep': '' })
+    expect(resolveRoot(dir, wf.discovery)).toBeNull()
+    const linked = tmp()
+    fs.mkdirSync(path.join(linked, 'docs'))
+    fs.symlinkSync(outside, path.join(linked, 'docs', 'work'))
+    expect(resolveRoot(linked, wf.discovery)).toBeNull()
+    const inside = tmp()
+    write(inside, { 'real/.keep': '' })
+    fs.mkdirSync(path.join(inside, 'docs'))
+    fs.symlinkSync(path.join(inside, 'real'), path.join(inside, 'docs', 'work'))
+    expect(resolveRoot(inside, wf.discovery)).toBe(path.join(inside, 'docs/work'))
+  })
 })
 
 describe('listFolders', () => {

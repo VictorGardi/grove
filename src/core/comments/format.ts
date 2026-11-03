@@ -1,5 +1,6 @@
 import path from 'node:path'
 import type { Comment, CommentAnchor } from '@shared/types'
+import { stripControls } from '../controlChars'
 
 // A configured checkout: what an anchor's path is relative to, and what the heading calls it.
 export interface Checkout { id: string; name: string; path: string }
@@ -72,5 +73,5 @@ export function formatReview(drafts: Comment[], ctx: FormatContext): string {
     files.set(key, { heading, blocks: [...(at?.blocks ?? []), block] })
   }
   for (const { heading, blocks } of files.values()) parts.push(`## ${heading}\n${blocks.join('\n\n')}`)
-  return parts.join('\n\n')
+  return stripControls(parts.join('\n\n'))
 }

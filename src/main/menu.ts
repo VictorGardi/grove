@@ -1,7 +1,7 @@
 import { app, Menu, type MenuItemConstructorOptions } from 'electron'
 import type { MenuAction } from '@shared/ipc'
 
-export function buildMenu(send: (a: MenuAction) => void, installCli: () => void, installSkill: () => void): void {
+export function buildMenu(send: (a: MenuAction) => void, installCli: () => void, installSkill: () => void, dictation: { ready: boolean }): void {
   const template: MenuItemConstructorOptions[] = [
     {
       label: app.name,
@@ -54,6 +54,9 @@ export function buildMenu(send: (a: MenuAction) => void, installCli: () => void,
         { label: 'Last Session', accelerator: 'Ctrl+Tab', click: () => send({ type: 'lastSession' }) },
         { label: 'Next Waiting Session', accelerator: 'CmdOrCtrl+.', click: () => send({ type: 'nextWaiting' }) },
         { label: 'Jump to Parent / Active Child', accelerator: 'CmdOrCtrl+Shift+J', click: () => send({ type: 'familyJump' }) },
+        // Informational only: the shortcut is a window key listener, so no accelerator here.
+        { type: 'separator' },
+        { label: dictation.ready ? 'Dictation: hold ⌃⇧Space' : 'Dictation: setup needed (see README)', enabled: false },
       ],
     },
   ]

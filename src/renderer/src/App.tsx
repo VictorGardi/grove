@@ -23,6 +23,7 @@ import { LaunchPalette } from './components/LaunchPalette'
 import { Button } from './components/ui/Button'
 import { paletteItems } from './paletteItems'
 import { useRepoRefs } from './useRepoRefs'
+import { useDictation } from './dictation/useDictation'
 import { DEFAULT_GRID_VIEW, gridShown, hasArrangement, visibleMembers, type GridView } from './gridView'
 import { GridControls } from './components/GridControls'
 import { contextView } from './contextGauge'
@@ -179,6 +180,15 @@ export default function App() {
   // terminal's `active` — and they had already drifted, each missing an overlay the other had. One
   // value now, with `active` as its negation, so there is nothing left to keep in step.
   const overlayOpen = paletteOpen || !!quickNew || !!launchNew || !!confirmRemove || scratchpadOpen
+  // the pane that has the keyboard: the one session, or the grid's focused pane
+  const dictation = useDictation({
+    getTargetId: () => {
+      const t = shown.kind === 'session' ? shown.session : shown.kind === 'grid' ? shown.focused : null
+      return t && t.lastStatus === 'running' ? t.id : null // an ended session has no live pane to type into
+    },
+    overlayOpen,
+    sessionIds: sessions.map((x) => x.id),
+  })
 
   return (
     <>
@@ -226,9 +236,9 @@ export default function App() {
                   if (dir !== null) openArtifact({ kind: 'file', projectId: shown.feature.projectId, path: dir + name, hash: null, fromDiff: null })
                 }} />
             ) : shown.kind === 'grid' ? (
-              <SessionGrid sessions={shown.sessions} focusedId={shown.focused.id} view={gridView} onFocusPane={setFocused} overlayOpen={overlayOpen} />
+              <SessionGrid sessions={shown.sessions} focusedId={shown.focused.id} view={gridView} onFocusPane={setFocused} overlayOpen={overlayOpen} dictation={dictation} />
             ) : shown.kind === 'session' && shown.session.lastStatus === 'running' ? (
-              <TerminalView key={shown.session.id} sessionId={shown.session.id} active={!overlayOpen} />
+              <TerminalView key={shown.session.id} sessionId={shown.session.id} active={!overlayOpen} dictation={dictation.phase !== 'idle' && dictation.id === shown.session.id ? dictation : undefined} />
             ) : shown.kind === 'session' ? (
               <div className={s.ended}>
                 <div className={s.endedTitle}>Session ended</div>

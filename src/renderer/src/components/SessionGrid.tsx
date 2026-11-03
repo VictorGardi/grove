@@ -13,15 +13,17 @@ import { Button } from './ui/Button'
 import { cx } from './ui/cx'
 import { ContextGauge } from './ContextGauge'
 import { TerminalView } from './TerminalView'
+import type { DictationState } from '../dictation/machine'
 import s from './SessionGrid.module.css'
 
 // The members side by side. Panes are keyed by session id, so reflow never remounts or re-attaches a terminal.
-export function SessionGrid({ sessions, focusedId, view, onFocusPane, overlayOpen }: {
+export function SessionGrid({ sessions, focusedId, view, onFocusPane, overlayOpen, dictation }: {
   sessions: Session[] // every member, in grid order; the view narrows them
   view: GridView // set by GridControls in the content header
   focusedId: string
   onFocusPane: (id: string) => void // a click or terminal focus inside a pane
   overlayOpen: boolean // a modal or the palette is open: no terminal takes the keyboard
+  dictation: DictationState // the badge shows only on the pane it locked
 }) {
   const { sessions: all, projects, ui, toggleGridMember, openAlone, swapGridPanes, setGridSpan, setGridTracks } = useSlices()
   const visible = visibleMembers(sessions, view)
@@ -144,7 +146,7 @@ export function SessionGrid({ sessions, focusedId, view, onFocusPane, overlayOpe
                   </>} />
               </div>
               {x.lastStatus === 'running'
-                ? <TerminalView sessionId={x.id} active={focused && !overlayOpen} onFocus={focus} />
+                ? <TerminalView sessionId={x.id} active={focused && !overlayOpen} onFocus={focus} dictation={dictation.phase !== 'idle' && dictation.id === x.id ? dictation : undefined} />
                 : (
                   <div className={s.ended}>
                     <div>Session ended</div>

@@ -39,6 +39,9 @@ export interface InvokeMap {
   'pty:attach': [{ sessionId: string; cols: number; rows: number }, { attachId: string }]
   'notes:read': [void, string]
   'notes:write': [{ content: string }, void]
+  // dictation (ADR for slice 4): audio never leaves the machine. pcm = 16 kHz mono signed 16-bit little-endian samples.
+  'dictation:transcribe': [{ pcm: ArrayBuffer }, { text: string }]
+  'dictation:dictate': [{ id: string; text: string }, { id: string }]
 }
 // fire-and-forget renderer → main
 export interface SendMap {

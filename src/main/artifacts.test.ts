@@ -4,6 +4,7 @@ import type { ViewerTarget } from '@shared/types'
 import type { Core } from '../core/core'
 
 const openExternal = vi.fn()
+const openHandler = vi.fn()
 vi.mock('electron', () => ({
   app: { isPackaged: true, getAppPath: () => '/app' },
   shell: { openExternal: (url: string) => openExternal(url) },
@@ -29,7 +30,7 @@ describe('guardNavigation', () => {
       mainFrame: main,
       getURL: () => 'file:///app/index.html',
       on: (_: string, fn: (e: object) => void) => { listener = fn },
-      setWindowOpenHandler: vi.fn(),
+      setWindowOpenHandler: openHandler,
     }
     const core = { getSlices: () => ({ ui: { viewer } }), commands: { uiSet } } as unknown as Core
     guardNavigation({ webContents: wc } as unknown as BrowserWindow, core)
@@ -71,11 +72,16 @@ describe('guardNavigation', () => {
     expect(uiSet).not.toHaveBeenCalled()
   })
 
-  it('opens a web link in the browser and denies other schemes, even from the main frame', () => {
+  it('never opens the browser from an artifact frame, and denies other schemes', () => {
     expect(navigate('https://example.com/', sub)).toHaveBeenCalled()
-    expect(openExternal).toHaveBeenCalledWith('https://example.com/')
     expect(navigate('file:///etc/passwd', main)).toHaveBeenCalled()
-    expect(openExternal).toHaveBeenCalledTimes(1)
+    expect(openExternal).not.toHaveBeenCalled()
     expect(uiSet).not.toHaveBeenCalled()
+  })
+
+  it('denies window.open without opening the browser', () => {
+    const handler = openHandler.mock.calls[openHandler.mock.calls.length - 1][0] as (d: { url: string }) => { action: string }
+    expect(handler({ url: 'https://example.com/' })).toEqual({ action: 'deny' })
+    expect(openExternal).not.toHaveBeenCalled()
   })
 })
