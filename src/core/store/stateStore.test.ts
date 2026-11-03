@@ -30,7 +30,7 @@ describe('stateStore', () => {
     const s: StateFile = {
       schemaVersion: 11,
       sessions: [newSession({ projectId: 'p', kind: 'terminal', now: new Date(), id: 'a', agentSessionId: null })],
-      ui: { sidebarWidth: 300, sidebarCollapsed: true, focusedSessionId: null, focusedFeature: null, focusedProject: 'p', board: 'sessions', collapsed: ['p:x'],
+      ui: { sidebarWidth: 300, sidebarCollapsed: true, focusedSessionId: null, focusedFeature: null, focusedProject: 'p', focusedArtifact: null, collapsed: ['p:x'],
         viewer: { kind: 'file', projectId: 'p', path: 'docs/work/f/03-design.html', hash: 'q1', fromDiff: 'a' }, viewerWidth: 600, viewerExpanded: true, grid: { open: true, members: ['a'] }, hiddenProjects: [], sessionSort: 'custom', sessionOrder: ['a'] },
     }
     saveState(file, s)
@@ -71,16 +71,12 @@ describe('stateStore', () => {
     expect(loadState(file).ui.diffPrefs).toBeUndefined()
   })
 
-  it('never reopens an artifact full page on launch but keeps the board view and filter, and loads an old file without any', () => {
+  it('never reopens an artifact page on launch', () => {
     const file = tmpFile()
-    const view = { x: 120, y: -40, scale: 0.5 }
-    const artifacts = { p: { open: { projectId: 'p', slug: 'f', name: '03-design.md' }, view }, q: { open: null } }
-    saveState(file, { schemaVersion: 11, sessions: [], ui: { ...DEFAULT_UI, artifacts } })
-    expect(loadState(file).ui.artifacts).toEqual({ p: { open: null, view }, q: { open: null } })
-    saveState(file, { schemaVersion: 11, sessions: [], ui: { ...DEFAULT_UI, artifacts: { p: { ...artifacts.p, filter: 'f' } } } })
-    expect(loadState(file).ui.artifacts).toEqual({ p: { open: null, view, filter: 'f' } }) // the filter survives, like the view
-    saveState(file, { schemaVersion: 11, sessions: [], ui: DEFAULT_UI })
-    expect(loadState(file).ui.artifacts).toBeUndefined()
+    saveState(file, { schemaVersion: 11, sessions: [], ui: { ...DEFAULT_UI, focusedArtifact: { projectId: 'p', slug: 'f', name: '03-design.md' } } })
+    expect(loadState(file).ui.focusedArtifact).toBeNull()
+    fs.writeFileSync(file, '{"schemaVersion":11,"sessions":[],"ui":{"sidebarWidth":230}}')
+    expect(loadState(file).ui.focusedArtifact).toBeNull()
   })
 
   it('migrates a saved sort of none to custom, and gives an older file an empty order', () => {
@@ -195,7 +191,6 @@ describe('stateStore', () => {
     const { ui } = loadState(file)
     expect(ui).not.toHaveProperty('view')
     expect(ui).not.toHaveProperty('sidebarTab')
-    expect(ui.board).toBe('sessions')
   })
 
   it('loads an old ui without viewer layout keys with the defaults', () => {

@@ -1,9 +1,8 @@
 import { describe, expect, it } from 'vitest'
 import { DEFAULT_UI, type Feature, type Project, type UiState } from '@shared/types'
-import { artifactClusters, artifactCrumbs, commentCard, artifactsTo, boardViewTo, filterClusters, filterTo, findCard, modifiedAgo, neighbours, openCard, pageClusters, previewKind, previewSrc, stepKey } from './artifactsBoard'
+import { artifactClusters, artifactCrumbs, commentCard, findCard, neighbours, openCard, pageClusters, stepKey } from './artifactData'
 import { unionFeatures } from './featureUnion'
 import { repoGroups } from './repoGroups'
-import { boardColumns } from './tree'
 
 const projects: Project[] = [
   { id: 'p', name: 'grove', path: '/src/p' },
@@ -50,20 +49,18 @@ describe('artifactClusters', () => {
     expect(names([f, empty, feature('c')])).toEqual([['a', ['01-questions.md']]])
   })
 
-  it('skips a feature outside its project folder, and group features like the board does', () => {
+  it('skips a feature outside its project folder, and group features', () => {
     const outside = feature('a', { path: '/elsewhere/a', artifacts: [md('x.md', null)] })
     const group = feature('g', { group: true, artifacts: [md('x.md', null)] })
     expect(clusters([outside, group])).toEqual([])
   })
 
-  it('orders clusters like the features board, column by column', () => {
+  it('orders clusters by stage, earliest first, then in the given order', () => {
     const late = feature('a', { currentStage: 'design', artifacts: [md('x.md', null)] })
     const early = feature('b', { currentStage: 'questions', artifacts: [md('x.md', null)] })
     const mid = feature('c', { currentStage: 'research', artifacts: [md('x.md', null)] })
     const union = unionFeatures([late, early, mid], repoGroups(projects))
-    const board = boardColumns(stages, union).flatMap((c) => c.cards.map((k) => k.feature.slug))
-    expect(artifactClusters(stages, union, projects).map((c) => c.feature.slug)).toEqual(board)
-    expect(board).toEqual(['b', 'c', 'a'])
+    expect(artifactClusters(stages, union, projects).map((c) => c.feature.slug)).toEqual(['b', 'c', 'a'])
   })
 })
 
@@ -89,12 +86,12 @@ describe('pageClusters, openCard', () => {
     expect(pageClusters(projects[0], projects, stages, [head, tied])[0].feature.projectId).toBe('p')
   })
 
-  it('resolves the open artifact only on a checkout page showing the artifacts board', () => {
-    const open = ui({ board: 'artifacts', artifacts: { p: { open: ref } } })
-    expect(openCard(open, projects[0], projects, stages, features)?.card.name).toBe('x.md')
-    expect(openCard({ ...open, board: 'features' }, projects[0], projects, stages, features)).toBeUndefined()
-    expect(openCard(ui({ board: 'artifacts', artifacts: { wt: { open: ref } } }), projects[1], projects, stages, features)).toBeUndefined()
-    expect(openCard(ui({ board: 'artifacts', artifacts: { p: { open: { ...ref, name: 'gone.md' } } } }), projects[0], projects, stages, features)).toBeUndefined()
+  it('resolves the focused artifact in the repo of its project, and nothing for a gone file or no focus', () => {
+    expect(openCard(ui({ focusedArtifact: ref }), projects, stages, features)?.card.name).toBe('x.md')
+    expect(openCard(ui({ focusedArtifact: { ...ref, projectId: 'p', slug: 'a' } }), projects, stages, features)?.card.name).toBe('x.md')
+    expect(openCard(ui({ focusedArtifact: { ...ref, name: 'gone.md' } }), projects, stages, features)).toBeUndefined()
+    expect(openCard(ui({ focusedArtifact: { ...ref, projectId: 'gone' } }), projects, stages, features)).toBeUndefined()
+    expect(openCard(ui({}), projects, stages, features)).toBeUndefined()
   })
 })
 
@@ -108,59 +105,15 @@ describe('findCard', () => {
   })
 })
 
-describe('artifactsTo, artifactCrumbs', () => {
-  const ref = { projectId: 'p', slug: 'a', name: 'x.md' }
-  const ui: UiState = { ...DEFAULT_UI, artifacts: { q: { open: null } } }
-
-  it("sets one page's open artifact and leaves the others", () => {
-    expect(artifactsTo(ui, 'p', ref)).toEqual({ artifacts: { q: { open: null }, p: { open: ref } } })
-    expect(artifactsTo(DEFAULT_UI, 'p', null)).toEqual({ artifacts: { p: { open: null } } })
-  })
-
-  it("keeps a page's saved view when its open artifact changes, and its open artifact when its view does", () => {
-    const view = { x: 10, y: -20, scale: 0.5 }
-    const withView: UiState = { ...ui, artifacts: { ...ui.artifacts, p: { open: null, view } } }
-    expect(artifactsTo(withView, 'p', ref)).toEqual({ artifacts: { q: { open: null }, p: { open: ref, view } } })
-    const opened: UiState = { ...ui, artifacts: { ...ui.artifacts, p: { open: ref } } }
-    expect(boardViewTo(opened, 'p', view)).toEqual({ artifacts: { q: { open: null }, p: { open: ref, view } } })
-    expect(boardViewTo(DEFAULT_UI, 'p', view)).toEqual({ artifacts: { p: { open: null, view } } })
-  })
-
-  it("keeps a page's filter when its open artifact or view changes, and both when its filter does, unless a view comes with it", () => {
-    const view = { x: 10, y: -20, scale: 0.5 }
-    const full: UiState = { ...ui, artifacts: { ...ui.artifacts, p: { open: ref, view, filter: 'a' } } }
-    expect(artifactsTo(full, 'p', null)).toEqual({ artifacts: { q: { open: null }, p: { open: null, view, filter: 'a' } } })
-    expect(boardViewTo(full, 'p', { x: 0, y: 0, scale: 1 })).toEqual({ artifacts: { q: { open: null }, p: { open: ref, view: { x: 0, y: 0, scale: 1 }, filter: 'a' } } })
-    expect(filterTo(full, 'p', 'b')).toEqual({ artifacts: { q: { open: null }, p: { open: ref, view, filter: 'b' } } })
-    expect(filterTo(full, 'p', null)).toEqual({ artifacts: { q: { open: null }, p: { open: ref, view, filter: null } } })
-    expect(filterTo(DEFAULT_UI, 'p', 'a')).toEqual({ artifacts: { p: { open: null, filter: 'a' } } })
-    // with a view, the filter and the view it starts at land in one write; the open artifact and other pages stay
-    const start = { x: 0, y: 0, scale: 0.5 }
-    expect(filterTo(full, 'p', 'b', start)).toEqual({ artifacts: { q: { open: null }, p: { open: ref, view: start, filter: 'b' } } })
-    expect(filterTo(DEFAULT_UI, 'p', null, start)).toEqual({ artifacts: { p: { open: null, view: start, filter: null } } })
-  })
-
-  it('reads project > Artifacts > feature > artifact, each up-link going where it says', () => {
+describe('artifactCrumbs', () => {
+  it('reads project > feature > artifact, each up-link going where it says', () => {
     const f = feature('a')
     const card = { name: 'x.md', path: 'docs/work/a/x.md', stage: null, mtimeMs: 1, source: null }
-    expect(artifactCrumbs(projects[0], f, card, ui)).toEqual([
-      { label: 'grove', to: { focusedProject: 'p', board: 'sessions' } },
-      { label: 'Artifacts', to: { artifacts: { q: { open: null }, p: { open: null } } } },
+    expect(artifactCrumbs(projects[0], f, card)).toEqual([
+      { label: 'grove', to: { focusedProject: 'p' } },
       { label: 'Ta', to: { focusedFeature: { projectId: 'p', slug: 'a' } } },
       { label: 'x.md' },
     ])
-  })
-})
-
-describe('filterClusters', () => {
-  const list = clusters([feature('a', { artifacts: [md('x.md', null)] }), feature('b', { artifacts: [md('y.md', null)] })])
-  const slugs = (filter: string | null | undefined) => filterClusters(list, filter).map((c) => c.feature.slug)
-
-  it('shows the filtered feature alone, and all without a filter or with a stale one', () => {
-    expect(slugs('b')).toEqual(['b'])
-    expect(slugs(null)).toEqual(['a', 'b'])
-    expect(slugs(undefined)).toEqual(['a', 'b'])
-    expect(slugs('gone')).toEqual(['a', 'b'])
   })
 })
 
@@ -187,8 +140,8 @@ describe('neighbours', () => {
     expect(neighbours(list, ref('c', '5.md'))).toEqual({ prev: ref('c', '4.md'), next: null, index: 4, total: 5 })
   })
 
-  it("walks the filtered feature's cards only", () => {
-    const only = filterClusters(list, 'c')
+  it("walks one feature's cluster alone", () => {
+    const only = list.filter((c) => c.feature.slug === 'c')
     expect(neighbours(only, ref('c', '4.md'))).toEqual({ prev: null, next: ref('c', '5.md'), index: 0, total: 2 })
     expect(neighbours(only, ref('c', '5.md'))).toEqual({ prev: ref('c', '4.md'), next: null, index: 1, total: 2 })
   })
@@ -221,45 +174,6 @@ describe('stepKey', () => {
 
   it('ignores other keys', () => {
     for (const k of ['ArrowUp', 'ArrowDown', 'Enter', 'a', ' ']) expect(key(k)).toBeNull()
-  })
-})
-
-describe('previewKind', () => {
-  it('draws images as images and everything else as a page', () => {
-    expect(['a.png', 'a.JPG', 'a.jpeg', 'a.gif', 'a.webp', 'd/a.svg'].map(previewKind)).toEqual(Array(6).fill('image'))
-    expect(['a.html', 'a.htm', 'a.md', 'png.md'].map(previewKind)).toEqual(Array(4).fill('page'))
-  })
-})
-
-describe('previewSrc', () => {
-  const card = (path: string, mtimeMs: number) => ({ name: path, path, stage: null, mtimeMs, source: null })
-
-  it('busts an image by its mtime, so a changed file is fetched again', () => {
-    expect(previewSrc('p1', card('d/a b.png', 5))).toBe('grove-artifact://p1/d/a%20b.png?v=5')
-    expect(previewSrc('p1', card('d/a b.png', 6))).not.toBe(previewSrc('p1', card('d/a b.png', 5)))
-  })
-
-  it('gives a page the plain URL', () => {
-    expect(previewSrc('p1', card('d/03-design.html', 5))).toBe('grove-artifact://p1/d/03-design.html')
-    expect(previewSrc('p1', card('d/03-design.html', 6))).toBe('grove-artifact://p1/d/03-design.html')
-  })
-})
-
-describe('modifiedAgo', () => {
-  const now = new Date(2026, 9, 26, 12, 0).getTime()
-  const ago = (ms: number) => modifiedAgo(now - ms, now)
-  const MIN = 60_000
-
-  it('reads minutes, hours and days, then a short date', () => {
-    expect(ago(30_000)).toBe('just now')
-    expect(ago(-5 * MIN)).toBe('just now') // a clock ahead of ours
-    expect(ago(5 * MIN)).toBe('5m ago')
-    expect(ago(59 * MIN)).toBe('59m ago')
-    expect(ago(60 * MIN)).toBe('1h ago')
-    expect(ago(3 * 60 * MIN + 59 * MIN)).toBe('3h ago')
-    expect(ago(24 * 60 * MIN)).toBe('1d ago')
-    expect(ago(6 * 24 * 60 * MIN)).toBe('6d ago')
-    expect(modifiedAgo(new Date(2026, 9, 12, 9, 0).getTime(), now)).toBe('12 Oct')
   })
 })
 

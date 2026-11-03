@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest'
 import { DEFAULT_UI, type Feature, type Project, type Session, type UiState } from '@shared/types'
 import { DEFAULT_GRID_VIEW, type GridView } from './gridView'
-import { artifactsKey, boardKey, boardProject, childrenOf, content, crumbs, currentProjectId, focusTarget } from './navigation'
+import { childrenOf, content, crumbs, currentProjectId, focusTarget } from './navigation'
 
 const project = (id: string): Project => ({ id, name: id.toUpperCase(), path: '/' + id })
 
@@ -48,6 +48,20 @@ describe('content', () => {
     expect(content(ui(), [], [], [])).toEqual({ kind: 'none' })
   })
 
+  it('shows the focused artifact, found in its project repo, ahead of a stale feature focus', () => {
+    const art = { name: 'x.md', stage: null, role: 'artifact' as const, mtimeMs: 1 }
+    const fs = [feature('a', { artifacts: [art] })]
+    const c = content(ui({ focusedArtifact: { projectId: 'p', slug: 'a', name: 'x.md' } }), projects, sessions, fs)
+    expect(c).toMatchObject({ kind: 'artifact', project: projects[0], card: { name: 'x.md', path: 'a/x.md' }, cluster: { feature: { slug: 'a' } } })
+    expect(crumbs(c, projects, fs)).toEqual([
+      { label: 'P', to: { focusedProject: 'p' } },
+      { label: 'Ta', to: { focusedFeature: { projectId: 'p', slug: 'a' } } },
+      { label: 'x.md' },
+    ])
+    expect(currentProjectId(c)).toBe('p')
+    expect(content(ui({ focusedArtifact: { projectId: 'p', slug: 'a', name: 'gone.md' } }), projects, sessions, fs).kind).toBe('project')
+  })
+
   it("falls back to a missing feature's project page", () => {
     expect(at({ focusedFeature: { projectId: 'q', slug: 'missing' } })).toEqual({ kind: 'project', project: projects[1] })
   })
@@ -66,38 +80,26 @@ describe('crumbs', () => {
 
   it('goes project › parent › feature, each up-link clickable', () => {
     expect(of({ focusedFeature: { projectId: 'p', slug: 'a' } })).toEqual([
-      { label: 'P', to: { focusedProject: 'p', board: 'sessions' } },
+      { label: 'P', to: { focusedProject: 'p' } },
       { label: 'Te', to: { focusedFeature: { projectId: 'p', slug: 'e' } } },
       { label: 'Ta' },
     ])
   })
 
   it('goes repo › session, leaving out the linked feature', () => {
-    expect(of({ focusedSessionId: 's' })).toEqual([{ label: 'P', to: { focusedProject: 'p', board: 'sessions' } }, { label: 'Ls' }])
-    expect(of({ focusedSessionId: 't' })).toEqual([{ label: 'Q', to: { focusedProject: 'q', board: 'sessions' } }, { label: 'Lt' }])
+    expect(of({ focusedSessionId: 's' })).toEqual([{ label: 'P', to: { focusedProject: 'p' } }, { label: 'Ls' }])
+    expect(of({ focusedSessionId: 't' })).toEqual([{ label: 'Q', to: { focusedProject: 'q' } }, { label: 'Lt' }])
   })
 
   it("names a worktree session's repo, not the worktree", () => {
     const wt = { id: 'w', name: 'P · feature-x', path: '/w', worktreeOf: 'p' }
     const x = session('x', { projectId: 'w' })
     expect(crumbs({ kind: 'session', session: x }, [...projects, wt], features))
-      .toEqual([{ label: 'P', to: { focusedProject: 'p', board: 'sessions' } }, { label: 'Lx' }])
+      .toEqual([{ label: 'P', to: { focusedProject: 'p' } }, { label: 'Lx' }])
   })
 
   it('is empty with nothing to show', () => {
     expect(crumbs({ kind: 'none' }, [], [])).toEqual([])
-  })
-})
-
-describe('boardProject', () => {
-  const of = (u: Partial<UiState>) => boardProject(ui(u), projects, sessions, features)
-
-  it("opens the focused session's or feature's project, else the focused or first project", () => {
-    expect(of({ focusedSessionId: 't' })).toBe('q')
-    expect(of({ focusedFeature: { projectId: 'q', slug: 'z' } })).toBe('q')
-    expect(of({ focusedProject: 'q' })).toBe('q')
-    expect(of({})).toBe('p')
-    expect(boardProject(ui(), [], [], [])).toBeNull()
   })
 })
 
@@ -111,83 +113,6 @@ describe('childrenOf', () => {
       feature('x', { parent: 'e', projectId: 'q' }),
     ]
     expect(childrenOf(fs[0], fs).map((f) => f.slug)).toEqual(['b', 'd', 'c'])
-  })
-})
-
-describe('boardKey', () => {
-  const of = (u: Partial<UiState>) => boardKey(ui(u), projects, sessions, features)
-
-  it('switches the board on a project page, else opens the context project', () => {
-    expect(of({ focusedProject: 'q', board: 'features' })).toEqual({ board: 'sessions' })
-    expect(of({ focusedProject: 'q', board: 'sessions' })).toEqual({ board: 'features' })
-    expect(of({ board: 'features' })).toEqual({ board: 'sessions' })
-    expect(of({ focusedSessionId: 't', board: 'features' })).toEqual({ focusedProject: 'q', board: 'sessions' })
-    expect(boardKey(ui(), [], [], [])).toBeNull()
-  })
-
-  it('leaves the artifacts board for the features board', () => {
-    expect(of({ focusedProject: 'q', board: 'artifacts' })).toEqual({ board: 'features' })
-  })
-})
-
-describe('artifactsKey', () => {
-  const of = (u: Partial<UiState>, ss = sessions) => artifactsKey(ui(u), projects, ss, features)
-  const wt = [project('p'), { ...project('wt'), worktreeOf: 'p' }]
-
-  it("opens the session's repo page on the artifacts board, filtered to its linked feature", () => {
-    expect(of({ focusedSessionId: 's' })).toEqual({ focusedProject: 'p', board: 'artifacts', artifacts: { p: { open: null, filter: 'a' } } })
-  })
-
-  it('shows every feature for an unlinked session', () => {
-    expect(of({ focusedSessionId: 't' })).toEqual({ focusedProject: 'q', board: 'artifacts', artifacts: { q: { open: null } } })
-  })
-
-  it("filters to a feature page's own feature", () => {
-    expect(of({ focusedFeature: { projectId: 'p', slug: 'e' } })?.artifacts?.p).toEqual({ open: null, filter: 'e' })
-  })
-
-  it('goes to the repo page from a session in a worktree', () => {
-    const w = session('w', { projectId: 'wt', feature: 'a' })
-    expect(artifactsKey(ui({ focusedSessionId: 'w' }), wt, [w], features)).toMatchObject({ focusedProject: 'p', artifacts: { p: { filter: 'a' } } })
-  })
-
-  it('keeps the filter and the view when it does not change, and drops the view when it does', () => {
-    const view = { x: 1, y: 2, scale: 1 }
-    const open = { projectId: 'p', slug: 'a', name: 'x.md' }
-    expect(of({ focusedSessionId: 's', artifacts: { p: { open, view, filter: 'a' } } })?.artifacts?.p).toEqual({ open: null, view, filter: 'a' })
-    expect(of({ focusedSessionId: 's', artifacts: { p: { open: null, view, filter: 'e' } } })?.artifacts?.p).toEqual({ open: null, filter: 'a' })
-    expect(of({ focusedProject: 'p', board: 'artifacts', artifacts: { p: { open, view, filter: 'e' } } })?.artifacts?.p).toEqual({ open: null, view, filter: 'e' })
-  })
-
-  it('does nothing with no project', () => {
-    expect(artifactsKey(ui(), [], [], [])).toBeNull()
-  })
-})
-
-describe('boardProject, boardKey, a repo\'s checkouts', () => {
-  // A checkout and a worktree of one repo: ⌘B is about the repo, which owns the features board.
-  const withWorktree = [project('p'), { ...project('wt'), name: 'P · fix-auth', worktreeOf: 'p' }]
-  const inWorktree = [...sessions, session('w', { projectId: 'wt' })]
-  const of = (u: Partial<UiState>, over = withWorktree, ss = inWorktree, ff = features) => boardProject(ui(u), over, ss, ff)
-  const key = (u: Partial<UiState>, over = withWorktree) => boardKey(ui(u), over, inWorktree, features)
-
-  it("opens the repo's checkout, not the worktree, from a session, a feature or a pane", () => {
-    expect(of({ focusedSessionId: 'w' })).toBe('p')
-    expect(of({ focusedFeature: { projectId: 'wt', slug: 'e' } }, withWorktree, inWorktree, [...features, feature('e', { projectId: 'wt' })])).toBe('p')
-    expect(of({ grid: { open: true, members: ['w'] }, focusedSessionId: 'w' })).toBe('p')
-  })
-
-  it('leaves a checkout alone', () => {
-    expect(of({ focusedSessionId: 's' })).toBe('p')
-  })
-
-  it('sends a worktree page to the repo\'s page rather than switching a board it has not got', () => {
-    expect(key({ focusedProject: 'wt', board: 'sessions' })).toEqual({ focusedProject: 'p', board: 'sessions' })
-    expect(key({ focusedProject: 'wt', board: 'features' })).toEqual({ focusedProject: 'p', board: 'sessions' })
-  })
-
-  it('still switches the board on a checkout\'s own page', () => {
-    expect(key({ focusedProject: 'p', board: 'features' })).toEqual({ board: 'sessions' })
   })
 })
 

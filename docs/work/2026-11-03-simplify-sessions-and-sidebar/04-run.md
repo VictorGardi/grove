@@ -101,4 +101,41 @@ Round 1: fresh reviewer found 0 blocking. Applied cheap non-blocking: CONTEXT.md
 
 None.
 
+## Slice 3
+
+Session: simplify-sessions-and-sidebar-slice-3-a1
+Status: done
+Commit: this commit (see git log)
+
+### Slice plan
+
+Found in the code: `ProjectPage.tsx` switches between `Board`, `SessionsBoard` and `ArtifactsBoard` on `ui.board`, and renders `ArtifactPage` when `ui.artifacts[project].open` is set; `BoardSwitch` sits in the App header and the menu/palette have `projectBoard` and `artifactsBoard` actions (`boardKey`, `artifactsKey` in `navigation.ts`). `artifactsBoard.ts` mixes board-only helpers (`filterClusters`, `neighbours`, `artifactsTo`, `boardViewTo`, `filterTo`, `previewKind`, `previewSrc`, `modifiedAgo`) with page helpers (`artifactClusters`, `pageClusters`, `openCard`, `artifactCrumbs`, `commentCard`, `stepKey`). `tree.ts` holds `boardColumns`/`sessionColumns` plus `linkedSessions`/`linkedFeature`. `ArtifactPage` is reached only through the board's open state, so with the board gone it needs a new focus: a `focusedArtifact: ArtifactRef | null` ui key, a fourth exclusive focus next to session, feature and project (core clears the others when one is set), and a `{ kind: 'artifact' }` content.
+
+Implementer A (shared, core, main, docs):
+- [x] `types.ts`: drop `board`, `artifacts`, `ArtifactsView`, `CanvasView` (if unused) from `UiState`/`DEFAULT_UI`, add `focusedArtifact`; `ipc.ts` and `menu.ts` drop `projectBoard`/`artifactsBoard`; `core.ts` makes `focusedArtifact` an exclusive focus (set, clear, absent-project handling); dead keys `board`/`artifacts` still load and are preserved on save, with a test
+- [x] `README.md`, `CONTEXT.md` ("Board", "Project page", "Focus", "Feature page"), tests that touch these
+
+Implementer B (renderer):
+- [x] Delete `Board`, `SessionsBoard`, `ArtifactsBoard`, `ArtifactCard` (+css, render tests), `shell/BoardSwitch`, `boardColumns`/`sessionColumns` from `tree.ts`; split `artifactsBoard.ts` into `artifactData.ts` (+test)
+- [x] Minimal `ProjectPage.tsx`: header, "new session", cmd+K hint; `App.tsx`, `navigation.ts`, `stores/slices.ts`, `tags.ts` follow; `content()` returns the artifact focus and renders `ArtifactPage` with prev/next inside its feature
+- [x] `paletteItems.ts`: `artifact` entries (per feature artifact card, by name) and feature entries kept; tests
+
+Models passed: implementer: inherit, reviewer: inherit
+
+### Review rounds
+
+Round 1: fresh reviewer found 0 blocking. Applied cheap non-blocking: CONTEXT.md Group feature wording. Approved, 0 blocking, 0 fix rounds. Non-blocking left: FeaturePage file links and "Open review" still open the side viewer, so `ArtifactPage` is reached from cmd+K only; artifact palette entries carry the bare file name (the feature is in the detail text); `ArtifactPage` Back goes to the feature page.
+
+### Deviations
+
+New `ui.focusedArtifact` focus (exclusive with the other three, never restored on launch) carries the artifact page, since the board's `ui.artifacts.open` is gone. `tree.ts` keeps `linkedFeature` (Sidebar uses it); `canvasView.ts` and `previewGate.ts` were deleted as board-only. `artifactClusters` keeps features whose stage is not in `stages` (placed last).
+
+### Verification
+
+`npm run typecheck`, `npm test` (118 files, 1413 tests) and `npm run build` pass. `grep` for `boardColumns|artifactsBoard|BoardSwitch|openBoard` in `src` returns nothing. Tests cover dead `board`/`artifacts` keys loading and surviving a save, focus exclusivity, and cmd+K feature and artifact entries (`paletteItems.test.ts`). Models requested: implementer inherit, reviewer inherit.
+
+### Left for the human
+
+`npm run dev` visual check: menu has no Project Board or Artifacts entry, a project click shows the header, New session and the cmd+K hint, cmd+K finds a feature and an artifact by name and opens its page, a session's linked-feature tag opens `FeaturePage`.
+
 ## Open questions

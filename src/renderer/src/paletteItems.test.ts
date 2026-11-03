@@ -13,7 +13,7 @@ const feature = (projectId: string, slug: string, over: Partial<Feature> = {}): 
 })
 const features = [feature('p1', 'grid')]
 
-const actions = () => ({ focusSession: vi.fn(), focusFeature: vi.fn(), openProject: vi.fn(), runAction: vi.fn() })
+const actions = () => ({ focusSession: vi.fn(), focusFeature: vi.fn(), focusArtifact: vi.fn(), openProject: vi.fn(), runAction: vi.fn() })
 const items = (a = actions()) => paletteItems({ projects, sessions, features }, a)
 
 describe('paletteItems waiting flag', () => {
@@ -45,7 +45,7 @@ describe('paletteItems', () => {
   it('lists the app commands, which run through runAction', () => {
     const a = actions()
     const cmds = paletteItems({ projects, sessions, features }, a).filter((i) => i.kind === 'command')
-    expect(cmds.map((c) => c.label)).toEqual(['New session', 'New session with options…', 'New terminal', 'Remove session', 'Session diff', 'Project board', 'Artifacts', 'Toggle sidebar', 'Last session', 'Next waiting session', 'Show grid', 'Add session to grid and show', 'Clear grid', 'Scratchpad'])
+    expect(cmds.map((c) => c.label)).toEqual(['New session', 'New session with options…', 'New terminal', 'Remove session', 'Session diff', 'Toggle sidebar', 'Last session', 'Next waiting session', 'Show grid', 'Add session to grid and show', 'Clear grid', 'Scratchpad'])
     cmds.find((c) => c.label === 'New terminal')!.run()
     expect(a.runAction).toHaveBeenCalledWith({ type: 'newTerminal' })
   })
@@ -97,6 +97,29 @@ describe('paletteItems', () => {
     expect(a.focusSession).toHaveBeenCalledWith('s1')
     expect(a.focusFeature).toHaveBeenCalledWith({ projectId: 'p1', slug: 'grid' })
     expect(a.openProject).toHaveBeenCalledWith('p2')
+  })
+
+  describe('artifacts', () => {
+    const art = { name: '03-design.md', stage: 'design', role: 'artifact' as const, mtimeMs: 1 }
+    const withArt = [feature('p1', 'grid', { artifacts: [art, { name: 'x.json', stage: null, role: null, mtimeMs: 1 }] })]
+    const list = (a = actions()) => paletteItems({ projects, sessions, features: withArt, stages: [{ id: 'design', label: 'Design' }] }, a)
+
+    it('lists one entry per artifact card of each feature, named for the feature, and opens it', () => {
+      const a = actions()
+      const arts = list(a).filter((i) => i.kind === 'artifact')
+      expect(arts.map((i) => [i.label, i.detail])).toEqual([['03-design.md', 'grove · Session grid']])
+      arts[0].run()
+      expect(a.focusArtifact).toHaveBeenCalledWith({ projectId: 'p1', slug: 'grid', name: '03-design.md' })
+    })
+
+    it('finds an artifact and a feature by name, the feature first for its own title', () => {
+      expect(rank(list(), 'design.md')[0].item).toMatchObject({ kind: 'artifact', label: '03-design.md' })
+      expect(rank(list(), 'session grid')[0].item).toMatchObject({ kind: 'feature', label: 'Session grid' })
+    })
+
+    it('lists artifacts after features and before projects with an empty query', () => {
+      expect(rank(list(), '').map((r) => r.item.kind).filter((k) => k !== 'session' && k !== 'command')).toEqual(['feature', 'artifact', 'project', 'project'])
+    })
   })
 })
 

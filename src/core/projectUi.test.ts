@@ -68,6 +68,14 @@ describe('forgetting a project', () => {
     })
   })
 
+  it('drops a focused artifact page of a removed project', async () => {
+    twoProjects()
+    const core = await start()
+    await core.commands.uiSet({ focusedArtifact: { projectId: 'p', slug: 'f', name: 'x.md' } })
+    expect((await core.commands.projectRemove({ id: 'p' })).ok).toBe(true)
+    expect(core.getSlices().ui.focusedArtifact).toBeNull()
+  })
+
   it('drops the recent diff bases of a removed project, and keeps another repo\'s', async () => {
     twoProjects()
     savedUi({ recentBases: { p: ['dev'], other: ['main', 'dev'] } })

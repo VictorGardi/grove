@@ -8,8 +8,8 @@ export interface ContextReading { pct: number; tokens: number | null; window: nu
 // docs/work/2026-10-09-session-workflow-status.
 export type WorkflowStatus = 'backlog' | 'in-progress' | 'blocked' | 'in-review' | 'cancelled' | 'done' | 'pinned'
 
-// Saved files may still carry the dead keys `zoneOverride` (sessions), `sidebarView` and `groupBy` (ui) from
-// the old sidebar; nothing reads them and they are preserved on save.
+// Saved files may still carry the dead keys `zoneOverride` (sessions), `sidebarView`, `groupBy`, `board` and `artifacts` (ui) from
+// the old sidebar and boards; nothing reads them and they are preserved on save.
 export interface Session {
   id: string
   projectId: string
@@ -104,21 +104,15 @@ export interface GridState {
   spans?: Record<string, PaneSpan> // by session id
   tracks?: Record<string, GridTracks> // by layout shape, e.g. "2x2"
 }
-export interface ArtifactRef { projectId: string; slug: string; name: string } // a card on the artifacts board: the feature's own checkout, its slug, the card's name
-export interface CanvasView { x: number; y: number; scale: number } // a pan/zoom canvas's offset in px and its zoom
-export interface ArtifactsView {
-  open: ArtifactRef | null // the artifact shown full page; never reopened on restart
-  view?: CanvasView        // the board's pan and zoom, kept across restarts (absent: the default view)
-  filter?: string | null   // the slug of the one feature the board shows (absent or null: all); a page's features are unioned by repo, so a slug names one cluster
-}
+export interface ArtifactRef { projectId: string; slug: string; name: string } // an artifact page: the feature's own checkout, its slug, the artifact's name
 export interface DiffPrefs { mode: DiffMode; base: string | null } // a session's picked view and compare branch; base null: the auto-detected main branch
 export interface UiState {
   sidebarWidth: number
   sidebarCollapsed: boolean // ⌘B: the sidebar is hidden, and a strip of session dots leads the content header
   focusedSessionId: string | null
   focusedFeature: { projectId: string; slug: string } | null
-  focusedProject: string | null // the project page; the three focuses are exclusive (ADR 0018)
-  board: 'features' | 'sessions' | 'artifacts' // what the project page's board shows
+  focusedProject: string | null // the project page
+  focusedArtifact: ArtifactRef | null // the artifact page; a fourth exclusive focus: setting one clears the other three (ADR 0018)
   collapsed: string[] // collapsed project folders on the Sessions tab: p:<projectId>
   hiddenProjects: string[] // project IDs hidden from the Sessions tab
   compact?: string[] // session IDs whose card is compacted to one line (absent reads as none)
@@ -129,7 +123,6 @@ export interface UiState {
   viewerWidth: number | null // null uses the responsive default; a number is a user-resized pixel width
   viewerExpanded: boolean     // the viewer fills the content area
   diffPrefs?: Record<string, DiffPrefs> // by session id: what the diff opens on again in that session (absent reads as none: defaults)
-  artifacts?: Record<string, ArtifactsView> // by project page id: the artifacts board's state there (absent reads as none)
   recentBases?: Record<string, string[]> // by project id: branches picked as a diff base there, newest first (absent reads as none)
   grid: GridState             // the session grid (ADR 0031); the focused pane is focusedSessionId
 }
@@ -189,6 +182,6 @@ export interface HandledPrompt { childId: string; at: string; kind: 'permission'
 export interface ConfigFile { schemaVersion: 1; projects: Project[]; workflow?: string; sounds?: boolean; escalateAfterSec?: number; classifier?: { enabled?: boolean; model?: string; kinds?: ('claude' | 'opencode' | 'copilot')[] } } // sounds: false mutes the waiting sounds; classifier.kinds: agent kinds whose finished screens go to the small model, default claude only
 export interface StateFile { schemaVersion: 11; sessions: Session[]; ui: UiState }
 export const SIDEBAR_WIDTH = 220 // the default; drag the sidebar's edge to resize, double-click it to come back here
-export const DEFAULT_UI: UiState = { sidebarWidth: SIDEBAR_WIDTH, sidebarCollapsed: false, focusedSessionId: null, focusedFeature: null, focusedProject: null, board: 'sessions', collapsed: [], hiddenProjects: [], sessionSort: 'viewed-desc', sessionOrder: [], viewer: null, viewerWidth: null, viewerExpanded: false, grid: { open: false, members: [] } }
+export const DEFAULT_UI: UiState = { sidebarWidth: SIDEBAR_WIDTH, sidebarCollapsed: false, focusedSessionId: null, focusedFeature: null, focusedProject: null, focusedArtifact: null, collapsed: [], hiddenProjects: [], sessionSort: 'viewed-desc', sessionOrder: [], viewer: null, viewerWidth: null, viewerExpanded: false, grid: { open: false, members: [] } }
 export const EMPTY_FEATURES: FeaturesSlice = { workflowError: null, stages: [], items: [] }
 export const OPENCODE_CONNECTING: OpenCodeSlice = { state: 'connecting', version: null }

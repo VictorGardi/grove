@@ -185,15 +185,16 @@ export function createCore(opts: CoreOptions): Core {
   let unreachableTimer: ReturnType<typeof setTimeout> | undefined
   let windowFocused = false
   // Where focus was before it moved, newest last (in memory): removing the focused session returns to the latest still valid one.
-  type Focus = Pick<UiState, 'focusedSessionId' | 'focusedFeature' | 'focusedProject'>
+  type Focus = Pick<UiState, 'focusedSessionId' | 'focusedFeature' | 'focusedProject' | 'focusedArtifact'>
   const focusHistory: Focus[] = []
   const FOCUS_HISTORY_MAX = 20
   const sameFocus = (a: Focus, b: Focus) =>
     a.focusedSessionId === b.focusedSessionId && a.focusedProject === b.focusedProject
+    && a.focusedArtifact?.projectId === b.focusedArtifact?.projectId && a.focusedArtifact?.slug === b.focusedArtifact?.slug && a.focusedArtifact?.name === b.focusedArtifact?.name
     && a.focusedFeature?.projectId === b.focusedFeature?.projectId && a.focusedFeature?.slug === b.focusedFeature?.slug
-  const focusOf = (ui: UiState): Focus => ({ focusedSessionId: ui.focusedSessionId, focusedFeature: ui.focusedFeature, focusedProject: ui.focusedProject })
+  const focusOf = (ui: UiState): Focus => ({ focusedSessionId: ui.focusedSessionId, focusedFeature: ui.focusedFeature, focusedProject: ui.focusedProject, focusedArtifact: ui.focusedArtifact ?? null })
   const rememberFocus = (prev: Focus) => {
-    if (!prev.focusedSessionId && !prev.focusedFeature && !prev.focusedProject) return
+    if (!prev.focusedSessionId && !prev.focusedFeature && !prev.focusedProject && !prev.focusedArtifact) return
     const at = focusHistory.findIndex((f) => sameFocus(f, prev))
     if (at >= 0) focusHistory.splice(at, 1)
     focusHistory.push(prev)
@@ -202,7 +203,8 @@ export function createCore(opts: CoreOptions): Core {
   const focusStillValid = (f: Focus) =>
     f.focusedSessionId ? !!findSession(f.focusedSessionId)
       : f.focusedFeature ? slices.features.items.some((x) => x.projectId === f.focusedFeature!.projectId && x.slug === f.focusedFeature!.slug)
-        : !!f.focusedProject && slices.projects.some((p) => p.id === f.focusedProject)
+        : f.focusedArtifact ? slices.projects.some((p) => p.id === f.focusedArtifact!.projectId)
+          : !!f.focusedProject && slices.projects.some((p) => p.id === f.focusedProject)
   let lastOnScreen: string | null = null
   const waitKey = new Map<string, string>() // session id → waitingFor it was last seen waiting with
   const holdTimers = new Map<string, ReturnType<typeof setTimeout>>() // child id → its grace-window timer
@@ -829,7 +831,7 @@ export function createCore(opts: CoreOptions): Core {
         const f = focusHistory.pop()!
         if (focusStillValid(f)) back = f
       }
-      ui = { ...ui, ...(back ?? { focusedSessionId: null, focusedFeature: null, focusedProject: focused.projectId }) }
+      ui = { ...ui, ...(back ?? { focusedSessionId: null, focusedFeature: null, focusedArtifact: null, focusedProject: focused.projectId }) }
     }
     const v = ui.viewer
     if (v?.kind === 'diff' && !findSession(v.sessionId)) ui = { ...ui, viewer: null }
@@ -877,6 +879,7 @@ export function createCore(opts: CoreOptions): Core {
   function forgetProjectUi(absent: (id: string) => boolean): void {
     const ui = slices.ui
     const focusedProject = ui.focusedProject && absent(ui.focusedProject) ? null : ui.focusedProject
+    const focusedArtifact = ui.focusedArtifact && absent(ui.focusedArtifact.projectId) ? null : (ui.focusedArtifact ?? null)
     const collapsed = ui.collapsed.filter((k) => {
       const id = keyProjectId(k)
       return id === '' || !absent(id)
@@ -885,11 +888,11 @@ export function createCore(opts: CoreOptions): Core {
     const recentEntries = Object.entries(ui.recentBases ?? {})
     const recentBases = Object.fromEntries(recentEntries.filter(([id]) => !absent(id)))
     // The filters only ever remove, so equal lengths mean nothing was there to forget.
-    if (focusedProject === ui.focusedProject
+    if (focusedProject === ui.focusedProject && focusedArtifact === (ui.focusedArtifact ?? null)
       && collapsed.length === ui.collapsed.length
       && hiddenProjects.length === (ui.hiddenProjects ?? []).length
       && Object.keys(recentBases).length === recentEntries.length) return
-    set('ui', { ...ui, focusedProject, collapsed, hiddenProjects, ...(ui.recentBases ? { recentBases } : {}) })
+    set('ui', { ...ui, focusedProject, focusedArtifact, collapsed, hiddenProjects, ...(ui.recentBases ? { recentBases } : {}) })
   }
 
   // Forget a project and everything that pointed at it. The checkout on disk is never touched:
@@ -1237,10 +1240,11 @@ export function createCore(opts: CoreOptions): Core {
 
     async uiSet(partial) {
       const next = { ...slices.ui, ...partial }
-      // one focus at a time: a session, a feature page or a project page
-      if (partial.focusedSessionId) Object.assign(next, { focusedFeature: null, focusedProject: null })
-      if (partial.focusedFeature) Object.assign(next, { focusedSessionId: null, focusedProject: null })
-      if (partial.focusedProject) Object.assign(next, { focusedSessionId: null, focusedFeature: null })
+      // one focus at a time: a session, a feature page, a project page or an artifact page
+      if (partial.focusedSessionId) Object.assign(next, { focusedFeature: null, focusedProject: null, focusedArtifact: null })
+      if (partial.focusedFeature) Object.assign(next, { focusedSessionId: null, focusedProject: null, focusedArtifact: null })
+      if (partial.focusedProject) Object.assign(next, { focusedSessionId: null, focusedFeature: null, focusedArtifact: null })
+      if (partial.focusedArtifact) Object.assign(next, { focusedSessionId: null, focusedFeature: null, focusedProject: null })
       if (!sameFocus(focusOf(slices.ui), focusOf(next))) rememberFocus(focusOf(slices.ui))
       const entered = partial.focusedSessionId && partial.focusedSessionId !== slices.ui.focusedSessionId ? findSession(partial.focusedSessionId) : undefined
       if (entered) replaceSession({ ...entered, lastFocusedAt: now().toISOString() })

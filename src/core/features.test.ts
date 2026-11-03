@@ -166,7 +166,12 @@ describe('core features', () => {
     await core.commands.uiSet({ focusedProject: 'p' })
     expect(core.getSlices().ui).toMatchObject({ focusedSessionId: null, focusedFeature: null, focusedProject: 'p' })
     await core.commands.uiSet({ focusedSessionId: 'y' })
-    expect(core.getSlices().ui).toMatchObject({ focusedSessionId: 'y', focusedFeature: null, focusedProject: null })
+    expect(core.getSlices().ui).toMatchObject({ focusedSessionId: 'y', focusedFeature: null, focusedProject: null, focusedArtifact: null })
+    const art = { projectId: 'p', slug: 'a', name: '03-design.md' }
+    await core.commands.uiSet({ focusedArtifact: art })
+    expect(core.getSlices().ui).toMatchObject({ focusedSessionId: null, focusedFeature: null, focusedProject: null, focusedArtifact: art })
+    await core.commands.uiSet({ focusedProject: 'p' })
+    expect(core.getSlices().ui).toMatchObject({ focusedProject: 'p', focusedArtifact: null })
   })
 
   it('links a session to a feature by hand and keeps it across restarts', async () => {

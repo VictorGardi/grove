@@ -6,6 +6,7 @@ import { SIDEBAR_WIDTH } from '@shared/types'
 import { ArtifactViewer } from './components/ArtifactViewer'
 import { CommandPalette } from './components/CommandPalette'
 import { DiffViewer } from './components/DiffViewer'
+import { ArtifactPage } from './components/ArtifactPage'
 import { FeaturePage } from './components/FeaturePage'
 import { ProjectPage } from './components/ProjectPage'
 import { SessionGrid } from './components/SessionGrid'
@@ -13,7 +14,6 @@ import { SessionMeta } from './components/SessionMeta'
 import { Sidebar } from './components/Sidebar'
 import { TerminalView } from './components/TerminalView'
 import { AppShell, SIDEBAR_MAX, SIDEBAR_MIN } from './components/shell/AppShell'
-import { BoardSwitch } from './components/shell/BoardSwitch'
 import { ContextPopover } from './components/ContextGauge'
 import { ContentHeader, Crumbs } from './components/shell/ContentHeader'
 import { Banner } from './components/ui/Banner'
@@ -27,8 +27,8 @@ import { useDictation } from './dictation/useDictation'
 import { DEFAULT_GRID_VIEW, gridShown, hasArrangement, visibleMembers, type GridView } from './gridView'
 import { GridControls } from './components/GridControls'
 import { contextView } from './contextGauge'
-import { artifactCrumbs, openCard } from './artifactsBoard'
-import { artifactsKey, boardKey, childrenOf, content, crumbs, currentProjectId, focusTarget } from './navigation'
+import { neighbours } from './artifactData'
+import { childrenOf, content, crumbs, currentProjectId, focusTarget } from './navigation'
 import { familyJumpTarget, familyOf } from './family'
 import { serviceBanners } from './sessionStatus'
 import { sessionDiffShortcut, type HiddenRenderedViewer } from './sessionDiffShortcut'
@@ -40,7 +40,7 @@ import { longestWaiting } from './sessionStatus'
 import s from './App.module.css'
 
 export default function App() {
-  const { projects, sessions, ui, features, opencode, diff, errors, hydrate, setFocused, focusFeature, openProject, toggleGrid, addFocusedToGrid, toggleSidebar, clearGrid, resetGridArrangement, go, setBoard, openBoardArtifact, setBoardView, setBoardFilter,
+  const { projects, sessions, ui, features, opencode, diff, errors, hydrate, setFocused, focusFeature, focusArtifact, openProject, toggleGrid, addFocusedToGrid, toggleSidebar, clearGrid, resetGridArrangement, go,
     openArtifact, openDiff, backToDiff, openRendered, closeViewer, setViewerWidth, toggleViewerExpanded, reloadViewer } = useSlices()
   const [quickNew, setQuickNew] = useState<{ projectId?: string } | null>(null) // ⌘T: the new-session palette
   const repoRefs = useRepoRefs(projects)
@@ -85,10 +85,10 @@ export default function App() {
     else if (a.type === 'addToGrid') addFocusedToGrid()
     else if (a.type === 'toggleSidebar') toggleSidebar()
     else if (a.type === 'clearGrid') clearGrid()
-    else if (a.type === 'newSession') setQuickNew({ projectId: currentProjectId(content(ui, projects, sessions, features.items)) ?? undefined })
-    else if (a.type === 'newSessionOptions') setLaunchNew({ projectId: currentProjectId(content(ui, projects, sessions, features.items)) ?? undefined })
+    else if (a.type === 'newSession') setQuickNew({ projectId: currentProjectId(content(ui, projects, sessions, features.items, features.stages)) ?? undefined })
+    else if (a.type === 'newSessionOptions') setLaunchNew({ projectId: currentProjectId(content(ui, projects, sessions, features.items, features.stages)) ?? undefined })
     else if (a.type === 'newTerminal') {
-      const projectId = currentProjectId(content(ui, projects, sessions, features.items))
+      const projectId = currentProjectId(content(ui, projects, sessions, features.items, features.stages))
       if (projectId) {
         void window.api.invoke('session:create', { projectId, kind: 'terminal', cols: 120, rows: 40 }).then((res) => {
           if (res.ok) setFocused(res.data.id)
@@ -109,18 +109,12 @@ export default function App() {
     } else if (a.type === 'focusIndex') {
       const target = focusTarget(ui, projects, sessions, features.items, a.n, gridView)
       if (target) setFocused(target.id)
-    } else if (a.type === 'projectBoard') {
-      const to = boardKey(ui, projects, sessions, features.items)
-      if (to) go(to)
-    } else if (a.type === 'artifactsBoard') {
-      const to = artifactsKey(ui, projects, sessions, features.items)
-      if (to) go(to)
     } else if (a.type === 'sessionDiff') {
       if (ui.focusedSessionId) toggleSessionDiff(ui.focusedSessionId, ui.viewer)
     } else if (a.type === 'scratchpad') {
       setScratchpadOpen((o) => !o)
     }
-  }, [setFocused, go, toggleSessionDiff, toggleGrid, addFocusedToGrid, toggleSidebar, clearGrid, gridView])
+  }, [setFocused, toggleSessionDiff, toggleGrid, addFocusedToGrid, toggleSidebar, clearGrid, gridView])
 
   useEffect(() => {
     const hidden = hiddenRendered.current
@@ -157,7 +151,7 @@ export default function App() {
     setQuickNew(null)
     return null
   }, [setFocused])
-  const shown = content(ui, projects, sessions, features.items)
+  const shown = content(ui, projects, sessions, features.items, features.stages)
   // the eye or a smaller layout can hide the focused pane: focus the first one still visible
   const changeGridView = (next: GridView) => {
     setGridView(next)
@@ -165,8 +159,7 @@ export default function App() {
     const visible = visibleMembers(shown.sessions, next)
     if (visible.length > 0 && !visible.some((x) => x.id === shown.focused.id)) setFocused(visible[0].id)
   }
-  const openArt = shown.kind === 'project' ? openCard(ui, shown.project, projects, features.stages, features.items) : undefined
-  const trail = openArt && shown.kind === 'project' ? artifactCrumbs(shown.project, openArt.cluster.feature, openArt.card, ui) : crumbs(shown, projects, features.items)
+  const trail = crumbs(shown, projects, features.items)
   const header = trail.map((c) => ({ label: c.label, onClick: c.to && (() => go(c.to!)) }))
   const context = shown.kind === 'session' ? contextView(shown.session) : null
   const openFeature = (f: Feature) => focusFeature({ projectId: f.projectId, slug: f.slug })
@@ -208,8 +201,7 @@ export default function App() {
                     context={context ? <ContextPopover view={context} /> : undefined}
                     family={{ ...familyOf(sessions, shown.session.id), onJump: setFocused }} />
                 : undefined}
-              right={shown.kind === 'project' && !shown.project.worktreeOf ? <BoardSwitch board={ui.board} onChange={setBoard} />
-                : shown.kind === 'grid' ? (
+              right={shown.kind === 'grid' ? (
                   <GridControls view={gridView} visibleCount={visibleMembers(shown.sessions, gridView).length} canReset={hasArrangement(ui.grid)}
                     onChange={changeGridView} onReset={resetGridArrangement} onEmpty={clearGrid} />
                 )
@@ -220,12 +212,12 @@ export default function App() {
                   </div>
                 ) : undefined} />
             {shown.kind === 'project' ? (
-              <ProjectPage project={shown.project} projects={projects} board={ui.board} stages={features.stages}
-                features={features.items} sessions={sessions} artifactsOpen={ui.artifacts?.[shown.project.id]?.open ?? null}
-                artifactsView={ui.artifacts?.[shown.project.id]?.view} artifactsFilter={ui.artifacts?.[shown.project.id]?.filter ?? null}
-                onOpenFeature={openFeature} onFocusSession={setFocused} onOpenArtifact={(r) => openBoardArtifact(shown.project.id, r)}
-                onArtifactsViewChange={(v) => setBoardView(shown.project.id, v)}
-                onArtifactsFilterChange={(f, v) => setBoardFilter(shown.project.id, f, v)} />
+              <ProjectPage project={shown.project} onNewSession={(projectId) => setQuickNew({ projectId })} />
+            ) : shown.kind === 'artifact' ? (
+              <ArtifactPage projectId={shown.cluster.feature.projectId} feature={{ projectId: shown.cluster.feature.projectId, slug: shown.cluster.feature.slug }}
+                cards={shown.cluster.cards} card={shown.card}
+                {...neighbours([shown.cluster], { projectId: shown.cluster.feature.projectId, slug: shown.cluster.feature.slug, name: shown.card.name })}
+                onBack={() => openFeature(shown.cluster.feature)} onStep={focusArtifact} />
             ) : shown.kind === 'feature' ? (
               <FeaturePage feature={shown.feature}
                 parent={features.items.find((f) => f.projectId === shown.feature.projectId && f.slug === shown.feature.parent) ?? null}
@@ -273,7 +265,7 @@ export default function App() {
       />
       {paletteOpen && (
         <CommandPalette onClose={() => setPaletteOpen(false)}
-          items={paletteItems({ projects, sessions, features: features.items, grid: ui.grid, gridShown: gridShown(ui) }, { focusSession: setFocused, focusFeature, openProject, runAction })} />
+          items={paletteItems({ projects, sessions, features: features.items, stages: features.stages, grid: ui.grid, gridShown: gridShown(ui) }, { focusSession: setFocused, focusFeature, focusArtifact, openProject, runAction })} />
       )}
       {confirmRemove && (
         <ConfirmDialog

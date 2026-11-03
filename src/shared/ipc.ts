@@ -2,7 +2,7 @@ import type { Comment, CommentAnchor, FeatureKey, FeaturesSlice, OpenCodeSlice, 
 
 export type Result<T> = { ok: true; data: T } | { ok: false; error: string; detail?: string }
 export type MenuAction =
-  | { type: 'newSession' } | { type: 'newSessionOptions' } | { type: 'closeSession' } | { type: 'focusIndex'; n: number } | { type: 'projectBoard' } | { type: 'artifactsBoard' }
+  | { type: 'newSession' } | { type: 'newSessionOptions' } | { type: 'closeSession' } | { type: 'focusIndex'; n: number }
   | { type: 'sessionDiff' } | { type: 'toggleSidebar' } | { type: 'addToGrid' }
   | { type: 'newTerminal' } | { type: 'lastSession' } | { type: 'palette' } | { type: 'toggleGrid' } | { type: 'clearGrid' }
   | { type: 'scratchpad' } | { type: 'nextWaiting' } | { type: 'familyJump' }

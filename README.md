@@ -5,7 +5,7 @@
 Grove runs [OpenCode](https://opencode.ai), [Claude Code](https://claude.com/claude-code) and [GitHub Copilot CLI](https://github.com/features/copilot/cli) sessions side by side, tells you which one needs you, and keeps every feature's research, design and plan as reviewable files in your repo.
 
 <p align="center">
-  <img src="docs/assets/screenshot.png" alt="Grove running: sessions in the sidebar, a live agent terminal and the project board" width="900">
+  <img src="docs/assets/screenshot.png" alt="Grove running: sessions in the sidebar, a live agent terminal and the project page" width="900">
 </p>
 
 ## Features
@@ -28,7 +28,7 @@ Isolation beyond git worktrees is left to each agent provider's own features.
 - Built-in viewer for markdown, HTML artifacts and project files.
 
 **Feature workflow**
-- A board of every feature by stage, with *Input required* highlighted when a linked session is waiting on you.
+- Features and their artifacts are found in the command palette (`⌘K`), with *Input required* highlighted when a linked session is waiting on you.
 - Stages, kinds and next actions come from a single `workflow.yaml`. The default is the `grove-*` workflow: questions → research → design → structure → plan → implement, with a human approving each gate.
 - Features are plain folders (`docs/work/<slug>/`) of markdown artifacts, so they live in git and review like code.
 
@@ -96,8 +96,8 @@ Use: hold `⌃⇧Space` while a Grove pane is focused, speak, release. The targe
 1. Open Grove and add a project: any folder, usually a git checkout.
 2. Press `⌘T` to start a session, or `⌘⇧T` for the launch dialog (agent, worktree, prompt).
 3. Watch the sidebar. Sessions that need you are marked *waiting*.
-4. Open the project board (`⌘⇧B`) for features by stage, or the sessions board.
-5. To use the feature workflow, run the setup skill in your repo (`grove-setup`). It creates `grove.config.json`, `docs/adr/`, `CONTEXT.md` and an `AGENTS.md` block. Then start a feature from the board.
+4. Open a project's page from the sidebar: a header, a new-session button and a `⌘K` hint. Features and artifacts are one `⌘K` away.
+5. To use the feature workflow, run the setup skill in your repo (`grove-setup`). It creates `grove.config.json`, `docs/adr/`, `CONTEXT.md` and an `AGENTS.md` block. Then start a feature from `⌘K`.
 
 ### Keyboard shortcuts
 
@@ -109,7 +109,6 @@ Use: hold `⌃⇧Space` while a Grove pane is focused, speak, release. The targe
 | `⌃Tab` | Last session |
 | `⌘K` | Command palette |
 | `⌘B` | Toggle sidebar |
-| `⌘⇧B` | Project board |
 | `⌘⌥B` | Session diff |
 | `⌘G` / `⌘⇧G` | Session grid / add session to grid |
 | `⌘W` | Remove session |
