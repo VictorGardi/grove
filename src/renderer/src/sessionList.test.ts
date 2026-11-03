@@ -62,16 +62,15 @@ describe('time-in-status sort', () => {
 })
 
 describe('time-in-status sort and children', () => {
-  it('does not put a finished or held child among the sessions that wait on you', () => {
+  it('does not put a finished child among the sessions that wait on you', () => {
     const at = (ms: number) => new Date(ms).toISOString()
     const list = [
       session('idle', { status: 'idle', statusAt: at(300) }),
       session('kid-done', { link: { id: 'x', kind: 'group' }, status: 'waiting', waitingFor: 'done', statusAt: at(100) }),
-      session('kid-held', { link: { id: 'x', kind: 'group' }, status: 'waiting', waitingFor: 'permission', held: true, statusAt: at(50) }),
       session('kid-ask', { link: { id: 'x', kind: 'group' }, status: 'waiting', waitingFor: 'question', statusAt: at(400) }),
     ]
     expect(ids(listGroups(PROJECTS, list, ui({ sessionSort: 'status-age' }))).slice(0, 1)).toEqual(['kid-ask'])
-    expect(ids(listGroups(PROJECTS, list, ui({ sessionSort: 'status-age' })))).toEqual(['kid-ask', 'kid-held', 'kid-done', 'idle'])
+    expect(ids(listGroups(PROJECTS, list, ui({ sessionSort: 'status-age' })))).toEqual(['kid-ask', 'kid-done', 'idle'])
   })
 })
 

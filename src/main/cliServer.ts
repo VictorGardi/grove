@@ -118,12 +118,7 @@ async function dispatch(core: Core, raise: () => void, line: string): Promise<Cl
       if (typeof ref !== 'string' || typeof text !== 'string' || !ref) return fail(id, 'bad-params', 'ref and text are required')
       const found = resolveSessionRef(core.getSlices().sessions, ref)
       if (!found.ok) return failFrom(id, found.error)
-      let from: string | undefined
-      if (typeof params.from === 'string' && params.from) {
-        const caller = resolveSessionRef(core.getSlices().sessions, params.from)
-        if (caller.ok) from = caller.data.id // an unknown caller is just not a parent
-      }
-      const res = await core.commands.sendToSession({ id: found.data.id, text, submit: params.submit !== false, from })
+      const res = await core.commands.sendToSession({ id: found.data.id, text, submit: params.submit !== false })
       if (!res.ok) return failFrom(id, res.error)
       if (params.wait !== true) return { id, ok: true, data: res.data }
       const turn = await waitAfter(core, id, params, found.data.id)
@@ -159,14 +154,6 @@ async function dispatch(core: Core, raise: () => void, line: string): Promise<Cl
       if (!found.ok) return failFrom(id, found.error)
       // the card picker's command: a plain field write, no cascade
       const res = await core.commands.sessionWorkflowStatus({ id: found.data.id, status: status as WorkflowStatus })
-      return res.ok ? { id, ok: true, data: { id: found.data.id } } : failFrom(id, res.error)
-    }
-    case 'sessions.escalate': {
-      const { ref, reason } = params
-      if (typeof ref !== 'string' || !ref || typeof reason !== 'string' || !reason.trim()) return fail(id, 'bad-params', 'ref and a reason are required')
-      const found = resolveSessionRef(core.getSlices().sessions, ref)
-      if (!found.ok) return failFrom(id, found.error)
-      const res = await core.commands.sessionEscalate({ id: found.data.id, reason })
       return res.ok ? { id, ok: true, data: { id: found.data.id } } : failFrom(id, res.error)
     }
     case 'sessions.progress': {

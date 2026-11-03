@@ -9,14 +9,13 @@ const parent = session('parent')
 const child = (id: string, over: Partial<Session> = {}) => session(id, { link: { id: 'parent', kind: 'group' }, ...over })
 const ids = (xs: Session[]) => xs.map((x) => x.id)
 
-describe('familyOf finished and held children', () => {
-  it('ranks a finished or held child as idle or working, below a real wait', () => {
+describe('familyOf finished children', () => {
+  it('ranks a finished child as idle, below a real wait', () => {
     const f = familyOf([parent,
       child('finished', { status: 'waiting', waitingFor: 'done' }),
-      child('held', { status: 'waiting', waitingFor: 'permission', held: true }),
       child('idle', { status: 'idle' }),
       child('ask', { status: 'waiting', waitingFor: 'permission' })], 'parent')
-    expect(ids(f.children)).toEqual(['ask', 'held', 'finished', 'idle'])
+    expect(ids(f.children)).toEqual(['ask', 'finished', 'idle'])
   })
 })
 

@@ -608,62 +608,13 @@ describe('core claude status', () => {
     expect(notified.map((x) => [x.id, x.waitingFor])).toEqual([[c.id, 'permission']])
   })
 
-  it('escalating a child that already notified adds the reason without a second notify', async () => {
-    const { core, claude, notified } = await connected()
-    const c = await createClaude(core)
-    claude.emit({ type: 'pending', sessionId: c.agentSessionId!, id: 'perm:main', kind: 'permission', open: true })
-    expect(notified).toHaveLength(1)
-    const res = await core.commands.sessionEscalate({ id: c.id, reason: '  \n  needs the prod key  \nmore' })
-    expect(res.ok && res.data.attention).toEqual({ reason: 'needs the prod key', waitingFor: 'permission' })
-    expect(find(core, c.id)?.attention?.reason).toBe('needs the prod key')
-    expect(notified).toHaveLength(1)
-  })
-
-  it('escalating a child not yet notified fires exactly one notify with the reason; on screen it stays quiet', async () => {
-    const { core, claude, notified } = await connected()
-    const c = await createClaude(core)
-    const d = await createClaude(core)
-    core.setWindowFocused(true)
-    await core.commands.uiSet({ focusedSessionId: c.id })
-    claude.emit({ type: 'pending', sessionId: c.agentSessionId!, id: 'perm:main', kind: 'question', open: true })
-    expect(notified).toHaveLength(0) // on screen: no popup
-    await core.commands.sessionEscalate({ id: c.id, reason: 'on screen' })
-    expect(notified).toHaveLength(0)
-    await core.commands.uiSet({ focusedSessionId: d.id })
-    await core.commands.sessionEscalate({ id: c.id, reason: 'now away' })
-    expect(notified.map((x) => [x.id, x.attention?.reason])).toEqual([[c.id, 'now away']])
-    await core.commands.sessionEscalate({ id: c.id, reason: 'again' })
-    expect(notified).toHaveLength(1)
-  })
-
-  it('an escalation clears when the wait ends, and the next prompt notifies without the old reason', async () => {
-    const { core, claude, notified } = await connected()
-    const c = await createClaude(core)
-    claude.emit({ type: 'pending', sessionId: c.agentSessionId!, id: 'perm:main', kind: 'permission', open: true })
-    await core.commands.sessionEscalate({ id: c.id, reason: 'why' })
-    claude.emit({ type: 'pending', sessionId: c.agentSessionId!, id: 'perm:main', kind: 'permission', open: false })
-    expect(find(core, c.id)?.attention).toBeUndefined()
-    claude.emit({ type: 'pending', sessionId: c.agentSessionId!, id: 'perm:2', kind: 'permission', open: true })
-    expect(notified).toHaveLength(2)
-    expect(notified[1].attention).toBeUndefined()
-    claude.emit({ type: 'exec-started', sessionId: c.agentSessionId! })
-    expect(find(core, c.id)?.attention).toBeUndefined()
-  })
-
-  it('never saves attention or progress, and a working session cannot be escalated', async () => {
+  it('never saves progress', async () => {
     const { core, claude, statePath } = await connected()
     const c = await createClaude(core)
-    claude.emit({ type: 'exec-started', sessionId: c.agentSessionId! })
-    expect(await core.commands.sessionEscalate({ id: c.id, reason: 'x' })).toEqual({ ok: false, error: 'not-waiting' })
-    expect(await core.commands.sessionEscalate({ id: 'nope', reason: 'x' })).toEqual({ ok: false, error: 'not-found' })
     claude.emit({ type: 'pending', sessionId: c.agentSessionId!, id: 'perm:main', kind: 'permission', open: true })
-    await core.commands.sessionEscalate({ id: c.id, reason: 'secret-reason' })
     await core.commands.sessionProgress({ id: c.id, done: 1, total: 3 })
     expect(find(core, c.id)?.progress).toEqual({ done: 1, total: 3 })
-    const saved = fs.readFileSync(statePath, 'utf8')
-    expect(saved).not.toContain('secret-reason')
-    expect(saved).not.toContain('"progress"')
-    expect(saved).not.toContain('"attention"')
+    expect(fs.readFileSync(statePath, 'utf8')).not.toContain('"progress"')
   })
 
   it('keeps the first line of the last prompt as lastLine, saved and kept after a reload', async () => {
@@ -770,7 +721,6 @@ describe('core seen and notify', () => {
   })
 
   it('keeps a finished child quiet, while its permission and a top-level finish still notify', async () => {
-    vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout'] })
     const { core, oc, notified } = await setup()
     const top = await createOpenCode(core)
     const kid = await createOpenCode(core)
@@ -784,200 +734,21 @@ describe('core seen and notify', () => {
     oc.emit({ type: 'exec-ended', sessionId: top.agentSessionId!, at: ENDED })
     expect(notified.map((x) => [x.id, x.waitingFor])).toEqual([[top.id, 'done']])
     oc.emit({ type: 'pending', sessionId: kid.agentSessionId!, id: 'per_1', kind: 'permission', open: true })
-    vi.advanceTimersByTime(61_000)
-    vi.useRealTimers()
     expect(notified.map((x) => [x.id, x.waitingFor])).toEqual([[top.id, 'done'], [kid.id, 'permission']])
   })
 
-  describe('grace window for a child prompt', () => {
-    afterEach(() => vi.useRealTimers())
-
-    async function held(config: Record<string, unknown> = {}) {
-      vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout'] })
-      const s = await setup()
-      if (Object.keys(config).length) {
-        // reload with the setting in config.json
-        const { loadConfig, saveConfig } = await import('./store/configStore')
-        s.core.dispose()
-        saveConfig(s.configPath, { ...loadConfig(s.configPath), ...config })
-        const core = s.make()
-        await core.start()
-        const notified: Session[] = []
-        core.on('notify', (x) => notified.push(x))
-        return grace({ ...s, core, notified })
-      }
-      return grace(s)
-    }
-    async function grace(s: Awaited<ReturnType<typeof setup>>) {
-      const parent = await createOpenCode(s.core)
-      const kid = await createOpenCode(s.core)
-      expect(await s.core.commands.sessionSetParent({ id: kid.id, parent: parent.id })).toMatchObject({ ok: true })
-      await connect(s.oc)
-      s.fake.captured.set(kid.tmuxName, Array.from({ length: 12 }, (_, i) => `l${i + 1}`).join('\n') + '\n')
-      const ask = (open: boolean) => s.oc.emit({ type: 'pending', sessionId: kid.agentSessionId!, id: 'per_1', kind: 'permission', open })
-      return { ...s, parent, kid, ask }
-    }
-
-    it('a send from the parent that clears the prompt in the window is handled, silently', async () => {
-      const { core, notified, parent, kid, ask } = await held()
-      ask(true)
-      expect(find(core, kid.id)).toMatchObject({ held: true })
-      await vi.advanceTimersByTimeAsync(10_000)
-      expect(await core.commands.sendToSession({ id: kid.id, text: 'y', from: parent.id })).toMatchObject({ ok: true })
-      ask(false)
-      expect(find(core, kid.id)?.held).toBeUndefined()
-      expect(find(core, parent.id)?.handled).toEqual([
-        { childId: kid.id, at: NOW.toISOString(), kind: 'permission', screen: 'l5\nl6\nl7\nl8\nl9\nl10\nl11\nl12', sent: 'y' },
-      ])
-      await vi.advanceTimersByTimeAsync(120_000)
-      expect(notified).toEqual([])
-    })
-
-    it('a clear with no send adds nothing; a send from a non-parent adds nothing', async () => {
-      const { core, notified, parent, kid, ask } = await held()
-      ask(true)
-      ask(false)
-      expect(find(core, parent.id)?.handled).toBeUndefined()
-      ask(true)
-      const other = await createOpenCode(core)
-      await core.commands.sendToSession({ id: kid.id, text: 'y', from: other.id })
-      await core.commands.sendToSession({ id: kid.id, text: 'y' })
-      ask(false)
-      expect(find(core, parent.id)?.handled).toBeUndefined()
-      expect(find(core, other.id)?.handled).toBeUndefined()
-      await vi.advanceTimersByTimeAsync(120_000)
-      expect(notified).toEqual([])
-    })
-
-    it('an unanswered prompt notifies exactly once, after the window', async () => {
-      const { core, notified, kid, ask } = await held()
-      ask(true)
-      await vi.advanceTimersByTimeAsync(59_000)
-      expect(notified).toEqual([])
-      await vi.advanceTimersByTimeAsync(2_000)
-      expect(notified.map((x) => [x.id, x.waitingFor])).toEqual([[kid.id, 'permission']])
-      expect(find(core, kid.id)?.held).toBeUndefined()
-      await vi.advanceTimersByTimeAsync(120_000)
-      expect(notified).toHaveLength(1)
-    })
-
-    it('escalate moves it to needs-you and notifies at once, once', async () => {
-      const { core, notified, kid, ask } = await held()
-      ask(true)
-      await core.commands.sessionEscalate({ id: kid.id, reason: 'drop table' })
-      expect(notified.map((x) => x.attention?.reason)).toEqual(['drop table'])
-      await vi.advanceTimersByTimeAsync(120_000)
-      expect(notified).toHaveLength(1)
-    })
-
-    it('scripted parent loop: wait returns blocked at once, routine is answered and handled, destructive is escalated', async () => {
-      const { core, notified, parent, kid, ask, fake } = await held()
-      // plumbing stand-in for the parent's judgement: the safety rules live in the skill text, a model applies them
-      const routine = (screen: string) => /^(npm test|npm run typecheck|npm run build|git status|git diff|git log)$/.test(screen.trim().split('\n').pop()!.replace(/^run: /, ''))
-      // the parent's loop from the grove skill: wait, read, decide, re-read, send or escalate
-      const handle = async (answer: string) => {
-        const turn = await core.waitTurn(kid.id, { expectStart: false, timeoutMs: 1000 })
-        expect(turn).toEqual({ ok: true, data: { status: 'waiting', waitingFor: 'permission' } }) // exit 4, though the child is held
-        const first = await core.commands.sessionRead({ id: kid.id, lines: 40 })
-        const text = first.ok ? first.data.text : ''
-        if (!routine(text)) return core.commands.sessionEscalate({ id: kid.id, reason: 'asks to ' + text.trim().split('\n').pop()!.replace(/^run: /, '') })
-        const again = await core.commands.sessionRead({ id: kid.id, lines: 40 })
-        if (!again.ok || again.data.text !== text) return core.commands.sessionEscalate({ id: kid.id, reason: 'prompt changed' })
-        return core.commands.sendToSession({ id: kid.id, text: answer, from: parent.id })
-      }
-      fake.captured.set(kid.tmuxName, 'Allow?\nrun: npm test\n')
-      ask(true)
-      expect(await handle('y')).toMatchObject({ ok: true })
-      ask(false)
-      expect(find(core, parent.id)?.handled).toEqual([
-        expect.objectContaining({ childId: kid.id, kind: 'permission', sent: 'y', screen: 'Allow?\nrun: npm test' }),
-      ])
-      expect(notified).toEqual([])
-      fake.captured.set(kid.tmuxName, 'Allow?\nrun: rm -rf build\n')
-      ask(true)
-      expect(await handle('y')).toMatchObject({ ok: true })
-      expect(find(core, kid.id)).toMatchObject({ attention: { reason: 'asks to rm -rf build' } })
-      expect(notified.map((x) => x.attention?.reason)).toEqual(['asks to rm -rf build'])
-      expect(find(core, parent.id)?.handled).toHaveLength(1)
-      await vi.advanceTimersByTimeAsync(120_000)
-      expect(notified).toHaveLength(1)
-    })
-
-    it('scripted parent loop: a changed screen between reads, or a non-routine one, sends nothing', async () => {
-      const { core, parent, kid, ask, fake } = await held()
-      ask(true)
-      fake.captured.set(kid.tmuxName, 'Allow?\nrun: cat .env\n')
-      const t = (await core.commands.sessionRead({ id: kid.id, lines: 40 })) as { data: { text: string } }
-      expect(t.data.text).toContain('cat .env')
-      await core.commands.sessionEscalate({ id: kid.id, reason: 'reads .env' })
-      ask(false)
-      expect(find(core, parent.id)?.handled).toBeUndefined()
-    })
-
-    it('a child held past the window while on screen ends the hold without a popup', async () => {
-      const { core, notified, kid, ask } = await held()
-      ask(true)
-      expect(find(core, kid.id)?.held).toBe(true)
-      core.setWindowFocused(true)
-      await core.commands.uiSet({ focusedSessionId: kid.id })
-      await vi.advanceTimersByTimeAsync(61_000)
-      expect(find(core, kid.id)).toMatchObject({ status: 'waiting', waitingFor: 'permission' })
-      expect(find(core, kid.id)?.held).toBeUndefined()
-      expect(notified).toEqual([])
-    })
-
-    it('clamps a huge escalateAfterSec to the timer maximum, still holding', async () => {
-      const { core, notified, kid, ask } = await held({ escalateAfterSec: 1e10 })
-      ask(true)
-      await vi.advanceTimersByTimeAsync(2_147_483_646)
-      expect(find(core, kid.id)?.held).toBe(true)
-      expect(notified).toEqual([])
-      await vi.advanceTimersByTimeAsync(2)
-      expect(find(core, kid.id)?.held).toBeUndefined()
-      expect(notified.map((x) => x.id)).toEqual([kid.id])
-    })
-
-    it('keeps only the newest 50 handled prompts per parent', async () => {
-      const { core, parent, kid, ask } = await held()
-      for (let i = 0; i < 55; i++) {
-        ask(true)
-        await core.commands.sendToSession({ id: kid.id, text: `a${i}`, from: parent.id })
-        ask(false)
-      }
-      const list = find(core, parent.id)?.handled ?? []
-      expect(list).toHaveLength(50)
-      expect(list[0].sent).toBe('a5')
-      expect(list[49].sent).toBe('a54')
-    })
-
-    it('never saves held or handled', async () => {
-      const { core, statePath, parent, kid, ask } = await held()
-      ask(true)
-      expect(fs.readFileSync(statePath, 'utf8')).not.toContain('"held"')
-      await core.commands.sendToSession({ id: kid.id, text: 'sekret-answer', from: parent.id })
-      ask(false)
-      expect(find(core, parent.id)?.handled).toHaveLength(1)
-      const saved = fs.readFileSync(statePath, 'utf8')
-      expect(saved).not.toContain('"handled"')
-      expect(saved).not.toContain('sekret-answer')
-    })
-
-    it('escalateAfterSec 0 turns the hold off, a custom value sets the window, and it survives a config rewrite', async () => {
-      const off = await held({ escalateAfterSec: 0 })
-      off.ask(true)
-      expect(off.notified.map((x) => x.id)).toEqual([off.kid.id])
-      off.core.dispose()
-      disposeAll()
-      const { loadConfig } = await import('./store/configStore')
-      const short = await held({ escalateAfterSec: 5 })
-      short.ask(true)
-      await vi.advanceTimersByTimeAsync(4_000)
-      expect(short.notified).toEqual([])
-      await vi.advanceTimersByTimeAsync(2_000)
-      expect(short.notified).toHaveLength(1)
-      await short.core.commands.projectRemove({ id: 'nope' })
-      expect(loadConfig(short.configPath).escalateAfterSec).toBe(5)
-    })
+  it('a child entering permission or question notifies in the same tick', async () => {
+    const { core, oc, notified } = await setup()
+    const parent = await createOpenCode(core)
+    const kid = await createOpenCode(core)
+    expect(await core.commands.sessionSetParent({ id: kid.id, parent: parent.id })).toMatchObject({ ok: true })
+    await connect(oc)
+    oc.emit({ type: 'pending', sessionId: kid.agentSessionId!, id: 'per_1', kind: 'permission', open: true })
+    expect(find(core, kid.id)).toMatchObject({ status: 'waiting', waitingFor: 'permission' })
+    expect(notified.map((x) => [x.id, x.waitingFor])).toEqual([[kid.id, 'permission']])
+    oc.emit({ type: 'pending', sessionId: kid.agentSessionId!, id: 'per_1', kind: 'permission', open: false })
+    oc.emit({ type: 'pending', sessionId: kid.agentSessionId!, id: 'q_1', kind: 'question', open: true })
+    expect(notified.map((x) => [x.id, x.waitingFor])).toEqual([[kid.id, 'permission'], [kid.id, 'question']])
   })
 
   it('notifies on reconnect only for real changes', async () => {

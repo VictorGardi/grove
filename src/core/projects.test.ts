@@ -1,6 +1,7 @@
 import fs from 'node:fs'
 import path from 'node:path'
 import { afterEach, describe, expect, it } from 'vitest'
+import type { ConfigFile } from '@shared/types'
 import { loadConfig, saveConfig } from './store/configStore'
 import { loadState } from './store/stateStore'
 import { createTerminal, setupCore } from './testing/setup'
@@ -91,5 +92,15 @@ describe('config sounds', () => {
     expect(a.soundsOn()).toBe(false)
     expect(await a.commands.projectRemove({ id: 'p' })).toEqual({ ok: true, data: { id: 'p' } })
     expect(loadConfig(s.configPath).sounds).toBe(false)
+  })
+
+  it('ignores a dead escalateAfterSec in config.json and writes it back unchanged', async () => {
+    const s = setupCore()
+    disposeAll = s.disposeAll
+    saveConfig(s.configPath, { ...loadConfig(s.configPath), escalateAfterSec: 5 } as ConfigFile)
+    const a = s.make()
+    await a.start()
+    expect(await a.commands.projectRemove({ id: 'p' })).toEqual({ ok: true, data: { id: 'p' } })
+    expect(JSON.parse(fs.readFileSync(s.configPath, 'utf8')).escalateAfterSec).toBe(5)
   })
 })

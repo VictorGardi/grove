@@ -103,17 +103,12 @@ Parent mode, all required (`--force` is not available here):
      it runs `grove wait <label> --timeout 600` (one call, never in a background loop).
      Exit 0 or 124: end the turn as above (the report arrives as a message; on 124 with the
      child still working, wait once more; a second 124: end the turn). Exit 5: the child ended; go to the git check in
-     step 4. Exit 4: the child is waiting on a permission or question; Grove holds it for a
-     grace window (60 s by default) so the parent can deal with it. Follow "Answering a
-     child's prompt" in the grove skill (`grove skill` prints it; it is the one source of the routine and never-answer lists): `grove read <label> --lines 40`,
-     decide against the routine list there, re-read the screen right before sending, answer
-     with `grove send <label> "<answer>"` only for a routine prompt you are sure of, and
-     otherwise `grove escalate <label> "<one-line reason>"`. After an answer, wait again; after
-     an escalation, end the turn and say which child needs the human (the human answers in
-     that child; then they say "continue" here). Unsure means escalate. Never `send` to a child
-     whose prompt you have not just read.
-   - Silence: a child that never reports (crash, or a permission prompt that was escalated, shown
-     as waiting in the sidebar) is seen by the human via the label. When the
+     step 4. A child waiting on a permission or question is still running for `wait`
+     (no special exit code); the human sees that prompt in the sidebar and answers it in the
+     child. The parent never answers a child's prompt and never `send`s into a child that is
+     waiting on one.
+   - Silence: a child that never reports (crash, or a permission prompt or question, shown
+     as waiting in the sidebar for the human to answer) is seen by the human via the label. When the
      human says "continue" here and the child is waiting, say which child (name the label)
      to answer the prompt in, then say "continue" here or run
      `grove-run <slug> --continue`. When the
@@ -121,7 +116,7 @@ Parent mode, all required (`--force` is not available here):
      `04-run.md` and `grove ls` first: slice finished but report lost, go to
      step 4; child still waiting, tell the human to answer in that child and
      start nothing; child still working: say so, start nothing, end the turn;
-     child gone with no matching commit: stop as in the git check. Never `send` into a child waiting on a prompt, except an answer to a routine prompt you have just re-read (see "A child's prompt"); never start a
+     child gone with no matching commit: stop as in the git check. Never `send` into a child waiting on a prompt; never start a
      later slice without a report or a git-confirmed finish.
 4. **Check in git.** `git -C <worktree> log -1 --format=%s` must equal
    `<slug>: slice N — <outcome>` and `git -C <worktree> rev-list --count
@@ -223,6 +218,6 @@ the last slice's gate answered finish, or the human abandoning the run.
 - The parent asks only the commit-first question, the gate questions (slice 1, `--review-each` slices, final), the `--continue` run-choice question, the `--continue` option question and the `--continue` retry / leave-it question; every other slice runs with no prompt.
 - The parent never edits files in the worktree.
 - Never start a later slice on a broken base.
-- Never mark a child done or kill it before its gate is answered; a finished child is marked done with `grove status <label> done`, never killed (`grove kill` is only for replacing a live idle child on `--continue` retry); never `send` into a child waiting on a prompt, except an answer to a routine prompt you have just re-read (see step 3, "A child's prompt").
+- Never mark a child done or kill it before its gate is answered; a finished child is marked done with `grove status <label> done`, never killed (`grove kill` is only for replacing a live idle child on `--continue` retry); never `send` into a child waiting on a prompt.
 - Name roles only; never model names.
 - Only `grove-approve`, invoked by the human, approves. This skill approves nothing.

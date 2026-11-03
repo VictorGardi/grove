@@ -2,7 +2,7 @@ import { randomUUID } from 'node:crypto'
 import fs from 'node:fs'
 import os from 'node:os'
 import path from 'node:path'
-import type { Comment, CommentAnchor, ConfigFile, FeatureKey, HandledPrompt, Project, PullRequest, Session, SessionDiff, SessionKind, Slices, UiState, WorkflowStatus } from '@shared/types'
+import type { Comment, CommentAnchor, ConfigFile, FeatureKey, Project, PullRequest, Session, SessionDiff, SessionKind, Slices, UiState, WorkflowStatus } from '@shared/types'
 import { DEFAULT_UI, EMPTY_FEATURES, OPENCODE_CONNECTING } from '@shared/types'
 import { keyProjectId } from '@shared/groups'
 import { opencodeCliConfig, opencodeModelEnv } from '@shared/opencodeSession'
@@ -100,7 +100,6 @@ export interface Commands {
   sessionResume(a: { id: string }): Promise<Result<Session>> // gone agent sessions only
   sessionRename(a: { id: string; label: string }): Promise<Result<Session>>
   sessionWorkflowStatus(a: { id: string; status: WorkflowStatus }): Promise<Result<Session>>
-  sessionEscalate(a: { id: string; reason: string }): Promise<Result<Session>> // a parent says this waiting child needs the human; error not-waiting unless it waits on a permission or question
   sessionProgress(a: { id: string; done: number; total: number }): Promise<Result<Session>> // a parent's run progress, shown on its row
   sessionLink(a: { id: string; feature: string | null }): Promise<Result<Session>>
   sessionPromote(a: { id: string; promoted: boolean }): Promise<Result<Session>> // a linked session also shows as its own row; not-found when it has no link
@@ -114,7 +113,7 @@ export interface Commands {
   diffRefs(a: { sessionId: string }): Promise<Result<{ branches: string[]; current: string | null; default: string | null }>> // every local and fetched remote branch to search as a diff base, the branch HEAD is on, the detected default
   reviewSend(a: { sessionId: string; feature?: FeatureKey }): Promise<Result<{ sent: number }>> // the session's drafts and those kept on its linked feature (or on `feature`, for a session not linked to it) as one message, the latter re-owned to it; none: 'empty'
   reviewStartAndSend(a: { feature: FeatureKey; kind: SessionKind; cols: number; rows: number }): Promise<Result<{ sessionId: string; sent: number }>> // a new agent session linked to the feature, launched with its kept drafts as the prompt (D4)
-  sendToSession(a: { id: string; text: string; submit?: boolean; from?: string }): // from: the calling session; a send from a held child's parent is what makes its clear count as handled
+  sendToSession(a: { id: string; text: string; submit?: boolean }):
     Promise<Result<{ id: string }>>
   dictate(a: { id: string; text: string }): Promise<Result<{ id: string }>>
   sessionRead(a: { id: string; lines: number }): Promise<Result<{ text: string }>> // the pane's last lines; empty when it is gone
@@ -161,9 +160,8 @@ export function createCore(opts: CoreOptions): Core {
   const watchers = opts.watchers ?? chokidarWatchers
   let configWorkflow: string | undefined
   let configSounds: boolean | undefined
-  let configEscalate: number | undefined // config.json `escalateAfterSec` as written; the grace window in use is escalateAfterSec()
-  const escalateAfterSec = () => configEscalate ?? 60
   let configClassifier: ConfigFile['classifier'] // config.json `classifier` as written
+  let configExtra: Record<string, unknown> = {} // config.json keys the app does not read: written back unchanged
   let classifier: ReturnType<typeof createClassifier> | null = null // null: no runner given, or enabled: false
   let classifyKinds: SessionKind[] = ['claude'] // the agent kinds whose screens may be sent; claude by default
   let classifying = false // one model call at a time
@@ -207,10 +205,6 @@ export function createCore(opts: CoreOptions): Core {
           : !!f.focusedProject && slices.projects.some((p) => p.id === f.focusedProject)
   let lastOnScreen: string | null = null
   const waitKey = new Map<string, string>() // session id → waitingFor it was last seen waiting with
-  const holdTimers = new Map<string, ReturnType<typeof setTimeout>>() // child id → its grace-window timer
-  const holdScreen = new Map<string, string>() // child id → last 8 lines of its pane as the prompt opened
-  const holdSent = new Map<string, string>() // child id → text its parent sent with `grove send` during the hold
-  const notified = new Map<string, string>() // session id → waitingFor a notify was fired for (so an escalation never pops a second time)
   const held = new Map<string, string>() // session id → slug it wrote to that discovery hasn't listed yet
   let lastCwds = new Map<string, string>() // tmux name → pane cwd, from the last refresh
   const sending = new Set<string>() // sessions, and `feature:` keys, with a review send in flight
@@ -258,22 +252,22 @@ export function createCore(opts: CoreOptions): Core {
   }
 
   function set<K extends keyof Slices>(k: K, v: Slices[K]): void {
-    if (k === 'sessions') v = dropStaleClassified(dropStaleAttention(stampStatusAt(v as Session[]))) as Slices[K]
+    if (k === 'sessions') v = dropStaleClassified(stampStatusAt(v as Session[])) as Slices[K]
     slices[k] = v
     for (const l of listeners) l(k, v)
     if (k === 'projects') {
       saveConfig(opts.configPath, {
+        ...configExtra,
         schemaVersion: 1,
         projects: slices.projects,
         ...(configWorkflow !== undefined && { workflow: configWorkflow }),
         ...(configSounds !== undefined && { sounds: configSounds }),
-        ...(configEscalate !== undefined && { escalateAfterSec: configEscalate }),
         ...(configClassifier !== undefined && { classifier: configClassifier }),
       })
     }
     else if (k === 'sessions' || k === 'ui') {
       const sessions = slices.sessions.filter((s) => !unsaved(s.id)).map(
-        ({ startup: _startup, statusAt: _statusAt, branch: _branch, status: _status, waitingFor: _waitingFor, held: _held, handled: _handled, attention: _attn, classified: _cl, progress: _prog, contextPct: _p, contextTokens: _t, contextWindow: _w, model: _m, pr: _pr, ...s }) => s,
+        ({ startup: _startup, statusAt: _statusAt, branch: _branch, status: _status, waitingFor: _waitingFor, classified: _cl, progress: _prog, contextPct: _p, contextTokens: _t, contextWindow: _w, model: _m, pr: _pr, ...s }) => s,
       ) // live-only
       saveState(opts.statePath, { schemaVersion: 11, sessions, ui: slices.ui })
     }
@@ -550,15 +544,6 @@ export function createCore(opts: CoreOptions): Core {
     lastDiffChoice = choice
   }
 
-  // An escalation belongs to one wait: it goes when the child is no longer waiting on that.
-  function dropStaleAttention(next: Session[]): Session[] {
-    return next.map((s) => {
-      if (!s.attention || (s.status === 'waiting' && s.waitingFor === s.attention.waitingFor)) return s
-      const { attention: _a, ...rest } = s
-      return rest
-    })
-  }
-
   // A verdict belongs to one idle period: it goes when the session moves on from that finish.
   function dropStaleClassified(next: Session[]): Session[] {
     return next.map((s) => {
@@ -660,72 +645,18 @@ export function createCore(opts: CoreOptions): Core {
     pumpClassifier()
   }
 
-  // End a child's hold (timer, captured screen, remembered send). Returns the session without `held`.
-  function endHold(id: string): void {
-    clearTimeout(holdTimers.get(id))
-    holdTimers.delete(id)
-    holdScreen.delete(id)
-    holdSent.delete(id)
-    const s = findSession(id)
-    if (s?.held) {
-      const { held: _h, ...rest } = s
-      replaceSession(rest)
-    }
-  }
-
-  // A child's prompt cleared inside the window: if its parent answered it with `grove send`, the
-  // parent's audit gains the entry. A clear with no such send (the human, or the child) adds nothing.
-  const HANDLED_MAX = 50
-  function settleHold(s: Session): void {
-    const sent = holdSent.get(s.id)
-    const screen = holdScreen.get(s.id) ?? ''
-    const kind = waitKey.get(s.id)
-    endHold(s.id)
-    const parent = s.link ? findSession(s.link.id) : undefined
-    if (sent === undefined || !parent || (kind !== 'permission' && kind !== 'question')) return
-    const entry: HandledPrompt = { childId: s.id, at: now().toISOString(), kind, screen, sent }
-    replaceSession({ ...parent, handled: [...(parent.handled ?? []), entry].slice(-HANDLED_MAX) }) // the newest only
-  }
-
-  const MAX_TIMER_MS = 2_147_483_647 // setTimeout fires at once above this
-  function startHold(s: Session, waitingFor: 'permission' | 'question'): void {
-    endHold(s.id)
-    replaceSession({ ...(findSession(s.id) ?? s), held: true })
-    void backend.capture(s.tmuxName, 8).then((text) => {
-      if (holdTimers.has(s.id)) holdScreen.set(s.id, text.replace(/\s+$/, '').split('\n').slice(-8).join('\n'))
-    }, () => {})
-    holdTimers.set(s.id, setTimeout(() => {
-      holdTimers.delete(s.id)
-      const cur = findSession(s.id)
-      if (!cur?.held || cur.status !== 'waiting' || cur.waitingFor !== waitingFor) return endHold(s.id)
-      endHold(s.id)
-      if (notified.get(s.id) === waitingFor || s.id === lastOnScreen) return // on screen: no popup, as in notifyTransitions
-      notified.set(s.id, waitingFor)
-      for (const cb of notifyListeners) cb(findSession(s.id) ?? cur)
-    }, Math.min(escalateAfterSec() * 1000, MAX_TIMER_MS)))
-  }
-
   // Notify on entering waiting (or a new reason) off screen. Disconnected sessions keep their entry.
   function notifyTransitions(kind: SessionKind, primed: boolean, onScreen: string | null): void {
     for (const s of slices.sessions) {
       if (s.kind !== kind || s.lastStatus !== 'running' || !s.status) continue
       if (s.status !== 'waiting' || !s.waitingFor) {
-        if (holdTimers.has(s.id)) settleHold(s)
         waitKey.delete(s.id)
-        notified.delete(s.id)
         continue
       }
       if (waitKey.get(s.id) === s.waitingFor) continue
-      if (holdTimers.has(s.id)) endHold(s.id) // the wait changed reason: a new hold, if any
       waitKey.set(s.id, s.waitingFor)
       // a finished child stays quiet: its leader owns the attention
       if (primed && s.id !== onScreen && !(s.link && s.waitingFor === 'done')) {
-        // a child's permission or question is held for the grace window so its parent can answer it
-        if (s.link && (s.waitingFor === 'permission' || s.waitingFor === 'question') && escalateAfterSec() > 0) {
-          startHold(s, s.waitingFor)
-          continue
-        }
-        notified.set(s.id, s.waitingFor)
         for (const cb of notifyListeners) cb(s)
       }
     }
@@ -1187,24 +1118,6 @@ export function createCore(opts: CoreOptions): Core {
       return { ok: true, data: next }
     },
 
-    async sessionEscalate({ id, reason }) {
-      const session = findSession(id)
-      if (!session) return { ok: false, error: 'not-found' }
-      const waitingFor = session.waitingFor
-      if (session.status !== 'waiting' || (waitingFor !== 'permission' && waitingFor !== 'question')) return { ok: false, error: 'not-waiting' }
-      endHold(id) // the parent gives up on it: Needs you now, popup at once
-      const line = reason.split('\n').map((l) => l.trim()).find((l) => l) ?? ''
-      replaceSession({ ...(findSession(id) ?? session), attention: { reason: line.slice(0, 200), waitingFor } })
-      const next = findSession(id) ?? session
-      // the popup rule: one per wait; a child that already popped only gains the reason
-      if (notified.get(id) !== waitingFor && id !== lastOnScreen) {
-        notified.set(id, waitingFor)
-        waitKey.set(id, waitingFor) // so notifyTransitions does not pop a second time for this wait
-        for (const cb of notifyListeners) cb(next)
-      }
-      return { ok: true, data: next }
-    },
-
     async sessionProgress({ id, done, total }) {
       const session = findSession(id)
       if (!session) return { ok: false, error: 'not-found' }
@@ -1385,15 +1298,7 @@ export function createCore(opts: CoreOptions): Core {
       }
     },
 
-    async sendToSession(a) {
-      // a send from the held child's own parent is remembered, before the paste so a fast clear still finds it
-      const target = findSession(a.id)
-      const noted = !!(a.from && target?.held && target.link?.id === a.from)
-      if (noted) holdSent.set(a.id, a.text)
-      const res = await sendToSession(sendDeps, a)
-      if (!res.ok && noted) holdSent.delete(a.id)
-      return res
-    },
+    sendToSession: (a) => sendToSession(sendDeps, a),
     dictate: (a) => dictate({ find: findSession, backend }, a),
     async sessionRead({ id, lines }) {
       const session = findSession(id)
@@ -1407,8 +1312,9 @@ export function createCore(opts: CoreOptions): Core {
       const onBad = (m: string) => errors.push(m)
       const config = loadConfig(opts.configPath, onBad)
       configWorkflow = config.workflow
+      const { schemaVersion: _v, projects: _p, workflow: _w, sounds: _s, classifier: _c, ...extra } = config as ConfigFile & Record<string, unknown>
+      configExtra = extra
       configSounds = typeof config.sounds === 'boolean' ? config.sounds : undefined
-      configEscalate = typeof config.escalateAfterSec === 'number' && Number.isFinite(config.escalateAfterSec) && config.escalateAfterSec >= 0 ? config.escalateAfterSec : undefined
       configClassifier = config.classifier && typeof config.classifier === 'object' ? config.classifier : undefined
       const kinds: unknown = configClassifier?.kinds
       classifyKinds = Array.isArray(kinds)
@@ -1553,8 +1459,6 @@ export function createCore(opts: CoreOptions): Core {
       disposed = true
       classifier = null
       classifyTried.clear()
-      for (const t of holdTimers.values()) clearTimeout(t)
-      holdTimers.clear()
       diffWatch.dispose()
       for (const st of states.values()) st.source.stop()
       void workflowWatch?.close()

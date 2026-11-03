@@ -10,14 +10,12 @@ function session(over: Partial<Session> = {}): Session {
   }
 }
 
-describe('rowLine finished and held children', () => {
+describe('rowLine finished children', () => {
   const kid = (over: Partial<Session>) => session({ link: { id: 'p', kind: 'group' }, status: 'waiting', label: 'kid', ...over })
-  it('a held or finished child reads by its named line; a real child wait still says what it needs', () => {
-    expect(rowLine(kid({ waitingFor: 'permission', held: true }))).toBe('kid · working')
+  it('a finished child reads by its named line; a real child wait still says what it needs', () => {
     expect(rowLine(kid({ waitingFor: 'done' }))).toBe('kid · waiting · done')
     expect(rowLine(kid({ waitingFor: 'permission' }))).toBe('Needs permission')
     expect(rowLine(kid({ waitingFor: 'question' }))).toBe('Has a question')
-    expect(rowLine(kid({ waitingFor: 'permission', held: true, attention: { reason: 'Need prod key', waitingFor: 'permission' } }))).toBe('Need prod key')
     expect(rowLine(session({ status: 'waiting', waitingFor: 'permission' }))).toBe('Needs permission')
   })
 })
@@ -33,15 +31,12 @@ describe('rowLine classified', () => {
 
 describe('rowLine attention', () => {
   const waiting = (over: Partial<Session>) => session({ status: 'waiting', lastLine: 'did a thing', ...over })
-  it('says the escalated reason over lastLine', () => {
-    expect(rowLine(waiting({ waitingFor: 'permission', attention: { reason: 'Run rm -rf?', waitingFor: 'permission' } }))).toBe('Run rm -rf?')
-  })
   it('falls back per wait kind', () => {
     expect(rowLine(waiting({ waitingFor: 'permission' }))).toBe('Needs permission')
     expect(rowLine(waiting({ waitingFor: 'question' }))).toBe('Has a question')
   })
   it('leaves other sessions alone', () => {
-    expect(rowLine(session({ status: 'working', lastLine: 'did a thing', attention: { reason: 'x', waitingFor: 'question' } }))).toBe('did a thing')
+    expect(rowLine(session({ status: 'working', lastLine: 'did a thing'}))).toBe('did a thing')
     expect(rowLine(waiting({ waitingFor: 'done' }))).toBe('did a thing')
   })
 })

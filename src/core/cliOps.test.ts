@@ -154,13 +154,25 @@ describe('waitTurn', () => {
     expect(await p).toMatchObject({ ok: true, data: { status: 'idle' } })
   })
 
-  it('reports permission and question as waiting, and a gone or removed session as gone', async () => {
+  it('still times out while the session waits on a permission', async () => {
     const perm = mk({ status: 'waiting', waitingFor: 'permission' })
-    expect(await waitTurn(perm.deps, 's', { expectStart: false, timeoutMs: 1000 })).toEqual({ ok: true, data: { status: 'waiting', waitingFor: 'permission' } })
-    const q = mk({ status: 'working' })
-    const p = waitTurn(q.deps, 's', { expectStart: false, timeoutMs: 1000 })
-    q.set({ status: 'waiting', waitingFor: 'question' })
-    expect(await p).toMatchObject({ data: { status: 'waiting', waitingFor: 'question' } })
+    const p = waitTurn(perm.deps, 's', { expectStart: false, timeoutMs: 20 })
+    vi.advanceTimersByTime(20)
+    expect(await p).toEqual({ ok: false, error: 'timeout' })
+  })
+
+  it('keeps waiting through a permission or question, then ends idle or gone', async () => {
+    const perm = mk({ status: 'waiting', waitingFor: 'permission' })
+    let ended = false
+    const pp = waitTurn(perm.deps, 's', { expectStart: false, timeoutMs: 1000 }).then((r) => { ended = true; return r })
+    await Promise.resolve()
+    expect(ended).toBe(false)
+    perm.set({ status: 'working' })
+    perm.set({ status: 'waiting', waitingFor: 'question' })
+    await Promise.resolve()
+    expect(ended).toBe(false)
+    perm.set({ status: 'idle' })
+    expect(await pp).toEqual({ ok: true, data: { status: 'idle', waitingFor: null } })
     const g = mk({ status: 'working' })
     const pg = waitTurn(g.deps, 's', { expectStart: true, timeoutMs: 1000 })
     g.set({ lastStatus: 'gone', status: undefined })

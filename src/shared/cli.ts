@@ -9,19 +9,18 @@ export interface CliMethods {
     params: { kind: SessionKind; cwd: string; prompt?: string; label?: string; feature?: string; parent?: string; relation?: 'slice'; worktree?: boolean; branch?: string; base?: string; model?: string; wait?: boolean; timeoutS?: number }
     data: CliSession & { turn?: TurnResult }
   }
-  'sessions.send': { params: { ref: string; text: string; submit: boolean; wait?: boolean; timeoutS?: number; from?: string }; data: { id: string; turn?: TurnResult } }
+  'sessions.send': { params: { ref: string; text: string; submit: boolean; wait?: boolean; timeoutS?: number }; data: { id: string; turn?: TurnResult } }
   'sessions.wait': { params: { ref: string; timeoutS?: number }; data: { id: string } & TurnResult }
   'sessions.focus': { params: { ref: string }; data: { id: string } }
   'sessions.kill': { params: { ref: string }; data: { id: string } }
   'sessions.status': { params: { ref: string; status: WorkflowStatus }; data: { id: string } }
-  'sessions.escalate': { params: { ref: string; reason: string }; data: { id: string } }
   'sessions.progress': { params: { ref: string; done: number; total: number }; data: { id: string } }
   'sessions.read': { params: { ref: string; lines: number }; data: { text: string } }
 }
 
-// How a wait ended: `waiting` is for permission or a question. The CLI exits 0, 4, 5.
+// How a wait ended: The CLI exits 0 (idle), 5 (gone).
 export interface TurnResult {
-  status: 'idle' | 'waiting' | 'gone'
+  status: 'idle' | 'gone'
   waitingFor: Session['waitingFor'] | null
 }
 

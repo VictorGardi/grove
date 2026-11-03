@@ -140,7 +140,6 @@ describe('deriveFeatures', () => {
     ['waiting with a waiting OpenCode session', { '01-questions.md': approved }, { kind: 'opencode', status: 'waiting', waitingFor: 'question' }, 'waiting'],
     ['not waiting when the session is gone', { '01-questions.md': approved }, { kind: 'opencode', status: 'waiting', lastStatus: 'gone' }, 'ready'],
     ['not waiting with a finished child', { '01-questions.md': approved }, { kind: 'opencode', status: 'waiting', waitingFor: 'done', link: { id: 'x', kind: 'group' } }, 'ready'],
-    ['not waiting with a held child prompt', { '01-questions.md': approved }, { kind: 'opencode', status: 'waiting', waitingFor: 'permission', link: { id: 'x', kind: 'group' }, held: true }, 'ready'],
     ['waiting with a real child permission', { '01-questions.md': approved }, { kind: 'opencode', status: 'waiting', waitingFor: 'permission', link: { id: 'x', kind: 'group' } }, 'waiting'],
     ['waiting with a finished top-level session', { '01-questions.md': approved }, { kind: 'opencode', status: 'waiting', waitingFor: 'done' }, 'waiting'],
     ['not running with a session in another project', { '01-questions.md': approved }, { kind: 'opencode', status: 'working', projectId: 'q' }, 'ready'],

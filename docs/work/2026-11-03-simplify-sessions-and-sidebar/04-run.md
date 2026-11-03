@@ -171,4 +171,39 @@ Round 1: fresh reviewer found 0 blocking. Applied cheap non-blocking: a mangled 
 
 Make the same epic-text edits to `contract.md` and `gates.md` in the grove-skills repo that syncs them, or the next sync restores them.
 
+## Slice 5
+
+Session: simplify-sessions-and-sidebar-slice-5-a1
+Status: done
+Commit: this commit (see git log)
+
+### Slice plan
+
+Found in the code: the hold lives in `core.ts` (`startHold`, `settleHold`, `endHold`, `holdTimers`, `holdSent`, `escalateAfterSec`/`configEscalate`, `sessionEscalate`, the `noted` check in `sendToSession`, the `attention` clearing and the `notified` map); `held`, `handled`, `attention`, `HandledPrompt` and `ConfigFile.escalateAfterSec` in `types.ts`; `asksHuman` in `shared/attention.ts` reads `held`; `sessionStatus.ts`, `rowText.ts` read `held`/`attention`; `main/index.ts` notification body reads `attention.reason`; `sessions.escalate` in `shared/cli.ts`/`cliServer.ts`; `escalate` in `cli/args.ts`/`index.ts`; `sessions.send` carries `from`; `waitTurn` in `cliOps.ts` returns `status: 'waiting'` for permission/question (CLI exit 4). The two skills and README/CONTEXT describe the hold.
+
+Implementer A (code):
+- [x] Remove the hold and escalate from `core.ts`, `types.ts`, `attention.ts`, `cli.ts`, `cliServer.ts`, `cli/*`, `main/index.ts`, renderer readers; `from` out of `grove send`; `waitTurn` keeps waiting through permission/question (D7 A), `TurnResult.status` loses `waiting`, exit 4 gone; `escalateAfterSec` in an old config.json ignored and preserved on save
+- [x] Rewrite tests; add the same-tick notification test, the plain-waiting `asksHuman` test and the config-survives-save test
+
+Implementer B (docs/skills):
+- [x] `resources/skills/grove/SKILL.md`, `resources/skills/grove-run/SKILL.md`, `README.md`, `CONTEXT.md`, new ADR 0049 superseding the hold parts of earlier ADRs
+
+Models passed: implementer: inherit, reviewer: inherit
+
+### Review rounds
+
+Round 1: fresh reviewer found 2 blocking: `README.md` still said `grove wait` exits 4, and `grove-run/SKILL.md` rules kept an "except a routine prompt" send exception that D7 removes. Both fixed by the planner directly (one-line text edits). Also applied: stale exit-code comment in `cli/output.ts`, a typo in `shared/cli.ts`, a new `waitTurn` test that the timeout still fires while a permission is waiting. Verdict: approved after 1 fix round. Non-blocking left: `TurnResult.waitingFor` is now always `null`; a comment in `attention.ts` mentions old board cards.
+
+### Deviations
+
+`saveConfig` writes only known keys, so core now keeps a `configExtra` of every other `config.json` key and spreads it back on save (this is how `escalateAfterSec` is preserved). `notified` and `dropStaleAttention` went with the hold. `TurnResult.status` is `'idle' | 'gone'`: exit 4 is gone from `grove wait`. No older ADR described the hold, so no supersession notes; ADR 0049 records the removal. `README.md` and `CONTEXT.md` needed only the exit-code line in README.
+
+### Verification
+
+`npm run typecheck` and `npm test` (118 files, 1392 tests) pass. The plan's greps return only the dead-key comment in `types.ts` and the preserve test in `projects.test.ts`; remaining `held` hits are unrelated (dictation, SessionGrid, worktrees, slug discovery map); `grep grace|handled|Grove holds resources/skills` returns only "handled in step 2" in `continue.md`. Tests added: same-tick child notification, `asksHuman` true for a plain waiting session, config with `escalateAfterSec` survives a save, `waitTurn` keeps waiting and still times out. Models requested: implementer inherit, reviewer inherit.
+
+### Left for the human
+
+Update the grove and grove-run skills in the grove-skills repo that syncs them, if they are copied from there. ESLint was not run (config format error).
+
 ## Open questions

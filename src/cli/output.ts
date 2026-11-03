@@ -30,8 +30,8 @@ export function exitCode(reply: CliReply): number {
   return reply.error.code === NOT_RUNNING ? 3 : reply.error.code === 'timeout' ? 124 : 1
 }
 
-// 0 finished, 4 needs the human, 5 gone.
-export const turnExit = (t: TurnResult): number => (t.status === 'waiting' ? 4 : t.status === 'gone' ? 5 : 0)
+// 0 finished, 5 gone.
+export const turnExit = (t: TurnResult): number => (t.status === 'gone' ? 5 : 0)
 
 export function formatError(error: { code: string; message: string }): string {
   return error.code === NOT_RUNNING ? 'grove: the Grove app is not running' : `grove: ${error.code}: ${error.message}`

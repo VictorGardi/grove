@@ -42,7 +42,7 @@ Isolation beyond git worktrees is left to each agent provider's own features.
 grove ls                                          # list sessions
 grove new claude --prompt "fix the flaky test" --worktree --branch fix-flaky
 grove send <session> "also update the docs"
-grove wait <session>                              # exit 0 done, 4 needs you, 5 gone
+grove wait <session>                              # exit 0 done, 5 gone, 124 timeout
 grove read <session> --lines 50                   # last lines of its screen
 grove focus <session>   # show it in the app
 grove kill <session>    # end it

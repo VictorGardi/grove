@@ -10,7 +10,6 @@ export type Command =
   | { cmd: 'focus'; ref: string }
   | { cmd: 'kill'; ref: string }
   | { cmd: 'status'; ref?: string; value: WorkflowStatus }
-  | { cmd: 'escalate'; ref: string; reason: string }
   | { cmd: 'progress'; ref: string; done: number; total: number }
   | { cmd: 'skill' }
   | { cmd: 'read'; ref: string; lines: number }
@@ -31,12 +30,11 @@ export const USAGE = `usage: grove <command>
   grove new copilot --model NAME                 start Copilot with that model (a name \`copilot --model\` takes)
   grove send <ref> <TEXT|-> [--no-enter] [--wait] [--timeout S]
                                                  type text into a session and submit it
-  grove wait <ref> [--timeout S]                 block until the session stops working (exit 0 done, 4 needs you, 5 gone, 124 timeout)
+  grove wait <ref> [--timeout S]                 block until the session stops working (exit 0 done, 5 gone, 124 timeout)
   grove focus <ref>                              show a session and raise the window
   grove kill <ref>                               end a session
   grove status [<ref>] <value>                   set a session's workflow status (default: this session); value is one of
                                                  backlog, in-progress, blocked, in-review, cancelled, done, pinned
-  grove escalate <ref> <reason>                  say a waiting child needs the human, with why (it stays waiting on a permission or question)
   grove progress <ref> <done>/<total>            declare how many of a run's slices are done
   grove skill                                    print the agent skill for grove
   grove read <ref> [--lines N]                   print the last N lines (default 100) of a session's screen`
@@ -114,11 +112,6 @@ export function parseCommand(argv: string[]): Command | UsageError {
       const value = positionals[positionals.length - 1]
       if (!WORKFLOW_STATUS_VALUES.includes(value as WorkflowStatus)) return new UsageError(`status value must be one of: ${WORKFLOW_STATUS_VALUES.join(', ')}\n${USAGE}`)
       return { cmd: 'status', ref: positionals.length === 2 ? positionals[0] : undefined, value: value as WorkflowStatus }
-    }
-    if (cmd === 'escalate') {
-      const { positionals } = parseArgs({ args: rest, options: {}, allowPositionals: true })
-      if (positionals.length !== 2 || !positionals[1].trim()) return new UsageError(`escalate takes a session and a reason\n${USAGE}`)
-      return { cmd: 'escalate', ref: positionals[0], reason: positionals[1] }
     }
     if (cmd === 'progress') {
       const { positionals } = parseArgs({ args: rest, options: {}, allowPositionals: true })

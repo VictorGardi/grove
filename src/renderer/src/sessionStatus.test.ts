@@ -11,9 +11,8 @@ function session(over: Partial<Session> = {}): Session {
 }
 
 describe('queueStatus', () => {
-  it('files a finished or held child as idle or working, and real waits as waiting', () => {
+  it('files a finished child as idle, and real waits as waiting', () => {
     expect(queueStatus(session({ status: 'waiting', waitingFor: 'done', link: { id: 'p', kind: 'group' } }))).toBe('idle')
-    expect(queueStatus(session({ status: 'waiting', waitingFor: 'permission', link: { id: 'p', kind: 'group' }, held: true }))).toBe('working')
     expect(queueStatus(session({ status: 'waiting', waitingFor: 'permission', link: { id: 'p', kind: 'group' } }))).toBe('waiting')
     expect(queueStatus(session({ status: 'waiting', waitingFor: 'done' }))).toBe('waiting')
     expect(queueStatus(session({ status: 'working' }))).toBe('working')
@@ -23,13 +22,12 @@ describe('queueStatus', () => {
     const kid = session({ status: 'waiting', waitingFor: 'done', link: { id: 'p', kind: 'group' } })
     expect(statusTone(kid)).toBe('finished')
     expect(countsAsWaiting(kid)).toBe(false)
-    expect(countsAsWaiting(session({ status: 'waiting', waitingFor: 'permission', link: { id: 'p', kind: 'group' }, held: true }))).toBe(false)
     expect(countsAsWaiting(session({ status: 'waiting', waitingFor: 'question', link: { id: 'p', kind: 'group' } }))).toBe(true)
     expect(countsAsWaiting(session({ status: 'waiting', waitingFor: 'done' }))).toBe(true)
   })
 
   it('anyWaiting-style checks (the board card) follow countsAsWaiting', () => {
-    const kids = [session({ id: 'f', status: 'waiting', waitingFor: 'done', link: { id: 'p', kind: 'group' } }), session({ id: 'h', status: 'waiting', link: { id: 'p', kind: 'group' }, held: true })]
+    const kids = [session({ id: 'f', status: 'waiting', waitingFor: 'done', link: { id: 'p', kind: 'group' } })]
     expect(kids.some(countsAsWaiting)).toBe(false)
     expect([...kids, session({ id: 'q', status: 'waiting', waitingFor: 'question', link: { id: 'p', kind: 'group' } })].some(countsAsWaiting)).toBe(true)
   })
@@ -217,21 +215,10 @@ describe('finished child', () => {
   })
 })
 
-describe('held prompts', () => {
+describe('child prompts', () => {
   const kid = (over: Partial<Session> = {}) => session({ id: 'k', link: { id: 'p1', kind: 'group' }, status: 'waiting', waitingFor: 'permission', ...over })
 
-  it('looks working and is not counted or visited while held', () => {
-    const k = kid({ held: true })
-    expect(shownStatus(k)).toBe('working')
-    expect(statusTone(k)).toBe('working')
-    expect(countsAsWaiting(k)).toBe(false)
-    expect(longestWaiting([k], { k: 1 })).toBeNull()
-    expect(trackWaiting({}, [k], 5)).toEqual({})
-    expect(mostUrgent([k, session({ id: 'i', status: 'idle' })])?.id).toBe('k')
-    expect(shownStatus(mostUrgent([k])!)).toBe('working')
-  })
-
-  it('the same child unheld counts', () => {
+  it('a child waiting on a permission counts at once', () => {
     const k = kid()
     expect(shownStatus(k)).toBe('waiting')
     expect(countsAsWaiting(k)).toBe(true)
@@ -239,7 +226,7 @@ describe('held prompts', () => {
     expect(trackWaiting({}, [k], 5)).toEqual({ k: 5 })
   })
 
-  it('gone still wins over held', () => {
-    expect(shownStatus(kid({ held: true, lastStatus: 'gone' }))).toBe('gone')
+  it('gone still wins', () => {
+    expect(shownStatus(kid({ lastStatus: 'gone' }))).toBe('gone')
   })
 })
