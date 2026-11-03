@@ -25,6 +25,7 @@ interface Hook {
   toolArgs?: unknown
   toolResult?: unknown
   usage?: unknown
+  prompt?: unknown
 }
 
 const str = (v: unknown): string | null => (typeof v === 'string' ? v : null)
@@ -126,6 +127,7 @@ export function step(f: CopilotFold, r: SpoolRecord): { fold: CopilotFold; event
       if (sub) break
       closeAll()
       begin()
+      if (typeof e.prompt === 'string') events.push({ type: 'prompt', sessionId, text: e.prompt })
       break
     case 'notification':
     case 'Notification': // the payload carries its own hook_event_name, which overrides the stamped one (verified)

@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import type { Session } from '@shared/types'
-import { longestWaiting, mostUrgent, serviceBanners, shownStatus, statusAge, statusTone, statusView, trackWaiting } from './sessionStatus'
+import { countsAsWaiting, longestWaiting, mostUrgent, queueStatus, serviceBanners, shownStatus, statusAge, statusTone, statusView, trackWaiting } from './sessionStatus'
 
 function session(over: Partial<Session> = {}): Session {
   return {
@@ -9,6 +9,31 @@ function session(over: Partial<Session> = {}): Session {
     startedAt: '2026-10-05T10:00:00.000Z', endedAt: null, lastStatus: 'running', seenAt: null, lastContext: null, workflowStatus: 'in-progress', ...over,
   }
 }
+
+describe('queueStatus', () => {
+  it('files a finished or held child as idle or working, and real waits as waiting', () => {
+    expect(queueStatus(session({ status: 'waiting', waitingFor: 'done', parentId: 'p' }))).toBe('idle')
+    expect(queueStatus(session({ status: 'waiting', waitingFor: 'permission', parentId: 'p', held: true }))).toBe('working')
+    expect(queueStatus(session({ status: 'waiting', waitingFor: 'permission', parentId: 'p' }))).toBe('waiting')
+    expect(queueStatus(session({ status: 'waiting', waitingFor: 'done' }))).toBe('waiting')
+    expect(queueStatus(session({ status: 'working' }))).toBe('working')
+  })
+
+  it('keeps the finished look for the child itself', () => {
+    const kid = session({ status: 'waiting', waitingFor: 'done', parentId: 'p' })
+    expect(statusTone(kid)).toBe('finished')
+    expect(countsAsWaiting(kid)).toBe(false)
+    expect(countsAsWaiting(session({ status: 'waiting', waitingFor: 'permission', parentId: 'p', held: true }))).toBe(false)
+    expect(countsAsWaiting(session({ status: 'waiting', waitingFor: 'question', parentId: 'p' }))).toBe(true)
+    expect(countsAsWaiting(session({ status: 'waiting', waitingFor: 'done' }))).toBe(true)
+  })
+
+  it('anyWaiting-style checks (the board card) follow countsAsWaiting', () => {
+    const kids = [session({ id: 'f', status: 'waiting', waitingFor: 'done', parentId: 'p' }), session({ id: 'h', status: 'waiting', parentId: 'p', held: true })]
+    expect(kids.some(countsAsWaiting)).toBe(false)
+    expect([...kids, session({ id: 'q', status: 'waiting', waitingFor: 'question', parentId: 'p' })].some(countsAsWaiting)).toBe(true)
+  })
+})
 
 describe('shownStatus', () => {
   it('prefers gone, then the live status, then tmux running', () => {
@@ -169,5 +194,62 @@ describe('time in status', () => {
     expect(statusAge(0, 6 * 60_000)).toBe('6m')
     expect(statusAge(0, 5 * 3_600_000 + 1)).toBe('5h')
     expect(statusAge(0, 3 * 86_400_000)).toBe('3d')
+  })
+})
+
+describe('finished child', () => {
+  const kid = session({ id: 'kid', parentId: 'lead', status: 'waiting', waitingFor: 'done' })
+
+  it('keeps its finished look but does not count as waiting', () => {
+    expect(shownStatus(kid)).toBe('waiting')
+    expect(statusTone(kid)).toBe('finished')
+    expect(countsAsWaiting(kid)).toBe(false)
+    expect(countsAsWaiting({ ...kid, parentId: null })).toBe(true)
+    expect(countsAsWaiting({ ...kid, waitingFor: 'permission' })).toBe(true)
+  })
+
+  it('is skipped by longestWaiting and trackWaiting, and loses to a working sibling', () => {
+    const top = session({ id: 'top', status: 'waiting', waitingFor: 'done' })
+    expect(longestWaiting([kid, top], { kid: 1, top: 2 })?.id).toBe('top')
+    expect(longestWaiting([kid], {})).toBeNull()
+    expect(trackWaiting({}, [kid, top], 5)).toEqual({ top: 5 })
+    expect(mostUrgent([kid, session({ id: 'w', status: 'working' })])?.id).toBe('w')
+  })
+})
+
+describe('countsAsWaiting and zones', () => {
+  it('is unchanged by a zone override', () => {
+    const s = session({ status: 'waiting', waitingFor: 'permission' })
+    expect(countsAsWaiting({ ...s, zoneOverride: 'running' })).toBe(true)
+    expect(countsAsWaiting({ ...s, zoneOverride: 'running' })).toBe(countsAsWaiting(s))
+    const done = session({ status: 'waiting', waitingFor: 'done', parentId: 'p' })
+    expect(countsAsWaiting({ ...done, zoneOverride: 'needs-you' })).toBe(false)
+  })
+})
+
+describe('held prompts', () => {
+  const kid = (over: Partial<Session> = {}) => session({ id: 'k', parentId: 'p1', status: 'waiting', waitingFor: 'permission', ...over })
+
+  it('looks working and is not counted or visited while held', () => {
+    const k = kid({ held: true })
+    expect(shownStatus(k)).toBe('working')
+    expect(statusTone(k)).toBe('working')
+    expect(countsAsWaiting(k)).toBe(false)
+    expect(longestWaiting([k], { k: 1 })).toBeNull()
+    expect(trackWaiting({}, [k], 5)).toEqual({})
+    expect(mostUrgent([k, session({ id: 'i', status: 'idle' })])?.id).toBe('k')
+    expect(shownStatus(mostUrgent([k])!)).toBe('working')
+  })
+
+  it('the same child unheld counts', () => {
+    const k = kid()
+    expect(shownStatus(k)).toBe('waiting')
+    expect(countsAsWaiting(k)).toBe(true)
+    expect(longestWaiting([k], { k: 1 })?.id).toBe('k')
+    expect(trackWaiting({}, [k], 5)).toEqual({ k: 5 })
+  })
+
+  it('gone still wins over held', () => {
+    expect(shownStatus(kid({ held: true, lastStatus: 'gone' }))).toBe('gone')
   })
 })

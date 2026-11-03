@@ -136,6 +136,10 @@ describe('deriveFeatures', () => {
     ['not running with an idle OpenCode session', { '01-questions.md': approved }, { kind: 'opencode', status: 'idle' }, 'ready'],
     ['waiting with a waiting OpenCode session', { '01-questions.md': approved }, { kind: 'opencode', status: 'waiting', waitingFor: 'question' }, 'waiting'],
     ['not waiting when the session is gone', { '01-questions.md': approved }, { kind: 'opencode', status: 'waiting', lastStatus: 'gone' }, 'ready'],
+    ['not waiting with a finished child', { '01-questions.md': approved }, { kind: 'opencode', status: 'waiting', waitingFor: 'done', parentId: 'x' }, 'ready'],
+    ['not waiting with a held child prompt', { '01-questions.md': approved }, { kind: 'opencode', status: 'waiting', waitingFor: 'permission', parentId: 'x', held: true }, 'ready'],
+    ['waiting with a real child permission', { '01-questions.md': approved }, { kind: 'opencode', status: 'waiting', waitingFor: 'permission', parentId: 'x' }, 'waiting'],
+    ['waiting with a finished top-level session', { '01-questions.md': approved }, { kind: 'opencode', status: 'waiting', waitingFor: 'done' }, 'waiting'],
     ['not running with a session in another project', { '01-questions.md': approved }, { kind: 'opencode', status: 'working', projectId: 'q' }, 'ready'],
     ['done even with a working session', { '01-questions.md': approved, '06-implementation.md': approved }, { kind: 'opencode', status: 'working' }, 'done'],
   ])('card state: %s', (_, files, over, expected) => {

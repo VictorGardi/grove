@@ -1,3 +1,4 @@
+import { asksHuman } from '@shared/attention'
 import type { CardState, Feature, FeatureStage, Session } from '@shared/types'
 import type { FolderSnapshot } from '../discovery/folder'
 import type { Axis, Predicate, Stage, Workflow } from './parse'
@@ -65,7 +66,7 @@ export function deriveFeatures(
       }))
       // only live OpenCode status counts: idle sessions and terminals don't keep a card running
       const linked = sessions.filter((s) => s.projectId === f.projectId && s.feature === f.slug && s.lastStatus === 'running')
-      const waiting = linked.some((s) => s.status === 'waiting')
+      const waiting = linked.some(asksHuman)
       const running = linked.some((s) => s.status === 'working')
       const cardState: CardState =
         current < 0 ? 'done' : waiting ? 'waiting' : running ? 'running'

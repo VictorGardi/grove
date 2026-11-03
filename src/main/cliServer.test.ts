@@ -184,6 +184,7 @@ describe('cli server', () => {
     expect(t.fake.pastes).toEqual([{ name: s.tmuxName, text: 'hi', submit: false }])
     await request(socketPath, req('sessions.send', { ref: s.id, text: 'yo', submit: true }))
     expect(t.fake.pastes[1]).toMatchObject({ text: 'yo', submit: true })
+    expect(await request(socketPath, req('sessions.send', { ref: s.id, text: 'who', submit: false, from: 'unknown-caller' }))).toMatchObject({ ok: true }) // an unknown caller is just not a parent
     expect(await request(socketPath, req('sessions.send', { ref: 'nope', text: 'x', submit: true }))).toMatchObject({ ok: false, error: { code: 'not-found' } })
     expect(await request(socketPath, req('sessions.send', { ref: s.id }))).toMatchObject({ ok: false, error: { code: 'bad-params' } })
     t.fake.captured.set(s.tmuxName, 'line1\nline2\n')
@@ -243,6 +244,21 @@ describe('cli server', () => {
     expect(await request(socketPath, req('sessions.status', { ref: 'nope', status: 'done' }))).toMatchObject({ ok: false, error: { code: 'not-found' } })
     expect(await request(socketPath, req('sessions.status', { ref: s.id, status: 'finished' }))).toMatchObject({ ok: false, error: { code: 'bad-params' } })
     expect(core.getSlices().sessions.find((x) => x.id === s.id)?.workflowStatus).toBe('blocked')
+  })
+
+  it('escalate needs a waiting session; progress validates and sets', async () => {
+    const { core, socketPath } = await start()
+    const s = await createTerminal(core)
+    expect(await request(socketPath, req('sessions.escalate', { ref: s.id, reason: 'why' }))).toMatchObject({ ok: false, error: { code: 'not-waiting' } })
+    expect(await request(socketPath, req('sessions.escalate', { ref: 'nope', reason: 'why' }))).toMatchObject({ ok: false, error: { code: 'not-found' } })
+    expect(await request(socketPath, req('sessions.escalate', { ref: s.id, reason: '  ' }))).toMatchObject({ ok: false, error: { code: 'bad-params' } })
+    expect(await request(socketPath, req('sessions.escalate', { ref: s.id }))).toMatchObject({ ok: false, error: { code: 'bad-params' } })
+    expect(await request(socketPath, req('sessions.progress', { ref: s.id, done: 1, total: 3 }))).toMatchObject({ ok: true, data: { id: s.id } })
+    expect(core.getSlices().sessions.find((x) => x.id === s.id)?.progress).toEqual({ done: 1, total: 3 })
+    for (const p of [{ done: 5, total: 4 }, { done: 0, total: 0 }, { done: -1, total: 2 }, { done: 1.5, total: 2 }]) {
+      expect(await request(socketPath, req('sessions.progress', { ref: s.id, ...p }))).toMatchObject({ ok: false, error: { code: 'bad-params' } })
+    }
+    expect(await request(socketPath, req('sessions.progress', { ref: 'nope', done: 1, total: 2 }))).toMatchObject({ ok: false, error: { code: 'not-found' } })
   })
 
   it('rejects another protocol version and unknown methods', async () => {

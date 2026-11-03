@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import type { Session } from '@shared/types'
-import { childrenCount, familyJumpTarget, familyOf } from './family'
+import { childrenCount, childrenSummary, familyJumpTarget, familyOf, runProgress } from './family'
 
 const session = (id: string, over: Partial<Session> = {}): Session =>
   ({ id, projectId: 'p', kind: 'claude', label: id, lastStatus: 'running', startedAt: '2026-10-05T10:00:00.000Z', ...over } as Session)
@@ -8,6 +8,17 @@ const session = (id: string, over: Partial<Session> = {}): Session =>
 const parent = session('parent')
 const child = (id: string, over: Partial<Session> = {}) => session(id, { parentId: 'parent', ...over })
 const ids = (xs: Session[]) => xs.map((x) => x.id)
+
+describe('familyOf finished and held children', () => {
+  it('ranks a finished or held child as idle or working, below a real wait', () => {
+    const f = familyOf([parent,
+      child('finished', { status: 'waiting', waitingFor: 'done' }),
+      child('held', { status: 'waiting', waitingFor: 'permission', held: true }),
+      child('idle', { status: 'idle' }),
+      child('ask', { status: 'waiting', waitingFor: 'permission' })], 'parent')
+    expect(ids(f.children)).toEqual(['ask', 'held', 'finished', 'idle'])
+  })
+})
 
 describe('familyOf', () => {
   it('ranks waiting over working over idle', () => {
@@ -47,9 +58,9 @@ describe('familyOf', () => {
     expect(f.active?.id).toBe('new')
   })
 
-  it('ranks a finished (waiting · done) child over a working one', () => {
+  it('ranks a finished (waiting · done) child below a working one: it is not asking the human', () => {
     const f = familyOf([parent, child('working', { status: 'working' }), child('done', { status: 'waiting', waitingFor: 'done' })], 'parent')
-    expect(f.active?.id).toBe('done')
+    expect(f.active?.id).toBe('working')
   })
 
   it('orders ended children by later startedAt, after running ones', () => {
@@ -148,5 +159,32 @@ describe('familyJumpTarget', () => {
     expect(first).toBe('a') // won by lastFocusedAt over the later-started b
     expect(jump(first)).toBe('parent')
     expect(jump('parent')).toBe(first)
+  })
+})
+
+describe('childrenSummary', () => {
+  const kid = (workflowStatus: Session['workflowStatus']) => ({ workflowStatus }) as Session
+  it('adds the done count only when some are done', () => {
+    expect(childrenSummary([kid('in-progress'), kid('in-progress')])).toBe('2 children')
+    expect(childrenSummary([kid('done'), kid('done'), kid('in-progress')])).toBe('3 children, 2 done')
+    expect(childrenSummary([kid('done')])).toBe('1 child, 1 done')
+  })
+})
+
+describe('runProgress', () => {
+  const withP = (done: number, total: number) => session('parent', { progress: { done, total } })
+  it('is null without progress', () => {
+    expect(runProgress(parent, [child('a')])).toBeNull()
+  })
+  it('labels slices, and children done when any', () => {
+    expect(runProgress(withP(4, 8), [child('a')])).toEqual({ done: 4, total: 8, kidsDone: 0, label: '4 of 8 slices done', pct: 50 })
+    const kids = ['a', 'b', 'c'].map((id) => child(id, { workflowStatus: 'done' }))
+    expect(runProgress(withP(4, 8), kids)?.label).toBe('4 of 8 slices done, 3 children done')
+    expect(runProgress(withP(4, 8), kids.slice(0, 1))?.label).toBe('4 of 8 slices done, 1 child done')
+  })
+  it('clamps the percentage', () => {
+    expect(runProgress(withP(9, 8), [])?.pct).toBe(100)
+    expect(runProgress(withP(-1, 8), [])?.pct).toBe(0)
+    expect(runProgress(withP(0, 0), [])?.pct).toBe(0)
   })
 })

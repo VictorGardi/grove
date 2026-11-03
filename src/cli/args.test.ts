@@ -46,6 +46,7 @@ describe('parseCommand', () => {
 
   it('parses send and read', () => {
     expect(parseCommand(['send', 'abc', 'hi'])).toEqual({ cmd: 'send', ref: 'abc', text: 'hi', submit: true, wait: false, timeoutS: undefined })
+    expect(parseCommand(['send', 'abc', 'hi'])).not.toHaveProperty('from') // the caller comes from the env, in index.ts
     expect(parseCommand(['send', 'abc', '-', '--no-enter'])).toEqual({ cmd: 'send', ref: 'abc', text: '-', submit: false, wait: false, timeoutS: undefined })
     expect(parseCommand(['read', 'abc'])).toEqual({ cmd: 'read', ref: 'abc', lines: 100 })
     expect(parseCommand(['read', 'abc', '--lines', '40'])).toEqual({ cmd: 'read', ref: 'abc', lines: 40 })
@@ -66,6 +67,11 @@ describe('parseCommand', () => {
 
   it('parses status with an optional ref and the seven values', () => {
     expect(parseCommand(['status', 'in-review'])).toEqual({ cmd: 'status', ref: undefined, value: 'in-review' })
+    expect(parseCommand(['escalate', 'h', 'needs a key'])).toEqual({ cmd: 'escalate', ref: 'h', reason: 'needs a key' })
+    expect(parseCommand(['escalate', 'h', '  '])).toBeInstanceOf(UsageError)
+    expect(parseCommand(['escalate', 'h'])).toBeInstanceOf(UsageError)
+    expect(parseCommand(['progress', 'h', '2/5'])).toEqual({ cmd: 'progress', ref: 'h', done: 2, total: 5 })
+    for (const bad of ['5/4', '1/0', 'x', '1/2/3', '-1/2']) expect(parseCommand(['progress', 'h', bad])).toBeInstanceOf(UsageError)
     expect(parseCommand(['status', 'helper', 'done'])).toEqual({ cmd: 'status', ref: 'helper', value: 'done' })
     for (const value of ['backlog', 'in-progress', 'blocked', 'in-review', 'cancelled', 'done', 'pinned']) {
       expect(parseCommand(['status', value])).toMatchObject({ cmd: 'status', value })

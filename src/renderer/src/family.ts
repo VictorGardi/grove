@@ -1,5 +1,5 @@
 import type { Session } from '@shared/types'
-import { shownStatus, type ShownStatus } from './sessionStatus'
+import { queueStatus, shownStatus, type ShownStatus } from './sessionStatus'
 
 export interface Family {
   parent: Session | null
@@ -16,7 +16,13 @@ export const isEnded = (s: Session) => {
 // "1 child", "3 children": the parent's count chip.
 export const childrenCount = (n: number) => (n === 1 ? '1 child' : `${n} children`)
 
-// Running children, most worth a look first. waiting covers every waitingFor, 'done' included;
+// "3 children, 2 done": the count chip with how many are marked done, when any are.
+export function childrenSummary(kids: Session[]): string {
+  const done = kids.filter((k) => k.workflowStatus === 'done').length
+  return done > 0 ? `${childrenCount(kids.length)}, ${done} done` : childrenCount(kids.length)
+}
+
+// Running children, most worth a look first. waiting is a wait that asks the human (a finished child ranks as idle);
 // running is a live pane with no agent status (a terminal); starting has nothing to show yet.
 const RANK: ShownStatus[] = ['waiting', 'working', 'idle', 'running', 'starting']
 
@@ -33,7 +39,7 @@ const later = (a: string | null | undefined, b: string | null | undefined) => {
 }
 
 function byRunning(a: Session, b: Session): number {
-  const ra = RANK.indexOf(shownStatus(a)), rb = RANK.indexOf(shownStatus(b))
+  const ra = RANK.indexOf(queueStatus(a)), rb = RANK.indexOf(queueStatus(b))
   if (ra !== rb) return ra - rb
   return later(a.lastFocusedAt, b.lastFocusedAt) || later(a.startedAt, b.startedAt)
 }
@@ -54,4 +60,17 @@ export function familyJumpTarget(sessions: Session[], focusedId: string | null |
   if (!focusedId) return null
   const f = familyOf(sessions, focusedId)
   return f.parent ?? f.active
+}
+
+export interface RunProgress { done: number; total: number; kidsDone: number; label: string; pct: number }
+
+// A run's progress bar: `grove progress` slices done of total, and how many children are marked done.
+export function runProgress(parent: Session, kids: Session[]): RunProgress | null {
+  const p = parent.progress
+  if (!p) return null
+  const kidsDone = kids.filter((k) => k.workflowStatus === 'done').length
+  const base = `${p.done} of ${p.total} slices done`
+  const label = kidsDone > 0 ? `${base}, ${kidsDone} ${kidsDone === 1 ? 'child' : 'children'} done` : base
+  const pct = p.total > 0 ? Math.min(100, Math.max(0, Math.round((100 * p.done) / p.total))) : 0
+  return { done: p.done, total: p.total, kidsDone, label, pct }
 }

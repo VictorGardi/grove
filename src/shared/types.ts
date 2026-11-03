@@ -8,6 +8,9 @@ export interface ContextReading { pct: number; tokens: number | null; window: nu
 // docs/work/2026-10-09-session-workflow-status.
 export type WorkflowStatus = 'backlog' | 'in-progress' | 'blocked' | 'in-review' | 'cancelled' | 'done' | 'pinned'
 
+// Where a session's row is shown in the zones sidebar.
+export type Zone = 'needs-you' | 'review' | 'running'
+
 export interface Session {
   id: string
   projectId: string
@@ -31,6 +34,14 @@ export interface Session {
   pr?: PullRequest | null          // live sessions: the PR for that branch, from `gh`; never saved
   status?: 'working' | 'waiting' | 'idle' // agent sessions while their service is connected, terminals from the foreground command; never saved
   waitingFor?: 'permission' | 'question' | 'done' // with status 'waiting'; never saved
+  zone?: Zone | null               // derived by core from the live state and the override on every sessions publish (shared/zones.ts); never saved
+  lastLine?: string                // one line on what the session was doing: the first line of the last prompt the human sent (cut at 120); persisted; absent: none
+  attention?: { reason: string; waitingFor: 'permission' | 'question' } // `grove escalate`: a parent says this waiting child needs the human; clears when the child leaves that wait; live, never saved
+  progress?: { done: number; total: number } // `grove progress`: slices a run has and how many are done; live, never saved
+  held?: boolean                   // a child's permission or question held for the grace window (`escalateAfterSec`): quiet, counted as running; live, never saved
+  classified?: { verdict: 'needs-you' | 'done'; at: string } // `at`: the statusAt of that finish; the small model's read of a finished top-level Claude session (core/classifier.ts; other kinds only when config `classifier.kinds` lists them); tied to one idle period; live, never saved
+  handled?: HandledPrompt[]        // prompts of its children it answered with `grove send` inside the grace window; live, never saved
+  zoneOverride?: Zone              // set by the human: only moves where the row is shown, never counts or popups; persisted; absent: none
   contextPct?: number | null       // agent sessions once a reading arrived: % of the context window used; null: not known yet; never saved
   contextTokens?: number | null    // tokens in context (input incl. cache); never saved
   contextWindow?: number | null    // size of the context window in tokens; never saved
@@ -113,6 +124,7 @@ export interface UiState {
   hiddenProjects: string[] // project IDs hidden from the Sessions tab
   compact?: string[] // session IDs whose card is compacted to one line (absent reads as none)
   hideDone?: boolean // sessions whose workflow status is done are left out of the list (absent reads as false)
+  sidebarView?: 'zones' | 'projects' // what the sidebar shows; absent reads as zones
   groupBy: 'project' | 'status' | 'none' // what the Sessions tab groups rows under
   sessionSort: 'custom' | 'viewed-desc' | 'viewed-asc' | 'created-desc' | 'created-asc' | 'status-age' // order of the rows inside a group; status-age: longest in its status first, sessions waiting on you ahead
   sessionOrder: string[] // the dragged order of every session, one list for all groupings; used while sessionSort is custom
@@ -175,9 +187,11 @@ export interface Comment {
 }
 export interface CommentsFile { schemaVersion: 3; comments: Comment[] }
 export type Slices = { projects: Project[]; sessions: Session[]; ui: UiState; features: FeaturesSlice; opencode: OpenCodeSlice; diff: SessionDiff | null; comments: Comment[] } // diff: the one on screen, not persisted
-export interface ConfigFile { schemaVersion: 1; projects: Project[]; workflow?: string; sounds?: boolean } // sounds: false mutes the waiting sounds
+// A child prompt its parent answered with `grove send` before the grace window ran out.
+export interface HandledPrompt { childId: string; at: string; kind: 'permission' | 'question'; screen: string; sent: string } // at: ISO; screen: last 8 lines of the child's pane as the prompt opened
+export interface ConfigFile { schemaVersion: 1; projects: Project[]; workflow?: string; sounds?: boolean; escalateAfterSec?: number; classifier?: { enabled?: boolean; model?: string; kinds?: ('claude' | 'opencode' | 'copilot')[] } } // sounds: false mutes the waiting sounds; classifier.kinds: agent kinds whose finished screens go to the small model, default claude only
 export interface StateFile { schemaVersion: 10; sessions: Session[]; ui: UiState }
 export const SIDEBAR_WIDTH = 220 // the default; drag the sidebar's edge to resize, double-click it to come back here
-export const DEFAULT_UI: UiState = { sidebarWidth: SIDEBAR_WIDTH, sidebarCollapsed: false, focusedSessionId: null, focusedFeature: null, focusedProject: null, board: 'sessions', collapsed: [], hiddenProjects: [], groupBy: 'project', sessionSort: 'custom', sessionOrder: [], viewer: null, viewerWidth: null, viewerExpanded: false, grid: { open: false, members: [] } }
+export const DEFAULT_UI: UiState = { sidebarWidth: SIDEBAR_WIDTH, sidebarCollapsed: false, focusedSessionId: null, focusedFeature: null, focusedProject: null, board: 'sessions', collapsed: [], hiddenProjects: [], groupBy: 'project', sessionSort: 'viewed-desc', sessionOrder: [], viewer: null, viewerWidth: null, viewerExpanded: false, grid: { open: false, members: [] } }
 export const EMPTY_FEATURES: FeaturesSlice = { workflowError: null, stages: [], items: [] }
 export const OPENCODE_CONNECTING: OpenCodeSlice = { state: 'connecting', version: null }

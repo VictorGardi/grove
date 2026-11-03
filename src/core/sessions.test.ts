@@ -594,6 +594,119 @@ describe('core claude status', () => {
     expect(notified.map((x) => [x.id, x.waitingFor])).toEqual([[c.id, 'permission']])
   })
 
+  it('escalating a child that already notified adds the reason without a second notify', async () => {
+    const { core, claude, notified } = await connected()
+    const c = await createClaude(core)
+    claude.emit({ type: 'pending', sessionId: c.agentSessionId!, id: 'perm:main', kind: 'permission', open: true })
+    expect(notified).toHaveLength(1)
+    const res = await core.commands.sessionEscalate({ id: c.id, reason: '  \n  needs the prod key  \nmore' })
+    expect(res.ok && res.data.attention).toEqual({ reason: 'needs the prod key', waitingFor: 'permission' })
+    expect(find(core, c.id)?.attention?.reason).toBe('needs the prod key')
+    expect(notified).toHaveLength(1)
+  })
+
+  it('escalating a child not yet notified fires exactly one notify with the reason; on screen it stays quiet', async () => {
+    const { core, claude, notified } = await connected()
+    const c = await createClaude(core)
+    const d = await createClaude(core)
+    core.setWindowFocused(true)
+    await core.commands.uiSet({ focusedSessionId: c.id })
+    claude.emit({ type: 'pending', sessionId: c.agentSessionId!, id: 'perm:main', kind: 'question', open: true })
+    expect(notified).toHaveLength(0) // on screen: no popup
+    await core.commands.sessionEscalate({ id: c.id, reason: 'on screen' })
+    expect(notified).toHaveLength(0)
+    await core.commands.uiSet({ focusedSessionId: d.id })
+    await core.commands.sessionEscalate({ id: c.id, reason: 'now away' })
+    expect(notified.map((x) => [x.id, x.attention?.reason])).toEqual([[c.id, 'now away']])
+    await core.commands.sessionEscalate({ id: c.id, reason: 'again' })
+    expect(notified).toHaveLength(1)
+  })
+
+  it('an escalation clears when the wait ends, and the next prompt notifies without the old reason', async () => {
+    const { core, claude, notified } = await connected()
+    const c = await createClaude(core)
+    claude.emit({ type: 'pending', sessionId: c.agentSessionId!, id: 'perm:main', kind: 'permission', open: true })
+    await core.commands.sessionEscalate({ id: c.id, reason: 'why' })
+    claude.emit({ type: 'pending', sessionId: c.agentSessionId!, id: 'perm:main', kind: 'permission', open: false })
+    expect(find(core, c.id)?.attention).toBeUndefined()
+    claude.emit({ type: 'pending', sessionId: c.agentSessionId!, id: 'perm:2', kind: 'permission', open: true })
+    expect(notified).toHaveLength(2)
+    expect(notified[1].attention).toBeUndefined()
+    claude.emit({ type: 'exec-started', sessionId: c.agentSessionId! })
+    expect(find(core, c.id)?.attention).toBeUndefined()
+  })
+
+  it('never saves attention or progress, and a working session cannot be escalated', async () => {
+    const { core, claude, statePath } = await connected()
+    const c = await createClaude(core)
+    claude.emit({ type: 'exec-started', sessionId: c.agentSessionId! })
+    expect(await core.commands.sessionEscalate({ id: c.id, reason: 'x' })).toEqual({ ok: false, error: 'not-waiting' })
+    expect(await core.commands.sessionEscalate({ id: 'nope', reason: 'x' })).toEqual({ ok: false, error: 'not-found' })
+    claude.emit({ type: 'pending', sessionId: c.agentSessionId!, id: 'perm:main', kind: 'permission', open: true })
+    await core.commands.sessionEscalate({ id: c.id, reason: 'secret-reason' })
+    await core.commands.sessionProgress({ id: c.id, done: 1, total: 3 })
+    expect(find(core, c.id)?.progress).toEqual({ done: 1, total: 3 })
+    const saved = fs.readFileSync(statePath, 'utf8')
+    expect(saved).not.toContain('secret-reason')
+    expect(saved).not.toContain('"progress"')
+    expect(saved).not.toContain('"attention"')
+  })
+
+  it('stamps a zone on each session, never saving it, and sets an override that keeps and persists', async () => {
+    const { core, claude, statePath, make } = await connected()
+    const c = await createClaude(core)
+    expect(find(core, c.id)?.zone ?? null).toBeNull()
+    claude.emit({ type: 'exec-started', sessionId: c.agentSessionId! })
+    expect(find(core, c.id)?.zone).toBe('running')
+    claude.emit({ type: 'pending', sessionId: c.agentSessionId!, id: 'perm:main', kind: 'permission', open: true })
+    expect(find(core, c.id)?.zone).toBe('needs-you')
+    expect(fs.readFileSync(statePath, 'utf8')).not.toContain('"zone"')
+
+    const res = await core.commands.sessionSetZone({ id: c.id, zone: 'review' })
+    expect(res.ok && res.data.zoneOverride).toBe('review')
+    expect(find(core, c.id)).toMatchObject({ zone: 'review', status: 'waiting', waitingFor: 'permission' })
+    expect(fs.readFileSync(statePath, 'utf8')).toContain('"zoneOverride": "review"')
+    expect(fs.readFileSync(statePath, 'utf8')).not.toContain('"zone"')
+
+    core.dispose()
+    const again = make()
+    await again.start()
+    expect(again.getSlices().sessions.find((x) => x.id === c.id)?.zoneOverride).toBe('review')
+
+    await again.commands.sessionSetZone({ id: c.id, zone: null })
+    expect(again.getSlices().sessions.find((x) => x.id === c.id)?.zoneOverride).toBeUndefined()
+    expect(await again.commands.sessionSetZone({ id: 'x', zone: 'review' })).toEqual({ ok: false, error: 'not-found' })
+    again.dispose()
+  })
+
+  it('keeps the first line of the last prompt as lastLine, saved and kept after a reload', async () => {
+    const { core, claude, statePath, make } = await connected()
+    const c = await createClaude(core)
+    const id = c.agentSessionId!
+    claude.emit({ type: 'prompt', sessionId: id, text: '  \n  fix the bug  \nsecret=hunter2' })
+    expect(find(core, c.id)?.lastLine).toBe('fix the bug')
+    claude.emit({ type: 'prompt', sessionId: id, text: ' \n\t ' })
+    expect(find(core, c.id)?.lastLine).toBe('fix the bug')
+    const state = fs.readFileSync(statePath, 'utf8')
+    expect(state).toContain('"lastLine": "fix the bug"')
+    expect(state).not.toContain('hunter2')
+    claude.emit({ type: 'prompt', sessionId: id, text: 'x'.repeat(200) })
+    expect(find(core, c.id)?.lastLine).toBe('x'.repeat(120))
+    core.dispose()
+    const again = make()
+    await again.start()
+    expect(again.getSlices().sessions.find((x) => x.id === c.id)?.lastLine).toBe('x'.repeat(120))
+    again.dispose()
+  })
+
+  it('does not notify differently when a zone override is set', async () => {
+    const { core, claude, notified } = await connected()
+    const c = await createClaude(core)
+    await core.commands.sessionSetZone({ id: c.id, zone: 'running' })
+    claude.emit({ type: 'pending', sessionId: c.agentSessionId!, id: 'perm:main', kind: 'permission', open: true })
+    expect(notified.map((x) => [x.id, x.waitingFor])).toEqual([[c.id, 'permission']])
+  })
+
   it('keeps Claude status when the OpenCode service disconnects', async () => {
     const { core, claude, oc } = await connected()
     oc.emit({ type: 'connected', version: '2.0.20' })
@@ -675,6 +788,219 @@ describe('core seen and notify', () => {
     expect(notified).toEqual([])
     oc.emit({ type: 'pending', sessionId: b.agentSessionId!, id: 'frm_1', kind: 'question', open: true })
     expect(notified.map((x) => [x.id, x.waitingFor])).toEqual([[b.id, 'question']])
+  })
+
+  it('keeps a finished child quiet, while its permission and a top-level finish still notify', async () => {
+    vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout'] })
+    const { core, oc, notified } = await setup()
+    const top = await createOpenCode(core)
+    const kid = await createOpenCode(core)
+    expect(await core.commands.sessionSetParent({ id: kid.id, parent: top.id })).toMatchObject({ ok: true })
+    await connect(oc)
+    oc.emit({ type: 'exec-started', sessionId: kid.agentSessionId! })
+    oc.emit({ type: 'exec-ended', sessionId: kid.agentSessionId!, at: ENDED })
+    expect(find(core, kid.id)).toMatchObject({ status: 'waiting', waitingFor: 'done' })
+    expect(notified).toEqual([])
+    oc.emit({ type: 'exec-started', sessionId: top.agentSessionId! })
+    oc.emit({ type: 'exec-ended', sessionId: top.agentSessionId!, at: ENDED })
+    expect(notified.map((x) => [x.id, x.waitingFor])).toEqual([[top.id, 'done']])
+    oc.emit({ type: 'pending', sessionId: kid.agentSessionId!, id: 'per_1', kind: 'permission', open: true })
+    vi.advanceTimersByTime(61_000)
+    vi.useRealTimers()
+    expect(notified.map((x) => [x.id, x.waitingFor])).toEqual([[top.id, 'done'], [kid.id, 'permission']])
+  })
+
+  describe('grace window for a child prompt', () => {
+    afterEach(() => vi.useRealTimers())
+
+    async function held(config: Record<string, unknown> = {}) {
+      vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout'] })
+      const s = await setup()
+      if (Object.keys(config).length) {
+        // reload with the setting in config.json
+        const { loadConfig, saveConfig } = await import('./store/configStore')
+        s.core.dispose()
+        saveConfig(s.configPath, { ...loadConfig(s.configPath), ...config })
+        const core = s.make()
+        await core.start()
+        const notified: Session[] = []
+        core.on('notify', (x) => notified.push(x))
+        return grace({ ...s, core, notified })
+      }
+      return grace(s)
+    }
+    async function grace(s: Awaited<ReturnType<typeof setup>>) {
+      const parent = await createOpenCode(s.core)
+      const kid = await createOpenCode(s.core)
+      expect(await s.core.commands.sessionSetParent({ id: kid.id, parent: parent.id })).toMatchObject({ ok: true })
+      await connect(s.oc)
+      s.fake.captured.set(kid.tmuxName, Array.from({ length: 12 }, (_, i) => `l${i + 1}`).join('\n') + '\n')
+      const ask = (open: boolean) => s.oc.emit({ type: 'pending', sessionId: kid.agentSessionId!, id: 'per_1', kind: 'permission', open })
+      return { ...s, parent, kid, ask }
+    }
+
+    it('a send from the parent that clears the prompt in the window is handled, silently', async () => {
+      const { core, notified, parent, kid, ask } = await held()
+      ask(true)
+      expect(find(core, kid.id)).toMatchObject({ held: true, zone: 'running' })
+      await vi.advanceTimersByTimeAsync(10_000)
+      expect(await core.commands.sendToSession({ id: kid.id, text: 'y', from: parent.id })).toMatchObject({ ok: true })
+      ask(false)
+      expect(find(core, kid.id)?.held).toBeUndefined()
+      expect(find(core, parent.id)?.handled).toEqual([
+        { childId: kid.id, at: NOW.toISOString(), kind: 'permission', screen: 'l5\nl6\nl7\nl8\nl9\nl10\nl11\nl12', sent: 'y' },
+      ])
+      await vi.advanceTimersByTimeAsync(120_000)
+      expect(notified).toEqual([])
+    })
+
+    it('a clear with no send adds nothing; a send from a non-parent adds nothing', async () => {
+      const { core, notified, parent, kid, ask } = await held()
+      ask(true)
+      ask(false)
+      expect(find(core, parent.id)?.handled).toBeUndefined()
+      ask(true)
+      const other = await createOpenCode(core)
+      await core.commands.sendToSession({ id: kid.id, text: 'y', from: other.id })
+      await core.commands.sendToSession({ id: kid.id, text: 'y' })
+      ask(false)
+      expect(find(core, parent.id)?.handled).toBeUndefined()
+      expect(find(core, other.id)?.handled).toBeUndefined()
+      await vi.advanceTimersByTimeAsync(120_000)
+      expect(notified).toEqual([])
+    })
+
+    it('an unanswered prompt notifies exactly once, after the window', async () => {
+      const { core, notified, kid, ask } = await held()
+      ask(true)
+      await vi.advanceTimersByTimeAsync(59_000)
+      expect(notified).toEqual([])
+      await vi.advanceTimersByTimeAsync(2_000)
+      expect(notified.map((x) => [x.id, x.waitingFor])).toEqual([[kid.id, 'permission']])
+      expect(find(core, kid.id)).toMatchObject({ zone: 'needs-you' })
+      expect(find(core, kid.id)?.held).toBeUndefined()
+      await vi.advanceTimersByTimeAsync(120_000)
+      expect(notified).toHaveLength(1)
+    })
+
+    it('escalate moves it to needs-you and notifies at once, once', async () => {
+      const { core, notified, kid, ask } = await held()
+      ask(true)
+      await core.commands.sessionEscalate({ id: kid.id, reason: 'drop table' })
+      expect(notified.map((x) => x.attention?.reason)).toEqual(['drop table'])
+      expect(find(core, kid.id)).toMatchObject({ zone: 'needs-you' })
+      await vi.advanceTimersByTimeAsync(120_000)
+      expect(notified).toHaveLength(1)
+    })
+
+    it('scripted parent loop: wait returns blocked at once, routine is answered and handled, destructive is escalated', async () => {
+      const { core, notified, parent, kid, ask, fake } = await held()
+      // plumbing stand-in for the parent's judgement: the safety rules live in the skill text, a model applies them
+      const routine = (screen: string) => /^(npm test|npm run typecheck|npm run build|git status|git diff|git log)$/.test(screen.trim().split('\n').pop()!.replace(/^run: /, ''))
+      // the parent's loop from the grove skill: wait, read, decide, re-read, send or escalate
+      const handle = async (answer: string) => {
+        const turn = await core.waitTurn(kid.id, { expectStart: false, timeoutMs: 1000 })
+        expect(turn).toEqual({ ok: true, data: { status: 'waiting', waitingFor: 'permission' } }) // exit 4, though the child is held
+        const first = await core.commands.sessionRead({ id: kid.id, lines: 40 })
+        const text = first.ok ? first.data.text : ''
+        if (!routine(text)) return core.commands.sessionEscalate({ id: kid.id, reason: 'asks to ' + text.trim().split('\n').pop()!.replace(/^run: /, '') })
+        const again = await core.commands.sessionRead({ id: kid.id, lines: 40 })
+        if (!again.ok || again.data.text !== text) return core.commands.sessionEscalate({ id: kid.id, reason: 'prompt changed' })
+        return core.commands.sendToSession({ id: kid.id, text: answer, from: parent.id })
+      }
+      fake.captured.set(kid.tmuxName, 'Allow?\nrun: npm test\n')
+      ask(true)
+      expect(await handle('y')).toMatchObject({ ok: true })
+      ask(false)
+      expect(find(core, parent.id)?.handled).toEqual([
+        expect.objectContaining({ childId: kid.id, kind: 'permission', sent: 'y', screen: 'Allow?\nrun: npm test' }),
+      ])
+      expect(notified).toEqual([])
+      fake.captured.set(kid.tmuxName, 'Allow?\nrun: rm -rf build\n')
+      ask(true)
+      expect(await handle('y')).toMatchObject({ ok: true })
+      expect(find(core, kid.id)).toMatchObject({ zone: 'needs-you', attention: { reason: 'asks to rm -rf build' } })
+      expect(notified.map((x) => x.attention?.reason)).toEqual(['asks to rm -rf build'])
+      expect(find(core, parent.id)?.handled).toHaveLength(1)
+      await vi.advanceTimersByTimeAsync(120_000)
+      expect(notified).toHaveLength(1)
+    })
+
+    it('scripted parent loop: a changed screen between reads, or a non-routine one, sends nothing', async () => {
+      const { core, parent, kid, ask, fake } = await held()
+      ask(true)
+      fake.captured.set(kid.tmuxName, 'Allow?\nrun: cat .env\n')
+      const t = (await core.commands.sessionRead({ id: kid.id, lines: 40 })) as { data: { text: string } }
+      expect(t.data.text).toContain('cat .env')
+      await core.commands.sessionEscalate({ id: kid.id, reason: 'reads .env' })
+      ask(false)
+      expect(find(core, parent.id)?.handled).toBeUndefined()
+    })
+
+    it('a child held past the window while on screen ends the hold without a popup', async () => {
+      const { core, notified, kid, ask } = await held()
+      ask(true)
+      expect(find(core, kid.id)?.held).toBe(true)
+      core.setWindowFocused(true)
+      await core.commands.uiSet({ focusedSessionId: kid.id })
+      await vi.advanceTimersByTimeAsync(61_000)
+      expect(find(core, kid.id)).toMatchObject({ status: 'waiting', waitingFor: 'permission' })
+      expect(find(core, kid.id)?.held).toBeUndefined()
+      expect(notified).toEqual([])
+    })
+
+    it('clamps a huge escalateAfterSec to the timer maximum, still holding', async () => {
+      const { core, notified, kid, ask } = await held({ escalateAfterSec: 1e10 })
+      ask(true)
+      await vi.advanceTimersByTimeAsync(2_147_483_646)
+      expect(find(core, kid.id)?.held).toBe(true)
+      expect(notified).toEqual([])
+      await vi.advanceTimersByTimeAsync(2)
+      expect(find(core, kid.id)?.held).toBeUndefined()
+      expect(notified.map((x) => x.id)).toEqual([kid.id])
+    })
+
+    it('keeps only the newest 50 handled prompts per parent', async () => {
+      const { core, parent, kid, ask } = await held()
+      for (let i = 0; i < 55; i++) {
+        ask(true)
+        await core.commands.sendToSession({ id: kid.id, text: `a${i}`, from: parent.id })
+        ask(false)
+      }
+      const list = find(core, parent.id)?.handled ?? []
+      expect(list).toHaveLength(50)
+      expect(list[0].sent).toBe('a5')
+      expect(list[49].sent).toBe('a54')
+    })
+
+    it('never saves held or handled', async () => {
+      const { core, statePath, parent, kid, ask } = await held()
+      ask(true)
+      expect(fs.readFileSync(statePath, 'utf8')).not.toContain('"held"')
+      await core.commands.sendToSession({ id: kid.id, text: 'sekret-answer', from: parent.id })
+      ask(false)
+      expect(find(core, parent.id)?.handled).toHaveLength(1)
+      const saved = fs.readFileSync(statePath, 'utf8')
+      expect(saved).not.toContain('"handled"')
+      expect(saved).not.toContain('sekret-answer')
+    })
+
+    it('escalateAfterSec 0 turns the hold off, a custom value sets the window, and it survives a config rewrite', async () => {
+      const off = await held({ escalateAfterSec: 0 })
+      off.ask(true)
+      expect(off.notified.map((x) => x.id)).toEqual([off.kid.id])
+      off.core.dispose()
+      disposeAll()
+      const { loadConfig } = await import('./store/configStore')
+      const short = await held({ escalateAfterSec: 5 })
+      short.ask(true)
+      await vi.advanceTimersByTimeAsync(4_000)
+      expect(short.notified).toEqual([])
+      await vi.advanceTimersByTimeAsync(2_000)
+      expect(short.notified).toHaveLength(1)
+      await short.core.commands.projectRemove({ id: 'nope' })
+      expect(loadConfig(short.configPath).escalateAfterSec).toBe(5)
+    })
   })
 
   it('notifies on reconnect only for real changes', async () => {
@@ -841,5 +1167,224 @@ describe('terminal notify', () => {
     s.fake.foreground.set(b.tmuxName, 'zsh')
     await vi.advanceTimersByTimeAsync(3000)
     expect(notified.map((x) => [x.id, x.waitingFor])).toEqual([[a.id, 'done']])
+  })
+
+  it('keeps a finished child terminal quiet', async () => {
+    vi.useFakeTimers({ toFake: ['setInterval', 'clearInterval', 'Date'] })
+    const s = setupCore()
+    disposeAll = s.disposeAll
+    const core = s.make()
+    await core.start()
+    const notified: Session[] = []
+    core.on('notify', (x) => notified.push(x))
+    const lead = await create(core)
+    const res = await core.commands.sessionCreate({ projectId: lead.projectId, kind: 'terminal', parent: lead.id, cols: 80, rows: 24 })
+    if (!res.ok) throw new Error(res.error)
+    s.fake.foreground.set(res.data.tmuxName, 'sleep')
+    await vi.advanceTimersByTimeAsync(4000)
+    s.fake.foreground.set(res.data.tmuxName, 'zsh')
+    await vi.advanceTimersByTimeAsync(3000)
+    expect(core.getSlices().sessions.find((x) => x.id === res.data.id)).toMatchObject({ status: 'waiting', waitingFor: 'done' })
+    expect(notified).toEqual([])
+  })
+})
+
+describe('small model classifier', () => {
+  let disposeAll = () => {}
+  afterEach(() => disposeAll())
+
+  const flush = () => new Promise((r) => setImmediate(r))
+  const ENDED = '2026-10-05T09:59:00.000Z'
+  const find = (core: { getSlices(): { sessions: Session[] } }, id: string) => core.getSlices().sessions.find((x) => x.id === id)
+
+  async function classifying(out: string, config: Record<string, unknown> = {}) {
+    const s = setupCore()
+    disposeAll = s.disposeAll
+    const { loadConfig, saveConfig } = await import('./store/configStore')
+    // these tests use OpenCode sessions, so they opt that kind in; a test passes `kinds` to override
+    saveConfig(s.configPath, { ...loadConfig(s.configPath), ...config, classifier: { kinds: ['opencode'], ...(config.classifier as object) } })
+    const run = vi.fn(async (_a: { model: string; input: string }) => out)
+    const core = s.make(NOW, { classifierRun: run })
+    await core.start()
+    s.oc.emit({ type: 'connected', version: '2.0.20' })
+    await flush()
+    const finish = (sessionId: string) => {
+      s.oc.emit({ type: 'exec-started', sessionId })
+      s.oc.emit({ type: 'exec-ended', sessionId, at: ENDED })
+    }
+    return { ...s, core, run, finish }
+  }
+
+  it('moves a finished top-level session that asks something to needs-you, with its summary as lastLine', async () => {
+    const { core, fake, run, finish } = await classifying('VERDICT: needs-you\nSUMMARY: Asks which database to use')
+    const o = await createOpenCode(core)
+    fake.captured.set(o.tmuxName, 'Which database?\n')
+    finish(o.agentSessionId!)
+    expect(find(core, o.id)).toMatchObject({ status: 'waiting', waitingFor: 'done', zone: 'review' })
+    await flush()
+    await flush()
+    expect(run).toHaveBeenCalledTimes(1)
+    expect(run.mock.calls[0][0]).toMatchObject({ model: 'haiku' })
+    expect(run.mock.calls[0][0].input).toContain('Which database?')
+    expect(find(core, o.id)).toMatchObject({ zone: 'needs-you', lastLine: 'Asks which database to use', classified: { verdict: 'needs-you', at: ENDED } })
+  })
+
+  it('asks once per finish, and drops the verdict when the session leaves it', async () => {
+    const { core, oc, run, finish } = await classifying('VERDICT: done\nSUMMARY: All fixed') as Awaited<ReturnType<typeof classifying>> & { oc: { emit(e: AgentEvent): void } }
+    const o = await createOpenCode(core)
+    finish(o.agentSessionId!)
+    await flush()
+    await flush()
+    expect(find(core, o.id)).toMatchObject({ zone: 'review', classified: { verdict: 'done' } })
+    core.setWindowFocused(true)
+    await core.commands.uiSet({ focusedSessionId: o.id })
+    expect(find(core, o.id)).not.toHaveProperty('classified')
+    await flush()
+    expect(run).toHaveBeenCalledTimes(1)
+    oc.emit({ type: 'exec-started', sessionId: o.agentSessionId! })
+    expect(find(core, o.id)).not.toHaveProperty('classified')
+  })
+
+  it('never classifies a child', async () => {
+    const { core, run, finish } = await classifying('VERDICT: needs-you')
+    const top = await createOpenCode(core)
+    const kid = await createOpenCode(core)
+    await core.commands.sessionSetParent({ id: kid.id, parent: top.id })
+    finish(kid.agentSessionId!)
+    await flush()
+    await flush()
+    expect(find(core, kid.id)).toMatchObject({ waitingFor: 'done' })
+    expect(run).not.toHaveBeenCalled()
+  })
+
+  it('enabled: false never calls the runner, and the classifier config survives a config rewrite', async () => {
+    const { core, run, finish, configPath } = await classifying('VERDICT: needs-you', { classifier: { enabled: false, model: 'sonnet' } })
+    const o = await createOpenCode(core)
+    finish(o.agentSessionId!)
+    await flush()
+    await flush()
+    expect(run).not.toHaveBeenCalled()
+    await core.commands.projectRemove({ id: 'nope' })
+    const { loadConfig } = await import('./store/configStore')
+    expect(loadConfig(configPath).classifier).toEqual({ kinds: ['opencode'], enabled: false, model: 'sonnet' })
+  })
+
+  it('uses the configured model', async () => {
+    const { core, run, finish } = await classifying('VERDICT: done', { classifier: { model: 'sonnet' } })
+    const o = await createOpenCode(core)
+    finish(o.agentSessionId!)
+    await flush()
+    await flush()
+    expect(run.mock.calls[0][0].model).toBe('sonnet')
+  })
+
+  it('sends only claude screens by default: an OpenCode finish is not sent', async () => {
+    const { core, run, finish } = await classifying('VERDICT: done', { classifier: { kinds: undefined } })
+    const o = await createOpenCode(core)
+    finish(o.agentSessionId!)
+    await flush()
+    await flush()
+    expect(run).not.toHaveBeenCalled()
+  })
+
+  it('sends an OpenCode screen when kinds lists it, and a claude one by default', async () => {
+    const on = await classifying('VERDICT: done', { classifier: { kinds: ['opencode'] } })
+    const o = await createOpenCode(on.core)
+    on.finish(o.agentSessionId!)
+    await flush()
+    await flush()
+    expect(on.run).toHaveBeenCalledTimes(1)
+    on.disposeAll()
+    const def = await classifying('VERDICT: done', { classifier: { kinds: undefined } })
+    def.claude.emit({ type: 'connected', version: 'spool' })
+    await flush()
+    const c = await createClaude(def.core)
+    def.claude.emit({ type: 'exec-started', sessionId: c.agentSessionId! })
+    def.claude.emit({ type: 'exec-ended', sessionId: c.agentSessionId!, at: ENDED })
+    await flush()
+    await flush()
+    expect(def.run).toHaveBeenCalledTimes(1)
+  })
+
+  it('validates kinds: garbage means the default, an empty list means none, and it survives a rewrite', async () => {
+    for (const kinds of ['opencode', 5, [1, 'nope', {}], { a: 1 }]) {
+      const t = await classifying('VERDICT: done', { classifier: { kinds } })
+      const o = await createOpenCode(t.core)
+      t.finish(o.agentSessionId!)
+      await flush()
+      await flush()
+      expect(t.run).not.toHaveBeenCalled()
+      t.disposeAll()
+    }
+    const mixed = await classifying('VERDICT: done', { classifier: { kinds: ['nope', 'opencode'] } })
+    const o = await createOpenCode(mixed.core)
+    mixed.finish(o.agentSessionId!)
+    await flush()
+    await flush()
+    expect(mixed.run).toHaveBeenCalledTimes(1)
+    await mixed.core.commands.projectRemove({ id: 'nope' })
+    const { loadConfig } = await import('./store/configStore')
+    expect(loadConfig(mixed.configPath).classifier?.kinds).toEqual(['nope', 'opencode'])
+    mixed.disposeAll()
+    const none = await classifying('VERDICT: done', { classifier: { kinds: [] } })
+    const p = await createOpenCode(none.core)
+    none.finish(p.agentSessionId!)
+    await flush()
+    await flush()
+    expect(none.run).not.toHaveBeenCalled()
+  })
+
+  it('abandons a slow runner at the cap, then classifies the next session', async () => {
+    vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout'] })
+    try {
+      const s = setupCore()
+      disposeAll = s.disposeAll
+      const { loadConfig, saveConfig } = await import('./store/configStore')
+      saveConfig(s.configPath, { ...loadConfig(s.configPath), classifier: { kinds: ['opencode'] } })
+      const run = vi.fn(async (_a: { model: string; input: string; signal: AbortSignal }): Promise<string> => 'VERDICT: done\nSUMMARY: Second')
+      run.mockImplementationOnce(() => new Promise(() => {})) // never settles
+      const core = s.make(NOW, { classifierRun: run })
+      await core.start()
+      s.oc.emit({ type: 'connected', version: '2.0.20' })
+      const a = await createOpenCode(core)
+      const b = await createOpenCode(core)
+      for (const o of [a, b]) {
+        s.oc.emit({ type: 'exec-started', sessionId: o.agentSessionId! })
+        s.oc.emit({ type: 'exec-ended', sessionId: o.agentSessionId!, at: ENDED })
+      }
+      s.fake.captured.set(a.tmuxName, 'a\n')
+      s.fake.captured.set(b.tmuxName, 'b\n')
+      await vi.advanceTimersByTimeAsync(100)
+      expect(run).toHaveBeenCalledTimes(1) // one in flight
+      await vi.advanceTimersByTimeAsync(20_000)
+      expect(run).toHaveBeenCalledTimes(2)
+      expect(run.mock.calls[0][0].signal.aborted).toBe(true)
+      expect(find(core, a.id)).not.toHaveProperty('classified')
+      expect(find(core, b.id)).toMatchObject({ classified: { verdict: 'done' }, lastLine: 'Second' })
+    } finally {
+      vi.useRealTimers()
+    }
+  })
+
+  it('ignores a non-boolean enabled and a model that looks like a flag', async () => {
+    const odd = await classifying('VERDICT: done', { classifier: { enabled: 'no', model: '--dangerously' } })
+    const o = await createOpenCode(odd.core)
+    odd.finish(o.agentSessionId!)
+    await flush()
+    await flush()
+    expect(odd.run).toHaveBeenCalledTimes(1)
+    expect(odd.run.mock.calls[0][0].model).toBe('haiku')
+  })
+
+  it('does not save classified', async () => {
+    const { core, statePath, finish } = await classifying('VERDICT: needs-you\nSUMMARY: Asks')
+    const o = await createOpenCode(core)
+    finish(o.agentSessionId!)
+    await flush()
+    await flush()
+    expect(find(core, o.id)?.classified).toBeDefined()
+    const saved = fs.readFileSync(statePath, 'utf8')
+    expect(saved).not.toContain('"classified"')
+    expect(saved).toContain('"lastLine": "Asks"')
   })
 })

@@ -23,7 +23,7 @@ async function run(cmd: Exclude<Command, { cmd: 'skill' }>, socket: string): Pro
     return reply.ok ? { ...reply, print: formatLs(reply.data as CliMethods['sessions.list']['data'], process.env.GROVE_SESSION_ID ?? null, cmd.json) } : reply
   }
   if (cmd.cmd === 'send') {
-    const reply = await call(socket, 'sessions.send', { ref: cmd.ref, text: text(cmd.text) ?? '', submit: cmd.submit, wait: cmd.wait, timeoutS: cmd.timeoutS })
+    const reply = await call(socket, 'sessions.send', { ref: cmd.ref, text: text(cmd.text) ?? '', submit: cmd.submit, wait: cmd.wait, timeoutS: cmd.timeoutS, from: process.env.GROVE_SESSION_ID || undefined })
     return reply.ok ? { ...reply, print: undefined, exit: turnOf(reply) } : reply
   }
   if (cmd.cmd === 'focus' || cmd.cmd === 'kill') {
@@ -33,6 +33,14 @@ async function run(cmd: Exclude<Command, { cmd: 'skill' }>, socket: string): Pro
   if (cmd.cmd === 'status') {
     // the ref is checked in main(): without one this is the calling session
     const reply = await call(socket, 'sessions.status', { ref: cmd.ref ?? process.env.GROVE_SESSION_ID, status: cmd.value })
+    return reply.ok ? { ...reply, print: undefined } : reply
+  }
+  if (cmd.cmd === 'escalate') {
+    const reply = await call(socket, 'sessions.escalate', { ref: cmd.ref, reason: cmd.reason })
+    return reply.ok ? { ...reply, print: undefined } : reply
+  }
+  if (cmd.cmd === 'progress') {
+    const reply = await call(socket, 'sessions.progress', { ref: cmd.ref, done: cmd.done, total: cmd.total })
     return reply.ok ? { ...reply, print: undefined } : reply
   }
   if (cmd.cmd === 'wait') {

@@ -2,7 +2,7 @@ import type { Feature, Project, Session } from '@shared/types'
 import { CARD_STATE_LABELS, CARD_STATE_TONES } from '../featureLabels'
 import { divergentCopies, type Checkout, type UnionFeature } from '../featureUnion'
 import { repoProjectIds } from '../repoGroups'
-import { shownStatus, statusView } from '../sessionStatus'
+import { countsAsWaiting, statusView } from '../sessionStatus'
 import { colorTags } from '../tags'
 import { boardColumns, linkedSessions } from '../tree'
 import { cx } from './ui/cx'
@@ -20,7 +20,7 @@ function FeatureCard({ feature: f, parent, parentTag, sessions, divergent, onOpe
   onOpenCopy(c: Checkout): void
   onOpenParent(): void
 }) {
-  const waiting = sessions.some((x) => shownStatus(x) === 'waiting')
+  const waiting = sessions.some(countsAsWaiting)
   return (
     <div className={cx(s.card, waiting && s.waiting)} onClick={onOpen}>
       <div className={s.state}>

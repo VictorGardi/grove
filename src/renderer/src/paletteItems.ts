@@ -4,7 +4,7 @@ import { fuzzy } from './fuzzy'
 import { unionFeatures } from './featureUnion'
 import { featureStage } from './featureLabels'
 import { repoGroups } from './repoGroups'
-import { shownStatus } from './sessionStatus'
+import { countsAsWaiting, shownStatus } from './sessionStatus'
 
 export interface PaletteItem {
   id: string
@@ -59,7 +59,7 @@ export function paletteItems(
       kind: 'session',
       label: s.label,
       detail: `${projectName(s.projectId)} · ${s.kind} · ${status}${data.grid?.members.includes(s.id) ? ' · in grid' : ''}`,
-      waiting: status === 'waiting',
+      waiting: countsAsWaiting(s),
       run: () => actions.focusSession(s.id),
     }
   })

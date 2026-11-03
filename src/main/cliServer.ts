@@ -30,6 +30,7 @@ function toCli(core: Core, s: Session): CliSession {
     feature: s.feature,
     workflowStatus: s.workflowStatus,
     parent: s.parentId ?? null,
+    ...(s.zone && { zone: s.zone }),
   }
 }
 
@@ -114,7 +115,12 @@ async function dispatch(core: Core, raise: () => void, line: string): Promise<Cl
       if (typeof ref !== 'string' || typeof text !== 'string' || !ref) return fail(id, 'bad-params', 'ref and text are required')
       const found = resolveSessionRef(core.getSlices().sessions, ref)
       if (!found.ok) return failFrom(id, found.error)
-      const res = await core.commands.sendToSession({ id: found.data.id, text, submit: params.submit !== false })
+      let from: string | undefined
+      if (typeof params.from === 'string' && params.from) {
+        const caller = resolveSessionRef(core.getSlices().sessions, params.from)
+        if (caller.ok) from = caller.data.id // an unknown caller is just not a parent
+      }
+      const res = await core.commands.sendToSession({ id: found.data.id, text, submit: params.submit !== false, from })
       if (!res.ok) return failFrom(id, res.error)
       if (params.wait !== true) return { id, ok: true, data: res.data }
       const turn = await waitAfter(core, id, params, found.data.id)
@@ -150,6 +156,24 @@ async function dispatch(core: Core, raise: () => void, line: string): Promise<Cl
       if (!found.ok) return failFrom(id, found.error)
       // the card picker's command: a plain field write, no cascade
       const res = await core.commands.sessionWorkflowStatus({ id: found.data.id, status: status as WorkflowStatus })
+      return res.ok ? { id, ok: true, data: { id: found.data.id } } : failFrom(id, res.error)
+    }
+    case 'sessions.escalate': {
+      const { ref, reason } = params
+      if (typeof ref !== 'string' || !ref || typeof reason !== 'string' || !reason.trim()) return fail(id, 'bad-params', 'ref and a reason are required')
+      const found = resolveSessionRef(core.getSlices().sessions, ref)
+      if (!found.ok) return failFrom(id, found.error)
+      const res = await core.commands.sessionEscalate({ id: found.data.id, reason })
+      return res.ok ? { id, ok: true, data: { id: found.data.id } } : failFrom(id, res.error)
+    }
+    case 'sessions.progress': {
+      const { ref, done, total } = params
+      if (typeof ref !== 'string' || !ref || typeof done !== 'number' || typeof total !== 'number' || !Number.isInteger(done) || !Number.isInteger(total) || done < 0 || total < 1 || done > total) {
+        return fail(id, 'bad-params', 'ref, done and total are required (0 <= done <= total, total >= 1)')
+      }
+      const found = resolveSessionRef(core.getSlices().sessions, ref)
+      if (!found.ok) return failFrom(id, found.error)
+      const res = await core.commands.sessionProgress({ id: found.data.id, done, total })
       return res.ok ? { id, ok: true, data: { id: found.data.id } } : failFrom(id, res.error)
     }
     case 'sessions.read': {

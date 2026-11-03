@@ -1,4 +1,5 @@
 import type { OpenCodeSlice, Session } from '@shared/types'
+import { asksHuman } from '@shared/attention'
 import type { StatusTone } from './components/ui/StatusDot'
 
 export type ShownStatus = 'running' | 'gone' | 'working' | 'waiting' | 'idle' | 'starting' | 'failed'
@@ -8,6 +9,7 @@ export function shownStatus(s: Session): ShownStatus {
   if (s.startup?.phase === 'failed') return 'failed' // the start failed: an error card, even over a resumable gone session
   if (s.lastStatus === 'gone') return 'gone'
   if (s.startup?.phase === 'starting') return 'starting' // no status yet: the card shows a spinner
+  if (s.held && s.status === 'waiting') return 'working' // a prompt held for the grace window: not asking for the human yet
   return s.status ?? 'running'
 }
 
@@ -25,19 +27,33 @@ export function statusTone(s: Session): StatusTone {
   return shown === 'waiting' && s.waitingFor === 'done' ? 'finished' : shown
 }
 
+// Whether a session counts toward "N waiting" and cmd+. A finished child keeps its finished look
+// but doesn't ask for attention; its leader does.
+export function countsAsWaiting(s: Session): boolean {
+  return asksHuman(s)
+}
+
+// The status a queue (column, ranking) files a session under: shownStatus, except a wait that
+// is not asking the human (a finished child) is idle there.
+export function queueStatus(s: Session): ShownStatus {
+  const shown = shownStatus(s)
+  return shown === 'waiting' && !asksHuman(s) ? 'idle' : shown
+}
+
 // What a collapsed group shows for its children: the one that most needs the human, so a waiting
 // child is never hidden behind its parent. null for no children.
 const URGENCY: ShownStatus[] = ['failed', 'waiting', 'working', 'idle', 'starting', 'running', 'gone']
 export function mostUrgent(sessions: Session[]): Session | null {
+  const rank = (s: Session) => URGENCY.indexOf(queueStatus(s))
   let best: Session | null = null
-  for (const s of sessions) if (!best || URGENCY.indexOf(shownStatus(s)) < URGENCY.indexOf(shownStatus(best))) best = s
+  for (const s of sessions) if (!best || rank(s) < rank(best)) best = s
   return best
 }
 
 // When the renderer first saw each session waiting (ms). Same object when unchanged.
 export function trackWaiting(prev: Record<string, number>, sessions: Session[], now: number): Record<string, number> {
   const next: Record<string, number> = {}
-  for (const s of sessions) if (shownStatus(s) === 'waiting') next[s.id] = prev[s.id] ?? now
+  for (const s of sessions) if (countsAsWaiting(s)) next[s.id] = prev[s.id] ?? now
   const keys = Object.keys(next)
   const same = keys.length === Object.keys(prev).length && keys.every((k) => prev[k] === next[k])
   return same ? prev : next
@@ -56,7 +72,7 @@ export function statusAge(at: number, now: number): string {
 export function longestWaiting(sessions: Session[], since: Record<string, number>): Session | null {
   let best: Session | null = null
   for (const s of sessions) {
-    if (shownStatus(s) !== 'waiting') continue
+    if (!countsAsWaiting(s)) continue
     if (!best || (since[s.id] ?? Infinity) < (since[best.id] ?? Infinity)) best = s
   }
   return best

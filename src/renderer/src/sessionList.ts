@@ -1,7 +1,7 @@
 import { doneKey, kidsKey, openedKey, projectKey } from '@shared/groups'
 import type { Project, Session, UiState, WorkflowStatus } from '@shared/types'
 import { repoGroups } from './repoGroups'
-import { statusTone } from './sessionStatus'
+import { countsAsWaiting, shownStatus } from './sessionStatus'
 import { WORKFLOW_STATUSES } from './workflowStatus'
 
 export type GroupBy = 'project' | 'status' | 'none'
@@ -104,10 +104,10 @@ const byCustom = (order: string[]) => {
 // Longest in its status first (core's statusAt), with the sessions that are your move (waiting,
 // finished, failed) ahead of the rest, so the top row is the one that has waited on you longest.
 // A session not stamped yet sorts as if it just changed.
-const NEEDS_YOU = new Set(['waiting', 'finished', 'failed'])
+const needsYou = (s: Session) => countsAsWaiting(s) || shownStatus(s) === 'failed'
 const statusTime = (s: Session) => (s.statusAt ? Date.parse(s.statusAt) : Infinity)
 const byStatusAge = (a: Session, b: Session) => {
-  const na = NEEDS_YOU.has(statusTone(a)), nb = NEEDS_YOU.has(statusTone(b))
+  const na = needsYou(a), nb = needsYou(b)
   if (na !== nb) return na ? -1 : 1
   return statusTime(a) - statusTime(b) || byStarted(a, b)
 }
