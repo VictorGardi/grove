@@ -206,4 +206,70 @@ Round 1: fresh reviewer found 2 blocking: `README.md` still said `grove wait` ex
 
 Update the grove and grove-run skills in the grove-skills repo that syncs them, if they are copied from there. ESLint was not run (config format error).
 
+## Slice 6
+
+Session: simplify-sessions-and-sidebar-slice-6-a2
+Status: done
+Commit: this commit (see git log)
+
+### Slice plan
+
+Found in the code: this slice changes no source. The sidebar today (`Sidebar.tsx`, `ChildrenPopover.tsx`, `RunProgress.tsx`, `SessionMeta.tsx`) shows a "N children" chip popover and per-slice progress; the mockups are drawn against that vocabulary. The page is a scratch file kept outside the repo and published as a Claude artifact.
+
+- [x] Pre-check: `continue.md` step 4 reads the latest `### Options` of a halted slice, asks the human to choose one (free text allowed), and starts a fresh child with a `Decision:` line; `slice-mode.md` step 2a records it and continues. A deliberate halt with a recorded pick is accepted.
+- [x] Build one HTML page with 4 concepts (A-D), each drawing the badge, the via-parent row, the peek overlay, promote and the slice progress bar, in light and dark.
+- [x] Publish it as an artifact and record the link here.
+
+Models passed: implementer inherit (none used), reviewer inherit (none used).
+
+### Mockups
+
+Artifact: https://claude.ai/artifact/M4khBGdu5uyPCEssE6tGUM
+
+Four concepts: A Quiet count, B Segments, C Ring, D Drawer. Each draws all five pieces.
+
+### Halt
+
+Deliberate halt: the plan's slice 6 stops the run so the human can pick a concept before slice 7 builds it. No code failed and no fix rounds ran. The page was published but not reviewed by a subagent, because it is a throwaway mockup and no source changed.
+
+### Options
+
+Recommended: Option 2 (B, Segments), because it shows state per slice at a glance and gives a waiting child the most visible, actionable row.
+
+#### Option 1: Concept A, Quiet count
+Pros: smallest change from today's chip popover; least visual noise.
+Cons: progress is a thin bar only; a waiting child is a plain text line.
+Changes design or outcome: no
+
+#### Option 2: Concept B, Segments
+Pros: one segment per slice by state; amber strip with an Answer action; live screen on hover.
+Cons: busiest parent row; needs the most CSS.
+Changes design or outcome: no
+
+#### Option 3: Concept C, Ring
+Pros: one glyph, very compact.
+Cons: no room for per-child state; the peek shows only the latest child; the waiting pill replaces the via-parent row.
+Changes design or outcome: no
+
+#### Option 4: Concept D, Drawer
+Pros: familiar expand/collapse; all children reachable in place.
+Cons: children appear in the sidebar again when open, which weakens the hide-children goal; no live screen.
+Changes design or outcome: no
+
+Whichever option is chosen, the Decision child writes `Mockup pick: <concept>` into this file; slice 7 starts only when `grep -n "Mockup pick:" 04-run.md` matches. A mix ("A, with B's progress bar") is a free-text pick; state that it changes neither the design nor the outcome.
+
+### Decision
+
+Decision: Option 2, Concept B, Segments. One segment per slice by state; amber strip with an Answer action for a waiting child; live screen on hover. Cons: busiest parent row; needs the most CSS. Changes design or outcome: no. The human chose this in the parent session ("continue with concept B").
+
+Mockup pick: B (Segments)
+
+### Verification
+
+`grep -n "claude.ai/artifact" 04-run.md` shows the link above. The page shows 4 concepts, each with all five pieces. Models requested: none used. After the decision: `grep -n "Mockup pick:" 04-run.md` matches `Mockup pick: B (Segments)`; no source changed.
+
+### Left for the human
+
+None. The pick is recorded; slice 7 builds concept B.
+
 ## Open questions
