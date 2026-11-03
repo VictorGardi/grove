@@ -5,7 +5,7 @@ import type { Session } from './types'
 // One truth for the counts, cmd+., the palette, board cards, columns and feature cards.
 export function asksHuman(s: Session): boolean {
   if (s.status !== 'waiting' || s.held) return false
-  if (s.parentId && s.waitingFor === 'done') return false
+  if (s.link && s.waitingFor === 'done') return false
   if (s.lastStatus === 'gone') return false
   return s.startup?.phase !== 'failed' && s.startup?.phase !== 'starting'
 }

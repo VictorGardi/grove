@@ -84,12 +84,12 @@ Parent mode, all required (`--force` is not available here):
    (resolved, one token per role, in that order; a subagent role without
    `agent` gets the planner's agent, the planner without `agent` the parent's
    own agent), where id is the current value of `$GROVE_SESSION_ID` (expanded, no angle brackets or variable name in the prompt). Start the child without `--wait`.
-   - No worktree yet (slice 1): `grove new <planner agent> --child --worktree --branch <branch> --base <plan-commit> --label <label> --link <slug> [--model <planner model>] --prompt "<child prompt>"`
-     (`--link <slug>` links the child to the feature, so the app offers it as a
+   - No worktree yet (slice 1): `grove new <planner agent> --child --relation slice --worktree --branch <branch> --base <plan-commit> --label <label> --link <slug> [--model <planner model>] --prompt "<child prompt>"`
+     (`--relation slice` marks the session as an auto-run slice; `--link <slug>` links the child to the feature, so the app offers it as a
      send target for comments on the feature's artifacts)
    - Whenever the worktree exists (later slices, and every slice on resume,
      slice 1 included): the same without `--worktree`, `--branch`, `--base`,
-     and with `--cwd <worktree>`. In both forms `--model <planner model>` is
+     and with `--cwd <worktree>` (still with `--child --relation slice`). In both forms `--model <planner model>` is
      added only when the `planner` role has a model; omit it when it inherits.
    - After the first child creates the worktree, the parent finds its path as
      the `git worktree list --porcelain` entry for `<branch>` and uses it for

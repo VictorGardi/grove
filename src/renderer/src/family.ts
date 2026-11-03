@@ -48,8 +48,8 @@ function byRunning(a: Session, b: Session): number {
 // by rank; then ended ones, newest first; never store order), and the child a jump goes to.
 export function familyOf(sessions: Session[], id: string): Family {
   const self = sessions.find((s) => s.id === id)
-  const parent = self?.parentId ? sessions.find((s) => s.id === self.parentId) ?? null : null
-  const mine = sessions.filter((s) => s.parentId === id)
+  const parent = self?.link ? sessions.find((s) => s.id === self.link!.id) ?? null : null
+  const mine = sessions.filter((s) => s.link?.id === id)
   const running = mine.filter((s) => !isEnded(s)).sort(byRunning)
   const done = mine.filter(isEnded).sort((a, b) => later(a.startedAt, b.startedAt))
   return { parent, children: [...running, ...done], active: running[0] ?? null }

@@ -639,7 +639,7 @@ export function Sidebar({ onNew, onRemove }: { onNew: (projectId?: string) => vo
             // a session that leads a group cannot become a child (groups are one level deep)
             ...(one && !hasChildren(sessions, one.id) && sessions.some((x) => canParent(sessions, one.id, x))
               ? [{ label: 'Set parent…', icon: 'corner-left-up' as const, onSelect: () => setParenting(one) }] : []),
-            ...(one?.parentId ? [{ label: 'Clear parent', icon: 'minus' as const, onSelect: () => void window.api.invoke('session:setParent', { id: one.id, parent: null }) }] : []),
+            ...(one?.link ? [{ label: 'Clear parent', icon: 'minus' as const, onSelect: () => void window.api.invoke('session:setParent', { id: one.id, parent: null }) }] : []),
             // the card's own status button covers a single card; the menu is for a selection
             ...(menu.ids.length > 1
               ? WORKFLOW_STATUSES.map((v) => ({ label: `Set ${v.label}`, glyph: <StatusMark view={v} />, onSelect: () => setStatuses(menu.ids, v.value) }))

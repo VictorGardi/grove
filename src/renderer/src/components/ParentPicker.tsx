@@ -38,7 +38,7 @@ export function ParentPicker({ session, onClose }: { session: Session; onClose: 
                 <div className={s.runRows}>
                   {list.map((o) => (
                     <ListRow key={o.id} title={o.label} meta={o.branch ?? undefined}
-                      tone={session.parentId === o.id ? 'selected' : 'default'} onClick={() => void pick(o.id)} />
+                      tone={session.link?.id === o.id ? 'selected' : 'default'} onClick={() => void pick(o.id)} />
                   ))}
                 </div>
               </div>

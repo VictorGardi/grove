@@ -66,9 +66,9 @@ describe('time-in-status sort and children', () => {
     const at = (ms: number) => new Date(ms).toISOString()
     const list = [
       session('idle', { status: 'idle', statusAt: at(300) }),
-      session('kid-done', { parentId: 'x', status: 'waiting', waitingFor: 'done', statusAt: at(100) }),
-      session('kid-held', { parentId: 'x', status: 'waiting', waitingFor: 'permission', held: true, statusAt: at(50) }),
-      session('kid-ask', { parentId: 'x', status: 'waiting', waitingFor: 'question', statusAt: at(400) }),
+      session('kid-done', { link: { id: 'x', kind: 'group' }, status: 'waiting', waitingFor: 'done', statusAt: at(100) }),
+      session('kid-held', { link: { id: 'x', kind: 'group' }, status: 'waiting', waitingFor: 'permission', held: true, statusAt: at(50) }),
+      session('kid-ask', { link: { id: 'x', kind: 'group' }, status: 'waiting', waitingFor: 'question', statusAt: at(400) }),
     ]
     expect(ids(listGroups(PROJECTS, list, ui({ sessionSort: 'status-age' }))).slice(0, 1)).toEqual(['kid-ask'])
     expect(ids(listGroups(PROJECTS, list, ui({ sessionSort: 'status-age' })))).toEqual(['kid-ask', 'kid-held', 'kid-done', 'idle'])
@@ -293,8 +293,8 @@ describe('session groups', () => {
   // r leads k1 and k2, one of which runs in another project; s stands alone
   const sessions = [
     session('r', { startedAt: at(5, 8) }),
-    session('k1', { parentId: 'r', startedAt: at(5, 9) }),
-    session('k2', { parentId: 'r', projectId: 'q', startedAt: at(5, 10) }),
+    session('k1', { link: { id: 'r', kind: 'group' }, startedAt: at(5, 9) }),
+    session('k2', { link: { id: 'r', kind: 'group' }, projectId: 'q', startedAt: at(5, 10) }),
     session('s', { startedAt: at(5, 11) }),
   ]
 
@@ -307,11 +307,11 @@ describe('session groups', () => {
 
   it('keeps a child whose parent is hidden or missing as a row of its own', () => {
     expect(ids(listGroups(PROJECTS, sessions, ui({ hiddenProjects: ['p'] })))).toEqual(['k2'])
-    expect(ids(listGroups(PROJECTS, [session('k1', { parentId: 'gone' })], ui()))).toEqual(['k1'])
+    expect(ids(listGroups(PROJECTS, [session('k1', { link: { id: 'gone', kind: 'group' } })], ui()))).toEqual(['k1'])
   })
 
   it('keeps a child of a child as a row, so no card is ever lost', () => {
-    expect(ids(listGroups(PROJECTS, [session('r'), session('k', { parentId: 'r' }), session('x', { parentId: 'k' })], ui()))).toEqual(['r', 'x'])
+    expect(ids(listGroups(PROJECTS, [session('r'), session('k', { link: { id: 'r', kind: 'group' } }), session('x', { link: { id: 'k', kind: 'group' } })], ui()))).toEqual(['r', 'x'])
   })
 
   it('counts children through Cmd+1..9 only while the parent is expanded; a range likewise', () => {
@@ -336,10 +336,10 @@ describe('done stacks', () => {
   // r leads four children in start order; d1 and d2 are done, with k1 between them
   const sessions = [
     session('r', { startedAt: at(5, 8) }),
-    session('k0', { parentId: 'r', startedAt: at(5, 9) }),
-    session('d1', { parentId: 'r', startedAt: at(5, 10), workflowStatus: 'done' }),
-    session('k1', { parentId: 'r', startedAt: at(5, 11) }),
-    session('d2', { parentId: 'r', startedAt: at(5, 12), workflowStatus: 'done' }),
+    session('k0', { link: { id: 'r', kind: 'group' }, startedAt: at(5, 9) }),
+    session('d1', { link: { id: 'r', kind: 'group' }, startedAt: at(5, 10), workflowStatus: 'done' }),
+    session('k1', { link: { id: 'r', kind: 'group' }, startedAt: at(5, 11) }),
+    session('d2', { link: { id: 'r', kind: 'group' }, startedAt: at(5, 12), workflowStatus: 'done' }),
   ]
   const rows = (collapsed: string[] = []) => kidRows(listGroups(PROJECTS, sessions, ui({ collapsed })).find((g) => g.key === 'p:p')!.nest, 'r')
     .map((r) => 'session' in r ? r.session.id : `[${r.stack.list.map((s) => s.id).join(' ')}${r.stack.open ? ' open' : ''}]`)

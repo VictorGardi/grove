@@ -46,9 +46,11 @@ export interface Session {
   startup?: { phase: 'starting'; since: string } | { phase: 'failed'; reason: string } // a session whose pane is being made, until its first status (or gone); ISO since; never saved
   statusAt?: string               // when it entered its current status (ISO), stamped by core on every sessions publish; never saved
   lastContext: ContextReading | null // the last known reading (pct known); persisted
-  parentId?: string | null         // the group this session is in: its parent's id. Groups are one level deep, so a parent never has a parent; persisted
+  link?: SessionLink               // the parent this session is linked to (a group, or a slice of a run). Links are one level deep, so a parent never has a parent; missing = no parent; persisted
+  promoted?: boolean               // a linked child that also shows as its own sidebar row; keeps its link; persisted
 }
 // a viewable file in the project folder (ADR 0032); path relative to the project, POSIX
+export interface SessionLink { id: string; kind: 'group' | 'slice' }
 export interface FileTarget { kind: 'file'; projectId: string; path: string; hash: string | null; fromDiff: string | null }
 export interface PullRequest { number: number; state: 'open' | 'merged' | 'closed'; draft: boolean; url: string }
 
@@ -185,7 +187,7 @@ export type Slices = { projects: Project[]; sessions: Session[]; ui: UiState; fe
 // A child prompt its parent answered with `grove send` before the grace window ran out.
 export interface HandledPrompt { childId: string; at: string; kind: 'permission' | 'question'; screen: string; sent: string } // at: ISO; screen: last 8 lines of the child's pane as the prompt opened
 export interface ConfigFile { schemaVersion: 1; projects: Project[]; workflow?: string; sounds?: boolean; escalateAfterSec?: number; classifier?: { enabled?: boolean; model?: string; kinds?: ('claude' | 'opencode' | 'copilot')[] } } // sounds: false mutes the waiting sounds; classifier.kinds: agent kinds whose finished screens go to the small model, default claude only
-export interface StateFile { schemaVersion: 10; sessions: Session[]; ui: UiState }
+export interface StateFile { schemaVersion: 11; sessions: Session[]; ui: UiState }
 export const SIDEBAR_WIDTH = 220 // the default; drag the sidebar's edge to resize, double-click it to come back here
 export const DEFAULT_UI: UiState = { sidebarWidth: SIDEBAR_WIDTH, sidebarCollapsed: false, focusedSessionId: null, focusedFeature: null, focusedProject: null, board: 'sessions', collapsed: [], hiddenProjects: [], sessionSort: 'viewed-desc', sessionOrder: [], viewer: null, viewerWidth: null, viewerExpanded: false, grid: { open: false, members: [] } }
 export const EMPTY_FEATURES: FeaturesSlice = { workflowError: null, stages: [], items: [] }

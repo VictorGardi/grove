@@ -3,7 +3,7 @@ import type { Project, Session } from '@shared/types'
 import { parentOptions } from './parentOptions'
 
 const project = (id: string, worktreeOf?: string): Project => ({ id, name: id, path: '/' + id, ...(worktreeOf && { worktreeOf }) })
-const s = (id: string, projectId: string, parentId?: string): Session => ({ id, projectId, parentId } as Session)
+const s = (id: string, projectId: string, parent?: string): Session => ({ id, projectId, link: parent ? { id: parent, kind: "group" } : undefined } as Session)
 
 describe('parentOptions', () => {
   const projects = [project('a'), project('b'), project('b-wt', 'b')]

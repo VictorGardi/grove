@@ -12,7 +12,7 @@ export function rowTitle(s: Session): string {
 // The row's second line: a waiting permission/question says what it needs (the escalated reason
 // first), else what it was doing, else its name and status.
 export function rowLine(s: Session): string {
-  const asks = !!s.attention || !(s.held || (s.parentId && s.waitingFor === 'done')) // a held or finished child is not asking: it reads by its named line
+  const asks = !!s.attention || !(s.held || (s.link && s.waitingFor === 'done')) // a held or finished child is not asking: it reads by its named line
   if (asks && s.status === 'waiting' && s.waitingFor === 'permission') return s.attention?.reason || 'Needs permission'
   if (asks && s.status === 'waiting' && s.waitingFor === 'question') return s.attention?.reason || 'Has a question'
   if (s.classified?.verdict === 'needs-you' && s.status === 'waiting' && !s.lastLine) return 'May need an answer'

@@ -70,11 +70,18 @@ specific meaning, so humans and agents stay consistent.
 - **Remove**: ends a session if it is running and forgets it, with no confirmation
   (⌘W, the card's ×, or right-click on a shift-click selection). Not resumable.
   `grove kill` only ends it, leaving a gone session to resume.
-- **Session group**: a **parent** session and its **children** (`parentId`). One level
+- **Session group**: a **parent** session and its **children**. A child's own link
+  (`link {id, kind}`) names the parent and has a kind: `group` (an ad-hoc member) or
+  `slice` (an auto-run slice session, set by `grove new --relation slice`). One level
   deep: a parent never has a parent, and a session started by a child joins the child's
   group. Children nest under the parent in the Sessions tab whatever project or worktree
-  they run in. Set at creation by `grove new --parent REF | --child`, or from the card
-  menu; removing the parent promotes its children to top level (ADR 0042).
+  they run in, unless promoted (`promoted`): a promoted child shows as its own sidebar
+  row and keeps its link. Set at creation by `grove new --parent REF | --child`, or from
+  the card menu; removing the parent makes its children top-level sessions (ADR 0042, 0047).
+  An agent's own subagents are never sessions: they are a third kind of "parent" that
+  exists only in status folding and is not stored. A worktree's **parent checkout**
+  (`Project.worktreeOf`) is a separate thing from a session's link, so "parent" no longer
+  covers both.
 - **Link**: a session's association with one feature. Set at start by a next
   action, automatically from the session's latest write into a feature folder,
   or manually; a manual link is **pinned** and stops auto-linking.

@@ -23,6 +23,7 @@ export interface InvokeMap {
   'session:resume': [{ id: string }, Session]
   'session:rename': [{ id: string; label: string }, Session]
   'session:link': [{ id: string; feature: string | null }, Session]
+  'session:promote': [{ id: string; promoted: boolean }, Session]
   'session:setParent': [{ id: string; parent: string | null }, Session]
   'session:workflowStatus': [{ id: string; status: WorkflowStatus }, Session]
   'comment:add': [{ sessionId: string | null; feature?: FeatureKey; anchor: CommentAnchor; body: string }, Comment]

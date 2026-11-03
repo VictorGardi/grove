@@ -38,7 +38,7 @@ describe('cli server', () => {
     const dead = await createTerminal(core)
     await core.commands.sessionKill({ id: dead.id })
     const reply = await request(socketPath, req('sessions.list'))
-    expect(reply.ok && (reply.data as CliSession[]).map((s) => [s.id, s.project, s.lastStatus])).toEqual([[live.id, 'proj', 'running']])
+    expect(reply.ok && (reply.data as CliSession[]).map((s) => [s.id, s.project, s.lastStatus, s.parent, s.relation])).toEqual([[live.id, 'proj', 'running', null, null]])
     const all = await request(socketPath, req('sessions.list', { all: true }))
     expect(all.ok && (all.data as CliSession[]).map((s) => s.id).sort()).toEqual([live.id, dead.id].sort())
   })
@@ -148,11 +148,16 @@ describe('cli server', () => {
     const first = await request(socketPath, req('sessions.create', { kind: 'terminal', cwd: t.dir, parent: lead.id.slice(0, 6) }))
     if (!first.ok) throw new Error(JSON.stringify(first.error))
     const child = (first.data as CliSession).id
-    expect(core.getSlices().sessions.find((s) => s.id === child)?.parentId).toBe(lead.id)
+    expect(core.getSlices().sessions.find((s) => s.id === child)?.link?.id).toBe(lead.id)
     expect((first.data as CliSession).parent).toBe(lead.id)
+    expect((first.data as CliSession).relation).toBe('group')
+    const sliced = await request(socketPath, req('sessions.create', { kind: 'terminal', cwd: t.dir, parent: lead.id, relation: 'slice' }))
+    expect(sliced.ok && (sliced.data as CliSession).relation).toBe('slice')
+    expect(await request(socketPath, req('sessions.create', { kind: 'terminal', cwd: t.dir, relation: 'slice' }))).toMatchObject({ ok: false, error: { code: 'bad-params' } })
+    expect(await request(socketPath, req('sessions.create', { kind: 'terminal', cwd: t.dir, parent: lead.id, relation: 'group' }))).toMatchObject({ ok: false, error: { code: 'bad-params' } })
     // started by the child: a sibling, not a grandchild
     const second = await request(socketPath, req('sessions.create', { kind: 'terminal', cwd: t.dir, parent: child }))
-    expect(second.ok && core.getSlices().sessions.find((s) => s.id === (second.data as CliSession).id)?.parentId).toBe(lead.id)
+    expect(second.ok && core.getSlices().sessions.find((s) => s.id === (second.data as CliSession).id)?.link?.id).toBe(lead.id)
 
     const repo = gitRepo()
     repo.commit()

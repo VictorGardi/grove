@@ -229,6 +229,20 @@ describe('sessionCreate for the CLI', () => {
     expect(res).toMatchObject({ ok: true, data: { feature: 'a', linkPinned: true, label: 'mine', labelPinned: true } })
   })
 
+  it('links a child as a group by default and as a slice with relation slice, also with --link', async () => {
+    const core = await start()
+    await vi.waitFor(() => expect(core.getSlices().features.items.some((f) => f.slug === 'a')).toBe(true))
+    const lead = await create(core, { cwd: t.dir })
+    if (!lead.ok) throw new Error(lead.error)
+    const slice = await create(core, { cwd: t.dir, parent: lead.data.id, relation: 'slice' })
+    expect(slice.ok && slice.data.link).toEqual({ id: lead.data.id, kind: 'slice' })
+    const plain = await create(core, { cwd: t.dir, parent: lead.data.id, feature: 'a' })
+    expect(plain.ok && plain.data.link).toEqual({ id: lead.data.id, kind: 'group' })
+    expect(plain.ok && plain.data.feature).toBe('a')
+    const top = await create(core, { cwd: t.dir })
+    expect(top.ok && top.data.link).toBeUndefined()
+  })
+
   it('pastes the prompt into a terminal once the pane is stable', async () => {
     const core = await start()
     const res = await create(core, { cwd: t.dir, prompt: 'echo hi' })

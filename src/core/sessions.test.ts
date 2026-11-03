@@ -277,16 +277,30 @@ describe('core sessions', () => {
     const lead = await create(a)
     const kid = await a.commands.sessionCreate({ projectId: lead.projectId, kind: 'terminal', parent: lead.id, cols: 120, rows: 40 })
     if (!kid.ok) throw new Error(kid.error)
-    expect(kid.data.parentId).toBe(lead.id)
+    expect(kid.data.link).toEqual({ id: lead.id, kind: 'group' })
     const other = await create(a)
     expect(await a.commands.sessionSetParent({ id: lead.id, parent: other.id })).toEqual({ ok: false, error: 'is-parent' })
     expect(await a.commands.sessionSetParent({ id: lead.id, parent: kid.data.id })).toEqual({ ok: false, error: 'same-session' }) // kid's leader is lead itself
     const moved = await a.commands.sessionSetParent({ id: kid.data.id, parent: other.id })
-    expect(moved.ok && moved.data.parentId).toBe(other.id)
+    expect(moved.ok && moved.data.link).toEqual({ id: other.id, kind: 'group' })
     const cleared = await a.commands.sessionSetParent({ id: kid.data.id, parent: null })
-    expect(cleared.ok && cleared.data.parentId).toBeNull()
+    expect(cleared.ok && cleared.data.link).toBeUndefined()
     expect(await a.commands.sessionCreate({ projectId: lead.projectId, kind: 'terminal', parent: 'nope', cols: 120, rows: 40 })).toEqual({ ok: false, error: 'no-parent' })
     expect(a.getSlices().sessions).toHaveLength(3) // the refused one made nothing
+  })
+
+  it('promotes a linked session and refuses one with no link', async () => {
+    const { make } = setup()
+    const a = make()
+    await a.start()
+    const lead = await create(a)
+    const kid = await a.commands.sessionCreate({ projectId: lead.projectId, kind: 'terminal', parent: lead.id, cols: 120, rows: 40 })
+    if (!kid.ok) throw new Error(kid.error)
+    expect(await a.commands.sessionPromote({ id: lead.id, promoted: true })).toEqual({ ok: false, error: 'not-found' })
+    const on = await a.commands.sessionPromote({ id: kid.data.id, promoted: true })
+    expect(on.ok && [on.data.promoted, on.data.link?.id]).toEqual([true, lead.id])
+    const off = await a.commands.sessionPromote({ id: kid.data.id, promoted: false })
+    expect(off.ok && off.data.promoted).toBe(false)
   })
 
   it('promotes the children of a removed parent to top level and forgets its collapsed key', async () => {
@@ -298,7 +312,7 @@ describe('core sessions', () => {
     if (!kid.ok) throw new Error(kid.error)
     await a.commands.uiSet({ collapsed: [`k:${lead.id}`, 'p:keep'] })
     await a.commands.sessionRemove({ id: lead.id })
-    expect(a.getSlices().sessions.map((s) => [s.id, s.parentId ?? null])).toEqual([[kid.data.id, null]])
+    expect(a.getSlices().sessions.map((s) => [s.id, s.link?.id ?? null])).toEqual([[kid.data.id, null]])
     expect(a.getSlices().ui.collapsed).toEqual(['p:keep'])
   })
 

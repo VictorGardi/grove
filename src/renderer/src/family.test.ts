@@ -6,7 +6,7 @@ const session = (id: string, over: Partial<Session> = {}): Session =>
   ({ id, projectId: 'p', kind: 'claude', label: id, lastStatus: 'running', startedAt: '2026-10-05T10:00:00.000Z', ...over } as Session)
 
 const parent = session('parent')
-const child = (id: string, over: Partial<Session> = {}) => session(id, { parentId: 'parent', ...over })
+const child = (id: string, over: Partial<Session> = {}) => session(id, { link: { id: 'parent', kind: 'group' }, ...over })
 const ids = (xs: Session[]) => xs.map((x) => x.id)
 
 describe('familyOf finished and held children', () => {

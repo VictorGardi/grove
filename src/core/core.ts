@@ -92,7 +92,7 @@ export interface Commands {
   // worktree is a project, so this is per project and not per session).
   repoRefs(a: { projectId: string }): Promise<Result<{ branch: string | null; default: string | null; bases: string[] }>>
   sessionCreate(a: {
-    projectId?: string; cwd?: string; worktree?: { branch: string; base?: string }; kind: SessionKind; prompt?: string; label?: string; feature?: string; parent?: string; model?: string; cols: number; rows: number
+    projectId?: string; cwd?: string; worktree?: { branch: string; base?: string }; kind: SessionKind; prompt?: string; label?: string; feature?: string; parent?: string; relation?: 'slice'; model?: string; cols: number; rows: number
   }): Promise<Result<Session>> // exactly one of projectId, cwd; `parent` is a session id, whose group the new one joins; `worktree` (with projectId) makes a worktree of that project first and starts the session in it
   sessionKill(a: { id: string }): Promise<Result<{ id: string }>>
   sessionRemove(a: { id: string }): Promise<Result<{ id: string }>>
@@ -103,6 +103,7 @@ export interface Commands {
   sessionEscalate(a: { id: string; reason: string }): Promise<Result<Session>> // a parent says this waiting child needs the human; error not-waiting unless it waits on a permission or question
   sessionProgress(a: { id: string; done: number; total: number }): Promise<Result<Session>> // a parent's run progress, shown on its row
   sessionLink(a: { id: string; feature: string | null }): Promise<Result<Session>>
+  sessionPromote(a: { id: string; promoted: boolean }): Promise<Result<Session>> // a linked session also shows as its own row; not-found when it has no link
   sessionSetParent(a: { id: string; parent: string | null }): Promise<Result<Session>> // null: out of its group
   uiSet(partial: Partial<UiState>): Promise<Result<UiState>>
   sessionFocusLast(): Promise<Result<{ id: string }>> // the latest earlier session still valid; ⌃Tab
@@ -272,7 +273,7 @@ export function createCore(opts: CoreOptions): Core {
       const sessions = slices.sessions.filter((s) => !unsaved(s.id)).map(
         ({ startup: _startup, statusAt: _statusAt, branch: _branch, status: _status, waitingFor: _waitingFor, held: _held, handled: _handled, attention: _attn, classified: _cl, progress: _prog, contextPct: _p, contextTokens: _t, contextWindow: _w, model: _m, pr: _pr, ...s }) => s,
       ) // live-only
-      saveState(opts.statePath, { schemaVersion: 10, sessions, ui: slices.ui })
+      saveState(opts.statePath, { schemaVersion: 11, sessions, ui: slices.ui })
     }
     else if (k === 'comments') saveComments(opts.commentsPath, { schemaVersion: 3, comments: slices.comments })
     if (k === 'sessions') publish() // card state reads linked sessions
@@ -572,7 +573,7 @@ export function createCore(opts: CoreOptions): Core {
   // and a failed or slow one is not retried.
   function pumpClassifier(): void {
     if (!classifier || classifying || disposed) return
-    const s = slices.sessions.find((x) => !x.parentId && classifyKinds.includes(x.kind) && x.status === 'waiting' && x.waitingFor === 'done'
+    const s = slices.sessions.find((x) => !x.link && classifyKinds.includes(x.kind) && x.status === 'waiting' && x.waitingFor === 'done'
       && x.lastStatus === 'running' && x.statusAt !== undefined && (x.seenAt === null || x.seenAt < x.statusAt)
       && classifyTried.get(x.id) !== x.statusAt)
     if (!s || s.statusAt === undefined) return
@@ -678,7 +679,7 @@ export function createCore(opts: CoreOptions): Core {
     const screen = holdScreen.get(s.id) ?? ''
     const kind = waitKey.get(s.id)
     endHold(s.id)
-    const parent = s.parentId ? findSession(s.parentId) : undefined
+    const parent = s.link ? findSession(s.link.id) : undefined
     if (sent === undefined || !parent || (kind !== 'permission' && kind !== 'question')) return
     const entry: HandledPrompt = { childId: s.id, at: now().toISOString(), kind, screen, sent }
     replaceSession({ ...parent, handled: [...(parent.handled ?? []), entry].slice(-HANDLED_MAX) }) // the newest only
@@ -716,9 +717,9 @@ export function createCore(opts: CoreOptions): Core {
       if (holdTimers.has(s.id)) endHold(s.id) // the wait changed reason: a new hold, if any
       waitKey.set(s.id, s.waitingFor)
       // a finished child stays quiet: its leader owns the attention
-      if (primed && s.id !== onScreen && !(s.parentId && s.waitingFor === 'done')) {
+      if (primed && s.id !== onScreen && !(s.link && s.waitingFor === 'done')) {
         // a child's permission or question is held for the grace window so its parent can answer it
-        if (s.parentId && (s.waitingFor === 'permission' || s.waitingFor === 'question') && escalateAfterSec() > 0) {
+        if (s.link && (s.waitingFor === 'permission' || s.waitingFor === 'question') && escalateAfterSec() > 0) {
           startHold(s, s.waitingFor)
           continue
         }
@@ -996,7 +997,7 @@ export function createCore(opts: CoreOptions): Core {
     },
 
     // `projectId` (the app) or `cwd` (the CLI, ADR 0029): a folder resolves to its project, registered when new.
-    async sessionCreate({ projectId, cwd, worktree, kind, prompt, label, feature, parent, model, cols, rows }) {
+    async sessionCreate({ projectId, cwd, worktree, kind, prompt, label, feature, parent, relation, model, cols, rows }) {
       const source = kind === 'terminal' ? undefined : states.get(kind)?.source
       if (kind !== 'terminal' && !source) return { ok: false, error: 'no-source' }
       let project = slices.projects.find((p) => p.id === projectId)
@@ -1018,18 +1019,18 @@ export function createCore(opts: CoreOptions): Core {
       if (feature !== undefined && !((!added && lists(chosen.id)) || (!!chosen.worktreeOf && lists(chosen.worktreeOf)))) {
         return { ok: false, error: 'no-feature' } // checked before anything is created
       }
-      let parentId: string | null = null
+      let leaderId: string | null = null
       if (parent !== undefined) {
         const r = resolveParent(slices.sessions, parent)
         if (!r.ok) return r // checked before anything is created, like the feature
-        parentId = r.data
+        leaderId = r.data
       }
       let workdir = dir ?? project.path
       const agentSessionId = source ? source.mintId(now()) : null
       let session = {
         ...newSession({ projectId: project.id, kind, now: now(), id: randomUUID(), agentSessionId, cwd: dir, label }),
         ...(feature !== undefined && { feature, linkPinned: true }),
-        ...(parentId && { parentId }),
+        ...(leaderId && { link: { id: leaderId, kind: relation === 'slice' ? 'slice' as const : 'group' as const } }),
         ...(model && { launchModel: model }),
       }
       const agentArgv = source ? source.argv(agentSessionId!, 'start', { prompt, name: label, model }) : []
@@ -1219,6 +1220,14 @@ export function createCore(opts: CoreOptions): Core {
       return { ok: true, data: next }
     },
 
+    async sessionPromote({ id, promoted }) {
+      const s = findSession(id)
+      if (!s?.link) return { ok: false, error: 'not-found' }
+      const next = { ...s, promoted }
+      replaceSession(next)
+      return { ok: true, data: next }
+    },
+
     async sessionSetParent({ id, parent }) {
       const next = withParent(slices.sessions, id, parent)
       if (!next.ok) return next
@@ -1375,7 +1384,7 @@ export function createCore(opts: CoreOptions): Core {
     async sendToSession(a) {
       // a send from the held child's own parent is remembered, before the paste so a fast clear still finds it
       const target = findSession(a.id)
-      const noted = !!(a.from && target?.held && target.parentId === a.from)
+      const noted = !!(a.from && target?.held && target.link?.id === a.from)
       if (noted) holdSent.set(a.id, a.text)
       const res = await sendToSession(sendDeps, a)
       if (!res.ok && noted) holdSent.delete(a.id)

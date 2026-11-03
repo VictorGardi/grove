@@ -18,12 +18,12 @@ const items = (a = actions()) => paletteItems({ projects, sessions, features }, 
 
 describe('paletteItems waiting flag', () => {
   const waitingOf = (extra: Partial<Session>) =>
-    paletteItems({ projects, sessions: [session('k', 'kid', { parentId: 'p', status: 'waiting', ...extra })], features: [] }, actions()).find((i) => i.kind === 'session')?.waiting
+    paletteItems({ projects, sessions: [session('k', 'kid', { link: { id: 'p', kind: 'group' }, status: 'waiting', ...extra })], features: [] }, actions()).find((i) => i.kind === 'session')?.waiting
   it('is quiet for a finished or held child, and set for a real child wait or a top-level finish', () => {
     expect(waitingOf({ waitingFor: 'done' })).toBe(false)
     expect(waitingOf({ waitingFor: 'permission', held: true })).toBe(false)
     expect(waitingOf({ waitingFor: 'permission' })).toBe(true)
-    expect(waitingOf({ waitingFor: 'done', parentId: undefined })).toBe(true)
+    expect(waitingOf({ waitingFor: 'done', link: undefined })).toBe(true)
   })
 })
 

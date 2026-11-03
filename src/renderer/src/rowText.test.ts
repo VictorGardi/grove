@@ -11,7 +11,7 @@ function session(over: Partial<Session> = {}): Session {
 }
 
 describe('rowLine finished and held children', () => {
-  const kid = (over: Partial<Session>) => session({ parentId: 'p', status: 'waiting', label: 'kid', ...over })
+  const kid = (over: Partial<Session>) => session({ link: { id: 'p', kind: 'group' }, status: 'waiting', label: 'kid', ...over })
   it('a held or finished child reads by its named line; a real child wait still says what it needs', () => {
     expect(rowLine(kid({ waitingFor: 'permission', held: true }))).toBe('kid · working')
     expect(rowLine(kid({ waitingFor: 'done' }))).toBe('kid · waiting · done')

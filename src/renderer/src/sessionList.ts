@@ -39,20 +39,20 @@ export function kidsGroup(g: ListGroup, parent: Session): ListGroup {
 export interface DoneStack { key: string; list: Session[]; open: boolean }
 export type KidRow = { session: Session } | { stack: DoneStack }
 
-export function kidRows(nest: Nest, parentId: string): KidRow[] {
-  const list = nest.kids.get(parentId) ?? []
+export function kidRows(nest: Nest, parentSessionId: string): KidRow[] {
+  const list = nest.kids.get(parentSessionId) ?? []
   const done = list.filter((s) => s.workflowStatus === 'done')
   const rest: KidRow[] = list.filter((s) => s.workflowStatus !== 'done').map((session) => ({ session }))
   if (done.length < 2) return [...rest, ...done.map((session) => ({ session }))]
-  const key = openedKey(doneKey(parentId))
+  const key = openedKey(doneKey(parentSessionId))
   return [...rest, { stack: { key, list: done, open: nest.collapsed.has(key) } }]
 }
 
 // A parent's children as the list shows them: none while the parent is collapsed, and a
 // folded stack's left out.
-function shownKids(nest: Nest, parentId: string): Session[] {
-  if (nest.collapsed.has(kidsKey(parentId))) return []
-  return kidRows(nest, parentId).flatMap((r) => 'session' in r ? [r.session] : r.stack.open ? r.stack.list : [])
+function shownKids(nest: Nest, parentSessionId: string): Session[] {
+  if (nest.collapsed.has(kidsKey(parentSessionId))) return []
+  return kidRows(nest, parentSessionId).flatMap((r) => 'session' in r ? [r.session] : r.stack.open ? r.stack.list : [])
 }
 
 export const SORT_OPTIONS: { value: SessionSort; label: string }[] = [
@@ -130,9 +130,9 @@ export function listGroups(
   // A session is a child only when its parent is on screen and is not itself a child, so a
   // hidden or missing parent never hides the child with it.
   const byId = new Map(visible.map((s) => [s.id, s] as const))
-  const isChild = (s: Session) => !!s.parentId && !!byId.get(s.parentId) && !byId.get(s.parentId)!.parentId
+  const isChild = (s: Session) => !!s.link && !!byId.get(s.link.id) && !byId.get(s.link.id)!.link
   const kids = new Map<string, Session[]>()
-  for (const s of visible) if (isChild(s)) kids.set(s.parentId!, [...(kids.get(s.parentId!) ?? []), s])
+  for (const s of visible) if (isChild(s)) kids.set(s.link!.id, [...(kids.get(s.link!.id) ?? []), s])
   for (const [id, list] of kids) kids.set(id, list.sort(sort))
   const nest: Nest = { kids, collapsed }
   const roots = visible.filter((s) => !isChild(s))

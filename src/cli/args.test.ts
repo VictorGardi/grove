@@ -35,6 +35,14 @@ describe('parseCommand', () => {
     expect(parseCommand(['new', 'claude', '--parent', 'x', '--child'])).toBeInstanceOf(UsageError)
   })
 
+  it('parses --relation slice only with --child or --parent', () => {
+    expect(parseCommand(['new', 'claude', '--child', '--relation', 'slice'])).toMatchObject({ child: true, relation: 'slice' })
+    expect(parseCommand(['new', 'claude', '--parent', 'x', '--relation', 'slice'])).toMatchObject({ parent: 'x', relation: 'slice' })
+    expect(parseCommand(['new', 'claude', '--child'])).toMatchObject({ relation: undefined })
+    expect(parseCommand(['new', 'claude', '--relation', 'slice'])).toBeInstanceOf(UsageError)
+    expect(parseCommand(['new', 'claude', '--child', '--relation', 'group'])).toBeInstanceOf(UsageError)
+  })
+
   it('parses the worktree pair, and takes no branch without one', () => {
     expect(parseCommand(['new', 'claude', '--worktree', '--branch', 'fix-auth'])).toMatchObject({
       cmd: 'new', kind: 'claude', worktree: true, branch: 'fix-auth',

@@ -62,4 +62,43 @@ Removed `ListGroup.status`, `DropResult.status` and the status-heading CSS (`.to
 
 `npm run dev` visual check: no Zones|Projects toggle, no Group by menu, one sort control, cmd+1..9 follow the rows top to bottom (cmd+. still jumps to the longest-waiting session, as before).
 
+## Slice 2
+
+Session: simplify-sessions-and-sidebar-slice-2-a1
+Status: done
+Commit: this commit (see git log)
+
+### Slice plan
+
+Found in the code: `Session.parentId` is read in `src/shared/{sessionGroups,attention,types}.ts`, `src/core/core.ts` (creation path, notification/send paths), `src/main/cliServer.ts`, and renderer `rowText.ts`, `family.ts`, `sessionList.ts`, `Sidebar.tsx`, `ParentPicker.tsx`. `v9ToV10` in `stateStore.ts` calls `orphanChildren`, which must keep working on old-shape data, so it orphans inline on `parentId`. Schema version 10 is hard-coded in `loadState`.
+
+Implementer A (shared, core, main, cli):
+- [x] `types.ts`: `link`, `promoted`; `sessionGroups.ts`, `attention.ts`; `v10ToV11`, version bump, `state.v10.bak`
+- [x] `--relation slice` in `args.ts`, `shared/cli.ts`, core creation; `grove list` adds `relation`
+- [x] `sessionPromote`, `session:promote` IPC; tests and fixtures
+
+Implementer B (renderer):
+- [x] Replace `parentId` readers and fixtures with `link` in the renderer files and tests
+
+Implementer C (docs):
+- [x] `grove-run/SKILL.md` passes `--relation slice`; `CONTEXT.md`; new ADR 0047
+
+Models passed: implementer: inherit, reviewer: inherit
+
+### Review rounds
+
+Round 1: fresh reviewer found 0 blocking. Applied cheap non-blocking: CONTEXT.md wording so "promote" only means the flag. Approved, 0 blocking, 0 fix rounds. Non-blocking left: `sessionPromote` returns `not-found` for an unlinked session and stores `promoted: false` instead of deleting the key; `promoted` has no reader until slice 7; `state.v10.bak` keeps only the first backup; re-parenting by hand resets a slice link to `group`; `resources/skills/grove/SKILL.md` does not mention `--relation` (the plan limits it to grove-run).
+
+### Deviations
+
+`--relation` is also wired through `src/cli/index.ts` (the only place it reaches the wire). The backup is a `backUpV10` helper in `loadState`, not in `jsonFile.ts`. `cliServer` also validates `relation` (`bad-params`).
+
+### Verification
+
+`npm run typecheck` and `npm test` (122 files, 1494 tests) pass. The scoped `parentId` grep returns only `v9ToV10`/`v10ToV11`, their tests, the two `oc.emit` child fixtures and the `e.parentId` agent-event line in `core.ts`. `grep -rn relation resources/skills` hits `grove-run/SKILL.md` only. Tests cover the v10 to v11 migration and `state.v10.bak`, the v11 round trip, `--relation` validation, slice vs group on creation, orphaning and re-parenting, and `grove list` printing `parent` and `relation`. Models requested: implementer inherit, reviewer inherit.
+
+### Left for the human
+
+None.
+
 ## Open questions

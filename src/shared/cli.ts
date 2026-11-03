@@ -6,7 +6,7 @@ export const PROTOCOL = 1
 export interface CliMethods {
   'sessions.list': { params: { all?: boolean }; data: CliSession[] }
   'sessions.create': {
-    params: { kind: SessionKind; cwd: string; prompt?: string; label?: string; feature?: string; parent?: string; worktree?: boolean; branch?: string; base?: string; model?: string; wait?: boolean; timeoutS?: number }
+    params: { kind: SessionKind; cwd: string; prompt?: string; label?: string; feature?: string; parent?: string; relation?: 'slice'; worktree?: boolean; branch?: string; base?: string; model?: string; wait?: boolean; timeoutS?: number }
     data: CliSession & { turn?: TurnResult }
   }
   'sessions.send': { params: { ref: string; text: string; submit: boolean; wait?: boolean; timeoutS?: number; from?: string }; data: { id: string; turn?: TurnResult } }
@@ -50,5 +50,6 @@ export interface CliSession {
   cwd: string
   feature: string | null
   workflowStatus: WorkflowStatus
-  parent: string | null // id of the session whose group this one is in
+  parent: string | null // id of the session this one is linked to
+  relation: 'group' | 'slice' | null // how it is linked; null when it has no parent
 }

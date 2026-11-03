@@ -29,7 +29,8 @@ function toCli(core: Core, s: Session): CliSession {
     cwd: s.cwd ?? project?.path ?? '',
     feature: s.feature,
     workflowStatus: s.workflowStatus,
-    parent: s.parentId ?? null,
+    parent: s.link?.id ?? null,
+    relation: s.link?.kind ?? null,
   }
 }
 
@@ -81,6 +82,9 @@ async function dispatch(core: Core, raise: () => void, line: string): Promise<Cl
         if (!found.ok) return failFrom(id, found.error === 'not-found' ? 'no-parent' : found.error)
         parent = found.data.id
       }
+      if (params.relation !== undefined && params.relation !== 'slice') return fail(id, 'bad-params', 'relation must be slice')
+      if (params.relation !== undefined && wantedParent === undefined) return fail(id, 'bad-params', '--relation needs --child or --parent')
+      const relation = params.relation === 'slice' ? 'slice' as const : undefined
       const model = optString(params.model)
       if (model !== undefined && kind === 'terminal') return fail(id, 'bad-params', '--model only works with claude, opencode and copilot')
       const branch = optString(params.branch)
@@ -101,7 +105,7 @@ async function dispatch(core: Core, raise: () => void, line: string): Promise<Cl
       }
       const res = await core.commands.sessionCreate({
         kind: kind as Session['kind'], cwd: dir, prompt: optString(params.prompt), label: optString(params.label),
-        feature: optString(params.feature), parent, model, cols: COLS, rows: ROWS,
+        feature: optString(params.feature), parent, relation, model, cols: COLS, rows: ROWS,
       })
       if (!res.ok) return failFrom(id, res.error)
       const created = toCli(core, res.data)
