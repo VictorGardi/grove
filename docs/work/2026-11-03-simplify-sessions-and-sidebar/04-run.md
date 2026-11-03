@@ -272,4 +272,62 @@ Mockup pick: B (Segments)
 
 None. The pick is recorded; slice 7 builds concept B.
 
+## Slice 7
+
+Session: simplify-sessions-and-sidebar-slice-7-a1
+Status: done
+Commit: this commit (see git log)
+
+### Slice plan
+
+Found in the code: `sessionList.ts` nests children under their parent (`Nest.kids`, `kidRows`, `kidsGroup`, done stacks, `kidsKey` collapse) and `isChild` ignores `Session.promoted`; `Sidebar.tsx` draws the nested children and a "N children" toggle; `RunProgress.tsx` is a single bar; `ChildrenPopover.tsx` is the header's jump list (kept there). `sessionRead` exists in core and the CLI server but there is no renderer channel, so `session:read` is added. The pick is concept B (Segments): one segment per slice by state, an amber strip with an Answer action for a waiting child, live screen on hover, promote on the child row in the peek.
+
+Implementer 1 (logic and IPC, no UI files):
+- [x] `sessionList.ts`: a child is hidden only when it is linked, not `promoted`, and its parent is on screen and unlinked; hidden children are listed in `Nest.kids`; add pure `viaParent(nest, parentId)` (hidden children whose own `asksHuman` is true, in sort order); `orderedSessions`/`visibleSessions` list each parent followed by its via-parent kids; drop `kidRows`, `kidsGroup`, `DoneStack`, `shownKids`, `Nest.collapsed`; `groupSize` counts rows; `canDrop` simplified
+- [x] `family.ts`: pure `childSegments(parent, kids)` (done / run / wait / queued, padded to `progress.total`) and `linkKind(kid)`; tests in `sessionList.test.ts`, `family.test.ts`
+- [x] `session:read` channel in `src/shared/ipc.ts` and `src/main/ipc.ts`
+
+Implementer 2 (UI):
+- [x] `Sidebar.tsx` + CSS: no child cards; parent shows the peek badge and segments; one via-parent strip per waiting child; `ChildPeek.tsx` overlay with live screen (polls `session:read`, status only when the pane is gone) and promote/unpromote; `RunProgress.tsx` draws segments; promoted children are ordinary rows
+
+Models passed: implementer: inherit, reviewer: inherit
+
+### Review rounds
+
+Round 1: fresh reviewer found 0 blocking. Verdict approved, 0 fix rounds. Non-blocking left: `mostUrgent` is now unused outside its test; a failed or gone child that is not done shows as a running segment; the peek popover is positioned once on open and does not follow scrolling; the live screen keeps polling the last hovered row until the peek closes; the unpromote context item reuses the set-parent icon; the via strip has no aria-label; with no `grove progress` the segments carry no text label (the badge has the count).
+
+### Deviations
+
+The owner reviewed the running UI and replaced concept B's pill and hover peek (see Fix after review). The row shows one proportional bar and a drawer (`ChildDrawer`) replaces the peek; `App.tsx` `overlayOpen` now includes the open drawer so the terminal does not take keys. The drawer finds the sidebar edge from the first `<aside>`, is capped at `min(60vh, 100vh - 16px)` rather than full height, and a jump from it only focuses the child (the sidebar's picked set is not reset). `childrenSummary`, `linkKind`, `mostUrgent` and `ChildrenPopover` were deleted as unused. `session:read` is new in `src/shared/ipc.ts` and `src/main/ipc.ts`. An "Unpromote" item was added to a promoted session's context menu.
+
+### Verification
+
+`npm run typecheck`, `npm test` (119 files, 1393 tests) and `npm run build` pass. `sessionList.test.ts` asserts a parent with 2 running and 3 done children is one row, a promoted child is its own row, a waiting child gives exactly one via-parent entry and an answered one none, no child appears twice, and the via row follows its parent in the cmd+1..9 order. `family.test.ts` covers `barCounts` (plan with 11 done, 1 running, 2 queued; no plan with 24 children; a waiting child; a failed child is red and not running). `childDrawer.test.ts` covers tab filtering, the name filter and the ordering. Models requested: implementer inherit, reviewer inherit.
+
+### Left for the human
+
+The `npm run dev` check with a grove-run parent was not run: no child cards in the sidebar, the proportional bar and `done/total` text, the `n needs you` chip, the drawer (tabs, filter, live screen, promote and `Promote selected`, Escape and outside click, terminal not stealing keys), a waiting child showing once as a via-parent row that clears when answered, and cmd+1..9 following the visible rows. The drawer's position beside the sidebar and the bar's width on real rows are unchecked.
+
+### Fix after review
+
+Comment: the owner reviewed the running UI and chose a different design: remove the dot pill and the hover peek; one proportional bar on the row (done, failed, running, waiting, queued blocks sized by count, `done/total` or `<done> of <children>` text, an amber `<n> needs you` chip) and a drawer (tabs, name filter, per-child lines, live screen, `Promote selected`) because nothing may draw one mark per child. Changed: `barCounts` (family.ts) and `childDrawer.ts` with tests, `RunProgress.tsx` as the one bar, new `ChildDrawer.tsx`, `ChildPeek` deleted, `App.tsx` drawer state and `overlayOpen`, unused `mostUrgent`, `childrenSummary`, `linkKind` removed. Verification re-run: typecheck, tests and build pass. No plan Decision or the outcome changed.
+
+### Fix 2
+
+Comment: port the child-naming and relation changes of the tooling commit a5f27e7 into the shipped skill copies, and add naming guidance for ad-hoc children. Changed: `resources/skills/grove-run` (`SKILL.md` step 2 labels `<n> <short title>` with ` #<k>` for a second child, lookup by feature, parent and `<n> ` label prefix, children addressed by id, `--relation slice` retried without the flag on an older app; `references/continue.md`, `slice-mode.md`, `gates.md` the same), keeping the slice 4 and 5 text (no hold, `grove wait` without exit 4, parent never answers a prompt, no epics) as it was; `resources/skills/grove/SKILL.md` gets a child-naming rule with a good and a bad example. No plan Decision or the outcome changed.
+
+### Fix 3
+
+Comment: the owner reviewed the running drawer. Changed: one children list, so `ChildrenPopover` is deleted and the header chip in `SessionMeta` opens the same `ChildDrawer` as the sidebar bar (open state in `drawerStore.ts`, pure `toggledDrawer` tested; a trigger click toggles instead of closing and reopening); the checkboxes, selection and `Promote selected` are removed; each row has the sidebar's `WorkflowStatusButton` (`session:workflowStatus`), and the tabs, counts and bar follow the workflow status at once (tested); the row dot shows the child state (`DOT_TONE`: done green, running blue, waiting amber, failed red) instead of the live pane. Cause of the orange dots: `statusTone` is the live pane status and orange is `--status-running`, "a live pane with no agent status", which every session shows in a preview app whose empty data folder gets no agent status. The name column already takes the remaining width. Verification re-run: typecheck, tests (119 files, 1396 tests) and build pass. No plan Decision or the outcome changed.
+
+Fix 4: branch on its own line below the bar
+
+## Final summary
+
+All seven slices are built on this branch. Zones and Group by are gone, sessions carry a typed link with a promote flag, boards and the epic concept are removed, the child-prompt hold is removed, and children are now hidden behind their parent with a proportional progress bar, a via-parent strip, and a drawer with live screen and promote. Unchecked in the real app: the visual and interactive points listed above. Not done on purpose: see the plan's risks.
+
+### PR description
+
+Simplify sessions and sidebar: fixed sidebar layout, typed session links with promote, no boards or epics, no child-prompt hold, children hidden behind their parent.
+
 ## Open questions

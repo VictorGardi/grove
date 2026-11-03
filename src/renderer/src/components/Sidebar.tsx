@@ -2,16 +2,15 @@ import { useEffect, useId, useRef, useState, type MouseEvent, type PointerEvent 
 import { GRID_MAX, type Feature, type Project, type Session, type WorkflowStatus } from '@shared/types'
 import { useSlices } from '../stores/slices'
 import { gridShown } from '../gridView'
-import { kidsKey } from '@shared/groups'
 import { canParent, hasChildren } from '@shared/sessionGroups'
-import { countsAsWaiting, longestWaiting, mostUrgent, shownStatus, statusAge, statusTone, statusView } from '../sessionStatus'
+import { countsAsWaiting, longestWaiting, shownStatus, statusAge, statusTone, statusView } from '../sessionStatus'
 import { selectRange } from '../selection'
-import { SORT_OPTIONS, canDrop, dropSession, groupSize, kidRows, kidsGroup, listGroups, visibleSessions, type DoneStack, type DropAt, type ListGroup } from '../sessionList'
+import { SORT_OPTIONS, canDrop, dropSession, groupSize, listGroups, viaParent, visibleSessions, type DropAt, type ListGroup } from '../sessionList'
 import { repoRows } from '../repoGroups'
 import { colorTags } from '../tags'
 import { rowTitle } from '../rowText'
 import { branchCut } from '../branchCut'
-import { childrenSummary, runProgress } from '../family'
+import { runProgress } from '../family'
 import { RunProgress } from './RunProgress'
 import { linkedFeature } from '../tree'
 import { WORKFLOW_STATUSES } from '../workflowStatus'
@@ -31,21 +30,7 @@ import css from './Sidebar.module.css'
 
 const KIND_LABEL: Record<Session['kind'], string> = { claude: 'Claude', opencode: 'OpenCode', copilot: 'Copilot', terminal: 'Terminal' }
 
-// Done children folded together: a card with the count and their names, and the edges of the
-// cards it holds peeking out below while folded.
-function DoneStackRow({ stack, holdsFocus, onToggle }: { stack: DoneStack; holdsFocus: boolean; onToggle: () => void }) {
-  return (
-    <button type="button" className={cx(css.stack, !stack.open && css.stackFolded, holdsFocus && css.stackHolding)} aria-expanded={stack.open}
-      title={stack.open ? 'Fold done children' : stack.list.map((s) => s.label).join('\n')} onClick={onToggle}>
-      <Icon name="check" size={12} className={css.stackCheck} />
-      <span className={css.stackCount}>{stack.list.length} done</span>
-      {!stack.open && <span className={css.stackNames}>{stack.list.map((s) => s.label).join(' · ')}</span>}
-      <Icon name={stack.open ? 'chevron-down' : 'chevron-right'} size={10} className={css.stackChevron} />
-    </button>
-  )
-}
-
-function SessionCard({ s, feature, worktree, focused, picked, compact, since, now, inGrid, gridFull, onToggleGrid, onFocus, onOpenFeature, onToggleCompact, onRemove, onContextMenu, kids }: {
+function SessionCard({ s, feature, worktree, focused, picked, compact, since, now, inGrid, gridFull, onToggleGrid, onFocus, onOpenFeature, onToggleCompact, onRemove, onContextMenu, kids, onOpenDrawer }: {
   s: Session
   feature: Feature | null // the linked feature, if it exists
   focused: boolean // a focused card shows selected
@@ -62,7 +47,8 @@ function SessionCard({ s, feature, worktree, focused, picked, compact, since, no
   onToggleCompact: () => void
   onRemove: () => void
   onContextMenu: (e: MouseEvent) => void
-  kids?: { list: Session[]; collapsed: boolean; holdsFocus: boolean; onToggle: () => void } // set on a parent: its children, for the toggle and the roll-up; holdsFocus when a hidden child is the focused session
+  kids?: Session[] // set on a parent: its children, hidden behind it, for the progress bar
+  onOpenDrawer: (id: string) => void // the bar opens the parent's child drawer
 }) {
   const [editing, setEditing] = useState(false)
   const shown = shownStatus(s)
@@ -70,6 +56,8 @@ function SessionCard({ s, feature, worktree, focused, picked, compact, since, no
   const needsYou = shown === 'waiting' && !done
   const status = { ...statusView(s), tone: statusTone(s) }
   const age = since === undefined ? '' : statusAge(since, now)
+  const progress = runProgress(s, kids ?? [])
+  const hasBar = !!progress || (kids?.length ?? 0) > 0 // a bar takes line two; the branch drops to its own line below it
 
   return (
     <SessionRow
@@ -78,28 +66,20 @@ function SessionCard({ s, feature, worktree, focused, picked, compact, since, no
       time={{ label: age, title: `${status.label} for ${age}` }}
       status={status}
       meta={(
-        <div className={css.branchLine}>
-          {kids && kids.list.length > 0 && (
-            <button type="button" className={cx(css.kidsToggle, kids.holdsFocus && css.kidsToggleHolding)} aria-expanded={!kids.collapsed}
-              title={kids.collapsed ? 'Show children' : 'Hide children'}
-              onClick={(e) => { e.stopPropagation(); kids.onToggle() }}>
-              {/* collapsed, the most urgent child shows through: a waiting child is never hidden */}
-              {kids.collapsed && (() => { const u = mostUrgent(kids.list); return u && <StatusDot tone={statusTone(u)} /> })()}
-              <Icon name={kids.collapsed ? 'chevron-right' : 'chevron-down'} size={10} />
-              {childrenSummary(kids.list)}
-            </button>
-          )}
-          {(() => { const pr = runProgress(s, kids?.list ?? []); return pr && <RunProgress progress={pr} /> })()}
-          {s.kind === 'terminal' && <span className={css.kindMark} title={KIND_LABEL.terminal} aria-label={KIND_LABEL.terminal}><Icon name="terminal" size={12} /></span>}
-          {/* a worktree's branch is purple instead of carrying a worktree icon */}
-          {s.branch && (() => {
-            // cut in the middle: the head shrinks, the tail that tells branches apart stays
-            const { head, tail } = branchCut(s.branch)
-            return <><BranchMark pr={s.pr} /><span className={cx(css.branchName, worktree && css.worktreeBranch)}
-              title={worktree ? `${s.branch}\nWorktree: ${worktree.path}` : s.branch}>
-              <span className={css.branchHead}>{head}</span>{tail && <span className={css.branchTail}>{tail}</span>}
-            </span></>
-          })()}
+        <div className={css.metaStack}>
+          {hasBar && <div className={css.branchLine}><RunProgress parent={s} kids={kids ?? []} progress={progress} onOpen={onOpenDrawer} /></div>}
+          <div className={css.branchLine}>
+            {s.kind === 'terminal' && <span className={css.kindMark} title={KIND_LABEL.terminal} aria-label={KIND_LABEL.terminal}><Icon name="terminal" size={12} /></span>}
+            {/* a worktree's branch is purple instead of carrying a worktree icon */}
+            {s.branch && (() => {
+              // cut in the middle: the head shrinks, the tail that tells branches apart stays
+              const { head, tail } = branchCut(s.branch)
+              return <><BranchMark pr={s.pr} /><span className={cx(css.branchName, worktree && css.worktreeBranch)}
+                title={worktree ? `${s.branch}\nWorktree: ${worktree.path}` : s.branch}>
+                <span className={css.branchHead}>{head}</span>{tail && <span className={css.branchTail}>{tail}</span>}
+              </span></>
+            })()}
+          </div>
         </div>
       )}
       slot={(
@@ -231,7 +211,7 @@ function useMinuteTick(): number {
   return now
 }
 
-export function Sidebar({ onNew, onRemove }: { onNew: (projectId?: string) => void; onRemove: (ids: string[]) => void }) {
+export function Sidebar({ onNew, onRemove, onOpenDrawer }: { onNew: (projectId?: string) => void; onRemove: (ids: string[]) => void; onOpenDrawer: (id: string) => void }) {
   const { projects, sessions, ui, features, setFocused, toggleCollapsed, toggleCompact, toggleProjectVisibility, toggleHideDone, focusFeature, openProject, setSessionSort, setSessionOrder, toggleGrid, toggleGridMember, waitingSince } = useSlices()
   const now = useMinuteTick()
   const waitingCount = sessions.filter(countsAsWaiting).length
@@ -447,7 +427,7 @@ export function Sidebar({ onNew, onRemove }: { onNew: (projectId?: string) => vo
     window.addEventListener('keydown', key)
   }
 
-  // one draggable card; `grp` is the list it reorders within (a parent's children are a list of their own)
+  // one draggable card; `grp` is the list it reorders within
   const slot = (s: Session, grp: ListGroup, kids?: Session[]) => {
     slotAt.current.set(s.id, { s, grp })
     const line = over?.group.key === grp.key && over.at?.target === s.id && drag?.id !== s.id
@@ -461,39 +441,30 @@ export function Sidebar({ onNew, onRemove }: { onNew: (projectId?: string) => vo
     )
   }
 
+  // A hidden child that asks the human surfaces under its parent as an amber strip. It sits
+  // outside the slot, so the drag code never sees it.
+  const viaStrip = (c: Session) => (
+    <button key={c.id} type="button" className={css.via} title={`${c.label} · ${statusView(c).label}`}
+      onClick={() => { setPicked(new Set()); setAnchor(c.id); setFocused(c.id) }}>
+      <StatusDot tone={statusTone(c)} />
+      <span className={css.viaText}>{c.label} asks</span>
+      <span className={css.viaAction}>Answer</span>
+    </button>
+  )
+
   const cardList = (g: ListGroup) => {
     cardsAt.current.set(g.key, g)
     return (
       <div className={cx(css.cards, drag && css.cardsDragging)} data-cards={g.key}>
-        {g.sessions.map((s) => {
-          const list = g.nest.kids.get(s.id) ?? []
-          const kg = kidsGroup(g, s)
-          cardsAt.current.set(kg.key, kg)
-          return (
-            <div key={s.id} className={css.cards}>
-              {slot(s, g, list)}
-              {list.length > 0 && !kg.collapsed && (
-                <div className={css.grow}>
-                  <div className={cx(css.cards, css.kids, drag && css.cardsDragging)} data-cards={kg.key}>
-                    {kidRows(g.nest, s.id).map((r) => 'session' in r ? slot(r.session, kg) : doneStack(r.stack, kg))}
-                  </div>
-                </div>
-              )}
-            </div>
-          )
-        })}
+        {g.sessions.map((s) => (
+          <div key={s.id} className={css.cards}>
+            {slot(s, g, g.nest.kids.get(s.id))}
+            {viaParent(g.nest, s.id).map(viaStrip)}
+          </div>
+        ))}
       </div>
     )
   }
-
-  // a parent's done children, folded into one row; opened, they unfold under it and still
-  // reorder among all their siblings
-  const doneStack = (st: DoneStack, kg: ListGroup) => (
-    <div key={st.key} className={css.stackRun}>
-      <DoneStackRow stack={st} holdsFocus={!st.open && st.list.some((k) => k.id === ui.focusedSessionId)} onToggle={() => toggleCollapsed(st.key)} />
-      {st.open && <div className={css.grow}><div className={cx(css.cards, css.stackOpen)}>{st.list.map((k) => slot(k, kg))}</div></div>}
-    </div>
-  )
 
   const sessionCard = (s: Session, kids?: Session[]) => {
     const f = linkedFeature(s, features.items)
@@ -516,7 +487,8 @@ export function Sidebar({ onNew, onRemove }: { onNew: (projectId?: string) => vo
         onToggleCompact={() => toggleCompact(s.id)}
         onRemove={() => removeSessions([s.id])}
         onContextMenu={(e) => openMenu(s.id, e)}
-        kids={kids && { list: kids, collapsed: ui.collapsed.includes(kidsKey(s.id)), holdsFocus: ui.collapsed.includes(kidsKey(s.id)) && kids.some((k) => k.id === ui.focusedSessionId), onToggle: () => toggleCollapsed(kidsKey(s.id)) }}
+        kids={kids}
+        onOpenDrawer={onOpenDrawer}
       />
     )
   }
@@ -639,6 +611,7 @@ export function Sidebar({ onNew, onRemove }: { onNew: (projectId?: string) => vo
             // a session that leads a group cannot become a child (groups are one level deep)
             ...(one && !hasChildren(sessions, one.id) && sessions.some((x) => canParent(sessions, one.id, x))
               ? [{ label: 'Set parent…', icon: 'corner-left-up' as const, onSelect: () => setParenting(one) }] : []),
+            ...(one?.promoted ? [{ label: 'Unpromote', icon: 'corner-left-up' as const, onSelect: () => void window.api.invoke('session:promote', { id: one.id, promoted: false }) }] : []),
             ...(one?.link ? [{ label: 'Clear parent', icon: 'minus' as const, onSelect: () => void window.api.invoke('session:setParent', { id: one.id, parent: null }) }] : []),
             // the card's own status button covers a single card; the menu is for a selection
             ...(menu.ids.length > 1

@@ -1,4 +1,5 @@
-import { doneKey, kidsKey, openedKey, projectKey } from '@shared/groups'
+import { asksHuman } from '@shared/attention'
+import { projectKey } from '@shared/groups'
 import type { Project, Session, UiState } from '@shared/types'
 import { repoGroups } from './repoGroups'
 import { countsAsWaiting, shownStatus } from './sessionStatus'
@@ -15,44 +16,20 @@ export interface ListGroup {
   nest: Nest                       // the same for every group of one list
 }
 
-// Session groups (a parent and its children). A child is drawn under its parent wherever it
-// runs, so `sessions` above holds only the rows that stand on their own, and `kids` holds the
-// rest, in the same order. A parent's children stay visible unless its kidsKey is collapsed.
+// Session groups (a parent and its children). A child hides behind its parent: `sessions` above
+// holds only the rows that stand on their own, and `kids` holds every child of a parent
+// (promoted ones too, so the parent's counts and segments include them), in the same order.
 export interface Nest {
   kids: Map<string, Session[]>
-  collapsed: Set<string>
 }
 
-// Every session in the group, children included.
-export const groupSize = (g: ListGroup): number => g.sessions.reduce((n, s) => n + 1 + (g.nest.kids.get(s.id)?.length ?? 0), 0)
+// The rows in the group.
+export const groupSize = (g: ListGroup): number => g.sessions.length
 
-// A parent's children as a list of their own, so the drag code treats them as one group: a
-// child reorders among its siblings and goes nowhere else.
-export function kidsGroup(g: ListGroup, parent: Session): ListGroup {
-  const key = kidsKey(parent.id)
-  return { key, label: parent.label, project: null, collapsed: g.nest.collapsed.has(key), sessions: g.nest.kids.get(parent.id) ?? [], nest: g.nest }
-}
-
-// A parent's done children sit below the rest, and once there are two or more they fold into
-// one stack at the bottom holding every done one in their order; a lone done child stays a row
-// of its own, last.
-export interface DoneStack { key: string; list: Session[]; open: boolean }
-export type KidRow = { session: Session } | { stack: DoneStack }
-
-export function kidRows(nest: Nest, parentSessionId: string): KidRow[] {
-  const list = nest.kids.get(parentSessionId) ?? []
-  const done = list.filter((s) => s.workflowStatus === 'done')
-  const rest: KidRow[] = list.filter((s) => s.workflowStatus !== 'done').map((session) => ({ session }))
-  if (done.length < 2) return [...rest, ...done.map((session) => ({ session }))]
-  const key = openedKey(doneKey(parentSessionId))
-  return [...rest, { stack: { key, list: done, open: nest.collapsed.has(key) } }]
-}
-
-// A parent's children as the list shows them: none while the parent is collapsed, and a
-// folded stack's left out.
-function shownKids(nest: Nest, parentSessionId: string): Session[] {
-  if (nest.collapsed.has(kidsKey(parentSessionId))) return []
-  return kidRows(nest, parentSessionId).flatMap((r) => 'session' in r ? [r.session] : r.stack.open ? r.stack.list : [])
+// A parent's hidden children that ask the human right now: the rows shown "via parent" under it.
+// A promoted child is a row of its own already, so it never shows twice.
+export function viaParent(nest: Nest, parentId: string): Session[] {
+  return (nest.kids.get(parentId) ?? []).filter((s) => !s.promoted && asksHuman(s))
 }
 
 export const SORT_OPTIONS: { value: SessionSort; label: string }[] = [
@@ -127,15 +104,16 @@ export function listGroups(
   const repoOf = new Map(groups.flatMap((g) => [g.project, ...g.worktrees].map((p) => [p.id, g.project.id] as const)))
   const visible = sessions.filter((s) => !hidden.has(repoOf.get(s.projectId) ?? s.projectId) && !(ui.hideDone && s.workflowStatus === 'done'))
   const sort = ui.sessionSort === 'custom' ? byCustom(ui.sessionOrder ?? []) : ui.sessionSort === 'status-age' ? byStatusAge : COMPARATORS[ui.sessionSort] ?? byStarted
-  // A session is a child only when its parent is on screen and is not itself a child, so a
-  // hidden or missing parent never hides the child with it.
+  // A session is a child of its parent when the parent is on screen and is not itself a child, so
+  // a hidden or missing parent never hides the child with it. A promoted child is still a kid of
+  // its parent but also a root; any other child is hidden behind the parent.
   const byId = new Map(visible.map((s) => [s.id, s] as const))
   const isChild = (s: Session) => !!s.link && !!byId.get(s.link.id) && !byId.get(s.link.id)!.link
   const kids = new Map<string, Session[]>()
   for (const s of visible) if (isChild(s)) kids.set(s.link!.id, [...(kids.get(s.link!.id) ?? []), s])
   for (const [id, list] of kids) kids.set(id, list.sort(sort))
-  const nest: Nest = { kids, collapsed }
-  const roots = visible.filter((s) => !isChild(s))
+  const nest: Nest = { kids }
+  const roots = visible.filter((s) => !isChild(s) || s.promoted)
   return groups
     .filter(({ project }) => !hidden.has(project.id))
     .map(({ project }): ListGroup => {
@@ -145,19 +123,19 @@ export function listGroups(
     })
 }
 
-// Every visible session once, in group order, collapsed groups included but a collapsed
-// parent's children and a folded done stack left out: what Cmd+1..9 counts through, so the number
-// the human counts is the session they get. A shift-click range uses visibleSessions below
+// Every visible row once, in group order, collapsed groups included, each root followed by its
+// via-parent rows: what Cmd+1..9 counts through, so the number the human counts is the session
+// they get. A shift-click range uses visibleSessions below
 // instead, so a range that spans a collapsed group can't select — and so delete — sessions the
 // human cannot see.
 export function orderedSessions(groups: ListGroup[]): Session[] {
-  return groups.flatMap((g) => g.sessions.flatMap((s) => [s, ...shownKids(g.nest, s.id)]))
+  return groups.flatMap((g) => g.sessions.flatMap((s) => [s, ...viaParent(g.nest, s.id)]))
 }
 
 // The same order, minus sessions inside collapsed groups: what a shift-click range runs over.
 export function visibleSessions(groups: ListGroup[]): Session[] {
   return groups.filter((g) => !g.collapsed).flatMap((g) =>
-    g.sessions.flatMap((s) => [s, ...shownKids(g.nest, s.id)]))
+    g.sessions.flatMap((s) => [s, ...viaParent(g.nest, s.id)]))
 }
 
 // Where a dragged card lands: beside `target` in `to`, before or after it.
@@ -169,7 +147,6 @@ export interface DropResult { order: string[] }
 // Whether a card may be dropped from one group into another. A project group is its own
 // bounded list, so only the same group accepts there.
 export function canDrop(from: ListGroup, to: ListGroup): boolean {
-  if (from.key.startsWith(kidsKey('')) || to.key.startsWith(kidsKey(''))) return from.key === to.key // children stay among their siblings
   return from.key === to.key
 }
 

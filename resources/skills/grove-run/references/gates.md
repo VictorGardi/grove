@@ -79,7 +79,7 @@ Never bypass silently.
   finish, fix, or stop.
 - A fix is sent to the still-live child, which amends the slice commit, so
   one commit per slice stays true.
-- The parent marks a child done (`grove status <label> done`, never `grove kill`) only after its gate is answered.
+- The parent marks a child done (`grove status <child id> done`, never `grove kill`) only after its gate is answered.
 
 ### `auto` halts
 

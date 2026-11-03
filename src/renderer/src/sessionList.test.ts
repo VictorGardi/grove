@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import type { Project, Session } from '@shared/types'
-import { canDrop, dropSession, groupSize, kidRows, kidsGroup, listGroups, orderedSessions, SORT_OPTIONS, visibleSessions, type ListGroup } from './sessionList'
+import { canDrop, dropSession, groupSize, listGroups, orderedSessions, SORT_OPTIONS, viaParent, visibleSessions, type ListGroup } from './sessionList'
 
 const project = (id: string, name = id, worktreeOf?: string): Project => ({ id, name, path: '/' + id, ...(worktreeOf && { worktreeOf }) })
 
@@ -289,82 +289,67 @@ describe('dropSession', () => {
 })
 
 describe('session groups', () => {
-  // r leads k1 and k2, one of which runs in another project; s stands alone
+  const link = { id: 'r', kind: 'group' as const }
   const sessions = [
     session('r', { startedAt: at(5, 8) }),
-    session('k1', { link: { id: 'r', kind: 'group' }, startedAt: at(5, 9) }),
-    session('k2', { link: { id: 'r', kind: 'group' }, projectId: 'q', startedAt: at(5, 10) }),
-    session('s', { startedAt: at(5, 11) }),
+    session('run1', { link, startedAt: at(5, 9) }),
+    session('run2', { link, projectId: 'q', startedAt: at(5, 10) }),
+    session('d1', { link, startedAt: at(5, 11), workflowStatus: 'done' }),
+    session('d2', { link, startedAt: at(5, 12), workflowStatus: 'done' }),
+    session('d3', { link, startedAt: at(5, 13), workflowStatus: 'done' }),
+    session('s', { startedAt: at(5, 14) }),
   ]
+  const waiting = (id: string, over: Partial<Session> = {}) => session(id, { link, status: 'waiting', waitingFor: 'question', startedAt: at(5, 15), ...over } as Partial<Session>)
 
-  it('draws a child under its parent, wherever it runs, and not as a row of its own', () => {
+  it('renders a parent with five children as one row', () => {
     const g = listGroups(PROJECTS, sessions, ui())
     expect(shape(g)).toEqual([['p:q', 'Project Q', 'q', []], ['p:p', 'Project P', 'p', ['r', 's']]])
-    expect(g[0].nest.kids.get('r')?.map((s) => s.id)).toEqual(['k1', 'k2'])
-    expect(groupSize(g[1])).toBe(4)
+    expect(g[1].nest.kids.get('r')?.length).toBe(5)
+    expect(groupSize(g[1])).toBe(2)
   })
 
   it('keeps a child whose parent is hidden or missing as a row of its own', () => {
-    expect(ids(listGroups(PROJECTS, sessions, ui({ hiddenProjects: ['p'] })))).toEqual(['k2'])
+    expect(ids(listGroups(PROJECTS, sessions.slice(0, 3), ui({ hiddenProjects: ['p'] })))).toEqual(['run2'])
     expect(ids(listGroups(PROJECTS, [session('k1', { link: { id: 'gone', kind: 'group' } })], ui()))).toEqual(['k1'])
   })
 
   it('keeps a child of a child as a row, so no card is ever lost', () => {
-    expect(ids(listGroups(PROJECTS, [session('r'), session('k', { link: { id: 'r', kind: 'group' } }), session('x', { link: { id: 'k', kind: 'group' } })], ui()))).toEqual(['r', 'x'])
+    expect(ids(listGroups(PROJECTS, [session('r'), session('k', { link }), session('x', { link: { id: 'k', kind: 'group' } })], ui()))).toEqual(['r', 'x'])
   })
 
-  it('counts children through Cmd+1..9 only while the parent is expanded; a range likewise', () => {
-    expect(orderedSessions(listGroups(PROJECTS, sessions, ui())).map((s) => s.id)).toEqual(['r', 'k1', 'k2', 's'])
-    expect(orderedSessions(listGroups(PROJECTS, sessions, ui({ collapsed: ['k:r'] }))).map((s) => s.id)).toEqual(['r', 's'])
-    expect(visibleSessions(listGroups(PROJECTS, sessions, ui({ collapsed: ['k:r'] }))).map((s) => s.id)).toEqual(['r', 's'])
+  it('shows a promoted child as its own row and still counts it among the kids', () => {
+    const g = listGroups(PROJECTS, [session('r', { startedAt: at(5, 8) }), session('k', { link, promoted: true, startedAt: at(5, 9) })], ui())
+    expect(ids(g)).toEqual(['r', 'k'])
+    expect(g[1].nest.kids.get('r')?.map((s) => s.id)).toEqual(['k'])
   })
 
-  it('lets a child reorder only among its siblings', () => {
+  it('yields one via-parent entry for a waiting child and none once answered', () => {
+    const ask = listGroups(PROJECTS, [session('r'), waiting('w')], ui())
+    expect(viaParent(ask[1].nest, 'r').map((s) => s.id)).toEqual(['w'])
+    const answered = listGroups(PROJECTS, [session('r'), waiting('w', { status: 'working' })], ui())
+    expect(viaParent(answered[1].nest, 'r')).toEqual([])
+  })
+
+  it('never lists a promoted child via its parent', () => {
+    const g = listGroups(PROJECTS, [session('r'), waiting('w', { promoted: true })], ui())
+    expect(viaParent(g[1].nest, 'r')).toEqual([])
+    expect(orderedSessions(g).map((s) => s.id)).toEqual(['r', 'w'])
+  })
+
+  it('counts the via-parent row right after its parent through Cmd+1..9, each child once', () => {
+    const all = [...sessions, waiting('w')]
+    const g = listGroups(PROJECTS, all, ui())
+    const order = orderedSessions(g).map((s) => s.id)
+    expect(order).toEqual(['r', 'w', 's'])
+    expect(new Set(order).size).toBe(order.length)
+    expect(visibleSessions(g).map((s) => s.id)).toEqual(['r', 'w', 's'])
+    expect(visibleSessions(listGroups(PROJECTS, all, ui({ collapsed: ['p:p'] }))).map((s) => s.id)).toEqual([])
+  })
+
+  it('accepts a drop only within the same group', () => {
     const g = listGroups(PROJECTS, sessions, ui())
-    const p = g[1]
-    const kg = kidsGroup(p, p.sessions[0])
-    expect(canDrop(kg, p)).toBe(false)
-    expect(canDrop(p, kg)).toBe(false)
-    expect(canDrop(kg, kg)).toBe(true)
-    const moved = dropSession(sessions, [], sessions[1], kg, kg, { target: 'k2', after: true })
-    expect(moved?.order.filter((id) => id.startsWith('k'))).toEqual(['k2', 'k1'])
-  })
-})
-
-describe('done stacks', () => {
-  // r leads four children in start order; d1 and d2 are done, with k1 between them
-  const sessions = [
-    session('r', { startedAt: at(5, 8) }),
-    session('k0', { link: { id: 'r', kind: 'group' }, startedAt: at(5, 9) }),
-    session('d1', { link: { id: 'r', kind: 'group' }, startedAt: at(5, 10), workflowStatus: 'done' }),
-    session('k1', { link: { id: 'r', kind: 'group' }, startedAt: at(5, 11) }),
-    session('d2', { link: { id: 'r', kind: 'group' }, startedAt: at(5, 12), workflowStatus: 'done' }),
-  ]
-  const rows = (collapsed: string[] = []) => kidRows(listGroups(PROJECTS, sessions, ui({ collapsed })).find((g) => g.key === 'p:p')!.nest, 'r')
-    .map((r) => 'session' in r ? r.session.id : `[${r.stack.list.map((s) => s.id).join(' ')}${r.stack.open ? ' open' : ''}]`)
-
-  it('folds two or more done children into one stack, below the rest', () => {
-    expect(rows()).toEqual(['k0', 'k1', '[d1 d2]'])
-  })
-
-  it('leaves a lone done child as a row of its own, last', () => {
-    const g = listGroups(PROJECTS, sessions.slice(0, 4), ui())
-    expect(kidRows(g[1].nest, 'r').map((r) => 'session' in r && r.session.id)).toEqual(['k0', 'k1', 'd1'])
-  })
-
-  it('starts folded and opens by its opened key', () => {
-    expect(rows(['o:d:r'])).toEqual(['k0', 'k1', '[d1 d2 open]'])
-  })
-
-  it('counts a stack\'s children through Cmd+1..9 and a range only while it is open', () => {
-    expect(orderedSessions(listGroups(PROJECTS, sessions, ui())).map((s) => s.id)).toEqual(['r', 'k0', 'k1'])
-    expect(visibleSessions(listGroups(PROJECTS, sessions, ui())).map((s) => s.id)).toEqual(['r', 'k0', 'k1'])
-    expect(orderedSessions(listGroups(PROJECTS, sessions, ui({ collapsed: ['o:d:r'] }))).map((s) => s.id)).toEqual(['r', 'k0', 'k1', 'd1', 'd2'])
-    expect(orderedSessions(listGroups(PROJECTS, sessions, ui({ collapsed: ['o:d:r', 'k:r'] }))).map((s) => s.id)).toEqual(['r'])
-  })
-
-  it('still counts a folded stack in the group size', () => {
-    expect(groupSize(listGroups(PROJECTS, sessions, ui())[1])).toBe(5)
+    expect(canDrop(g[1], g[1])).toBe(true)
+    expect(canDrop(g[1], g[0])).toBe(false)
   })
 })
 

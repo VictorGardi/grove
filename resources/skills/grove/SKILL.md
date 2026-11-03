@@ -112,6 +112,10 @@ esac
   and never start a step the human has not approved when the work has a gate.
 - A child waiting on a permission or a question counts as still running for `wait`; never
   kill it. See "A child's prompt" below.
+- Name each child with `--label` for its task: two to four lowercase words, at most about
+  28 characters, no timestamps, no repeated prefix such as the repo or feature name, and
+  never a default like "Claude · 09:49". Put what tells siblings apart first, such as a slice
+  number: `3 boards and project page`, not `grove simplify-sessions slice 3 - 21:44`.
 - Give each child a self-contained `--prompt`: it does not see your context.
 - Use `--worktree --branch NAME` when two children could touch the same files.
 - Do the small, read-only fan-out inside your own session with subagents. A

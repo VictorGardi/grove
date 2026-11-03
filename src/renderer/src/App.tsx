@@ -12,6 +12,8 @@ import { ProjectPage } from './components/ProjectPage'
 import { SessionGrid } from './components/SessionGrid'
 import { SessionMeta } from './components/SessionMeta'
 import { Sidebar } from './components/Sidebar'
+import { ChildDrawer } from './components/ChildDrawer'
+import { closeDrawer, toggleDrawer, useDrawerFor } from './drawerStore'
 import { TerminalView } from './components/TerminalView'
 import { AppShell, SIDEBAR_MAX, SIDEBAR_MIN } from './components/shell/AppShell'
 import { ContextPopover } from './components/ContextGauge'
@@ -48,6 +50,7 @@ export default function App() {
   const { removeSessions, dialog: removalDialog } = useSessionRemoval()
   const [confirmRemove, setConfirmRemove] = useState<Session | null>(null) // ⌘W asks first
   const [paletteOpen, setPaletteOpen] = useState(false)
+  const drawerFor = useDrawerFor() // the parent whose child drawer is open, from the sidebar bar or the header chip
   const [gridView, setGridView] = useState<GridView>(DEFAULT_GRID_VIEW) // toolbar settings, view-only
   const [scratchpadOpen, setScratchpadOpen] = useState(false) // ⌘N: global notes, not persisted
   const hiddenRendered = useRef<HiddenRenderedViewer | null>(null)
@@ -172,7 +175,8 @@ export default function App() {
   // keys the human is typing into a form. This was two lists — the grid's `overlayOpen` and the
   // terminal's `active` — and they had already drifted, each missing an overlay the other had. One
   // value now, with `active` as its negation, so there is nothing left to keep in step.
-  const overlayOpen = paletteOpen || !!quickNew || !!launchNew || !!confirmRemove || scratchpadOpen
+  const drawerParent = sessions.find((x) => x.id === drawerFor) // gone parent: no drawer
+  const overlayOpen = paletteOpen || !!quickNew || !!launchNew || !!confirmRemove || scratchpadOpen || !!drawerParent
   // the pane that has the keyboard: the one session, or the grid's focused pane
   const dictation = useDictation({
     getTargetId: () => {
@@ -191,7 +195,7 @@ export default function App() {
           ...(features.workflowError ? [<Banner key="workflow">Workflow: {features.workflowError}</Banner>] : []),
           ...serviceBanners(opencode, sessions).map((b) => <Banner key={b.text} tone={b.tone}>{b.text}</Banner>),
         ]}
-        sidebar={ui.sidebarCollapsed ? undefined : <Sidebar onNew={(projectId) => setQuickNew({ projectId })} onRemove={(ids) => void removeSessions(ids)} />}
+        sidebar={ui.sidebarCollapsed ? undefined : <Sidebar onNew={(projectId) => setQuickNew({ projectId })} onRemove={(ids) => void removeSessions(ids)} onOpenDrawer={toggleDrawer} />}
         content={
           <>
             <ContentHeader crumbs={header}
@@ -284,6 +288,10 @@ export default function App() {
       )}
       {launchNew && (
         <NewSessionDialog projectId={launchNew.projectId} onClose={() => setLaunchNew(null)} onStart={startLaunch} />
+      )}
+      {drawerParent && (
+        <ChildDrawer parent={drawerParent} kids={sessions.filter((x) => x.link?.id === drawerParent.id)}
+          onJump={setFocused} onClose={closeDrawer} />
       )}
       {scratchpadOpen && <ScratchpadOverlay onClose={() => setScratchpadOpen(false)} />}
     </>

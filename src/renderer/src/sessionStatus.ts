@@ -39,16 +39,6 @@ export function queueStatus(s: Session): ShownStatus {
   return shown === 'waiting' && !asksHuman(s) ? 'idle' : shown
 }
 
-// What a collapsed group shows for its children: the one that most needs the human, so a waiting
-// child is never hidden behind its parent. null for no children.
-const URGENCY: ShownStatus[] = ['failed', 'waiting', 'working', 'idle', 'starting', 'running', 'gone']
-export function mostUrgent(sessions: Session[]): Session | null {
-  const rank = (s: Session) => URGENCY.indexOf(queueStatus(s))
-  let best: Session | null = null
-  for (const s of sessions) if (!best || rank(s) < rank(best)) best = s
-  return best
-}
-
 // When the renderer first saw each session waiting (ms). Same object when unchanged.
 export function trackWaiting(prev: Record<string, number>, sessions: Session[], now: number): Record<string, number> {
   const next: Record<string, number> = {}

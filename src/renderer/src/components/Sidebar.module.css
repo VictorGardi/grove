@@ -258,6 +258,13 @@
 }
 
 
+.metaStack {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+}
+
 .branchLine {
   display: flex;
   align-items: center;
@@ -439,192 +446,38 @@
   cursor: default;
 }
 
-/* A clear step from the parent, with a branch rail through the child rows. */
-.kids {
-  position: relative;
-  padding-left: 18px;
-}
-
-.kids::before {
-  content: '';
-  position: absolute;
-  left: 8px;
-  top: 4px;
-  bottom: 4px;
-  width: 1px;
-  border-radius: 1px;
-  background: var(--glass-border-strong);
-  pointer-events: none;
-}
-
-.kids > .slot {
-  border-top: 0;
-}
-
-.kids > .slot > div::before {
-  content: '';
-  position: absolute;
-  left: -10px;
-  top: 13px;
-  width: 9px;
-  height: 1px;
-  background: var(--glass-border-strong);
-  pointer-events: none;
-}
-
-/* the handle on a parent's bottom edge: the count and, collapsed, the most urgent child's dot */
-.kidsToggle {
-  display: inline-flex;
-  align-items: center;
-  gap: 3px;
-  flex-shrink: 0;
-  padding: 0 7px 0 5px;
-  height: 18px;
-  line-height: 1;
-  border: 1px solid var(--card-border);
-  border-radius: var(--r-pill);
-  background: var(--chrome-bg);
-  color: var(--text-2);
-  font: inherit;
-  font-size: 11px;
-  white-space: nowrap;
-  cursor: pointer;
-}
-
-.kidsToggle:hover {
-  color: var(--text);
-  border-color: var(--text-2);
-}
-
-/* the focused session is one of the children this collapsed parent hides */
-.kidsToggleHolding,
-.kidsToggleHolding:hover {
-  background: var(--card-selected-bg);
-  border-color: var(--card-selected-border);
-  color: var(--text);
-}
-
-/* a parent's done children, folded into one row: the stack and, open, its cards under it */
-.stackRun {
-  display: flex;
-  flex-direction: column;
-  border-top: 1px solid var(--divider);
-}
-
-.kids > .stackRun {
-  border-top: 0;
-}
-
-.stack {
-  position: relative;
+/* a hidden child asking the human, under its parent's row: outside the slot, so it never drags */
+.via {
   display: flex;
   align-items: center;
-  gap: var(--sp-1);
+  gap: var(--sp-2);
   min-width: 0;
-  height: 26px;
-  padding: 0 10px 0 8px;
-  background: none;
+  padding: 3px var(--sp-2);
   border: 0;
+  border-top: 1px solid var(--divider);
   border-radius: var(--r-card);
-  color: var(--text-2);
+  background: color-mix(in srgb, var(--status-waiting) 12%, transparent);
+  color: var(--text);
   font: inherit;
   font-size: var(--fs-sm);
   text-align: left;
   cursor: pointer;
 }
 
-.kids > .stackRun > .stack::before {
-  content: '';
-  position: absolute;
-  left: -10px;
-  top: 12px;
-  width: 9px;
-  height: 1px;
-  background: var(--glass-border-strong);
-  pointer-events: none;
+.via:hover {
+  background: color-mix(in srgb, var(--status-waiting) 22%, transparent);
 }
 
-.stack:hover {
-  color: var(--text);
-  background: var(--glass-fill);
-}
-
-.stackFolded {
-  color: var(--text-3);
-}
-
-.stackHolding,
-.stackHolding:hover {
-  background: var(--glass-selected);
-  box-shadow: inset 2px 0 0 var(--card-selected-border);
-  color: var(--text);
-}
-
-.stackCheck {
-  flex-shrink: 0;
-  color: var(--status-finished);
-}
-
-.stackCount {
-  flex-shrink: 0;
-  color: var(--text);
-}
-
-.stackNames {
+.viaText {
   flex: 1;
   min-width: 0;
   overflow: hidden;
-  white-space: nowrap;
   text-overflow: ellipsis;
-  color: var(--text-3);
+  white-space: nowrap;
 }
 
-.stackChevron {
-  flex-shrink: 0;
-  margin-left: auto;
-}
-
-/* an opened stack's cards, ruled off from their siblings by a line of their own beside the kids' */
-.stackOpen {
-  position: relative;
-}
-
-.stackOpen::before {
-  content: '';
-  position: absolute;
-  left: 5px;
-  top: 4px;
-  bottom: 4px;
-  width: 1px;
-  background: color-mix(in srgb, var(--status-finished) 45%, transparent);
-  pointer-events: none;
-}
-
-/* opened, a parent's children (or a stack's) slide out from nothing: the row's height runs
-   0fr to 1fr, pushing the cards below down as it goes. The clip reaches past the edge, so a
-   drop line above the first card still shows */
-.grow {
-  display: grid;
-  grid-template-rows: 1fr;
-  grid-template-columns: minmax(0, 1fr); /* the column is the sidebar's width, not its longest title's */
-  animation: grow 200ms ease-out;
-}
-
-.grow > * {
-  min-height: 0;
-  overflow: clip;
-  overflow-clip-margin: 6px;
-  animation: fade 200ms ease-out;
-}
-
-@keyframes grow {
-  from { grid-template-rows: 0fr; }
-}
-
-@keyframes fade {
-  from { opacity: 0; }
-}
-
-@media (prefers-reduced-motion: reduce) {
-  .grow, .grow > * { animation: none; }
+.viaAction {
+  flex: none;
+  color: var(--status-waiting);
+  font-weight: 600;
 }

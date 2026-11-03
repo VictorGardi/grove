@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import type { Session } from '@shared/types'
-import { countsAsWaiting, longestWaiting, mostUrgent, queueStatus, serviceBanners, shownStatus, statusAge, statusTone, statusView, trackWaiting } from './sessionStatus'
+import { countsAsWaiting, longestWaiting, queueStatus, serviceBanners, shownStatus, statusAge, statusTone, statusView, trackWaiting } from './sessionStatus'
 
 function session(over: Partial<Session> = {}): Session {
   return {
@@ -60,13 +60,6 @@ describe('starting', () => {
     expect(shownStatus(session({ startup: starting, lastStatus: 'gone' }))).toBe('gone')
     expect(shownStatus(session({ startup: undefined, status: 'idle' }))).toBe('idle')
     expect(shownStatus(session({ startup: undefined }))).toBe('running')
-  })
-
-  it('ranks between idle and running when rolled up', () => {
-    const st = session({ id: 's', startup: starting })
-    expect(mostUrgent([st])?.id).toBe('s')
-    expect(mostUrgent([st, session({ id: 'i', status: 'idle' })])?.id).toBe('i')
-    expect(mostUrgent([session({ id: 'r' }), st])?.id).toBe('s')
   })
 })
 
@@ -138,52 +131,6 @@ describe('failed', () => {
     expect(statusView(session({ startup: failed }))).toEqual({ label: 'failed · no-claude', tone: 'failed' })
     expect(statusTone(session({ startup: failed }))).toBe('failed')
   })
-
-  it('beats every other child on a collapsed parent', () => {
-    const w = session({ id: 'w', status: 'waiting' })
-    const f = session({ id: 'f', startup: failed })
-    expect(mostUrgent([w, f])?.id).toBe('f')
-  })
-})
-
-describe('mostUrgent', () => {
-  const waiting = session({ id: 'waiting', status: 'waiting', waitingFor: 'question' })
-  const working = session({ id: 'working', status: 'working' })
-  const idle = session({ id: 'idle', status: 'idle' })
-  const st = session({ id: 'starting', startup: starting })
-  const running = session({ id: 'running' })
-  const gone = session({ id: 'gone', lastStatus: 'gone' })
-  const fail = session({ id: 'failed', startup: failed })
-
-  it('gives null for an empty list', () => {
-    expect(mostUrgent([])).toBeNull()
-  })
-
-  it('picks a starting child that is alone', () => {
-    expect(mostUrgent([st])?.id).toBe('starting')
-  })
-
-  it('ranks starting below idle', () => {
-    expect(mostUrgent([st, idle])?.id).toBe('idle')
-    expect(mostUrgent([idle, st])?.id).toBe('idle')
-  })
-
-  it('ranks starting above running', () => {
-    expect(mostUrgent([st, running])?.id).toBe('starting')
-    expect(mostUrgent([running, st])?.id).toBe('starting')
-  })
-
-  it('lets a failed child beat every other child, in any order', () => {
-    expect(mostUrgent([idle, gone, working, fail, running, st, waiting])?.id).toBe('failed')
-  })
-
-  it('keeps waiting > working > idle > running > gone', () => {
-    expect(mostUrgent([gone, running, idle, working, waiting])?.id).toBe('waiting')
-    expect(mostUrgent([gone, running, idle, working])?.id).toBe('working')
-    expect(mostUrgent([gone, running, idle])?.id).toBe('idle')
-    expect(mostUrgent([gone, running])?.id).toBe('running')
-    expect(mostUrgent([gone])?.id).toBe('gone')
-  })
 })
 
 describe('time in status', () => {
@@ -206,12 +153,11 @@ describe('finished child', () => {
     expect(countsAsWaiting({ ...kid, waitingFor: 'permission' })).toBe(true)
   })
 
-  it('is skipped by longestWaiting and trackWaiting, and loses to a working sibling', () => {
+  it('is skipped by longestWaiting and trackWaiting,', () => {
     const top = session({ id: 'top', status: 'waiting', waitingFor: 'done' })
     expect(longestWaiting([kid, top], { kid: 1, top: 2 })?.id).toBe('top')
     expect(longestWaiting([kid], {})).toBeNull()
     expect(trackWaiting({}, [kid, top], 5)).toEqual({ top: 5 })
-    expect(mostUrgent([kid, session({ id: 'w', status: 'working' })])?.id).toBe('w')
   })
 })
 
