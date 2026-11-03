@@ -1,11 +1,11 @@
 ---
 feature: 2026-11-03-simplify-sessions-and-sidebar
 phase: run
-status: draft
+status: approved
 version: 1
 created: 2026-11-03
 updated: 2026-11-03
-approved_at:
+approved_at: 2026-11-03
 based_on: [03-plan.md@8]
 forced: []
 ---
