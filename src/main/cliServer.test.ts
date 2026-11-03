@@ -38,7 +38,7 @@ describe('cli server', () => {
     const dead = await createTerminal(core)
     await core.commands.sessionKill({ id: dead.id })
     const reply = await request(socketPath, req('sessions.list'))
-    expect(reply.ok && (reply.data as CliSession[]).map((s) => [s.id, s.project, s.lastStatus])).toEqual([[live.id, 'proj', 'running']])
+    expect(reply.ok && (reply.data as CliSession[]).map((s) => [s.id, s.project, s.lastStatus, s.parent, s.relation])).toEqual([[live.id, 'proj', 'running', null, null]])
     const all = await request(socketPath, req('sessions.list', { all: true }))
     expect(all.ok && (all.data as CliSession[]).map((s) => s.id).sort()).toEqual([live.id, dead.id].sort())
   })
@@ -148,11 +148,16 @@ describe('cli server', () => {
     const first = await request(socketPath, req('sessions.create', { kind: 'terminal', cwd: t.dir, parent: lead.id.slice(0, 6) }))
     if (!first.ok) throw new Error(JSON.stringify(first.error))
     const child = (first.data as CliSession).id
-    expect(core.getSlices().sessions.find((s) => s.id === child)?.parentId).toBe(lead.id)
+    expect(core.getSlices().sessions.find((s) => s.id === child)?.link?.id).toBe(lead.id)
     expect((first.data as CliSession).parent).toBe(lead.id)
+    expect((first.data as CliSession).relation).toBe('group')
+    const sliced = await request(socketPath, req('sessions.create', { kind: 'terminal', cwd: t.dir, parent: lead.id, relation: 'slice' }))
+    expect(sliced.ok && (sliced.data as CliSession).relation).toBe('slice')
+    expect(await request(socketPath, req('sessions.create', { kind: 'terminal', cwd: t.dir, relation: 'slice' }))).toMatchObject({ ok: false, error: { code: 'bad-params' } })
+    expect(await request(socketPath, req('sessions.create', { kind: 'terminal', cwd: t.dir, parent: lead.id, relation: 'group' }))).toMatchObject({ ok: false, error: { code: 'bad-params' } })
     // started by the child: a sibling, not a grandchild
     const second = await request(socketPath, req('sessions.create', { kind: 'terminal', cwd: t.dir, parent: child }))
-    expect(second.ok && core.getSlices().sessions.find((s) => s.id === (second.data as CliSession).id)?.parentId).toBe(lead.id)
+    expect(second.ok && core.getSlices().sessions.find((s) => s.id === (second.data as CliSession).id)?.link?.id).toBe(lead.id)
 
     const repo = gitRepo()
     repo.commit()
@@ -184,7 +189,6 @@ describe('cli server', () => {
     expect(t.fake.pastes).toEqual([{ name: s.tmuxName, text: 'hi', submit: false }])
     await request(socketPath, req('sessions.send', { ref: s.id, text: 'yo', submit: true }))
     expect(t.fake.pastes[1]).toMatchObject({ text: 'yo', submit: true })
-    expect(await request(socketPath, req('sessions.send', { ref: s.id, text: 'who', submit: false, from: 'unknown-caller' }))).toMatchObject({ ok: true }) // an unknown caller is just not a parent
     expect(await request(socketPath, req('sessions.send', { ref: 'nope', text: 'x', submit: true }))).toMatchObject({ ok: false, error: { code: 'not-found' } })
     expect(await request(socketPath, req('sessions.send', { ref: s.id }))).toMatchObject({ ok: false, error: { code: 'bad-params' } })
     t.fake.captured.set(s.tmuxName, 'line1\nline2\n')
@@ -246,13 +250,9 @@ describe('cli server', () => {
     expect(core.getSlices().sessions.find((x) => x.id === s.id)?.workflowStatus).toBe('blocked')
   })
 
-  it('escalate needs a waiting session; progress validates and sets', async () => {
+  it('progress validates and sets', async () => {
     const { core, socketPath } = await start()
     const s = await createTerminal(core)
-    expect(await request(socketPath, req('sessions.escalate', { ref: s.id, reason: 'why' }))).toMatchObject({ ok: false, error: { code: 'not-waiting' } })
-    expect(await request(socketPath, req('sessions.escalate', { ref: 'nope', reason: 'why' }))).toMatchObject({ ok: false, error: { code: 'not-found' } })
-    expect(await request(socketPath, req('sessions.escalate', { ref: s.id, reason: '  ' }))).toMatchObject({ ok: false, error: { code: 'bad-params' } })
-    expect(await request(socketPath, req('sessions.escalate', { ref: s.id }))).toMatchObject({ ok: false, error: { code: 'bad-params' } })
     expect(await request(socketPath, req('sessions.progress', { ref: s.id, done: 1, total: 3 }))).toMatchObject({ ok: true, data: { id: s.id } })
     expect(core.getSlices().sessions.find((x) => x.id === s.id)?.progress).toEqual({ done: 1, total: 3 })
     for (const p of [{ done: 5, total: 4 }, { done: 0, total: 0 }, { done: -1, total: 2 }, { done: 1.5, total: 2 }]) {

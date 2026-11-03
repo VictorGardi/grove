@@ -8,9 +8,9 @@ export interface ContextReading { pct: number; tokens: number | null; window: nu
 // docs/work/2026-10-09-session-workflow-status.
 export type WorkflowStatus = 'backlog' | 'in-progress' | 'blocked' | 'in-review' | 'cancelled' | 'done' | 'pinned'
 
-// Where a session's row is shown in the zones sidebar.
-export type Zone = 'needs-you' | 'review' | 'running'
-
+// Saved files may still carry the dead keys `zoneOverride` (sessions), `sidebarView`, `groupBy`, `board` and `artifacts` (ui) from
+// the old sidebar and boards, `held`, `handled` and `attention` (sessions) from the child-prompt hold and `grove escalate`, and
+// config `escalateAfterSec`; nothing reads them and they are preserved on save.
 export interface Session {
   id: string
   projectId: string
@@ -34,14 +34,9 @@ export interface Session {
   pr?: PullRequest | null          // live sessions: the PR for that branch, from `gh`; never saved
   status?: 'working' | 'waiting' | 'idle' // agent sessions while their service is connected, terminals from the foreground command; never saved
   waitingFor?: 'permission' | 'question' | 'done' // with status 'waiting'; never saved
-  zone?: Zone | null               // derived by core from the live state and the override on every sessions publish (shared/zones.ts); never saved
   lastLine?: string                // one line on what the session was doing: the first line of the last prompt the human sent (cut at 120); persisted; absent: none
-  attention?: { reason: string; waitingFor: 'permission' | 'question' } // `grove escalate`: a parent says this waiting child needs the human; clears when the child leaves that wait; live, never saved
   progress?: { done: number; total: number } // `grove progress`: slices a run has and how many are done; live, never saved
-  held?: boolean                   // a child's permission or question held for the grace window (`escalateAfterSec`): quiet, counted as running; live, never saved
   classified?: { verdict: 'needs-you' | 'done'; at: string } // `at`: the statusAt of that finish; the small model's read of a finished top-level Claude session (core/classifier.ts; other kinds only when config `classifier.kinds` lists them); tied to one idle period; live, never saved
-  handled?: HandledPrompt[]        // prompts of its children it answered with `grove send` inside the grace window; live, never saved
-  zoneOverride?: Zone              // set by the human: only moves where the row is shown, never counts or popups; persisted; absent: none
   contextPct?: number | null       // agent sessions once a reading arrived: % of the context window used; null: not known yet; never saved
   contextTokens?: number | null    // tokens in context (input incl. cache); never saved
   contextWindow?: number | null    // size of the context window in tokens; never saved
@@ -49,9 +44,11 @@ export interface Session {
   startup?: { phase: 'starting'; since: string } | { phase: 'failed'; reason: string } // a session whose pane is being made, until its first status (or gone); ISO since; never saved
   statusAt?: string               // when it entered its current status (ISO), stamped by core on every sessions publish; never saved
   lastContext: ContextReading | null // the last known reading (pct known); persisted
-  parentId?: string | null         // the group this session is in: its parent's id. Groups are one level deep, so a parent never has a parent; persisted
+  link?: SessionLink               // the parent this session is linked to (a group, or a slice of a run). Links are one level deep, so a parent never has a parent; missing = no parent; persisted
+  promoted?: boolean               // a linked child that also shows as its own sidebar row; keeps its link; persisted
 }
 // a viewable file in the project folder (ADR 0032); path relative to the project, POSIX
+export interface SessionLink { id: string; kind: 'group' | 'slice' }
 export interface FileTarget { kind: 'file'; projectId: string; path: string; hash: string | null; fromDiff: string | null }
 export interface PullRequest { number: number; state: 'open' | 'merged' | 'closed'; draft: boolean; url: string }
 
@@ -105,34 +102,25 @@ export interface GridState {
   spans?: Record<string, PaneSpan> // by session id
   tracks?: Record<string, GridTracks> // by layout shape, e.g. "2x2"
 }
-export interface ArtifactRef { projectId: string; slug: string; name: string } // a card on the artifacts board: the feature's own checkout, its slug, the card's name
-export interface CanvasView { x: number; y: number; scale: number } // a pan/zoom canvas's offset in px and its zoom
-export interface ArtifactsView {
-  open: ArtifactRef | null // the artifact shown full page; never reopened on restart
-  view?: CanvasView        // the board's pan and zoom, kept across restarts (absent: the default view)
-  filter?: string | null   // the slug of the one feature the board shows (absent or null: all); a page's features are unioned by repo, so a slug names one cluster
-}
+export interface ArtifactRef { projectId: string; slug: string; name: string } // an artifact page: the feature's own checkout, its slug, the artifact's name
 export interface DiffPrefs { mode: DiffMode; base: string | null } // a session's picked view and compare branch; base null: the auto-detected main branch
 export interface UiState {
   sidebarWidth: number
   sidebarCollapsed: boolean // ⌘B: the sidebar is hidden, and a strip of session dots leads the content header
   focusedSessionId: string | null
   focusedFeature: { projectId: string; slug: string } | null
-  focusedProject: string | null // the project page; the three focuses are exclusive (ADR 0018)
-  board: 'features' | 'sessions' | 'artifacts' // what the project page's board shows
+  focusedProject: string | null // the project page
+  focusedArtifact: ArtifactRef | null // the artifact page; a fourth exclusive focus: setting one clears the other three (ADR 0018)
   collapsed: string[] // collapsed project folders on the Sessions tab: p:<projectId>
   hiddenProjects: string[] // project IDs hidden from the Sessions tab
   compact?: string[] // session IDs whose card is compacted to one line (absent reads as none)
   hideDone?: boolean // sessions whose workflow status is done are left out of the list (absent reads as false)
-  sidebarView?: 'zones' | 'projects' // what the sidebar shows; absent reads as zones
-  groupBy: 'project' | 'status' | 'none' // what the Sessions tab groups rows under
   sessionSort: 'custom' | 'viewed-desc' | 'viewed-asc' | 'created-desc' | 'created-asc' | 'status-age' // order of the rows inside a group; status-age: longest in its status first, sessions waiting on you ahead
   sessionOrder: string[] // the dragged order of every session, one list for all groupings; used while sessionSort is custom
   viewer: ViewerTarget | null // what the right-hand panel shows
   viewerWidth: number | null // null uses the responsive default; a number is a user-resized pixel width
   viewerExpanded: boolean     // the viewer fills the content area
   diffPrefs?: Record<string, DiffPrefs> // by session id: what the diff opens on again in that session (absent reads as none: defaults)
-  artifacts?: Record<string, ArtifactsView> // by project page id: the artifacts board's state there (absent reads as none)
   recentBases?: Record<string, string[]> // by project id: branches picked as a diff base there, newest first (absent reads as none)
   grid: GridState             // the session grid (ADR 0031); the focused pane is focusedSessionId
 }
@@ -143,20 +131,17 @@ export interface FeatureStage {
   review: string | null
   state: 'complete' | 'current' | 'unapproved' | 'upcoming'
 }
-export type CardState = 'backlog' | 'running' | 'waiting' | 'needs-review' | 'ready' | 'active' | 'done'
+export type CardState = 'backlog' | 'running' | 'waiting' | 'needs-review' | 'ready' | 'done'
 export interface Feature {
   projectId: string
   slug: string
   path: string
   title: string
   kind: string
-  group: boolean
-  parent: string | null
   flow: string | null
   stages: FeatureStage[]          // effective stages only
   currentStage: string | null     // null when done
   cardState: CardState
-  progress: { done: number; total: number } | null // group kinds with children only
   flags: { id: string; label: string }[]
   warnings: string[]              // e.g. 'flow?', 'frontmatter?: 03-design.md'
   artifacts: { name: string; stage: string | null; role: 'artifact' | 'review' | null; mtimeMs: number }[]
@@ -188,10 +173,9 @@ export interface Comment {
 export interface CommentsFile { schemaVersion: 3; comments: Comment[] }
 export type Slices = { projects: Project[]; sessions: Session[]; ui: UiState; features: FeaturesSlice; opencode: OpenCodeSlice; diff: SessionDiff | null; comments: Comment[] } // diff: the one on screen, not persisted
 // A child prompt its parent answered with `grove send` before the grace window ran out.
-export interface HandledPrompt { childId: string; at: string; kind: 'permission' | 'question'; screen: string; sent: string } // at: ISO; screen: last 8 lines of the child's pane as the prompt opened
-export interface ConfigFile { schemaVersion: 1; projects: Project[]; workflow?: string; sounds?: boolean; escalateAfterSec?: number; classifier?: { enabled?: boolean; model?: string; kinds?: ('claude' | 'opencode' | 'copilot')[] } } // sounds: false mutes the waiting sounds; classifier.kinds: agent kinds whose finished screens go to the small model, default claude only
-export interface StateFile { schemaVersion: 10; sessions: Session[]; ui: UiState }
+export interface ConfigFile { schemaVersion: 1; projects: Project[]; workflow?: string; sounds?: boolean; classifier?: { enabled?: boolean; model?: string; kinds?: ('claude' | 'opencode' | 'copilot')[] } } // sounds: false mutes the waiting sounds; classifier.kinds: agent kinds whose finished screens go to the small model, default claude only
+export interface StateFile { schemaVersion: 11; sessions: Session[]; ui: UiState }
 export const SIDEBAR_WIDTH = 220 // the default; drag the sidebar's edge to resize, double-click it to come back here
-export const DEFAULT_UI: UiState = { sidebarWidth: SIDEBAR_WIDTH, sidebarCollapsed: false, focusedSessionId: null, focusedFeature: null, focusedProject: null, board: 'sessions', collapsed: [], hiddenProjects: [], groupBy: 'project', sessionSort: 'viewed-desc', sessionOrder: [], viewer: null, viewerWidth: null, viewerExpanded: false, grid: { open: false, members: [] } }
+export const DEFAULT_UI: UiState = { sidebarWidth: SIDEBAR_WIDTH, sidebarCollapsed: false, focusedSessionId: null, focusedFeature: null, focusedProject: null, focusedArtifact: null, collapsed: [], hiddenProjects: [], sessionSort: 'viewed-desc', sessionOrder: [], viewer: null, viewerWidth: null, viewerExpanded: false, grid: { open: false, members: [] } }
 export const EMPTY_FEATURES: FeaturesSlice = { workflowError: null, stages: [], items: [] }
 export const OPENCODE_CONNECTING: OpenCodeSlice = { state: 'connecting', version: null }

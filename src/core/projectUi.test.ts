@@ -34,7 +34,7 @@ describe('forgetting a project', () => {
 
   // A previous run's ui, written the way grove writes it: state.json before anything starts.
   const savedUi = (over: Partial<UiState>) =>
-    saveState(t.statePath, { schemaVersion: 10, sessions: [], ui: { ...DEFAULT_UI, ...over } })
+    saveState(t.statePath, { schemaVersion: 11, sessions: [], ui: { ...DEFAULT_UI, ...over } })
   const start = async () => {
     const core = t.make()
     await core.start()
@@ -66,6 +66,14 @@ describe('forgetting a project', () => {
       hiddenProjects: ['other'],
       focusedProject: null,
     })
+  })
+
+  it('drops a focused artifact page of a removed project', async () => {
+    twoProjects()
+    const core = await start()
+    await core.commands.uiSet({ focusedArtifact: { projectId: 'p', slug: 'f', name: 'x.md' } })
+    expect((await core.commands.projectRemove({ id: 'p' })).ok).toBe(true)
+    expect(core.getSlices().ui.focusedArtifact).toBeNull()
   })
 
   it('drops the recent diff bases of a removed project, and keeps another repo\'s', async () => {

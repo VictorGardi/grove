@@ -1,9 +1,8 @@
-import { IMAGE_EXTS, artifactUrl, extOf, isViewable } from '@shared/artifactUrl'
-import type { ArtifactRef, CanvasView, Feature, FeatureKey, Project, UiState } from '@shared/types'
+import { isViewable } from '@shared/artifactUrl'
+import type { ArtifactRef, Feature, FeatureKey, Project, UiState } from '@shared/types'
 import { unionFeatures, type UnionFeature } from './featureUnion'
-import { openBoard, type Crumb } from './navigation'
+import type { Crumb } from './navigation'
 import { repoGroups, repoProjectIds } from './repoGroups'
-import { boardColumns } from './tree'
 import { featureDir } from './viewerFiles'
 
 export interface ArtifactCard {
@@ -32,10 +31,14 @@ function cardsOf(f: Feature, dir: string, stages: { id: string }[]): ArtifactCar
   }).sort((a, b) => rank(a.stage) - rank(b.stage) || a.name.localeCompare(b.name))
 }
 
-// Every feature's cards, clustered in the features board's order (its columns read left to right)
-// so the board, and later the step-through, walk features the way the human already sees them.
+// Every feature's cards, clustered by workflow stage (earliest first; a done feature sits at the last
+// stage of its own flow), then in the given order.
 export function artifactClusters<T extends Feature>(stages: { id: string; label: string }[], features: T[], projects: Project[]): ArtifactCluster<T>[] {
-  return boardColumns(stages, features).flatMap((c) => c.cards).flatMap(({ feature }) => {
+  const used = stages.filter((s) => features.some((f) => f.stages.some((fs) => fs.id === s.id)))
+  const last = used[used.length - 1]?.id
+  const column = (f: T) => { const i = used.findIndex((s) => s.id === (f.currentStage ?? f.stages[f.stages.length - 1]?.id ?? last)); return i < 0 ? used.length : i }
+  const ordered = features.map((feature, i) => ({ feature, i, c: column(feature) })).sort((a, b) => a.c - b.c || a.i - b.i)
+  return ordered.flatMap(({ feature }) => {
     const dir = featureDir(feature, projects)
     const cards = dir === null ? [] : cardsOf(feature, dir, stages)
     return cards.length > 0 ? [{ feature, cards }] : []
@@ -52,7 +55,7 @@ function newestCopy(f: UnionFeature): UnionFeature {
   return best === f || best.projectId === f.projectId ? f : { ...best, flags: f.flags, headId: f.headId, copies: f.copies }
 }
 
-// A checkout page's clusters: the repo's features, unioned like the features board's, each from its newest copy.
+// A checkout page's clusters: the repo's features, unioned (one per slug), each from its newest copy.
 export function pageClusters(project: Project, projects: Project[], stages: { id: string; label: string }[], features: Feature[]): ArtifactCluster[] {
   const scope = repoProjectIds(projects, project.id)
   const union = unionFeatures(features.filter((f) => scope.has(f.projectId)), repoGroups(projects))
@@ -67,37 +70,18 @@ export function findCard<T extends Feature>(clusters: ArtifactCluster<T>[], ref:
   return cluster && card ? { cluster, card } : undefined
 }
 
-// The artifact a project page shows full page, if it shows one: a checkout's, on the artifacts
-// board, whose open ref still resolves to a card (a file gone stays on the board).
-export function openCard(ui: Pick<UiState, 'board' | 'artifacts'>, project: Project, projects: Project[], stages: { id: string; label: string }[], features: Feature[]) {
-  const ref = ui.artifacts?.[project.id]?.open
-  if (project.worktreeOf || ui.board !== 'artifacts' || !ref) return undefined
-  return findCard(pageClusters(project, projects, stages, features), ref)
-}
-
-export const artifactsTo = (ui: UiState, projectId: string, open: ArtifactRef | null): Partial<UiState> =>
-  ({ artifacts: { ...ui.artifacts, [projectId]: { ...ui.artifacts?.[projectId], open } } })
-
-// The board's saved pan and zoom on one page; the page's open artifact and filter stay as they are.
-export const boardViewTo = (ui: UiState, projectId: string, view: CanvasView): Partial<UiState> =>
-  ({ artifacts: { ...ui.artifacts, [projectId]: { ...ui.artifacts?.[projectId], open: ui.artifacts?.[projectId]?.open ?? null, view } } })
-
-// The one feature the board shows on one page (null: all), and the view it starts at if given, in one
-// write: two would each echo the whole ui back and briefly undo the other. The open artifact stays.
-export const filterTo = (ui: UiState, projectId: string, filter: string | null, view?: CanvasView): Partial<UiState> =>
-  ({ artifacts: { ...ui.artifacts, [projectId]: { ...ui.artifacts?.[projectId], open: ui.artifacts?.[projectId]?.open ?? null, filter, ...(view && { view }) } } })
-
-// The clusters the board draws: the filtered feature's alone. A filter naming no cluster (its feature
-// gone, or its last file) is stale, and shows all rather than an empty board.
-export function filterClusters<T extends Feature>(clusters: ArtifactCluster<T>[], filter: string | null | undefined): ArtifactCluster<T>[] {
-  const hit = filter ? clusters.filter((c) => c.feature.slug === filter) : []
-  return hit.length > 0 ? hit : clusters
+// The artifact the content area shows, if it shows one: the focused ref's card, in the repo of the
+// project it names. A file gone resolves to nothing and the page falls back to the project's.
+export function openCard(ui: Pick<UiState, 'focusedArtifact'>, projects: Project[], stages: { id: string; label: string }[], features: Feature[]) {
+  const ref = ui.focusedArtifact
+  const project = ref && projects.find((p) => p.id === ref.projectId)
+  return project && ref ? findCard(pageClusters(project, projects, stages, features), ref) : undefined
 }
 
 const refOf = (c: ArtifactCluster<Feature>, card: ArtifactCard): ArtifactRef => ({ projectId: c.feature.projectId, slug: c.feature.slug, name: card.name })
 
-// The full page's previous and next artifacts, in board order: clusters in order, cards in order,
-// across cluster edges. An unknown ref has neither, at index -1.
+// The full page's previous and next artifacts: clusters in order, cards in order, across cluster
+// edges (the page passes its own feature's cluster alone). An unknown ref has neither, at index -1.
 export function neighbours(clusters: ArtifactCluster<Feature>[], ref: ArtifactRef): { prev: ArtifactRef | null; next: ArtifactRef | null; index: number; total: number } {
   const all = clusters.flatMap((c) => c.cards.map((card) => refOf(c, card)))
   const index = all.findIndex((r) => r.projectId === ref.projectId && r.slug === ref.slug && r.name === ref.name)
@@ -122,37 +106,12 @@ export function stepKey(e: { key: string; altKey: boolean; ctrlKey: boolean; met
   return e.key === 'ArrowLeft' ? -1 : e.key === 'ArrowRight' ? 1 : null
 }
 
-// project > Artifacts > feature > artifact; "Artifacts" closes the full page back to the board.
-export function artifactCrumbs(project: Project, feature: Feature, card: ArtifactCard, ui: UiState): Crumb[] {
+
+// project > feature > artifact; the feature up-link closes the full page back to the feature's page.
+export function artifactCrumbs(project: Project, feature: Feature, card: ArtifactCard): Crumb[] {
   return [
-    { label: project.name, to: openBoard(project.id) },
-    { label: 'Artifacts', to: artifactsTo(ui, project.id, null) },
+    { label: project.name, to: { focusedProject: project.id } },
     { label: feature.title, to: { focusedFeature: { projectId: feature.projectId, slug: feature.slug } } },
     { label: card.name },
   ]
-}
-
-// A card's preview: images draw as an <img>, everything else (html, markdown rendered by the protocol) as a page.
-export function previewKind(path: string): 'image' | 'page' {
-  const ext = extOf(path)
-  return ext !== undefined && IMAGE_EXTS.includes(ext) ? 'image' : 'page'
-}
-
-// The preview's source. Chromium reuses a loaded image with the same URL, so an image's carries the
-// mtime (the protocol reads only the path); a page keeps the plain URL and reloads by remounting.
-export function previewSrc(projectId: string, card: ArtifactCard): string {
-  const url = artifactUrl({ kind: 'file', projectId, path: card.path, hash: null, fromDiff: null })
-  return previewKind(card.path) === 'image' ? `${url}?v=${card.mtimeMs}` : url
-}
-
-// "5m ago" on a card, a short date ("12 Oct") once it is a week old.
-export function modifiedAgo(mtimeMs: number, now: number): string {
-  const min = Math.floor((now - mtimeMs) / 60_000)
-  if (min < 1) return 'just now'
-  if (min < 60) return `${min}m ago`
-  const h = Math.floor(min / 60)
-  if (h < 24) return `${h}h ago`
-  const d = Math.floor(h / 24)
-  if (d < 7) return `${d}d ago`
-  return new Date(mtimeMs).toLocaleDateString('en-GB', { day: 'numeric', month: 'short' })
 }

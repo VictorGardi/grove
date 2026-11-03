@@ -23,7 +23,7 @@ async function run(cmd: Exclude<Command, { cmd: 'skill' }>, socket: string): Pro
     return reply.ok ? { ...reply, print: formatLs(reply.data as CliMethods['sessions.list']['data'], process.env.GROVE_SESSION_ID ?? null, cmd.json) } : reply
   }
   if (cmd.cmd === 'send') {
-    const reply = await call(socket, 'sessions.send', { ref: cmd.ref, text: text(cmd.text) ?? '', submit: cmd.submit, wait: cmd.wait, timeoutS: cmd.timeoutS, from: process.env.GROVE_SESSION_ID || undefined })
+    const reply = await call(socket, 'sessions.send', { ref: cmd.ref, text: text(cmd.text) ?? '', submit: cmd.submit, wait: cmd.wait, timeoutS: cmd.timeoutS })
     return reply.ok ? { ...reply, print: undefined, exit: turnOf(reply) } : reply
   }
   if (cmd.cmd === 'focus' || cmd.cmd === 'kill') {
@@ -33,10 +33,6 @@ async function run(cmd: Exclude<Command, { cmd: 'skill' }>, socket: string): Pro
   if (cmd.cmd === 'status') {
     // the ref is checked in main(): without one this is the calling session
     const reply = await call(socket, 'sessions.status', { ref: cmd.ref ?? process.env.GROVE_SESSION_ID, status: cmd.value })
-    return reply.ok ? { ...reply, print: undefined } : reply
-  }
-  if (cmd.cmd === 'escalate') {
-    const reply = await call(socket, 'sessions.escalate', { ref: cmd.ref, reason: cmd.reason })
     return reply.ok ? { ...reply, print: undefined } : reply
   }
   if (cmd.cmd === 'progress') {
@@ -54,7 +50,7 @@ async function run(cmd: Exclude<Command, { cmd: 'skill' }>, socket: string): Pro
   const reply = await call(socket, 'sessions.create', {
     kind: cmd.kind, cwd: path.resolve(cmd.cwd ?? process.cwd()), prompt: text(cmd.prompt), label: cmd.label, feature: cmd.link,
     parent: cmd.child ? process.env.GROVE_SESSION_ID : cmd.parent, // --child: the session running this command
-    worktree: cmd.worktree, branch: cmd.branch, base: cmd.base, model: cmd.model, wait: cmd.wait, timeoutS: cmd.timeoutS,
+    relation: cmd.relation, worktree: cmd.worktree, branch: cmd.branch, base: cmd.base, model: cmd.model, wait: cmd.wait, timeoutS: cmd.timeoutS,
   })
   return reply.ok ? { ...reply, print: formatNew(reply.data as CliMethods['sessions.create']['data'], cmd.json), exit: turnOf(reply) } : reply
 }

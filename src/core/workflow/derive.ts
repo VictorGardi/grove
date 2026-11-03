@@ -47,7 +47,7 @@ export function deriveFeatures(
   folders: (FolderSnapshot & { projectId: string })[],
   sessions: Session[]
 ): Feature[] {
-  return withGroups(folders
+  return folders
     .map((f): Feature => {
       const m = f.manifest.data
       const kind = axisValue(wf.kinds, m)
@@ -83,8 +83,6 @@ export function deriveFeatures(
         path: f.path,
         title: title(f),
         kind,
-        group: wf.kinds.values[kind]?.group === true,
-        parent: wf.kinds.parent_field ? str(m[wf.kinds.parent_field]) : null,
         flow: wf.flows ? str(m[wf.flows.field]) : null,
         stages,
         currentStage: current < 0 ? null : stages[current].id,
@@ -97,29 +95,7 @@ export function deriveFeatures(
           ...Object.keys(f.artifacts).sort().filter((n) => f.artifacts[n].error).map((n) => `frontmatter?: ${n}`),
         ],
         artifacts: f.files.map((name) => ({ name, ...tagged(name), mtimeMs: f.mtimes[name] ?? 0 })),
-        progress: null,
       }
-    }))
+    })
     .sort((a, b) => a.projectId.localeCompare(b.projectId) || a.slug.localeCompare(b.slug))
-}
-
-// A group is done only when its own stages are and every child (same project, by
-// `parent`) is done; until then, with its own stages complete, it is `active`.
-function withGroups(features: Feature[]): Feature[] {
-  const memo = new Map<Feature, Feature>()
-  const resolve = (f: Feature, seen: Set<Feature>): Feature => {
-    const hit = memo.get(f)
-    if (hit) return hit
-    const kids = f.group ? features.filter((c) => c !== f && c.projectId === f.projectId && c.parent === f.slug) : []
-    let out = f
-    if (kids.length > 0 && !seen.has(f)) {
-      const next = new Set(seen).add(f)
-      const done = kids.filter((c) => resolve(c, next).cardState === 'done').length
-      const cardState = f.cardState === 'done' && done < kids.length ? 'active' : f.cardState
-      out = { ...f, cardState, progress: { done, total: kids.length } }
-    }
-    memo.set(f, out)
-    return out
-  }
-  return features.map((f) => resolve(f, new Set()))
 }

@@ -15,7 +15,7 @@ this file. The `04-run.md` layout is in `references/run-template.md`.
 ## Steps
 
 1. Read `<artifactRoot>/<slug>/03-plan.md`, `01-outcome.md`, and `04-run.md` if
-   it exists. The label is on the `Label:` line and the parent id on the `Parent:` line of your prompt.
+   it exists. The label (it contains spaces) is on the `Label:` line and the parent id on the `Parent:` line of your prompt.
 2. **Slice 1 only:** if an uncommitted `04-run.md` already exists (dead child), reuse it,
    never recreate it; otherwise create `04-run.md` from `references/run-template.md`,
    writing only the frontmatter, the header block and `## Open questions`; the

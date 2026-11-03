@@ -2,8 +2,8 @@ import { describe, expect, it } from 'vitest'
 import type { Session } from '@shared/types'
 import { canParent, hasChildren, leaderOf, orphanChildren, resolveParent, withParent } from './sessionGroups'
 
-const s = (id: string, parentId?: string): Session => ({ id, parentId } as Session)
-const parentOf = (list: Session[], id: string) => list.find((x) => x.id === id)?.parentId ?? null
+const s = (id: string, parent?: string, over: Partial<Session> = {}): Session => ({ id, ...(parent && { link: { id: parent, kind: 'group' as const } }), ...over } as Session)
+const parentOf = (list: Session[], id: string) => list.find((x) => x.id === id)?.link?.id ?? null
 
 describe('leaderOf', () => {
   it('is the session itself when it has no parent', () => expect(leaderOf([s('a')], 'a')?.id).toBe('a'))
@@ -51,6 +51,20 @@ describe('orphanChildren', () => {
   it('returns the same array when no child is affected', () => {
     const all = [s('a'), s('b', 'a')]
     expect(orphanChildren(all, ['q'])).toBe(all)
+  })
+})
+
+describe('promoted links', () => {
+  it('removing a parent clears link and promoted of a promoted child', () => {
+    const left = orphanChildren([s('b', 'a', { promoted: true })], ['a'])
+    expect(left[0]).toEqual({ id: 'b' })
+  })
+  it('re-parenting gives a group link, keeping slice out; clearing removes link and promoted', () => {
+    const kid = { id: 'd', link: { id: 'a', kind: 'slice' }, promoted: true } as Session
+    const moved = withParent([s('a'), s('c'), kid], 'd', 'c')
+    expect(moved.ok && moved.data.find((x) => x.id === 'd')?.link).toEqual({ id: 'c', kind: 'group' })
+    const cleared = withParent([s('a'), kid], 'd', null)
+    expect(cleared.ok && cleared.data.find((x) => x.id === 'd')).toEqual({ id: 'd' })
   })
 })
 

@@ -1,6 +1,7 @@
+import fs from 'node:fs'
+import path from 'node:path'
 import { DEFAULT_UI, type Session, type StateFile, type UiState } from '@shared/types'
 import { pruneGrid } from '@shared/grid'
-import { orphanChildren } from '@shared/sessionGroups'
 import { atomicWrite, readVersioned } from './jsonFile'
 
 type V1Session = Omit<Session, 'agentSessionId'> & { opencodeSessionId?: string | null }
@@ -46,15 +47,35 @@ const v8ToV9 = (s: object) => s
 
 // v9 → v10 (sandbox removed, ADR 0045): a sandboxed session cannot resume without its sandbox, so
 // it is dropped (its children become top level); the rest lose the `sandboxed` field.
-const v9ToV10 = (s: { sessions?: (Session & { sandboxed?: boolean })[] }) => {
+const v9ToV10 = (s: { sessions?: (Session & { sandboxed?: boolean; parentId?: string | null })[] }) => {
   const all = s.sessions ?? []
   const gone = all.filter((x) => x.sandboxed).map((x) => x.id)
   const kept = all.filter((x) => !x.sandboxed).map(({ sandboxed: _sandboxed, ...x }) => x)
-  return { ...s, sessions: orphanChildren(kept, gone) }
+  // inline on the old `parentId` field: this step predates the typed `link`
+  const orphaned = kept.map((x) => (x.parentId && gone.includes(x.parentId) ? { ...x, parentId: null } : x))
+  return { ...s, sessions: orphaned }
+}
+
+// v10 → v11 (typed session link): `parentId: X` becomes `link: { id: X, kind: 'group' }`; no parent means no link.
+const v10ToV11 = (s: { sessions?: (Session & { parentId?: string | null })[] }) => ({
+  ...s,
+  sessions: (s.sessions ?? []).map(({ parentId, ...x }) => (parentId ? { ...x, link: { id: parentId, kind: 'group' as const } } : x)),
+})
+
+// Before a v10 file is migrated to v11, keep a copy of it once as state.v10.bak.
+function backUpV10(file: string): void {
+  const bak = path.join(path.dirname(file), 'state.v10.bak')
+  try {
+    if (fs.existsSync(bak)) return
+    if (JSON.parse(fs.readFileSync(file, 'utf8'))?.schemaVersion === 10) fs.copyFileSync(file, bak)
+  } catch {
+    // missing or unreadable: readVersioned reports it
+  }
 }
 
 export function loadState(file: string, onBad?: (msg: string) => void): StateFile {
-  const s = readVersioned<StateFile>(file, 10, { schemaVersion: 10, sessions: [], ui: DEFAULT_UI }, onBad, { 1: v1ToV2, 2: v2ToV3, 3: v3ToV4, 4: v4ToV5, 5: v5ToV6, 6: v6ToV7, 7: v7ToV8, 8: v8ToV9, 9: v9ToV10 })
+  backUpV10(file)
+  const s = readVersioned<StateFile>(file, 11, { schemaVersion: 11, sessions: [], ui: DEFAULT_UI }, onBad, { 1: v1ToV2, 2: v2ToV3, 3: v3ToV4, 4: v4ToV5, 5: v5ToV6, 6: v6ToV7, 7: v7ToV8, 8: v8ToV9, 9: v9ToV10, 10: v10ToV11 })
   const sessions = (s.sessions ?? []).map((x) => ({ ...x, seenAt: x.seenAt ?? null })) // seenAt: added after v1 shipped
   // v1 files from before ADR 0018 carry `view`; files from before the sidebar lost its Projects tab carry `sidebarTab`
   const { view: _view, sidebarTab: _sidebarTab, ...saved } = (s.ui ?? {}) as Partial<UiState> & { view?: unknown; sidebarTab?: unknown }
@@ -67,8 +88,8 @@ export function loadState(file: string, onBad?: (msg: string) => void): StateFil
   if (v?.kind === 'diff' && !known(v.sessionId)) ui.viewer = null
   else if (v && v.kind !== 'diff' && v.fromDiff && !known(v.fromDiff)) ui.viewer = { ...v, fromDiff: null }
   if (ui.diffPrefs) ui.diffPrefs = Object.fromEntries(Object.entries(ui.diffPrefs).filter(([id]) => known(id)))
-  // the full page is a place the human went, not one to come back to on launch
-  if (ui.artifacts) ui.artifacts = Object.fromEntries(Object.entries(ui.artifacts).map(([id, a]) => [id, { ...a, open: null }]))
+  // the artifact page is a place the human went, not one to come back to on launch
+  ui.focusedArtifact = null
   ui.grid = pruneGrid(ui.grid ?? DEFAULT_UI.grid, known)
   return { ...s, sessions, ui }
 }

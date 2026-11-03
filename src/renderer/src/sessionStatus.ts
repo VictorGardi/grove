@@ -9,7 +9,6 @@ export function shownStatus(s: Session): ShownStatus {
   if (s.startup?.phase === 'failed') return 'failed' // the start failed: an error card, even over a resumable gone session
   if (s.lastStatus === 'gone') return 'gone'
   if (s.startup?.phase === 'starting') return 'starting' // no status yet: the card shows a spinner
-  if (s.held && s.status === 'waiting') return 'working' // a prompt held for the grace window: not asking for the human yet
   return s.status ?? 'running'
 }
 
@@ -38,16 +37,6 @@ export function countsAsWaiting(s: Session): boolean {
 export function queueStatus(s: Session): ShownStatus {
   const shown = shownStatus(s)
   return shown === 'waiting' && !asksHuman(s) ? 'idle' : shown
-}
-
-// What a collapsed group shows for its children: the one that most needs the human, so a waiting
-// child is never hidden behind its parent. null for no children.
-const URGENCY: ShownStatus[] = ['failed', 'waiting', 'working', 'idle', 'starting', 'running', 'gone']
-export function mostUrgent(sessions: Session[]): Session | null {
-  const rank = (s: Session) => URGENCY.indexOf(queueStatus(s))
-  let best: Session | null = null
-  for (const s of sessions) if (!best || rank(s) < rank(best)) best = s
-  return best
 }
 
 // When the renderer first saw each session waiting (ms). Same object when unchanged.

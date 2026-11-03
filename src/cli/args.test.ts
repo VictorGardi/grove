@@ -35,6 +35,14 @@ describe('parseCommand', () => {
     expect(parseCommand(['new', 'claude', '--parent', 'x', '--child'])).toBeInstanceOf(UsageError)
   })
 
+  it('parses --relation slice only with --child or --parent', () => {
+    expect(parseCommand(['new', 'claude', '--child', '--relation', 'slice'])).toMatchObject({ child: true, relation: 'slice' })
+    expect(parseCommand(['new', 'claude', '--parent', 'x', '--relation', 'slice'])).toMatchObject({ parent: 'x', relation: 'slice' })
+    expect(parseCommand(['new', 'claude', '--child'])).toMatchObject({ relation: undefined })
+    expect(parseCommand(['new', 'claude', '--relation', 'slice'])).toBeInstanceOf(UsageError)
+    expect(parseCommand(['new', 'claude', '--child', '--relation', 'group'])).toBeInstanceOf(UsageError)
+  })
+
   it('parses the worktree pair, and takes no branch without one', () => {
     expect(parseCommand(['new', 'claude', '--worktree', '--branch', 'fix-auth'])).toMatchObject({
       cmd: 'new', kind: 'claude', worktree: true, branch: 'fix-auth',
@@ -67,9 +75,6 @@ describe('parseCommand', () => {
 
   it('parses status with an optional ref and the seven values', () => {
     expect(parseCommand(['status', 'in-review'])).toEqual({ cmd: 'status', ref: undefined, value: 'in-review' })
-    expect(parseCommand(['escalate', 'h', 'needs a key'])).toEqual({ cmd: 'escalate', ref: 'h', reason: 'needs a key' })
-    expect(parseCommand(['escalate', 'h', '  '])).toBeInstanceOf(UsageError)
-    expect(parseCommand(['escalate', 'h'])).toBeInstanceOf(UsageError)
     expect(parseCommand(['progress', 'h', '2/5'])).toEqual({ cmd: 'progress', ref: 'h', done: 2, total: 5 })
     for (const bad of ['5/4', '1/0', 'x', '1/2/3', '-1/2']) expect(parseCommand(['progress', 'h', bad])).toBeInstanceOf(UsageError)
     expect(parseCommand(['status', 'helper', 'done'])).toEqual({ cmd: 'status', ref: 'helper', value: 'done' })

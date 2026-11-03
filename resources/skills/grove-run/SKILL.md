@@ -74,9 +74,24 @@ Parent mode, all required (`--force` is not available here):
    `## Slice N` with `Status: done` and a non-empty `Commit:` line, confirmed
    by a git log subject `<slug>: slice N — <outcome>` on the branch. Next = the
    first slice not done.
-2. **Start the slice.** Label = `<name>-slice-<n>-a<k>`, where `<name>` is `<slug>` without its leading `yyyy-mm-dd-` date, and k = 1 plus the
-   number of sessions in `grove ls --all --json` whose label starts with
-   `<name>-slice-<n>-a`. Child prompt: "Load the grove-run skill and follow
+2. **Start the slice.** Label = `<n> <short title>`: the slice number, a space,
+   then two to four lowercase words from the slice heading (`### Slice N. ...` in
+   `03-plan.md`), e.g. `3 boards and project page`; never the feature name (the
+   child already carries the feature link and the parent id). A second child for
+   the same slice (retry, or the `Decision:` child after a halt) gets ` #<k>`
+   appended, k = the number of existing children for that slice + 1 (`6 mockup
+   round #2`); the first has no suffix. **Finding a slice's children:** the
+   entries of `grove ls --all --json` with `feature` equal to `<slug>`, `parent`
+   set, and a `label` that starts with `<n> ` (the number then a space, so slice 1
+   never matches slice 10); the newest wins (the highest `#k`, no suffix = 1; on a
+   tie the last in the list). **Addressing a child:** `grove status`, `grove send`,
+   `grove wait` and `grove kill` match a session id (or id prefix) or an exact label,
+   never a label prefix, and labels contain spaces and can be a prefix of one another
+   (`6 mockup round` and `6 mockup round #2`), so always address a child by its
+   session **id** (`<child id>`): the id `grove new` prints, or, after the turn
+   ended and the parent no longer has it (on "continue" or `--continue`), the `id`
+   of the entry found by the lookup above. Where this skill writes `<label>` in a
+   message it is only for the human to read. Child prompt: "Load the grove-run skill and follow
    it exactly. Arguments: <slug> --slice <N> --profile <P>" plus the lines `Label: <label>`,
    `Parent: <id>`,
    `Roles: cto=<m|inherit> researcher=<m|inherit> planner=<m|inherit> reviewer=<m|inherit> implementer=<m|inherit>`
@@ -84,12 +99,14 @@ Parent mode, all required (`--force` is not available here):
    (resolved, one token per role, in that order; a subagent role without
    `agent` gets the planner's agent, the planner without `agent` the parent's
    own agent), where id is the current value of `$GROVE_SESSION_ID` (expanded, no angle brackets or variable name in the prompt). Start the child without `--wait`.
-   - No worktree yet (slice 1): `grove new <planner agent> --child --worktree --branch <branch> --base <plan-commit> --label <label> --link <slug> [--model <planner model>] --prompt "<child prompt>"`
-     (`--link <slug>` links the child to the feature, so the app offers it as a
-     send target for comments on the feature's artifacts)
+   - No worktree yet (slice 1): `grove new <planner agent> --child --relation slice --worktree --branch <branch> --base <plan-commit> --label "<label>" --link <slug> [--model <planner model>] --prompt "<child prompt>"`
+     (`--relation slice` marks the session as an auto-run slice; `--link <slug>` links the child to the feature, so the app offers it as a
+     send target for comments on the feature's artifacts. If `grove new` fails with an
+     unknown or invalid `--relation` option (an older app), run it again without that
+     flag. `grove new` prints the child's id: keep it as `<child id>`)
    - Whenever the worktree exists (later slices, and every slice on resume,
      slice 1 included): the same without `--worktree`, `--branch`, `--base`,
-     and with `--cwd <worktree>`. In both forms `--model <planner model>` is
+     and with `--cwd <worktree>` (still with `--child --relation slice`). In both forms `--model <planner model>` is
      added only when the `planner` role has a model; omit it when it inherits.
    - After the first child creates the worktree, the parent finds its path as
      the `git worktree list --porcelain` entry for `<branch>` and uses it for
@@ -100,20 +117,15 @@ Parent mode, all required (`--force` is not available here):
    `SLICE n: done — fixed: <line>`). `halted`: stop as in step 4, except a
    `halted` that answers a fix request (see step 5, fix with a comment).
    - **A child's prompt.** After starting a child, the parent does not end its turn at once:
-     it runs `grove wait <label> --timeout 600` (one call, never in a background loop).
+     it runs `grove wait <child id> --timeout 600` (one call, never in a background loop).
      Exit 0 or 124: end the turn as above (the report arrives as a message; on 124 with the
      child still working, wait once more; a second 124: end the turn). Exit 5: the child ended; go to the git check in
-     step 4. Exit 4: the child is waiting on a permission or question; Grove holds it for a
-     grace window (60 s by default) so the parent can deal with it. Follow "Answering a
-     child's prompt" in the grove skill (`grove skill` prints it; it is the one source of the routine and never-answer lists): `grove read <label> --lines 40`,
-     decide against the routine list there, re-read the screen right before sending, answer
-     with `grove send <label> "<answer>"` only for a routine prompt you are sure of, and
-     otherwise `grove escalate <label> "<one-line reason>"`. After an answer, wait again; after
-     an escalation, end the turn and say which child needs the human (the human answers in
-     that child; then they say "continue" here). Unsure means escalate. Never `send` to a child
-     whose prompt you have not just read.
-   - Silence: a child that never reports (crash, or a permission prompt that was escalated, shown
-     as waiting in the sidebar) is seen by the human via the label. When the
+     step 4. A child waiting on a permission or question is still running for `wait`
+     (no special exit code); the human sees that prompt in the sidebar and answers it in the
+     child. The parent never answers a child's prompt and never `send`s into a child that is
+     waiting on one.
+   - Silence: a child that never reports (crash, or a permission prompt or question, shown
+     as waiting in the sidebar for the human to answer) is seen by the human via the label. When the
      human says "continue" here and the child is waiting, say which child (name the label)
      to answer the prompt in, then say "continue" here or run
      `grove-run <slug> --continue`. When the
@@ -121,7 +133,7 @@ Parent mode, all required (`--force` is not available here):
      `04-run.md` and `grove ls` first: slice finished but report lost, go to
      step 4; child still waiting, tell the human to answer in that child and
      start nothing; child still working: say so, start nothing, end the turn;
-     child gone with no matching commit: stop as in the git check. Never `send` into a child waiting on a prompt, except an answer to a routine prompt you have just re-read (see "A child's prompt"); never start a
+     child gone with no matching commit: stop as in the git check. Never `send` into a child waiting on a prompt; never start a
      later slice without a report or a git-confirmed finish.
 4. **Check in git.** `git -C <worktree> log -1 --format=%s` must equal
    `<slug>: slice N — <outcome>` and `git -C <worktree> rev-list --count
@@ -139,7 +151,7 @@ Parent mode, all required (`--force` is not available here):
      human decides (`grove-run <slug> --continue`). No retries.
 5. **Gate.** The human is asked after slice 1 (always), after every slice
    when `--review-each` is given, and after the last slice (final review).
-   Every other slice has no question: after the git check, `grove status <label> done`
+   Every other slice has no question: after the git check, `grove status <child id> done`
    on the finished child (it stays open), start the next child (step 2) and end the turn (step 3). After each git-confirmed slice, also run `grove progress <own-id> <done>/<total>`.
    Slices 2..N then run with no human prompt. At a gate:
    - Show a summary in the format of the `auto` review gates section of
@@ -168,12 +180,12 @@ Parent mode, all required (`--force` is not available here):
      *stop*). A one-slice plan has slice 1 as the last slice: its gate is the
      final one (finish / fix / stop) and still carries the slice-1
      permission-prefix note above.
-   - **continue / finish**: `grove status <label> done` on the finished child
+   - **continue / finish**: `grove status <child id> done` on the finished child
      (only now; never kill it). Continue: go to step 2 for the next slice and end the turn (step
      3). Finish: go to step 6.
    - **fix with a comment**: the comment is the question tool's other/free
      text; if empty, ask once more for it through the question tool. Then
-     `grove send <label> "Fix slice N: <comment>"` to the live child (no
+     `grove send <child id> "Fix slice N: <comment>"` to the live child (no
      `--wait`) and end the turn. The child amends its slice commit and
      reports `SLICE N: done — fixed: <line>`. On that report, check git again
      (step 4: HEAD subject still `<slug>: slice N — <outcome>`, and
@@ -187,7 +199,7 @@ Parent mode, all required (`--force` is not available here):
      again (continue / fix with a comment / stop; finish / fix / stop on the
      last slice). A `halted` that is not an answer to a fix keeps the normal
      handling. The silence rule of step 3 applies.
-   - **stop**: `grove status <label> done`, print where things are (worktree,
+   - **stop**: `grove status <child id> done`, print where things are (worktree,
      branch, `04-run.md` in the worktree) and end.
 6. **After the last slice.** Once its gate is answered *finish* and the child
    is marked done, print the hand-off as the final message:
@@ -223,6 +235,6 @@ the last slice's gate answered finish, or the human abandoning the run.
 - The parent asks only the commit-first question, the gate questions (slice 1, `--review-each` slices, final), the `--continue` run-choice question, the `--continue` option question and the `--continue` retry / leave-it question; every other slice runs with no prompt.
 - The parent never edits files in the worktree.
 - Never start a later slice on a broken base.
-- Never mark a child done or kill it before its gate is answered; a finished child is marked done with `grove status <label> done`, never killed (`grove kill` is only for replacing a live idle child on `--continue` retry); never `send` into a child waiting on a prompt, except an answer to a routine prompt you have just re-read (see step 3, "A child's prompt").
+- Never mark a child done or kill it before its gate is answered; a finished child is marked done with `grove status <child id> done`, never killed (`grove kill` is only for replacing a live idle child on `--continue` retry); never `send` into a child waiting on a prompt.
 - Name roles only; never model names.
 - Only `grove-approve`, invoked by the human, approves. This skill approves nothing.

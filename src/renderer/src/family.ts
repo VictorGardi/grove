@@ -1,4 +1,5 @@
 import type { Session } from '@shared/types'
+import { asksHuman } from '@shared/attention'
 import { queueStatus, shownStatus, type ShownStatus } from './sessionStatus'
 
 export interface Family {
@@ -15,12 +16,6 @@ export const isEnded = (s: Session) => {
 
 // "1 child", "3 children": the parent's count chip.
 export const childrenCount = (n: number) => (n === 1 ? '1 child' : `${n} children`)
-
-// "3 children, 2 done": the count chip with how many are marked done, when any are.
-export function childrenSummary(kids: Session[]): string {
-  const done = kids.filter((k) => k.workflowStatus === 'done').length
-  return done > 0 ? `${childrenCount(kids.length)}, ${done} done` : childrenCount(kids.length)
-}
 
 // Running children, most worth a look first. waiting is a wait that asks the human (a finished child ranks as idle);
 // running is a live pane with no agent status (a terminal); starting has nothing to show yet.
@@ -48,8 +43,8 @@ function byRunning(a: Session, b: Session): number {
 // by rank; then ended ones, newest first; never store order), and the child a jump goes to.
 export function familyOf(sessions: Session[], id: string): Family {
   const self = sessions.find((s) => s.id === id)
-  const parent = self?.parentId ? sessions.find((s) => s.id === self.parentId) ?? null : null
-  const mine = sessions.filter((s) => s.parentId === id)
+  const parent = self?.link ? sessions.find((s) => s.id === self.link!.id) ?? null : null
+  const mine = sessions.filter((s) => s.link?.id === id)
   const running = mine.filter((s) => !isEnded(s)).sort(byRunning)
   const done = mine.filter(isEnded).sort((a, b) => later(a.startedAt, b.startedAt))
   return { parent, children: [...running, ...done], active: running[0] ?? null }
@@ -73,4 +68,29 @@ export function runProgress(parent: Session, kids: Session[]): RunProgress | nul
   const label = kidsDone > 0 ? `${base}, ${kidsDone} ${kidsDone === 1 ? 'child' : 'children'} done` : base
   const pct = p.total > 0 ? Math.min(100, Math.max(0, Math.round((100 * p.done) / p.total))) : 0
   return { done: p.done, total: p.total, kidsDone, label, pct }
+}
+
+export interface BarCounts { done: number; failed: number; run: number; wait: number; queued: number; needsYou: number; text: string; label: string }
+
+// A parent's proportional bar: every child counted once (done, then waiting on the human, then failed, else running),
+// plus the slices of the plan not started yet. Never one mark per child.
+export function barCounts(parent: Session, kids: Session[]): BarCounts {
+  let done = 0, failed = 0, run = 0, wait = 0
+  for (const k of kids) {
+    if (k.workflowStatus === 'done') done++
+    else if (asksHuman(k)) wait++
+    else if (shownStatus(k) === 'failed') failed++
+    else run++
+  }
+  const p = parent.progress
+  const queued = p ? Math.max(0, p.total - kids.length) : 0
+  const text = p ? `${p.done}/${p.total}` : `${done} of ${kids.length}`
+  const head = p ? `${p.done} of ${p.total} slices done` : `${done} of ${kids.length} children done`
+  const parts = [
+    run && `${run} running`,
+    failed && `${failed} failed`,
+    wait && `${wait} needs you`,
+    queued && `${queued} not started`,
+  ].filter(Boolean)
+  return { done, failed, run, wait, queued, needsYou: wait, text, label: [head, ...parts].join(', ') }
 }

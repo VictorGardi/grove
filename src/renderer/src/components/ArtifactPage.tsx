@@ -2,7 +2,7 @@ import { useEffect, useMemo, useRef, useState } from 'react'
 import { artifactUrl } from '@shared/artifactUrl'
 import type { ArtifactRef, DocTarget, FeatureKey } from '@shared/types'
 import { isCommentable } from '../artifactComments'
-import { commentCard, stepKey, type ArtifactCard } from '../artifactsBoard'
+import { commentCard, stepKey, type ArtifactCard } from '../artifactData'
 import { useArtifactComments } from './ArtifactComments'
 import { FeatureReviewMenu } from './ReviewTray'
 import { Button } from './ui/Button'
@@ -13,17 +13,17 @@ interface Props {
   feature: FeatureKey // the open card's feature: its comments are kept here, no session needed (design D3)
   cards: ArtifactCard[] // that feature's cards, to find where a comment is
   card: ArtifactCard
-  prev: ArtifactRef | null // the artifacts either side in board order, filter applied; null at an end
+  prev: ArtifactRef | null // the artifacts either side in the feature's own order; null at an end
   next: ArtifactRef | null
-  index: number // of card among the board's cards, from 0
+  index: number // of card among the feature's cards, from 0
   total: number
   onBack(): void
   onStep(ref: ArtifactRef): void
 }
 
-// One artifact full page, in place of the board. Same opaque sandboxed frame as the viewer (ADR 0007);
+// One artifact full page. Same opaque sandboxed frame as the viewer (ADR 0007);
 // keyed on the file's mtime so it reloads when an agent rewrites it. Previous and next, or the arrow
-// keys, walk the board's cards; keys pressed inside the frame stay there. A card with an html face can
+// keys, walk the feature's cards; keys pressed inside the frame stay there. A card with an html face can
 // show its markdown instead, which is the one to comment on; comments go on the feature.
 export function ArtifactPage({ projectId, feature, cards, card, prev, next, index, total, onBack, onStep }: Props) {
   // the card showing its markdown, by its path: stepping to another card shows that one's face again

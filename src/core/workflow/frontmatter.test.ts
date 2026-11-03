@@ -20,7 +20,7 @@ describe('readFrontmatter', () => {
   })
 
   it('accepts ... as the closing line', () => {
-    expect(readFrontmatter('---\nkind: epic\n...\nrest').data).toEqual({ kind: 'epic' })
+    expect(readFrontmatter('---\nkind: feature\n...\nrest').data).toEqual({ kind: 'feature' })
   })
 
   it('treats an empty block as an empty mapping', () => {

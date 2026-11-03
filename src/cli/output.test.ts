@@ -4,7 +4,7 @@ import { exitCode, formatError, formatLs, formatRead, turnExit } from './output'
 
 const s = (over: Partial<CliSession>): CliSession => ({
   id: 'aaaaaaaa-1111', kind: 'opencode', label: 'one', status: 'working', waitingFor: null,
-  lastStatus: 'running', project: 'proj', cwd: '/p', feature: null, workflowStatus: 'in-progress', parent: null, ...over,
+  lastStatus: 'running', project: 'proj', cwd: '/p', feature: null, workflowStatus: 'in-progress', parent: null, relation: null, ...over,
 })
 
 describe('formatLs', () => {
@@ -46,10 +46,9 @@ describe('formatRead', () => {
 })
 
 describe('exit codes for waits', () => {
-  it('maps a timeout to 124 and a turn to 0, 4 or 5', () => {
+  it('maps a timeout to 124 and a turn to 0 or 5', () => {
     expect(exitCode({ id: 'r', ok: false, error: { code: 'timeout', message: '' } })).toBe(124)
     expect(turnExit({ status: 'idle', waitingFor: null })).toBe(0)
-    expect(turnExit({ status: 'waiting', waitingFor: 'permission' })).toBe(4)
     expect(turnExit({ status: 'gone', waitingFor: null })).toBe(5)
   })
 })

@@ -79,7 +79,7 @@ Never bypass silently.
   finish, fix, or stop.
 - A fix is sent to the still-live child, which amends the slice commit, so
   one commit per slice stays true.
-- The parent marks a child done (`grove status <label> done`, never `grove kill`) only after its gate is answered.
+- The parent marks a child done (`grove status <child id> done`, never `grove kill`) only after its gate is answered.
 
 ### `auto` halts
 
@@ -95,20 +95,6 @@ Never bypass silently.
   commit.
 - A permission prompt in a child is not a halt: the child stays waiting, no
   report arrives, and no later slice starts.
-
-## Epic gate (always refuses, no `--force`)
-
-- `grove-implement` refuses outright on `kind: epic` (there is nothing to
-  force — an epic has no slices to implement). Report which child is next:
-  the lowest-`order` child that is not yet `implementation`, or "all
-  children started" if none.
-
-## Rolling-wave warning (soft, by default)
-
-- Starting a child (`parent` set) with `grove-start` or `grove-questions`
-  warns, but allows continuing, if an earlier child in the epic's `order`
-  has not yet reached `phase: implementation`. This is always a soft
-  warning — there is no `--force` needed and no config flag to make it hard.
 
 ## Soft gates (warn, allow continue)
 
@@ -136,27 +122,7 @@ immediately before writing — never trust an earlier step's self-report.
 If an input artifact's current `version` is higher than the version recorded
 in `based_on` by the artifact being read, the consuming skill must stop and
 tell the human, offering to re-read and revise rather than silently
-proceeding on stale input. This applies identically to a `parent:*` entry in
-a child's `based_on` (see `shared/contract.md`).
-
-### Targeted stale marking (epic → children)
-
-Approving a **changed** epic design (i.e. re-approving after a revision, not
-the first approval) does not mark every child stale wholesale. Instead:
-
-- A child goes `stale` only if its own `03-design.md` or `04-structure.md`
-  lists, in its scope, an `E-D` id whose decision changed in this revision.
-- If the revision changed the epic's `## Problem`, `## Non-goals`, or
-  `## Appetite` (in `feature.md` or `03-design.md`'s appetite check) rather
-  than a specific `E-D` decision, every child is marked stale — those
-  changes affect the epic's shape as a whole, not one decision.
-- A child not yet past `grove-questions` (no `03-design.md` of its own yet)
-  cannot be marked stale; it simply inherits the new epic state next time it
-  reads it.
-
-This is the only place staleness is targeted rather than wholesale — every
-other propagation rule in this file and in `shared/contract.md` stays
-all-or-nothing per phase.
+proceeding on stale input.
 
 ## Approval
 

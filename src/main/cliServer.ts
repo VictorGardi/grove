@@ -29,8 +29,8 @@ function toCli(core: Core, s: Session): CliSession {
     cwd: s.cwd ?? project?.path ?? '',
     feature: s.feature,
     workflowStatus: s.workflowStatus,
-    parent: s.parentId ?? null,
-    ...(s.zone && { zone: s.zone }),
+    parent: s.link?.id ?? null,
+    relation: s.link?.kind ?? null,
   }
 }
 
@@ -82,6 +82,9 @@ async function dispatch(core: Core, raise: () => void, line: string): Promise<Cl
         if (!found.ok) return failFrom(id, found.error === 'not-found' ? 'no-parent' : found.error)
         parent = found.data.id
       }
+      if (params.relation !== undefined && params.relation !== 'slice') return fail(id, 'bad-params', 'relation must be slice')
+      if (params.relation !== undefined && wantedParent === undefined) return fail(id, 'bad-params', '--relation needs --child or --parent')
+      const relation = params.relation === 'slice' ? 'slice' as const : undefined
       const model = optString(params.model)
       if (model !== undefined && kind === 'terminal') return fail(id, 'bad-params', '--model only works with claude, opencode and copilot')
       const branch = optString(params.branch)
@@ -102,7 +105,7 @@ async function dispatch(core: Core, raise: () => void, line: string): Promise<Cl
       }
       const res = await core.commands.sessionCreate({
         kind: kind as Session['kind'], cwd: dir, prompt: optString(params.prompt), label: optString(params.label),
-        feature: optString(params.feature), parent, model, cols: COLS, rows: ROWS,
+        feature: optString(params.feature), parent, relation, model, cols: COLS, rows: ROWS,
       })
       if (!res.ok) return failFrom(id, res.error)
       const created = toCli(core, res.data)
@@ -115,12 +118,7 @@ async function dispatch(core: Core, raise: () => void, line: string): Promise<Cl
       if (typeof ref !== 'string' || typeof text !== 'string' || !ref) return fail(id, 'bad-params', 'ref and text are required')
       const found = resolveSessionRef(core.getSlices().sessions, ref)
       if (!found.ok) return failFrom(id, found.error)
-      let from: string | undefined
-      if (typeof params.from === 'string' && params.from) {
-        const caller = resolveSessionRef(core.getSlices().sessions, params.from)
-        if (caller.ok) from = caller.data.id // an unknown caller is just not a parent
-      }
-      const res = await core.commands.sendToSession({ id: found.data.id, text, submit: params.submit !== false, from })
+      const res = await core.commands.sendToSession({ id: found.data.id, text, submit: params.submit !== false })
       if (!res.ok) return failFrom(id, res.error)
       if (params.wait !== true) return { id, ok: true, data: res.data }
       const turn = await waitAfter(core, id, params, found.data.id)
@@ -156,14 +154,6 @@ async function dispatch(core: Core, raise: () => void, line: string): Promise<Cl
       if (!found.ok) return failFrom(id, found.error)
       // the card picker's command: a plain field write, no cascade
       const res = await core.commands.sessionWorkflowStatus({ id: found.data.id, status: status as WorkflowStatus })
-      return res.ok ? { id, ok: true, data: { id: found.data.id } } : failFrom(id, res.error)
-    }
-    case 'sessions.escalate': {
-      const { ref, reason } = params
-      if (typeof ref !== 'string' || !ref || typeof reason !== 'string' || !reason.trim()) return fail(id, 'bad-params', 'ref and a reason are required')
-      const found = resolveSessionRef(core.getSlices().sessions, ref)
-      if (!found.ok) return failFrom(id, found.error)
-      const res = await core.commands.sessionEscalate({ id: found.data.id, reason })
       return res.ok ? { id, ok: true, data: { id: found.data.id } } : failFrom(id, res.error)
     }
     case 'sessions.progress': {

@@ -13,7 +13,7 @@ const session = (id: string, over: Partial<Session> = {}): Session =>
   ({ id, projectId: 'p', kind: 'claude', label: id, lastStatus: 'running', startedAt: '2026-10-05T10:00:00.000Z', ...over } as Session)
 
 const parent = session('parent')
-const child = session('fix-the-login-flow', { parentId: 'parent', status: 'working' })
+const child = session('fix-the-login-flow', { link: { id: 'parent', kind: 'group' }, status: 'working' })
 
 type Family = { parent: Session | null; children: Session[]; active: Session | null; onJump: (id: string) => void }
 const render = (family?: Family, self: Session = parent) =>
@@ -56,7 +56,7 @@ describe('SessionMeta parent chip', () => {
 })
 
 describe('SessionMeta children chip', () => {
-  const kid = (id: string, over: Partial<Session> = {}) => session(id, { parentId: 'parent', ...over })
+  const kid = (id: string, over: Partial<Session> = {}) => session(id, { link: { id: 'parent', kind: 'group' }, ...over })
 
   it('counts one child and three children', () => {
     expect(render({ parent: null, children: [child], active: child, onJump: () => {} })).toContain('>1 child</button>')
@@ -88,8 +88,8 @@ describe('SessionMeta in a grid pane', () => {
   // a pane passes context and actions too; the chips sit in the one row between the status and them
   it('keeps every family chip in the single row, after the status and before the actions', () => {
     const grandparent = session('grandparent')
-    const middle = session('middle', { parentId: 'grandparent', status: 'working' })
-    const kid = session('kid', { parentId: 'middle', status: 'working' })
+    const middle = session('middle', { link: { id: 'grandparent', kind: 'group' }, status: 'working' })
+    const kid = session('kid', { link: { id: 'middle', kind: 'group' }, status: 'working' })
     const html = renderToStaticMarkup(createElement(SessionMeta, {
       lead: 'p / middle',
       session: middle,

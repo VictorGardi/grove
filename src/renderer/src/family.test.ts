@@ -1,22 +1,21 @@
 import { describe, expect, it } from 'vitest'
 import type { Session } from '@shared/types'
-import { childrenCount, childrenSummary, familyJumpTarget, familyOf, runProgress } from './family'
+import { barCounts, childrenCount, familyJumpTarget, familyOf, runProgress } from './family'
 
 const session = (id: string, over: Partial<Session> = {}): Session =>
   ({ id, projectId: 'p', kind: 'claude', label: id, lastStatus: 'running', startedAt: '2026-10-05T10:00:00.000Z', ...over } as Session)
 
 const parent = session('parent')
-const child = (id: string, over: Partial<Session> = {}) => session(id, { parentId: 'parent', ...over })
+const child = (id: string, over: Partial<Session> = {}) => session(id, { link: { id: 'parent', kind: 'group' }, ...over })
 const ids = (xs: Session[]) => xs.map((x) => x.id)
 
-describe('familyOf finished and held children', () => {
-  it('ranks a finished or held child as idle or working, below a real wait', () => {
+describe('familyOf finished children', () => {
+  it('ranks a finished child as idle, below a real wait', () => {
     const f = familyOf([parent,
       child('finished', { status: 'waiting', waitingFor: 'done' }),
-      child('held', { status: 'waiting', waitingFor: 'permission', held: true }),
       child('idle', { status: 'idle' }),
       child('ask', { status: 'waiting', waitingFor: 'permission' })], 'parent')
-    expect(ids(f.children)).toEqual(['ask', 'held', 'finished', 'idle'])
+    expect(ids(f.children)).toEqual(['ask', 'finished', 'idle'])
   })
 })
 
@@ -162,15 +161,6 @@ describe('familyJumpTarget', () => {
   })
 })
 
-describe('childrenSummary', () => {
-  const kid = (workflowStatus: Session['workflowStatus']) => ({ workflowStatus }) as Session
-  it('adds the done count only when some are done', () => {
-    expect(childrenSummary([kid('in-progress'), kid('in-progress')])).toBe('2 children')
-    expect(childrenSummary([kid('done'), kid('done'), kid('in-progress')])).toBe('3 children, 2 done')
-    expect(childrenSummary([kid('done')])).toBe('1 child, 1 done')
-  })
-})
-
 describe('runProgress', () => {
   const withP = (done: number, total: number) => session('parent', { progress: { done, total } })
   it('is null without progress', () => {
@@ -188,3 +178,32 @@ describe('runProgress', () => {
     expect(runProgress(withP(0, 0), [])?.pct).toBe(0)
   })
 })
+
+describe('barCounts', () => {
+  const withP = (done: number, total: number) => session('parent', { progress: { done, total } })
+  const many = (n: number, over: Partial<Session>, p = 'k') => Array.from({ length: n }, (_, i) => child(`${p}${i}`, over))
+  it('counts a plan: 11 done, 1 running, 2 not started', () => {
+    const kids = [...many(11, { workflowStatus: 'done' }, 'd'), child('r')]
+    expect(barCounts(withP(11, 14), kids)).toMatchObject({ done: 11, run: 1, failed: 0, wait: 0, queued: 2, needsYou: 0, text: '11/14' })
+    expect(barCounts(withP(11, 14), kids).label).toBe('11 of 14 slices done, 1 running, 2 not started')
+  })
+  it('counts no plan: 24 children', () => {
+    const kids = [...many(16, { workflowStatus: 'done' }, 'd'), ...many(7, {}, 'r'), child('f', { startup: { phase: 'failed', reason: 'x' } })]
+    const b = barCounts(parent, kids)
+    expect(b).toMatchObject({ done: 16, run: 7, failed: 1, wait: 0, queued: 0, text: '16 of 24' })
+    expect(b.label).toBe('16 of 24 children done, 7 running, 1 failed')
+  })
+  it('counts a waiting child in wait and needsYou, not run', () => {
+    const b = barCounts(parent, [child('w', { status: 'waiting', waitingFor: 'question' }), child('r')])
+    expect(b).toMatchObject({ wait: 1, needsYou: 1, run: 1 })
+    expect(b.label).toBe('0 of 2 children done, 1 running, 1 needs you')
+  })
+  it('counts a failed child as failed, not running', () => {
+    const b = barCounts(parent, [child('f', { startup: { phase: 'failed', reason: 'x' } })])
+    expect(b).toMatchObject({ failed: 1, run: 0 })
+  })
+  it('never goes below zero queued when kids exceed the plan', () => {
+    expect(barCounts(withP(0, 1), [child('a'), child('b')]).queued).toBe(0)
+  })
+})
+

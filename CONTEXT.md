@@ -21,14 +21,10 @@ specific meaning, so humans and agents stay consistent.
 - **Workflow**: the single `workflow.yaml` that holds all stage, kind, action
   and discovery rules. The app's code knows no workflow's phase names.
 - **Feature**: a folder found by the workflow's `discovery` rule, identified by
-  `projectId + slug`. Its **artifacts** are the files in that folder. The board
-  shows **one card per (repo group, slug)**: the parent checkout's copy is
+  `projectId + slug`. Its **artifacts** are the files in that folder. Palette
+  results show **one entry per (repo group, slug)**: the parent checkout's copy is
   canonical, and a worktree copy at a different stage gets a chip rather than a
-  second card (ADR 0037).
-- **Group feature**: a feature whose kind has `group: true` (grove's epic);
-  its children are found via `parent_field`. Never a board card: reached from
-  a child's **parent tag** or breadcrumb, and its feature page lists its
-  children. The app never names the kind (ADR 0018).
+  second entry (ADR 0037).
 - **Stage**: a feature's current step, derived from artifact frontmatter by
   workflow rules: the first incomplete stage, unless a later artifact exists.
 - **Flow**: a second manifest field (grove's `flow`) whose value, via the
@@ -70,11 +66,18 @@ specific meaning, so humans and agents stay consistent.
 - **Remove**: ends a session if it is running and forgets it, with no confirmation
   (⌘W, the card's ×, or right-click on a shift-click selection). Not resumable.
   `grove kill` only ends it, leaving a gone session to resume.
-- **Session group**: a **parent** session and its **children** (`parentId`). One level
+- **Session group**: a **parent** session and its **children**. A child's own link
+  (`link {id, kind}`) names the parent and has a kind: `group` (an ad-hoc member) or
+  `slice` (an auto-run slice session, set by `grove new --relation slice`). One level
   deep: a parent never has a parent, and a session started by a child joins the child's
   group. Children nest under the parent in the Sessions tab whatever project or worktree
-  they run in. Set at creation by `grove new --parent REF | --child`, or from the card
-  menu; removing the parent promotes its children to top level (ADR 0042).
+  they run in, unless promoted (`promoted`): a promoted child shows as its own sidebar
+  row and keeps its link. Set at creation by `grove new --parent REF | --child`, or from
+  the card menu; removing the parent makes its children top-level sessions (ADR 0042, 0047).
+  An agent's own subagents are never sessions: they are a third kind of "parent" that
+  exists only in status folding and is not stored. A worktree's **parent checkout**
+  (`Project.worktreeOf`) is a separate thing from a session's link, so "parent" no longer
+  covers both.
 - **Link**: a session's association with one feature. Set at start by a next
   action, automatically from the session's latest write into a feature folder,
   or manually; a manual link is **pinned** and stops auto-linking.
@@ -120,16 +123,14 @@ specific meaning, so humans and agents stay consistent.
   project colour and a rule of the same colour; it can be **collapsed** to hide its sessions,
   and then shows their count. Its menu adds a session, opens the project page or removes the project.
 - **Focus**: what the content area shows: exactly one of a session, a feature
-  page or a project page (`focusedSessionId`, `focusedFeature`,
-  `focusedProject`, mutually exclusive). With none, the first project's page
-  (ADR 0018).
-- **Project page**: the content area for one project: a Features | Sessions |
-  Artifacts switch over its board. Going to it always shows the sessions board
-  first (ADR 0020). ⌘B opens the current context's project page, and on it
-  switches between features and sessions (from artifacts, to features). ⌘⇧A
-  opens the context's repo page on its artifacts board, filtered to the
-  session's linked feature or the feature page's own.
-- **Breadcrumb**: the content header's trail (project › parent › feature, or
+  page, a project page or an artifact page (`focusedSessionId`,
+  `focusedFeature`, `focusedProject`, `focusedArtifact`, mutually exclusive).
+  With none, the first project's page (ADR 0018).
+- **Project page**: the content area for one project, kept minimal: its header,
+  a new-session button and a ⌘K hint. Features and artifacts are not listed
+  there; they are found in the command palette (⌘K), which opens a feature page
+  or an artifact page.
+- **Breadcrumb**: the content header's trail (project › feature, or
   project › linked feature › session); every segment but the last is an
   up-link. There is no back history.
 - **Effective stages**: the stages a feature uses: those in both its kind's
@@ -138,20 +139,8 @@ specific meaning, so humans and agents stay consistent.
 - **Unapproved pass**: a stage counted as passed because a later effective
   stage's artifact exists, although its own `complete_when` is not met.
 - **Feature page**: the content area for one feature: stage timeline, card
-  state and flags, its parent link, its children, its artifacts listed, its
+  state and flags, its artifacts listed, its
   linked sessions.
-- **Board**: the project page's body. The **features board** groups the
-  project's non-group features into one column per workflow stage the
-  project's features use (not every stage); a
-  **feature card** shows card state, title, parent tag and linked-session
-  dots, and turns amber with "Input required" while a linked session waits.
-  The **sessions board** groups the project's sessions into Waiting, Working
-  (also plain terminals), Idle and Ended, with time in the current status.
-  The **artifacts board** shows every feature's viewable files as title cards,
-  one labelled cluster per feature in the features board's order; a markdown
-  and its html review are one card. Opening a card shows that artifact **full
-  page** in place of the board, with Back and a project › Artifacts › feature ›
-  artifact breadcrumb; it is never reopened on launch.
 - **Artifact viewer**: the right-hand panel showing one viewer target (a
   project file or a session diff), next to the main area or
   expanded over it; HTML in an opaque sandboxed iframe

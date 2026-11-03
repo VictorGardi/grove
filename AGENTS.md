@@ -22,8 +22,7 @@ Features move through phased, human-gated steps. Each phase is a `grove-*` skill
 ### Gates
 
 - **Hard (block unless `--force <reason>`, recorded in `forced` frontmatter):** structure needs an approved design. Plan needs an approved structure. Implement needs an approved structure and plan.
-- **Epics:** plan and implement always refuse on `kind: epic`.
-- **Soft (warn, continue):** research without approved questions; design without approved research; starting a child while an earlier sibling hasn't reached implementation.
+- **Soft (warn, continue):** research without approved questions; design without approved research.
 - **Content:** an artifact can't be approved with non-empty `## Open questions`, any `TODO`/`TBD`, a structure slice without verification, or a design missing chosen options.
 - **Staleness:** if an input's `version` is newer than the consumer's `based_on`, stop and tell the human.
 - **Approval:** only `grove-approve` sets `status: approved`, and only when the human invokes it directly. Never on a model's own initiative.

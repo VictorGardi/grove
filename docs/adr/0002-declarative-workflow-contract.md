@@ -6,6 +6,8 @@ Date: 2026-10-05 (amended 2026-10-05: `flows` axis; amended 2026-10-05: group co
 
 Accepted
 
+Superseded in part by [0048](./0048-epic-concept-removed.md): the group-feature parts (group completion, Parent/Children on the feature page).
+
 ## Context
 
 All workflow knowledge (stages, kinds, actions, completion rules) must live in

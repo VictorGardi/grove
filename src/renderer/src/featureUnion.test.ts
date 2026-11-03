@@ -9,8 +9,8 @@ const project = (id: string, name: string, worktreeOf?: string): Project => ({ i
 const projects = [project('p', 'grove'), project('wt', 'grove · fix-auth', 'p'), project('q', 'other')]
 
 const feature = (projectId: string, slug: string, over: Partial<Feature> = {}): Feature => ({
-  projectId, slug, path: '/src/' + projectId + '/' + slug, title: slug, kind: 'feature', group: false,
-  parent: null, flow: null, stages: [], currentStage: 'research', cardState: 'ready', progress: null,
+  projectId, slug, path: '/src/' + projectId + '/' + slug, title: slug, kind: 'feature',
+  flow: null, stages: [], currentStage: 'research', cardState: 'ready',
   flags: [], warnings: [], artifacts: [], ...over,
 })
 

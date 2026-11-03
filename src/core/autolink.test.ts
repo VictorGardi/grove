@@ -7,7 +7,7 @@ import { slugFor } from './autolink'
 function project() {
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'grove-link-'))
   const root = path.join(dir, 'docs', 'work')
-  for (const slug of ['a', 'epic']) fs.mkdirSync(path.join(root, slug), { recursive: true })
+  for (const slug of ['a', 'other']) fs.mkdirSync(path.join(root, slug), { recursive: true })
   return { dir, root }
 }
 
@@ -17,7 +17,7 @@ describe('slugFor', () => {
     expect(slugFor(['docs/work/a/x.md'], dir, root)).toBe('a')
     expect(slugFor([path.join(dir, 'docs/work/a/x.md')], dir, root)).toBe('a')
     expect(slugFor(['docs/work/new/01-questions.md'], dir, root)).toBe('new')
-    expect(slugFor(['docs/work/epic/03-design.md'], dir, root)).toBe('epic')
+    expect(slugFor(['docs/work/other/03-design.md'], dir, root)).toBe('other')
   })
 
   it('matches through symlinks (realpath on both sides)', () => {

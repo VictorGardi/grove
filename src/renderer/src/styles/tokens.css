@@ -50,7 +50,7 @@
   --status-idle: #5e5e66;
   --status-gone: #5e5e66;
 
-  /* tags: project and epic colours (src/renderer/src/tags.ts), clear of accent and status hues */
+  /* tags: project colours (src/renderer/src/tags.ts), clear of accent and status hues */
   --tag-1: #60a5fa;
   --tag-2: #f472b6;
   --tag-3: #4ade80;

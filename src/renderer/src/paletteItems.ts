@@ -1,6 +1,7 @@
 import type { MenuAction } from '@shared/ipc'
-import type { Feature, GridState, Project, Session } from '@shared/types'
+import type { ArtifactRef, Feature, GridState, Project, Session } from '@shared/types'
 import { fuzzy } from './fuzzy'
+import { pageClusters } from './artifactData'
 import { unionFeatures } from './featureUnion'
 import { featureStage } from './featureLabels'
 import { repoGroups } from './repoGroups'
@@ -8,7 +9,7 @@ import { countsAsWaiting, shownStatus } from './sessionStatus'
 
 export interface PaletteItem {
   id: string
-  kind: 'session' | 'feature' | 'project' | 'command'
+  kind: 'session' | 'feature' | 'artifact' | 'project' | 'command'
   label: string
   detail: string
   hint?: string // a keyboard shortcut, for commands
@@ -19,6 +20,7 @@ export interface PaletteItem {
 export interface PaletteActions {
   focusSession(id: string): void
   focusFeature(ref: { projectId: string; slug: string }): void
+  focusArtifact(ref: ArtifactRef): void
   openProject(id: string): void
   runAction(a: MenuAction): void
 }
@@ -30,8 +32,6 @@ export const PALETTE_COMMANDS: { id: string; label: string; hint?: string; actio
   { id: 'newTerminal', label: 'New terminal', hint: '⌘J', action: { type: 'newTerminal' } },
   { id: 'closeSession', label: 'Remove session', hint: '⌘W', action: { type: 'closeSession' } },
   { id: 'sessionDiff', label: 'Session diff', hint: '⌥⌘B', action: { type: 'sessionDiff' } },
-  { id: 'projectBoard', label: 'Project board', hint: '⇧⌘B', action: { type: 'projectBoard' } },
-  { id: 'artifactsBoard', label: 'Artifacts', hint: '⇧⌘A', action: { type: 'artifactsBoard' } },
   { id: 'toggleSidebar', label: 'Toggle sidebar', hint: '⌘B', action: { type: 'toggleSidebar' } },
   { id: 'lastSession', label: 'Last session', hint: '⌃Tab', action: { type: 'lastSession' } },
   { id: 'nextWaiting', label: 'Next waiting session', hint: '⌘.', action: { type: 'nextWaiting' } },
@@ -41,12 +41,12 @@ export const PALETTE_COMMANDS: { id: string; label: string; hint?: string; actio
   { id: 'scratchpad', label: 'Scratchpad', hint: '⌘N', action: { type: 'scratchpad' } },
 ]
 
-const KIND_ORDER: Record<PaletteItem['kind'], number> = { session: 0, feature: 1, project: 2, command: 3 }
+const KIND_ORDER: Record<PaletteItem['kind'], number> = { session: 0, feature: 1, artifact: 2, project: 3, command: 4 }
 const DETAIL_PENALTY = 10 // a detail-only match ranks below any label match of similar quality
 
 // Everything the palette can jump to, in the order it lists with an empty query.
 export function paletteItems(
-  data: { projects: Project[]; sessions: Session[]; features: Feature[]; grid?: GridState; gridShown?: boolean },
+  data: { projects: Project[]; sessions: Session[]; features: Feature[]; stages?: { id: string; label: string }[]; grid?: GridState; gridShown?: boolean },
   actions: PaletteActions,
 ): PaletteItem[] {
   const projectName = (id: string) => data.projects.find((p) => p.id === id)?.name ?? id
@@ -73,6 +73,16 @@ export function paletteItems(
     detail: `${projectName(f.projectId)} · ${featureStage(f)}`,
     run: () => actions.focusFeature({ projectId: f.projectId, slug: f.slug }),
   }))
+  // One entry per artifact card of every feature, in each repo's checkout pages' order. A repo is
+  // walked once, from its checkout, whose clusters already take the newest copy of each feature.
+  const artifacts: PaletteItem[] = groups.flatMap((g) => pageClusters(g.project, data.projects, data.stages ?? [], data.features).flatMap((c) =>
+    c.cards.map((card): PaletteItem => ({
+      id: `artifact:${c.feature.projectId}/${c.feature.slug}/${card.name}`,
+      kind: 'artifact',
+      label: card.name,
+      detail: `${projectName(c.feature.projectId)} · ${c.feature.title}`,
+      run: () => actions.focusArtifact({ projectId: c.feature.projectId, slug: c.feature.slug, name: card.name }),
+    }))))
   const projects: PaletteItem[] = groups.map((g) => ({
     id: `project:${g.project.id}`,
     kind: 'project',
@@ -88,7 +98,7 @@ export function paletteItems(
     hint: c.hint,
     run: () => actions.runAction(c.action),
   }))
-  return [...sessions, ...features, ...projects, ...commands]
+  return [...sessions, ...features, ...artifacts, ...projects, ...commands]
 }
 
 // Empty query: kind order, waiting sessions first. Otherwise best score first, ties by kind order, then list order.

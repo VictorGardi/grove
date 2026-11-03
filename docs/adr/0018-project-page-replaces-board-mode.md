@@ -6,6 +6,8 @@ Date: 2026-10-06
 
 Accepted
 
+Superseded in part by [0048](./0048-epic-concept-removed.md): the group-feature parts (group completion, Parent/Children on the feature page).
+
 ## Context
 
 `UiState.view` (`list | board`) is a global mode. With `view: 'board'` the

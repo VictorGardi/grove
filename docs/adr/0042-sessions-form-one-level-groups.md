@@ -6,6 +6,8 @@ Date: 2026-10-12
 
 Accepted
 
+Superseded in part by [0047](./0047-session-link-has-a-kind.md): the "grouping only" wording and `Session.parentId`.
+
 ## Context
 
 Driving a feature slice by slice starts a session per slice, and the Sessions tab fills

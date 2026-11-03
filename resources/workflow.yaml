@@ -7,9 +7,7 @@ discovery:
 kinds:
   field: kind
   default: feature
-  parent_field: parent
   values:
-    epic: { group: true, stages: [questions, research, design, structure] }
     feature: { stages: all }
 
 flows: # second axis; effective stages = kind ∩ flow

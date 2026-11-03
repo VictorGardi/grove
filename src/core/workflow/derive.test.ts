@@ -25,9 +25,8 @@ const ids = (m: Record<string, unknown>) => effectiveStages(wf, m).map((s) => s.
 
 describe('effectiveStages', () => {
   it('intersects the kind and the flow', () => {
-    expect(ids({ kind: 'epic' })).toEqual(['questions', 'research', 'design', 'structure'])
+    expect(ids({ kind: 'feature' })).toEqual(['questions', 'research', 'design', 'structure', 'implementation'])
     expect(ids({ flow: 'small' })).toEqual(['questions', 'implementation'])
-    expect(ids({ kind: 'epic', flow: 'small' })).toEqual(['questions'])
   })
 
   it('uses the defaults for a missing kind and flow', () => {
@@ -82,15 +81,19 @@ describe('deriveFeatures', () => {
     expect(f.flow).toBe('small')
   })
 
-  it('reads kind, group and parent and falls back to the slug for a title', () => {
-    const out = deriveFeatures(wf, [
-      folder('b-child', { 'feature.md': fm('parent: a-epic') }),
-      folder('a-epic', { 'feature.md': fm('kind: epic') }),
-    ], [])
-    expect(out.map((f) => [f.slug, f.kind, f.group, f.parent, f.flow, f.title])).toEqual([
-      ['a-epic', 'epic', true, null, null, 'a-epic'],
-      ['b-child', 'feature', false, 'a-epic', null, 'b-child'],
-    ])
+  it('reads kind and falls back to the slug for a title', () => {
+    const out = deriveFeatures(wf, [folder('b', { 'feature.md': fm('flow: small') }), folder('a', { 'feature.md': '' })], [])
+    expect(out.map((f) => [f.slug, f.kind, f.flow, f.title])).toEqual([['a', 'feature', null, 'a'], ['b', 'feature', 'small', 'b']])
+  })
+
+  it('derives a manifest with the retired `kind: epic` as an ordinary feature', () => {
+    const [f] = deriveFeatures(wf, [folder('e', { 'feature.md': fm('kind: epic\nparent: x'), '01-questions.md': approved })], [])
+    expect(f.kind).toBe('feature')
+    expect(f).not.toHaveProperty('group')
+    expect(f).not.toHaveProperty('parent')
+    expect(f).not.toHaveProperty('progress')
+    expect(f.stages.map((s) => s.id)).toEqual(['questions', 'research', 'design', 'structure', 'implementation'])
+    expect(f.cardState).toBe('ready')
   })
 
   it('passes an incomplete stage when a later artifact exists ("unapproved")', () => {
@@ -136,9 +139,8 @@ describe('deriveFeatures', () => {
     ['not running with an idle OpenCode session', { '01-questions.md': approved }, { kind: 'opencode', status: 'idle' }, 'ready'],
     ['waiting with a waiting OpenCode session', { '01-questions.md': approved }, { kind: 'opencode', status: 'waiting', waitingFor: 'question' }, 'waiting'],
     ['not waiting when the session is gone', { '01-questions.md': approved }, { kind: 'opencode', status: 'waiting', lastStatus: 'gone' }, 'ready'],
-    ['not waiting with a finished child', { '01-questions.md': approved }, { kind: 'opencode', status: 'waiting', waitingFor: 'done', parentId: 'x' }, 'ready'],
-    ['not waiting with a held child prompt', { '01-questions.md': approved }, { kind: 'opencode', status: 'waiting', waitingFor: 'permission', parentId: 'x', held: true }, 'ready'],
-    ['waiting with a real child permission', { '01-questions.md': approved }, { kind: 'opencode', status: 'waiting', waitingFor: 'permission', parentId: 'x' }, 'waiting'],
+    ['not waiting with a finished child', { '01-questions.md': approved }, { kind: 'opencode', status: 'waiting', waitingFor: 'done', link: { id: 'x', kind: 'group' } }, 'ready'],
+    ['waiting with a real child permission', { '01-questions.md': approved }, { kind: 'opencode', status: 'waiting', waitingFor: 'permission', link: { id: 'x', kind: 'group' } }, 'waiting'],
     ['waiting with a finished top-level session', { '01-questions.md': approved }, { kind: 'opencode', status: 'waiting', waitingFor: 'done' }, 'waiting'],
     ['not running with a session in another project', { '01-questions.md': approved }, { kind: 'opencode', status: 'working', projectId: 'q' }, 'ready'],
     ['done even with a working session', { '01-questions.md': approved, '06-implementation.md': approved }, { kind: 'opencode', status: 'working' }, 'done'],
@@ -153,52 +155,6 @@ describe('deriveFeatures', () => {
       session({ id: 'q', kind: 'opencode', status: 'waiting', waitingFor: 'permission' }),
     ])
     expect(f.cardState).toBe('waiting')
-  })
-
-  describe('groups', () => {
-    const epicDone = { 'feature.md': fm('kind: epic'), '01-questions.md': approved, '02-research.md': approved, '03-design.md': approved, '04-structure.md': approved }
-    const child = (slug: string, done: boolean, over = '') =>
-      folder(slug, { 'feature.md': fm(`parent: e${over}\nflow: small`), '01-questions.md': approved, ...(done && { '06-implementation.md': approved }) })
-    const epic = (out: ReturnType<typeof deriveFeatures>) => out.find((f) => f.slug === 'e')!
-
-    it('is active with progress while some children are unfinished', () => {
-      const e = epic(deriveFeatures(wf, [folder('e', epicDone), child('a', true), child('b', false)], []))
-      expect(e.cardState).toBe('active')
-      expect(e.currentStage).toBeNull()
-      expect(e.progress).toEqual({ done: 1, total: 2 })
-    })
-
-    it('is done once every child is done', () => {
-      const e = epic(deriveFeatures(wf, [folder('e', epicDone), child('a', true), child('b', true)], []))
-      expect(e.cardState).toBe('done')
-      expect(e.progress).toEqual({ done: 2, total: 2 })
-    })
-
-    it('is done by its own stages with no children, and ignores other projects', () => {
-      const other = { ...child('a', false), projectId: 'q' }
-      const e = epic(deriveFeatures(wf, [folder('e', epicDone), other], []))
-      expect(e.cardState).toBe('done')
-      expect(e.progress).toBeNull()
-    })
-
-    it('keeps the usual rules before its own stages complete', () => {
-      const e = epic(deriveFeatures(wf, [folder('e', { 'feature.md': fm('kind: epic'), '01-questions.md': approved }), child('a', true)], []))
-      expect(e.cardState).toBe('ready')
-      expect(e.progress).toEqual({ done: 1, total: 1 })
-    })
-
-    it('counts a nested group as done only when its own children are', () => {
-      const mid = folder('m', { ...epicDone, 'feature.md': fm('kind: epic\nparent: e') })
-      const leaf = folder('l', { 'feature.md': fm('parent: m\nflow: small'), '01-questions.md': approved })
-      const out = deriveFeatures(wf, [folder('e', epicDone), mid, leaf], [])
-      expect(out.find((f) => f.slug === 'm')!.cardState).toBe('active')
-      expect(epic(out)).toMatchObject({ cardState: 'active', progress: { done: 0, total: 1 } })
-    })
-
-    it('gives non-groups no progress', () => {
-      const out = deriveFeatures(wf, [folder('e', epicDone), child('a', true)], [])
-      expect(out.find((f) => f.slug === 'a')!.progress).toBeNull()
-    })
   })
 
   it('tags files with their stage and role', () => {

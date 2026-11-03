@@ -1,9 +1,9 @@
 import { useEffect, useRef, useState, type MouseEvent, type ReactNode } from 'react'
 import type { Project, Session } from '@shared/types'
-import type { Family } from '../family'
+import { childrenCount, type Family } from '../family'
 import { statusTone, statusView } from '../sessionStatus'
 import { BranchMark, showsPr } from './BranchMark'
-import { ChildrenPopover } from './ChildrenPopover'
+import { toggleDrawer, useDrawerFor } from '../drawerStore'
 import { Icon } from './ui/Icon'
 import { StatusDot } from './ui/StatusDot'
 import { cx } from './ui/cx'
@@ -69,6 +69,7 @@ export function SessionMeta({ lead, trail, session, worktree, context, actions, 
   family?: Family & { onJump: (id: string) => void }
 }) {
   const status = statusView(session)
+  const drawerOpen = useDrawerFor() === session.id
   const parent = family?.parent ?? null
   const child = family?.active ?? null
   const branch = session.branch && (
@@ -96,7 +97,11 @@ export function SessionMeta({ lead, trail, session, worktree, context, actions, 
           <span className={s.truncate}>{child.label}</span>
         </button>
       )}
-      {family && family.children.length > 0 && <ChildrenPopover kids={family.children} onJump={family.onJump} />}
+      {family && family.children.length > 0 && (
+        <button type="button" className={s.chip} data-drawer-trigger aria-expanded={drawerOpen} aria-haspopup="dialog" title="Show all children" onClick={() => toggleDrawer(session.id)}>
+          {childrenCount(family.children.length)}
+        </button>
+      )}
     </>
   )
   return (

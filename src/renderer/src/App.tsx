@@ -6,14 +6,16 @@ import { SIDEBAR_WIDTH } from '@shared/types'
 import { ArtifactViewer } from './components/ArtifactViewer'
 import { CommandPalette } from './components/CommandPalette'
 import { DiffViewer } from './components/DiffViewer'
+import { ArtifactPage } from './components/ArtifactPage'
 import { FeaturePage } from './components/FeaturePage'
 import { ProjectPage } from './components/ProjectPage'
 import { SessionGrid } from './components/SessionGrid'
 import { SessionMeta } from './components/SessionMeta'
 import { Sidebar } from './components/Sidebar'
+import { ChildDrawer } from './components/ChildDrawer'
+import { closeDrawer, toggleDrawer, useDrawerFor } from './drawerStore'
 import { TerminalView } from './components/TerminalView'
 import { AppShell, SIDEBAR_MAX, SIDEBAR_MIN } from './components/shell/AppShell'
-import { BoardSwitch } from './components/shell/BoardSwitch'
 import { ContextPopover } from './components/ContextGauge'
 import { ContentHeader, Crumbs } from './components/shell/ContentHeader'
 import { Banner } from './components/ui/Banner'
@@ -27,8 +29,8 @@ import { useDictation } from './dictation/useDictation'
 import { DEFAULT_GRID_VIEW, gridShown, hasArrangement, visibleMembers, type GridView } from './gridView'
 import { GridControls } from './components/GridControls'
 import { contextView } from './contextGauge'
-import { artifactCrumbs, openCard } from './artifactsBoard'
-import { artifactsKey, boardKey, childrenOf, content, crumbs, currentProjectId, focusTarget } from './navigation'
+import { neighbours } from './artifactData'
+import { content, crumbs, currentProjectId, focusTarget } from './navigation'
 import { familyJumpTarget, familyOf } from './family'
 import { serviceBanners } from './sessionStatus'
 import { sessionDiffShortcut, type HiddenRenderedViewer } from './sessionDiffShortcut'
@@ -40,7 +42,7 @@ import { longestWaiting } from './sessionStatus'
 import s from './App.module.css'
 
 export default function App() {
-  const { projects, sessions, ui, features, opencode, diff, errors, hydrate, setFocused, focusFeature, openProject, toggleGrid, addFocusedToGrid, toggleSidebar, clearGrid, resetGridArrangement, go, setBoard, openBoardArtifact, setBoardView, setBoardFilter,
+  const { projects, sessions, ui, features, opencode, diff, errors, hydrate, setFocused, focusFeature, focusArtifact, openProject, toggleGrid, addFocusedToGrid, toggleSidebar, clearGrid, resetGridArrangement, go,
     openArtifact, openDiff, backToDiff, openRendered, closeViewer, setViewerWidth, toggleViewerExpanded, reloadViewer } = useSlices()
   const [quickNew, setQuickNew] = useState<{ projectId?: string } | null>(null) // ⌘T: the new-session palette
   const repoRefs = useRepoRefs(projects)
@@ -48,6 +50,7 @@ export default function App() {
   const { removeSessions, dialog: removalDialog } = useSessionRemoval()
   const [confirmRemove, setConfirmRemove] = useState<Session | null>(null) // ⌘W asks first
   const [paletteOpen, setPaletteOpen] = useState(false)
+  const drawerFor = useDrawerFor() // the parent whose child drawer is open, from the sidebar bar or the header chip
   const [gridView, setGridView] = useState<GridView>(DEFAULT_GRID_VIEW) // toolbar settings, view-only
   const [scratchpadOpen, setScratchpadOpen] = useState(false) // ⌘N: global notes, not persisted
   const hiddenRendered = useRef<HiddenRenderedViewer | null>(null)
@@ -85,10 +88,10 @@ export default function App() {
     else if (a.type === 'addToGrid') addFocusedToGrid()
     else if (a.type === 'toggleSidebar') toggleSidebar()
     else if (a.type === 'clearGrid') clearGrid()
-    else if (a.type === 'newSession') setQuickNew({ projectId: currentProjectId(content(ui, projects, sessions, features.items)) ?? undefined })
-    else if (a.type === 'newSessionOptions') setLaunchNew({ projectId: currentProjectId(content(ui, projects, sessions, features.items)) ?? undefined })
+    else if (a.type === 'newSession') setQuickNew({ projectId: currentProjectId(content(ui, projects, sessions, features.items, features.stages)) ?? undefined })
+    else if (a.type === 'newSessionOptions') setLaunchNew({ projectId: currentProjectId(content(ui, projects, sessions, features.items, features.stages)) ?? undefined })
     else if (a.type === 'newTerminal') {
-      const projectId = currentProjectId(content(ui, projects, sessions, features.items))
+      const projectId = currentProjectId(content(ui, projects, sessions, features.items, features.stages))
       if (projectId) {
         void window.api.invoke('session:create', { projectId, kind: 'terminal', cols: 120, rows: 40 }).then((res) => {
           if (res.ok) setFocused(res.data.id)
@@ -109,18 +112,12 @@ export default function App() {
     } else if (a.type === 'focusIndex') {
       const target = focusTarget(ui, projects, sessions, features.items, a.n, gridView)
       if (target) setFocused(target.id)
-    } else if (a.type === 'projectBoard') {
-      const to = boardKey(ui, projects, sessions, features.items)
-      if (to) go(to)
-    } else if (a.type === 'artifactsBoard') {
-      const to = artifactsKey(ui, projects, sessions, features.items)
-      if (to) go(to)
     } else if (a.type === 'sessionDiff') {
       if (ui.focusedSessionId) toggleSessionDiff(ui.focusedSessionId, ui.viewer)
     } else if (a.type === 'scratchpad') {
       setScratchpadOpen((o) => !o)
     }
-  }, [setFocused, go, toggleSessionDiff, toggleGrid, addFocusedToGrid, toggleSidebar, clearGrid, gridView])
+  }, [setFocused, toggleSessionDiff, toggleGrid, addFocusedToGrid, toggleSidebar, clearGrid, gridView])
 
   useEffect(() => {
     const hidden = hiddenRendered.current
@@ -157,7 +154,7 @@ export default function App() {
     setQuickNew(null)
     return null
   }, [setFocused])
-  const shown = content(ui, projects, sessions, features.items)
+  const shown = content(ui, projects, sessions, features.items, features.stages)
   // the eye or a smaller layout can hide the focused pane: focus the first one still visible
   const changeGridView = (next: GridView) => {
     setGridView(next)
@@ -165,8 +162,7 @@ export default function App() {
     const visible = visibleMembers(shown.sessions, next)
     if (visible.length > 0 && !visible.some((x) => x.id === shown.focused.id)) setFocused(visible[0].id)
   }
-  const openArt = shown.kind === 'project' ? openCard(ui, shown.project, projects, features.stages, features.items) : undefined
-  const trail = openArt && shown.kind === 'project' ? artifactCrumbs(shown.project, openArt.cluster.feature, openArt.card, ui) : crumbs(shown, projects, features.items)
+  const trail = crumbs(shown, projects)
   const header = trail.map((c) => ({ label: c.label, onClick: c.to && (() => go(c.to!)) }))
   const context = shown.kind === 'session' ? contextView(shown.session) : null
   const openFeature = (f: Feature) => focusFeature({ projectId: f.projectId, slug: f.slug })
@@ -179,7 +175,8 @@ export default function App() {
   // keys the human is typing into a form. This was two lists — the grid's `overlayOpen` and the
   // terminal's `active` — and they had already drifted, each missing an overlay the other had. One
   // value now, with `active` as its negation, so there is nothing left to keep in step.
-  const overlayOpen = paletteOpen || !!quickNew || !!launchNew || !!confirmRemove || scratchpadOpen
+  const drawerParent = sessions.find((x) => x.id === drawerFor) // gone parent: no drawer
+  const overlayOpen = paletteOpen || !!quickNew || !!launchNew || !!confirmRemove || scratchpadOpen || !!drawerParent
   // the pane that has the keyboard: the one session, or the grid's focused pane
   const dictation = useDictation({
     getTargetId: () => {
@@ -198,7 +195,7 @@ export default function App() {
           ...(features.workflowError ? [<Banner key="workflow">Workflow: {features.workflowError}</Banner>] : []),
           ...serviceBanners(opencode, sessions).map((b) => <Banner key={b.text} tone={b.tone}>{b.text}</Banner>),
         ]}
-        sidebar={ui.sidebarCollapsed ? undefined : <Sidebar onNew={(projectId) => setQuickNew({ projectId })} onRemove={(ids) => void removeSessions(ids)} />}
+        sidebar={ui.sidebarCollapsed ? undefined : <Sidebar onNew={(projectId) => setQuickNew({ projectId })} onRemove={(ids) => void removeSessions(ids)} onOpenDrawer={toggleDrawer} />}
         content={
           <>
             <ContentHeader crumbs={header}
@@ -208,8 +205,7 @@ export default function App() {
                     context={context ? <ContextPopover view={context} /> : undefined}
                     family={{ ...familyOf(sessions, shown.session.id), onJump: setFocused }} />
                 : undefined}
-              right={shown.kind === 'project' && !shown.project.worktreeOf ? <BoardSwitch board={ui.board} onChange={setBoard} />
-                : shown.kind === 'grid' ? (
+              right={shown.kind === 'grid' ? (
                   <GridControls view={gridView} visibleCount={visibleMembers(shown.sessions, gridView).length} canReset={hasArrangement(ui.grid)}
                     onChange={changeGridView} onReset={resetGridArrangement} onEmpty={clearGrid} />
                 )
@@ -220,17 +216,15 @@ export default function App() {
                   </div>
                 ) : undefined} />
             {shown.kind === 'project' ? (
-              <ProjectPage project={shown.project} projects={projects} board={ui.board} stages={features.stages}
-                features={features.items} sessions={sessions} artifactsOpen={ui.artifacts?.[shown.project.id]?.open ?? null}
-                artifactsView={ui.artifacts?.[shown.project.id]?.view} artifactsFilter={ui.artifacts?.[shown.project.id]?.filter ?? null}
-                onOpenFeature={openFeature} onFocusSession={setFocused} onOpenArtifact={(r) => openBoardArtifact(shown.project.id, r)}
-                onArtifactsViewChange={(v) => setBoardView(shown.project.id, v)}
-                onArtifactsFilterChange={(f, v) => setBoardFilter(shown.project.id, f, v)} />
+              <ProjectPage project={shown.project} onNewSession={(projectId) => setQuickNew({ projectId })} />
+            ) : shown.kind === 'artifact' ? (
+              <ArtifactPage projectId={shown.cluster.feature.projectId} feature={{ projectId: shown.cluster.feature.projectId, slug: shown.cluster.feature.slug }}
+                cards={shown.cluster.cards} card={shown.card}
+                {...neighbours([shown.cluster], { projectId: shown.cluster.feature.projectId, slug: shown.cluster.feature.slug, name: shown.card.name })}
+                onBack={() => openFeature(shown.cluster.feature)} onStep={focusArtifact} />
             ) : shown.kind === 'feature' ? (
-              <FeaturePage feature={shown.feature}
-                parent={features.items.find((f) => f.projectId === shown.feature.projectId && f.slug === shown.feature.parent) ?? null}
-                children={childrenOf(shown.feature, features.items)} sessions={sessions} projects={projects}
-                onFocusSession={setFocused} onOpenFeature={openFeature}
+              <FeaturePage feature={shown.feature} sessions={sessions} projects={projects}
+                onFocusSession={setFocused}
                 onOpenArtifact={(name) => {
                   const dir = featureDir(shown.feature, projects)
                   if (dir !== null) openArtifact({ kind: 'file', projectId: shown.feature.projectId, path: dir + name, hash: null, fromDiff: null })
@@ -273,7 +267,7 @@ export default function App() {
       />
       {paletteOpen && (
         <CommandPalette onClose={() => setPaletteOpen(false)}
-          items={paletteItems({ projects, sessions, features: features.items, grid: ui.grid, gridShown: gridShown(ui) }, { focusSession: setFocused, focusFeature, openProject, runAction })} />
+          items={paletteItems({ projects, sessions, features: features.items, stages: features.stages, grid: ui.grid, gridShown: gridShown(ui) }, { focusSession: setFocused, focusFeature, focusArtifact, openProject, runAction })} />
       )}
       {confirmRemove && (
         <ConfirmDialog
@@ -294,6 +288,10 @@ export default function App() {
       )}
       {launchNew && (
         <NewSessionDialog projectId={launchNew.projectId} onClose={() => setLaunchNew(null)} onStart={startLaunch} />
+      )}
+      {drawerParent && (
+        <ChildDrawer parent={drawerParent} kids={sessions.filter((x) => x.link?.id === drawerParent.id)}
+          onJump={setFocused} onClose={closeDrawer} />
       )}
       {scratchpadOpen && <ScratchpadOverlay onClose={() => setScratchpadOpen(false)} />}
     </>

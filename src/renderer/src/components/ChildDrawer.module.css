@@ -1,0 +1,149 @@
+.drawer {
+  position: fixed; /* portalled to <body>, beside the sidebar: the sidebar clips overflow */
+  top: 8px;
+  left: calc(var(--left) + 6px);
+  z-index: 20;
+  width: 460px;
+  max-width: calc(100vw - var(--left) - 14px);
+  max-height: min(60vh, calc(100vh - 16px));
+  display: flex;
+  flex-direction: column;
+  gap: var(--sp-1);
+  padding: var(--sp-2);
+  background: var(--card-bg);
+  border: 1px solid var(--card-border);
+  border-radius: var(--r-card);
+  box-shadow: 0 6px 20px rgb(0 0 0 / 0.4);
+  font-size: var(--fs-md);
+}
+
+.head {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-2);
+}
+
+.title {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-weight: 600;
+}
+
+.close,
+.promote {
+  border: 0;
+  border-radius: var(--r-card);
+  background: none;
+  font: inherit;
+  color: var(--text-2);
+  cursor: pointer;
+}
+
+.close { flex: none; padding: 0 var(--sp-2); font-size: var(--fs-xl); }
+.promote { flex: none; padding: 0 var(--sp-1); font-size: var(--fs-sm); }
+.close:hover,
+.promote:hover { color: var(--text); background: var(--glass-fill); }
+
+.tabs {
+  display: flex;
+  gap: var(--sp-1);
+}
+
+.tab {
+  padding: 2px var(--sp-2);
+  border: 0;
+  border-radius: var(--r-pill);
+  background: none;
+  font: inherit;
+  color: var(--text-2);
+  cursor: pointer;
+}
+
+.tab:hover,
+.tabOn { background: var(--raised-bg); color: var(--text); }
+
+.count { color: var(--text-3); }
+
+.filter {
+  padding: var(--sp-1) var(--sp-2);
+  border: 1px solid var(--card-border);
+  border-radius: var(--r-card);
+  background: var(--chrome-bg);
+  color: var(--text);
+  font: inherit;
+}
+
+/* long lists scroll here, not the drawer */
+.list {
+  flex: 1 1 auto;
+  min-height: 60px;
+  overflow-y: auto;
+}
+
+.row {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-2);
+  min-width: 0;
+  padding: 1px var(--sp-2);
+  border-radius: var(--r-card);
+}
+
+.row:hover,
+.rowOn { background: var(--raised-bg); }
+
+.jump {
+  flex: 1;
+  min-width: 0;
+  padding: var(--sp-1) 0;
+  border: 0;
+  background: none;
+  font: inherit;
+  color: inherit;
+  text-align: left;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  cursor: pointer;
+}
+
+.state,
+.age {
+  flex: none;
+  color: var(--text-3);
+  font-size: var(--fs-sm);
+}
+
+.needs { color: var(--status-waiting); }
+.failed { color: var(--danger); }
+
+.age { min-width: 2.5em; text-align: right; }
+
+.empty {
+  padding: var(--sp-2);
+  color: var(--text-3);
+}
+
+/* the hovered child's live screen, or just its status when the pane is gone */
+.screen {
+  margin: 0;
+  padding: var(--sp-1) var(--sp-2);
+  max-height: 160px;
+  overflow: auto;
+  flex: none;
+  border-top: 1px solid var(--divider);
+  color: var(--text-2);
+  font-family: var(--font-mono, ui-monospace, monospace);
+  font-size: var(--fs-xs);
+  white-space: pre;
+}
+
+.status {
+  padding: var(--sp-1) var(--sp-2);
+  border-top: 1px solid var(--divider);
+  color: var(--text-3);
+  font-size: var(--fs-sm);
+}

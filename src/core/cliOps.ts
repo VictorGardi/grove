@@ -79,6 +79,7 @@ export interface WaitDeps {
 const START_WAIT_MS = 30_000
 
 // Blocks until the session stops working (ADR 0027). `expectStart`: first give the turn up to `startWaitMs` to begin.
+// A permission or question keeps waiting: it is for the human, never the parent.
 // An agent session with no status (its source is disconnected) keeps waiting; a terminal has none to wait on.
 export function waitTurn(
   deps: WaitDeps,
@@ -102,8 +103,8 @@ export function waitTurn(
       if (!s || s.lastStatus === 'gone') return finish({ ok: true, data: { status: 'gone', waitingFor: null } })
       if (s.status === 'working') started = true
       if (!started || !s.status || s.status === 'working') return
-      const blocked = s.status === 'waiting' && (s.waitingFor === 'permission' || s.waitingFor === 'question')
-      finish({ ok: true, data: blocked ? { status: 'waiting', waitingFor: s.waitingFor ?? null } : { status: 'idle', waitingFor: null } })
+      if (s.status === 'waiting' && (s.waitingFor === 'permission' || s.waitingFor === 'question')) return // the human's to answer: still running
+      finish({ ok: true, data: { status: 'idle', waitingFor: null } })
     }
     off = deps.onSessions(check)
     timers.push(setTimeout(() => finish({ ok: false, error: 'timeout' }), o.timeoutMs))

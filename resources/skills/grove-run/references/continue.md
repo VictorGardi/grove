@@ -21,14 +21,14 @@ expected (the failing code is uncommitted), never clean it.
 2. **Lost report.** Before picking N: HEAD subject = `git -C <worktree> log -1
    --format=%s`. If it is `<slug>: slice M — <outcome>` for a slice M whose gate is still
    due (slice 1, any slice with `--review-each`, or the last slice), the gate may not have
-   been answered, and M's child (labels starting `<name>-slice-<M>-a` in `grove ls --all
-   --json`, the highest `a<k>`) is still live: treat as a report for M and run `SKILL.md`
-   step 4/5 for M with that label. This may re-ask a gate already answered: acceptable.
+   been answered, and M's child (found by the lookup in `SKILL.md` step 2 for slice M: `feature` = `<slug>`,
+   `parent` set, label starting `<M> `, the newest; use its `id`) is still live: treat as a report for M and run `SKILL.md`
+   step 4/5 for M with that child. This may re-ask a gate already answered: acceptable.
    All slices done: M = the last slice, found the same way; no live child for M: nothing
    to continue, print where things are and end.
    Otherwise **slice N** = the first slice not done.
-3. **Find N's child.** `grove ls --all --json`, labels starting `<name>-slice-<N>-a`,
-   the highest `a<k>`. HEAD subject as in step 2.
+3. **Find N's child.** Lookup as in `SKILL.md` step 2 (`feature` = `<slug>`, `parent`
+   set, label starting `<N> `, the newest); address it by its `id`, never by label. HEAD subject as in step 2.
    - a. Finished slice, report lost: handled in step 2.
    - b. `<slug>: slice N halted`: go to step 4.
    - c. Neither, child live (working or waiting, e.g. permission prompt): say "answer the
@@ -37,12 +37,12 @@ expected (the failing code is uncommitted), never clean it.
      is a new parent session, run `--continue` again after answering. If the child is live
      but idle (not waiting on a prompt), or the last stop was "did not finish", ask through
      the question tool (options *retry* / *leave it*) instead; on retry, or if the human
-     says retry, `grove kill` it and start a fresh child for slice N with no `Decision:` line and
-     the line `Retry: yes` (label per `SKILL.md` step 2).
+     says retry, `grove kill <child id>` it and start a fresh child for slice N with no `Decision:` line and
+     the line `Retry: yes` (label and `--relation slice` per `SKILL.md` step 2; the label gets ` #<k>`).
    - d. Neither, child gone: start a fresh child for slice N with no `Decision:` line and
-     the line `Retry: yes` (the worktree as it stands; label per `SKILL.md` step 2), same
+     the line `Retry: yes` (the worktree as it stands; label with ` #<k>` and `--relation slice` per `SKILL.md` step 2), same
      prompt as `SKILL.md` step 2.
-4. **Halted.** `grove status <label> done` the leftover child first (do not kill it). Read the options:
+4. **Halted.** `grove status <child id> done` the leftover child first (do not kill it). Read the options:
    `git -C <worktree> show HEAD:<artifactRoot>/<slug>/04-run.md`; only the latest
    un-numbered `### Options` counts (older ones are `### Options (attempt <n>)`). If the
    human already named an option earlier in this session, use it without asking again.
@@ -54,7 +54,7 @@ expected (the failing code is uncommitted), never clean it.
 5. **Refusal.** An option with `Changes design or outcome: yes` is refused with exactly
    "revise the plan first: `grove-auto <slug>`" (then re-approve with
    `grove-approve <slug> plan`). Start nothing and end the turn.
-6. **Otherwise** start a fresh child for slice N (label per `SKILL.md` step 2, `--cwd
+6. **Otherwise** start a fresh child for slice N (label with ` #<k>` and `--relation slice` per `SKILL.md` step 2, `--cwd
    <worktree>`, same prompt as `SKILL.md` step 2 plus the line `Decision: <option title and
    text>`; launched with the `planner` model and as the planner's agent as usual, never `--worktree`/`--branch`/
    `--base`). The child does the `git reset --soft HEAD~1` of the halt commit, records

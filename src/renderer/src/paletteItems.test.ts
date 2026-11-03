@@ -8,22 +8,21 @@ const session = (id: string, label: string, extra: Partial<Session> = {}) =>
 const sessions = [session('s1', 'fix sidebar'), session('s2', 'write docs', { status: 'waiting' }), session('s3', 'terminal', { kind: 'terminal' })]
 // A complete Feature: unionFeatures reads the whole record, as core sends it.
 const feature = (projectId: string, slug: string, over: Partial<Feature> = {}): Feature => ({
-  projectId, slug, path: '/g/' + slug, title: 'Session grid', kind: 'feature', group: false, parent: null,
-  flow: null, stages: [], currentStage: null, cardState: 'done', progress: null, flags: [], warnings: [], artifacts: [], ...over,
+  projectId, slug, path: '/g/' + slug, title: 'Session grid', kind: 'feature',
+  flow: null, stages: [], currentStage: null, cardState: 'done', flags: [], warnings: [], artifacts: [], ...over,
 })
 const features = [feature('p1', 'grid')]
 
-const actions = () => ({ focusSession: vi.fn(), focusFeature: vi.fn(), openProject: vi.fn(), runAction: vi.fn() })
+const actions = () => ({ focusSession: vi.fn(), focusFeature: vi.fn(), focusArtifact: vi.fn(), openProject: vi.fn(), runAction: vi.fn() })
 const items = (a = actions()) => paletteItems({ projects, sessions, features }, a)
 
 describe('paletteItems waiting flag', () => {
   const waitingOf = (extra: Partial<Session>) =>
-    paletteItems({ projects, sessions: [session('k', 'kid', { parentId: 'p', status: 'waiting', ...extra })], features: [] }, actions()).find((i) => i.kind === 'session')?.waiting
-  it('is quiet for a finished or held child, and set for a real child wait or a top-level finish', () => {
+    paletteItems({ projects, sessions: [session('k', 'kid', { link: { id: 'p', kind: 'group' }, status: 'waiting', ...extra })], features: [] }, actions()).find((i) => i.kind === 'session')?.waiting
+  it('is quiet for a finished child, and set for a real child wait or a top-level finish', () => {
     expect(waitingOf({ waitingFor: 'done' })).toBe(false)
-    expect(waitingOf({ waitingFor: 'permission', held: true })).toBe(false)
     expect(waitingOf({ waitingFor: 'permission' })).toBe(true)
-    expect(waitingOf({ waitingFor: 'done', parentId: undefined })).toBe(true)
+    expect(waitingOf({ waitingFor: 'done', link: undefined })).toBe(true)
   })
 })
 
@@ -45,7 +44,7 @@ describe('paletteItems', () => {
   it('lists the app commands, which run through runAction', () => {
     const a = actions()
     const cmds = paletteItems({ projects, sessions, features }, a).filter((i) => i.kind === 'command')
-    expect(cmds.map((c) => c.label)).toEqual(['New session', 'New session with options…', 'New terminal', 'Remove session', 'Session diff', 'Project board', 'Artifacts', 'Toggle sidebar', 'Last session', 'Next waiting session', 'Show grid', 'Add session to grid and show', 'Clear grid', 'Scratchpad'])
+    expect(cmds.map((c) => c.label)).toEqual(['New session', 'New session with options…', 'New terminal', 'Remove session', 'Session diff', 'Toggle sidebar', 'Last session', 'Next waiting session', 'Show grid', 'Add session to grid and show', 'Clear grid', 'Scratchpad'])
     cmds.find((c) => c.label === 'New terminal')!.run()
     expect(a.runAction).toHaveBeenCalledWith({ type: 'newTerminal' })
   })
@@ -73,7 +72,7 @@ describe('paletteItems', () => {
   it('lists a feature once per repo, not once per checkout, and opens the checkout\'s copy', () => {
     const wt = { id: 'p1b', name: 'grove · fix-auth', path: '/g/fix-auth', worktreeOf: 'p1' }
     const withWorktree = [...projects, wt] as Project[]
-    const copies = [feature('p1', 'grid'), feature('p1b', 'grid', { currentStage: 'design', cardState: 'active' })]
+    const copies = [feature('p1', 'grid'), feature('p1b', 'grid', { currentStage: 'design', cardState: 'waiting' })]
     const a = actions()
     const list = paletteItems({ projects: withWorktree, sessions, features: copies }, a)
     const feats = list.filter((i) => i.kind === 'feature')
@@ -97,6 +96,29 @@ describe('paletteItems', () => {
     expect(a.focusSession).toHaveBeenCalledWith('s1')
     expect(a.focusFeature).toHaveBeenCalledWith({ projectId: 'p1', slug: 'grid' })
     expect(a.openProject).toHaveBeenCalledWith('p2')
+  })
+
+  describe('artifacts', () => {
+    const art = { name: '03-design.md', stage: 'design', role: 'artifact' as const, mtimeMs: 1 }
+    const withArt = [feature('p1', 'grid', { artifacts: [art, { name: 'x.json', stage: null, role: null, mtimeMs: 1 }] })]
+    const list = (a = actions()) => paletteItems({ projects, sessions, features: withArt, stages: [{ id: 'design', label: 'Design' }] }, a)
+
+    it('lists one entry per artifact card of each feature, named for the feature, and opens it', () => {
+      const a = actions()
+      const arts = list(a).filter((i) => i.kind === 'artifact')
+      expect(arts.map((i) => [i.label, i.detail])).toEqual([['03-design.md', 'grove · Session grid']])
+      arts[0].run()
+      expect(a.focusArtifact).toHaveBeenCalledWith({ projectId: 'p1', slug: 'grid', name: '03-design.md' })
+    })
+
+    it('finds an artifact and a feature by name, the feature first for its own title', () => {
+      expect(rank(list(), 'design.md')[0].item).toMatchObject({ kind: 'artifact', label: '03-design.md' })
+      expect(rank(list(), 'session grid')[0].item).toMatchObject({ kind: 'feature', label: 'Session grid' })
+    })
+
+    it('lists artifacts after features and before projects with an empty query', () => {
+      expect(rank(list(), '').map((r) => r.item.kind).filter((k) => k !== 'session' && k !== 'command')).toEqual(['feature', 'artifact', 'project', 'project'])
+    })
   })
 })
 

@@ -1,11 +1,9 @@
 import { create } from 'zustand'
-import type { ArtifactRef, CanvasView, Comment, DiffFile, DiffMode, DocTarget, FeaturesSlice, OpenCodeSlice, PaneSpan, Project, Session, SessionDiff, UiState } from '@shared/types'
+import type { ArtifactRef, Comment, DiffFile, DiffMode, DocTarget, FeaturesSlice, OpenCodeSlice, PaneSpan, Project, Session, SessionDiff, UiState } from '@shared/types'
 import { DEFAULT_UI, EMPTY_FEATURES, OPENCODE_CONNECTING } from '@shared/types'
 import { focusAfterRemove, gridShown, swapMembers, withMember, withoutArrangement, withSpan, withTracks, type GridLayout } from '../gridView'
 import { pushRecentBase } from '../diffBases'
 import { diffTargetFor, pickDiffPrefs } from '../diffView'
-import { artifactsTo, boardViewTo, filterTo } from '../artifactsBoard'
-import { openBoard } from '../navigation'
 import { trackWaiting } from '../sessionStatus'
 
 interface SlicesState {
@@ -27,11 +25,7 @@ interface SlicesState {
   focusFeature(ref: { projectId: string; slug: string }): void
   openProject(id: string): void
   go(to: Partial<UiState>): void // a breadcrumb up-link
-  setBoard(board: UiState['board']): void
-  openBoardArtifact(projectId: string, ref: ArtifactRef | null): void // the artifacts board's full page on that project page; null closes it
-  setBoardView(projectId: string, view: CanvasView): void // the artifacts board's pan and zoom on that project page
-  setBoardFilter(projectId: string, slug: string | null, view?: CanvasView): void // the one feature the artifacts board shows on that project page (null: all), and the view it starts at
-  setGroupBy(groupBy: UiState['groupBy']): void
+  focusArtifact(ref: ArtifactRef): void // the artifact's full page: a fourth exclusive focus
   setSessionSort(sessionSort: UiState['sessionSort']): void
   setSessionOrder(order: UiState['sessionOrder']): void // shown at once, saved behind it: a drop must not wait for the main process
   toggleSidebar(): void
@@ -62,12 +56,6 @@ export const useSlices = create<SlicesState>((set, get) => {
       sessions,
       waitingSince: trackWaiting(get().waitingSince, sessions, Date.now()),
     })
-
-  // shown at once, saved behind it (like setSessionOrder)
-  const setUi = (partial: Partial<UiState>) => {
-    set({ ui: { ...get().ui, ...partial } })
-    void window.api.invoke('ui:set', partial)
-  }
 
   // the one writer of a diff's view and branch: the open viewer carries them for core, diffPrefs keeps them for the session's next open
   const pickDiff = (sessionId: string, pick: { mode?: DiffMode; base?: string | null }) => {
@@ -109,16 +97,10 @@ export const useSlices = create<SlicesState>((set, get) => {
     },
     setFocused: (id) => { void window.api.invoke('ui:set', { focusedSessionId: id }) },
     focusFeature: (ref) => { void window.api.invoke('ui:set', { focusedFeature: ref }) },
-    openProject: (id) => { void window.api.invoke('ui:set', openBoard(id)) },
+    openProject: (id) => { void window.api.invoke('ui:set', { focusedProject: id }) },
+    focusArtifact: (ref) => { void window.api.invoke('ui:set', { focusedArtifact: ref }) },
     go: (to) => { void window.api.invoke('ui:set', to) },
-    setBoard: (board) => { void window.api.invoke('ui:set', { board }) },
-    // All three write the whole artifacts record from the local ui (core merges top-level keys only), so
-    // each lands locally at once: a view write right before or after an open then builds on it.
-    openBoardArtifact: (projectId, ref) => { setUi(artifactsTo(get().ui, projectId, ref)) },
-    setBoardView: (projectId, view) => { setUi(boardViewTo(get().ui, projectId, view)) },
-    setBoardFilter: (projectId, slug, view) => { setUi(filterTo(get().ui, projectId, slug, view)) },
     toggleSidebar: () => { void window.api.invoke('ui:set', { sidebarCollapsed: !get().ui.sidebarCollapsed }) },
-    setGroupBy: (groupBy) => { void window.api.invoke('ui:set', { groupBy }) },
     setSessionSort: (sessionSort) => { void window.api.invoke('ui:set', { sessionSort }) },
     setSessionOrder: (sessionOrder) => {
       set({ ui: { ...get().ui, sessionOrder } })
