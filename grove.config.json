@@ -14,7 +14,7 @@
   },
   "limits": {
     "maxOneWayDecisions": 8,
-    "maxSlices": 8,
+    "maxSlices": 9,
     "designMaxLines": 220
   }
 }
