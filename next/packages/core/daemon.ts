@@ -12,6 +12,7 @@ import { SpacesService } from './spaces.ts'
 import { claudeLaunch, SESSION_ID } from './agents/claude/launch.ts'
 import { createClaudeSource } from './agents/claude/source.ts'
 import { StatusService, type LaunchClaude } from './status/service.ts'
+import { Attention } from './attention/attention.ts'
 
 const TAB_ID = /^[A-Za-z0-9_-]{1,64}$/
 // A holder call the status service makes must answer within this, or that call fails and its check is skipped.
@@ -90,11 +91,20 @@ export async function startCoreDaemon(
   const broadcast = (message: unknown) => {
     for (const socket of sockets) if (!socket.destroyed) socket.write(encodeLine(message))
   }
-  const unsubscribe = status.subscribe((change) => broadcast(notification('status.changed', change)))
+  const attention = new Attention({
+    notify: (notice) => broadcast(notification('attention.notify', notice)),
+    markSeen: (tabId) => status.markSeen(tabId),
+  })
+  // The client that last sent attention.focus; when its connection closes the window is no longer focused.
+  let focusOwner: net.Socket | undefined
+  const unsubscribe = status.subscribe((change) => {
+    broadcast(notification('status.changed', change))
+    attention.onStatus(change)
+  })
   // Claude tabs are rebuilt before the core listens, so the first client already sees their state.
   status.restore(spaces.claudeTabs(), aliveAtStart)
   status.start()
-  const deps: Deps = { spaces, status, home, launchClaude }
+  const deps: Deps = { spaces, status, attention, home, launchClaude }
 
   const server = net.createServer((socket) => {
     sockets.add(socket)
@@ -122,6 +132,7 @@ export async function startCoreDaemon(
       }
       try {
         const result = await dispatch(request.method, request.params, holder, deps)
+        if (request.method === METHODS.attentionFocus) focusOwner = socket
         if (request.id !== undefined) send({ jsonrpc: '2.0', id: request.id, result })
       } catch (error) {
         if (request.id !== undefined) send(toFailure(request.id, error))
@@ -132,6 +143,10 @@ export async function startCoreDaemon(
     socket.on('error', () => socket.destroy())
     socket.on('close', () => {
       sockets.delete(socket)
+      if (focusOwner === socket) {
+        focusOwner = undefined
+        attention.focus(null, false)
+      }
       void holder.then(
         (client) => client.close(),
         () => undefined,
@@ -203,11 +218,21 @@ async function removeStaleSocket(socketPath: string): Promise<void> {
 interface Deps {
   spaces: SpacesService
   status: StatusService
+  attention: Attention
   home: string
   launchClaude: LaunchClaude
 }
 
 async function dispatch(method: string, rawParams: unknown, holder: Promise<RpcClient>, deps: Deps): Promise<unknown> {
+  if (method === METHODS.attentionFocus) {
+    const p = rawParams as MethodMap['attention.focus']['params']
+    if (p?.tabId !== null && (typeof p?.tabId !== 'string' || !TAB_ID.test(p.tabId))) {
+      throw new RpcError(ERROR_CODES.invalidParams, 'tab id is not valid')
+    }
+    if (typeof p?.windowFocused !== 'boolean') throw new RpcError(ERROR_CODES.invalidParams, 'windowFocused must be a boolean')
+    deps.attention.focus(p.tabId, p.windowFocused)
+    return {} satisfies MethodMap['attention.focus']['result']
+  }
   if (method === METHODS.corePing) {
     const result: MethodMap['core.ping']['result'] = { protocolVersion: PROTOCOL_VERSION }
     return result

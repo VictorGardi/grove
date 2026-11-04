@@ -11,7 +11,8 @@ use std::sync::{Arc, Mutex};
 use std::thread;
 use std::time::{Duration, Instant};
 use tauri::ipc::Channel;
-use tauri::State;
+use tauri::{AppHandle, State};
+use tauri_plugin_notification::NotificationExt;
 
 const CLOSED_LINE: &str = r#"{"jsonrpc":"2.0","method":"bridge.closed","params":{}}"#;
 const RPC_TIMEOUT: Duration = Duration::from_secs(30);
@@ -193,13 +194,35 @@ fn env_info() -> EnvInfo {
     }
 }
 
-// Stub: notifications arrive in slice 4.
+// Shows a notification and, when there is a sound file, plays it with afplay without waiting for it to finish.
 #[tauri::command]
-fn notify(_title: String, _body: String) {}
+fn notify(app: AppHandle, title: String, body: String, sound: Option<String>) {
+    if let Err(error) = app.notification().builder().title(title).body(body).show() {
+        eprintln!("notification failed: {error}");
+    }
+    if let Some(file) = sound {
+        match Command::new("/usr/bin/afplay")
+            .arg(&file)
+            .stdin(Stdio::null())
+            .stdout(Stdio::null())
+            .stderr(Stdio::null())
+            .spawn()
+        {
+            // Reaped on a thread so the finished process does not linger as a zombie.
+            Ok(mut child) => {
+                thread::spawn(move || {
+                    let _ = child.wait();
+                });
+            }
+            Err(error) => eprintln!("sound failed: {error}"),
+        }
+    }
+}
 
 pub fn run() {
     tauri::Builder::default()
         .manage(Bridge::default())
+        .plugin(tauri_plugin_notification::init())
         .invoke_handler(tauri::generate_handler![connect, rpc, env_info, notify])
         .run(tauri::generate_context!())
         .expect("error while running the Grove window");

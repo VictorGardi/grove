@@ -463,4 +463,42 @@ describe('StatusService', () => {
     expect(stateOf(service)).toMatchObject({ state: 'working' })
     service.close()
   })
+
+  it('marks a finished tab seen: it becomes idle from now, is saved, and is broadcast', () => {
+    const service = make()
+    service.subscribe((change) => changes.push({ tabId: change.tabId, state: change.state }))
+    track(service)
+    now = 2000
+    emit('t1', { kind: 'finished' })
+    now = 2500
+    service.markSeen('t1')
+    expect(stateOf(service)).toMatchObject({ state: 'idle', since: 2500 })
+    expect(changes.at(-1)).toEqual({ tabId: 't1', state: 'idle' })
+    const saved = JSON.parse(fs.readFileSync(path.join(home, 'agents', 'claude', 't1.status.json'), 'utf8'))
+    expect(saved.status).toEqual({ state: 'idle', since: 2500 })
+    service.close()
+  })
+
+  it('leaves a working tab untouched by markSeen', () => {
+    const service = make()
+    const seenChanges: string[] = []
+    service.subscribe((change) => seenChanges.push(change.state))
+    track(service)
+    now = 2000
+    emit('t1', { kind: 'working' })
+    service.markSeen('t1')
+    expect(stateOf(service)).toMatchObject({ state: 'working', since: 2000 })
+    expect(seenChanges).toEqual(['working'])
+    service.close()
+  })
+
+  it('ignores markSeen for a needs-you, idle, or unknown tab and for an unknown tab id', () => {
+    const service = make()
+    track(service)
+    emit('t1', { kind: 'needs-you', reason: 'permission' })
+    service.markSeen('t1')
+    expect(stateOf(service)).toMatchObject({ state: 'needs-you', reason: 'permission' })
+    service.markSeen('nope')
+    service.close()
+  })
 })

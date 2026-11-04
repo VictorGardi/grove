@@ -236,6 +236,13 @@ export class StatusService {
     })
   }
 
+  // The reader saw a finished tab: it is idle from now, so the next finish notifies again. Any other state is left alone.
+  markSeen(tabId: string): void {
+    const watch = this.watches.get(tabId)
+    if (!watch || watch.status.state !== 'finished') return
+    this.apply(watch, applyEvent(watch.status, { kind: 'idle' }, this.clock()))
+  }
+
   close(tabId?: string): void {
     const ids = tabId === undefined ? [...this.watches.keys()] : [tabId]
     for (const id of ids) {

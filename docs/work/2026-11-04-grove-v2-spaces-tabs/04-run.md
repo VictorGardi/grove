@@ -442,4 +442,59 @@ Models passed: cto=inherit, researcher=inherit, planner=inherit, reviewer=inheri
 - `PostToolBatch` (the marker for a turn woken by a background task) is not ported; see Deviations (attempt 2).
 - StopFailure is needs-you error (the plan's error reason). The old Grove ends the turn on StopFailure. Confirm the choice.
 
+## Slice 4
+
+Session: 4 interrupts seen mark
+Status: done
+Commit: this commit (see git log)
+
+### Slice plan
+
+Found in the code: `next/packages/core/status/service.ts` `apply()` is the only place a change is emitted, to `subscribe` listeners, and `restore()` emits nothing, so a restart notifies nothing (as the old Grove's primed flag does). `daemon.ts` broadcasts each change as `status.changed` and has no focus input yet. `next/packages/ui/main.ts` knows the active tab (`active`), its label (`tabLabel`), and renders from `paint()`, but has no window focus state. `next/packages/ui/src-tauri/src/lib.rs` has a `notify` stub that takes title and body only. Old Grove: `src/core/core.ts` `notifyTransitions` (notify on entering waiting or a new reason, not for the tab on screen), `refreshStatus` (the on-screen tab is marked seen), `statusOf` (finished and seen shows as idle), `src/main/sound.ts` (Glass for permission and question, Funk for done, one sound per burst, 1 s gap), `src/main/index.ts` (notification bodies, click raises the window). The `tauri-plugin-notification` 2.8.0 crate for Tauri 2 is fetchable; no plugin is in Cargo yet.
+
+Implementer A (core, runs first):
+- [ ] `next/packages/protocol/messages.ts`: `METHODS.attentionFocus = 'attention.focus'`; `MethodMap['attention.focus']` params `{ tabId: string | null; windowFocused: boolean }`, result `Empty`; `AttentionNotice` `{ tabId: string; state: 'needs-you' | 'finished'; reason?: NeedsYouReason }`; `NotificationMap['attention.notify']: AttentionNotice`.
+- [ ] `next/packages/core/status/service.ts`: `markSeen(tabId)`: a `finished` tab becomes `idle` (since now) through `applyEvent(..., { kind: 'idle' })`, anything else is a no-op. Goes through `apply()` so it is saved and broadcast.
+- [ ] `next/packages/core/attention/attention.ts` (new): pure class `Attention` with `focus(tabId, windowFocused)` and `onStatus(change)`. Same rules as the old Grove: a tab entering needs-you (any reason) or finished notifies once per entry (dedupe key per tab, cleared by any other state), unless it is the tab on screen (`windowFocused` and `tabId` equal); a finished tab on screen is marked seen at once; `focus` marks the tab on screen seen. Calls `notify(notice)` and `markSeen(tabId)` given in its options.
+- [ ] `next/packages/core/daemon.ts`: `attention` in `Deps`; the status subscription also calls `attention.onStatus`; `attention.notify` broadcast to every client; `attention.focus` validated (tab id matches `TAB_ID` or null, boolean) and handled; the socket that last sent it clears the focus when it closes (window closed means not focused).
+- [ ] Tests: `next/packages/core/attention/attention.test.ts` (each transition, dedupe, reason change, on-screen rules, a second entry after idle notifies again, unknown and working never notify); `service.test.ts` gets `markSeen` cases (finished to idle and saved; working untouched).
+
+Implementer B (window, runs after A):
+- [ ] `next/packages/ui/alerts.ts` (new): pure. `noticeBody(notice)` (`Needs permission`, `Has a question`, `Hit an error`, `Finished`); `createSoundGate(now)` returns `(notice) => string | null`: `/System/Library/Sounds/Glass.aiff` for needs-you, `Funk.aiff` for finished, null otherwise or within `SOUND_GAP_MS` (1000) of the last sound. Port of `src/main/sound.ts`.
+- [ ] `next/packages/ui/alerts.test.ts` (new): the cases of `src/main/sound.test.ts`, plus the bodies.
+- [ ] `next/packages/ui/main.ts`: `windowFocused` from `getCurrentWindow().isFocused()` and `onFocusChanged`; `reportFocus()` sends `attention.focus` with the active tab id (or null) and window focus, deduped, called from `paint()` and the focus change, and re-sent after a reconnect; `bridge.on('attention.notify')` calls `invoke('notify', { title: tabLabel, body, sound })`.
+- [ ] `next/packages/ui/src-tauri/Cargo.toml`: `tauri-plugin-notification = "2.8.0"`; `lib.rs`: plugin registered; `notify(app, title, body, sound: Option<String>)` shows the notification and, when there is a sound, runs `/usr/bin/afplay <file>` detached (its failure is logged, not fatal).
+- [ ] Gates: `npm test`, `npm run typecheck` in `next/`, `cargo check` in `next/packages/ui/src-tauri`.
+
+Verification (by hand, from the built bundle, not run here): two Claude tabs, the window in another app, one asks permission and the other finishes; both notify with a sound; focusing a tab clears its finished state; record whether clicking reaches the tab.
+
+### Review rounds
+
+Round 1 (fresh reviewer, read-only): 0 blocking, 4 non-blocking. (a) A failed `attention.focus` replaced the reconnect message in the status line: fixed, the error now goes to the console only. (b) A tab that enters needs-you while on screen is not notified if the window then loses focus while it still waits: left (matches the old `waitKey`). (c) A needs-you or finished replayed at a core restart is not notified: left (plan-accepted, matches the old primed flag). (d) No daemon-level test for `attention.focus` validation or clearing focus on socket close: left, see Left for the human.
+
+Clean, 0 blocking, 0 fix rounds. Non-blocking left: (b), (c), (d).
+
+### Deviations
+
+- Reused from the old Grove: the notify rules of `notifyTransitions` (entering needs-you or finished, once per entry, a new reason notifies again, the tab on screen is skipped), the seen mark of `refreshStatus`, the seen-finished-reads-idle rule of `statusOf` (here the `markSeen` transition), no notify at restore (primed), `src/main/sound.ts` (Glass for needs-you, Funk for finished, one sound per burst with a 1 s gap, `/usr/bin/afplay`), and the notification bodies.
+- Diverged: no per-tab sound toggle (the old Grove's sound is off per session unless turned on; the brief asks for a sound on every interrupt). The old "finished child stays quiet" rule is not ported (no link concept in v2). The notification title is the tab label (space name and tab number), not a session label. Added the body "Hit an error" for the error reason.
+- Focus comes from the window (`attention.focus`, with `isFocused` and `onFocusChanged`), not from the old IPC. `markSeen` is called for the on-screen tab whenever the window is focused; it does nothing unless that tab is finished.
+- Click-to-raise is not implemented. The old Grove's notification click raises the window and focuses the session; the new notification plugin's click reporting on desktop was not checked, so clicking a banner is expected to do nothing yet.
+- `afplay` is reaped on a background thread so a finished sound does not stay a zombie. The old `execFile` callback also reaped.
+- Notifications are raised by the window's process, as the plan says: nothing notifies while the app is fully quit.
+
+### Verification
+
+- `npx vitest run` in `next/`: 20 files, 181 tests passed (after the review fix).
+- `npm run typecheck` in `next/`: exit 0.
+- `cargo check` in `next/packages/ui/src-tauri`: exit 0, no warnings.
+- Core logic tests: `next/packages/core/attention/attention.test.ts` (each transition, dedupe, reason change, on-screen rules, a second entry after idle) and `markSeen` cases in `service.test.ts`.
+- Not run here: the by-hand check from the built bundle (`tauri build`), since banners and the sound do not appear from a development binary.
+
+### Left for the human
+
+- By hand, from the built bundle (`npm run build:app`): two Claude tabs, the window in another app; one asks for permission and the other finishes; both notify with a sound. Focusing a tab clears its finished state. Record whether clicking the notification reaches the tab (expected: no, see Deviations).
+- Non-blocking, left as they are: a needs-you entered on the focused tab, followed by switching away while it still waits, does not notify; a permission request pending when the core restarts is not notified.
+- No daemon-level test covers `attention.focus` validation and focus clearing when the window's connection closes.
+
 ## Open questions

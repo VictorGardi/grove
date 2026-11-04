@@ -1,5 +1,7 @@
 import { invoke } from '@tauri-apps/api/core'
+import { getCurrentWindow } from '@tauri-apps/api/window'
 import { createBridge, fromBase64, toBase64 } from './bridge.ts'
+import { createSoundGate, noticeBody } from './alerts.ts'
 import { openTerminal, type TerminalView } from './terminal.ts'
 import type { AgentInfo, AgentStateName, SpaceInfo } from '../protocol/messages.ts'
 import './styles.css'
@@ -30,6 +32,10 @@ let active: Tab | null = null
 let activeSpace: string | null = null
 let refused: string | null = null
 let homeDir = ''
+let windowFocused = false
+// The last attention.focus sent, as a key; an identical one is skipped until a reconnect clears it.
+let sentFocus: string | null = null
+const playSound = createSoundGate()
 
 const tabStrip = byId('tabs')
 const terminals = byId('terminals')
@@ -180,6 +186,20 @@ function paint(): void {
   for (const control of addSpaceForm.querySelectorAll<HTMLInputElement | HTMLButtonElement>('input, button')) {
     control.disabled = refused !== null
   }
+  reportFocus()
+}
+
+// The core needs the tab on screen and whether the window has focus, to decide what to notify and mark seen.
+function reportFocus(): void {
+  const params = { tabId: active?.id || null, windowFocused }
+  const key = JSON.stringify(params)
+  if (key === sentFocus) return
+  sentFocus = key
+  // Not shown in the status line: during a reconnect that would replace the reconnect message. The next paint or reconnect sends it again.
+  bridge.rpc('attention.focus', params).catch((error: unknown) => {
+    sentFocus = null
+    console.error(error)
+  })
 }
 
 function focusActive(): void {
@@ -468,12 +488,21 @@ bridge.on('status.changed', (change) => {
   refreshAgents().catch(report)
 })
 
+bridge.on('attention.notify', (notice) => {
+  const tab = tabs.get(notice.tabId)
+  const title = tab ? tabLabel(tab) : notice.tabId
+  invoke('notify', { title, body: noticeBody(notice), sound: playSound(notice) }).catch(report)
+})
+
 bridge.onStatus((status) => {
   if (status === 'closed') {
     statusLine.textContent = 'Reconnecting to the core...'
     return
   }
   statusLine.textContent = ''
+  // A new core socket has no focus yet, so the focus is sent again.
+  sentFocus = null
+  reportFocus()
   resync().catch(report)
 })
 
@@ -491,6 +520,12 @@ async function start(): Promise<void> {
   const env = await invoke<EnvInfo>('env_info')
   homeDir = env.home
   spacePathInput.value = env.home
+  const appWindow = getCurrentWindow()
+  windowFocused = await appWindow.isFocused()
+  await appWindow.onFocusChanged(({ payload }: { payload: boolean }) => {
+    windowFocused = payload
+    reportFocus()
+  })
   await bridge.connect()
   await resync()
 }

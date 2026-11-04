@@ -15,6 +15,7 @@ export const METHODS = {
   tabsOpen: 'tabs.open',
   tabsScreen: 'tabs.screen',
   agentsList: 'agents.list',
+  attentionFocus: 'attention.focus',
 } as const
 
 export const ERROR_CODES = {
@@ -95,6 +96,13 @@ export interface AgentInfo {
   resumable: boolean
 }
 
+// A tab that needs the human: entered needs-you (any reason) or finished, and is not on screen.
+export interface AttentionNotice {
+  tabId: string
+  state: 'needs-you' | 'finished'
+  reason?: NeedsYouReason
+}
+
 export interface StatusChange {
   tabId: string
   state: AgentStateName
@@ -131,12 +139,15 @@ export interface MethodMap {
   'tabs.open': { params: { spacePath: string; cols: number; rows: number }; result: { id: string } }
   'tabs.screen': { params: { id: string }; result: { text: string } }
   'agents.list': { params: Empty; result: AgentInfo[] }
+  // The tab on screen (null when none) and whether the window has focus.
+  'attention.focus': { params: { tabId: string | null; windowFocused: boolean }; result: Empty }
 }
 
 export interface NotificationMap {
   'tabs.output': { id: string; dataB64: string }
   'tabs.exit': { id: string; exitCode: number | null }
   'status.changed': StatusChange
+  'attention.notify': AttentionNotice
 }
 
 export type MethodName = keyof MethodMap
