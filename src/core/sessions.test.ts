@@ -628,6 +628,8 @@ describe('core claude status', () => {
     claude.emit({ type: 'pending', sessionId: c.agentSessionId!, id: 'perm:main', kind: 'permission', open: true })
     await core.commands.sessionProgress({ id: c.id, done: 1, total: 3 })
     expect(find(core, c.id)?.progress).toEqual({ done: 1, total: 3 })
+    await core.commands.sessionProgress({ id: c.id, done: 1, total: 3, current: 2 })
+    expect(find(core, c.id)?.progress).toEqual({ done: 1, total: 3, current: 2 })
     expect(fs.readFileSync(statePath, 'utf8')).not.toContain('"progress"')
   })
 

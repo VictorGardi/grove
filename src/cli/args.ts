@@ -10,7 +10,7 @@ export type Command =
   | { cmd: 'focus'; ref: string }
   | { cmd: 'kill'; ref: string }
   | { cmd: 'status'; ref?: string; value: WorkflowStatus }
-  | { cmd: 'progress'; ref: string; done: number; total: number }
+  | { cmd: 'progress'; ref: string; done: number; total: number; current?: number }
   | { cmd: 'skill' }
   | { cmd: 'read'; ref: string; lines: number }
 
@@ -35,7 +35,7 @@ export const USAGE = `usage: grove <command>
   grove kill <ref>                               end a session
   grove status [<ref>] <value>                   set a session's workflow status (default: this session); value is one of
                                                  backlog, in-progress, blocked, in-review, cancelled, done, pinned
-  grove progress <ref> <done>/<total>            declare how many of a run's slices are done
+  grove progress <ref> <done>/<total> [--current N]  declare how many of a run's slices are done, and which one is running
   grove skill                                    print the agent skill for grove
   grove read <ref> [--lines N]                   print the last N lines (default 100) of a session's screen`
 
@@ -114,11 +114,14 @@ export function parseCommand(argv: string[]): Command | UsageError {
       return { cmd: 'status', ref: positionals.length === 2 ? positionals[0] : undefined, value: value as WorkflowStatus }
     }
     if (cmd === 'progress') {
-      const { positionals } = parseArgs({ args: rest, options: {}, allowPositionals: true })
+      const { values, positionals } = parseArgs({ args: rest, options: { current: { type: 'string' } }, allowPositionals: true })
       if (positionals.length !== 2 || !/^\d+\/\d+$/.test(positionals[1])) return new UsageError(`progress takes a session and <done>/<total>\n${USAGE}`)
       const [done, total] = positionals[1].split('/').map(Number)
       if (total < 1 || done > total) return new UsageError(`progress needs total >= 1 and done <= total\n${USAGE}`)
-      return { cmd: 'progress', ref: positionals[0], done, total }
+      if (values.current === undefined) return { cmd: 'progress', ref: positionals[0], done, total }
+      const current = Number(values.current)
+      if (!/^\d+$/.test(values.current) || current < 1 || current > total) return new UsageError(`progress --current needs 1 <= N <= total\n${USAGE}`)
+      return { cmd: 'progress', ref: positionals[0], done, total, current }
     }
     if (cmd === 'skill') {
       const { positionals } = parseArgs({ args: rest, options: {}, allowPositionals: true })

@@ -255,6 +255,11 @@ describe('cli server', () => {
     const s = await createTerminal(core)
     expect(await request(socketPath, req('sessions.progress', { ref: s.id, done: 1, total: 3 }))).toMatchObject({ ok: true, data: { id: s.id } })
     expect(core.getSlices().sessions.find((x) => x.id === s.id)?.progress).toEqual({ done: 1, total: 3 })
+    expect(await request(socketPath, req('sessions.progress', { ref: s.id, done: 1, total: 3, current: 2 }))).toMatchObject({ ok: true })
+    expect(core.getSlices().sessions.find((x) => x.id === s.id)?.progress).toEqual({ done: 1, total: 3, current: 2 })
+    for (const current of [0, 4, 1.5, '2']) {
+      expect(await request(socketPath, req('sessions.progress', { ref: s.id, done: 1, total: 3, current }))).toMatchObject({ ok: false, error: { code: 'bad-params' } })
+    }
     for (const p of [{ done: 5, total: 4 }, { done: 0, total: 0 }, { done: -1, total: 2 }, { done: 1.5, total: 2 }]) {
       expect(await request(socketPath, req('sessions.progress', { ref: s.id, ...p }))).toMatchObject({ ok: false, error: { code: 'bad-params' } })
     }

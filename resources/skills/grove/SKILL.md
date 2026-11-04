@@ -29,7 +29,7 @@ grove read <ref> [--lines N]         the last N lines of its screen (default 100
 grove focus <ref>                    show it in the app and raise the window
 grove kill <ref>                     end it
 grove status [<ref>] <value>         set a session's workflow status (default: your own session)
-grove progress <ref> <done>/<total>  declare how far a run is (for example 4/8) on the parent's card
+grove progress <ref> <done>/<total> [--current N]  declare how far a run is (for example 4/8) on the parent's card; --current N names the slice running
 grove skill                          print this file
 ```
 
@@ -54,7 +54,7 @@ error (exit 2). With one argument it sets your own session (needs `GROVE_SESSION
 changes the label: nothing is started, stopped or cascaded. `grove ls` shows it in the WORKFLOW
 column and `grove ls --json` as `workflowStatus`.
 
-`progress` takes `<done>/<total>` and is live only (gone after an app restart).
+`progress` takes `<done>/<total>` and optionally `--current N` (1 to total; the bar then reads "slice N/M"; an older app rejects the flag, so retry without it), and is live only (gone after an app restart).
 
 ## Exit codes
 

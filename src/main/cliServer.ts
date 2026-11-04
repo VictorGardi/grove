@@ -157,13 +157,16 @@ async function dispatch(core: Core, raise: () => void, line: string): Promise<Cl
       return res.ok ? { id, ok: true, data: { id: found.data.id } } : failFrom(id, res.error)
     }
     case 'sessions.progress': {
-      const { ref, done, total } = params
+      const { ref, done, total, current } = params
       if (typeof ref !== 'string' || !ref || typeof done !== 'number' || typeof total !== 'number' || !Number.isInteger(done) || !Number.isInteger(total) || done < 0 || total < 1 || done > total) {
         return fail(id, 'bad-params', 'ref, done and total are required (0 <= done <= total, total >= 1)')
       }
+      if (current !== undefined && (typeof current !== 'number' || !Number.isInteger(current) || current < 1 || current > total)) {
+        return fail(id, 'bad-params', 'current must be an integer with 1 <= current <= total')
+      }
       const found = resolveSessionRef(core.getSlices().sessions, ref)
       if (!found.ok) return failFrom(id, found.error)
-      const res = await core.commands.sessionProgress({ id: found.data.id, done, total })
+      const res = await core.commands.sessionProgress({ id: found.data.id, done, total, current })
       return res.ok ? { id, ok: true, data: { id: found.data.id } } : failFrom(id, res.error)
     }
     case 'sessions.read': {

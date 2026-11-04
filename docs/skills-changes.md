@@ -28,3 +28,16 @@ Needed by: `docs/work/2026-10-05-02-workflow-discovery-sidebar/03-design.md` (D4
 Prerequisite for a later hub (epic design, two-way row "Skills changes");
 reserved `{repo}`, `{repo_path}` and `per_repo` in `workflow.yaml`. Not
 specified yet.
+
+## 3. `grove progress --current N` (current slice on the parent bar)
+
+Status: not yet built in grove-skills (the app side is done).
+
+Needed by: the parent bar showing "slice N/M" during an auto run.
+
+- `grove-run`: right after starting each slice's child, the parent runs
+  `grove progress <own-id> <done>/<total> --current N`; if the app rejects
+  `--current` (older app), it retries without the flag. The existing call after
+  a git-confirmed slice stays.
+- `grove`: document `--current N` in the command list and the `progress` note.
+- Installed copies (for example under `~/.claude/skills`) need the same edit.

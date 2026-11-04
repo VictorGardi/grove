@@ -36,7 +36,7 @@ async function run(cmd: Exclude<Command, { cmd: 'skill' }>, socket: string): Pro
     return reply.ok ? { ...reply, print: undefined } : reply
   }
   if (cmd.cmd === 'progress') {
-    const reply = await call(socket, 'sessions.progress', { ref: cmd.ref, done: cmd.done, total: cmd.total })
+    const reply = await call(socket, 'sessions.progress', { ref: cmd.ref, done: cmd.done, total: cmd.total, current: cmd.current })
     return reply.ok ? { ...reply, print: undefined } : reply
   }
   if (cmd.cmd === 'wait') {

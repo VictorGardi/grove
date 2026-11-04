@@ -163,6 +163,10 @@ describe('familyJumpTarget', () => {
 
 describe('runProgress', () => {
   const withP = (done: number, total: number) => session('parent', { progress: { done, total } })
+  it('names the current slice', () => {
+    const p = runProgress(session('parent', { progress: { done: 2, total: 5, current: 3 } }), [])
+    expect(p).toMatchObject({ current: 3, pct: 40, label: 'slice 3 of 5, 2 done' })
+  })
   it('is null without progress', () => {
     expect(runProgress(parent, [child('a')])).toBeNull()
   })
@@ -186,6 +190,11 @@ describe('barCounts', () => {
     const kids = [...many(11, { workflowStatus: 'done' }, 'd'), child('r')]
     expect(barCounts(withP(11, 14), kids)).toMatchObject({ done: 11, run: 1, failed: 0, wait: 0, queued: 2, needsYou: 0, text: '11/14' })
     expect(barCounts(withP(11, 14), kids).label).toBe('11 of 14 slices done, 1 running, 2 not started')
+  })
+  it('reads slice N/M when a current slice is set', () => {
+    const b = barCounts(session('parent', { progress: { done: 2, total: 5, current: 3 } }), [child('r')])
+    expect(b.text).toBe('slice 3/5')
+    expect(b.label).toBe('slice 3 of 5, 2 done, 1 running, 4 not started')
   })
   it('counts no plan: 24 children', () => {
     const kids = [...many(16, { workflowStatus: 'done' }, 'd'), ...many(7, {}, 'r'), child('f', { startup: { phase: 'failed', reason: 'x' } })]

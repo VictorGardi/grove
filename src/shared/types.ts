@@ -35,7 +35,7 @@ export interface Session {
   status?: 'working' | 'waiting' | 'idle' // agent sessions while their service is connected, terminals from the foreground command; never saved
   waitingFor?: 'permission' | 'question' | 'done' // with status 'waiting'; never saved
   lastLine?: string                // one line on what the session was doing: the first line of the last prompt the human sent (cut at 120); persisted; absent: none
-  progress?: { done: number; total: number } // `grove progress`: slices a run has and how many are done; live, never saved
+  progress?: { done: number; total: number; current?: number } // `grove progress`: slices a run has and how many are done; live, never saved
   classified?: { verdict: 'needs-you' | 'done'; at: string } // `at`: the statusAt of that finish; the small model's read of a finished top-level Claude session (core/classifier.ts; other kinds only when config `classifier.kinds` lists them); tied to one idle period; live, never saved
   contextPct?: number | null       // agent sessions once a reading arrived: % of the context window used; null: not known yet; never saved
   contextTokens?: number | null    // tokens in context (input incl. cache); never saved

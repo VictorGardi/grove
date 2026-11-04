@@ -100,7 +100,7 @@ export interface Commands {
   sessionResume(a: { id: string }): Promise<Result<Session>> // gone agent sessions only
   sessionRename(a: { id: string; label: string }): Promise<Result<Session>>
   sessionWorkflowStatus(a: { id: string; status: WorkflowStatus }): Promise<Result<Session>>
-  sessionProgress(a: { id: string; done: number; total: number }): Promise<Result<Session>> // a parent's run progress, shown on its row
+  sessionProgress(a: { id: string; done: number; total: number; current?: number }): Promise<Result<Session>> // a parent's run progress, shown on its row
   sessionLink(a: { id: string; feature: string | null }): Promise<Result<Session>>
   sessionSound(a: { id: string; on: boolean }): Promise<Result<Session>> // the waiting sound for one session; off unless turned on
   sessionPromote(a: { id: string; promoted: boolean }): Promise<Result<Session>> // a linked session also shows as its own row; not-found when it has no link
@@ -1118,10 +1118,10 @@ export function createCore(opts: CoreOptions): Core {
       return { ok: true, data: next }
     },
 
-    async sessionProgress({ id, done, total }) {
+    async sessionProgress({ id, done, total, current }) {
       const session = findSession(id)
       if (!session) return { ok: false, error: 'not-found' }
-      replaceSession({ ...session, progress: { done, total } })
+      replaceSession({ ...session, progress: current === undefined ? { done, total } : { done, total, current } })
       return { ok: true, data: findSession(id) ?? session }
     },
 

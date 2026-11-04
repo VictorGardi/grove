@@ -57,17 +57,17 @@ export function familyJumpTarget(sessions: Session[], focusedId: string | null |
   return f.parent ?? f.active
 }
 
-export interface RunProgress { done: number; total: number; kidsDone: number; label: string; pct: number }
+export interface RunProgress { done: number; total: number; current?: number; kidsDone: number; label: string; pct: number }
 
 // A run's progress bar: `grove progress` slices done of total, and how many children are marked done.
 export function runProgress(parent: Session, kids: Session[]): RunProgress | null {
   const p = parent.progress
   if (!p) return null
   const kidsDone = kids.filter((k) => k.workflowStatus === 'done').length
-  const base = `${p.done} of ${p.total} slices done`
+  const base = p.current ? `slice ${p.current} of ${p.total}, ${p.done} done` : `${p.done} of ${p.total} slices done`
   const label = kidsDone > 0 ? `${base}, ${kidsDone} ${kidsDone === 1 ? 'child' : 'children'} done` : base
   const pct = p.total > 0 ? Math.min(100, Math.max(0, Math.round((100 * p.done) / p.total))) : 0
-  return { done: p.done, total: p.total, kidsDone, label, pct }
+  return { done: p.done, total: p.total, current: p.current, kidsDone, label, pct }
 }
 
 export interface BarCounts { done: number; failed: number; run: number; wait: number; queued: number; needsYou: number; text: string; label: string }
@@ -84,8 +84,8 @@ export function barCounts(parent: Session, kids: Session[]): BarCounts {
   }
   const p = parent.progress
   const queued = p ? Math.max(0, p.total - kids.length) : 0
-  const text = p ? `${p.done}/${p.total}` : `${done} of ${kids.length}`
-  const head = p ? `${p.done} of ${p.total} slices done` : `${done} of ${kids.length} children done`
+  const text = p ? (p.current ? `slice ${p.current}/${p.total}` : `${p.done}/${p.total}`) : `${done} of ${kids.length}`
+  const head = p ? (p.current ? `slice ${p.current} of ${p.total}, ${p.done} done` : `${p.done} of ${p.total} slices done`) : `${done} of ${kids.length} children done`
   const parts = [
     run && `${run} running`,
     failed && `${failed} failed`,

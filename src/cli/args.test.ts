@@ -76,6 +76,8 @@ describe('parseCommand', () => {
   it('parses status with an optional ref and the seven values', () => {
     expect(parseCommand(['status', 'in-review'])).toEqual({ cmd: 'status', ref: undefined, value: 'in-review' })
     expect(parseCommand(['progress', 'h', '2/5'])).toEqual({ cmd: 'progress', ref: 'h', done: 2, total: 5 })
+    expect(parseCommand(['progress', 'h', '2/5', '--current', '3'])).toEqual({ cmd: 'progress', ref: 'h', done: 2, total: 5, current: 3 })
+    for (const bad of ['0', '6', 'x', '-1', '1.5']) expect(parseCommand(['progress', 'h', '2/5', '--current', bad])).toBeInstanceOf(UsageError)
     for (const bad of ['5/4', '1/0', 'x', '1/2/3', '-1/2']) expect(parseCommand(['progress', 'h', bad])).toBeInstanceOf(UsageError)
     expect(parseCommand(['status', 'helper', 'done'])).toEqual({ cmd: 'status', ref: 'helper', value: 'done' })
     for (const value of ['backlog', 'in-progress', 'blocked', 'in-review', 'cancelled', 'done', 'pinned']) {
