@@ -102,6 +102,7 @@ export interface Commands {
   sessionWorkflowStatus(a: { id: string; status: WorkflowStatus }): Promise<Result<Session>>
   sessionProgress(a: { id: string; done: number; total: number }): Promise<Result<Session>> // a parent's run progress, shown on its row
   sessionLink(a: { id: string; feature: string | null }): Promise<Result<Session>>
+  sessionSound(a: { id: string; on: boolean }): Promise<Result<Session>> // the waiting sound for one session; off unless turned on
   sessionPromote(a: { id: string; promoted: boolean }): Promise<Result<Session>> // a linked session also shows as its own row; not-found when it has no link
   sessionSetParent(a: { id: string; parent: string | null }): Promise<Result<Session>> // null: out of its group
   uiSet(partial: Partial<UiState>): Promise<Result<UiState>>
@@ -125,7 +126,6 @@ export interface Core {
   getErrors(): string[]
   on(e: 'slice', cb: SliceListener): () => void
   on(e: 'notify', cb: (s: Session) => void): () => void // a session started waiting while not on screen
-  soundsOn(): boolean // config.json `sounds`, read at start; on unless set to false
   setWindowFocused(f: boolean): void
   checkLiveness(): Promise<void>
   commands: Commands
@@ -1136,6 +1136,14 @@ export function createCore(opts: CoreOptions): Core {
       return { ok: true, data: next }
     },
 
+    async sessionSound({ id, on }) {
+      const s = findSession(id)
+      if (!s) return { ok: false, error: 'not-found' }
+      const next = { ...s, sound: on }
+      replaceSession(next)
+      return { ok: true, data: next }
+    },
+
     async sessionPromote({ id, promoted }) {
       const s = findSession(id)
       if (!s?.link) return { ok: false, error: 'not-found' }
@@ -1385,7 +1393,6 @@ export function createCore(opts: CoreOptions): Core {
       bag.add(cb)
       return () => void bag.delete(cb)
     },
-    soundsOn: () => configSounds !== false,
     setWindowFocused(f) {
       windowFocused = f
       refreshStatus()

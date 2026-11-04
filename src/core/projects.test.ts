@@ -75,21 +75,12 @@ describe('config sounds', () => {
   let disposeAll = () => {}
   afterEach(() => disposeAll())
 
-  it('is on by default', async () => {
-    const s = setupCore()
-    disposeAll = s.disposeAll
-    const a = s.make()
-    await a.start()
-    expect(a.soundsOn()).toBe(true)
-  })
-
-  it('reads sounds: false and keeps it when the projects are saved', async () => {
+  it('keeps the old sounds key when the projects are saved', async () => {
     const s = setupCore()
     disposeAll = s.disposeAll
     saveConfig(s.configPath, { ...loadConfig(s.configPath), sounds: false })
     const a = s.make()
     await a.start()
-    expect(a.soundsOn()).toBe(false)
     expect(await a.commands.projectRemove({ id: 'p' })).toEqual({ ok: true, data: { id: 'p' } })
     expect(loadConfig(s.configPath).sounds).toBe(false)
   })

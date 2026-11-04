@@ -126,7 +126,7 @@ app.whenReady().then(async () => {
   const BODY = { permission: 'Needs permission', question: 'Has a question', done: 'Finished' }
   const playSound = createSoundPlayer((file) => execFile('/usr/bin/afplay', [file], () => {}))
   core.on('notify', (s) => {
-    if (process.platform === 'darwin' && core.soundsOn()) playSound(s)
+    if (process.platform === 'darwin' && s.sound === true) playSound(s)
     if (!Notification.isSupported() || !s.waitingFor) return
     const n = new Notification({ title: s.label, body: BODY[s.waitingFor] })
     shown.add(n)

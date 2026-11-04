@@ -45,6 +45,7 @@ export interface Session {
   statusAt?: string               // when it entered its current status (ISO), stamped by core on every sessions publish; never saved
   lastContext: ContextReading | null // the last known reading (pct known); persisted
   link?: SessionLink               // the parent this session is linked to (a group, or a slice of a run). Links are one level deep, so a parent never has a parent; missing = no parent; persisted
+  sound?: boolean                  // plays a sound when it starts waiting; missing = off; persisted
   promoted?: boolean               // a linked child that also shows as its own sidebar row; keeps its link; persisted
 }
 // a viewable file in the project folder (ADR 0032); path relative to the project, POSIX
@@ -173,7 +174,7 @@ export interface Comment {
 export interface CommentsFile { schemaVersion: 3; comments: Comment[] }
 export type Slices = { projects: Project[]; sessions: Session[]; ui: UiState; features: FeaturesSlice; opencode: OpenCodeSlice; diff: SessionDiff | null; comments: Comment[] } // diff: the one on screen, not persisted
 // A child prompt its parent answered with `grove send` before the grace window ran out.
-export interface ConfigFile { schemaVersion: 1; projects: Project[]; workflow?: string; sounds?: boolean; classifier?: { enabled?: boolean; model?: string; kinds?: ('claude' | 'opencode' | 'copilot')[] } } // sounds: false mutes the waiting sounds; classifier.kinds: agent kinds whose finished screens go to the small model, default claude only
+export interface ConfigFile { schemaVersion: 1; projects: Project[]; workflow?: string; sounds?: boolean; classifier?: { enabled?: boolean; model?: string; kinds?: ('claude' | 'opencode' | 'copilot')[] } } // sounds: kept as written, no longer read (sound is per session); classifier.kinds: agent kinds whose finished screens go to the small model, default claude only
 export interface StateFile { schemaVersion: 11; sessions: Session[]; ui: UiState }
 export const SIDEBAR_WIDTH = 220 // the default; drag the sidebar's edge to resize, double-click it to come back here
 export const DEFAULT_UI: UiState = { sidebarWidth: SIDEBAR_WIDTH, sidebarCollapsed: false, focusedSessionId: null, focusedFeature: null, focusedProject: null, focusedArtifact: null, collapsed: [], hiddenProjects: [], sessionSort: 'viewed-desc', sessionOrder: [], viewer: null, viewerWidth: null, viewerExpanded: false, grid: { open: false, members: [] } }

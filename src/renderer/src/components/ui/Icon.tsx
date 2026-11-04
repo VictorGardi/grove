@@ -3,7 +3,7 @@ import type { ReactNode } from 'react'
 export type IconName =
   | 'plus' | 'folder' | 'folder-plus' | 'chevron-down' | 'chevron-up' | 'chevron-right'
   | 'terminal' | 'opencode' | 'claude' | 'copilot' | 'branch' | 'pr-open' | 'pr-merged' | 'search' | 'info' | 'trash'
-  | 'minimize' | 'maximize' | 'x' | 'link' | 'resume' | 'minus' | 'chevrons-down-up' | 'chevrons-up-down' | 'check' | 'grid' | 'eye' | 'eye-off' | 'sidebar' | 'sliders' | 'shield' | 'shield-off' | 'more-vertical' | 'corner-left-up' | 'worktree' | 'span-1x1' | 'span-wide' | 'span-tall'
+  | 'minimize' | 'maximize' | 'x' | 'link' | 'resume' | 'minus' | 'chevrons-down-up' | 'chevrons-up-down' | 'check' | 'grid' | 'eye' | 'eye-off' | 'sidebar' | 'sliders' | 'shield' | 'shield-off' | 'more-vertical' | 'corner-left-up' | 'worktree' | 'span-1x1' | 'span-wide' | 'span-tall' | 'bell' | 'bell-off'
 
 const folder = 'M20 20a2 2 0 0 0 2-2V8a2 2 0 0 0-2-2h-7.9a2 2 0 0 1-1.69-.9L9.6 3.9A2 2 0 0 0 7.93 3H4a2 2 0 0 0-2 2v13a2 2 0 0 0 2 2Z'
 
@@ -16,6 +16,8 @@ const shapes: Record<IconName, ReactNode> = {
   'corner-left-up': <><path d="M14 9 9 4 4 9" /><path d="M20 20h-7a4 4 0 0 1-4-4V4" /></>,
   sidebar: <><rect x="3" y="3" width="18" height="18" rx="2" /><path d="M9 3v18" /></>,
   minus: <path d="M5 12h14" />,
+  bell: <><path d="M6 8a6 6 0 0 1 12 0c0 7 3 9 3 9H3s3-2 3-9" /><path d="M10.3 21a1.94 1.94 0 0 0 3.4 0" /></>,
+  'bell-off': <><path d="M10.3 21a1.94 1.94 0 0 0 3.4 0" /><path d="M18.6 13.7C18.9 15.1 19.6 16.2 21 17H8" /><path d="M17 17H3s3-2 3-9a6 6 0 0 1 .3-1.9" /><path d="M8.7 3.3A6 6 0 0 1 18 8a21 21 0 0 0 .3 3" /><path d="m2 2 20 20" /></>,
   check: <path d="M20 6 9 17l-5-5" />,
   grid: <><rect x="3" y="3" width="7" height="7" rx="1" /><rect x="14" y="3" width="7" height="7" rx="1" /><rect x="3" y="14" width="7" height="7" rx="1" /><rect x="14" y="14" width="7" height="7" rx="1" /></>,
   'more-vertical': <><circle cx="12" cy="5" r="1" /><circle cx="12" cy="12" r="1" /><circle cx="12" cy="19" r="1" /></>,

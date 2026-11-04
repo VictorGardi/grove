@@ -70,6 +70,7 @@ function SessionCard({ s, feature, worktree, focused, picked, compact, since, no
           {hasBar && <div className={css.branchLine}><RunProgress parent={s} kids={kids ?? []} progress={progress} onOpen={onOpenDrawer} /></div>}
           <div className={css.branchLine}>
             {s.kind === 'terminal' && <span className={css.kindMark} title={KIND_LABEL.terminal} aria-label={KIND_LABEL.terminal}><Icon name="terminal" size={12} /></span>}
+            {s.sound === true && <span className={css.kindMark} title="Sound on" aria-label="Sound on"><Icon name="bell" size={12} /></span>}
             {/* a worktree's branch is purple instead of carrying a worktree icon */}
             {s.branch && (() => {
               // cut in the middle: the head shrinks, the tail that tells branches apart stays
@@ -223,6 +224,7 @@ export function Sidebar({ onNew, onRemove, onOpenDrawer }: { onNew: (projectId?:
   const [anchor, setAnchor] = useState<string | null>(null) // where a shift-click range starts
   const [menu, setMenu] = useState<{ x: number; y: number; ids: string[] } | null>(null)
   const hidden = ui.hiddenProjects ?? []
+  const soundOn = !!menu && menu.ids.length > 0 && menu.ids.every((id) => sessions.find((x) => x.id === id)?.sound === true) // the menu item mutes only when every picked session is on
   const one = menu?.ids.length === 1 ? sessions.find((x) => x.id === menu.ids[0]) : undefined // linking and parenting act on one session
   // what the options panel shows and hides: one row per repo, its worktrees counted in, since
   // the repo is the unit rather than the checkout
@@ -612,6 +614,7 @@ export function Sidebar({ onNew, onRemove, onOpenDrawer }: { onNew: (projectId?:
             ...(one && !hasChildren(sessions, one.id) && sessions.some((x) => canParent(sessions, one.id, x))
               ? [{ label: 'Set parent…', icon: 'corner-left-up' as const, onSelect: () => setParenting(one) }] : []),
             ...(one?.promoted ? [{ label: 'Unpromote', icon: 'corner-left-up' as const, onSelect: () => void window.api.invoke('session:promote', { id: one.id, promoted: false }) }] : []),
+            { label: soundOn ? 'Mute sound' : 'Turn sound on', icon: soundOn ? ('bell-off' as const) : ('bell' as const), onSelect: () => { for (const id of menu.ids) void window.api.invoke('session:sound', { id, on: !soundOn }) } },
             ...(one?.link ? [{ label: 'Clear parent', icon: 'minus' as const, onSelect: () => void window.api.invoke('session:setParent', { id: one.id, parent: null }) }] : []),
             // the card's own status button covers a single card; the menu is for a selection
             ...(menu.ids.length > 1

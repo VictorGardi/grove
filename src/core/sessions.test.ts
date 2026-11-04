@@ -289,6 +289,20 @@ describe('core sessions', () => {
     expect(a.getSlices().sessions).toHaveLength(3) // the refused one made nothing
   })
 
+  it('turns sound on per session, off by default, and refuses an unknown one', async () => {
+    const { make } = setup()
+    const a = make()
+    await a.start()
+    const s = await create(a)
+    expect(s.sound).toBeUndefined()
+    expect(await a.commands.sessionSound({ id: 'nope', on: true })).toEqual({ ok: false, error: 'not-found' })
+    const on = await a.commands.sessionSound({ id: s.id, on: true })
+    expect(on.ok && on.data.sound).toBe(true)
+    expect(a.getSlices().sessions.find((x) => x.id === s.id)?.sound).toBe(true)
+    const off = await a.commands.sessionSound({ id: s.id, on: false })
+    expect(off.ok && off.data.sound).toBe(false)
+  })
+
   it('promotes a linked session and refuses one with no link', async () => {
     const { make } = setup()
     const a = make()
