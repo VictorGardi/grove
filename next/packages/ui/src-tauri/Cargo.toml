@@ -1,0 +1,22 @@
+[package]
+name = "grove-ui"
+version = "0.1.0"
+description = "Grove window: a Tauri shell around the core's JSON-RPC socket"
+edition = "2021"
+publish = false
+
+[lib]
+name = "grove_ui_lib"
+path = "src/lib.rs"
+
+[[bin]]
+name = "grove-ui"
+path = "src/main.rs"
+
+[build-dependencies]
+tauri-build = "2.7.4"
+
+[dependencies]
+tauri = "2.12.5"
+serde = { version = "1.0.228", features = ["derive"] }
+serde_json = "1.0.154"

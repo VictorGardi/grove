@@ -1,0 +1,35 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Grove</title>
+    <link rel="stylesheet" href="./styles.css" />
+  </head>
+  <body>
+    <div class="app">
+      <aside class="sidebar">
+        <section>
+          <h2 class="section-label">Spaces</h2>
+          <button class="space" type="button" aria-current="true">Home</button>
+        </section>
+        <section>
+          <h2 class="section-label">Agents</h2>
+          <p class="empty">No agents yet.</p>
+        </section>
+        <footer class="sidebar-foot">
+          <a id="stress-link" href="./stress.html" hidden>Stress page</a>
+        </footer>
+      </aside>
+      <main class="main">
+        <div class="tabstrip">
+          <div id="tabs" class="tabs" role="tablist"></div>
+          <button id="new-tab" class="new-tab" type="button" title="New shell tab">+</button>
+        </div>
+        <div id="terminals" class="terminals"></div>
+        <div id="status" class="status" role="status"></div>
+      </main>
+    </div>
+    <script type="module" src="./main.ts"></script>
+  </body>
+</html>
