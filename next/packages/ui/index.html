@@ -11,7 +11,11 @@
       <aside class="sidebar">
         <section>
           <h2 class="section-label">Spaces</h2>
-          <button class="space" type="button" aria-current="true">Home</button>
+          <ul id="spaces" class="spaces"></ul>
+          <form id="add-space" class="add-space">
+            <input id="space-path" type="text" spellcheck="false" aria-label="Folder path" />
+            <button type="submit">Add</button>
+          </form>
         </section>
         <section>
           <h2 class="section-label">Agents</h2>

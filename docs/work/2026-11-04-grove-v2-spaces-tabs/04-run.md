@@ -204,4 +204,102 @@ Fix rounds: 0 in this attempt (the decision's one fix; attempt 1 had 3, attempt 
 - After a supersede, the old listener's queued output is flushed before the second reply; a client that writes each snapshot without resetting its screen would show repeated content. The client side must reset (not checked here).
 - The manual checks in the Verification of the plan (the window opens, the `claude` tab survives reopening, the stress page runs) were not run here.
 
+## Slice 2
+
+Session: 2 spaces tabs stick
+Status: done
+Commit: this commit (see git log)
+
+### Slice plan
+
+Found in the code: slice 1 has the core daemon proxying `tabs.*` to the holder (`next/packages/core/daemon.ts`), `tabs.create` takes an optional id and fails with `tabExists` on an id the holder still has (exited tabs stay in its table, `pty-table.ts`), `groveNextHome()` is the one place for `~/.grove-next` (`protocol/paths.ts`), and the window only makes shell tabs in the fixed "Home" space (`ui/main.ts`, `ui/index.html`). Nothing reads or writes a state file yet. The root `vitest.config.ts` only includes `src/**` and `scripts/**`, so `next/` stays outside it; no root file changes in this slice.
+
+Decisions made here, inside the slice (the plan leaves them open):
+- The core owns the state. `<groveNextHome()>/state.json` is one versioned file (`version: 1`) with `spaces` (`{ path }`) and `tabs` (`{ id, spacePath }`, order = tab number within a space). The window and the CLI are clients over RPC, so they see the same truth (D5).
+- Space identity is the real path (`fs.realpathSync`). `spaces.add` is idempotent: adding a known path returns it.
+- A saved tab's id is its holder tab id. On core start, before it listens, a saved tab the holder does not know at all is created again with the same id, as a fresh login shell in its space's root (home if that folder is gone). A tab the holder still has (alive or exited) is left as it is. So a core restart keeps shells, and a reboot (holder gone) gives fresh shells in the same spaces and tabs.
+- Worktree grouping is computed by the core from `git rev-parse --git-common-dir` and the first entry of `git worktree list --porcelain`. A space gets `parent` = the path of its main worktree when that path is also a space; otherwise `parent` is null and the space shows top-level with the repo's name (`repoName`) and its own folder name.
+- A state file that cannot be parsed is renamed to `state.json.corrupt-<unix ms>` and the core starts empty. A state file with another or missing `version` is refused: the file is not touched, the core runs, and `spaces.*` and `tabs.open` fail with `stateRefused` and the reason (the window shows it).
+- Tabs the holder has that no saved record names (for example from slice 1) are not shown in any space.
+- The window adds a space by typing a path in a field under the spaces list (no folder picker: it would need the Tauri dialog plugin, a new dependency). Default value: the home folder.
+- The shell is `$SHELL` (fallback `/bin/zsh`), started as a login shell (`-l`), as slice 1 does. The core picks it, not the window.
+
+Implementer 1 (core: protocol, store, git, RPC, restore; runs first):
+- [ ] `next/packages/protocol/messages.ts`: add methods `spaces.list` (params `Empty`; result `{ spaces: SpaceInfo[]; tabs: SpaceTabInfo[]; refused: string | null }`), `spaces.add` (params `{ path: string }`; result `SpaceInfo`), `tabs.open` (params `{ spacePath: string; cols: number; rows: number }`; result `{ id: string }`). `SpaceInfo = { path, name, repoName: string | null, parent: string | null }`, `SpaceTabInfo = { id, spacePath, alive, exitCode: number | null }`. Add error code `stateRefused: -32003`. Bump nothing else; `PROTOCOL_VERSION` stays 1 (nothing shipped). Add `MethodMap` and `METHODS` entries.
+- [ ] `next/packages/protocol/client.ts`: move `connectWhenReady` here from `packages/core/test-helpers.ts` (export it; test-helpers re-exports or imports it), so the CLI can use it without importing a test helper.
+- [ ] `next/packages/core/store/state.ts`: `loadState(file)` returns `{ kind: 'ok', state }` | `{ kind: 'refused', reason }`, sets aside a corrupt file (`state.json.corrupt-<ms>`) and returns an empty state; `saveState(file, state)` writes `file + '.tmp-' + pid`, then `fs.renameSync` (atomic). Types `StateV1`, `SpaceRecord`, `TabRecord`. No other fields.
+- [ ] `next/packages/core/git.ts`: `spaceGitInfo(path)` runs `git -C` (explicit `-C` here, since this is core code, not an agent in a worktree) with `execFile` and returns `{ repoName, mainPath }` or nulls when the folder is not in git (or git is missing). `mainPath` = first `worktree` line of `git worktree list --porcelain`; `repoName` = basename of `mainPath`.
+- [ ] `next/packages/core/spaces.ts`: service that owns the store file path and state: `list()` (spaces with `parent` from git info, tabs merged with holder `tabs.list` for `alive`/`exitCode`), `add(path)` (realpath, must be a directory, else `invalidParams`), `openTab(spacePath, cols, rows)` (new id with `crypto.randomUUID().slice(0, 8)`, holder `tabs.create` with `command = $SHELL`, `args ['-l']`, `cwd = spacePath`; then save), `restore()` (see Decisions). Holder access takes an `RpcClient`, passed in, so the daemon and the restore share the same code.
+- [ ] `next/packages/core/daemon.ts`: dispatch the three new methods to `spaces.ts` (the holder connection is the one per client it already makes). `startCoreDaemon` takes `stateFile?` (default `groveNextHome()/state.json`) for tests.
+- [ ] `next/packages/core/bin.ts`: after `ensureHolder()` and before `startCoreDaemon()`, run `restore()` through a holder connection; log its count.
+- [ ] Tests (`next/packages/core/store/state.test.ts`, `next/packages/core/git.test.ts`, `next/packages/core/spaces.test.ts`): corrupt file set aside and an empty start; unknown version refused and the file bytes unchanged; save then load round-trips with no `.tmp-` file left; a temp repo with `git worktree add` gives `parent` = the main path when the main path is a space, and `parent: null` with `repoName` when it is not; `tabs.open` in a space gives a tab whose `pwd` output equals the space root (realpath); after the holder and core are stopped (`stopHolder`), a new stack restores the same space and tab id with a live shell in the space root.
+
+Implementer 2 (CLI and the `grove-next` script; after Implementer 1; parallel with Implementer 3):
+- [ ] `next/packages/cli/main.ts`: `main(argv, options)` returning an exit code, and the `bin` entry at the bottom. Commands: `space add [path]` (default `GROVE_NEXT_CALLER_CWD` or `process.cwd()`; prints `added <path>` or `already a space: <path>`), `space ls` and `ls` (spaces, then their tabs, one per line with the tab's number and alive/exited). Starts the holder with `ensureHolder()` when the core socket is not reachable, then `connectWhenReady(coreSocketPath())`. Errors print one line to stderr with exit 1; unknown command prints usage and exits 2.
+- [ ] `next/bin/grove-next` (POSIX `sh`, executable in git: `git update-index --chmod=+x`): `here` = the `next/` folder, `export GROVE_NEXT_CALLER_CWD="$PWD"`, then `cd "$here" && exec node --import tsx packages/cli/main.ts "$@"`.
+- [ ] `next/README.md`: a short "Spaces" section: `grove-next space add [path]`, `grove-next ls`, the state file location, and the reboot behaviour.
+- [ ] Test (`next/packages/cli/cli.test.ts`): `main(['space', 'add', dir])` in-process with `GROVE_NEXT_HOME` set to a temp folder; a second add says already a space; `main(['ls'])` output includes the path. Stops the holder in `afterEach` (`stopHolder` pattern from `test-helpers.ts`).
+
+Implementer 3 (window; after Implementer 1; parallel with Implementer 2):
+- [ ] `next/packages/ui/index.html`: the sidebar's spaces section becomes a list container (`#spaces`) with an "Add space" form (a text input `#space-path` prefilled with the home folder, and a button). The agents section stays as it is. The stress link stays.
+- [ ] `next/packages/ui/main.ts`: replace the fixed "Home" space and `tabs.create` with `spaces.list` on start and on every resync; nested rendering of `parent` children under their parent with the repo name for top-level worktrees; click a space to show its tabs; the tab strip shows only the active space's tabs, numbered 1..n within the space; "+" calls `tabs.open` for the active space (disabled when there is none); `spaces.add` from the form, then select the new space; a `refused` reason shown in the status line with "+" disabled. Keep the reattach/resync logic (`attach`, `markExited`, the queue) unchanged. Tabs of other spaces stay mounted and hidden.
+- [ ] `next/packages/ui/styles.css`: the spaces list styles (indented children, muted repo name, active space marked with `aria-current`), the add-space form. Use the existing tokens.
+- [ ] Keep `env_info` in the Rust bridge (the home default comes from it); no Rust change in this slice.
+
+Models passed: cto=inherit, researcher=inherit, planner=inherit, reviewer=inherit, implementer=inherit (general-purpose subagents, no `model`).
+
+Verification: `cd next && npm test` passes, including the store, git and spaces tests and the CLI test; `npm run typecheck` passes; `npx vite build` in `next/` builds both pages. Root files are not touched: `git diff --name-only 3aa8c05..HEAD -- ':!next' ':!docs'` is empty for this slice. By hand (not run here, left for the human): add one space from the window and one with `./next/bin/grove-next space add` from a terminal; open three tabs in each and run `pwd` (equals the space root); quit, `kill -9` the core and holder, reopen, and see the same spaces and tabs with fresh shells; the old Grove and `grove ls` still show only their own sessions, and the old state file's checksum is unchanged.
+
+### Review rounds
+
+Implementation: three implementers, one per chunk (core foundation; CLI and `bin/grove-next`; window). Checks run by the planner: `npm test` 26 of 26 after the first build, `npm run typecheck` clean, `npx vite build` in `next/packages/ui` builds both pages.
+
+Round 1 (2 blocking, 7 non-blocking, fresh reviewer): blocking: a version-1 check that ran after the shape check let an unknown or missing version be set aside instead of refused; one failing tab create stopped the whole restore. Fixed in `store/state.ts` (version checked first; refused files untouched) and `spaces.ts` restore (each create isolated, failure logged, count returned). Non-blocking fixed: fsync before rename, awaited test expects, `emptyState()`, state built before saving, `rootFor` requires a directory. Not fixed: the window id race while a `tabs.open` is in flight, and `spaces.list` waiting on the holder connection.
+
+Round 2 (1 blocking, 6 non-blocking, fresh reviewer): blocking: a version-1 file with a malformed entry (`{"version":1,"spaces":[null],...}`) was accepted and made `spaces.list` throw on every call. Fixed in `store/state.ts` (`isSpaceRecord` and `isTabRecord` checked per entry; a failing file is set aside). Non-blocking fixed: `spaces.add` rejects a relative path (invalidParams); the window expands a leading `~` from the home folder; `resync` marks nothing exited while the state is refused; the `node:path` import moved. Not fixed: openTab save-failure cleanup, the symlinked `mainPath`, the short-write loop, the directory fsync, the long-line style items.
+
+Round 3 (fresh reviewer, the malformed-entry fix and the new paths): verdict PASS, 0 blocking. It probed `loadState` with crafted files (valid, wrong field types, arrays, null, invalid JSON, versions 2 and missing, extra fields, `spaces: null`); each behaved as the Decisions say.
+
+Fix rounds: 2 (limit 2). Blocking findings across the rounds: 3, all fixed; 0 open.
+
+### Deviations
+
+- `spaces.add` rejects a relative path, and the window expands only `~` and `~/...`, so `~user/...` is sent as typed and rejected.
+- `spaces.add` also throws `stateRefused` when the state is refused (the plan named only `tabs.open`); without it the next save would overwrite the refused file.
+- `restore` recreates a missing tab with 80 by 24; the window resizes it on attach.
+- `startCoreDaemon` takes an optional prebuilt `spaces` service (in addition to `stateFile`), so `bin.ts` restores and serves from one in-memory state.
+- `RpcError` moved from `core/daemon.ts` to a new `protocol/errors.ts` so the service and the daemon share it (not in the plan's file list).
+- `connectWhenReady` moved to `protocol/client.ts`; `core/test-helpers.ts` re-exports it.
+- `cli/main.ts` exports `main(argv)` (the plan wrote `main(argv, options)`; no options were needed).
+- The CLI prints `no spaces` on an empty list, and `error: <reason>` on stderr with exit 1 when the state is refused (the plan did not cover either).
+- The window adds a space by typing a path in a text field (no folder picker: it would need the Tauri dialog plugin, a new dependency).
+- `bin/grove-next` is staged with mode 100755 (set with `git update-index` through `git add`).
+- Holder tabs with no saved record (for example slice 1's shell) are not shown in any space, as decided.
+
+### Verification
+
+- `cd next && npm test`: 11 files, 33 tests, all pass. Covered: state load and save (corrupt set aside, unknown and missing version refused with the file untouched, malformed entries set aside, atomic save with no tmp left), git grouping (worktree nested under a repo that is a space, top-level when not), the spaces service (`tabs.open` runs in the space root, a relative path rejected, a restore after the holder and core are stopped brings back the same space and tab with a live shell, one failing create does not stop the other tab), and the CLI (`space add`, re-add, `ls`, usage).
+- `cd next && npm run typecheck`: exit 0.
+- `cd next/packages/ui && npx vite build`: builds `index.html` and `stress.html` (run to a scratchpad outDir; `dist/` is gitignored).
+- Manual CLI check: `grove-next space add <dir>`, the re-add, `ls` and an unknown command each gave the expected output and exit code, under a temp `GROVE_NEXT_HOME`.
+- No file outside `next/` and `docs/work/2026-11-04-grove-v2-spaces-tabs/` changed; the root workspace is untouched.
+- Not run here, left for the human: the window in `npm run dev` (add a space from the field, open three tabs in each space, `pwd` in each equals the space root); quit, `kill -9` the core and holder, reopen, and see the same spaces and tabs with fresh shells; the old Grove and `grove ls` still show only their own sessions and its state file's checksum is unchanged.
+
+### Left for the human
+
+- `state.ts` `loadState`: an unreadable state file (EACCES, EISDIR) throws out of the service constructor, so the core exits at start and the holder restarts it in a loop. The decision said refused. Fix: catch and return `refused` with the message.
+- A top-level JSON value that is not an object (`[]`, `null`) is set aside, where the Decisions text says refused. Data is renamed, not deleted, so nothing is lost; either side could be the right one.
+- `isSpaceRecord` accepts a relative `path` in a hand-edited file; the core would then run git against a cwd-relative path. Fix: require `path.isAbsolute`.
+- The window's `addSpace` can read `homeDir` before `start()` has set it (`''`); a leading `~` typed then would become `/...`. Fix: refuse `~` input while `homeDir` is empty.
+- `openTab`: if `saveState` throws after the holder created the shell, the shell runs unrecorded. Fix: kill it and rethrow.
+- Window: a resync that runs while `tabs.open` is in flight can adopt the same id twice (a few-millisecond window; needs a reconnect or an add at that moment).
+- `spaces.list` waits on the holder connection even though `spaces.add` does not need it.
+- `git.ts`: a symlinked main worktree path makes `parent` null, so the worktree shows top-level rather than nested. Unverified on this machine; fix: `realpath` the `mainPath`.
+- Short writes are not looped in `saveState`, and the parent directory is not fsynced after rename. Low risk on macOS.
+- The `spaces.list` `tabs` are empty while the state is refused, so the window cannot show the tabs (only the refusal line).
+- `client.ts` drops the error code on the wire (plain `Error(message)`), so the window cannot tell `stateRefused` from other failures by code.
+- Long lines over 120 characters in `spaces.ts`, `ui/main.ts`.
+
+## Open questions
+
 ## Open questions

@@ -1,8 +1,10 @@
 import { execFileSync } from 'node:child_process'
 import type { ChildProcess } from 'node:child_process'
-import { connectRpc, type RpcClient } from '../protocol/client.ts'
+import { connectWhenReady, type RpcClient } from '../protocol/client.ts'
 import { coreSocketPath } from '../protocol/paths.ts'
 import { ensureHolder } from './holder-client.ts'
+
+export { connectWhenReady }
 
 export async function waitFor<T>(read: () => Promise<T>, done: (value: T) => boolean, timeoutMs = 8000): Promise<T> {
   const deadline = Date.now() + timeoutMs
@@ -10,18 +12,6 @@ export async function waitFor<T>(read: () => Promise<T>, done: (value: T) => boo
     const value = await read()
     if (done(value) || Date.now() > deadline) return value
     await new Promise((resolve) => setTimeout(resolve, 50))
-  }
-}
-
-export async function connectWhenReady(socketPath: string, timeoutMs = 8000): Promise<RpcClient> {
-  const deadline = Date.now() + timeoutMs
-  for (;;) {
-    try {
-      return await connectRpc(socketPath)
-    } catch (error) {
-      if (Date.now() > deadline) throw error
-      await new Promise((resolve) => setTimeout(resolve, 50))
-    }
   }
 }
 

@@ -1,23 +1,17 @@
 import fs from 'node:fs'
 import net from 'node:net'
+import path from 'node:path'
 import { connectRpc, type RpcClient } from '../protocol/client.ts'
 import { bytesToB64, createLineDecoder, encodeLine } from '../protocol/framing.ts'
-import { coreSocketPath, holderSocketPath } from '../protocol/paths.ts'
+import { coreSocketPath, groveNextHome, holderSocketPath } from '../protocol/paths.ts'
 import { ERROR_CODES, METHODS, PROTOCOL_VERSION } from '../protocol/messages.ts'
 import type { JsonRpcId, JsonRpcRequest, MethodMap, MethodName } from '../protocol/messages.ts'
+import { RpcError } from '../protocol/errors.ts'
+import { SpacesService } from './spaces.ts'
 
 export interface CoreServer {
   socketPath: string
   close: () => Promise<void>
-}
-
-class RpcError extends Error {
-  constructor(
-    readonly code: number,
-    message: string,
-  ) {
-    super(message)
-  }
 }
 
 const PROXIED = new Set<string>([
@@ -29,13 +23,16 @@ const PROXIED = new Set<string>([
   METHODS.tabsAttach,
 ])
 
+const SPACE_METHODS = new Set<string>([METHODS.spacesList, METHODS.spacesAdd, METHODS.tabsOpen])
+
 // Each core client gets its own holder connection, so holder attachments are released
 // when the client's connection closes and output is never shared between clients.
 export async function startCoreDaemon(
-  options: { socketPath?: string; holderSocket?: string } = {},
+  options: { socketPath?: string; holderSocket?: string; stateFile?: string; spaces?: SpacesService } = {},
 ): Promise<CoreServer> {
   const socketPath = options.socketPath ?? coreSocketPath()
   const holderSocket = options.holderSocket ?? holderSocketPath()
+  const spaces = options.spaces ?? new SpacesService(options.stateFile ?? path.join(groveNextHome(), 'state.json'))
   await removeStaleSocket(socketPath)
 
   const sockets = new Set<net.Socket>()
@@ -64,7 +61,7 @@ export async function startCoreDaemon(
         return
       }
       try {
-        const result = await dispatch(request.method, request.params, holder)
+        const result = await dispatch(request.method, request.params, holder, spaces)
         if (request.id !== undefined) send({ jsonrpc: '2.0', id: request.id, result })
       } catch (error) {
         if (request.id !== undefined) send(toFailure(request.id, error))
@@ -117,14 +114,49 @@ async function removeStaleSocket(socketPath: string): Promise<void> {
   fs.rmSync(socketPath, { force: true })
 }
 
-async function dispatch(method: string, rawParams: unknown, holder: Promise<RpcClient>): Promise<unknown> {
+async function dispatch(
+  method: string,
+  rawParams: unknown,
+  holder: Promise<RpcClient>,
+  spaces: SpacesService,
+): Promise<unknown> {
   if (method === METHODS.corePing) {
     const result: MethodMap['core.ping']['result'] = { protocolVersion: PROTOCOL_VERSION }
     return result
   }
+  if (SPACE_METHODS.has(method)) return dispatchSpaces(method, rawParams, await holder, spaces)
   if (!PROXIED.has(method)) throw new RpcError(ERROR_CODES.methodNotFound, `unknown method ${method}`)
   const client = await holder
   return client.request(method as MethodName, rawParams as never)
+}
+
+async function dispatchSpaces(
+  method: string,
+  rawParams: unknown,
+  holder: RpcClient,
+  spaces: SpacesService,
+): Promise<unknown> {
+  if (method === METHODS.spacesList) return spaces.list(holder)
+  if (method === METHODS.spacesAdd) {
+    const p = rawParams as MethodMap['spaces.add']['params']
+    return spaces.add(stringParam(p, 'path'))
+  }
+  const p = rawParams as MethodMap['tabs.open']['params']
+  return spaces.openTab(stringParam(p, 'spacePath'), numberParam(p, 'cols'), numberParam(p, 'rows'), holder)
+}
+
+function stringParam(params: unknown, key: string): string {
+  const value = (params as Record<string, unknown> | null)?.[key]
+  if (typeof value !== 'string') throw new RpcError(ERROR_CODES.invalidParams, `${key} must be a string`)
+  return value
+}
+
+function numberParam(params: unknown, key: string): number {
+  const value = (params as Record<string, unknown> | null)?.[key]
+  if (typeof value !== 'number' || !Number.isFinite(value)) {
+    throw new RpcError(ERROR_CODES.invalidParams, `${key} must be a number`)
+  }
+  return value
 }
 
 function notification(method: string, params: unknown) {

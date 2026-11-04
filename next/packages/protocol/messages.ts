@@ -10,6 +10,9 @@ export const METHODS = {
   tabsAttach: 'tabs.attach',
   tabsOutput: 'tabs.output',
   tabsExit: 'tabs.exit',
+  spacesList: 'spaces.list',
+  spacesAdd: 'spaces.add',
+  tabsOpen: 'tabs.open',
 } as const
 
 export const ERROR_CODES = {
@@ -20,6 +23,7 @@ export const ERROR_CODES = {
   internal: -32603,
   tabNotFound: -32001,
   tabExists: -32002,
+  stateRefused: -32003,
 } as const
 
 export type JsonRpcId = number | string
@@ -61,6 +65,20 @@ export interface TabInfo {
   exitCode: number | null
 }
 
+export interface SpaceInfo {
+  path: string
+  name: string
+  repoName: string | null
+  parent: string | null
+}
+
+export interface SpaceTabInfo {
+  id: string
+  spacePath: string
+  alive: boolean
+  exitCode: number | null
+}
+
 export interface MethodMap {
   'core.ping': { params: Empty; result: { protocolVersion: number } }
   'tabs.create': {
@@ -80,6 +98,12 @@ export interface MethodMap {
   'tabs.resize': { params: { id: string; cols: number; rows: number }; result: Empty }
   'tabs.kill': { params: { id: string }; result: Empty }
   'tabs.attach': { params: { id: string }; result: { screenB64: string; cols: number; rows: number } }
+  'spaces.list': {
+    params: Empty
+    result: { spaces: SpaceInfo[]; tabs: SpaceTabInfo[]; refused: string | null }
+  }
+  'spaces.add': { params: { path: string }; result: SpaceInfo }
+  'tabs.open': { params: { spacePath: string; cols: number; rows: number }; result: { id: string } }
 }
 
 export interface NotificationMap {

@@ -1,16 +1,16 @@
 import { invoke } from '@tauri-apps/api/core'
 import { createBridge, fromBase64, toBase64 } from './bridge.ts'
 import { openTerminal, type TerminalView } from './terminal.ts'
-import type { TabInfo } from '../protocol/messages.ts'
+import type { SpaceInfo } from '../protocol/messages.ts'
 import './styles.css'
 
 interface EnvInfo {
   home: string
-  shell: string
 }
 
 interface Tab {
   id: string
+  spacePath: string
   attached: boolean
   exited: boolean
   queue: Uint8Array[] | null
@@ -23,12 +23,20 @@ const bridge = createBridge()
 const encoder = new TextEncoder()
 const tabs = new Map<string, Tab>()
 const order: Tab[] = []
+const spaces = new Map<string, SpaceInfo>()
+const activeBySpace = new Map<string, Tab>()
 let active: Tab | null = null
-let env: EnvInfo | null = null
+let activeSpace: string | null = null
+let refused: string | null = null
+let homeDir = ''
 
 const tabStrip = byId('tabs')
 const terminals = byId('terminals')
 const statusLine = byId('status')
+const spaceList = byId('spaces')
+const addSpaceForm = byId('add-space') as HTMLFormElement
+const spacePathInput = byId('space-path') as HTMLInputElement
+const newTabButton = byId('new-tab') as HTMLButtonElement
 
 function byId(id: string): HTMLElement {
   const element = document.getElementById(id)
@@ -42,7 +50,11 @@ function report(error: unknown): void {
   statusLine.textContent = message
 }
 
-function createTab(): Tab {
+function spaceName(path: string): string {
+  return spaces.get(path)?.name ?? path
+}
+
+function createTab(spacePath: string): Tab {
   const host = document.createElement('div')
   host.className = 'term-host'
   host.hidden = true
@@ -57,6 +69,7 @@ function createTab(): Tab {
 
   const tab: Tab = {
     id: '',
+    spacePath,
     attached: false,
     exited: false,
     queue: null,
@@ -80,8 +93,7 @@ function adopt(tab: Tab, id: string): void {
   tab.id = id
   tabs.set(id, tab)
   order.push(tab)
-  tab.button.textContent = String(order.length)
-  tab.button.title = `Tab ${order.length}`
+  paint()
 }
 
 function removeTab(tab: Tab): void {
@@ -91,6 +103,7 @@ function removeTab(tab: Tab): void {
   const index = order.indexOf(tab)
   if (index !== -1) order.splice(index, 1)
   if (active === tab) active = null
+  paint()
 }
 
 function deliver(tab: Tab, bytes: Uint8Array): void {
@@ -127,26 +140,97 @@ async function attach(tab: Tab): Promise<void> {
   await bridge.rpc('tabs.resize', { id: tab.id, cols, rows })
 }
 
-function activate(tab: Tab): void {
-  active = tab
-  for (const other of order) {
-    const on = other === tab
-    other.host.hidden = !on
-    other.button.classList.toggle('active', on)
-    other.button.setAttribute('aria-selected', String(on))
+// Tabs of other spaces stay mounted and only hidden, so their shells keep running and their screens keep filling.
+function paint(): void {
+  const counts = new Map<string, number>()
+  for (const tab of order) {
+    const on = tab === active
+    const number = (counts.get(tab.spacePath) ?? 0) + 1
+    counts.set(tab.spacePath, number)
+    tab.button.textContent = String(number)
+    tab.button.title = `${spaceName(tab.spacePath)}: tab ${number}`
+    tab.button.hidden = tab.spacePath !== activeSpace
+    tab.host.hidden = !on
+    tab.button.classList.toggle('active', on)
+    tab.button.setAttribute('aria-selected', String(on))
   }
-  tab.view.fit()
-  tab.view.term.focus()
+  renderSpaces()
+  newTabButton.disabled = activeSpace === null || refused !== null
+  for (const control of addSpaceForm.querySelectorAll<HTMLInputElement | HTMLButtonElement>('input, button')) {
+    control.disabled = refused !== null
+  }
+}
+
+function focusActive(): void {
+  active?.view.fit()
+  active?.view.term.focus()
+}
+
+function activate(tab: Tab): void {
+  activeBySpace.set(tab.spacePath, tab)
+  selectSpace(tab.spacePath)
+  focusActive()
+}
+
+// Shows the space's last active tab, or its first tab, or nothing when the space has no tabs.
+function selectSpace(path: string | null): void {
+  activeSpace = path
+  const remembered = path ? activeBySpace.get(path) : undefined
+  active = remembered && order.includes(remembered) ? remembered : (order.find((tab) => tab.spacePath === path) ?? null)
+  paint()
+}
+
+function renderSpaces(): void {
+  const all = [...spaces.values()]
+  const top = all.filter((space) => !space.parent || !spaces.has(space.parent))
+  spaceList.replaceChildren(
+    ...top.map((space) => {
+      const item = document.createElement('li')
+      item.append(spaceButton(space, true))
+      const children = all.filter((child) => child.parent === space.path)
+      if (children.length > 0) {
+        const nested = document.createElement('ul')
+        nested.className = 'spaces nested'
+        for (const child of children) {
+          const li = document.createElement('li')
+          li.append(spaceButton(child, false))
+          nested.append(li)
+        }
+        item.append(nested)
+      }
+      return item
+    }),
+  )
+}
+
+function spaceButton(space: SpaceInfo, top: boolean): HTMLButtonElement {
+  const button = document.createElement('button')
+  button.type = 'button'
+  button.className = 'space'
+  button.title = space.path
+  if (top && space.repoName && space.repoName !== space.name) {
+    const folder = document.createElement('span')
+    folder.className = 'space-folder'
+    folder.textContent = space.name
+    button.append(space.repoName, ' ', folder)
+  } else {
+    button.textContent = space.name
+  }
+  if (space.path === activeSpace) button.setAttribute('aria-current', 'true')
+  button.addEventListener('click', () => {
+    selectSpace(space.path)
+    focusActive()
+  })
+  return button
 }
 
 async function newShellTab(): Promise<void> {
-  if (!env) return
-  const tab = createTab()
+  const spacePath = activeSpace
+  if (!spacePath) return
+  const tab = createTab(spacePath)
   try {
-    const { id } = await bridge.rpc('tabs.create', {
-      command: env.shell,
-      args: ['-l'],
-      cwd: env.home,
+    const { id } = await bridge.rpc('tabs.open', {
+      spacePath,
       cols: tab.view.term.cols,
       rows: tab.view.term.rows,
     })
@@ -159,23 +243,47 @@ async function newShellTab(): Promise<void> {
   }
 }
 
-// Brings the page in line with the core: alive tabs are shown and reattached, gone ones are marked.
+async function addSpace(): Promise<void> {
+  const typed = spacePathInput.value.trim()
+  if (!typed) return
+  const path = typed === '~' || typed.startsWith('~/') ? homeDir + typed.slice(1) : typed
+  const space = await bridge.rpc('spaces.add', { path })
+  await resync()
+  selectSpace(space.path)
+  focusActive()
+}
+
+// Brings the page in line with the core: spaces and their tabs are listed, alive tabs are shown and reattached, gone ones are marked.
 async function resync(): Promise<void> {
-  const list: TabInfo[] = await bridge.rpc('tabs.list', {})
-  const alive = new Set(list.filter((info) => info.alive).map((info) => info.id))
-  for (const tab of order) if (!alive.has(tab.id)) markExited(tab)
-  for (const info of list) {
-    if (!info.alive) continue
+  const state = await bridge.rpc('spaces.list', {})
+  spaces.clear()
+  for (const space of state.spaces) spaces.set(space.path, space)
+  refused = state.refused
+  if (refused) statusLine.textContent = `State file refused: ${refused}`
+
+  const alive = new Set(state.tabs.filter((info) => info.alive).map((info) => info.id))
+  if (state.refused === null) {
+    for (const tab of order) if (!alive.has(tab.id)) markExited(tab)
+  }
+  for (const info of state.tabs) {
     const existing = tabs.get(info.id)
-    if (existing) {
-      await attach(existing)
-    } else {
-      const tab = createTab()
+    if (info.alive) {
+      if (existing) {
+        await attach(existing)
+      } else {
+        const tab = createTab(info.spacePath)
+        adopt(tab, info.id)
+        await attach(tab)
+      }
+    } else if (!existing) {
+      const tab = createTab(info.spacePath)
       adopt(tab, info.id)
-      await attach(tab)
+      markExited(tab, info.exitCode)
     }
   }
-  if (!active && order.length > 0) activate(order[0]!)
+
+  if (!activeSpace || !spaces.has(activeSpace)) activeSpace = state.spaces[0]?.path ?? null
+  selectSpace(activeSpace)
 }
 
 bridge.on('tabs.output', ({ id, dataB64 }) => {
@@ -198,14 +306,19 @@ bridge.onStatus((status) => {
 })
 
 new ResizeObserver(() => active?.view.fit()).observe(terminals)
-byId('new-tab').addEventListener('click', () => void newShellTab())
+newTabButton.addEventListener('click', () => void newShellTab())
+addSpaceForm.addEventListener('submit', (event) => {
+  event.preventDefault()
+  addSpace().catch(report)
+})
 
 async function start(): Promise<void> {
   if (import.meta.env.DEV) byId('stress-link').hidden = false
-  env = await invoke<EnvInfo>('env_info')
+  const env = await invoke<EnvInfo>('env_info')
+  homeDir = env.home
+  spacePathInput.value = env.home
   await bridge.connect()
   await resync()
-  if (order.length === 0) await newShellTab()
 }
 
 start().catch((error: unknown) => {

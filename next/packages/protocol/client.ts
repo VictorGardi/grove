@@ -63,3 +63,16 @@ export function connectRpc(socketPath: string): Promise<RpcClient> {
     })
   })
 }
+
+// Retries connectRpc until the socket accepts a connection or the timeout passes.
+export async function connectWhenReady(socketPath: string, timeoutMs = 8000): Promise<RpcClient> {
+  const deadline = Date.now() + timeoutMs
+  for (;;) {
+    try {
+      return await connectRpc(socketPath)
+    } catch (error) {
+      if (Date.now() > deadline) throw error
+      await new Promise((resolve) => setTimeout(resolve, 50))
+    }
+  }
+}

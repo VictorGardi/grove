@@ -30,6 +30,21 @@ This runs `tauri dev`. It starts the Vite dev server on port 1420, builds the Ru
 
 The core socket is `~/.grove-next/s` (or `$GROVE_NEXT_HOME/s`). macOS limits socket paths to about 104 bytes, so keep `GROVE_NEXT_HOME` short if you change it.
 
+## Spaces
+
+A space is a folder; its tabs are login shells started in that folder. Add one from the window (the field under the spaces list), or from a terminal:
+
+```sh
+./bin/grove-next space add [path]   # from next/, or put next/bin on PATH
+grove-next ls                       # the spaces, then their tabs
+```
+
+`space add` defaults to the folder you run it from. A space is identified by its real path, so adding it again says `already a space`.
+
+The state is `~/.grove-next/state.json` (or `$GROVE_NEXT_HOME/state.json`), a versioned file (`"version": 1`). A file that is not valid JSON is set aside as `state.json.corrupt-<ms>` and Grove starts empty. A file with another version is refused: it is left untouched, and adding spaces and opening tabs fail until it is moved away.
+
+A reboot brings the spaces and their tabs back, but the shells are fresh: each tab is a new login shell in its space's folder (the home folder if that folder is gone). A core restart alone keeps the running shells.
+
 ## Stress page
 
 Developer-only. In the dev window, click "Stress page" at the bottom of the sidebar (the link is hidden in production builds). It runs nine terminals fed with synthetic output and, on each run, prints:
