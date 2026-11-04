@@ -4,6 +4,13 @@ import { applyEvent, GRACE_MS, SILENCE_MS, unknownStatus, type Status } from './
 const idle: Status = { state: 'idle', since: 100 }
 
 describe('applyEvent', () => {
+  it('leaves the state alone on lost, since the service sets unknown for it', () => {
+    const working: Status = { state: 'working', since: 200 }
+    expect(applyEvent(working, { kind: 'lost' }, 500)).toBe(working)
+    const finished: Status = { state: 'finished', since: 300 }
+    expect(applyEvent(finished, { kind: 'lost' }, 500)).toBe(finished)
+  })
+
   it('moves to working and stamps the time', () => {
     expect(applyEvent(idle, { kind: 'working' }, 200)).toEqual({ state: 'working', since: 200 })
   })

@@ -24,6 +24,8 @@ export type Status =
 // What an adapter emits. `heartbeat` is the source's reader still running (not a hook); it refreshes the
 // heartbeat only, never a working tab's activity. `session` carries the agent's own resume id (it changes
 // on /clear) and never changes the state. Every other event is a real hook record and counts as progress.
+// `lost` means the source cannot read its signal now (an OpenCode event connection dropped). The service sets the
+// tab to unknown, as for a gone tab, and it is not real activity.
 // `idle-prompt` is Claude's idle_prompt notification. It ends a turn that was interrupted, or had a question
 // rejected with Esc, when no other hook fires. A running turn (working, or needs-you with a pending permission
 // or question) goes to finished, as the old Grove ends it; finished and idle keep their since; unknown goes to idle.
@@ -35,6 +37,7 @@ export type StatusEvent =
   | { kind: 'idle-prompt' }
   | { kind: 'session'; resumeId: string }
   | { kind: 'heartbeat' }
+  | { kind: 'lost' }
 
 export function unknownStatus(now: number): Status {
   return { state: 'unknown', since: now }
@@ -42,7 +45,7 @@ export function unknownStatus(now: number): Status {
 
 // Pure. A real event (working, needs-you, finished, idle) moves to its state and leaves unknown.
 // Setting the same state again keeps `since`, except that a needs-you with a new reason is a change.
-// `session` and `heartbeat` never change the state; the service, not this reducer, decides their silence effect.
+// `session`, `heartbeat` and `lost` never change the state; the service, not this reducer, decides their silence effect.
 export function applyEvent(status: Status, event: StatusEvent, now: number): Status {
   switch (event.kind) {
     case 'working':
@@ -60,6 +63,7 @@ export function applyEvent(status: Status, event: StatusEvent, now: number): Sta
       return { state: 'idle', since: now }
     case 'session':
     case 'heartbeat':
+    case 'lost':
       return status
   }
 }

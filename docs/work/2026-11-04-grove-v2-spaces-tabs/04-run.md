@@ -6,7 +6,7 @@ version: 1
 created: 2026-11-04
 updated: 2026-11-04
 approved_at:
-based_on: [03-plan.md@8]
+based_on: [03-plan.md@10]
 forced: []
 ---
 
@@ -14,7 +14,7 @@ forced: []
 
 Profile: inherit
 Branch: feature/2026-11-04-grove-v2-spaces-tabs-inherit
-Plan commit: 3aa8c056635901c19b24d567d427cb8cf4037754
+Plan commit: af0c1f7e1eb65c74508a9bcd5649c2f8c69c726d
 Review gate: slice 1
 Roles:
 - cto: claude, inherit
@@ -496,5 +496,114 @@ Clean, 0 blocking, 0 fix rounds. Non-blocking left: (b), (c), (d).
 - By hand, from the built bundle (`npm run build:app`): two Claude tabs, the window in another app; one asks for permission and the other finishes; both notify with a sound. Focusing a tab clears its finished state. Record whether clicking the notification reaches the tab (expected: no, see Deviations).
 - Non-blocking, left as they are: a needs-you entered on the focused tab, followed by switching away while it still waits, does not notify; a permission request pending when the core restarts is not notified.
 - No daemon-level test covers `attention.focus` validation and focus clearing when the window's connection closes.
+
+## Slice 5
+
+Session: 5 opencode copilot
+Status: done
+Commit: this commit (see git log)
+
+### Slice plan
+
+Found in the code: the status layer is Claude-only. `status/service.ts` takes `launchClaude` and `createSource` and hard-codes `AGENT_SOURCE = 'claude'`, `record.agent !== 'claude'`, and the `agents/claude` folder. `agents/claude/source.ts` mixes a generic spool reader (`readSpool`, offsets, watch, poll heartbeat, `drain`) with the Claude-only `eventsFor`. `protocol/messages.ts` types `AgentInfo.agent`, `StatusChange` (no agent kind) and `tabs.create`'s `agent` as `'claude'`; `store/state.ts` `TabRecord.agent` is `'claude'`; `spaces.ts` has `claudeTabs()`; `daemon.ts` `createAgentTab` rejects any kind but claude and calls `launchClaude` directly; `ui/main.ts` has `newClaudeTab` / `resumeAgent` hard-coded to `command: 'claude'`, and `ui/index.html` has one "+ Claude" button. Old Grove, read for reuse: `src/core/opencode/normalise.ts` (event envelope, `pending` for permission and form events, `exec-started` / `exec-ended`, child sessions, `snapshotOf` for re-sync), `src/core/opencode/client.ts` (service file under `XDG_STATE_HOME`, Basic auth, `/api/event` SSE with `sseData`, silence timeout, reconnect loop with backoff, `snapshot` re-sync, `argv` = `opencode -s <id>` for start and resume alike), `src/core/opencodeId.ts` (`mintSessionId`, `ses_` ids), `src/core/copilot/normalise.ts` (`step()` fold: turn start and end, user prompt, `notification` permission and question, pre and post tool hooks, `agentStop`, `sessionEnd`, `abort` and `session.shutdown` from the log, stale-abort check by `startedAt`, subagents ignored by `agentId`), `src/core/copilot/hooks.ts` (per-launch plugin, `printf` stamp into a `{t, e}` JSONL spool, never fails Copilot), `src/core/copilot/events.ts` (root turn and abort records from `session-state/<id>/events.jsonl`, byte offsets, 1 MiB first read), `src/core/copilot/source.ts` (`--session-id` / `--resume=<id>` argv, `--plugin-dir`, `copilotOnPath` through the login shell with a cached positive probe, 1 s poll of the log). The old `src/core/claude/spool.ts` is what `status/spool.ts` ports. `opencode`, `copilot` and `claude` are all on this Mac (`/opt/homebrew/bin`), but no live run is part of this slice: the captured shapes are the ones the old tests use (research-verified per their comments). The new contract (`status/contract.ts`) is the StatusEvent set, so old AgentEvent kinds that the status does not need (`prompt`, `wrote`, `context`, `child`, `connected`) are dropped, not ported.
+
+Shared adapter contract (Implementer 1 creates it; Implementers 2 and 3 code against it, do not change it):
+
+```ts
+// next/packages/core/status/adapter.ts
+export type AgentKind = 'claude' | 'opencode' | 'copilot'
+export interface AgentLaunch { command: string; args: string[]; env: Record<string, string>; sessionId: string }
+export interface AdapterLaunchInput { tabId: string; cwd: string; home: string; resumeId?: string }
+export interface AdapterWatchInput { tabId: string; sessionId: string; home: string; clock: () => number; onEvent: (event: StatusEvent, at: number) => void }
+export interface AgentWatch { close: () => void }
+export interface AgentAdapter {
+  kind: AgentKind
+  // Throws RpcError-free Error with a message when a resume id is not valid for this agent.
+  launch(input: AdapterLaunchInput): AgentLaunch
+  // Starts reporting for one tab. Delivers StatusEvents; the service folds them and owns the sidecar and the cross-check.
+  watch(input: AdapterWatchInput): AgentWatch
+  // Optional: resolves false when the command is not on the login shell's PATH (the create is refused with agentMissing).
+  available?: () => Promise<boolean>
+}
+```
+
+`StatusEvent` gains one kind, `{ kind: 'lost' }`: the source cannot read its signal now (the OpenCode event connection dropped). The service sets the tab to unknown (the same path as a gone tab). Nothing else in the contract changes; the reducer maps `lost` to unchanged state and the service calls `fallToUnknown`.
+
+Implementer 1 (core, runs first, alone):
+- [ ] `next/packages/core/status/contract.ts`: add `lost` to `StatusEvent` with its comment; `applyEvent` leaves the state alone; tests in `contract.test.ts`.
+- [ ] `next/packages/core/status/adapter.ts`: the types above, exactly.
+- [ ] `next/packages/core/status/spool.ts` (new): generic spool reader moved from `agents/claude/source.ts` (`readSpool`, `SpoolRecord`, `SpoolRead`, corrupt counting, the offset file load and save, the fs.watch with rename and error handling, the 1 s poll that is the heartbeat). The line parser is a parameter (`parse: (line: string) => SpoolRecord | null`), defaulting to the Claude one, so Copilot can use its `{t, e}` records. Export `createSpoolSource({ spoolFile, offsetFile, clock, onEvent, toEvents, parse })`. Keep the Claude source as a thin wrapper with the same exported names (`readSpool`, `replaySpool`, `eventsFor`, `deliveriesFor`, `createClaudeSource`, `POLL_MS`) so `source.test.ts` and `replay.test.ts` pass unchanged.
+- [ ] `next/packages/core/agents/claude/adapter.ts` (new): `createClaudeAdapter()` implementing `AgentAdapter`: `launch` calls `claudeLaunch` (spoolFile stays on its return value, not on `AgentLaunch`), `watch` calls `createClaudeSource` with `claudeSpoolFile(home, tabId)` and the offset file `home/agents/claude/<tab>.offset`.
+- [ ] `next/packages/core/status/service.ts`: `StatusServiceOptions.adapters: Record<AgentKind, AgentAdapter>` replaces `launchClaude` and `createSource`; `TrackInput` drops `spoolFile`; `Watch` keeps `kind`; `restore`, `track`, `list`, `apply` and the snapshot files use `home/agents/<kind>/` (`AGENT_SOURCE` goes); `restore` takes every record with an `agent` kind; `onEvent` handles `lost` by `fallToUnknown`; `StatusChange` and `AgentInfo` carry `agent: kind` and `source: kind`. The `onSession` callback stays. Tests in `service.test.ts` move to the adapter fakes; every existing case keeps its meaning.
+- [ ] `next/packages/protocol/messages.ts`: `AgentKind` imported from the adapter types (or re-declared, one definition only); `AgentInfo.agent: AgentKind`; `StatusChange.agent: AgentKind`; `tabs.create` `agent?: { kind: AgentKind; resumeId?: string }`; error code `agentMissing: -32004`.
+- [ ] `next/packages/core/store/state.ts`: `TabRecord.agent?: AgentKind` (no version bump, as the file says for optional fields; loading an old file with `agent: 'claude'` is unchanged). `next/packages/core/spaces.ts`: `claudeTabs()` becomes `agentTabs()` (every tab with an agent); `setAgentSession` unchanged.
+- [ ] `next/packages/core/agents/registry.ts` (new): `export const adapters: Partial<Record<AgentKind, AgentAdapter>>` built with `createClaudeAdapter()`. Implementers 2 and 3 add one import and one entry each. `daemon.ts` takes `adapters` (default: the registry) instead of `launchClaude`; `createAgentTab` takes any kind in the registry (unknown kind: `invalidParams`, "agent.kind must be one of ..."); it runs `available()` once per kind (cached when true, as the old Copilot probe did) and refuses with `agentMissing` and a message naming the command when false; then `launch`, saves the record before the holder create (as today), `tabs.create` with `command`, `args`, `env`, then `status.track`. `bin.ts` is unchanged apart from what the daemon options need.
+- [ ] `next/packages/ui/bridge.ts` and `main.ts`: no behaviour change yet beyond types: `newClaudeTab` and `resumeAgent` keep working through the new kind-agnostic path (see Implementer 4).
+- [ ] Gates: `npx vitest run` in `next/` (181 passing before this slice; the same tests, adjusted, must pass), `npm run typecheck`.
+
+Implementer 2 (OpenCode, after Implementer 1; parallel with 3 and 4; new folder only, plus one import and one registry line):
+- [ ] `next/packages/core/agents/opencode/normalise.ts`: port `src/core/opencode/normalise.ts` for the status events only. Keep `normalise` (envelope, `pending` for permission and form events with the `open` flag, `exec-started`, `exec-ended` for succeeded, failed and interrupted, child sessions for the filter), `sseData`, `snapshotOf` and `childIds`, `unwrap`. Map to StatusEvent in a new function `statusFor(raw, sessionId)`: an exec start → `working`; an exec end → `finished`; a permission or form open → `needs-you` (`permission` or `question`); a close → `working` when the session is still running, else nothing; `session.created` of a child and any event for another session → nothing. Drop `prompt`, `wrote`, `context`, `tool` and token functions (old Grove only; the new contract does not need them). Port the snapshot-to-status rule: from a re-sync snapshot, `needs-you` for each open pending item, `working` when running, and `idle-prompt` when it is not running and the tab was working or needs-you (the contract's rule for a turn that ended while nothing was listening).
+- [ ] `next/packages/core/agents/opencode/hub.ts` (new): one shared connection per core (the old `HttpOpenCode` loop: service file read on every connect, `fs.watchFile` kick, `/api/info` version, `/api/event` SSE, silence timeout 45 s, reconnect backoff 1 s doubling to 10 s, `stop`). It routes each event to the watch whose `sessionId` matches; on connect and on each reconnect it runs the snapshot for every watched session (`/api/session/active`, `/api/session/:id`, `/permission`, `/form`) and folds it. A dropped connection sends `lost` to every watch; a read of any byte sends `heartbeat`. Service file path: `XDG_STATE_HOME` or `~/.local/state`, `opencode/service.json`; the password is never logged. Fetch is injected for tests.
+- [ ] `next/packages/core/agents/opencode/adapter.ts` (new): `createOpenCodeAdapter({ hub?, serviceFile?... })`: `kind: 'opencode'`; `launch` mints `ses_` ids with `mintSessionId` (port `src/core/opencodeId.ts` into this folder) or validates a resume id against `^ses_[0-9A-Za-z]+$`; argv `['-s', id]` for start and resume alike; `env: {}`; `watch` registers the session with the hub and returns a watch that unregisters on close; `available` = `opencode` on the login shell's PATH (port `copilotOnPath` as a generic `commandOnPath(command, shell)` in `next/packages/core/agents/commandOnPath.ts`, and make Implementer 3 use it too: Implementer 2 creates it, Implementer 3 imports it, the planner checks it in).
+- [ ] Tests: `normalise.test.ts` (port the cases of `src/core/opencode/normalise.test.ts` for the status mapping; each permission, form and exec case, a child session ignored, another session ignored); `client.test.ts` (port `sseData` cases and the snapshot cases of `src/core/opencode/client.test.ts`; a fake fetch and a fake service file; a dropped stream sends `lost` to each watch; a reconnect re-syncs a running session to `working`; silence aborts the stream); `adapter.test.ts` (ids are `ses_`; a bad resume id throws; argv is `-s id`). Fixtures: copy the event shapes the old tests use into `next/packages/core/agents/opencode/fixtures/` as JSON lines with a README stating the OpenCode version the old tests name (2.0.20) and that they were not re-captured in this slice.
+- [ ] A replay test in `next/packages/core/agents/opencode/replay.test.ts`: a fixture sequence (start, permission asked, replied, exec ended) gives `working`, `needs-you permission`, `working`, `finished` in order, with an injected clock.
+
+Implementer 3 (Copilot, after Implementer 1; parallel with 2 and 4; new folder only, plus one import and one registry line):
+- [ ] `next/packages/core/agents/copilot/hooks.ts`: port `src/core/copilot/hooks.ts` unchanged in behaviour (`HOOK_EVENTS`, `hookCommand`, `pluginJson`, `hooksJson`) and its tests if the old folder has them (it has none; add a test that the command never exits non-zero and writes one `{t, e}` line).
+- [ ] `next/packages/core/agents/copilot/normalise.ts`: port `src/core/copilot/normalise.ts` (`step`, `emptyFold`, `writePaths` is dropped, `readContext` dropped, `sameContext` dropped) with `step()` returning `{ fold, events: StatusEvent[] }` under the same rules: turn start (root, not running) → working; `userPromptSubmitted` → working; `preToolUse` (root, not running) → working; `notification` permission_prompt → needs-you permission; elicitation_dialog → needs-you question; a pending prompt closed by a tool result or a turn end → working when the turn is still running (a close with nothing pending emits nothing); `agentStop`, `assistant.turn_end`, `sessionEnd` when running, `abort` and `session.shutdown` after the turn started → finished; `sessionStart` on a running fold → finished (a resume after an unclean end). Subagent records (with `agentId`) are ignored, as before. Keep `startedAt` and the stale-abort check.
+- [ ] `next/packages/core/agents/copilot/events.ts`: port `src/core/copilot/events.ts` (root turn, abort, shutdown records from `session-state/<id>/events.jsonl`, byte offsets, a first read of at most 1 MiB, complete lines only). Drop the usage record (context).
+- [ ] `next/packages/core/agents/copilot/adapter.ts` (new): `createCopilotAdapter({ home? })` with `kind: 'copilot'`. `launch`: a new id is `randomUUID()`; argv `['--session-id', id, '--plugin-dir', dir]` for start, `['--resume=' + id, '--plugin-dir', dir]` for resume; the resume id must match the UUID shape (reuse `SESSION_ID` from `agents/claude/launch.ts` only if it reads cleanly, otherwise a local regex); the plugin folder `home/agents/copilot/<tab>.plugin` is written at launch with `hooks.json` pointing at `home/agents/copilot/<tab>.jsonl`; `env: {}`. `watch`: `createSpoolSource` from `status/spool.ts` with `parse` for the `{t, e}` shape and `toEvents` = a closure over the fold from `normalise.ts`; plus a 1 s poll of `events.ts`'s log that folds the same way, with the log's first read folded silently (as the old `start()` did), so a restored tab does not replay an old end. Heartbeat from the spool poll, as Claude's. `available` = `commandOnPath('copilot', shell)` from `agents/commandOnPath.ts` (Implementer 2 creates it: wait for it or write it yourself with the same signature if Implementer 2 has not finished, and say so in Deviations).
+- [ ] Tests: `normalise.test.ts` (port the cases of `src/core/copilot/normalise.test.ts`, with the status outputs); `events.test.ts` (port `src/core/copilot/events.test.ts`); `source.test.ts` (port the cases of `src/core/copilot/source.test.ts` that cover the fold, against the spool and the log in a temp home; the plugin and argv cases); `adapter.test.ts` (argv for start and resume, bad id throws, plugin files exist). Fixtures: `next/packages/core/agents/copilot/fixtures/` with the hook record shapes the old tests use; README as for OpenCode.
+
+Implementer 4 (window, after Implementer 1; parallel with 2 and 3):
+- [ ] `next/packages/ui/index.html`: next to "+ Claude" add "+ OpenCode" (`id="new-opencode"`) and "+ Copilot" (`id="new-copilot"`), same classes and titles ("New OpenCode tab in this space", "New Copilot tab in this space").
+- [ ] `next/packages/ui/main.ts`: one `newAgentTab(kind: AgentKind)` with the command table `{ claude: 'claude', opencode: 'opencode', copilot: 'copilot' }` (the core picks the args; the window sends only `command` and `agent: { kind }`, as today's Claude path does); `resumeAgent(tab)` sends `agent: { kind: agent.agent, resumeId? }` by the tab's stored kind (the core already resumes the saved session when no id is given); `agentRow` shows the agent's kind label ("Claude", "OpenCode", "Copilot") next to the tab label; the `status.changed` handler uses `change.agent` (no hard-coded `'claude'`); a `refused` error or `agentMissing` shows the message in the status line via `report`.
+- [ ] `next/packages/ui/bridge.ts`: no change expected; if a type import changes, follow it.
+- [ ] Gates: `npx vitest run` (the UI has `alerts.test.ts` and `bridge.test.ts`), `npm run typecheck`.
+
+Models passed: cto=inherit, researcher=inherit, planner=inherit, reviewer=inherit, implementer=inherit (general-purpose subagents, no `model`).
+
+Verification: `cd next && npx vitest run` passes, with the new tests of each implementer; `npm run typecheck` passes; `cd next/packages/ui/src-tauri && cargo check` passes (no Rust change is planned, so this is a regression check). By hand, not run here (left for the human): a `claude`, an `opencode` and a `copilot` tab each show the right states, notify and play the sound when they need you and when they finish; kill the core and holder mid-turn with each agent, reopen, and see each state rebuilt, with Resume bringing back OpenCode and Copilot (Copilot may show Resume unavailable with the reason); with the old Grove running beside, each app lists only its own OpenCode sessions; the Copilot tab on the work Mac.
+
+### Review rounds
+
+Round 1 (fresh reviewer, whole slice): 2 blocking, 5 non-blocking. Blocking: (a) an OpenCode tab restored after a core restart stays working when its turn ended during downtime, because a fresh fold never reports an idle snapshot; (b) a Copilot tab restored after an Esc during downtime stays working, because the silent first read of the events log ends the turn without an event. Fixed in the adapters: an idle, known OpenCode snapshot now gives `idle-prompt` (a `known` flag keeps a not-yet-started session silent); a Copilot first log read that ends a turn the spool left running gives one `idle-prompt`. Four tests added (287 to 291).
+
+Round 2 (fresh reviewer, re-review after the fix): 0 blocking. Verdict: passed. Non-blocking left, not fixed: (1) a `watch()` added while connected resyncs without a lock, so a live `exec-started` during its GETs can be overwritten by the snapshot and a spurious `idle-prompt` can follow (narrow, four local GETs); (2) events read after a connect's resync can be older than the snapshot (permission asked and replied inside the window leaves needs-you); (3) if `resync` throws after the connection is set, the `/api/event` body is not aborted, so each such failure leaks one connection; (4) `OpenCodeFold.reported` is written and never read; (5) a restored working Copilot tab with log records emits `working` again, which counts as watchdog progress; (6) the window sends `command` in `tabs.create`, which the core ignores (it uses the launch command); (7) a Copilot log lagging a fresh hook could end a just-started turn until the next poll.
+
+Fix rounds: 1 of 2 (both blocking findings from round 1, one round).
+
+### Deviations
+
+- Shared contract (`status/adapter.ts`) as the plan wrote it. Departures: `StatusServiceOptions.adapters` is `Partial` because the registry grows with the slice; `TrackInput` is `{ tabId, spacePath, kind, sessionId }` (no `spoolFile`); restore no longer calls `launch`, a record without a session id passes `''`; the resume-id check lives in each adapter's `launch`; `agentMissing` names the kind (the three kinds equal their command names); the daemon refuses a request whose kind differs from the saved tab's kind (`invalidParams`); `StatusChange.source` and `AgentInfo.source` stay `string`.
+- `lost` is added to `StatusEvent` (the plan's design): the reducer leaves the state alone and the service sets unknown.
+- The generic spool reader moved to `status/spool.ts`; `agents/claude/source.ts` is a thin wrapper with the same exports. Log messages say "agent spool" instead of "Claude spool".
+- `commandOnPath` is a shared helper (`agents/commandOnPath.ts`) used by the OpenCode and Copilot adapters; a positive probe is cached in the daemon per kind, a timeout counts as found, and a failed probe as missing (the old Copilot semantics). Claude is not probed, as before.
+- Reused from the old Grove: OpenCode `normalise` (envelope, pending permission and form, exec started, exec ended for succeeded, failed and interrupted, child sessions), `sseData`, `snapshotOf`, the service-file reader under `XDG_STATE_HOME`, Basic auth, the reconnect loop with backoff and the silence timeout, `mintSessionId` (moved into `agents/opencode/adapter.ts`); Copilot `step` (turn start and end, prompts, notification permission and question, pre and post tool, `agentStop`, `sessionEnd`, `abort` and `session.shutdown` with the stale check, subagents ignored), the `{t, e}` hook plugin, the events-log reader with a first read of at most 1 MiB, and the start and resume argv.
+- Dropped from the old code: prompt, write, context and token events (the status contract does not need them), and the old child and connected events.
+- OpenCode departures: `statusFor` takes the fold and returns `{ fold, events }` (the fold holds running, pending and the last reported state). A closed permission while another is open stays needs-you, not working. The hub fetches only active, session, permission and form, not children or context. `lost` is sent when an up connection drops, not on each failed attempt. A `watchFile` poll with no change in mtime, size or ino is ignored (Node fires it spuriously when the service file is missing); `watchFile` uses `persistent: false`. The hub's tests live in `client.test.ts`.
+- Copilot departures: the factory option is `copilotHome` (not `home`, which is the Grove home in the watch input). The fold uses epoch-ms times. The first read of the log is folded silently, and its resulting state is reported once when the log had records (so a restored running turn is not blank). There is no `forget()`: the contract has no tab-removal hook, so each tab's `.jsonl`, `.offset` and `.plugin` files under `agents/copilot/` are left behind. A hooks test was added (the old folder had none).
+- Round-1 fix: an idle, known OpenCode snapshot reports `idle-prompt` on every connect. Consequence: a known, idle OpenCode session turns an unknown tab idle on first connect (the service's rule for `idle-prompt`; finished and idle are unchanged).
+- Window: the kind label is a span in a new `.agent-title` row (a small CSS addition; the plan named no class). The three agent buttons are wired from one list and are disabled together. `main.ts` imports the `AgentKind` type from `core/status/adapter.ts`, not from protocol (both were allowed).
+- Fixtures for OpenCode and Copilot are the event shapes the old tests use, copied into each `fixtures/` folder with a README. They were not re-captured from live runs in this slice.
+- Not committed: `next/packages/ui/src-tauri/Cargo.toml` (the harmless tauri rewrite) and the untracked `next/packages/ui/reference/` folder, which is not part of this slice.
+
+### Verification
+
+- `cd next && npx vitest run`: 31 files, 291 tests passed (baseline 181 at the start of the slice).
+- `cd next && npm run typecheck`: exit 0.
+- `cd next/packages/ui/src-tauri && cargo check`: finished, no errors (no Rust change in this slice).
+- `npx vite build` in `next/`: succeeded (run by the window implementer after its change; the window was not changed after that).
+- Restart and replay cases are covered by the new tests: a turn that ended during downtime (OpenCode), an Esc during downtime (Copilot), an idle session not yet started (silent), a Copilot empty log (no repeat), and the per-kind registry and daemon paths (unknown kind, kind mismatch, `agentMissing`).
+- Not run here: any live `opencode` or `copilot` tab, and any real service or log file.
+
+### Left for the human
+
+- By hand, on the personal Mac and then the work Mac (`npm run dev`): a `claude`, an `opencode` and a `copilot` tab each show the right states and notify with a sound when they need you and when they finish.
+- Kill the core and holder mid-turn with each agent, reopen, and see each state rebuilt. Press Resume for OpenCode and Copilot; Copilot may show Resume unavailable with the reason.
+- With the old Grove running beside, each app lists only its own OpenCode sessions.
+- The Copilot tab on the work Mac (the plan's work-Mac check).
+- Live captures: the OpenCode and Copilot fixtures are the old tests' shapes; a real capture would confirm them.
+- Non-blocking review items above (1 to 7), and the per-tab Copilot files that are not removed.
 
 ## Open questions

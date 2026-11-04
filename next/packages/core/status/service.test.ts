@@ -3,7 +3,8 @@ import os from 'node:os'
 import path from 'node:path'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { SILENCE_MS, type StatusEvent } from './contract.ts'
-import { StatusService, type SourceOptions } from './service.ts'
+import { StatusService } from './service.ts'
+import type { AgentAdapter } from './adapter.ts'
 
 describe('StatusService', () => {
   let home: string
@@ -15,18 +16,24 @@ describe('StatusService', () => {
   let changes: Array<{ tabId: string; state: string }>
   let sessions: Array<{ tabId: string; sessionId: string }>
 
+  // A fake Claude adapter: its watch hands the service's onEvent to the test, keyed by tab.
+  const fakeAdapter = (): AgentAdapter => ({
+    kind: 'claude',
+    launch: () => {
+      throw new Error('not used: tabs are tracked directly')
+    },
+    watch: (input) => {
+      sources.set(input.tabId, input.onEvent)
+      return { close: () => sources.delete(input.tabId) }
+    },
+  })
+
   const make = (
     overrides: { silenceMs?: number; tickMs?: number; onSession?: (tabId: string, sessionId: string) => void } = {},
   ) =>
     new StatusService({
       home,
-      launchClaude: () => {
-        throw new Error('not used: tabs are tracked directly')
-      },
-      createSource: (options: SourceOptions) => {
-        sources.set(path.basename(options.spoolFile, '.jsonl'), options.onEvent)
-        return { close: () => sources.delete(path.basename(options.spoolFile, '.jsonl')) }
-      },
+      adapters: { claude: fakeAdapter() },
       screen: async () => screen,
       alive: async () => {
         if (holderDown) throw new Error('the holder did not answer in time')
@@ -53,8 +60,7 @@ describe('StatusService', () => {
       await beat(service)
     }
   }
-  const track = (service: StatusService, tabId = 't1') =>
-    service.track({ tabId, spacePath: home, spoolFile: path.join(home, `${tabId}.jsonl`), sessionId: 's1' })
+  const track = (service: StatusService, tabId = 't1') => service.track({ tabId, spacePath: home, kind: 'claude', sessionId: 's1' })
   const stateOf = (service: StatusService, tabId = 't1') => service.list(live).find((agent) => agent.tabId === tabId)
 
   beforeEach(() => {
@@ -261,6 +267,17 @@ describe('StatusService', () => {
     service.close()
   })
 
+  it('falls to unknown when the source reports it lost, from any state', () => {
+    const service = make()
+    track(service)
+    now = 2000
+    emit('t1', { kind: 'working' })
+    now = 2500
+    emit('t1', { kind: 'lost' })
+    expect(stateOf(service)).toMatchObject({ state: 'unknown', since: 2500 })
+    service.close()
+  })
+
   it('keeps a finished or idle tab after one failed holder call', async () => {
     const service = make()
     track(service, 't1')
@@ -374,16 +391,17 @@ describe('StatusService', () => {
     const resumeId = '00000000-0000-4000-8000-00000000000e'
     const restored = new StatusService({
       home,
-      launchClaude: (input) => ({
-        command: 'claude',
-        args: [],
-        env: {},
-        sessionId: input.resumeId ?? resumeId,
-        spoolFile: path.join(home, 'agents', 'claude', `${input.tabId}.jsonl`),
-      }),
-      createSource: (options: SourceOptions) => {
-        options.onEvent({ kind: 'needs-you', reason: 'permission' }, now)
-        return { close: () => undefined }
+      adapters: {
+        claude: {
+          kind: 'claude',
+          launch: () => {
+            throw new Error('not used: a restore does not launch')
+          },
+          watch: (input) => {
+            input.onEvent({ kind: 'needs-you', reason: 'permission' }, now)
+            return { close: () => undefined }
+          },
+        },
       },
       screen: async () => screen,
       alive: async () => new Set(),
@@ -417,13 +435,7 @@ describe('StatusService', () => {
     emit('t1', { kind: 'needs-you', reason: 'permission' })
     const unreachable = new StatusService({
       home,
-      launchClaude: () => {
-        throw new Error('unused')
-      },
-      createSource: (options: SourceOptions) => {
-        sources.set(path.basename(options.spoolFile, '.jsonl'), options.onEvent)
-        return { close: () => undefined }
-      },
+      adapters: { claude: fakeAdapter() },
       screen: async () => {
         throw new Error('no such tab')
       },

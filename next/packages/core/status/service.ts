@@ -2,51 +2,15 @@ import fs from 'node:fs'
 import path from 'node:path'
 import type { AgentInfo, AgentStateName, NeedsYouReason, StatusChange } from '../../protocol/messages.ts'
 import type { TabRecord } from '../store/state.ts'
+import type { AgentAdapter, AgentKind, AgentWatch } from './adapter.ts'
 import { applyEvent, GRACE_MS, unknownStatus, type Status, type StatusEvent } from './contract.ts'
 import { createCrossCheck, normaliseScreen, type CrossCheck } from './cross-check.ts'
 import { createWatchdog, type Watchdog } from './watchdog.ts'
 
-// The launch and source shapes this service needs. They are structural, so the Claude adapter's
-// functions are passed in as they are and the tests pass fakes.
-export interface ClaudeLaunchInput {
-  tabId: string
-  cwd: string
-  home: string
-  resumeId?: string
-}
-
-export interface ClaudeLaunchResult {
-  command: string
-  args: string[]
-  env: Record<string, string>
-  sessionId: string
-  spoolFile: string
-}
-
-export type LaunchClaude = (input: ClaudeLaunchInput) => ClaudeLaunchResult
-
-export interface SourceOptions {
-  spoolFile: string
-  offsetFile: string
-  clock: () => number
-  // `at` is the time the event happened; a source that cannot tell passes the clock.
-  onEvent: (event: StatusEvent, at: number) => void
-}
-
-// The Claude source delivers the spool from its saved offset as soon as it is created, so a restored
-// watch is rebuilt before restore() returns.
-export interface AgentSource {
-  close: () => void
-}
-
-export type CreateSource = (options: SourceOptions) => AgentSource
-
-export const AGENT_SOURCE = 'claude'
-
 export interface StatusServiceOptions {
   home: string
-  launchClaude: LaunchClaude
-  createSource: CreateSource
+  // One adapter per agent kind. A kind with no adapter cannot be tracked or restored.
+  adapters: Partial<Record<AgentKind, AgentAdapter>>
   // The visible text of a tab's screen, read from the holder. Asked on each tick for a needs-you tab.
   screen: (tabId: string) => Promise<string>
   // The ids of the holder tabs that are alive. A tab not in this set is gone. One failed call is skipped, so a
@@ -63,29 +27,29 @@ export interface StatusServiceOptions {
 export interface TrackInput {
   tabId: string
   spacePath: string
-  spoolFile: string
+  kind: AgentKind
   sessionId: string
 }
 
 interface Watch {
   tabId: string
-  spoolFile: string
+  kind: AgentKind
   resumeId: string | undefined
   status: Status
   check: CrossCheck
   watchdog: Watchdog
   // The last normalised screen read for a working tab; a change in it is real activity.
   screen: string | undefined
-  source: AgentSource | undefined
+  source: AgentWatch | undefined
 }
 
 const TICK_MS = 1000
 const STATE_NAMES = new Set<string>(['working', 'needs-you', 'finished', 'idle', 'unknown'])
 const REASONS = new Set<string>(['permission', 'question', 'error'])
 
-// One watch per Claude tab. Each owns its spool source, cross-check and watchdog, and folds the
-// source's events into a status. The status is written to a sidecar file on every change, and the
-// spool offset is saved by the source, so a restarted core rebuilds each tab instead of resetting it.
+// One watch per agent tab. Each owns its adapter's watch, cross-check and watchdog, and folds the
+// watch's events into a status. The status is written to a sidecar file on every change, and the
+// adapter saves its own read position, so a restarted core rebuilds each tab instead of resetting it.
 export class StatusService {
   private readonly watches = new Map<string, Watch>()
   private readonly listeners = new Set<(change: StatusChange) => void>()
@@ -109,24 +73,25 @@ export class StatusService {
     return () => this.listeners.delete(listener)
   }
 
-  // Rebuilds each saved Claude tab from its sidecar status and its spool from the saved offset.
+  // Rebuilds each saved agent tab from its sidecar status and its watch from the saved offset.
   // A tab whose holder tab is not in `alive` is gone, so it restores as unknown, never as a live state.
   // A tab that fails to rebuild is logged and skipped.
   restore(records: TabRecord[], alive: Set<string>): void {
     for (const record of records) {
-      if (record.agent !== 'claude' || this.watches.has(record.id)) continue
+      if (record.agent === undefined || this.watches.has(record.id)) continue
       try {
-        const launch = this.options.launchClaude({
-          tabId: record.id,
-          cwd: record.spacePath,
-          home: this.options.home,
-          resumeId: record.agentSessionId,
-        })
         const now = this.clock()
-        const saved = this.readSnapshot(record.id)
+        const saved = this.readSnapshot(record.agent, record.id)
         const gone = !alive.has(record.id)
         const status = gone ? unknownStatus(now) : (saved ?? unknownStatus(now))
-        const watch = this.open({ tabId: record.id, spoolFile: launch.spoolFile, resumeId: record.agentSessionId, status })
+        // A record with no session id gets '' here: the adapter then has nothing to resume, as before.
+        const watch = this.open({
+          tabId: record.id,
+          kind: record.agent,
+          sessionId: record.agentSessionId ?? '',
+          resumeId: record.agentSessionId,
+          status,
+        })
         // The replay above may have set a needs-you or working from the spool; a gone tab is never shown as live.
         if (gone) {
           this.fallToUnknown(watch, this.clock())
@@ -138,12 +103,13 @@ export class StatusService {
     }
   }
 
-  // A tab launched or resumed now starts idle: Claude is up and waiting for a prompt.
+  // A tab launched or resumed now starts idle: the agent is up and waiting for a prompt.
   track(input: TrackInput): void {
     this.close(input.tabId)
     const watch = this.open({
       tabId: input.tabId,
-      spoolFile: input.spoolFile,
+      kind: input.kind,
+      sessionId: input.sessionId,
       resumeId: input.sessionId,
       status: { state: 'idle', since: this.clock() },
     })
@@ -226,11 +192,11 @@ export class StatusService {
       const { status } = watch
       return {
         tabId: watch.tabId,
-        agent: 'claude',
+        agent: watch.kind,
         state: status.state,
         ...(status.state === 'needs-you' ? { reason: status.reason } : {}),
         since: status.since,
-        source: AGENT_SOURCE,
+        source: watch.kind,
         resumable: !alive.has(watch.tabId) && watch.resumeId !== undefined,
       }
     })
@@ -258,11 +224,13 @@ export class StatusService {
     }
   }
 
-  private open(input: { tabId: string; spoolFile: string; resumeId: string | undefined; status: Status }): Watch {
+  private open(input: { tabId: string; kind: AgentKind; sessionId: string; resumeId: string | undefined; status: Status }): Watch {
+    const adapter = this.options.adapters[input.kind]
+    if (adapter === undefined) throw new Error(`no adapter for agent ${input.kind}`)
     const now = this.clock()
     const watch: Watch = {
       tabId: input.tabId,
-      spoolFile: input.spoolFile,
+      kind: input.kind,
       resumeId: input.resumeId,
       status: input.status,
       check: createCrossCheck({ clock: this.clock, graceMs: this.graceMs }),
@@ -276,10 +244,11 @@ export class StatusService {
     // Counted as progress from now; replayed records below then set it to their own times.
     watch.watchdog.progress(now)
     this.watches.set(input.tabId, watch)
-    // The source may deliver events before it returns, so the watch is already registered.
-    watch.source = this.options.createSource({
-      spoolFile: input.spoolFile,
-      offsetFile: path.join(this.agentDir(), `${input.tabId}.offset`),
+    // The adapter may deliver events before it returns, so the watch is already registered.
+    watch.source = adapter.watch({
+      tabId: input.tabId,
+      sessionId: input.sessionId,
+      home: this.options.home,
       clock: this.clock,
       onEvent: (event, at) => this.onEvent(watch, event, at),
     })
@@ -291,6 +260,11 @@ export class StatusService {
     const now = Number.isFinite(at) ? at : this.clock()
     if (event.kind === 'heartbeat') {
       watch.watchdog.heartbeat(this.clock())
+      return
+    }
+    // The source cannot read its signal now. This is not activity, so it does not reset the silence check.
+    if (event.kind === 'lost') {
+      this.fallToUnknown(watch, now)
       return
     }
     // Every hook record is real activity, including one that changes no state.
@@ -322,27 +296,28 @@ export class StatusService {
     this.writeSnapshot(watch)
     const change: StatusChange = {
       tabId: watch.tabId,
+      agent: watch.kind,
       state: next.state as AgentStateName,
       since: next.since,
-      source: AGENT_SOURCE,
+      source: watch.kind,
       ...(next.state === 'needs-you' ? { reason: next.reason } : {}),
     }
     for (const listener of this.listeners) listener(change)
   }
 
-  private agentDir(): string {
-    return path.join(this.options.home, 'agents', AGENT_SOURCE)
+  private agentDir(kind: AgentKind): string {
+    return path.join(this.options.home, 'agents', kind)
   }
 
-  private snapshotFile(tabId: string): string {
-    return path.join(this.agentDir(), `${tabId}.status.json`)
+  private snapshotFile(kind: AgentKind, tabId: string): string {
+    return path.join(this.agentDir(kind), `${tabId}.status.json`)
   }
 
   private writeSnapshot(watch: Watch): void {
-    const file = this.snapshotFile(watch.tabId)
+    const file = this.snapshotFile(watch.kind, watch.tabId)
     const body = { status: watch.status, resumeId: watch.resumeId }
     try {
-      fs.mkdirSync(this.agentDir(), { recursive: true, mode: 0o700 })
+      fs.mkdirSync(this.agentDir(watch.kind), { recursive: true, mode: 0o700 })
       fs.writeFileSync(`${file}.tmp`, `${JSON.stringify(body)}\n`, { mode: 0o600 })
       fs.renameSync(`${file}.tmp`, file)
     } catch (error) {
@@ -351,10 +326,10 @@ export class StatusService {
   }
 
   // A missing or unreadable snapshot is no status at all; the caller then starts unknown.
-  private readSnapshot(tabId: string): Status | null {
+  private readSnapshot(kind: AgentKind, tabId: string): Status | null {
     let parsed: unknown
     try {
-      parsed = JSON.parse(fs.readFileSync(this.snapshotFile(tabId), 'utf8'))
+      parsed = JSON.parse(fs.readFileSync(this.snapshotFile(kind, tabId), 'utf8'))
     } catch {
       return null
     }

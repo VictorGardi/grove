@@ -1,4 +1,5 @@
 import fs from 'node:fs'
+import type { AgentKind } from '../status/adapter.ts'
 
 export interface SpaceRecord {
   path: string
@@ -9,7 +10,7 @@ export interface SpaceRecord {
 export interface TabRecord {
   id: string
   spacePath: string
-  agent?: 'claude'
+  agent?: AgentKind
   agentSessionId?: string
 }
 

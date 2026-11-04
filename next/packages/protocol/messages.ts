@@ -1,3 +1,5 @@
+import type { AgentKind } from '../core/status/adapter.ts'
+
 export const PROTOCOL_VERSION = 1
 
 export const METHODS = {
@@ -27,6 +29,7 @@ export const ERROR_CODES = {
   tabNotFound: -32001,
   tabExists: -32002,
   stateRefused: -32003,
+  agentMissing: -32004,
 } as const
 
 export type JsonRpcId = number | string
@@ -88,7 +91,7 @@ export type NeedsYouReason = 'permission' | 'question' | 'error'
 
 export interface AgentInfo {
   tabId: string
-  agent: 'claude'
+  agent: AgentKind
   state: AgentStateName
   reason?: NeedsYouReason
   since: number
@@ -105,6 +108,7 @@ export interface AttentionNotice {
 
 export interface StatusChange {
   tabId: string
+  agent: AgentKind
   state: AgentStateName
   reason?: NeedsYouReason
   since: number
@@ -122,7 +126,7 @@ export interface MethodMap {
       env?: Record<string, string>
       cols: number
       rows: number
-      agent?: { kind: 'claude'; resumeId?: string }
+      agent?: { kind: AgentKind; resumeId?: string }
     }
     result: { id: string }
   }

@@ -9,9 +9,9 @@ import { ERROR_CODES, METHODS, PROTOCOL_VERSION } from '../protocol/messages.ts'
 import type { JsonRpcId, JsonRpcRequest, MethodMap, MethodName } from '../protocol/messages.ts'
 import { RpcError } from '../protocol/errors.ts'
 import { SpacesService } from './spaces.ts'
-import { claudeLaunch, SESSION_ID } from './agents/claude/launch.ts'
-import { createClaudeSource } from './agents/claude/source.ts'
-import { StatusService, type LaunchClaude } from './status/service.ts'
+import { adapters as registry } from './agents/registry.ts'
+import type { AgentAdapter, AgentKind, AgentLaunch } from './status/adapter.ts'
+import { StatusService } from './status/service.ts'
 import { Attention } from './attention/attention.ts'
 
 const TAB_ID = /^[A-Za-z0-9_-]{1,64}$/
@@ -44,14 +44,16 @@ export async function startCoreDaemon(
     stateFile?: string
     spaces?: SpacesService
     home?: string
-    launchClaude?: LaunchClaude
+    adapters?: Partial<Record<AgentKind, AgentAdapter>>
     status?: StatusService
   } = {},
 ): Promise<CoreServer> {
   const socketPath = options.socketPath ?? coreSocketPath()
   const holderSocket = options.holderSocket ?? holderSocketPath()
   const home = options.home ?? groveNextHome()
-  const launchClaude = options.launchClaude ?? claudeLaunch
+  const adapters = options.adapters ?? registry
+  // An agent that reported its command available is not probed again for the life of this core.
+  const available = new Set<AgentKind>()
   const spaces = options.spaces ?? new SpacesService(options.stateFile ?? path.join(home, 'state.json'))
   await removeStaleSocket(socketPath)
 
@@ -78,13 +80,12 @@ export async function startCoreDaemon(
     options.status ??
     new StatusService({
       home,
-      launchClaude,
-      createSource: createClaudeSource,
+      adapters,
       screen,
       alive,
       onSession: (tabId, sessionId) => spaces.setAgentSession(tabId, sessionId),
     })
-  // A holder that cannot be reached at start leaves every saved Claude tab unknown.
+  // A holder that cannot be reached at start leaves every saved agent tab unknown.
   const aliveAtStart = await alive().catch(() => new Set<string>())
 
   const sockets = new Set<net.Socket>()
@@ -101,10 +102,10 @@ export async function startCoreDaemon(
     broadcast(notification('status.changed', change))
     attention.onStatus(change)
   })
-  // Claude tabs are rebuilt before the core listens, so the first client already sees their state.
-  status.restore(spaces.claudeTabs(), aliveAtStart)
+  // Agent tabs are rebuilt before the core listens, so the first client already sees their state.
+  status.restore(spaces.agentTabs(), aliveAtStart)
   status.start()
-  const deps: Deps = { spaces, status, attention, home, launchClaude }
+  const deps: Deps = { spaces, status, attention, home, adapters, available }
 
   const server = net.createServer((socket) => {
     sockets.add(socket)
@@ -220,7 +221,8 @@ interface Deps {
   status: StatusService
   attention: Attention
   home: string
-  launchClaude: LaunchClaude
+  adapters: Partial<Record<AgentKind, AgentAdapter>>
+  available: Set<AgentKind>
 }
 
 async function dispatch(method: string, rawParams: unknown, holder: Promise<RpcClient>, deps: Deps): Promise<unknown> {
@@ -255,14 +257,19 @@ function agentParam(params: unknown): unknown {
   return (params as Record<string, unknown> | null)?.agent
 }
 
-// Starts a Claude tab in a space. With an id and a saved record it is a resume: same tab id, and the
+// Starts an agent tab in a space. With an id and a saved record it is a resume: same tab id, and the
 // saved session id unless the caller gives one.
 async function createAgentTab(
   p: MethodMap['tabs.create']['params'],
   holder: RpcClient,
   deps: Deps,
 ): Promise<{ id: string }> {
-  if (p.agent?.kind !== 'claude') throw new RpcError(ERROR_CODES.invalidParams, 'agent.kind must be claude')
+  const kind = p.agent?.kind
+  const adapter = kind === undefined ? undefined : deps.adapters[kind]
+  if (kind === undefined || adapter === undefined) {
+    const known = Object.keys(deps.adapters).join(', ')
+    throw new RpcError(ERROR_CODES.invalidParams, `agent.kind must be one of ${known}`)
+  }
   if (p.id !== undefined && !TAB_ID.test(p.id)) throw new RpcError(ERROR_CODES.invalidParams, 'tab id is not valid')
   // Before the lookup: a refused state must not even start a tab in the holder.
   deps.spaces.assertNotRefused()
@@ -271,18 +278,30 @@ async function createAgentTab(
   if (saved !== undefined && saved.agent === undefined) {
     throw new RpcError(ERROR_CODES.tabExists, `tab ${id} is a shell tab`)
   }
+  if (saved !== undefined && saved.agent !== kind) {
+    throw new RpcError(ERROR_CODES.invalidParams, `tab ${id} is a ${saved.agent} tab`)
+  }
   const spacePath = saved?.spacePath ?? stringParam(p, 'cwd')
   if (!deps.spaces.isSpace(spacePath)) throw new RpcError(ERROR_CODES.invalidParams, `not a space: ${spacePath}`)
 
-  // The resume id goes to the command line, so only a UUID is ever accepted.
-  const resumeId = p.agent.resumeId ?? saved?.agentSessionId
-  if (resumeId !== undefined && !SESSION_ID.test(resumeId)) {
-    throw new RpcError(ERROR_CODES.invalidParams, 'resume id is not a session id')
+  // A command that is not on the login shell's PATH is refused before anything is written for it.
+  if (adapter.available !== undefined && !deps.available.has(kind)) {
+    if (!(await adapter.available())) {
+      throw new RpcError(ERROR_CODES.agentMissing, `${kind} is not on the PATH of your login shell`)
+    }
+    deps.available.add(kind)
   }
-  const launch = deps.launchClaude({ tabId: id, cwd: spacePath, home: deps.home, resumeId })
+
+  const resumeId = p.agent?.resumeId ?? saved?.agentSessionId
+  let launch: AgentLaunch
+  try {
+    launch = adapter.launch({ tabId: id, cwd: spacePath, home: deps.home, resumeId })
+  } catch (error) {
+    throw new RpcError(ERROR_CODES.invalidParams, error instanceof Error ? error.message : String(error))
+  }
   if (p.id !== undefined) await removeExitedTab(holder, id)
   // Saved before the holder create: if the create fails, the record stays and the tab can be resumed.
-  deps.spaces.saveAgentTab({ id, spacePath, agent: 'claude', agentSessionId: launch.sessionId })
+  deps.spaces.saveAgentTab({ id, spacePath, agent: kind, agentSessionId: launch.sessionId })
   await holder.request(METHODS.tabsCreate, {
     id,
     command: launch.command,
@@ -292,11 +311,11 @@ async function createAgentTab(
     cols: numberParam(p, 'cols'),
     rows: numberParam(p, 'rows'),
   })
-  deps.status.track({ tabId: id, spacePath, spoolFile: launch.spoolFile, sessionId: launch.sessionId })
+  deps.status.track({ tabId: id, spacePath, kind, sessionId: launch.sessionId })
   return { id }
 }
 
-// A Claude tab that exits on its own (/exit, a crash, kill -9 of Claude) stays in the holder as an exited
+// An agent tab that exits on its own (/exit, a crash, kill -9 of Claude) stays in the holder as an exited
 // entry, and a create with the same id would fail with tabExists. An exited entry is removed first. A live
 // one is left alone, so the create refuses it as before.
 async function removeExitedTab(holder: RpcClient, id: string): Promise<void> {

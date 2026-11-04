@@ -9,6 +9,7 @@ describe('Attention', () => {
 
   const change = (tabId: string, state: StatusChange['state'], reason?: StatusChange['reason']): StatusChange => ({
     tabId,
+    agent: 'claude',
     state,
     since: 0,
     source: 'claude',

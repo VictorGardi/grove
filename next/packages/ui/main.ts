@@ -4,6 +4,7 @@ import { createBridge, fromBase64, toBase64 } from './bridge.ts'
 import { createSoundGate, noticeBody } from './alerts.ts'
 import { openTerminal, type TerminalView } from './terminal.ts'
 import type { AgentInfo, AgentStateName, SpaceInfo } from '../protocol/messages.ts'
+import type { AgentKind } from '../core/status/adapter.ts'
 import './styles.css'
 
 interface EnvInfo {
@@ -44,9 +45,17 @@ const spaceList = byId('spaces')
 const addSpaceForm = byId('add-space') as HTMLFormElement
 const spacePathInput = byId('space-path') as HTMLInputElement
 const newTabButton = byId('new-tab') as HTMLButtonElement
-const newClaudeButton = byId('new-claude') as HTMLButtonElement
+const newAgentButtons = [
+  { kind: 'claude', button: byId('new-claude') as HTMLButtonElement },
+  { kind: 'opencode', button: byId('new-opencode') as HTMLButtonElement },
+  { kind: 'copilot', button: byId('new-copilot') as HTMLButtonElement },
+] satisfies Array<{ kind: AgentKind; button: HTMLButtonElement }>
 const agentList = byId('agents')
 const agentsEmpty = byId('agents-empty')
+
+// The command the window starts; the core builds the args from the agent kind.
+const AGENT_COMMANDS: Record<AgentKind, string> = { claude: 'claude', opencode: 'opencode', copilot: 'copilot' }
+const AGENT_LABELS: Record<AgentKind, string> = { claude: 'Claude', opencode: 'OpenCode', copilot: 'Copilot' }
 
 // The sidebar groups agents in this order; the state names match the core's.
 const AGENT_GROUPS: Array<{ state: AgentStateName; label: string }> = [
@@ -182,7 +191,7 @@ function paint(): void {
   }
   renderSpaces()
   newTabButton.disabled = activeSpace === null || refused !== null
-  newClaudeButton.disabled = activeSpace === null || refused !== null
+  for (const { button } of newAgentButtons) button.disabled = activeSpace === null || refused !== null
   for (const control of addSpaceForm.querySelectorAll<HTMLInputElement | HTMLButtonElement>('input, button')) {
     control.disabled = refused !== null
   }
@@ -284,18 +293,18 @@ async function newShellTab(): Promise<void> {
   }
 }
 
-// Opens a Claude tab in the space root. The core launches Claude and records the session.
-async function newClaudeTab(): Promise<void> {
+// Opens an agent tab in the space root. The core launches the agent and records the session.
+async function newAgentTab(kind: AgentKind): Promise<void> {
   const spacePath = activeSpace
   if (!spacePath) return
   const tab = createTab(spacePath)
   try {
     const { id } = await bridge.rpc('tabs.create', {
-      command: 'claude',
+      command: AGENT_COMMANDS[kind],
       cwd: spacePath,
       cols: tab.view.term.cols,
       rows: tab.view.term.rows,
-      agent: { kind: 'claude' },
+      agent: { kind },
     })
     adopt(tab, id)
     await attach(tab)
@@ -307,16 +316,16 @@ async function newClaudeTab(): Promise<void> {
   }
 }
 
-// Starts a gone Claude tab again under its own id; the core resumes the saved session.
-async function resumeAgent(tab: Tab): Promise<void> {
+// Starts a gone agent tab again under its own id; the core resumes the saved session.
+async function resumeAgent(tab: Tab, kind: AgentKind): Promise<void> {
   const { cols, rows } = tab.view.term
   await bridge.rpc('tabs.create', {
     id: tab.id,
-    command: 'claude',
+    command: AGENT_COMMANDS[kind],
     cwd: tab.spacePath,
     cols,
     rows,
-    agent: { kind: 'claude' },
+    agent: { kind },
   })
   await attach(tab)
   activate(tab)
@@ -367,7 +376,9 @@ function agentRow(agent: AgentInfo): HTMLLIElement {
   const age = element('span', 'agent-age', formatAge(Date.now() - agent.since))
   age.dataset.since = String(agent.since)
   meta.append(state, ' · ', age)
-  focus.append(element('span', 'agent-label', label), meta)
+  const title = element('span', 'agent-title')
+  title.append(element('span', 'agent-label', label), element('span', 'agent-kind', AGENT_LABELS[agent.agent]))
+  focus.append(title, meta)
   focus.addEventListener('click', () => {
     if (tab) activate(tab)
   })
@@ -380,7 +391,7 @@ function agentRow(agent: AgentInfo): HTMLLIElement {
     resume.textContent = 'Resume'
     resume.addEventListener('click', () => {
       resume.disabled = true
-      resumeAgent(tab).catch((error: unknown) => {
+      resumeAgent(tab, agent.agent).catch((error: unknown) => {
         resume.disabled = false
         report(error)
       })
@@ -476,7 +487,7 @@ bridge.on('status.changed', (change) => {
   const previous = agents.get(change.tabId)
   agents.set(change.tabId, {
     tabId: change.tabId,
-    agent: 'claude',
+    agent: change.agent,
     state: change.state,
     ...(change.reason ? { reason: change.reason } : {}),
     since: change.since,
@@ -508,7 +519,9 @@ bridge.onStatus((status) => {
 
 new ResizeObserver(() => active?.view.fit()).observe(terminals)
 newTabButton.addEventListener('click', () => void newShellTab())
-newClaudeButton.addEventListener('click', () => void newClaudeTab())
+for (const { kind, button } of newAgentButtons) {
+  button.addEventListener('click', () => void newAgentTab(kind))
+}
 setInterval(refreshAges, AGE_REFRESH_MS)
 addSpaceForm.addEventListener('submit', (event) => {
   event.preventDefault()

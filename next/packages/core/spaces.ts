@@ -98,7 +98,7 @@ export class SpacesService {
     const known = new Set((await holder.request(METHODS.tabsList, {})).map((tab) => tab.id))
     let restored = 0
     for (const tab of this.state.tabs) {
-      // A Claude tab is never restarted as a shell; when its holder tab is gone it is resumed on request.
+      // An agent tab is never restarted as a shell; when its holder tab is gone it is resumed on request.
       if (known.has(tab.id) || tab.agent !== undefined) continue
       try {
         await holder.request(METHODS.tabsCreate, {
@@ -126,11 +126,11 @@ export class SpacesService {
     return this.state.tabs.find((tab) => tab.id === id)
   }
 
-  claudeTabs(): TabRecord[] {
-    return this.state.tabs.filter((tab) => tab.agent === 'claude')
+  agentTabs(): TabRecord[] {
+    return this.state.tabs.filter((tab) => tab.agent !== undefined)
   }
 
-  // Adds a Claude tab, or updates the record of a tab with the same id (a resume keeps its place).
+  // Adds an agent tab, or updates the record of a tab with the same id (a resume keeps its place).
   saveAgentTab(tab: TabRecord): void {
     this.assertNotRefused()
     const index = this.state.tabs.findIndex((candidate) => candidate.id === tab.id)

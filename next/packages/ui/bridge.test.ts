@@ -32,7 +32,14 @@ describe('bridge notifications', () => {
     await bridge.connect()
 
     const events = invoke.mock.calls.at(-1)![1].events as { onmessage: (line: string) => void }
-    const change: StatusChange = { tabId: 'abc12345', state: 'needs-you', reason: 'permission', since: 42, source: 'claude' }
+    const change: StatusChange = {
+      tabId: 'abc12345',
+      agent: 'claude',
+      state: 'needs-you',
+      reason: 'permission',
+      since: 42,
+      source: 'claude',
+    }
     events.onmessage(JSON.stringify({ jsonrpc: '2.0', method: 'status.changed', params: change }))
     expect(seen).toEqual([change])
   })

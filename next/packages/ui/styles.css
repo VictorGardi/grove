@@ -196,11 +196,25 @@ button {
   cursor: pointer;
 }
 
-.agent-label {
+.agent-title {
+  display: flex;
+  align-items: baseline;
+  gap: 6px;
   max-width: 100%;
+  min-width: 0;
+}
+
+.agent-label {
+  min-width: 0;
   overflow: hidden;
   white-space: nowrap;
   text-overflow: ellipsis;
+}
+
+.agent-kind {
+  flex: none;
+  font-size: 11px;
+  color: var(--muted);
 }
 
 .agent-meta {

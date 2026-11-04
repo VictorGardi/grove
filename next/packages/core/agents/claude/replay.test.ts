@@ -6,6 +6,8 @@ import { afterEach, beforeEach, describe, expect, it } from 'vitest'
 import { applyEvent, GRACE_MS, SILENCE_MS, unknownStatus, type Status, type StatusEvent } from '../../status/contract.ts'
 import { createCrossCheck } from '../../status/cross-check.ts'
 import { StatusService } from '../../status/service.ts'
+import { createClaudeAdapter } from './adapter.ts'
+import { claudeSpoolFile } from './launch.ts'
 import { createClaudeSource } from './source.ts'
 
 const here = path.dirname(fileURLToPath(import.meta.url))
@@ -55,19 +57,23 @@ function replay(name: string, lines?: number) {
 // poll's heartbeat and then the service's tick, and `screen` is what the holder shows on each tick.
 function serviceOn(name: string, lines: number | undefined, screen: () => string) {
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'grove-claude-service-'))
-  const spool = path.join(dir, 'tab.jsonl')
+  const spool = claudeSpoolFile(dir, 'tab')
+  fs.mkdirSync(path.dirname(spool), { recursive: true })
   const all = fs.readFileSync(fixture(name), 'utf8').split('\n').filter((line) => line !== '')
   fs.writeFileSync(spool, all.slice(0, lines ?? all.length).join('\n') + '\n')
   let now = START
   let heartbeat: ((event: StatusEvent, at: number) => void) | undefined
+  const adapter = createClaudeAdapter()
   const service = new StatusService({
     home: dir,
-    launchClaude: () => {
-      throw new Error('not used: the tab is tracked directly')
-    },
-    createSource: (options) => {
-      heartbeat = options.onEvent
-      return createClaudeSource(options)
+    adapters: {
+      claude: {
+        ...adapter,
+        watch: (input) => {
+          heartbeat = input.onEvent
+          return adapter.watch(input)
+        },
+      },
     },
     screen: async () => screen(),
     alive: async () => new Set(['tab']),
@@ -75,7 +81,7 @@ function serviceOn(name: string, lines: number | undefined, screen: () => string
     graceMs: GRACE_MS,
     silenceMs: SILENCE_MS,
   })
-  service.track({ tabId: 'tab', spacePath: dir, spoolFile: spool, sessionId: SESSION })
+  service.track({ tabId: 'tab', spacePath: dir, kind: 'claude', sessionId: SESSION })
   return {
     state: () => service.list(new Set(['tab']))[0],
     setNow: (at: number) => (now = at),

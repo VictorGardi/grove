@@ -11,8 +11,11 @@ import { connectRpc, connectWhenReady, type RpcClient } from '../protocol/client
 import { holderSocketPath } from '../protocol/paths.ts'
 import { ensureHolder } from './holder-client.ts'
 import { startCoreDaemon, type CoreServer } from './daemon.ts'
+import { createClaudeAdapter } from './agents/claude/adapter.ts'
 import { SpacesService } from './spaces.ts'
-import { StatusService, type CreateSource, type LaunchClaude } from './status/service.ts'
+import { StatusService } from './status/service.ts'
+import type { AdapterWatchInput, AgentAdapter, AgentKind, AgentWatch } from './status/adapter.ts'
+import type { StatusEvent } from './status/contract.ts'
 import { killCore, startStack, stopHolder, waitFor } from './test-helpers.ts'
 
 const screenText = async (client: RpcClient, id: string): Promise<string> => {
@@ -124,19 +127,9 @@ describe('core daemon agents', () => {
   // A session id in the shape Claude uses (a UUID), derived from the tab id, which is hex in these tests.
   const sessionFor = (tabId: string) => `${tabId.padEnd(8, '0').slice(0, 8)}-0000-4000-8000-000000000000`
 
-  const fakeLaunch: LaunchClaude = ({ tabId, resumeId }) => {
-    launches.push({ tabId, resumeId })
-    return {
-      command: '/bin/sh',
-      args: ['-c', launchScript],
-      env: {},
-      sessionId: resumeId ?? sessionFor(tabId),
-      spoolFile: spoolOf(tabId),
-    }
-  }
-
-  const fakeSource: CreateSource = ({ spoolFile, offsetFile, onEvent }) => {
-    const tab = path.basename(spoolFile, '.jsonl')
+  const fakeWatch = ({ tabId, onEvent }: AdapterWatchInput): AgentWatch => {
+    const spoolFile = spoolOf(tabId)
+    const offsetFile = path.join(home, 'agents', 'claude', `${tabId}.offset`)
     let offset = fs.existsSync(offsetFile) ? (JSON.parse(fs.readFileSync(offsetFile, 'utf8')) as { offset: number }).offset : 0
     const drain = () => {
       if (!fs.existsSync(spoolFile)) return
@@ -145,8 +138,8 @@ describe('core daemon agents', () => {
       if (complete === '') return
       for (const line of complete.split('\n').filter(Boolean)) {
         const event = JSON.parse(line) as { kind: string }
-        delivered.push({ tab, kind: event.kind })
-        onEvent(event as never, Date.now())
+        delivered.push({ tab: tabId, kind: event.kind })
+        onEvent(event as StatusEvent, Date.now())
       }
       offset += Buffer.byteLength(complete)
       fs.writeFileSync(offsetFile, JSON.stringify({ offset }))
@@ -154,11 +147,26 @@ describe('core daemon agents', () => {
     // As the real source does: a heartbeat after each drain that worked, so the reader is seen to run.
     const beat = () => {
       drain()
-      onEvent({ kind: 'heartbeat' } as never, Date.now())
+      onEvent({ kind: 'heartbeat' }, Date.now())
     }
     beat()
     const timer = setInterval(beat, 20)
     return { close: () => clearInterval(timer) }
+  }
+
+  // The fake Claude adapter: a launch that runs the shell script, and a watch over the fake spool.
+  const fakeAdapter: AgentAdapter = {
+    kind: 'claude',
+    launch: ({ tabId, resumeId }) => {
+      launches.push({ tabId, resumeId })
+      return {
+        command: '/bin/sh',
+        args: ['-c', launchScript],
+        env: {},
+        sessionId: resumeId ?? sessionFor(tabId),
+      }
+    },
+    watch: fakeWatch,
   }
 
   const screenFromHolder = async (tabId: string): Promise<string> => {
@@ -190,12 +198,12 @@ describe('core daemon agents', () => {
   }
 
   const startDaemon = async (
-    overrides: { silenceMs?: number } = {},
+    overrides: { silenceMs?: number; adapters?: Partial<Record<AgentKind, AgentAdapter>> } = {},
   ): Promise<{ core: RpcClient; status: StatusService }> => {
+    const adapters = overrides.adapters ?? { claude: fakeAdapter }
     const status = new StatusService({
       home,
-      launchClaude: fakeLaunch,
-      createSource: fakeSource,
+      adapters,
       screen: screenFromHolder,
       alive: aliveFromHolder,
       onSession: (tabId, sessionId) => spaces.setAgentSession(tabId, sessionId),
@@ -204,7 +212,7 @@ describe('core daemon agents', () => {
       silenceMs: overrides.silenceMs ?? 60000,
     })
     const spaces = new SpacesService(stateFile)
-    daemons.push(await startCoreDaemon({ spaces, status, home, launchClaude: fakeLaunch }))
+    daemons.push(await startCoreDaemon({ spaces, status, home, adapters }))
     const core = await connectWhenReady(coreSocketPath())
     clients.push(core)
     return { core, status }
@@ -475,7 +483,8 @@ describe('core daemon agents', () => {
   })
 
   it('refuses a resume id that is not a session id', async () => {
-    const { core } = await startDaemon()
+    // The real Claude adapter validates the resume id, so this case runs against it, not the fake.
+    const { core } = await startDaemon({ adapters: { claude: createClaudeAdapter() } })
     await expect(
       core.request(METHODS.tabsCreate, {
         command: 'claude',
@@ -485,5 +494,31 @@ describe('core daemon agents', () => {
         agent: { kind: 'claude', resumeId: '--dangerously-skip-permissions' },
       }),
     ).rejects.toThrow('resume id is not a session id')
+  })
+
+  it('refuses an agent kind that has no adapter', async () => {
+    const { core } = await startDaemon()
+    await expect(
+      core.request(METHODS.tabsCreate, { command: 'opencode', cwd: space, cols: 80, rows: 24, agent: { kind: 'opencode' } }),
+    ).rejects.toThrow('agent.kind must be one of claude')
+    expect(await aliveFromHolder()).toEqual(new Set())
+  })
+
+  it('refuses an agent whose command is not on the PATH, before any record or holder tab is made', async () => {
+    const missing: AgentAdapter = {
+      kind: 'copilot',
+      launch: () => {
+        throw new Error('not used: the command is missing')
+      },
+      watch: () => ({ close: () => undefined }),
+      available: async () => false,
+    }
+    const { core } = await startDaemon({ adapters: { claude: fakeAdapter, copilot: missing } })
+    await expect(
+      core.request(METHODS.tabsCreate, { command: 'copilot', cwd: space, cols: 80, rows: 24, agent: { kind: 'copilot' } }),
+    ).rejects.toThrow('copilot is not on the PATH of your login shell')
+    expect(await aliveFromHolder()).toEqual(new Set())
+    const saved = JSON.parse(fs.readFileSync(stateFile, 'utf8')) as { tabs: unknown[] }
+    expect(saved.tabs).toEqual([])
   })
 })
