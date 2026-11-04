@@ -1,7 +1,7 @@
 # grove-run: slice mode (child)
 
 You are a child session started by `grove-run` with `<slug> --slice N --profile P`. You
-play the `planner` role in your own session. Your cwd is the run worktree. Follow only
+play the `planner` role in your own session. Your cwd is the run worktree, also the orchestrator's own checkout. Your prompt's `Parent:` line is the orchestrator's session id. Follow only
 this file. The `04-run.md` layout is in `references/run-template.md`.
 
 ## Rules
@@ -22,6 +22,7 @@ this file. The `04-run.md` layout is in `references/run-template.md`.
    later sections (`## Slice N`, `## Final summary`) are added when they are
    written, and placeholder text is never copied:
    profile (the `--profile` value of your prompt, `inherit` if none),
+   review gate (the `Review gate:` line of your prompt, `slice 1` or `none`; `slice 1` if absent),
    branch (`git branch --show-current`), plan commit (`git rev-parse HEAD`),
    roles (the `Roles:` and `Agents:` lines of your prompt are `role=model` and
    `role=agent`; record each role as `- <role>: <agent>, <model or inherit>`).

@@ -22,6 +22,7 @@ forced: []
 Profile: <profile or inherit>
 Branch: <branch>
 Plan commit: <sha>
+Review gate: <slice 1 | none>
 Roles:
 - cto: <agent>, <model or inherit>
 - researcher: <agent>, <model or inherit>

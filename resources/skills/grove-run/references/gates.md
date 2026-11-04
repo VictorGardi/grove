@@ -44,7 +44,13 @@ Never bypass silently.
   `Plan commit:` differs from the current plan commit. A stale run is never
   resumed or continued: plain `grove-run` starts a new run on the next free
   `-2`, `-3` branch; `--continue` stops and says to start a new run or abandon
-  the old one. The `plan` unit cannot be
+  the old one. Where it is checked: the hand-off (and `--continue`/resume run from
+  the main checkout) compares the main checkout's current plan with the run's
+  committed `04-run.md` by branch ref; the run's orchestrator, which runs inside the
+  worktree and does not read the main checkout, compares the plan commit and
+  `version` on its own branch with the `Plan commit:` it was handed and the
+  `04-run.md` header; a plan edited in main after the hand-off is caught at
+  `grove-approve <slug> run`. The `plan` unit cannot be
   approved while `03-plan.md`'s `based_on` is behind the current versions of
   `01-outcome.md` or `02-research.md`.
 - Run approval gate (`grove-approve <slug> run`, run from the run worktree,
@@ -70,16 +76,21 @@ Never bypass silently.
 
 ### `auto` review gates
 
-- Slices that gate: slice 1 always, every slice with `--review-each`, and the
-  last slice as the final review. No question is asked at any other slice.
-- At a gate the parent shows a summary: what was built, the review verdict
+- Slices that gate: slice 1 (unless the run has `--no-review`, recorded as
+  `Review gate: none` in `04-run.md`), every slice with `--review-each`, and the
+  last slice as the final review, which `--no-review` never skips. No question is
+  asked at any other slice. `--no-review` does not stop halts: a halted slice,
+  a slice that did not finish in git, or a child waiting on a prompt still stops
+  the run.
+- At a gate the orchestrator (the session inside the run worktree that drives the
+  slices) shows a summary: what was built, the review verdict
   with its fix-round count, the deviations, and where the diff is (the
   worktree project in the app, one click from the sidebar; not a link).
 - Three answers: continue, fix with a comment, or stop. On the last slice:
   finish, fix, or stop.
 - A fix is sent to the still-live child, which amends the slice commit, so
   one commit per slice stays true.
-- The parent marks a child done (`grove status <child id> done`, never `grove kill`) only after its gate is answered.
+- The orchestrator marks a child done (`grove status <child id> done`, never `grove kill`) only after its gate is answered.
 
 ### `auto` halts
 

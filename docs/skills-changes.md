@@ -41,3 +41,22 @@ Needed by: the parent bar showing "slice N/M" during an auto run.
   a git-confirmed slice stays.
 - `grove`: document `--current N` in the command list and the `progress` note.
 - Installed copies (for example under `~/.claude/skills`) need the same edit.
+
+## 4. `grove-run` hands off to an orchestrator in the worktree; `--no-review`
+
+Status: edited in `resources/skills/grove-run` (this repo); not yet in grove-skills.
+
+Needed by: the app showing the right branch for the session that drives a run, and
+runs under permission scopes that cannot read the worktree from the main checkout.
+
+- `grove-run`: from the planning session (main checkout) it does the gates, then
+  `grove new <own agent> --worktree --branch <B> --base <plan-commit> --label "run
+  orchestrator" --link <slug> --prompt "... <slug> --orchestrator --profile <p> [flags]"`
+  (a top-level session, not `--child`) and stops. The orchestrator (cwd = the run
+  worktree) spawns every slice child with `--cwd <its own checkout>`, never
+  `--worktree`. `--continue` from main starts a fresh orchestrator with `--cwd <worktree>`.
+- `--no-review`: no human stop after slice 1; recorded as `Review gate: none` in
+  `04-run.md` and the child prompt; the final review and every halt stay.
+- Shared sources (`shared/gates.md`, `shared/contract.md`, `shared/roles.md`) need the
+  same edits, then `scripts/sync-shared.sh` in grove-skills. `~/.claude/skills/grove-run`
+  is a symlink to `/Users/victor/git/grove-skills/skills/grove-run`: sync it there.

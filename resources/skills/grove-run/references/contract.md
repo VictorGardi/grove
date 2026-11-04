@@ -29,7 +29,7 @@ the artifacts and their format are the same in every flow.
 | `full` | `grove-start` → `grove-design` → `grove-structure` → `grove-implement` | start (skim) → design → structure → each slice |
 | `standard` | `grove-start` → `grove-design` (writes design **and** structure) → `grove-implement` | start (skim) → design + structure (one review) → each slice |
 | `small` | `grove-start` (questions only) → `grove-implement` | questions → each slice |
-| `auto` | `grove-auto` (outcome interview, research map, plan) → `grove-run` (parent starts one child session per slice, one commit per slice) | outcome play-back → plan approval → after slice 1 → final review and run approval |
+| `auto` | `grove-auto` (outcome interview, research map, plan) → `grove-run` (hands off to an orchestrator session in the run worktree, which starts one child session per slice, one commit per slice) | outcome play-back → plan approval → after slice 1 (skippable with `--no-review`) → final review and run approval |
 
 `auto` is never proposed by `grove-questions`: the human starts it with
 `grove-auto`.

@@ -50,7 +50,7 @@ Do this once, before the first subagent or child session is started.
    the agent, and the model inherits.
    Subagent roles (`cto`, `researcher`, `reviewer`, `implementer`) are played
    inside the session that spawns them: `grove-auto`'s own session, or the
-   `grove-run` child, which runs as the `planner`'s agent (the parent's when
+   `grove-run` child, which runs as the `planner`'s agent (the orchestrator's when
    the planner has none). So their `agent`, when set, must equal that
    session's agent; otherwise stop, naming the role and both agents. Only
    `planner` may name a different agent, since it is a child session started
@@ -61,7 +61,7 @@ Do this once, before the first subagent or child session is started.
 7. Otherwise the role's model is its `model` value, unchanged.
 
 **Inherit** means pass no model: the role runs with the model of the session
-that starts it. A child session started with a different agent than its parent
+that starts it. A child session started with a different agent than its starter
 runs on that agent's own default model.
 
 ## Passing a resolved role
@@ -75,8 +75,11 @@ runs on that agent's own default model.
   `grove new <planner agent> ... --model <planner model>`; omit `--model` when
   the planner inherits. Both `claude` and `opencode` accept `--model`. The child learns each role's
   agent from the `Agents:` line of its prompt.
-- **Your own session** (`grove-auto`, the `grove-run` parent) keeps the model
+- **Your own session** (`grove-auto`) keeps the model
   the human started it with; it never relaunches itself.
+- **The `grove-run` orchestrator** is not a role: the planning session's `grove-run`
+  hand-off starts it as a new top-level session in the run worktree, as its own agent
+  and with no `--model` (the agent's default), and it keeps that.
 
 The model is requested, not verified: the skill cannot confirm what the
 runtime actually used.
