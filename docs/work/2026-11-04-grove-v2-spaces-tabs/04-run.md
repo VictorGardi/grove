@@ -300,6 +300,146 @@ Fix rounds: 2 (limit 2). Blocking findings across the rounds: 3, all fixed; 0 op
 - `client.ts` drops the error code on the wire (plain `Error(message)`), so the window cannot tell `stateRefused` from other failures by code.
 - Long lines over 120 characters in `spaces.ts`, `ui/main.ts`.
 
-## Open questions
+## Slice 3
+
+Session: 3 claude status trust #2
+Status: done
+Commit: this commit (see git log)
+
+### Slice plan (attempt 1)
+
+Found in the code: `protocol/messages.ts` has `tabs.*` and `spaces.*` only, with `TabInfo` carrying no agent. `core/daemon.ts` proxies `tabs.*` to the holder and holds `SpacesService` (`core/spaces.ts`); `core/store/state.ts` `TabRecord` is `{ id, spacePath }`. The holder (`holder/pty-table.ts`) already keeps an `@xterm/headless` screen per tab, so a visible-text read can be added there without new terminal code. The window (`ui/main.ts`) makes shell tabs only. Nothing reads a spool, runs a hook or knows Claude yet. The research (`02-research.md`) confirms the Claude hook events, the `--settings` per-launch override and `--session-id`/`--resume`. Recorded real Claude captures cannot be made unattended here, so the fixtures are synthetic captures in the documented hook shape (see Deviations).
+
+Foundation (runs first, one implementer):
+- [ ] `next/packages/protocol/messages.ts`: add `tabs.screen` (visible text of a tab's screen, holder and core), `agents.list` (tab id, agent kind, state, `since`, source, `resumable`), the notification `status.changed` (tab id plus new status); extend `tabs.create` with an optional `agent: { kind: 'claude', resumeId?: string }`. Additive, `PROTOCOL_VERSION` stays 1.
+- [ ] `next/packages/core/status/contract.ts`: the status record, `type Status = { state: 'working' } | { state: 'needs-you'; reason: 'permission' | 'question' | 'error' } | { state: 'finished' } | { state: 'idle' } | { state: 'unknown' }` plus `since`, and `StatusEvent` (what an adapter emits: `{ at, kind: 'working'|'needs-you'|'finished'|'idle'|'session', ... }`). A pure reducer `applyEvent(status, event, now)`. Constants `GRACE_MS = 3000`, `SILENCE_MS = 30000`, overridable by options.
+- [ ] `next/packages/core/status/cross-check.ts`: after a `needs-you`, wait the grace, read the screen text (normalised: ignore cursor, spinner glyphs and the selection marker), remember it; a later read that differs in real text falls the state to `unknown` until the next real event.
+- [ ] `next/packages/core/status/watchdog.ts`: a `working` with no terminal output or spool activity for `SILENCE_MS` falls to `unknown`; the clock is injected.
+- [ ] Tests (`*.test.ts` next to each file): reducer transitions; cross-check falls to unknown on a changed screen and holds on a repeated one; watchdog with an injected clock.
+
+Claude adapter (after Foundation):
+- [ ] `next/packages/core/agents/claude/launch.ts`: `claudeLaunch({ tabId, cwd, home, resumeId? })` returns `{ command: 'claude', args, env, sessionId, spoolFile }`. `args` are `--session-id <uuid>` (or `--resume <id>` on resume) and `--settings <inline json>`; the inline settings hold one hook command per event (`SessionStart`, `UserPromptSubmit`, `Stop`, `StopFailure`, `PermissionRequest`, `Notification`, `PreToolUse`, `PostToolUse`, `SubagentStart`, `SubagentStop`, `SessionEnd`) that runs `next/packages/core/agents/claude/hook.mjs <Event>`. That script appends one JSON line (event name, payload, time) to the spool and writes nothing else.
+- [ ] `next/packages/core/agents/claude/source.ts`: spool tailer with byte offsets saved in `<home>/agents/claude/<tab>.offset`; `fs.watch` plus a 1 s poll; a corrupt line is skipped and counted; maps records to `StatusEvent`; `SessionStart` updates the resume id (covers `/clear`).
+- [ ] `next/packages/core/agents/claude/fixtures/`: synthetic event captures (JSONL) and terminal-screen text captures for: a permission ask answered; an interrupted turn; an Esc-rejected question (screen before and after); a turn woken by a background task (`PreToolUse` without `UserPromptSubmit`). A README in the folder says they are synthetic, written from the documented hook shape.
+- [ ] Tests: replay each capture through `source.ts` and the reducer, assert the state sequence; the stuck cases reach `unknown` through the cross-check or the watchdog with an injected clock.
+
+Wiring and window (after Foundation, parallel with Claude adapter):
+- [ ] `next/packages/holder/pty-table.ts` and `server.ts`: `tabs.screen` returns the visible rows as text; `next/packages/core/daemon.ts` proxies it.
+- [ ] `next/packages/core/status/service.ts` (or inside `daemon.ts`): one per tab, owns the source and the status; the spool offsets are saved so a restarted core replays the spool and rebuilds each tab's state rather than resetting it; emits `status.changed`; `agents.list` answers from it.
+- [ ] `next/packages/core/daemon.ts`: `tabs.create` with `agent` launches `claudeLaunch` (`--session-id` set, `TabRecord` gets `agent` and `agentSessionId`, saved in `state.json` with a version bump only if the shape needs it); `tabs.create` with `agent.resumeId` is the Resume path for a gone Claude tab, same tab id.
+- [ ] `next/packages/ui/main.ts`, `index.html`, `styles.css`, `bridge.ts`: the agents list in the sidebar grouped by state (needs you, working, finished, idle, unknown), each row with the time since `since` (refreshed every 5 s); a click focuses the tab; a gone Claude tab shows a one-click Resume; `status.changed` updates the list. A "+ Claude" control opens a Claude tab in the space root.
+- [ ] Tests: `daemon.test.ts` (agents.list, `tabs.screen`, restart rebuild from spool offsets), `bridge.test.ts` (status event passes through), `cli.test.ts` unchanged.
+
+Models passed: cto=inherit, researcher=inherit, planner=inherit, reviewer=inherit, implementer=inherit (general-purpose subagents, no `model`).
+
+Verification: `cd next && npm test` passes, including the new tests above; `npm run typecheck` passes; `cd next/packages/ui/src-tauri && cargo check` passes if Rust changed (not expected). By hand (not run here, left for the human): in `npm run dev`, ask Claude to run a command that needs permission and see "needs you" within about two seconds; answer and see working then finished; while Claude waits for permission `kill -9` the window and then only the core, reopen, and see "needs you" still shown for that tab; stop the spool reader and see "unknown" after the watchdog time; kill the holder and press Resume to bring the conversation back.
+
+### Review rounds (attempt 1)
+
+Implementation: a foundation implementer (protocol, status contract, cross-check, watchdog), then a Claude adapter implementer and a wiring and window implementer in parallel. Tests 137 of 137 and `npm run typecheck` clean at the last run.
+
+Round 1 (fail, 4 blocking): the screen baseline was taken only after the grace, so a dialog dismissed inside it was missed; a killed Claude tab stayed needs-you; a dead spool reader never reached unknown for non-working states; `drain` could throw out of the core. Fix round 1 addressed all four, plus resume-id validation, file modes and event time. Fixed.
+
+Round 2 (fail, 2 blocking): a working tab stayed working forever while the reader heartbeated; Resume after a Claude exit failed with `tabExists`. Fix round 2 added a progress clock for working tabs (changed normalised screen, non-heartbeat events), removed an exited holder tab before create, and fixed an `alive()` failure marking every tab gone, restore of a gone tab, and an unhandled rejection in the tick. Fixed.
+
+Round 3 (fail, 3 blocking; see Halt).
+
+Fix rounds used: 2 of 2.
+
+### Review rounds (attempt 2)
+
+Implementation: three implementers (status A; daemon and Claude source B; then a fix round for the review findings). Checks run by the planner after A and B: `npm test` 150 of 150, `npm run typecheck` clean. After the old-Grove ports: 152 of 152.
+
+Round 1 (fresh reviewer, FAIL, 2 blocking, 9 non-blocking): blocking: `idle-prompt` turned a finished tab idle (the old Grove leaves finished alone); one failed `alive()` (a timeout) marked every tab unknown, which is a false unknown on a healthy holder. Fix round 1: needs-you and working go to finished on idle-prompt, finished and idle keep their since, unknown goes to idle; the gone check runs only after two consecutive failed `alive()` calls, and a success resets the count (a killed holder still reaches unknown in two ticks). Non-blocking applied: AskUserQuestion as the old Grove has it (a question from PreToolUse, no permission from PermissionRequest); a subagent is an `agent_id` other than the string `'main'`; misleading test names fixed. Replay case (c) now expects the question at PreToolUse (since 1200) and the elicitation notification repeats it. Non-blocking not applied, recorded under Deviations: StopFailure stays needs-you error (the plan's error reason has no other source); the spool stays line-based (plan); save-before-create leaves a record when the holder create fails and a caller-given resume id can overwrite a live tab's saved id before the refusal (plan, to be fixed with a rollback in a later slice); the rotating spinner verb is not stripped (not verified against Claude).
+
+Round 2 (fresh reviewer over the whole round, FAIL, 1 blocking): all five round-1 items closed (the core side passes). Blocking: the window's `status.changed` handler kept the previous row's `resumable`, so a tab that fell to unknown on a holder death never showed Resume (no `tabs.exit` fires to refresh the list). Fix round 2: `ui/main.ts` now refreshes the list from `agents.list` after each `status.changed`. Non-blocking applied: the `StopFailure`/`Stop` case in `source.ts` is braced. Non-blocking noted: the same save-before-create, idle-prompt during a long permission wait (old behaviour, unverified against real Claude). A narrow fresh review of the fix round follows.
+
+Fix rounds in this attempt: 2 (round 1 on the core, round 2 on the window). The decision allowed fix rounds past the limit for this attempt.
+
+### Deviations (attempt 2)
+
+- Reused from the old Grove (`src/core/claude/normalise.ts`): the `idle_prompt` Notification closes the open permission or question and ends a running turn, so the new `idle-prompt` event (working to finished, anything else to idle, in the reducer) follows it; the new version also sets idle when no turn was running, as the human asked. Stop and StopFailure from a subagent (an `agent_id` in the payload) do not end the main turn (the old `scope !== 'main'` rule). `PostToolUseFailure` clears a needs-you (a denied permission) as the old `close` does; it is mapped to working and added to the hook list in `launch.ts`.
+- Reused in round 1 of this attempt: an `AskUserQuestion` question starts at PreToolUse and its PermissionRequest is ignored (the old `normalise.ts` pending map); a subagent is an `agent_id` other than `'main'`. The `idle-prompt` event ends a needs-you turn to finished (the old fold ends a running turn), so a permission or question interrupted by Esc ends as finished, not idle.
+- Diverged on purpose: the gone check needs two consecutive failed `alive()` calls (about two seconds), not one. The plan's "a failed call falls every tab to unknown" made a single holder timeout show every tab as unknown; a killed holder still reaches unknown within two ticks.
+- Not reused: the old per-scope pending map (`perm:<agent>`, `q:<tool_use_id>`). The new source keeps one needs-you per tab, which the plan's contract needs; a permission raised by a subagent therefore shows as the tab's needs-you, as before.
+- Not reused: the old `PostToolBatch` marker, which records that a turn was woken by a background task and starts it running. The new `hook.mjs` writes the whole hook payload, which for PostToolBatch carries every tool's output; porting the marker needs its own hook command. The woken turn is caught by its `PreToolUse` (working), as the background-task fixture already shows. Left for a later slice; the gap is a late working state, not a stuck one.
+- New, no old equivalent: the normaliser's spinner glyphs and token counters, the failed `alive()` falling every tab to unknown, and the save-before-create order in `createAgentTab`. The old Grove has no screen check and keeps no holder, so there was nothing to port. The save order follows `openTab` in this slice; a failed holder create leaves a resumable record.
+
+### Deviations (attempt 1)
+
+- The Claude fixtures are synthetic, written from the documented hook shape. No real Claude run was recorded, so the timings are unverified.
+- Restore is synchronous: the source replays on creation.
+- Spool offsets and a per-tab status file (`<home>/agents/claude/<tab>.status.json`) rebuild state after a core restart; the offset alone is not enough.
+- Resume with no `resumeId` uses the saved `agentSessionId`.
+
+### Halt (attempt 1)
+
+Halted after round 3 of the review, with both fix rounds spent. Three blocking findings remain, all in the code as it stands (uncommitted in this worktree):
+
+1. Claude's own spinner glyphs (`✻ ✽ ✶ ✳ ✢ ·`) and its token counter (`↑ 1.2k tokens`) are not stripped by `normaliseScreen` (`next/packages/core/status/cross-check.ts`). A hung Claude with an animated spinner counts as progress every tick, so a working tab never reaches unknown: the false working D3 forbids. The replay test only uses braille frames.
+2. When the holder is killed, `alive()` fails on every tick and the gone check is skipped (`next/packages/core/status/service.ts` tick, `watchdog.ts`). The reader keeps heartbeating, so a finished or idle Claude tab shows "finished" or "idle" indefinitely after its process is gone.
+3. `createAgentTab` (`next/packages/core/daemon.ts`) starts the holder process before saving the record, with no `assertNotRefused` before the create (unlike `openTab`). With a refused state file or a disk error, a live Claude process runs untracked, and every retry starts another.
+
+The findings are narrow, but a fourth fix round would exceed the two-round limit, so the slice stops here.
+
+### Options (attempt 1)
+
+#### Option 1: Retry from the worktree as it stands (recommended)
+
+Run `grove-run <slug> --continue` so a fresh child takes `Retry: yes` from the current code, fixes the three findings (the normaliser set, the failure path, save before create) and goes through a fresh review. Pros: the code is nearly complete, the 137 tests pass, the fixes are contained in three places. Cons: it is a fourth fix round beyond the two-round rule, so it needs your explicit go-ahead; the three findings may hide more. Changes design or outcome: no.
+
+#### Option 2: Accept slice 3 as it stands and record the three findings under Left for the human
+
+Commit the current code as slice 3 and carry the three findings into slice 4 or a follow-up. Pros: the main path works (permission to needs you, resume, restart rebuild), and the run moves on. Cons: the outcome's "never wrong for more than a few seconds" is not met for a hung Claude, a killed holder, or an orphaned process after a refused state file. Changes design or outcome: yes.
+
+#### Option 3: Split slice 3 and restart it from the worktree
+
+Split the slice in `03-plan.md` into three smaller slices: the status contract, cross-check and watchdog first; the Claude adapter next; the wiring and window last. Each gets its own review. Pros: each boundary (where the three findings sit) gets a narrower review. Cons: the plan changes, the uncommitted work becomes a starting point rather than a commit, and it takes more sessions. Changes design or outcome: no.
+
+### Decision
+
+Decision: Option 1: retry from the worktree as it stands, with the human's explicit go-ahead for a fix round beyond the two-round limit. Fix the three blocking findings: (1) `normaliseScreen` in `next/packages/core/status/cross-check.ts` also strips Claude's spinner glyphs (`✻ ✽ ✶ ✳ ✢ ·`) and token counters such as `↑ 1.2k tokens`, with replay cases using those glyphs, so a hung Claude with an animated spinner falls to `unknown`; (2) when the holder is killed, the gone check still runs when `alive()` fails, so finished or idle tabs do not stay stale (`status/service.ts` tick, `watchdog.ts`); (3) `createAgentTab` in `core/daemon.ts` saves the record before starting the holder process and calls `assertNotRefused` before create, as `openTab` does. Also, as a small additive change within D3 (hooks stay the primary source): map the Claude `Notification` hook with `notification_type` `idle_prompt` to `idle`, or to `finished` when the tab was working, as the old Grove does (`src/core/claude/normalise.ts`), with a test. The D3 screen cross-check and the watchdog stay unchanged. Does not change the design or outcome. The uncommitted code in `next/` is the starting point; the halt commit is folded in (`git reset --soft HEAD~1`).
+
+### Slice plan (attempt 2)
+
+Found in the code: `status/cross-check.ts` `normaliseScreen` strips braille spinners, timers and the selection marker only, so Claude's `✻ ✽ ✶ ✳ ✢ ·` spinner and its `↑ 1.2k tokens` counter count as real change in `StatusService.readWorkingScreen` and keep a hung working tab alive. `status/service.ts` `tick` skips the gone check for every tab when `alive()` rejects (holder killed). `core/daemon.ts` `createAgentTab` starts the holder tab before `saveAgentTab`, and never calls `assertNotRefused` (it is private on `SpacesService`; `openTab` calls it). `agents/claude/source.ts` `eventsFor` returns nothing for `Notification` with `idle_prompt`; the old Grove ends the turn there (`src/core/claude/normalise.ts`, the Notification case). `watchdog.ts` needs no change: its silence rules already work once the tick reaches a gone tab.
+
+Implementer A (status; runs in parallel with B; files: `status/cross-check*.ts`, `status/service*.ts`):
+- [ ] `next/packages/core/status/cross-check.ts`: `normaliseScreen` also strips `✻ ✽ ✶ ✳ ✢ ·` and token counters (an arrow `↑` or `↓`, a number with an optional `k` or `m`, then `tokens`). Update the comment above the regexes. Braille glyphs, timers and the selection marker stay.
+- [ ] `next/packages/core/status/cross-check.test.ts`: `normaliseScreen` cases for those glyphs and counters; two frames that differ only in glyph or counter normalise to the same text.
+- [ ] `next/packages/core/status/service.ts` `tick`: when `alive()` rejects, every tab is treated as gone for that tick (an empty set), so the gone check runs; gone tabs fall to unknown. Update the comment on the `alive` option and in `tick` to say so (a failed call means the tabs cannot be confirmed alive).
+- [ ] `next/packages/core/status/service.test.ts`: (a) a failed `alive()` falls a finished or idle tab to unknown (replace any existing case that expects the skip); (b) a working tab whose screen changes only in spinner glyphs and a token counter reaches unknown through the watchdog with an injected clock, while a change in real text does not.
+
+Implementer B (daemon, spaces, Claude source; runs in parallel with A; files: `daemon*.ts`, `spaces*.ts`, `status/contract*.ts`, `agents/claude/source*.ts`):
+- [ ] `next/packages/core/spaces.ts`: `assertNotRefused` becomes public. No other change.
+- [ ] `next/packages/core/daemon.ts` `createAgentTab`: call `deps.spaces.assertNotRefused()` first, before the tab record lookup; call `deps.spaces.saveAgentTab(...)` before `holder.request(METHODS.tabsCreate, ...)`; call `deps.status.track(...)` after the create succeeds. A failed holder create leaves the saved record (the tab then shows as gone and can be resumed).
+- [ ] `next/packages/core/daemon.test.ts`: (a) with a refused state, `tabs.create` with `agent` fails with `stateRefused` and no holder tab is created; (b) when the holder create fails, the record is still saved.
+- [ ] `next/packages/core/status/contract.ts`: a new `StatusEvent` `{ kind: 'idle-prompt' }`. `applyEvent`: from `working` it moves to `finished`; from any other state to `idle`; the same state keeps `since`. Document it in the comment above the type (the Claude `idle_prompt` notification, which ends an interrupted or Esc-rejected turn with no other hook).
+- [ ] `next/packages/core/status/contract.test.ts`: working to finished; needs-you to idle; unknown to idle; idle to idle keeps `since`.
+- [ ] `next/packages/core/agents/claude/source.ts` `eventsFor`: `Notification` with `notification_type` `idle_prompt` returns `[{ kind: 'idle-prompt' }]`. `permission_prompt` and `elicitation_dialog` are unchanged.
+- [ ] `next/packages/core/agents/claude/source.test.ts`: an `idle_prompt` record maps to `idle-prompt`; a Notification of another type still maps to nothing.
+
+Shared: each implementer runs only its own test files with `npx vitest run <files>` (inside `next/`); the planner runs the full `npm test` and `npm run typecheck` after both return. Each new test is first run against the unfixed code and its failing line is reported.
+
+Models passed: cto=inherit, researcher=inherit, planner=inherit, reviewer=inherit, implementer=inherit (general-purpose subagents, no `model`).
+
+### Verification
+
+- `cd next && npm test`: 18 files, 157 tests, all pass (after fix round 2).
+- `cd next && npm run typecheck`: exit 0, no output.
+- Replay of the recorded fixtures (synthetic, see `fixtures/README.md`): permission answered, interrupted turn, Esc-rejected question (now starts at PreToolUse, since 1200), background-task turn; the cross-check falls the Esc case to unknown on a changed screen and holds it on an unchanged one.
+- Spinner and token-counter cases: the glyph-only and counter-only screen changes in a working tab fall to unknown through the watchdog; a real text change keeps it working.
+- A failed `alive()` falls a tab to unknown on the second consecutive failure, not the first.
+- Not run here, left for the human: `npm run dev` in the window; a `claude` tab asking for permission shows needs-you within about two seconds; answer and see working then finished; `kill -9` the window, then the core, reopen, and see needs-you still shown; stop the spool reader and see unknown after the watchdog time; kill the holder and press Resume. These are the slice's by-hand checks in `03-plan.md`.
+
+### Left for the human
+
+- The fixtures are synthetic; no real Claude run was recorded, so the timings (the grace, the silence and the idle_prompt delay) are unverified against Claude.
+- `idle_prompt` may fire during a long permission wait (about a minute), which would show finished rather than needs-you. The old Grove does the same; check it in the by-hand run.
+- The rotating spinner verb (for example a word that cycles while Claude thinks) is not stripped; a hung turn whose verb changes would count as progress. Check it against a real hung turn.
+- Save before create leaves a record if the holder create fails, and a caller-supplied `agent.resumeId` can overwrite a live tab's saved id before the refusal. Fix with a rollback in a later slice.
+- The spool is read line by line (plan decision). The old `spool.ts` reads records independent of newlines; a glued pair loses both records. Port the old scan if real spool files show it.
+- `PostToolBatch` (the marker for a turn woken by a background task) is not ported; see Deviations (attempt 2).
+- StopFailure is needs-you error (the plan's error reason). The old Grove ends the turn on StopFailure. Confirm the choice.
 
 ## Open questions

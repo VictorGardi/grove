@@ -130,6 +130,22 @@ export class PtyTable {
     for (const id of [...this.tabs.keys()]) this.kill(id)
   }
 
+  // The visible rows of the tab's screen as plain text, one line per row. The pending writes are
+  // flushed first so the text reflects every byte the shell has sent so far.
+  screen(id: string): Promise<string> {
+    const tab = this.get(id)
+    return new Promise((resolve) => {
+      tab.term.write('', () => {
+        const buffer = tab.term.buffer.active
+        const rows: string[] = []
+        for (let row = 0; row < tab.term.rows; row++) {
+          rows.push(buffer.getLine(buffer.viewportY + row)?.translateToString(true) ?? '')
+        }
+        resolve(rows.join('\n'))
+      })
+    })
+  }
+
   // The live listener is registered now, so no chunk written after this call can be
   // missed. Its events queue until the screen snapshot is taken, and `flush` (called
   // once the attach reply is sent) delivers them in order: none is in the snapshot,

@@ -13,6 +13,8 @@ export const METHODS = {
   spacesList: 'spaces.list',
   spacesAdd: 'spaces.add',
   tabsOpen: 'tabs.open',
+  tabsScreen: 'tabs.screen',
+  agentsList: 'agents.list',
 } as const
 
 export const ERROR_CODES = {
@@ -79,6 +81,28 @@ export interface SpaceTabInfo {
   exitCode: number | null
 }
 
+export type AgentStateName = 'working' | 'needs-you' | 'finished' | 'idle' | 'unknown'
+
+export type NeedsYouReason = 'permission' | 'question' | 'error'
+
+export interface AgentInfo {
+  tabId: string
+  agent: 'claude'
+  state: AgentStateName
+  reason?: NeedsYouReason
+  since: number
+  source: string
+  resumable: boolean
+}
+
+export interface StatusChange {
+  tabId: string
+  state: AgentStateName
+  reason?: NeedsYouReason
+  since: number
+  source: string
+}
+
 export interface MethodMap {
   'core.ping': { params: Empty; result: { protocolVersion: number } }
   'tabs.create': {
@@ -90,6 +114,7 @@ export interface MethodMap {
       env?: Record<string, string>
       cols: number
       rows: number
+      agent?: { kind: 'claude'; resumeId?: string }
     }
     result: { id: string }
   }
@@ -104,11 +129,14 @@ export interface MethodMap {
   }
   'spaces.add': { params: { path: string }; result: SpaceInfo }
   'tabs.open': { params: { spacePath: string; cols: number; rows: number }; result: { id: string } }
+  'tabs.screen': { params: { id: string }; result: { text: string } }
+  'agents.list': { params: Empty; result: AgentInfo[] }
 }
 
 export interface NotificationMap {
   'tabs.output': { id: string; dataB64: string }
   'tabs.exit': { id: string; exitCode: number | null }
+  'status.changed': StatusChange
 }
 
 export type MethodName = keyof MethodMap

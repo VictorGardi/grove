@@ -177,6 +177,11 @@ async function dispatch(method: string, rawParams: unknown, ctx: DispatchContext
       const attached = await ctx.attach(str(p.id, 'id'))
       return { screenB64: bytesToB64(Buffer.from(attached.screen)), cols: attached.cols, rows: attached.rows }
     }
+    case METHODS.tabsScreen: {
+      const p = params<MethodMap['tabs.screen']['params']>(rawParams)
+      const text = await table.screen(str(p.id, 'id'))
+      return { text } satisfies MethodMap['tabs.screen']['result']
+    }
     default:
       throw new RpcError(ERROR_CODES.methodNotFound, `unknown method ${method}`)
   }

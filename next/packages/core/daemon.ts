@@ -1,3 +1,4 @@
+import { randomUUID } from 'node:crypto'
 import fs from 'node:fs'
 import net from 'node:net'
 import path from 'node:path'
@@ -8,6 +9,13 @@ import { ERROR_CODES, METHODS, PROTOCOL_VERSION } from '../protocol/messages.ts'
 import type { JsonRpcId, JsonRpcRequest, MethodMap, MethodName } from '../protocol/messages.ts'
 import { RpcError } from '../protocol/errors.ts'
 import { SpacesService } from './spaces.ts'
+import { claudeLaunch, SESSION_ID } from './agents/claude/launch.ts'
+import { createClaudeSource } from './agents/claude/source.ts'
+import { StatusService, type LaunchClaude } from './status/service.ts'
+
+const TAB_ID = /^[A-Za-z0-9_-]{1,64}$/
+// A holder call the status service makes must answer within this, or that call fails and its check is skipped.
+const STATUS_CALL_MS = 2000
 
 export interface CoreServer {
   socketPath: string
@@ -21,6 +29,7 @@ const PROXIED = new Set<string>([
   METHODS.tabsResize,
   METHODS.tabsKill,
   METHODS.tabsAttach,
+  METHODS.tabsScreen,
 ])
 
 const SPACE_METHODS = new Set<string>([METHODS.spacesList, METHODS.spacesAdd, METHODS.tabsOpen])
@@ -28,14 +37,65 @@ const SPACE_METHODS = new Set<string>([METHODS.spacesList, METHODS.spacesAdd, ME
 // Each core client gets its own holder connection, so holder attachments are released
 // when the client's connection closes and output is never shared between clients.
 export async function startCoreDaemon(
-  options: { socketPath?: string; holderSocket?: string; stateFile?: string; spaces?: SpacesService } = {},
+  options: {
+    socketPath?: string
+    holderSocket?: string
+    stateFile?: string
+    spaces?: SpacesService
+    home?: string
+    launchClaude?: LaunchClaude
+    status?: StatusService
+  } = {},
 ): Promise<CoreServer> {
   const socketPath = options.socketPath ?? coreSocketPath()
   const holderSocket = options.holderSocket ?? holderSocketPath()
-  const spaces = options.spaces ?? new SpacesService(options.stateFile ?? path.join(groveNextHome(), 'state.json'))
+  const home = options.home ?? groveNextHome()
+  const launchClaude = options.launchClaude ?? claudeLaunch
+  const spaces = options.spaces ?? new SpacesService(options.stateFile ?? path.join(home, 'state.json'))
   await removeStaleSocket(socketPath)
 
+  // The status service reads screens and tab liveness through its own holder connection, so it does not depend on any window.
+  let statusClient: Promise<RpcClient> | undefined
+  const holderStatusCall = async <T>(use: (client: RpcClient) => Promise<T>): Promise<T> => {
+    const pending = (statusClient ??= connectRpc(holderSocket))
+    try {
+      return await withTimeout(pending.then(use), STATUS_CALL_MS)
+    } catch (error) {
+      if (statusClient === pending) statusClient = undefined
+      void pending.then(
+        (client) => client.close(),
+        () => undefined,
+      )
+      throw error
+    }
+  }
+  const screen = (tabId: string): Promise<string> =>
+    holderStatusCall(async (client) => (await client.request(METHODS.tabsScreen, { id: tabId })).text)
+  const alive = (): Promise<Set<string>> =>
+    holderStatusCall(async (client) => aliveIds(await client.request(METHODS.tabsList, {})))
+  const status =
+    options.status ??
+    new StatusService({
+      home,
+      launchClaude,
+      createSource: createClaudeSource,
+      screen,
+      alive,
+      onSession: (tabId, sessionId) => spaces.setAgentSession(tabId, sessionId),
+    })
+  // A holder that cannot be reached at start leaves every saved Claude tab unknown.
+  const aliveAtStart = await alive().catch(() => new Set<string>())
+
   const sockets = new Set<net.Socket>()
+  const broadcast = (message: unknown) => {
+    for (const socket of sockets) if (!socket.destroyed) socket.write(encodeLine(message))
+  }
+  const unsubscribe = status.subscribe((change) => broadcast(notification('status.changed', change)))
+  // Claude tabs are rebuilt before the core listens, so the first client already sees their state.
+  status.restore(spaces.claudeTabs(), aliveAtStart)
+  status.start()
+  const deps: Deps = { spaces, status, home, launchClaude }
+
   const server = net.createServer((socket) => {
     sockets.add(socket)
     const send = (message: unknown) => {
@@ -61,7 +121,7 @@ export async function startCoreDaemon(
         return
       }
       try {
-        const result = await dispatch(request.method, request.params, holder, spaces)
+        const result = await dispatch(request.method, request.params, holder, deps)
         if (request.id !== undefined) send({ jsonrpc: '2.0', id: request.id, result })
       } catch (error) {
         if (request.id !== undefined) send(toFailure(request.id, error))
@@ -92,6 +152,12 @@ export async function startCoreDaemon(
     socketPath,
     close: () =>
       new Promise<void>((resolve) => {
+        unsubscribe()
+        status.close()
+        void statusClient?.then(
+          (client) => client.close(),
+          () => undefined,
+        )
         for (const socket of sockets) socket.destroy()
         server.close(() => {
           fs.rmSync(socketPath, { force: true })
@@ -99,6 +165,26 @@ export async function startCoreDaemon(
         })
       }),
   }
+}
+
+function aliveIds(tabs: Array<{ id: string; alive: boolean }>): Set<string> {
+  return new Set(tabs.filter((tab) => tab.alive).map((tab) => tab.id))
+}
+
+function withTimeout<T>(work: Promise<T>, ms: number): Promise<T> {
+  return new Promise<T>((resolve, reject) => {
+    const timer = setTimeout(() => reject(new Error('the holder did not answer in time')), ms)
+    work.then(
+      (value) => {
+        clearTimeout(timer)
+        resolve(value)
+      },
+      (error: unknown) => {
+        clearTimeout(timer)
+        reject(error)
+      },
+    )
+  })
 }
 
 async function removeStaleSocket(socketPath: string): Promise<void> {
@@ -114,20 +200,90 @@ async function removeStaleSocket(socketPath: string): Promise<void> {
   fs.rmSync(socketPath, { force: true })
 }
 
-async function dispatch(
-  method: string,
-  rawParams: unknown,
-  holder: Promise<RpcClient>,
-  spaces: SpacesService,
-): Promise<unknown> {
+interface Deps {
+  spaces: SpacesService
+  status: StatusService
+  home: string
+  launchClaude: LaunchClaude
+}
+
+async function dispatch(method: string, rawParams: unknown, holder: Promise<RpcClient>, deps: Deps): Promise<unknown> {
   if (method === METHODS.corePing) {
     const result: MethodMap['core.ping']['result'] = { protocolVersion: PROTOCOL_VERSION }
     return result
   }
-  if (SPACE_METHODS.has(method)) return dispatchSpaces(method, rawParams, await holder, spaces)
+  if (method === METHODS.agentsList) {
+    const client = await holder
+    const alive = aliveIds(await client.request(METHODS.tabsList, {}))
+    return deps.status.list(alive) satisfies MethodMap['agents.list']['result']
+  }
+  if (method === METHODS.tabsCreate && agentParam(rawParams) !== undefined) {
+    return createAgentTab(rawParams as MethodMap['tabs.create']['params'], await holder, deps)
+  }
+  if (SPACE_METHODS.has(method)) return dispatchSpaces(method, rawParams, await holder, deps.spaces)
   if (!PROXIED.has(method)) throw new RpcError(ERROR_CODES.methodNotFound, `unknown method ${method}`)
   const client = await holder
   return client.request(method as MethodName, rawParams as never)
+}
+
+function agentParam(params: unknown): unknown {
+  return (params as Record<string, unknown> | null)?.agent
+}
+
+// Starts a Claude tab in a space. With an id and a saved record it is a resume: same tab id, and the
+// saved session id unless the caller gives one.
+async function createAgentTab(
+  p: MethodMap['tabs.create']['params'],
+  holder: RpcClient,
+  deps: Deps,
+): Promise<{ id: string }> {
+  if (p.agent?.kind !== 'claude') throw new RpcError(ERROR_CODES.invalidParams, 'agent.kind must be claude')
+  if (p.id !== undefined && !TAB_ID.test(p.id)) throw new RpcError(ERROR_CODES.invalidParams, 'tab id is not valid')
+  // Before the lookup: a refused state must not even start a tab in the holder.
+  deps.spaces.assertNotRefused()
+  const id = p.id ?? randomUUID().slice(0, 8)
+  const saved = deps.spaces.tabRecord(id)
+  if (saved !== undefined && saved.agent === undefined) {
+    throw new RpcError(ERROR_CODES.tabExists, `tab ${id} is a shell tab`)
+  }
+  const spacePath = saved?.spacePath ?? stringParam(p, 'cwd')
+  if (!deps.spaces.isSpace(spacePath)) throw new RpcError(ERROR_CODES.invalidParams, `not a space: ${spacePath}`)
+
+  // The resume id goes to the command line, so only a UUID is ever accepted.
+  const resumeId = p.agent.resumeId ?? saved?.agentSessionId
+  if (resumeId !== undefined && !SESSION_ID.test(resumeId)) {
+    throw new RpcError(ERROR_CODES.invalidParams, 'resume id is not a session id')
+  }
+  const launch = deps.launchClaude({ tabId: id, cwd: spacePath, home: deps.home, resumeId })
+  if (p.id !== undefined) await removeExitedTab(holder, id)
+  // Saved before the holder create: if the create fails, the record stays and the tab can be resumed.
+  deps.spaces.saveAgentTab({ id, spacePath, agent: 'claude', agentSessionId: launch.sessionId })
+  await holder.request(METHODS.tabsCreate, {
+    id,
+    command: launch.command,
+    args: launch.args,
+    env: launch.env,
+    cwd: spacePath,
+    cols: numberParam(p, 'cols'),
+    rows: numberParam(p, 'rows'),
+  })
+  deps.status.track({ tabId: id, spacePath, spoolFile: launch.spoolFile, sessionId: launch.sessionId })
+  return { id }
+}
+
+// A Claude tab that exits on its own (/exit, a crash, kill -9 of Claude) stays in the holder as an exited
+// entry, and a create with the same id would fail with tabExists. An exited entry is removed first. A live
+// one is left alone, so the create refuses it as before.
+async function removeExitedTab(holder: RpcClient, id: string): Promise<void> {
+  const tabs = await holder.request(METHODS.tabsList, {})
+  if (!tabs.some((tab) => tab.id === id && !tab.alive)) return
+  try {
+    await holder.request(METHODS.tabsKill, { id })
+  } catch (error) {
+    // The client does not carry the error code, so a kill that fails because the entry is already gone is told apart by asking again.
+    const stillThere = (await holder.request(METHODS.tabsList, {})).some((tab) => tab.id === id)
+    if (stillThere) throw error
+  }
 }
 
 async function dispatchSpaces(

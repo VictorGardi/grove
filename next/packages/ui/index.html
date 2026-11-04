@@ -17,9 +17,10 @@
             <button type="submit">Add</button>
           </form>
         </section>
-        <section>
+        <section class="agents-section">
           <h2 class="section-label">Agents</h2>
-          <p class="empty">No agents yet.</p>
+          <p id="agents-empty" class="empty">No agents yet.</p>
+          <ul id="agents" class="agents"></ul>
         </section>
         <footer class="sidebar-foot">
           <a id="stress-link" href="./stress.html" hidden>Stress page</a>
@@ -29,6 +30,7 @@
         <div class="tabstrip">
           <div id="tabs" class="tabs" role="tablist"></div>
           <button id="new-tab" class="new-tab" type="button" title="New shell tab">+</button>
+          <button id="new-claude" class="new-tab" type="button" title="New Claude tab in this space">+ Claude</button>
         </div>
         <div id="terminals" class="terminals"></div>
         <div id="status" class="status" role="status"></div>

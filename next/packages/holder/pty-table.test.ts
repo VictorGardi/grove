@@ -75,6 +75,27 @@ describe('PtyTable', () => {
     attached.detach()
   })
 
+  it('returns the visible rows of the screen as plain text', async () => {
+    const table = new PtyTable()
+    tables.push(table)
+    const id = table.create({
+      command: SHELL,
+      args: ['-c', 'printf "first line\\r\\n\\033[31mred words\\033[0m\\r\\n"; sleep 5'],
+      cwd: process.cwd(),
+      cols: 40,
+      rows: 5,
+    })
+    const text = await waitFor(
+      () => table.screen(id),
+      (screen) => screen.includes('red words'),
+    )
+    const rows = text.split('\n')
+    expect(rows).toHaveLength(5)
+    expect(rows[0]).toBe('first line')
+    expect(rows[1]).toBe('red words')
+    expect(text).not.toContain('\x1b')
+  })
+
   it('reports exit and lists the tab as not alive', async () => {
     const table = new PtyTable()
     tables.push(table)

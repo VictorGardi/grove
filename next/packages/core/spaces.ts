@@ -98,7 +98,8 @@ export class SpacesService {
     const known = new Set((await holder.request(METHODS.tabsList, {})).map((tab) => tab.id))
     let restored = 0
     for (const tab of this.state.tabs) {
-      if (known.has(tab.id)) continue
+      // A Claude tab is never restarted as a shell; when its holder tab is gone it is resumed on request.
+      if (known.has(tab.id) || tab.agent !== undefined) continue
       try {
         await holder.request(METHODS.tabsCreate, {
           id: tab.id,
@@ -117,7 +118,36 @@ export class SpacesService {
     return restored
   }
 
-  private assertNotRefused(): void {
+  isSpace(spacePath: string): boolean {
+    return this.state.spaces.some((space) => space.path === spacePath)
+  }
+
+  tabRecord(id: string): TabRecord | undefined {
+    return this.state.tabs.find((tab) => tab.id === id)
+  }
+
+  claudeTabs(): TabRecord[] {
+    return this.state.tabs.filter((tab) => tab.agent === 'claude')
+  }
+
+  // Adds a Claude tab, or updates the record of a tab with the same id (a resume keeps its place).
+  saveAgentTab(tab: TabRecord): void {
+    this.assertNotRefused()
+    const index = this.state.tabs.findIndex((candidate) => candidate.id === tab.id)
+    const tabs = index === -1 ? [...this.state.tabs, tab] : this.state.tabs.map((candidate, i) => (i === index ? tab : candidate))
+    const next: StateV1 = { ...this.state, tabs }
+    saveState(this.file, next)
+    this.state = next
+  }
+
+  // Keeps the saved session id current; a /clear inside Claude gives a new one. A refused state is never written.
+  setAgentSession(id: string, sessionId: string): void {
+    const record = this.tabRecord(id)
+    if (this.refused !== null || !record || record.agentSessionId === sessionId) return
+    this.saveAgentTab({ ...record, agentSessionId: sessionId })
+  }
+
+  assertNotRefused(): void {
     if (this.refused !== null) throw new RpcError(ERROR_CODES.stateRefused, this.refused)
   }
 

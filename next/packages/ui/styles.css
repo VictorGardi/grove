@@ -7,6 +7,7 @@
   --muted: #7a776f;
   --line: #d9d6cd;
   --accent: #4f7a5c;
+  --attention: #a86f22;
   --term-bg: #1f1f1d;
   --term-fg: #d8d6cf;
   font-family: -apple-system, BlinkMacSystemFont, 'Helvetica Neue', sans-serif;
@@ -22,6 +23,7 @@
     --muted: #8f8c83;
     --line: #3a3936;
     --accent: #7fa98a;
+    --attention: #d29a52;
   }
 }
 
@@ -33,6 +35,7 @@
   --muted: #8f8c83;
   --line: #3a3936;
   --accent: #7fa98a;
+  --attention: #d29a52;
 }
 
 * {
@@ -146,6 +149,86 @@ button {
   border: 1px solid var(--line);
   border-radius: 6px;
   cursor: pointer;
+}
+
+.agents {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.agent-group {
+  margin: 0 0 4px;
+  font-size: 11px;
+  font-weight: 500;
+  color: var(--muted);
+}
+
+.agent-rows {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.agent-row {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.agent {
+  width: 100%;
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 1px;
+  padding: 5px 8px;
+  text-align: left;
+  background: var(--surface);
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  cursor: pointer;
+}
+
+.agent-label {
+  max-width: 100%;
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+
+.agent-meta {
+  font-size: 11px;
+  color: var(--muted);
+}
+
+.agent-state.state-needs-you {
+  color: var(--attention);
+}
+
+.agent-state.state-working {
+  color: var(--accent);
+}
+
+.agent-resume {
+  align-self: flex-end;
+  padding: 2px 8px;
+  font-size: 11px;
+  background: transparent;
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  cursor: pointer;
+}
+
+.agent-row.gone .agent {
+  color: var(--muted);
+  border-style: dashed;
 }
 
 .add-space input:disabled,

@@ -86,6 +86,25 @@ describe('state store', () => {
     expect(corrupt).toHaveLength(1)
   })
 
+  it('loads a version-1 file written before the agent fields, with neither set', () => {
+    const bytes = '{"version":1,"spaces":[{"path":"/a"}],"tabs":[{"id":"abc12345","spacePath":"/a"}]}'
+    fs.writeFileSync(file, bytes)
+    const result = loadState(file)
+    expect(result).toEqual({ kind: 'ok', state: { version: 1, spaces: [{ path: '/a' }], tabs: [{ id: 'abc12345', spacePath: '/a' }] } })
+    if (result.kind === 'ok') expect(result.state.tabs[0]).not.toHaveProperty('agent')
+    expect(fs.readFileSync(file, 'utf8')).toBe(bytes)
+  })
+
+  it('round-trips a Claude tab with its agent and session id', () => {
+    const state: StateV1 = {
+      version: 1,
+      spaces: [{ path: '/a' }],
+      tabs: [{ id: 'abc12345', spacePath: '/a', agent: 'claude', agentSessionId: '6f1c2b1e-0000-4000-8000-000000000001' }],
+    }
+    saveState(file, state)
+    expect(loadState(file)).toEqual({ kind: 'ok', state })
+  })
+
   it('round-trips a saved state and leaves no tmp file behind', () => {
     const state: StateV1 = {
       version: 1,
