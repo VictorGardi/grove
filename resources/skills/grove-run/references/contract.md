@@ -104,9 +104,15 @@ where noted.
 ---
 kind: feature             # optional (default: feature)
 flow: standard             # full | standard | small | auto (missing = full); see "Flows"
+review_gate: slice-1       # auto flow, optional: slice-1 (default) | none; see below
 created: 2026-10-04
 ---
 ```
+
+`review_gate` (auto flow only) is the human's default for `grove-run`: `none`
+skips the human stop after slice 1 (as `--no-review` does; the final review
+stays). `grove-auto` writes it from the human's answer; a `grove-run` flag
+overrides it.
 
 `flow` is the one field that changes after creation without an approval:
 see "Changing the flow". Every change is logged in the body's

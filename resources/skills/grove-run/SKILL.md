@@ -51,8 +51,12 @@ or `<slug> --slice N [--profile P]` (child). `grove.config.json`
   not finish in git, a child waiting on a permission prompt or question, and a
   failed gate. Nothing is approved without the human. It is recorded as
   `Review gate: none` in `04-run.md` and kept on `--continue`. It conflicts with
-  `--review-each` (stop and say so). Neither `grove-auto` nor `grove.config.json`
-  carries it; it is given to `grove-run` on each fresh run.
+  `--review-each` (stop and say so). `grove-auto` can record it as a default:
+  `review_gate: none` in `feature.md` makes a fresh run behave as if `--no-review`
+  was given (`review_gate: slice-1` or no line: the slice-1 stop). The flag and
+  `--review-each` on the command line win over that line, and `--review-each`
+  with a `feature.md` default of `none` is not a conflict (the flag wins).
+  `grove.config.json` does not carry it.
 
 ## Mode
 
@@ -137,12 +141,14 @@ H2. **Start the orchestrator.** A NEW TOP-LEVEL session: no `--child`, no
    <slug> --orchestrator --profile <P> [--continue] [--review-each] [--no-review]"
    plus the line `Plan commit: <sha>` (the plan commit of H1). Forward `--continue`,
    `--review-each` and `--no-review` exactly as given here; never add flags the human
-   did not give (a run's stored `Review gate:` is read by the orchestrator).
+   did not give, with one exception: when `feature.md` says `review_gate: none` and
+   neither `--no-review` nor `--review-each` was given, forward `--no-review` (a run's
+   stored `Review gate:` is read by the orchestrator).
 H3. **Hand off and stop.** Final message, nothing after it: the orchestrator's id
    and label, the branch, the worktree path, "switch to <label> in the sidebar: it
    runs the slices and asks you only at the review gates (slice 1 unless
    `--no-review`, the last slice, and every slice with `--review-each`)"; when
-   `--no-review` was given, say plainly that the run will not stop after slice 1
+   `--no-review` was given or came from `feature.md`, say plainly that the run will not stop after slice 1
    and still halts on failure, and the final review is kept; and the permission
    note: the run uses the human's own permission settings for the orchestrator's agent
    and the planner's agent, a worktree starts without the main checkout's untracked
