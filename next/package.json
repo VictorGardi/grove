@@ -23,6 +23,7 @@
   "devDependencies": {
     "@tauri-apps/cli": "2.12.4",
     "@types/node": "24.19.1",
+    "happy-dom": "21.0.4",
     "tsx": "4.23.15",
     "typescript": "5.9.3",
     "vite": "8.3.5",

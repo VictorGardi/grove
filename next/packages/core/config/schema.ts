@@ -20,7 +20,7 @@ export const SECTION: Record<ConfigFile, keyof ConfigValues> = {
   'layout.json': 'layout',
 }
 
-export const KEY_ACTIONS = ['grid-toggle', 'new-shell', 'new-claude', 'new-opencode', 'new-copilot'] as const satisfies readonly KeyAction[]
+export const KEY_ACTIONS = ['grid-toggle', 'new-shell', 'new-space', 'close-tab'] as const satisfies readonly KeyAction[]
 export const LAYOUT_SECTIONS = ['spaces', 'agents'] as const satisfies readonly LayoutSection[]
 export const THEME_TOKENS = [
   'accent',
@@ -46,13 +46,12 @@ export const THEME_TOKENS = [
 ] as const
 
 export const DEFAULT_VALUES: ConfigValues = {
-  settings: { sidebarWidth: 200 },
+  settings: { sidebarWidth: 240 },
   keys: {
     'grid-toggle': 'mod+g',
     'new-shell': 'mod+t',
-    'new-claude': 'mod+shift+1',
-    'new-opencode': 'mod+shift+2',
-    'new-copilot': 'mod+shift+3',
+    'new-space': 'mod+shift+n',
+    'close-tab': 'mod+w',
   },
   launchers: [],
   // Tokens not in the file keep their defaults in tokens.css, so the default is no override at all.
@@ -112,9 +111,8 @@ export function canonicalBinding(text: string): string | null {
 const KEY_DESCRIPTIONS: Record<KeyAction, string> = {
   'grid-toggle': 'Shows or hides the grid of tabs.',
   'new-shell': 'Opens a shell tab in the active space.',
-  'new-claude': 'Starts a Claude tab in the active space.',
-  'new-opencode': 'Starts an OpenCode tab in the active space.',
-  'new-copilot': 'Starts a Copilot tab in the active space.',
+  'new-space': 'Adds a space at the home folder, or selects it if it exists, and opens a shell tab there.',
+  'close-tab': 'Closes the active tab.',
 }
 
 const LAUNCHER_KEYS: readonly string[] = ['id', 'label', 'command', 'args', 'env']
@@ -199,7 +197,7 @@ export const SCHEMAS: Record<ConfigFile, Schema> = {
       parse: (value: unknown) =>
         typeof value === 'string' && canonicalBinding(value) !== null
           ? ok(value)
-          : no('must be a key binding such as "mod+g" or "mod+shift+1"'),
+          : no('must be a key binding such as "mod+g" or "mod+shift+n"'),
     })),
     check: (fields) => {
       const seen = new Map<string, string>()

@@ -7,7 +7,7 @@ import { connectWhenReady, type RpcClient } from '../protocol/client.ts'
 import { METHODS, type AgentInfo, type SpaceTabInfo } from '../protocol/messages.ts'
 import { coreSocketPath } from '../protocol/paths.ts'
 import { parseCommand, UsageError, type Command } from './args.ts'
-import { formatError, formatLsJson, formatNew, formatRead, formatTree, turnExit, type LsTab, type TurnOutcome } from './output.ts'
+import { formatError, formatLsJson, formatNew, formatRead, formatTree, spaceHeadings, turnExit, type LsTab, type TurnOutcome } from './output.ts'
 import { pasteText, waitStable } from './paste.ts'
 import { resolveTabRef } from './ref.ts'
 import { agentSkillsDirs, installSkill } from './skill.ts'
@@ -110,11 +110,10 @@ async function addSpace(arg: string | undefined): Promise<number> {
   const base = process.env.GROVE_NEXT_CALLER_CWD || process.cwd()
   const target = path.resolve(base, arg ?? '')
   return withCore(async (core) => {
-    const before = await core.request(METHODS.spacesList, {})
-    const real = realpathOrSelf(target)
-    const existed = before.spaces.some((space) => space.path === real)
+    // Always a new space, even when the folder is one already; it prints the new space's heading.
     const space = await core.request(METHODS.spacesAdd, { path: target })
-    console.log(existed ? `already a space: ${space.path}` : `added ${space.path}`)
+    const { spaces } = await core.request(METHODS.spacesList, {})
+    console.log(`added ${spaceHeadings(spaces).get(space.id) ?? space.path}`)
     return 0
   })
 }
@@ -132,7 +131,7 @@ async function listTabs(json: boolean): Promise<number> {
       return 0
     }
     if (result.spaces.length === 0) console.log('no spaces')
-    for (const line of formatTree(result.spaces.map((space) => space.path), tabs)) console.log(line)
+    for (const line of formatTree(result.spaces, tabs)) console.log(line)
     return 0
   })
 }
@@ -140,6 +139,7 @@ async function listTabs(json: boolean): Promise<number> {
 function lsTabs(tabs: SpaceTabInfo[], agents: AgentInfo[]): LsTab[] {
   return tabs.map((tab) => ({
     id: tab.id,
+    spaceId: tab.spaceId,
     spacePath: tab.spacePath,
     kind: tab.kind,
     state: tab.kind === 'terminal' ? null : (agents.find((agent) => agent.tabId === tab.id)?.state ?? null),
@@ -152,16 +152,18 @@ async function newTab(cmd: Extract<Command, { cmd: 'new' }>): Promise<number> {
   const base = process.env.GROVE_NEXT_CALLER_CWD || process.cwd()
   const dir = realpathOrSelf(path.resolve(base, cmd.cwd ?? ''))
   return withCore(async (core) => {
+    // A folder means its first space.
     const { spaces } = await core.request(METHODS.spacesList, {})
-    if (!spaces.some((space) => space.path === dir)) {
+    const space = spaces.find((candidate) => candidate.path === dir)
+    if (space === undefined) {
       throw new Error(`not a space: ${dir}, add it with grove-next space add`)
     }
     const prompt = cmd.prompt === undefined ? undefined : readText(cmd.prompt)
     const id =
       cmd.kind === 'terminal'
-        ? (await core.request(METHODS.tabsOpen, { spacePath: dir, cols: COLS, rows: ROWS, label: cmd.label })).id
+        ? (await core.request(METHODS.tabsOpen, { spaceId: space.id, cols: COLS, rows: ROWS, label: cmd.label })).id
         : (await core.request(METHODS.tabsCreate, { command: cmd.kind, cwd: dir, cols: COLS, rows: ROWS, label: cmd.label, agent: { kind: cmd.kind } })).id
-    console.log(formatNew({ id, kind: cmd.kind, spacePath: dir, label: cmd.label ?? null }, cmd.json))
+    console.log(formatNew({ id, kind: cmd.kind, spaceId: space.id, spacePath: dir, label: cmd.label ?? null }, cmd.json))
     if (prompt !== undefined) {
       await settleAndPaste(core, id, prompt, true)
       await afterPaste(core, { id, kind: cmd.kind }, true)

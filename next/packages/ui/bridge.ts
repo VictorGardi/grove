@@ -24,7 +24,22 @@ export function createBridge(): Bridge {
   let reconnecting = false
   const handlers = new Map<string, Array<(params: never) => void>>()
   const statusHandlers: Array<(status: BridgeStatus) => void> = []
-  const events = new Channel<string>()
+  // Made on first use, not here: a channel needs the Tauri runtime, and the states page runs in a browser without it.
+  let events: Channel<string> | undefined
+  const eventChannel = (): Channel<string> => {
+    if (events) return events
+    events = new Channel<string>()
+    events.onmessage = (line) => {
+      const message = JSON.parse(line) as { method?: string; params?: unknown }
+      if (message.method === CLOSED) {
+        emitStatus('closed')
+        void reconnect()
+        return
+      }
+      for (const handler of handlers.get(message.method ?? '') ?? []) handler(message.params as never)
+    }
+    return events
+  }
 
   const emitStatus = (status: BridgeStatus) => {
     for (const handler of statusHandlers) handler(status)
@@ -36,7 +51,7 @@ export function createBridge(): Bridge {
     let delay = 300
     for (;;) {
       try {
-        await invoke('connect', { events })
+        await invoke('connect', { events: eventChannel() })
         break
       } catch {
         await new Promise((resolve) => setTimeout(resolve, delay))
@@ -47,19 +62,9 @@ export function createBridge(): Bridge {
     emitStatus('open')
   }
 
-  events.onmessage = (line) => {
-    const message = JSON.parse(line) as { method?: string; params?: unknown }
-    if (message.method === CLOSED) {
-      emitStatus('closed')
-      void reconnect()
-      return
-    }
-    for (const handler of handlers.get(message.method ?? '') ?? []) handler(message.params as never)
-  }
-
   return {
     async connect() {
-      await invoke('connect', { events })
+      await invoke('connect', { events: eventChannel() })
     },
     async rpc(method, params) {
       const id = nextId++

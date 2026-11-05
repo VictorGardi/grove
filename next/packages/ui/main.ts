@@ -3,26 +3,63 @@ import { getCurrentWindow } from '@tauri-apps/api/window'
 import { createBridge, fromBase64, toBase64 } from './bridge.ts'
 import { createSoundGate, noticeBody } from './alerts.ts'
 import { applyLayout, applySettings, applyTheme, findAction, launcherLine } from './config.ts'
-import { openTerminal, type TerminalView } from './terminal.ts'
+import { openTerminal, terminalFontSize, tokenValue, type TerminalView } from './terminal.ts'
 import { gridMembers, gridShape, paneSpans } from './grid/layout.ts'
-import type { AgentInfo, AgentStateName, ConfigSnapshot, KeyAction, Launcher, SpaceInfo } from '../protocol/messages.ts'
+import { groupAgents, shortFolder, tabStateOf, tileIndex } from './sidebar-model.ts'
+import { createTabPill, type TabPill } from './tab-pill.ts'
+import { createRenameModal } from './rename-modal.ts'
+import { indicatorClass, indicatorLabel } from './indicator.ts'
+import { iconSvg } from './icons.ts'
+import { rollupSpaces } from '../protocol/rollup.ts'
+import type {
+  AgentInfo,
+  AgentStateName,
+  ConfigSnapshot,
+  KeyAction,
+  Launcher,
+  SpaceInfo,
+} from '../protocol/messages.ts'
 import type { AgentKind } from '../core/status/adapter.ts'
 import { DEFAULT_VALUES } from '../core/config/schema.ts'
+import type { DemoRows } from './demo/states.ts'
 import './styles.css'
 
 interface EnvInfo {
   home: string
 }
 
+// What a tab runs: a shell, or one of the agents.
+type TabKind = 'shell' | AgentKind
+
 interface Tab {
   id: string
+  // The space the tab belongs to, by its id; spacePath is the folder the pane header shows.
+  spaceId: string
   spacePath: string
+  kind: TabKind
+  // The name the user gave the tab; null shows "Tab N".
+  label: string | null
+  // The tab's number in its space, counted in the order the tabs were opened.
+  number: number
   attached: boolean
   exited: boolean
   queue: Uint8Array[] | null
+  // The tab's pane in the terminals area, its terminal, and its button in the strip.
+  pane: HTMLElement
+  head: HTMLElement
   host: HTMLDivElement
-  button: HTMLButtonElement
+  tabEl: HTMLDivElement
+  pill: TabPill
   view: TerminalView
+}
+
+// One agent row in the sidebar: the tab it belongs to, with the agent's status.
+interface AgentRow {
+  spaceId: string
+  tabNumber: number
+  agent: AgentInfo
+  exited: boolean
+  tab: Tab
 }
 
 const bridge = createBridge()
@@ -46,47 +83,60 @@ const isMac = navigator.platform.startsWith('Mac')
 let gridOn = false
 // The last attention.focus sent, as a key; an identical one is skipped until a reconnect clears it.
 let sentFocus: string | null = null
+// The states page (?demo=states) runs without a core: nothing is sent to it.
+let demoMode = false
 const playSound = createSoundGate()
 
+const appEl = byId('app')
 const tabStrip = byId('tabs')
 const terminals = byId('terminals')
 const statusLine = byId('status')
 const spaceList = byId('spaces')
-const addSpaceForm = byId('add-space') as HTMLFormElement
-const spacePathInput = byId('space-path') as HTMLInputElement
 const newTabButton = byId('new-tab') as HTMLButtonElement
 const gridToggle = byId('grid-toggle') as HTMLButtonElement
-const newAgentButtons = [
-  { kind: 'claude', button: byId('new-claude') as HTMLButtonElement },
-  { kind: 'opencode', button: byId('new-opencode') as HTMLButtonElement },
-  { kind: 'copilot', button: byId('new-copilot') as HTMLButtonElement },
-] satisfies Array<{ kind: AgentKind; button: HTMLButtonElement }>
 const agentList = byId('agents')
 const agentsEmpty = byId('agents-empty')
 const installCliButton = byId('install-cli') as HTMLButtonElement
 const sidebar = byId('sidebar')
+const sidebarToggle = byId('sidebar-toggle') as HTMLButtonElement
 const launcherBar = byId('launchers')
-// The buttons a key binding presses; a disabled button ignores the press, as it does a click.
-const keyButtons: Record<KeyAction, HTMLButtonElement> = {
-  'grid-toggle': gridToggle,
-  'new-shell': newTabButton,
-  'new-claude': byId('new-claude') as HTMLButtonElement,
-  'new-opencode': byId('new-opencode') as HTMLButtonElement,
-  'new-copilot': byId('new-copilot') as HTMLButtonElement,
+const emptyState = byId('empty-state')
+const emptyTitle = byId('empty-title')
+const emptyText = byId('empty-text')
+// The rename modal saves through tabs.rename and shows the tab's new name at once. Key bindings wait while it is open.
+const renameModal = createRenameModal(
+  {
+    modal: byId('rename-modal'),
+    form: byId('rename-form') as HTMLFormElement,
+    input: byId('rename-input') as HTMLInputElement,
+    cancel: byId('rename-cancel') as HTMLButtonElement,
+    error: byId('rename-error'),
+  },
+  {
+    rename: (id, label) => bridge.rpc('tabs.rename', { id, label }),
+    renamed: (id, label) => {
+      const tab = tabs.get(id)
+      if (!tab) return
+      tab.label = label || null
+      paint()
+    },
+    closed: focusActive,
+  },
+)
+// Each key action does what its button does, so a disabled button ignores the key as it ignores a click.
+const keyActions: Record<KeyAction, () => void> = {
+  'grid-toggle': () => gridToggle.click(),
+  'new-shell': () => newTabButton.click(),
+  'new-space': () => void newSpaceTab().catch(report),
+  'close-tab': () => {
+    if (active) void closeTab(active).catch(report)
+  },
 }
 
 // The command the window starts; the core builds the args from the agent kind.
 const AGENT_COMMANDS: Record<AgentKind, string> = { claude: 'claude', opencode: 'opencode', copilot: 'copilot' }
-const AGENT_LABELS: Record<AgentKind, string> = { claude: 'Claude', opencode: 'OpenCode', copilot: 'Copilot' }
-
-// The sidebar groups agents in this order; the state names match the core's.
-const AGENT_GROUPS: Array<{ state: AgentStateName; label: string }> = [
-  { state: 'needs-you', label: 'Needs you' },
-  { state: 'working', label: 'Working' },
-  { state: 'finished', label: 'Finished' },
-  { state: 'idle', label: 'Idle' },
-  { state: 'unknown', label: 'Unknown' },
-]
+// The letter on a tab's mark: C, O and G for the agents (the reference's marks), $ for a shell.
+const MARK_TEXT: Record<TabKind, string> = { shell: '$', claude: 'C', opencode: 'O', copilot: 'G' }
 const AGE_REFRESH_MS = 5000
 
 function byId(id: string): HTMLElement {
@@ -101,40 +151,82 @@ function report(error: unknown): void {
   statusLine.textContent = message
 }
 
-function spaceName(path: string): string {
-  return spaces.get(path)?.name ?? path
+function element(tag: string, className: string, text = ''): HTMLElement {
+  const node = document.createElement(tag)
+  node.className = className
+  node.textContent = text
+  return node
 }
 
-// The same label the tab button's title shows: the space name and the tab's number in it.
+function spaceName(spaceId: string): string {
+  return spaces.get(spaceId)?.name ?? spaceId
+}
+
+// The tab's name: the one the user gave it, else "Tab N".
+function tabName(tab: Tab): string {
+  return tab.label || `Tab ${tab.number}`
+}
+
+// The tab's name with its space, for titles and notifications.
 function tabLabel(tab: Tab): string {
-  const number = order.filter((other) => other.spacePath === tab.spacePath).indexOf(tab) + 1
-  return `${spaceName(tab.spacePath)}: tab ${number}`
+  return `${spaceName(tab.spaceId)}: ${tabName(tab)}`
 }
 
-function createTab(spacePath: string): Tab {
+// The state a tab shows: its agent's status, or idle for a shell or a gone tab.
+function stateOf(tab: Tab): AgentStateName {
+  return tabStateOf({ exited: tab.exited, kind: tab.kind, state: agents.get(tab.id)?.state ?? null })
+}
+
+// The state indicator; its label is the same text as the shape's name.
+function indicatorEl(state: AgentStateName): HTMLElement {
+  const node = element('span', indicatorClass(state))
+  node.title = indicatorLabel(state)
+  node.setAttribute('aria-label', indicatorLabel(state))
+  return node
+}
+
+function markEl(kind: TabKind): HTMLElement {
+  return element('span', `agent-mark mark-${kind}`, MARK_TEXT[kind])
+}
+
+function createTab(spaceId: string, spacePath: string, kind: TabKind, label: string | null): Tab {
+  const pane = document.createElement('section')
+  pane.className = 'pane'
+  const head = document.createElement('header')
+  head.className = 'pane-head'
   const host = document.createElement('div')
   host.className = 'term-host'
-  host.hidden = true
-  terminals.append(host)
+  pane.append(head, host)
+  terminals.append(pane)
 
-  const button = document.createElement('button')
-  button.type = 'button'
-  button.className = 'tab'
-  button.setAttribute('role', 'tab')
-  button.addEventListener('click', () => activate(tab))
-  tabStrip.append(button)
-  host.addEventListener('click', () => activate(tab))
+  const pill = createTabPill(markEl(kind), {
+    onActivate: () => activate(tab),
+    onRename: () => {
+      if (tab.id) renameModal.open({ id: tab.id, label: tab.label, number: tab.number })
+    },
+    onClose: () => closeTab(tab).catch(report),
+  })
+  const tabEl = pill.root
+  tabStrip.append(tabEl)
 
   const tab: Tab = {
     id: '',
+    spaceId,
     spacePath,
+    kind,
+    label,
+    number: 0,
     attached: false,
     exited: false,
     queue: null,
+    pane,
+    head,
     host,
-    button,
+    tabEl,
+    pill,
     view: undefined as unknown as TerminalView,
   }
+  host.addEventListener('click', () => activate(tab))
   tab.view = openTerminal(host, {
     onInput: (text) => {
       if (tab.attached) void bridge.rpc('tabs.write', { id: tab.id, dataB64: toBase64(encoder.encode(text)) }).catch(report)
@@ -154,14 +246,25 @@ function adopt(tab: Tab, id: string): void {
   paint()
 }
 
+// Takes a tab out of the window. When it was the one on screen, the space's next tab is shown.
 function removeTab(tab: Tab): void {
-  tab.host.remove()
-  tab.button.remove()
+  tab.pane.remove()
+  tab.tabEl.remove()
   if (tab.id) tabs.delete(tab.id)
   const index = order.indexOf(tab)
   if (index !== -1) order.splice(index, 1)
   if (active === tab) active = null
-  paint()
+  if (active === null) selectSpace(activeSpace)
+  else paint()
+}
+
+// The × and Cmd+W: the core kills the tab and drops its record. The tab leaves the strip and the agents list at once.
+async function closeTab(tab: Tab): Promise<void> {
+  if (!tab.id) return
+  await bridge.rpc('tabs.close', { id: tab.id })
+  agents.delete(tab.id)
+  removeTab(tab)
+  focusActive()
 }
 
 function deliver(tab: Tab, bytes: Uint8Array): void {
@@ -173,9 +276,9 @@ function markExited(tab: Tab, exitCode: number | null = null): void {
   if (tab.exited) return
   tab.exited = true
   tab.attached = false
-  tab.button.classList.add('exited')
   const code = exitCode === null ? '' : ` with code ${exitCode}`
   deliver(tab, encoder.encode(`\r\n\x1b[2m[process exited${code}]\x1b[0m\r\n`))
+  paint()
 }
 
 // Shows the core's saved screen first, then output that arrived while the attach was in flight.
@@ -193,14 +296,13 @@ async function attach(tab: Tab): Promise<void> {
   }
   tab.attached = true
   tab.exited = false
-  tab.button.classList.remove('exited')
   const { cols, rows } = tab.view.term
   await bridge.rpc('tabs.resize', { id: tab.id, cols, rows })
 }
 
 // The active space's first nine tabs, in tab order: the panes grid mode shows.
 function gridTabs(): Tab[] {
-  const spaceTabs = order.filter((tab) => tab.spacePath === activeSpace)
+  const spaceTabs = order.filter((tab) => tab.spaceId === activeSpace)
   const ids = gridMembers(spaceTabs.map((tab) => tab.id))
   return spaceTabs.filter((tab) => ids.includes(tab.id))
 }
@@ -220,8 +322,9 @@ function paintGrid(members: Tab[]): void {
   for (const tab of order) {
     const index = members.indexOf(tab)
     const span = gridOn && index >= 0 ? spans[index] : undefined
-    tab.host.style.gridColumn = span ? `span ${span.cols}` : ''
-    tab.host.style.gridRow = span ? `span ${span.rows}` : ''
+    // The grid placement of a pane is the one style the window writes per element.
+    tab.pane.style.gridColumn = span ? `span ${span.cols}` : ''
+    tab.pane.style.gridRow = span ? `span ${span.rows}` : ''
     tab.host.classList.toggle('pane-dim', span !== undefined && tab !== active)
   }
 }
@@ -229,6 +332,28 @@ function paintGrid(members: Tab[]): void {
 // Refits what is on screen: the grid's panes, else the active tab.
 function fitShown(): void {
   for (const tab of gridOn ? gridTabs() : active ? [active] : []) tab.view.fit()
+}
+
+// The tab's strip button and its pane header, from its name and state.
+function paintTab(tab: Tab): void {
+  const state = stateOf(tab)
+  const name = tabName(tab)
+  tab.pill.update({ name, title: tabLabel(tab), state })
+  tab.head.replaceChildren(
+    markEl(tab.kind),
+    element('span', 'pane-kind', name),
+    element('span', 'pane-folder', shortFolder(tab.spacePath, homeDir)),
+    indicatorEl(state),
+  )
+}
+
+// The empty state shows when there is no space, or the space has no tabs.
+function paintEmpty(): void {
+  const none = activeSpace === null
+  const bare = !order.some((tab) => tab.spaceId === activeSpace)
+  emptyState.hidden = !(none || bare)
+  emptyTitle.textContent = none ? 'No space open' : 'No tabs in this space'
+  emptyText.textContent = none ? 'Press Cmd+Shift+N to open a space at your home folder.' : 'Press + in the tab strip to open a shell.'
 }
 
 // Tabs of other spaces stay mounted and only hidden, so their shells keep running and their screens keep filling.
@@ -239,31 +364,38 @@ function paint(): void {
   const counts = new Map<string, number>()
   for (const tab of order) {
     const on = tab === active
-    const number = (counts.get(tab.spacePath) ?? 0) + 1
-    counts.set(tab.spacePath, number)
-    tab.button.textContent = String(number)
-    tab.button.title = `${spaceName(tab.spacePath)}: tab ${number}`
-    tab.button.hidden = tab.spacePath !== activeSpace
-    tab.host.hidden = gridOn ? !members.includes(tab) : !on
-    tab.button.classList.toggle('active', on)
-    tab.button.setAttribute('aria-selected', String(on))
+    const number = (counts.get(tab.spaceId) ?? 0) + 1
+    counts.set(tab.spaceId, number)
+    tab.number = number
+    tab.tabEl.hidden = tab.spaceId !== activeSpace
+    tab.tabEl.classList.toggle('active', on)
+    tab.tabEl.classList.toggle('exited', tab.exited)
+    tab.tabEl.setAttribute('aria-selected', String(on))
+    tab.pane.hidden = gridOn ? !members.includes(tab) : !on
+    tab.pane.classList.toggle('focused', on)
+    paintTab(tab)
   }
   paintGrid(members)
   requestAnimationFrame(fitShown)
   renderSpaces()
-  newTabButton.disabled = activeSpace === null || refused !== null
+  renderAgents()
+  paintEmpty()
+  const idle = activeSpace === null || refused !== null
+  newTabButton.disabled = idle
   gridToggle.setAttribute('aria-pressed', String(gridOn))
-  gridToggle.disabled = !gridOn && (activeSpace === null || refused !== null)
-  for (const { button } of newAgentButtons) button.disabled = activeSpace === null || refused !== null
-  for (const button of launcherBar.querySelectorAll('button')) button.disabled = activeSpace === null || refused !== null
-  for (const control of addSpaceForm.querySelectorAll<HTMLInputElement | HTMLButtonElement>('input, button')) {
-    control.disabled = refused !== null
-  }
+  gridToggle.disabled = !gridOn && idle
+  for (const button of launcherBar.querySelectorAll('button')) button.disabled = idle
   reportFocus()
+}
+
+// The root's unfocused class pauses the spinners: the window is in the background or the page is hidden.
+function paintFocus(): void {
+  document.documentElement.classList.toggle('unfocused', !windowFocused || document.hidden)
 }
 
 // The core needs the tab on screen and whether the window has focus, to decide what to notify and mark seen.
 function reportFocus(): void {
+  if (demoMode) return
   const params = { tabId: active?.id || null, windowFocused }
   const key = JSON.stringify(params)
   if (key === sentFocus) return
@@ -276,40 +408,45 @@ function reportFocus(): void {
 }
 
 function focusActive(): void {
-  if (active && !active.host.hidden) {
+  if (active && !active.pane.hidden) {
     active.view.fit()
     active.view.term.focus()
   }
 }
 
 function activate(tab: Tab): void {
-  activeBySpace.set(tab.spacePath, tab)
-  selectSpace(tab.spacePath)
+  activeBySpace.set(tab.spaceId, tab)
+  selectSpace(tab.spaceId)
   focusActive()
 }
 
 // Shows the space's last active tab, or its first tab, or nothing when the space has no tabs.
-function selectSpace(path: string | null): void {
-  activeSpace = path
-  const remembered = path ? activeBySpace.get(path) : undefined
-  active = remembered && order.includes(remembered) ? remembered : (order.find((tab) => tab.spacePath === path) ?? null)
+function selectSpace(spaceId: string | null): void {
+  activeSpace = spaceId
+  const remembered = spaceId ? activeBySpace.get(spaceId) : undefined
+  active = remembered && order.includes(remembered) ? remembered : (order.find((tab) => tab.spaceId === spaceId) ?? null)
   paint()
 }
 
 function renderSpaces(): void {
   const all = [...spaces.values()]
+  // A space's indicator is the most urgent state among its own tabs; a worktree's tabs count only towards itself.
+  const states = rollupSpaces(
+    all.map((space) => space.id),
+    order.map((tab) => ({ spaceId: tab.spaceId, state: stateOf(tab) })),
+  )
   const top = all.filter((space) => !space.parent || !spaces.has(space.parent))
   spaceList.replaceChildren(
     ...top.map((space) => {
       const item = document.createElement('li')
-      item.append(spaceButton(space, true))
-      const children = all.filter((child) => child.parent === space.path)
+      item.append(spaceButton(space, states.get(space.id) ?? 'idle'))
+      const children = all.filter((child) => child.parent === space.id)
       if (children.length > 0) {
         const nested = document.createElement('ul')
         nested.className = 'spaces nested'
         for (const child of children) {
           const li = document.createElement('li')
-          li.append(spaceButton(child, false))
+          li.append(spaceButton(child, states.get(child.id) ?? 'idle'))
           nested.append(li)
         }
         item.append(nested)
@@ -319,22 +456,23 @@ function renderSpaces(): void {
   )
 }
 
-function spaceButton(space: SpaceInfo, top: boolean): HTMLButtonElement {
+function spaceButton(space: SpaceInfo, state: AgentStateName): HTMLButtonElement {
+  const worktree = space.parent !== null
   const button = document.createElement('button')
   button.type = 'button'
-  button.className = 'space'
+  button.className = worktree ? 'space worktree' : 'space'
   button.title = space.path
-  if (top && space.repoName && space.repoName !== space.name) {
-    const folder = document.createElement('span')
-    folder.className = 'space-folder'
-    folder.textContent = space.name
-    button.append(space.repoName, ' ', folder)
-  } else {
-    button.textContent = space.name
-  }
-  if (space.path === activeSpace) button.setAttribute('aria-current', 'true')
+  const tile = element(
+    'span',
+    `space-tile tile-${tileIndex(space.name)}`,
+    worktree ? '' : space.name.charAt(0).toUpperCase(),
+  )
+  if (worktree) tile.innerHTML = iconSvg('worktree')
+  button.append(tile, element('span', 'space-name', space.name), element('span', 'space-branch', space.branch ?? ''))
+  button.append(indicatorEl(state))
+  if (space.id === activeSpace) button.setAttribute('aria-current', 'true')
   button.addEventListener('click', () => {
-    selectSpace(space.path)
+    selectSpace(space.id)
     focusActive()
   })
   return button
@@ -342,12 +480,13 @@ function spaceButton(space: SpaceInfo, top: boolean): HTMLButtonElement {
 
 // Opens a shell tab in the active space. A launcher passes the line it types once the tab's first output arrives.
 async function newShellTab(typed: string | null = null): Promise<void> {
-  const spacePath = activeSpace
-  if (!spacePath) return
-  const tab = createTab(spacePath)
+  const spaceId = activeSpace
+  const space = spaceId ? spaces.get(spaceId) : undefined
+  if (!spaceId || !space) return
+  const tab = createTab(spaceId, space.path, 'shell', null)
   try {
     const { id } = await bridge.rpc('tabs.open', {
-      spacePath,
+      spaceId,
       cols: tab.view.term.cols,
       rows: tab.view.term.rows,
     })
@@ -361,27 +500,12 @@ async function newShellTab(typed: string | null = null): Promise<void> {
   }
 }
 
-// Opens an agent tab in the space root. The core launches the agent and records the session.
-async function newAgentTab(kind: AgentKind): Promise<void> {
-  const spacePath = activeSpace
-  if (!spacePath) return
-  const tab = createTab(spacePath)
-  try {
-    const { id } = await bridge.rpc('tabs.create', {
-      command: AGENT_COMMANDS[kind],
-      cwd: spacePath,
-      cols: tab.view.term.cols,
-      rows: tab.view.term.rows,
-      agent: { kind },
-    })
-    adopt(tab, id)
-    await attach(tab)
-    activate(tab)
-    await refreshAgents()
-  } catch (error) {
-    removeTab(tab)
-    report(error)
-  }
+// Cmd+Shift+N: adds a new space at the home folder (spaces.add always adds one), selects it, and opens one shell tab there.
+async function newSpaceTab(): Promise<void> {
+  const space = await bridge.rpc('spaces.add', { path: homeDir })
+  spaces.set(space.id, space)
+  selectSpace(space.id)
+  await newShellTab()
 }
 
 // Starts a gone agent tab again under its own id; the core resumes the saved session.
@@ -457,42 +581,23 @@ function formatAge(ms: number): string {
   return `${Math.floor(hours / 24)}d`
 }
 
-function stateText(agent: AgentInfo): string {
-  const name = agent.state === 'needs-you' ? 'needs you' : agent.state
-  return agent.state === 'needs-you' && agent.reason ? `${name}: ${agent.reason}` : name
-}
-
-function element(tag: string, className: string, text = ''): HTMLElement {
-  const node = document.createElement(tag)
-  node.className = className
-  node.textContent = text
-  return node
-}
-
-function agentRow(agent: AgentInfo): HTMLLIElement {
-  const tab = tabs.get(agent.tabId)
+function agentRow(row: AgentRow): HTMLLIElement {
+  const { tab, agent } = row
   const li = document.createElement('li')
-  li.className = tab?.exited ? 'agent-row gone' : 'agent-row'
+  li.className = tab.exited ? 'agent-row gone' : 'agent-row'
 
   const focus = document.createElement('button')
   focus.type = 'button'
   focus.className = 'agent'
-  const label = tab ? tabLabel(tab) : agent.tabId
-  focus.title = label
-  const meta = element('span', 'agent-meta')
-  const state = element('span', `agent-state state-${agent.state}`, stateText(agent))
+  focus.title = tabLabel(tab)
+  if (tab === active) focus.setAttribute('aria-current', 'true')
   const age = element('span', 'agent-age', formatAge(Date.now() - agent.since))
   age.dataset.since = String(agent.since)
-  meta.append(state, ' · ', age)
-  const title = element('span', 'agent-title')
-  title.append(element('span', 'agent-label', label), element('span', 'agent-kind', AGENT_LABELS[agent.agent]))
-  focus.append(title, meta)
-  focus.addEventListener('click', () => {
-    if (tab) activate(tab)
-  })
+  focus.append(markEl(tab.kind), element('span', 'agent-label', tabName(tab)), age, indicatorEl(stateOf(tab)))
+  focus.addEventListener('click', () => activate(tab))
   li.append(focus)
 
-  if (tab && agent.resumable) {
+  if (agent.resumable) {
     const resume = document.createElement('button')
     resume.type = 'button'
     resume.className = 'agent-resume'
@@ -509,21 +614,23 @@ function agentRow(agent: AgentInfo): HTMLLIElement {
   return li
 }
 
-// Rebuilds the sidebar list. Empty groups are left out; within a group, the one waiting longest comes first.
+// Rebuilds the sidebar list: one group per space, in the space order. Within a group, the most urgent row comes first.
 function renderAgents(): void {
-  const all = [...agents.values()]
-  agentsEmpty.hidden = all.length > 0
+  const rows: AgentRow[] = []
+  for (const agent of agents.values()) {
+    const tab = tabs.get(agent.tabId)
+    if (tab) rows.push({ spaceId: tab.spaceId, tabNumber: tab.number, agent, exited: tab.exited, tab })
+  }
+  agentsEmpty.hidden = rows.length > 0
   agentList.replaceChildren(
-    ...AGENT_GROUPS.flatMap((group) => {
-      const rows = all.filter((agent) => agent.state === group.state).sort((a, b) => a.since - b.since)
-      if (rows.length === 0) return []
+    ...groupAgents([...spaces.keys()], rows).map((group) => {
       const section = document.createElement('li')
-      const heading = element('h3', 'agent-group', group.label)
+      section.className = 'agent-group'
       const list = document.createElement('ul')
       list.className = 'agent-rows'
-      list.append(...rows.map(agentRow))
-      section.append(heading, list)
-      return [section]
+      list.append(...group.rows.map(agentRow))
+      section.append(element('h3', 'agent-group-name', spaceName(group.spaceId)), list)
+      return section
     }),
   )
 }
@@ -536,21 +643,11 @@ function refreshAges(): void {
   }
 }
 
-async function addSpace(): Promise<void> {
-  const typed = spacePathInput.value.trim()
-  if (!typed) return
-  const path = typed === '~' || typed.startsWith('~/') ? homeDir + typed.slice(1) : typed
-  const space = await bridge.rpc('spaces.add', { path })
-  await resync()
-  selectSpace(space.path)
-  focusActive()
-}
-
 // Brings the page in line with the core: spaces and their tabs are listed, alive tabs are shown and reattached, gone ones are marked.
 async function resync(): Promise<void> {
   const state = await bridge.rpc('spaces.list', {})
   spaces.clear()
-  for (const space of state.spaces) spaces.set(space.path, space)
+  for (const space of state.spaces) spaces.set(space.id, space)
   refused = state.refused
   if (refused) statusLine.textContent = `State file refused: ${refused}`
 
@@ -559,23 +656,28 @@ async function resync(): Promise<void> {
     for (const tab of order) if (!alive.has(tab.id)) markExited(tab)
   }
   for (const info of state.tabs) {
+    const kind: TabKind = info.kind === 'terminal' ? 'shell' : info.kind
     const existing = tabs.get(info.id)
+    if (existing) {
+      existing.label = info.label
+      existing.kind = kind
+    }
     if (info.alive) {
       if (existing) {
         await attach(existing)
       } else {
-        const tab = createTab(info.spacePath)
+        const tab = createTab(info.spaceId, info.spacePath, kind, info.label)
         adopt(tab, info.id)
         await attach(tab)
       }
     } else if (!existing) {
-      const tab = createTab(info.spacePath)
+      const tab = createTab(info.spaceId, info.spacePath, kind, info.label)
       adopt(tab, info.id)
       markExited(tab, info.exitCode)
     }
   }
 
-  if (!activeSpace || !spaces.has(activeSpace)) activeSpace = state.spaces[0]?.path ?? null
+  if (!activeSpace || !spaces.has(activeSpace)) activeSpace = state.spaces[0]?.id ?? null
   selectSpace(activeSpace)
   await refreshAgents()
 }
@@ -626,9 +728,9 @@ bridge.on('tabs.focus', ({ id }) => {
 // The CLI closed the tab: it leaves the strip and the agents list at once, not at the next resync.
 bridge.on('tabs.closed', ({ id }) => {
   const tab = tabs.get(id)
-  if (tab) removeTab(tab)
   agents.delete(id)
-  renderAgents()
+  if (tab) removeTab(tab)
+  else renderAgents()
 })
 
 bridge.onStatus((status) => {
@@ -650,6 +752,12 @@ gridToggle.addEventListener('click', () => {
   gridToggle.setAttribute('aria-pressed', String(gridOn))
   paint()
 })
+sidebarToggle.addEventListener('click', () => {
+  const hidden = appEl.classList.toggle('sidebar-hidden')
+  const label = hidden ? 'Show the sidebar' : 'Hide the sidebar'
+  sidebarToggle.title = label
+  sidebarToggle.setAttribute('aria-label', label)
+})
 installCliButton.addEventListener('click', () => {
   installCliButton.disabled = true
   invoke<string>('install_cli')
@@ -662,43 +770,70 @@ installCliButton.addEventListener('click', () => {
     })
 })
 newTabButton.addEventListener('click', () => void newShellTab())
-// Key bindings are read in the capture phase, so a matched key does not also reach the terminal.
+// Key bindings are read in the capture phase, so a matched key does not also reach the terminal. While the rename modal is open they wait.
 window.addEventListener(
   'keydown',
   (event) => {
+    if (renameModal.isOpen()) return
     const action = findAction(keys, event, isMac)
     if (action === null) return
     event.preventDefault()
     event.stopPropagation()
-    keyButtons[action].click()
+    keyActions[action]()
   },
   { capture: true },
 )
-for (const { kind, button } of newAgentButtons) {
-  button.addEventListener('click', () => void newAgentTab(kind))
-}
 setInterval(refreshAges, AGE_REFRESH_MS)
-addSpaceForm.addEventListener('submit', (event) => {
-  event.preventDefault()
-  addSpace().catch(report)
-})
+document.addEventListener('visibilitychange', paintFocus)
+
+// The bundled fonts load before the first terminal opens, so xterm measures Geist Mono and not a fallback.
+async function loadFonts(): Promise<void> {
+  await document.fonts.load(`${terminalFontSize()}px ${tokenValue('--font-mono')}`).catch(report)
+}
+
+// The states page: the fabricated rows, through the same rendering, with no core and no Tauri call.
+async function startDemo(rows: DemoRows): Promise<void> {
+  demoMode = true
+  windowFocused = true
+  homeDir = rows.home
+  for (const space of rows.spaces) spaces.set(space.id, space)
+  for (const agent of rows.agents) agents.set(agent.tabId, agent)
+  for (const item of rows.tabs) {
+    const tab = createTab(item.spaceId, spaces.get(item.spaceId)?.path ?? '', item.kind, item.label)
+    tab.exited = item.exited
+    adopt(tab, item.id)
+  }
+  paintFocus()
+  selectSpace(rows.spaces[0]?.id ?? null)
+}
 
 async function start(): Promise<void> {
-  if (import.meta.env.DEV) byId('stress-link').hidden = false
+  if (import.meta.env.DEV) {
+    byId('stress-link').hidden = false
+    const demo = await import('./demo/states.ts')
+    if (demo.isDemoStates(window.location, import.meta.env.DEV)) {
+      await loadFonts()
+      await startDemo(demo.demoRows())
+      return
+    }
+  }
   const env = await invoke<EnvInfo>('env_info')
   homeDir = env.home
-  spacePathInput.value = env.home
   const appWindow = getCurrentWindow()
   windowFocused = await appWindow.isFocused()
   await appWindow.onFocusChanged(({ payload }: { payload: boolean }) => {
     windowFocused = payload
+    paintFocus()
     reportFocus()
   })
+  paintFocus()
+  await loadFonts()
   await bridge.connect()
   await loadConfig()
   await resync()
 }
 
+document.documentElement.classList.toggle('mac', isMac)
 start().catch((error: unknown) => {
   report(error instanceof Error ? `Could not start: ${error.message}` : error)
 })

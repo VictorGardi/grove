@@ -26,6 +26,7 @@ export interface StatusServiceOptions {
 
 export interface TrackInput {
   tabId: string
+  spaceId: string
   spacePath: string
   kind: AgentKind
   sessionId: string

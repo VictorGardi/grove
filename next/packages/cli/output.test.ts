@@ -1,23 +1,57 @@
 import { describe, expect, it } from 'vitest'
-import { formatError, formatLsJson, formatNew, formatRead, formatTree, turnExit, type LsTab } from './output.ts'
+import { formatError, formatLsJson, formatNew, formatRead, formatTree, spaceHeadings, turnExit, type LsTab } from './output.ts'
 
 const t = (over: Partial<LsTab>): LsTab => ({
-  id: 'aaaaaaaa-1111', kind: 'claude', state: 'working', label: 'one', alive: true, spacePath: '/p', ...over,
+  id: 'aaaaaaaa-1111', kind: 'claude', state: 'working', label: 'one', alive: true, spaceId: 'sp_a', spacePath: '/p', ...over,
+})
+
+describe('spaceHeadings', () => {
+  it('uses the path for the first space of a folder and path#n for the later ones', () => {
+    const headings = spaceHeadings([
+      { id: 'sp_a', path: '/p' },
+      { id: 'sp_b', path: '/q' },
+      { id: 'sp_c', path: '/p' },
+      { id: 'sp_d', path: '/p' },
+    ])
+    expect([...headings.values()]).toEqual(['/p', '/q', '/p#2', '/p#3'])
+  })
 })
 
 describe('formatTree', () => {
   it('prints each space, then its tabs numbered within it', () => {
-    const lines = formatTree(['/p', '/q'], [t({}), t({ id: 'bbbbbbbb-2222', kind: 'terminal', state: null, label: null, alive: false })])
+    const lines = formatTree(
+      [
+        { id: 'sp_a', path: '/p' },
+        { id: 'sp_b', path: '/q' },
+      ],
+      [t({}), t({ id: 'bbbbbbbb-2222', spaceId: 'sp_b', kind: 'terminal', state: null, label: null, alive: false })],
+    )
     expect(lines).toEqual([
       '/p',
       '  1  aaaaaaaa-1111  claude    working   one  alive',
-      '  2  bbbbbbbb-2222  terminal  -         -  exited',
       '/q',
+      '  1  bbbbbbbb-2222  terminal  -         -  exited',
+    ])
+  })
+
+  it('shows two spaces at one folder as two groups, the second with a #2 heading', () => {
+    const lines = formatTree(
+      [
+        { id: 'sp_a', path: '/p' },
+        { id: 'sp_b', path: '/p' },
+      ],
+      [t({}), t({ id: 'bbbbbbbb-2222', spaceId: 'sp_b', kind: 'terminal', state: null, label: null, alive: false })],
+    )
+    expect(lines).toEqual([
+      '/p',
+      '  1  aaaaaaaa-1111  claude    working   one  alive',
+      '/p#2',
+      '  1  bbbbbbbb-2222  terminal  -         -  exited',
     ])
   })
 
   it('prints only the space line for a space with no tabs', () => {
-    expect(formatTree(['/p'], [])).toEqual(['/p'])
+    expect(formatTree([{ id: 'sp_a', path: '/p' }], [])).toEqual(['/p'])
   })
 })
 
@@ -28,7 +62,7 @@ describe('formatLsJson', () => {
 })
 
 describe('formatNew', () => {
-  const tab = { id: 'abcd1234', kind: 'terminal', spacePath: '/p', label: 'x' }
+  const tab = { id: 'abcd1234', kind: 'terminal', spaceId: 'sp_a', spacePath: '/p', label: 'x' }
   it('prints the id, or the object with --json', () => {
     expect(formatNew(tab, false)).toBe('abcd1234')
     expect(JSON.parse(formatNew(tab, true))).toEqual(tab)

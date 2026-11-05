@@ -29,6 +29,8 @@ describe('config watch', () => {
     const seen = new Promise<ConfigSnapshot>((resolve) => {
       stop = watchConfig(store, resolve)
     })
+    // fs.watch (FSEvents on macOS) can start after a write in the same tick, so the event would be missed under load.
+    await new Promise((resolve) => setTimeout(resolve, 200))
     fs.writeFileSync(path.join(dir, 'settings.json'), JSON.stringify({ version: 1, sidebarWidth: 300 }))
     const snapshot = await Promise.race([
       seen,
@@ -48,10 +50,11 @@ describe('config watch', () => {
   it('sends a note that appears with a bad edit, and nothing for a repeat of the same bad edit', async () => {
     const snapshots: ConfigSnapshot[] = []
     stop = watchConfig(store, (snapshot) => snapshots.push(snapshot))
+    await new Promise((resolve) => setTimeout(resolve, 200))
     fs.writeFileSync(path.join(dir, 'settings.json'), JSON.stringify({ version: 1, sidebarWidth: 1 }))
     await waitUntil(() => snapshots.length === 1)
     expect(snapshots[0].notes['settings.json']).toMatch(/^settings\.json: sidebarWidth/)
-    expect(snapshots[0].values.settings).toEqual({ sidebarWidth: 200 })
+    expect(snapshots[0].values.settings).toEqual({ sidebarWidth: 240 })
   })
 
   it('stops after the returned function is called', async () => {

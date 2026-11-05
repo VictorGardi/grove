@@ -43,7 +43,7 @@ describe('grove-next cli', () => {
     fs.rmSync(folder, { recursive: true, force: true })
   })
 
-  it('adds a space once, reports a second add as already a space, and lists it', async () => {
+  it('adds a space each time, so a second add of a folder is a second space, and lists both', async () => {
     // Keep the holder this test starts, so afterEach can stop it. main() then finds it running.
     holder = await ensureHolder()
 
@@ -52,11 +52,12 @@ describe('grove-next cli', () => {
 
     logs.length = 0
     expect(await main(['space', 'add', folder])).toBe(0)
-    expect(logs).toEqual([`already a space: ${folder}`])
+    expect(logs).toEqual([`added ${folder}#2`])
 
     logs.length = 0
     expect(await main(['ls'])).toBe(0)
     expect(logs).toContain(folder)
+    expect(logs).toContain(`${folder}#2`)
     expect(errors).toEqual([])
   }, 20000)
 

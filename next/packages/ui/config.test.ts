@@ -163,15 +163,14 @@ describe('findAction', () => {
   const keys: Record<KeyAction, string> = {
     'grid-toggle': 'mod+g',
     'new-shell': 'mod+t',
-    'new-claude': 'mod+shift+1',
-    'new-opencode': 'mod+shift+2',
-    'new-copilot': 'alt+shift+3',
+    'new-space': 'mod+shift+n',
+    'close-tab': 'mod+w',
   }
 
   it('returns the action of the matching binding, or null', () => {
     expect(findAction(keys, keyEvent({ key: 't', code: 'KeyT', ctrlKey: true }), false)).toBe('new-shell')
-    expect(findAction(keys, keyEvent({ key: '2', code: 'Digit2', metaKey: true, shiftKey: true }), true)).toBe('new-opencode')
-    expect(findAction(keys, keyEvent({ key: '3', code: 'Digit3', altKey: true, shiftKey: true }), true)).toBe('new-copilot')
+    expect(findAction(keys, keyEvent({ key: 'N', code: 'KeyN', metaKey: true, shiftKey: true }), true)).toBe('new-space')
+    expect(findAction(keys, keyEvent({ key: 'w', code: 'KeyW', metaKey: true }), true)).toBe('close-tab')
     expect(findAction(keys, keyEvent({ key: 'x', code: 'KeyX', metaKey: true }), true)).toBeNull()
   })
 

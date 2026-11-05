@@ -19,6 +19,7 @@ export const METHODS = {
   agentsList: 'agents.list',
   attentionFocus: 'attention.focus',
   tabsClose: 'tabs.close',
+  tabsRename: 'tabs.rename',
   tabsFocus: 'tabs.focus',
   configGet: 'config.get',
 } as const
@@ -75,14 +76,20 @@ export interface TabInfo {
 }
 
 export interface SpaceInfo {
+  // Opaque, and not a path. Spaces saved before ids existed have their path as their id.
+  id: string
   path: string
   name: string
   repoName: string | null
+  // The id of the space the worktree belongs to, or null.
   parent: string | null
+  // The branch checked out in the space; null when detached or when git cannot say.
+  branch: string | null
 }
 
 export interface SpaceTabInfo {
   id: string
+  spaceId: string
   spacePath: string
   kind: 'terminal' | AgentKind
   label: string | null
@@ -112,7 +119,7 @@ export interface AttentionNotice {
 }
 
 // Keys of the key bindings in keys.json.
-export type KeyAction = 'grid-toggle' | 'new-shell' | 'new-claude' | 'new-opencode' | 'new-copilot'
+export type KeyAction = 'grid-toggle' | 'new-shell' | 'new-space' | 'close-tab'
 
 export type LayoutSection = 'spaces' | 'agents'
 
@@ -175,14 +182,17 @@ export interface MethodMap {
     params: Empty
     result: { spaces: SpaceInfo[]; tabs: SpaceTabInfo[]; refused: string | null }
   }
+  // Always adds a new space, even when the folder is already one.
   'spaces.add': { params: { path: string }; result: SpaceInfo }
-  'tabs.open': { params: { spacePath: string; cols: number; rows: number; label?: string }; result: { id: string } }
+  'tabs.open': { params: { spaceId: string; cols: number; rows: number; label?: string }; result: { id: string } }
   'tabs.screen': { params: { id: string }; result: { text: string } }
   'agents.list': { params: Empty; result: AgentInfo[] }
   // The tab on screen (null when none) and whether the window has focus.
   'attention.focus': { params: { tabId: string | null; windowFocused: boolean }; result: Empty }
   // Kills the tab in the holder and removes its saved record.
   'tabs.close': { params: { id: string }; result: Empty }
+  // An empty label clears the name, so the tab shows its number again.
+  'tabs.rename': { params: { id: string; label: string }; result: Empty }
   // Asks every client to show the tab; the window selects it and raises itself.
   'tabs.focus': { params: { id: string }; result: Empty }
   'config.get': { params: Empty; result: ConfigSnapshot }

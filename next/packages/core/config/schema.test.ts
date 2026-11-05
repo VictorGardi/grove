@@ -39,13 +39,29 @@ describe('config schema', () => {
     expect(validateFile('settings.json', withFile('settings.json', { sidebarWidth: 200.5 })).ok).toBe(false)
   })
 
+  it('has the four key actions with their defaults', () => {
+    expect(validateFile('keys.json', defaultFile('keys.json'))).toEqual({
+      ok: true,
+      value: { 'grid-toggle': 'mod+g', 'new-shell': 'mod+t', 'new-space': 'mod+shift+n', 'close-tab': 'mod+w' },
+    })
+  })
+
   it('rejects a duplicate key binding, and accepts the same modifiers in another order only as a duplicate', () => {
     const duplicate = validateFile('keys.json', withFile('keys.json', { 'new-shell': 'mod+g' }))
     expect(duplicate).toEqual({ ok: false, message: 'keys.json: new-shell: same binding as grid-toggle' })
-    const reordered = validateFile('keys.json', withFile('keys.json', { 'new-copilot': 'shift+mod+3', 'new-claude': 'mod+shift+1' }))
+    const reordered = validateFile('keys.json', withFile('keys.json', { 'new-space': 'shift+mod+w', 'close-tab': 'mod+shift+x' }))
     expect(reordered.ok).toBe(true)
-    const samePair = validateFile('keys.json', withFile('keys.json', { 'new-copilot': 'shift+mod+1' }))
-    expect(samePair).toEqual({ ok: false, message: 'keys.json: new-copilot: same binding as new-claude' })
+    const samePair = validateFile('keys.json', withFile('keys.json', { 'close-tab': 'mod+shift+n' }))
+    expect(samePair).toEqual({ ok: false, message: 'keys.json: close-tab: same binding as new-space' })
+  })
+
+  it('rejects the removed Claude, OpenCode and Copilot key actions', () => {
+    for (const action of ['new-claude', 'new-opencode', 'new-copilot']) {
+      expect(validateFile('keys.json', withFile('keys.json', { [action]: 'mod+shift+1' }))).toEqual({
+        ok: false,
+        message: `keys.json: unknown key "${action}"`,
+      })
+    }
   })
 
   it('rejects a binding that is not a modifier and a key, and an unknown action', () => {

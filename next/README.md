@@ -58,7 +58,7 @@ A space is a folder; its tabs are login shells started in that folder. Add one f
 grove-next ls                       # the spaces, then their tabs
 ```
 
-`space add` defaults to the folder you run it from. A space is identified by its real path, so adding it again says `already a space`.
+`space add` defaults to the folder you run it from, and always adds a new space: two spaces may share a folder, and the CLI uses the first space of a folder (`new --cwd`, `ls` shows a second one as `<path>#2`).
 
 The state is `~/.grove-next/state.json` (or `$GROVE_NEXT_HOME/state.json`), a versioned file (`"version": 1`). A file that is not valid JSON is set aside as `state.json.corrupt-<ms>` and Grove starts empty. A file with another version is refused: it is left untouched, and adding spaces and opening tabs fail until it is moved away.
 
@@ -102,8 +102,8 @@ grove-next config path
 
 The folder holds five JSON files, each with `"version": 1`. A missing file means its defaults, and the app writes the defaults when it starts:
 
-- `settings.json`: `sidebarWidth`, in px (180 to 480, default 200).
-- `keys.json`: the shortcuts for `grid-toggle`, `new-shell`, `new-claude`, `new-opencode` and `new-copilot`. `mod` is Cmd on macOS and Ctrl elsewhere. A key bound to two actions is invalid.
+- `settings.json`: `sidebarWidth`, in px (180 to 480, default 240).
+- `keys.json`: the shortcuts for `grid-toggle` (default `mod+g`, shows or hides the grid), `new-shell` (`mod+t`, a shell tab in the active space), `new-space` (`mod+shift+n`, a space at the home folder, or selects it if it exists, with one new shell tab) and `close-tab` (`mod+w`, closes the active tab). `mod` is Cmd on macOS and Ctrl elsewhere. A key bound to two actions is invalid; an action left out of the file keeps its default. The Claude, OpenCode and Copilot shortcuts (`new-claude`, `new-opencode`, `new-copilot`) were removed in slice 9; a `keys.json` that still names them is rejected.
 - `launchers.json`: a list of buttons, each `{ id, label, command, args, env }`. A launcher opens a shell tab in the active space and types the command.
 - `theme.json`: `tokens`, the colours and sizes the window uses, by token name (`accent`, `state-working`, `font-ui` and so on). Removing a token reverts it to its default.
 - `layout.json`: `sidebarOrder`, `["spaces", "agents"]` or the reverse.

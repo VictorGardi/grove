@@ -81,7 +81,7 @@ function serviceOn(name: string, lines: number | undefined, screen: () => string
     graceMs: GRACE_MS,
     silenceMs: SILENCE_MS,
   })
-  service.track({ tabId: 'tab', spacePath: dir, kind: 'claude', sessionId: SESSION })
+  service.track({ tabId: 'tab', spaceId: dir, spacePath: dir, kind: 'claude', sessionId: SESSION })
   return {
     state: () => service.list(new Set(['tab']))[0],
     setNow: (at: number) => (now = at),

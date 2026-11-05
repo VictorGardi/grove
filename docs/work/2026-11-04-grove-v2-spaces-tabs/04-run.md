@@ -860,4 +860,169 @@ Where it differs from the plan, and why:
 - From the review, left as they are: a modifier-less binding is not allowed, but `shift+<key>` is (the user's choice; it would intercept a typed `!` in a terminal, so a rebind to `mod` or `alt` is safer); launcher env values may contain a newline, which would type an extra Enter (the file is user-owned); the README's "Install on a fresh Mac" lists Node without a version, because `next/package.json` has no `engines` field, so the required Node version is not checked.
 - A launcher line typed before the shell prompt relies on the pty buffering input; confirm by hand with a launcher that runs a command at start.
 
+## Slice 9
+
+Session: 9 look and feel
+Status: done
+Commit: this commit (see git log)
+
+### Slice plan
+
+Found in the code: the window (`next/packages/ui/index.html`, `styles.css`, `main.ts`) is plain: a sidebar with a spaces list and an agents list grouped by state (`AGENT_GROUPS`), a tab strip whose tabs show only their number, and a bare `.term-host` per tab with no header. `styles.css` has a light and a dark theme and literal colours; slice 8 put the tokens in `src/tokens.css` with the old values. The old app's `src/renderer/src/components/ui/Icon.tsx` has Lucide-shaped icon paths (ISC) and `StatusDot.tsx`/`Spinner.tsx` have the old state tones and spin rule. The reference (`docs/work/2026-11-04-grove-v2-spaces-tabs/reference/herdr-look.html`) fixes the sizes and the palette: 250 px sidebar, 50 px header rows, 14.5 px names, 12.5 px meta, pane headers of 40 px. `SpaceInfo` has no branch: slice 2's git data is `repoName` and `mainPath` only (`core/git.ts`), so the branch has to be read in core. `tabs.close` exists (`{ id }`). No seen mark is drawn in the window today (slice 4 is core only), so there is nothing to restyle for it. No browser test runner is installed (vitest runs in node, no jsdom), so the render checks are pure functions plus the CSS text. A Playwright Chromium is in `~/Library/Caches/ms-playwright`; a headless screenshot of `?demo=states` is tried, not required.
+
+Decisions taken for this slice (the plan leaves them open; recorded so the review can see them):
+- One dark theme, as the reference says. The light palette in `styles.css` goes. The theme file still overrides any token.
+- Fonts: Geist (interface) and Geist Mono (terminal) from `@fontsource-variable/geist` and `@fontsource-variable/geist-mono` 5.3.0 (OFL-1.1), Latin woff2 copied into `next/packages/ui/assets/fonts/` with the licence. The old app's JetBrains Mono does not match the reference, so it is not reused for the look.
+- Sidebar default width becomes 240 px (the reference is 250 px; 200 px made the branch text truncate). The `sidebarWidth` range stays 180 to 480.
+- Branch: `spaceGitInfo` also returns the branch (`git rev-parse --abbrev-ref HEAD`, null when detached or when git fails); `SpaceInfo.branch` carries it. This replaces the plan's "slice 2's git data", which has no branch.
+- Tile colours: eight tokens `--tile-1` to `--tile-8`; a space's tile is `tile-N` where N comes from a hash of its name (`tileIndex` in `ui/sidebar-model.ts`).
+- Agent marks are letters on tokens `--agent-claude`, `--agent-opencode`, `--agent-copilot`; a shell tab's mark is `$` on `--agent-shell`, as in the reference.
+- Icons: path data ported from the old `Icon.tsx` into `ui/icons.ts` (search, sidebar, plus, grid, x, terminal, worktree), with the Lucide licence note.
+- The sidebar toggle collapses the sidebar column (`.app.sidebar-hidden`); the search icon is drawn and does nothing, as the slice says.
+- Title bar: Tauri's macOS overlay (`titleBarStyle: "Overlay"`, `hiddenTitle: true`), the header row is a drag region and leaves room for the real window controls (`--traffic-light-inset`). The reference's drawn lights are not copied, since Tauri draws its own. On other platforms the header just has no inset.
+- Tokens beyond slice 8's twenty names: the surface and text colours, the tile and agent marks, `--text-terminal` and the indicator sizes are new names in `tokens.css`. The theme file accepts only slice 8's twenty names, so the new ones are not overridable in v1 (recorded in Deviations).
+- The tab's × closes the tab through `tabs.close` at once, with no confirmation (it ends the tab's process; the CLI does the same). Recorded for the human to judge.
+- Agents are grouped under their space in the sidebar's space order; inside a group, rows are ordered by urgency (needs you, working, finished, unknown, idle) and then by the longest wait. A group with no agents is left out.
+- A tab's state for the roll-up: a gone tab is idle; a shell tab is idle; an agent tab with no status yet is unknown (a guess is not hidden behind idle); otherwise the agent's state. A space's state is the most urgent state among its own tabs (`rollupSpaces` in `protocol/rollup.ts`); a space with no tabs is idle; a worktree counts only towards itself.
+- Dimming: an unfocused grid pane dims its terminal only (`.term-host.pane-dim`); its header and indicator stay full strength, so an unknown ring stays visible.
+- The spinner is a CSS transform that pauses (`animation-play-state`) while the window is not focused or the page is hidden (`html.unfocused`), and is static under reduced motion.
+- `?demo=states` is a development-only page: `ui/demo/states.ts` is loaded by a dynamic import inside `import.meta.env.DEV`, so a production build does not contain it. It fabricates three spaces (one a worktree), tabs in all five states plus a gone tab, and agents, and renders them through the same functions and never calls Tauri or the core.
+- Fonts load (`document.fonts.load`) before the first terminal opens, so xterm measures the bundled Geist Mono.
+- The terminal theme is built from the tokens when a terminal opens (background `--color-ground`, text `--color-term-fg`, cursor `--color-ink`, selection `--color-selected`, font `--font-mono`, size `--text-terminal`). An already open terminal keeps the theme it opened with; a theme change applies to tabs opened after it.
+
+Markup contract (`index.html` and `styles.css` are written to it; `main.ts` renders to it; the names are the contract):
+- Sidebar `aside#sidebar.sidebar`: first, `header.side-head[data-tauri-drag-region]` with `span.brand-tile` ("G"), `span.brand-name` ("Grove"), `button#search-button.icon-button` (no handler), `button#sidebar-toggle.icon-button`; then `section#section-spaces` (`div.section-head` with `h2.section-label` "Spaces" and `button#add-space-toggle.icon-button` "+"), `ul#spaces.spaces`, `form#add-space.add-space` (`input#space-path`, `button` "Add"); then `section#section-agents.agents-section` (`div.section-head` with `h2.section-label` "Agents"), `p#agents-empty.empty`, `ul#agents.agents`; then `footer.sidebar-foot` (`button#install-cli.install-cli`, `a#stress-link`, hidden unless dev).
+- Space row: `li > button.space` (`.space.worktree` when it has a parent, `.space[aria-current='true']` when selected), containing `span.space-tile.tile-N` (the letter, or the worktree icon for a worktree), `span.space-name`, `span.space-branch` (dim, right side), `span.indicator.ind-<state>`. A repo's worktrees are `ul.spaces.nested` under it, always shown.
+- Agent group: `li.agent-group` with `h3.agent-group-name` (the space's name) and `ul.agent-rows` of `li.agent-row` (`.gone` for a gone tab) holding `button.agent` (`span.agent-mark.mark-claude|mark-opencode|mark-copilot` letter, `span.agent-label` "Tab N", `span.agent-age`, `span.indicator`) and `button.agent-resume` when the tab can resume.
+- Tab strip `div.tabstrip`: `div#tabs.tabs[role=tablist]` with `div.tab[role=tab][aria-selected]` (`.active`, `.exited`) holding `button.tab-main` (`span.agent-mark` or `span.agent-mark.mark-shell`, `span.tab-label` "Tab N", `span.indicator`) and `button.tab-close` (×, `title="Close tab"`, shown on the active tab and on hover); then at the right `div.tab-actions` with `#launchers`, `#grid-toggle`, `#new-claude`, `#new-opencode`, `#new-copilot`, and `#new-tab` ("+", last).
+- Main `main.main`: `div#terminals.terminals` holds `section.pane` per tab (`.focused` for the active one, `.pane-dim` on its `.term-host` when a grid member is unfocused), each with `header.pane-head` (`span.agent-mark` or shell mark, `span.pane-kind`, `span.pane-folder` shortened with `~`, `span.indicator`) and `div.term-host`. `div#empty-state.empty-state` (`h2`, `p`) is shown when there is no space, or the space has no tabs. `div#status.status`.
+- Indicators: `span.indicator.ind-needs-you|ind-working|ind-finished|ind-unknown|ind-idle`, with `title` and `aria-label` from `indicatorLabel`.
+- Roots: `html.mac` (macOS, from `navigator.platform`), `html.unfocused` (window not focused or page hidden), `.app.sidebar-hidden`.
+- Kept element ids: `grid-toggle`, `new-tab`, `new-claude`, `new-opencode`, `new-copilot`, `launchers`, `install-cli`, `stress-link`, `status`, `add-space`, `space-path`, `section-spaces`, `section-agents`, `agents`, `agents-empty`, `spaces`, `tabs`, `terminals`, and the `.sidebar-foot` footer that `applyLayout` inserts before.
+
+Implementer A (core and protocol; runs in parallel with B):
+- [ ] `next/packages/protocol/messages.ts`: `SpaceInfo` gets `branch: string | null`.
+- [ ] `next/packages/core/git.ts`: `spaceGitInfo` also returns `branch` (`git -C <dir> rev-parse --abbrev-ref HEAD`; null for `HEAD` or on error; never throws). `next/packages/core/spaces.ts` `describe` passes `branch`. Update `git.test.ts` and any `spaces.test.ts` expectation that compares a whole `SpaceInfo`.
+- [ ] `next/packages/protocol/rollup.ts`: `URGENCY` (needs-you, working, finished, unknown, idle), `mostUrgent(states): AgentStateName` (empty gives idle), `rollupSpaces(paths: string[], tabs: Array<{ spacePath: string; state: AgentStateName }>): Map<string, AgentStateName>` (each path gets the most urgent among its own tabs; no tabs gives idle). `rollup.test.ts`: each state wins over the ones below it, empty is idle, a worktree's tabs do not count towards its repo, a path with no tabs is idle.
+- [ ] `next/packages/core/config/schema.ts`: `sidebarWidth` default 240 (range 180 to 480 unchanged); fix `schema.test.ts` and `next/README.md` where they name 200 for the default.
+
+Implementer B (look, static files; parallel with A):
+- [ ] `next/packages/ui/assets/fonts/`: copy the Latin variable woff2 of Geist and Geist Mono from `@fontsource-variable/geist` and `@fontsource-variable/geist-mono` 5.3.0 (run `npm pack` into a scratchpad folder, extract there, copy only the files) as `Geist-Variable.woff2` and `GeistMono-Variable.woff2`, plus the OFL licence as `OFL.txt`. Do not add a package dependency.
+- [ ] `next/packages/ui/src/fonts.css`: `@font-face` for `Geist` and `Geist Mono` (weight 100 to 900, `font-display: block`, `url('../assets/fonts/...')`).
+- [ ] `next/packages/ui/src/tokens.css`: final values for slice 8's twenty names; new names: `--color-page`, `--color-ground`, `--color-sidebar`, `--color-raised`, `--color-selected`, `--color-line`, `--color-well`, `--color-ink`, `--color-mute`, `--color-faint`, `--color-term-fg`, `--color-pane-line`, `--color-pane-focus`, `--tile-1` to `--tile-8`, `--agent-claude`, `--agent-opencode`, `--agent-copilot`, `--agent-shell`, `--text-terminal`, `--ind-size`, `--ind-stroke`, `--halo-size`, `--spin-period`, `--header-h`, `--traffic-light-inset`, `--radius-lg`. Values from the reference (`herdr-look.html`): ground `#161617`, sidebar `#111112`, page `#0b0b0c`, raised `#1c1c1e`, selected `#262628`, line `#2a2a2d`, ink `#e8e8ea`, mute `#8e8e93`, faint `#5f5f64`, state colours `#f0b44c`, `#6ea0ff`, `#4fcf86`, `#6c6c72`, `#4a4a50`; agent marks `#c7683f`, `#3d6fe0`, `#6e56cf`, shell `#3a3a3e`; accent `#8ab4ff`. Sizes: `--text-sm` 12px, `--text-md` 13.5px, `--text-lg` 14.5px, `--text-terminal` 12.5px, `--space-1..6` 4, 6, 8, 10, 12, 16px, `--radius-sm` 6px, `--radius-md` 9px, `--radius-lg` 12px, `--header-h` 50px, `--traffic-light-inset` 78px, `--ind-size` 10px, `--ind-stroke` 1.5px, `--halo-size` 3px, `--spin-period` 1s. `--font-ui: 'Geist', system-ui, -apple-system, sans-serif`, `--font-mono: 'Geist Mono', ui-monospace, Menlo, monospace`. `color-scheme: dark`; no light palette.
+- [ ] `next/packages/ui/styles.css`: rewritten to the markup contract above and to the reference's layout (sidebar, rows, tab pill, pane headers, indicators). Every colour is a token; every size is a token, except `0`, `1px`, `100%`, `auto`, `inherit`, `currentColor`, `transparent`. Indicators: needs you a solid amber dot with a halo (`box-shadow`), working a spinning ring (`animation: spin var(--spin-period) linear infinite`, paused under `html.unfocused`, static under `prefers-reduced-motion`), finished a solid green dot, idle a hollow ring, unknown a dashed ring. Selected space and agent: a lighter rounded background and no left marker. `.app.sidebar-hidden` makes the sidebar column zero. Keep the classes the stress page uses (`.grid`, `.term-host`, `.stress-*`, `.results`) working.
+- [ ] `next/packages/ui/index.html`: the markup contract; loads `./src/fonts.css`, `./src/tokens.css`, `./styles.css` in that order. `stress.html` loads the fonts file too.
+- [ ] `next/packages/ui/icons.ts`: `iconSvg(name)` returns SVG markup (viewBox 24, stroke currentColor) for `search`, `sidebar`, `plus`, `grid`, `x`, `terminal`, `worktree`, from the old `src/renderer/src/components/ui/Icon.tsx` shapes (Lucide, ISC; the comment names the source).
+- [ ] `next/packages/ui/indicator.ts` (no DOM at import): `INDICATOR_STATES`, `indicatorLabel(state)` ("needs you", "working", "finished", "unknown", "idle") and `indicatorClass(state)` (`indicator ind-<state>`, with `needs-you` as `ind-needs-you`). `indicator.test.ts`: every state has a label and a class; `styles.css` has a rule `.ind-<state>` for every state that uses `var(--state-<state>)`.
+- [ ] `next/packages/ui/literals.test.ts`: scans `next/packages/ui/**/*.{css,ts,tsx}` excluding `src-tauri/`, `dist/`, `node_modules/`, `demo/`, `stress*`, `src/tokens.css`, `*.test.ts`; fails on any hex colour, `rgb(`/`rgba(`/`hsl(`/`hsla(`/`oklch(`, or a number with `px`, `rem`, `em`, `pt`, `vh`, `vw`, `s` or `ms` unit, other than `0`, `1px`, `100%`, `0s`, `0ms`. Tokens-file-only literals are fine. Run it first on the current tree to see it fail for the right reasons, then make it pass.
+- [ ] `next/packages/ui/src-tauri/tauri.conf.json`: window `titleBarStyle: "Overlay"`, `hiddenTitle: true`. `src-tauri/capabilities/default.json`: add `core:window:allow-start-dragging` for the header drag region.
+- [ ] `next/packages/ui/design-notes.md`: the type scale, the spacing steps, the radius steps, and the indicator table (state, shape, colour token, motion).
+
+Implementer C (window behaviour; after A and B are both done):
+- [ ] `next/packages/ui/sidebar-model.ts` (pure, tested): `tabStateOf(tab: { exited: boolean; kind: 'shell' | AgentKind; state: AgentStateName | null })` (exited or shell gives idle; an agent tab with no state gives unknown; else the state), `groupAgents(spaces: string[], rows: Array<{ spacePath; tabNumber; agent: AgentInfo; exited }>)` (space order, empty groups left out, rows by urgency then `since` ascending), `tileIndex(name): number` (1 to 8, stable hash), `shortFolder(path, home)` (`~` prefix). `sidebar-model.test.ts` covers each.
+- [ ] `next/packages/ui/demo/states.ts`: `isDemoStates(location, dev)` and `demoRows()` returning spaces (three, one a worktree), tabs in all five states plus a gone tab, and agents; `demo/states.test.ts` checks it covers all five states, a worktree, and a gone tab.
+- [ ] `next/packages/ui/main.ts`: sidebar, tab strip, panes and empty state per the contract; `rollupSpaces` for space indicators (through `tabStateOf` per tab); branch text from `SpaceInfo.branch`; agents grouped with `groupAgents`; the × calls `tabs.close` and removes the tab; sidebar toggle; `+` next to the search icon focuses `#space-path`; `html.mac` and `html.unfocused` (set on start and on focus change and `visibilitychange`); `await document.fonts.load` before the first terminal; the demo branch (`if (import.meta.env.DEV && isDemoStates(...)) { const demo = await import('./demo/states.ts'); ... }`) that renders the fabricated rows without bridge or invoke calls and skips `attention.focus`.
+- [ ] `next/packages/ui/terminal.ts`: theme and font from the tokens, read with `getComputedStyle(document.documentElement)`; `fontSize` from `--text-terminal` (parsed as a number).
+- [ ] Keep `stress.ts` working with the new styles; change it only if a class or id it uses is gone.
+
+Added by the human during the slice (after implementers A and B started; the human said "it is a start, we need to fix a few things"):
+- Cmd+Shift+N creates a new space at the home folder (`~`) and opens one terminal tab there at once; if that space already exists it is selected and gets the one new tab. Key action `new-space`, default `mod+shift+n`, in keys.json like the others.
+- Cmd+T opens a new terminal (shell) tab in the current space. This is slice 8's `new-shell` (default `mod+t`) already; it stays, and the requirement is checked, not re-built.
+- Cmd+W closes the current tab (`tabs.close` on the active tab, the same path as the × button). Key action `close-tab`, default `mod+w`.
+- Double-click on a tab opens a rename modal (a text box, Save and Cancel; Enter saves, Esc cancels). A new core method `tabs.rename` (`{ id, label }`, an empty label clears the name) stores the label in the tab record (`label` already exists in `TabRecord`), and the window re-renders the tab and pane title from it. The tab label shows the saved name, else "Tab N".
+- Item 5 of the human's list was empty; not built, asked at the final message.
+
+Reviewer: a fresh `reviewer` subagent gets the diff of this slice, the decisions above, the contract, and `01-outcome.md`. It must read `reference/herdr-look.html` and check the markup against the contract.
+
+Models passed: planner=inherit, reviewer=inherit, implementer=inherit (general-purpose subagents, no `model`).
+
+Verification: `cd next && npm test` passes (all files, including the new tests and the literal scan); `npm run typecheck` clean; `npx vite build --outDir <scratchpad>` in `next/packages/ui` builds both pages; a production build's output does not contain the string `demo=states` (the grep is recorded); headless screenshots of `?demo=states` against the reference are tried with a Playwright Chromium if one runs here (paths recorded, not committed); `git diff --name-only af0c1f7 -- ':!next' ':!docs'` is empty; `git status` shows no `next/packages/ui/reference/`.
+
+### Review rounds
+
+Round 1 (fresh reviewer; 2 blocking, 13 non-blocking). Blocking: Cmd+W reached the default menu's "close window" item, which the system handles before the page sees the key (fixed: `src-tauri/src/lib.rs` builds a menu without that item and keeps Quit, Edit and Window minimise; `cargo check --offline` passes, not run in the app); the demo page reached a production build when the shell had `NODE_ENV=development` (fixed: `vite.config.ts` sets `import.meta.env.DEV` from the command; the build grep is clean with and without `NODE_ENV`). Non-blocking applied: a gone agent row sorts as idle, not by its stored state (test added); the rename input has `maxlength="80"`; the worktree rows get an indent rule (`.space.worktree`), so the class is styled. Non-blocking left, recorded in Deviations: a tab's number renumbers when a tab before it closes; × and Cmd+W close a running agent at once with no confirmation; only the sidebar header is a drag region; the sidebar footer (install command, stress link) and the folder form stay; `core/spaces.ts` `rename` saves through `saveAgentTab`, the existing writer, so its name is misleading (behaviour is right).
+
+Verdict: pass after the blocking fixes. The fixes were checked by the test run, the build grep and the Rust check, not by a second fresh review.
+
+### Deviations
+
+What was reused from the old app, as the human asked: the icon paths (`src/renderer/src/components/ui/Icon.tsx`, Lucide shapes, ISC) in `ui/icons.ts`; the spin rule of `Spinner.module.css` (paused and static as the plan says); the state-indicator idea of `StatusDot.tsx` (a dot per state), with the reference's colours; `agentSkillsDirs` and the JSON write from slice 8. Not reused: the old JetBrains Mono (the reference is Geist and Geist Mono, so the bundled Geist replaces it); the old light and dark palette.
+
+Where it differs from the plan, and why:
+- The human's requests after the plan was written, which override it where they conflict: the `+Claude`, `+OpenCode` and `+Copilot` buttons are removed, with their key actions `new-claude`, `new-opencode` and `new-copilot` (the config now refuses those names, so an existing `keys.json` that names them fails validation until the line is removed). New key actions: `new-space` (`mod+shift+n`, a new space at `~` with one terminal tab; an existing one gets one new tab) and `close-tab` (`mod+w`, the same path as the ×). `tabs.rename` is a new core method (trimmed; an empty name clears it; over 80 characters is refused). Cmd+T stays `new-shell` (`mod+t`).
+- The branch is read in core (`spaceGitInfo` now returns it, `SpaceInfo.branch`). The plan assumed slice 2 already read it; it did not.
+- Sidebar default width 240 px, not 200 (the reference is 250 px; 200 px truncated the branch text). The range is unchanged.
+- Tokens beyond slice 8's twenty names: the surface and text colours, the tile colours `--tile-1` to `--tile-8`, the agent marks, `--text-terminal`, the indicator sizes, `--size-modal` and the others in `tokens.css`. The theme file accepts only slice 8's twenty names, so these are not overridable in v1.
+- Tile colours: the first four from the reference, the last four chosen here.
+- Title bar: Tauri's macOS overlay (`titleBarStyle: "Overlay"`, `hiddenTitle: true`) with `--traffic-light-inset` for the real window controls; the reference's drawn lights are not copied.
+- The tab's × and Cmd+W close at once, with no confirmation. A running agent ends with it, the same as `tabs.close` from the CLI. Recorded for the human to judge.
+- Tab numbers are the position in the space, so closing a tab renumbers the ones after it (the strip, the pane header and the rename placeholder). The plan's wording says "Tab N" by position; say if names should stay with the tab.
+- The rename modal is prefilled with the saved name only (empty when none), so the placeholder "Tab N" is not saved by accident. Key actions are ignored while it is open.
+- The pane header shows the tab's name (saved, else "Tab N"), not the agent's name as the reference shows it.
+- The sidebar lists only agents that `agents.list` returns. An agent tab with no status yet shows as unknown in the tab strip and the space's indicator, with no sidebar row.
+- Cmd+Shift+N adds the new space to the local list and selects it, instead of a full resync (a resync re-attaches every terminal and resets its screen).
+- The tab-strip agent buttons are gone, so the contract's `#new-claude`, `#new-opencode` and `#new-copilot` no longer exist (the contract line above is superseded).
+- `bridge.ts`: the Tauri `Channel` is created on first use, not in `createBridge()`. Creating it at load threw in a plain browser, so the demo page rendered nothing; the Tauri behaviour is unchanged.
+- The demo is loaded by `main.ts` with a dynamic import inside `import.meta.env.DEV`, then `isDemoStates` decides; the production build has no demo code (checked).
+- `vite.config.ts` sets `import.meta.env.DEV` from the command, not from `NODE_ENV` (review fix).
+- `src-tauri/src/lib.rs`: a menu without the close-window item, so Cmd+W reaches the page (review fix).
+- The sidebar toggle collapses the sidebar column; the search icon is drawn and does nothing, as the slice says.
+- Fonts load before the first terminal opens. A terminal keeps the theme it opened with; a theme change applies to tabs opened after it.
+- `watch.test.ts` (slice 8's test, not this slice's code): the test now waits 200 ms for the watcher to be armed before its write. It failed once under load in a full run (a write in the same tick as `fs.watch` can be missed on macOS). Its timing limits are unchanged.
+- The stress page is unchanged apart from loading the fonts; it still needs Tauri to start a run.
+
+### Verification
+
+- `cd next && npm test`: 48 files, 443 tests, all pass (the last run, after the review fixes).
+- `npm run typecheck` (`tsc --noEmit` in `next/`): clean.
+- Production build: `npx vite build` in `next/packages/ui` with `NODE_ENV=development` in the shell, and with `--mode production`: the output contains neither `demo=states` nor `isDemoStates` nor `demoRows`.
+- `cargo check --offline` in `next/packages/ui/src-tauri`: passes (the menu change).
+- Headless screenshot of `/?demo=states` against the dev server (a `chrome-headless-shell`): the output is at `/private/tmp/claude-501/-Users-victor--grove-worktrees-grove-feature-2026-11-04-grove-v2-spaces-tabs-inherit/733b0762-d290-48d2-a22f-e408ccb9c91f/scratchpad/states-c.png`. It shows spaces with indicators, agent groups, a gone row with Resume, and a pane header. Not placed beside the reference here.
+- Not verified in a browser or the Tauri app: the rename modal, Cmd+Shift+N, Cmd+W, Cmd+T and the double-click.
+- `next/packages/ui/reference/` does not exist; the reference stays in `docs/work/…/reference/`, which is tracked with the plan.
+
+### Left for the human
+
+- Run the app and try: Cmd+Shift+N (a new space at `~` with one terminal tab), Cmd+T, Cmd+W (closes the tab, not the window), a double-click on a tab (save, empty name clears, Esc cancels), and the × button.
+- Judge the look beside `reference/herdr-screenshot.webp`: the sidebar width (240 px against the reference's 250), the footer and folder form, the truncated worktree name on the 240 px sidebar, the empty state and the rename modal, which were judged from the CSS and not seen rendered.
+- Decide: whether × and Cmd+W should ask before ending a running agent; whether tab numbers should stay with their tab when another closes.
+- Item 5 of the request was empty, so nothing was built for it.
+- Cmd+Shift+N against a live core: restart the core first (see the rename note below), then press it: it must add a new space at your home folder with one terminal tab.
+- Rename saves failing with `unknown method tabs.rename` mean the running core predates the rename code. Quit Grove, stop only the core process (`pkill -f packages/core/bin.ts`; never `holder/bin.ts`, which keeps the agents alive), then open Grove again. The modal now shows that message instead of hiding it.
+- An existing `keys.json` that names `new-claude`, `new-opencode` or `new-copilot` now fails validation until those lines are removed.
+
+### Fix after review
+
+Comment from the human, after trying the app: the tab rename had three faults. (1) A double-click worked only on the padding of the pill, not on the name. (2) Enter in the rename box did not save. (3) Save did nothing: the name was not saved and the modal stayed open.
+
+Causes, found in the app and the browser, not guessed:
+- (1) `paintTab` rebuilt the children of the tab's button on every paint, and every click paints (it activates the tab). The second click of a double-click landed on a detached node, so the `dblclick` never reached the pill. Only the padding, which is never rebuilt, still worked. Fix: the pill's DOM is made once and updated in place (`ui/tab-pill.ts`); a double-click on the name, the padding or the gap opens the rename; the close button does not.
+- (2) and (3) are one fault: `tabs.rename` failed, and the failure went to the status line behind the modal backdrop, so nothing looked saved. The running core (started at 01:54 today, before the rename code) answers `unknown method tabs.rename` (checked by sending the request to its socket). The modal is now `ui/rename-modal.ts`: Enter (in the name box), Save, Esc, Cancel and the backdrop all go through one save; a failure keeps the modal open and shows the reason inside it.
+
+Tests added: `ui/tab-pill.test.ts` (a double-click on the name, the pill and not the close button; a double-click after a re-paint still opens the rename; the close button closes only; the name element is kept), `ui/rename-modal.test.ts` (open with the saved name or empty; Enter saves trimmed and closes; Save saves and closes; an empty name clears; Esc and Cancel and the backdrop cancel without saving; a failed save keeps the modal open with the reason; the next open clears it), and `core/spaces.test.ts` ("keeps a tab name after a restart of the core": the name survives a new `SpacesService` on the same state file). The two DOM tests run under happy-dom, pinned as a dev dependency (`happy-dom@21.0.4`, published 16 days before this fix); the repo had no DOM test library. Browser check (headless Chromium, the demo page): double-click on the name, the pill edges and the gap open the modal; Enter, Save, Esc, an empty name and a stale core behave as the tests say.
+
+Verification re-run: `cd next && npm test`: 50 files, 458 tests pass. `npm run typecheck`: clean. Production build grep for `demo=states` with `NODE_ENV=development`: none.
+
+### Fix after review (second comment)
+
+Comment from the human: remove the folder text box and "Add" under Spaces; two spaces may point at the same folder; Cmd+Shift+N must create a new space each time (it had selected the existing home space instead, since spaces were keyed by folder path).
+
+Change: a space has an opaque `id`. A space added now gets `sp_` plus 12 random hex characters, and nothing derives it from the folder. Spaces saved before this change keep their path as their id, so existing state needs no migration of ids. The space's path stays a separate, changeable field (the debug child's root rule may change it). Tabs carry a `spaceId` (optional in saved state; a tab without one is attached to the first space at its path on load). `spaces.add` always adds a new space; `tabs.open` takes `spaceId`; the CLI maps a folder to its first space. The window keys spaces, tabs, agent groups, worktree nesting and the roll-up by id, removes the add form, and Cmd+Shift+N adds a new space at the home folder and opens one terminal tab there.
+
+Decisions: the `${path}#n` form applies only to duplicates in an old state file without ids (the first duplicate of a folder keeps its path as id); new spaces never use it. The CLI's `ls` headings use the path with an occurrence index, not the id. The empty state now points at Cmd+Shift+N instead of the removed form. Rolling up by id means two spaces at one folder roll up separately.
+
+Verification: a clean checkout of this commit: `npm run typecheck` clean, `npx vitest run` 50 files and 471 tests pass. The working tree also had the debug child's uncommitted work (53 files, 494 tests), which is not in this commit. Production build: no `demo=states` in the output. Browser check of the demo page (headless Chromium): no add form in the DOM; four spaces listed, one of them a second space at the folder of the first.
+
+Not checked in the app: Cmd+Shift+N against a live core (the running core must be restarted to pick up the change).
+
+### Final summary
+
+Slice 9 makes the window look like the Herdr reference and adds the four shortcuts and rename the human asked for. The spaces list shows a coloured letter tile, the branch in dim text and a state indicator per space, with a worktree nested under its repo. Agents are grouped under their space and sorted by urgency. The tab strip shows an active pill with a close button and an indicator on each tab; the panes have their own headers. Indicators follow the reference's shapes and colours, and spin only while the window is focused. Everything uses tokens; a scan test keeps the literals out. Geist is bundled. The demo page is development-only.
+
+Behaviour added in this slice, beyond the plan's list: Cmd+Shift+N, Cmd+W, the rename modal and `tabs.rename`; the Claude/OpenCode/Copilot buttons removed. The sidebar default is 240 px.
+
+Suggested PR description: "Slice 9 of the Grove v2 rebuild: the look (spaces with state, grouped agents, tab pills, pane headers, bundled Geist), plus Cmd+Shift+N, Cmd+W, double-click rename, and removal of the per-agent buttons. Verified by tests, the production build check and a headless screenshot; not yet verified in the app." 
+
+🤖 Generated with [Claude Code](https://claude.com/claude-code)
+
 ## Open questions

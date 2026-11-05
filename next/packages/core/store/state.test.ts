@@ -90,16 +90,65 @@ describe('state store', () => {
     const bytes = '{"version":1,"spaces":[{"path":"/a"}],"tabs":[{"id":"abc12345","spacePath":"/a"}]}'
     fs.writeFileSync(file, bytes)
     const result = loadState(file)
-    expect(result).toEqual({ kind: 'ok', state: { version: 1, spaces: [{ path: '/a' }], tabs: [{ id: 'abc12345', spacePath: '/a' }] } })
+    expect(result).toEqual({
+      kind: 'ok',
+      state: {
+        version: 1,
+        spaces: [{ id: '/a', path: '/a' }],
+        tabs: [{ id: 'abc12345', spaceId: '/a', spacePath: '/a' }],
+      },
+    })
     if (result.kind === 'ok') expect(result.state.tabs[0]).not.toHaveProperty('agent')
     expect(fs.readFileSync(file, 'utf8')).toBe(bytes)
+  })
+
+  it('fills in space ids from the path, with #n for a later space at the same path', () => {
+    fs.writeFileSync(
+      file,
+      '{"version":1,"spaces":[{"path":"/a"},{"path":"/b"},{"path":"/a"}],"tabs":[{"id":"t1","spacePath":"/a"},{"id":"t2","spacePath":"/b"}]}',
+    )
+    const result = loadState(file)
+    expect(result).toEqual({
+      kind: 'ok',
+      state: {
+        version: 1,
+        spaces: [
+          { id: '/a', path: '/a' },
+          { id: '/b', path: '/b' },
+          { id: '/a#2', path: '/a' },
+        ],
+        tabs: [
+          { id: 't1', spaceId: '/a', spacePath: '/a' },
+          { id: 't2', spaceId: '/b', spacePath: '/b' },
+        ],
+      },
+    })
+  })
+
+  it('keeps the ids a file already has, and fills in the rest around them', () => {
+    fs.writeFileSync(
+      file,
+      '{"version":1,"spaces":[{"id":"/a#2","path":"/a"},{"path":"/a"}],"tabs":[{"id":"t1","spaceId":"/a#2","spacePath":"/a"}]}',
+    )
+    const result = loadState(file)
+    expect(result.kind === 'ok' && result.state.spaces).toEqual([
+      { id: '/a#2', path: '/a' },
+      { id: '/a', path: '/a' },
+    ])
+    expect(result.kind === 'ok' && result.state.tabs).toEqual([{ id: 't1', spaceId: '/a#2', spacePath: '/a' }])
+  })
+
+  it('sets aside a version-1 file whose space id or tab spaceId is not a string', () => {
+    fs.writeFileSync(file, '{"version":1,"spaces":[{"id":3,"path":"/a"}],"tabs":[]}')
+    expect(loadState(file)).toEqual({ kind: 'ok', state: { version: 1, spaces: [], tabs: [] } })
+    expect(fs.readdirSync(dir).filter((name) => /^state\.json\.corrupt-\d+$/.test(name))).toHaveLength(1)
   })
 
   it('round-trips a Claude tab with its agent and session id', () => {
     const state: StateV1 = {
       version: 1,
-      spaces: [{ path: '/a' }],
-      tabs: [{ id: 'abc12345', spacePath: '/a', agent: 'claude', agentSessionId: '6f1c2b1e-0000-4000-8000-000000000001' }],
+      spaces: [{ id: '/a', path: '/a' }],
+      tabs: [{ id: 'abc12345', spaceId: '/a', spacePath: '/a', agent: 'claude', agentSessionId: '6f1c2b1e-0000-4000-8000-000000000001' }],
     }
     saveState(file, state)
     expect(loadState(file)).toEqual({ kind: 'ok', state })
@@ -117,8 +166,8 @@ describe('state store', () => {
   it('round-trips a tab with its label', () => {
     const state: StateV1 = {
       version: 1,
-      spaces: [{ path: '/a' }],
-      tabs: [{ id: 'abc12345', spacePath: '/a', agent: 'claude', agentSessionId: 'sess-1', label: 'api fix' }],
+      spaces: [{ id: '/a', path: '/a' }],
+      tabs: [{ id: 'abc12345', spaceId: '/a', spacePath: '/a', agent: 'claude', agentSessionId: 'sess-1', label: 'api fix' }],
     }
     saveState(file, state)
     expect(loadState(file)).toEqual({ kind: 'ok', state })
@@ -127,10 +176,14 @@ describe('state store', () => {
   it('round-trips a saved state and leaves no tmp file behind', () => {
     const state: StateV1 = {
       version: 1,
-      spaces: [{ path: '/a' }, { path: '/b' }],
+      spaces: [
+        { id: '/a', path: '/a' },
+        { id: '/b', path: '/b' },
+        { id: '/a#2', path: '/a' },
+      ],
       tabs: [
-        { id: 'abc12345', spacePath: '/b' },
-        { id: 'def67890', spacePath: '/a' },
+        { id: 'abc12345', spaceId: '/b', spacePath: '/b' },
+        { id: 'def67890', spaceId: '/a#2', spacePath: '/a' },
       ],
     }
     saveState(file, state)

@@ -24,7 +24,7 @@ describe('config store', () => {
   it('writes the defaults for missing files and reads them', () => {
     store.load()
     expect(FILES.every((file) => fs.existsSync(path.join(dir, file)))).toBe(true)
-    expect(JSON.parse(fs.readFileSync(path.join(dir, settingsFile), 'utf8'))).toEqual({ version: 1, sidebarWidth: 200 })
+    expect(JSON.parse(fs.readFileSync(path.join(dir, settingsFile), 'utf8'))).toEqual({ version: 1, sidebarWidth: 240 })
     expect(store.snapshot()).toEqual({ path: dir, values: DEFAULT_VALUES, notes: {} })
   })
 

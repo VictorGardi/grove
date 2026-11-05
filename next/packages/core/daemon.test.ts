@@ -150,8 +150,8 @@ describe('core daemon', () => {
     const core = stack.core
     clients.push(core)
     const space = fs.realpathSync(fs.mkdtempSync(path.join(home, 'space-')))
-    await core.request(METHODS.spacesAdd, { path: space })
-    const { id } = await core.request(METHODS.tabsOpen, { spacePath: space, cols: 80, rows: 24, label: 'scratch' })
+    const { id: spaceId } = await core.request(METHODS.spacesAdd, { path: space })
+    const { id } = await core.request(METHODS.tabsOpen, { spaceId, cols: 80, rows: 24, label: 'scratch' })
     expect((await core.request(METHODS.spacesList, {})).tabs).toContainEqual(
       expect.objectContaining({ id, kind: 'terminal', label: 'scratch', alive: true }),
     )
@@ -175,6 +175,22 @@ describe('core daemon', () => {
     const core = stack.core
     clients.push(core)
     await expect(core.request(METHODS.tabsClose, { id: 'nope0001' })).rejects.toThrow('no such tab: nope0001')
+  })
+
+  it('renames a saved tab through tabs.rename, and refuses an unknown tab', async () => {
+    const stack = await startStack()
+    holder = stack.holder
+    const core = stack.core
+    clients.push(core)
+    const space = fs.realpathSync(fs.mkdtempSync(path.join(home, 'rename-')))
+    const { id: spaceId } = await core.request(METHODS.spacesAdd, { path: space })
+    const { id } = await core.request(METHODS.tabsOpen, { spaceId, cols: 80, rows: 24 })
+
+    expect(await core.request(METHODS.tabsRename, { id, label: '  api fix  ' })).toEqual({})
+    expect((await core.request(METHODS.spacesList, {})).tabs).toContainEqual(expect.objectContaining({ id, label: 'api fix' }))
+    expect(await core.request(METHODS.tabsRename, { id, label: '   ' })).toEqual({})
+    expect((await core.request(METHODS.spacesList, {})).tabs).toContainEqual(expect.objectContaining({ id, label: null }))
+    await expect(core.request(METHODS.tabsRename, { id: 'nope0001', label: 'x' })).rejects.toThrow('no such tab: nope0001')
   })
 
   it('sends tabs.focus to every connected client and refuses an unknown tab', async () => {
@@ -270,8 +286,8 @@ describe('core daemon', () => {
     const core = stack.core
     clients.push(core)
     const space = fs.realpathSync(fs.mkdtempSync(path.join(home, 'space-')))
-    await core.request(METHODS.spacesAdd, { path: space })
-    const { id } = await core.request(METHODS.tabsOpen, { spacePath: space, cols: 200, rows: 24 })
+    const { id: spaceId } = await core.request(METHODS.spacesAdd, { path: space })
+    const { id } = await core.request(METHODS.tabsOpen, { spaceId, cols: 200, rows: 24 })
     const expected = `cfg=${path.join(home, 'config')}=end`
     await core.request(METHODS.tabsWrite, { id, dataB64: bytesToB64(Buffer.from('echo "cfg=$GROVE_NEXT_CONFIG=end"\n')) })
     const screen = await waitFor(
@@ -479,7 +495,7 @@ describe('core daemon agents', () => {
     expect(await core.request(METHODS.tabsScreen, { id })).toEqual({ text: expect.stringContaining('screen-line') })
 
     const saved = JSON.parse(fs.readFileSync(stateFile, 'utf8')) as { tabs: unknown[] }
-    expect(saved.tabs).toEqual([{ id, spacePath: space, agent: 'claude', agentSessionId: sessionFor(id) }])
+    expect(saved.tabs).toEqual([{ id, spaceId: space, spacePath: space, agent: 'claude', agentSessionId: sessionFor(id) }])
   })
 
   it('resumes a gone Claude tab under the same id with its saved session', async () => {
@@ -678,7 +694,13 @@ describe('core daemon agents', () => {
       }),
     ).rejects.toThrow()
     const saved = JSON.parse(fs.readFileSync(stateFile, 'utf8')) as { tabs: unknown[] }
-    expect(saved.tabs).toContainEqual({ id: 'beef0001', spacePath: space, agent: 'claude', agentSessionId: sessionFor('beef0001') })
+    expect(saved.tabs).toContainEqual({
+      id: 'beef0001',
+      spaceId: space,
+      spacePath: space,
+      agent: 'claude',
+      agentSessionId: sessionFor('beef0001'),
+    })
   })
 
   it('refuses a resume id that is not a session id', async () => {

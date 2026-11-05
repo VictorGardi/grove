@@ -60,7 +60,7 @@ describe('StatusService', () => {
       await beat(service)
     }
   }
-  const track = (service: StatusService, tabId = 't1') => service.track({ tabId, spacePath: home, kind: 'claude', sessionId: 's1' })
+  const track = (service: StatusService, tabId = 't1') => service.track({ tabId, spaceId: home, spacePath: home, kind: 'claude', sessionId: 's1' })
   const stateOf = (service: StatusService, tabId = 't1') => service.list(live).find((agent) => agent.tabId === tabId)
 
   beforeEach(() => {
@@ -407,7 +407,7 @@ describe('StatusService', () => {
       alive: async () => new Set(),
       clock: () => now,
     })
-    restored.restore([{ id: 't9', spacePath: home, agent: 'claude', agentSessionId: resumeId }], new Set())
+    restored.restore([{ id: 't9', spaceId: home, spacePath: home, agent: 'claude', agentSessionId: resumeId }], new Set())
     expect(restored.list(new Set())).toEqual([
       { tabId: 't9', agent: 'claude', state: 'unknown', since: now, source: 'claude', resumable: true },
     ])

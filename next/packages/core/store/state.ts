@@ -1,19 +1,27 @@
 import fs from 'node:fs'
 import type { AgentKind } from '../status/adapter.ts'
 
+// `id` is optional: a file written before spaces had ids has none, and loadState fills them in.
 export interface SpaceRecord {
+  id?: string
   path: string
 }
 
-// Tab order within a space is the array order. `agent`, `agentSessionId` and `label` are optional and were added
-// without a version bump: a version-1 file written before them loads unchanged, with none set.
+// Tab order within a space is the array order. `spaceId`, `agent`, `agentSessionId` and `label` are optional and were
+// added without a version bump: a version-1 file written before them loads unchanged, with them filled in or unset.
 export interface TabRecord {
   id: string
+  spaceId?: string
   spacePath: string
   agent?: AgentKind
   agentSessionId?: string
   label?: string
 }
+
+// loadState fills every id in, so these fallbacks only satisfy the optional fields' types. They are the same
+// values loadState would fill in.
+export const recordSpaceId = (space: SpaceRecord): string => space.id ?? space.path
+export const tabSpaceId = (tab: TabRecord): string => tab.spaceId ?? tab.spacePath
 
 export interface StateV1 {
   version: 1
@@ -32,11 +40,36 @@ function isPlainObject(value: unknown): value is Record<string, unknown> {
 }
 
 function isSpaceRecord(value: unknown): boolean {
-  return isPlainObject(value) && typeof value.path === 'string'
+  return isPlainObject(value) && typeof value.path === 'string' && (value.id === undefined || typeof value.id === 'string')
 }
 
 function isTabRecord(value: unknown): boolean {
-  return isPlainObject(value) && typeof value.id === 'string' && typeof value.spacePath === 'string'
+  return (
+    isPlainObject(value) &&
+    typeof value.id === 'string' &&
+    typeof value.spacePath === 'string' &&
+    (value.spaceId === undefined || typeof value.spaceId === 'string')
+  )
+}
+
+// Gives each space without an id one: the first space of a path gets the path, a later one `${path}#n` for the
+// smallest n >= 2 not already used. A tab without a spaceId gets the id of the first space with its spacePath.
+// A tab whose path matches no space keeps its path as its spaceId, which no space has, so it shows under no space.
+function fillIds(state: StateV1): StateV1 {
+  const ids = new Set(state.spaces.flatMap((space) => (space.id === undefined ? [] : [space.id])))
+  const spaces = state.spaces.map((space) => {
+    if (space.id !== undefined) return space
+    let id = space.path
+    for (let n = 2; ids.has(id); n++) id = `${space.path}#${n}`
+    ids.add(id)
+    return { ...space, id }
+  })
+  const tabs = state.tabs.map((tab) => {
+    if (tab.spaceId !== undefined) return tab
+    const first = spaces.find((space) => space.path === tab.spacePath)
+    return { ...tab, spaceId: first?.id ?? tab.spacePath }
+  })
+  return { ...state, spaces, tabs }
 }
 
 // A missing file is an empty state. A file that is not valid JSON, or not a JSON object, is set aside
@@ -82,7 +115,7 @@ export function loadState(file: string): LoadResult {
     fs.renameSync(file, `${file}.corrupt-${Date.now()}`)
     return { kind: 'ok', state: emptyState() }
   }
-  return { kind: 'ok', state: parsed as unknown as StateV1 }
+  return { kind: 'ok', state: fillIds(parsed as unknown as StateV1) }
 }
 
 // Writes a temp file next to the state file, fsyncs it, and renames it over, so a reader never sees a partial file.

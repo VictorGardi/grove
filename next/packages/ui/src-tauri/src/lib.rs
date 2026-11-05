@@ -13,6 +13,7 @@ use std::sync::{Arc, Mutex};
 use std::thread;
 use std::time::{Duration, Instant};
 use tauri::ipc::Channel;
+use tauri::menu::{Menu, PredefinedMenuItem, Submenu};
 use tauri::{AppHandle, Manager, State};
 use tauri_plugin_notification::NotificationExt;
 
@@ -268,10 +269,50 @@ fn notify(app: AppHandle, title: String, body: String, sound: Option<String>) {
     }
 }
 
+// The default menu binds Cmd+W to "close window", which the system handles before the page sees the key. Grove's
+// window closes its tabs on Cmd+W instead, so the menu leaves that item out and keeps the rest of the default one.
+fn build_menu(app: &AppHandle) -> tauri::Result<Menu<tauri::Wry>> {
+    let app_menu = Submenu::with_items(
+        app,
+        "Grove",
+        true,
+        &[
+            &PredefinedMenuItem::about(app, None, None)?,
+            &PredefinedMenuItem::separator(app)?,
+            &PredefinedMenuItem::hide(app, None)?,
+            &PredefinedMenuItem::hide_others(app, None)?,
+            &PredefinedMenuItem::show_all(app, None)?,
+            &PredefinedMenuItem::separator(app)?,
+            &PredefinedMenuItem::quit(app, None)?,
+        ],
+    )?;
+    let edit_menu = Submenu::with_items(
+        app,
+        "Edit",
+        true,
+        &[
+            &PredefinedMenuItem::undo(app, None)?,
+            &PredefinedMenuItem::redo(app, None)?,
+            &PredefinedMenuItem::separator(app)?,
+            &PredefinedMenuItem::cut(app, None)?,
+            &PredefinedMenuItem::copy(app, None)?,
+            &PredefinedMenuItem::paste(app, None)?,
+            &PredefinedMenuItem::select_all(app, None)?,
+        ],
+    )?;
+    let window_menu = Submenu::with_items(app, "Window", true, &[&PredefinedMenuItem::minimize(app, None)?])?;
+    Menu::with_items(app, &[&app_menu, &edit_menu, &window_menu])
+}
+
 pub fn run() {
     tauri::Builder::default()
         .manage(Bridge::default())
         .plugin(tauri_plugin_notification::init())
+        .setup(|app| {
+            let menu = build_menu(app.handle())?;
+            app.set_menu(menu)?;
+            Ok(())
+        })
         .invoke_handler(tauri::generate_handler![connect, rpc, env_info, notify, raise_window, install_cli])
         .run(tauri::generate_context!())
         .expect("error while running the Grove window");

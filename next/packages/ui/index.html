@@ -3,23 +3,35 @@
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <meta name="color-scheme" content="dark" />
     <title>Grove</title>
+    <link rel="stylesheet" href="./src/fonts.css" />
     <link rel="stylesheet" href="./src/tokens.css" />
     <link rel="stylesheet" href="./styles.css" />
   </head>
   <body>
-    <div class="app">
+    <div id="app" class="app">
       <aside id="sidebar" class="sidebar">
-        <section id="section-spaces">
-          <h2 class="section-label">Spaces</h2>
+        <header class="side-head" data-tauri-drag-region>
+          <span class="brand-tile" aria-hidden="true">G</span>
+          <span class="brand-name">Grove</span>
+          <button id="search-button" class="icon-button" type="button" aria-label="Search" title="Search">
+            <svg class="icon icon-search" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="11" cy="11" r="8" /><path d="m21 21-4.3-4.3" /></svg>
+          </button>
+          <button id="sidebar-toggle" class="icon-button" type="button" aria-label="Hide the sidebar" title="Hide the sidebar">
+            <svg class="icon icon-sidebar" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="3" y="3" width="18" height="18" rx="2" /><path d="M9 3v18" /></svg>
+          </button>
+        </header>
+        <section id="section-spaces" class="spaces-section">
+          <div class="section-head">
+            <h2 class="section-label">Spaces</h2>
+          </div>
           <ul id="spaces" class="spaces"></ul>
-          <form id="add-space" class="add-space">
-            <input id="space-path" type="text" spellcheck="false" aria-label="Folder path" />
-            <button type="submit">Add</button>
-          </form>
         </section>
         <section id="section-agents" class="agents-section">
-          <h2 class="section-label">Agents</h2>
+          <div class="section-head">
+            <h2 class="section-label">Agents</h2>
+          </div>
           <p id="agents-empty" class="empty">No agents yet.</p>
           <ul id="agents" class="agents"></ul>
         </section>
@@ -31,16 +43,30 @@
       <main class="main">
         <div class="tabstrip">
           <div id="tabs" class="tabs" role="tablist"></div>
-          <div id="launchers" class="launchers"></div>
-          <button id="grid-toggle" class="new-tab" type="button" aria-pressed="false" title="Show this space's tabs in a grid">grid</button>
-          <button id="new-tab" class="new-tab" type="button" title="New shell tab">+</button>
-          <button id="new-claude" class="new-tab" type="button" title="New Claude tab in this space">+ Claude</button>
-          <button id="new-opencode" class="new-tab" type="button" title="New OpenCode tab in this space">+ OpenCode</button>
-          <button id="new-copilot" class="new-tab" type="button" title="New Copilot tab in this space">+ Copilot</button>
+          <div class="tab-actions">
+            <div id="launchers" class="launchers"></div>
+            <button id="grid-toggle" class="new-tab" type="button" aria-pressed="false" title="Show this space's tabs in a grid">Grid</button>
+            <button id="new-tab" class="new-tab" type="button" title="New shell tab" aria-label="New shell tab">+</button>
+          </div>
         </div>
         <div id="terminals" class="terminals"></div>
+        <div id="empty-state" class="empty-state" hidden>
+          <h2 id="empty-title">No space open</h2>
+          <p id="empty-text">Press Cmd+Shift+N to open a space at your home folder.</p>
+        </div>
         <div id="status" class="status" role="status"></div>
       </main>
+    </div>
+    <div id="rename-modal" class="modal-backdrop" hidden>
+      <form id="rename-form" class="modal" role="dialog" aria-modal="true" aria-labelledby="rename-title">
+        <h2 id="rename-title" class="modal-title">Rename tab</h2>
+        <input id="rename-input" class="modal-input" type="text" spellcheck="false" maxlength="80" aria-label="Tab name" />
+        <p id="rename-error" class="modal-error" role="alert" hidden></p>
+        <div class="modal-actions">
+          <button id="rename-cancel" type="button">Cancel</button>
+          <button id="rename-save" class="modal-save" type="submit">Save</button>
+        </div>
+      </form>
     </div>
     <script type="module" src="./main.ts"></script>
   </body>

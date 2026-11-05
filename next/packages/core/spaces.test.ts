@@ -86,7 +86,7 @@ describe('spaces and tabs', () => {
     const main = path.join(root, 'widgets')
     const worktree = path.join(root, 'widgets-feature')
     fs.mkdirSync(main)
-    git(main, ['init', '-q'])
+    git(main, ['init', '-q', '-b', 'main'])
     git(main, ['commit', '-q', '--allow-empty', '-m', 'init'])
     git(main, ['worktree', 'add', '-q', '-b', 'feature', worktree])
     return { main, worktree }
@@ -98,9 +98,9 @@ describe('spaces and tabs', () => {
     const core = stack.core
     clients.push(core)
     const space = fs.mkdtempSync(path.join(root, 'plain-'))
-    await core.request(METHODS.spacesAdd, { path: space })
+    const { id: spaceId } = await core.request(METHODS.spacesAdd, { path: space })
 
-    const { id } = await core.request(METHODS.tabsOpen, { spacePath: fs.realpathSync(space), cols: 80, rows: 24 })
+    const { id } = await core.request(METHODS.tabsOpen, { spaceId, cols: 80, rows: 24 })
     expect(await shellDirectory(core, id)).toBe(fs.realpathSync(space))
   })
 
@@ -123,11 +123,18 @@ describe('spaces and tabs', () => {
     clients.push(core)
     const { main, worktree } = makeRepo()
 
-    await core.request(METHODS.spacesAdd, { path: main })
-    await core.request(METHODS.spacesAdd, { path: worktree })
+    const mainSpace = await core.request(METHODS.spacesAdd, { path: main })
+    const worktreeSpace = await core.request(METHODS.spacesAdd, { path: worktree })
     const both = await core.request(METHODS.spacesList, {})
-    expect(both.spaces).toContainEqual({ path: worktree, name: 'widgets-feature', repoName: 'widgets', parent: main })
-    expect(both.spaces).toContainEqual({ path: main, name: 'widgets', repoName: 'widgets', parent: null })
+    expect(both.spaces).toContainEqual({
+      id: worktreeSpace.id,
+      path: worktree,
+      name: 'widgets-feature',
+      repoName: 'widgets',
+      parent: mainSpace.id,
+      branch: 'feature',
+    })
+    expect(both.spaces).toContainEqual({ id: mainSpace.id, path: main, name: 'widgets', repoName: 'widgets', parent: null, branch: 'main' })
     expect(both.refused).toBeNull()
 
     // Only the worktree is a space now (a fresh stack reads the same file).
@@ -138,10 +145,10 @@ describe('spaces and tabs', () => {
     const again = await startStack()
     holder = again.holder
     clients.push(again.core)
-    await again.core.request(METHODS.spacesAdd, { path: worktree })
+    const readded = await again.core.request(METHODS.spacesAdd, { path: worktree })
     const alone = await again.core.request(METHODS.spacesList, {})
     expect(alone.spaces).toEqual([
-      { path: worktree, name: 'widgets-feature', repoName: 'widgets', parent: null },
+      { id: readded.id, path: worktree, name: 'widgets-feature', repoName: 'widgets', parent: null, branch: 'feature' },
     ])
   })
 
@@ -151,8 +158,8 @@ describe('spaces and tabs', () => {
     const core = stack.core
     clients.push(core)
     const { worktree } = makeRepo()
-    await core.request(METHODS.spacesAdd, { path: worktree })
-    const { id } = await core.request(METHODS.tabsOpen, { spacePath: worktree, cols: 80, rows: 24 })
+    const { id: spaceId } = await core.request(METHODS.spacesAdd, { path: worktree })
+    const { id } = await core.request(METHODS.tabsOpen, { spaceId, cols: 80, rows: 24 })
     expect(await shellDirectory(core, id)).toBe(worktree)
 
     core.close()
@@ -167,7 +174,8 @@ describe('spaces and tabs', () => {
     clients.push(restored)
     const listed = await restored.request(METHODS.spacesList, {})
     expect(listed.spaces.map((space) => space.path)).toEqual([worktree])
-    expect(listed.tabs).toEqual([{ id, spacePath: worktree, kind: 'terminal', label: null, alive: true, exitCode: null }])
+    expect(listed.spaces.map((space) => space.id)).toEqual([spaceId])
+    expect(listed.tabs).toEqual([{ id, spaceId, spacePath: worktree, kind: 'terminal', label: null, alive: true, exitCode: null }])
     expect(await shellDirectory(restored, id)).toBe(worktree)
   })
 
@@ -217,18 +225,89 @@ describe('spaces and tabs', () => {
     clients.push(holderClient)
     const service = new SpacesService(path.join(home, 'service.json'))
     const space = fs.realpathSync(fs.mkdtempSync(path.join(root, 'labels-')))
-    await service.add(space)
+    const { id: spaceId } = await service.add(space)
 
-    const plain = await service.openTab(space, 80, 24, holderClient)
-    const named = await service.openTab(space, 80, 24, holderClient, 'api fix')
-    service.saveAgentTab({ id: 'claude01', spacePath: space, agent: 'claude', label: 'review' })
+    const plain = await service.openTab(spaceId, 80, 24, holderClient)
+    const named = await service.openTab(spaceId, 80, 24, holderClient, 'api fix')
+    service.saveAgentTab({ id: 'claude01', spaceId, spacePath: space, agent: 'claude', label: 'review' })
 
     const listed = await service.list(holderClient)
     expect(listed.tabs).toEqual([
-      { id: plain.id, spacePath: space, kind: 'terminal', label: null, alive: true, exitCode: null },
-      { id: named.id, spacePath: space, kind: 'terminal', label: 'api fix', alive: true, exitCode: null },
-      { id: 'claude01', spacePath: space, kind: 'claude', label: 'review', alive: false, exitCode: null },
+      { id: plain.id, spaceId, spacePath: space, kind: 'terminal', label: null, alive: true, exitCode: null },
+      { id: named.id, spaceId, spacePath: space, kind: 'terminal', label: 'api fix', alive: true, exitCode: null },
+      { id: 'claude01', spaceId, spacePath: space, kind: 'claude', label: 'review', alive: false, exitCode: null },
     ])
+    service.rename(plain.id, 'renamed')
+    expect((await service.list(holderClient)).tabs.find((tab) => tab.id === plain.id)?.label).toBe('renamed')
+  })
+
+  it('renames a tab: trims the label, clears it on a blank one, and rejects one over 80 characters', async () => {
+    const stack = await startStack()
+    holder = stack.holder
+    clients.push(stack.core)
+    const holderClient = await connectRpc(holderSocketPath())
+    clients.push(holderClient)
+    const file = path.join(home, 'rename.json')
+    const service = new SpacesService(file)
+    const space = fs.realpathSync(fs.mkdtempSync(path.join(root, 'rename-')))
+    const { id: spaceId } = await service.add(space)
+    const { id } = await service.openTab(spaceId, 80, 24, holderClient)
+    const labelOf = async () => (await service.list(holderClient)).tabs.find((tab) => tab.id === id)?.label
+
+    service.rename(id, '  api fix  ')
+    expect(await labelOf()).toBe('api fix')
+    expect(JSON.parse(fs.readFileSync(file, 'utf8')).tabs).toEqual([{ id, spaceId, spacePath: space, label: 'api fix' }])
+
+    service.rename(id, '')
+    expect(await labelOf()).toBeNull()
+    expect(JSON.parse(fs.readFileSync(file, 'utf8')).tabs).toEqual([{ id, spaceId, spacePath: space }])
+
+    service.rename(id, 'a'.repeat(80))
+    expect(await labelOf()).toBe('a'.repeat(80))
+    const error = (() => {
+      try {
+        service.rename(id, 'a'.repeat(81))
+        return undefined
+      } catch (caught) {
+        return caught
+      }
+    })()
+    expect(error).toBeInstanceOf(RpcError)
+    expect((error as RpcError).code).toBe(ERROR_CODES.invalidParams)
+    expect(await labelOf()).toBe('a'.repeat(80))
+
+    expect(() => service.rename('nope0001', 'x')).toThrow('no such tab: nope0001')
+  })
+
+  it('keeps a tab name after a restart of the core', async () => {
+    const stack = await startStack()
+    holder = stack.holder
+    clients.push(stack.core)
+    const holderClient = await connectRpc(holderSocketPath())
+    clients.push(holderClient)
+    const file = path.join(home, 'named.json')
+    const service = new SpacesService(file)
+    const space = fs.realpathSync(fs.mkdtempSync(path.join(root, 'named-')))
+    const { id: spaceId } = await service.add(space)
+    const { id } = await service.openTab(spaceId, 80, 24, holderClient)
+    service.rename(id, 'api fix')
+
+    const restarted = new SpacesService(file)
+    await restarted.restore(holderClient)
+    expect((await restarted.list(holderClient)).tabs.find((tab) => tab.id === id)?.label).toBe('api fix')
+  })
+
+  it('refuses to rename while the state is refused, and leaves the file as it was', async () => {
+    const stack = await startStack()
+    holder = stack.holder
+    clients.push(stack.core)
+    const file = path.join(home, 'refused.json')
+    const refused = JSON.stringify({ version: 2, spaces: [], tabs: [{ id: 'keep0001', spacePath: '/x' }] })
+    fs.writeFileSync(file, refused)
+    const service = new SpacesService(file)
+
+    expect(() => service.rename('keep0001', 'x')).toThrow('version 2')
+    expect(fs.readFileSync(file, 'utf8')).toBe(refused)
   })
 
   it('starts a shell tab with the environment it is given', async () => {
@@ -239,9 +318,9 @@ describe('spaces and tabs', () => {
     clients.push(holderClient)
     const service = new SpacesService(path.join(home, 'env.json'))
     const space = fs.realpathSync(fs.mkdtempSync(path.join(root, 'env-')))
-    await service.add(space)
+    const { id: spaceId } = await service.add(space)
 
-    const { id } = await service.openTab(space, 200, 24, holderClient, undefined, { GROVE_TEST_ENV: 'env-7' })
+    const { id } = await service.openTab(spaceId, 200, 24, holderClient, undefined, { GROVE_TEST_ENV: 'env-7' })
     await holderClient.request(METHODS.tabsWrite, {
       id,
       dataB64: bytesToB64(Buffer.from('echo "got=$GROVE_TEST_ENV=end"\n')),
@@ -262,8 +341,8 @@ describe('spaces and tabs', () => {
     const file = path.join(home, 'service.json')
     const service = new SpacesService(file)
     const space = fs.realpathSync(fs.mkdtempSync(path.join(root, 'remove-')))
-    await service.add(space)
-    const { id } = await service.openTab(space, 80, 24, holderClient)
+    const { id: spaceId } = await service.add(space)
+    const { id } = await service.openTab(spaceId, 80, 24, holderClient)
 
     service.removeTab(id)
     expect(service.tabRecord(id)).toBeUndefined()
@@ -274,5 +353,108 @@ describe('spaces and tabs', () => {
     expect(await next.restore(holderClient)).toBe(0)
     expect((await holderClient.request(METHODS.tabsList, {})).some((tab) => tab.id === id)).toBe(false)
     expect((await next.list(holderClient)).tabs).toEqual([])
+  })
+
+  it('adds the same folder twice as two spaces, with ids the path and path#2, and lists both', async () => {
+    const stack = await startStack()
+    holder = stack.holder
+    const core = stack.core
+    clients.push(core)
+    const space = fs.realpathSync(fs.mkdtempSync(path.join(root, 'twice-')))
+
+    const first = await core.request(METHODS.spacesAdd, { path: space })
+    const second = await core.request(METHODS.spacesAdd, { path: space })
+    expect(first).toMatchObject({ path: space })
+    expect(second).toMatchObject({ path: space })
+    expect(first.id).toMatch(/^sp_[0-9a-f]{12}$/)
+    expect(second.id).not.toBe(first.id)
+    const listed = await core.request(METHODS.spacesList, {})
+    expect(listed.spaces.map((item) => item.id)).toEqual([first.id, second.id])
+    expect(listed.spaces.map((item) => item.path)).toEqual([space, space])
+  })
+
+  it('opens a tab in the second space of a folder: it lists under that space and starts in the folder', async () => {
+    const stack = await startStack()
+    holder = stack.holder
+    const core = stack.core
+    clients.push(core)
+    const space = fs.realpathSync(fs.mkdtempSync(path.join(root, 'second-')))
+    await core.request(METHODS.spacesAdd, { path: space })
+    const { id: secondId } = await core.request(METHODS.spacesAdd, { path: space })
+
+    const { id } = await core.request(METHODS.tabsOpen, { spaceId: secondId, cols: 80, rows: 24 })
+    expect(await shellDirectory(core, id)).toBe(space)
+    const listed = await core.request(METHODS.spacesList, {})
+    expect(listed.tabs).toEqual([{ id, spaceId: secondId, spacePath: space, kind: 'terminal', label: null, alive: true, exitCode: null }])
+  })
+
+  it('loads a state file with no ids: spaces get their paths as ids and tabs attach to the first space of their path', async () => {
+    const stack = await startStack()
+    holder = stack.holder
+    clients.push(stack.core)
+    const holderClient = await connectRpc(holderSocketPath())
+    clients.push(holderClient)
+    const a = fs.realpathSync(fs.mkdtempSync(path.join(root, 'old-a-')))
+    const b = fs.realpathSync(fs.mkdtempSync(path.join(root, 'old-b-')))
+    const file = path.join(home, 'old.json')
+    fs.writeFileSync(
+      file,
+      JSON.stringify({
+        version: 1,
+        spaces: [{ path: a }, { path: b }, { path: a }],
+        tabs: [
+          { id: 'old00001', spacePath: a },
+          { id: 'old00002', spacePath: b },
+        ],
+      }),
+    )
+
+    const listed = await new SpacesService(file).list(holderClient)
+    expect(listed.spaces.map((space) => [space.id, space.path])).toEqual([
+      [a, a],
+      [b, b],
+      [`${a}#2`, a],
+    ])
+    expect(listed.tabs.map((tab) => [tab.id, tab.spaceId])).toEqual([
+      ['old00001', a],
+      ['old00002', b],
+    ])
+  })
+
+  it('renames a tab in the second space of a folder', async () => {
+    const stack = await startStack()
+    holder = stack.holder
+    const core = stack.core
+    clients.push(core)
+    const space = fs.realpathSync(fs.mkdtempSync(path.join(root, 'rename-second-')))
+    await core.request(METHODS.spacesAdd, { path: space })
+    const { id: secondId } = await core.request(METHODS.spacesAdd, { path: space })
+    const { id } = await core.request(METHODS.tabsOpen, { spaceId: secondId, cols: 80, rows: 24 })
+
+    expect(await core.request(METHODS.tabsRename, { id, label: 'second' })).toEqual({})
+    expect((await core.request(METHODS.spacesList, {})).tabs).toContainEqual(
+      expect.objectContaining({ id, spaceId: secondId, label: 'second' }),
+    )
+  })
+
+  it('refuses tabs.open for a space id that does not exist', async () => {
+    const stack = await startStack()
+    holder = stack.holder
+    const core = stack.core
+    clients.push(core)
+    const holderClient = await connectRpc(holderSocketPath())
+    clients.push(holderClient)
+    const service = new SpacesService(path.join(home, 'unknown.json'))
+
+    await expect(core.request(METHODS.tabsOpen, { spaceId: '/nowhere', cols: 80, rows: 24 })).rejects.toThrow(
+      'no such space: /nowhere',
+    )
+    const error = await service.openTab('/nowhere', 80, 24, holderClient).then(
+      () => undefined,
+      (caught: unknown) => caught,
+    )
+    expect(error).toBeInstanceOf(RpcError)
+    expect((error as RpcError).code).toBe(ERROR_CODES.invalidParams)
+    expect((error as Error).message).toBe('no such space: /nowhere')
   })
 })

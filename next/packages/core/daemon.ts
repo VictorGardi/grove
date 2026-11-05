@@ -9,7 +9,7 @@ import { ERROR_CODES, METHODS, PROTOCOL_VERSION } from '../protocol/messages.ts'
 import type { Empty, JsonRpcId, JsonRpcRequest, MethodMap, MethodName, NotificationMap } from '../protocol/messages.ts'
 import { RpcError } from '../protocol/errors.ts'
 import { SpacesService } from './spaces.ts'
-import type { TabRecord } from './store/state.ts'
+import { recordSpaceId, tabSpaceId, type TabRecord } from './store/state.ts'
 import { adapters as registry } from './agents/registry.ts'
 import type { AgentAdapter, AgentKind, AgentLaunch } from './status/adapter.ts'
 import { StatusService } from './status/service.ts'
@@ -264,6 +264,9 @@ async function dispatch(method: string, rawParams: unknown, holder: Promise<RpcC
   if (method === METHODS.tabsFocus) {
     return focusTab(rawParams, await holder, deps)
   }
+  if (method === METHODS.tabsRename) {
+    return renameTab(rawParams, deps)
+  }
   if (method === METHODS.configGet) {
     return deps.config.snapshot() satisfies MethodMap['config.get']['result']
   }
@@ -314,10 +317,14 @@ async function createAgentTab(
   if (saved !== undefined && saved.agent !== kind) {
     throw new RpcError(ERROR_CODES.invalidParams, `tab ${id} is a ${saved.agent} tab`)
   }
-  const spacePath = saved?.spacePath ?? stringParam(p, 'cwd')
+  // A resume keeps the space it was saved in; a new tab goes in the first space of the folder it names.
+  const folder = saved?.spacePath ?? stringParam(p, 'cwd')
+  const space = saved === undefined ? deps.spaces.firstSpaceAt(folder) : deps.spaces.spaceById(tabSpaceId(saved))
+  if (space === undefined) throw new RpcError(ERROR_CODES.invalidParams, `not a space: ${folder}`)
+  const spaceId = recordSpaceId(space)
+  const spacePath = space.path
   // A resume keeps the label it was saved with.
   const label = saved?.label ?? labelParam
-  if (!deps.spaces.isSpace(spacePath)) throw new RpcError(ERROR_CODES.invalidParams, `not a space: ${spacePath}`)
 
   // A command that is not on the login shell's PATH is refused before anything is written for it.
   if (adapter.available !== undefined && !deps.available.has(kind)) {
@@ -336,7 +343,7 @@ async function createAgentTab(
   }
   if (p.id !== undefined) await removeExitedTab(holder, id)
   // Saved before the holder create: if the create fails, the record stays and the tab can be resumed.
-  const record: TabRecord = { id, spacePath, agent: kind, agentSessionId: launch.sessionId }
+  const record: TabRecord = { id, spaceId, spacePath, agent: kind, agentSessionId: launch.sessionId }
   deps.spaces.saveAgentTab(label === undefined ? record : { ...record, label })
   await holder.request(METHODS.tabsCreate, {
     id,
@@ -347,7 +354,7 @@ async function createAgentTab(
     cols: numberParam(p, 'cols'),
     rows: numberParam(p, 'rows'),
   })
-  deps.status.track({ tabId: id, spacePath, kind, sessionId: launch.sessionId })
+  deps.status.track({ tabId: id, spaceId, spacePath, kind, sessionId: launch.sessionId })
   return { id }
 }
 
@@ -381,6 +388,13 @@ async function closeTab(rawParams: unknown, holder: RpcClient, deps: Deps): Prom
   return {} satisfies MethodMap['tabs.close']['result']
 }
 
+// Sets a saved tab's label. Only the saved record changes, so nothing is broadcast: the window updates itself.
+function renameTab(rawParams: unknown, deps: Deps): Empty {
+  const id = tabIdParam(rawParams)
+  deps.spaces.rename(id, stringParam(rawParams, 'label'))
+  return {} satisfies MethodMap['tabs.rename']['result']
+}
+
 // Tells every connected window to show the tab. The tab must be saved or live in the holder.
 async function focusTab(rawParams: unknown, holder: RpcClient, deps: Deps): Promise<Empty> {
   const id = tabIdParam(rawParams)
@@ -407,7 +421,7 @@ async function dispatchSpaces(method: string, rawParams: unknown, holder: RpcCli
   }
   const p = rawParams as MethodMap['tabs.open']['params']
   const env = { GROVE_NEXT_CONFIG: deps.configDir }
-  return spaces.openTab(stringParam(p, 'spacePath'), numberParam(p, 'cols'), numberParam(p, 'rows'), holder, optionalLabel(p), env)
+  return spaces.openTab(stringParam(p, 'spaceId'), numberParam(p, 'cols'), numberParam(p, 'rows'), holder, optionalLabel(p), env)
 }
 
 function stringParam(params: unknown, key: string): string {
