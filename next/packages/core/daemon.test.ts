@@ -196,6 +196,51 @@ describe('core daemon', () => {
     expect((await next.request(METHODS.spacesList, {})).tabs.some((tab) => tab.id === id)).toBe(false)
   })
 
+  it('serves the diff of a tab\'s or a space\'s folder by id, refuses unknown ids and flag-like bases, and keeps the view per folder', async () => {
+    const stack = await startStack()
+    holder = stack.holder
+    const core = stack.core
+    clients.push(core)
+    const repo = fs.realpathSync(fs.mkdtempSync(path.join(home, 'repo-')))
+    const gitIn = (args: string[]) =>
+      execFileSync('git', ['-c', 'user.name=grove', '-c', 'user.email=grove@example.invalid', ...args], { cwd: repo, stdio: 'pipe' })
+    gitIn(['init', '-q', '-b', 'main'])
+    fs.writeFileSync(path.join(repo, 'a.txt'), 'one\n')
+    gitIn(['add', '-A'])
+    gitIn(['commit', '-q', '-m', 'init'])
+    gitIn(['branch', 'old'])
+    fs.writeFileSync(path.join(repo, 'a.txt'), 'two\n')
+    const link = path.join(home, 'link')
+    fs.symlinkSync(repo, link)
+    const { id: spaceId } = await core.request(METHODS.spacesAdd, { path: link })
+    const { id: tabId } = await core.request(METHODS.tabsOpen, { spaceId, cols: 80, rows: 24 })
+
+    const byTab = await core.request(METHODS.diffGet, { tabId, mode: 'uncommitted' })
+    expect(byTab.state).toBe('ok')
+    expect(byTab.root).toBe(repo)
+    expect(byTab.files.map((file) => file.path)).toEqual(['a.txt'])
+    const bySpace = await core.request(METHODS.diffGet, { spaceId, mode: 'uncommitted' })
+    expect(bySpace.files).toEqual(byTab.files)
+    expect(byTab.counts.uncommitted).toBe(1)
+
+    await expect(core.request(METHODS.diffGet, { tabId: 'nosuch', mode: 'branch' })).rejects.toThrow('no such tab')
+    await expect(core.request(METHODS.diffGet, { spaceId: 'nosuch', mode: 'branch' })).rejects.toThrow('no such space')
+    await expect(core.request(METHODS.diffGet, { tabId, spaceId, mode: 'branch' } as never)).rejects.toThrow('not both')
+    await expect(core.request(METHODS.diffGet, { mode: 'branch' } as never)).rejects.toThrow('tabId or a spaceId')
+    await expect(core.request(METHODS.diffGet, { tabId, mode: 'branch', base: '--output=x' })).rejects.toThrow('not a valid base')
+    await expect(core.request(METHODS.diffGet, { tabId, mode: 'wide' as never })).rejects.toThrow('mode must be')
+    // A path in the call is not read: with a tab named, the folder is the tab's.
+    const sneaky = await core.request(METHODS.diffGet, { tabId, mode: 'uncommitted', path: '/etc' } as never)
+    expect(sneaky.root).toBe(repo)
+
+    expect(await core.request(METHODS.diffPrefsGet, { tabId })).toEqual({ mode: 'branch', base: null, recents: [] })
+    await core.request(METHODS.diffPrefsSet, { tabId, mode: 'uncommitted' })
+    expect(await core.request(METHODS.diffPrefsSet, { spaceId, base: 'old' })).toEqual({ mode: 'uncommitted', base: 'old', recents: ['old'] })
+    expect(await core.request(METHODS.diffPrefsSet, { tabId, base: null })).toEqual({ mode: 'uncommitted', base: null, recents: ['old'] })
+    expect(await core.request(METHODS.diffBases, { tabId })).toEqual({ branches: ['main', 'old'], current: 'main', default: 'main', recents: ['old'] })
+    expect(JSON.parse(fs.readFileSync(path.join(home, 'state.json'), 'utf8')).diffPrefs[repo].recents).toEqual(['old'])
+  })
+
   it('refuses to close a tab that is neither saved nor in the holder', async () => {
     const stack = await startStack()
     holder = stack.holder

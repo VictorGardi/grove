@@ -30,6 +30,10 @@ export const METHODS = {
   configSetKey: 'config.setKey',
   notesRead: 'notes.read',
   notesWrite: 'notes.write',
+  diffGet: 'diff.get',
+  diffBases: 'diff.bases',
+  diffPrefsGet: 'diff.prefs.get',
+  diffPrefsSet: 'diff.prefs.set',
   integrationStatus: 'integration.status',
   integrationInstall: 'integration.install',
   integrationUninstall: 'integration.uninstall',
@@ -217,6 +221,85 @@ export interface IntegrationInfo {
   error?: string
 }
 
+export type DiffMode = 'branch' | 'uncommitted' | 'last-commit'
+
+// What the diff was compared against, resolved by the core.
+export interface DiffCompared {
+  mode: DiffMode
+  // The branch the diff is since (a merge-base); null: the working tree against HEAD.
+  base: string | null
+  // The detected main branch; null with noDefault.
+  defaultBase: string | null
+  // HEAD is the default branch.
+  onDefault: boolean
+  // No default branch found (none detected, no ref for it, or a detached or unborn HEAD).
+  noDefault: boolean
+  // HEAD is the merge-base with the compared branch; false when onDefault.
+  noOwnCommits: boolean
+}
+
+// Line identity: add -> new side, del -> old side, context -> new side.
+export interface DiffLine {
+  kind: 'context' | 'add' | 'del'
+  text: string
+  old: number | null
+  new: number | null
+}
+
+export interface DiffHunk {
+  header: string
+  oldStart: number
+  newStart: number
+  lines: DiffLine[]
+}
+
+export interface DiffFile {
+  // POSIX, relative to the repo root; the new path for renames.
+  path: string
+  // Renames only.
+  oldPath: string | null
+  status: 'modified' | 'added' | 'deleted' | 'renamed' | 'untracked'
+  binary: boolean
+  additions: number
+  deletions: number
+  // Binary, unreadable or cut files have none.
+  hunks: DiffHunk[]
+  // Too large to show (over 1 MB, or past the line cap): hunks cut.
+  truncated: boolean
+}
+
+// `not-git`: the folder is not in a repo. `error`: git refused (its message, or `timed out`); nothing else in the result is meaningful.
+export interface DiffResult {
+  state: 'ok' | 'not-git' | 'error'
+  error: string | null
+  // The repo's top level.
+  root: string | null
+  files: DiffFile[]
+  // Some file lost its lines because the total passed the cap.
+  truncated: boolean
+  compared: DiffCompared
+  // How many files each mode shows now, for the tabs. Untracked files count where the mode lists them.
+  counts: Record<DiffMode, number>
+}
+
+// What the base picker lists: local branches, then remote-tracking ones as `origin/x`.
+export interface DiffBases {
+  branches: string[]
+  current: string | null
+  default: string | null
+  recents: string[]
+}
+
+// The view remembered for a folder. `base` null: the detected default branch.
+export interface DiffPrefs {
+  mode: DiffMode
+  base: string | null
+  recents: string[]
+}
+
+// The folder a diff call is about. The caller names a tab or a space and never a path: the core finds the folder itself.
+export type DiffTarget = { tabId: string; spaceId?: undefined } | { spaceId: string; tabId?: undefined }
+
 export interface MethodMap {
   // `build` fingerprints the core's own source (the holder sends none): a caller whose build differs is talking to an older core.
   'core.ping': { params: Empty; result: { protocolVersion: number; build?: string } }
@@ -277,6 +360,14 @@ export interface MethodMap {
   // The notes page: one markdown file under the core's home. A file that does not exist yet reads as empty text.
   'notes.read': { params: Empty; result: { text: string } }
   'notes.write': { params: { text: string }; result: Empty }
+  // The diff of the tab's folder (its live folder when the core knows it, else its space's). Read-only: nothing is staged or written.
+  // `base` only counts in branch mode; null or unset: the default branch. Untracked files are listed unless `showUntracked` is false.
+  'diff.get': { params: DiffTarget & { mode: DiffMode; base?: string | null; showUntracked?: boolean }; result: DiffResult }
+  'diff.bases': { params: DiffTarget; result: DiffBases }
+  // The view last chosen for the folder. A folder never chosen for reads as branch mode against the default.
+  'diff.prefs.get': { params: DiffTarget; result: DiffPrefs }
+  // Sets the parts given. A non-null base is also put first in the folder's recent bases (five at most).
+  'diff.prefs.set': { params: DiffTarget & { mode?: DiffMode; base?: string | null }; result: DiffPrefs }
   'integration.status': { params: Empty; result: { agents: IntegrationInfo[] } }
   // The only writer of an agent's settings file, and only on this call (a human's yes). `written` is the backup this change wrote, or null.
   'integration.install': { params: { agent: IntegrationAgent }; result: IntegrationInfo & { changed: boolean; written: string | null } }

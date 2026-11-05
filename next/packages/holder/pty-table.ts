@@ -11,6 +11,14 @@ import type { TabInfo } from '../protocol/messages.ts'
 const execFileAsync = promisify(execFile)
 const { Terminal } = xtermHeadless
 const SCROLLBACK = 2000
+const INHERITED_CLAUDE_SESSION_VARS = [
+  'CLAUDE_CODE_CHILD_SESSION',
+  'CLAUDE_CODE_SESSION_ID',
+  'CLAUDE_CODE_BRIDGE_SESSION_ID',
+  'CLAUDE_CODE_SESSION_ATTENDED',
+  'CLAUDE_CODE_MESSAGING_SOCKET',
+  'CLAUDE_CODE_MESSAGING_TOKEN',
+]
 
 export interface TabSpec {
   id?: string
@@ -62,6 +70,8 @@ export class PtyTable {
     for (const key of Object.keys(env)) {
       if (key === 'TMUX' || key === 'TMUX_PANE' || key.startsWith('TERM_PROGRAM')) delete env[key]
     }
+    // Nor does the Claude Code session the app was started from: a marker like CLAUDE_CODE_CHILD_SESSION makes every claude in a tab skip saving its transcript.
+    for (const key of INHERITED_CLAUDE_SESSION_VARS) delete env[key]
     env.TERM = 'xterm-256color'
     env.COLORTERM = 'truecolor'
     // An app started from the Dock has no locale, and zsh then draws the prompt's symbols wrong.

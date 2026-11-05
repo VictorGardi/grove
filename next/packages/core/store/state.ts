@@ -1,4 +1,5 @@
 import fs from 'node:fs'
+import type { DiffPrefs } from '../../protocol/messages.ts'
 import type { AgentKind } from '../status/adapter.ts'
 
 // `id` is optional: a file written before spaces had ids has none, and loadState fills them in.
@@ -31,6 +32,8 @@ export interface StateV1 {
   version: 1
   spaces: SpaceRecord[]
   tabs: TabRecord[]
+  // The diff panel's view per folder (its real path). Added without a version bump: a file without it loads unchanged.
+  diffPrefs?: Record<string, DiffPrefs>
 }
 
 export type LoadResult = { kind: 'ok'; state: StateV1 } | { kind: 'refused'; reason: string }
@@ -114,7 +117,8 @@ export function loadState(file: string): LoadResult {
     !Array.isArray(parsed.spaces) ||
     !Array.isArray(parsed.tabs) ||
     !parsed.spaces.every(isSpaceRecord) ||
-    !parsed.tabs.every(isTabRecord)
+    !parsed.tabs.every(isTabRecord) ||
+    (parsed.diffPrefs !== undefined && !isPlainObject(parsed.diffPrefs))
   if (malformed) {
     fs.renameSync(file, `${file}.corrupt-${Date.now()}`)
     return { kind: 'ok', state: emptyState() }

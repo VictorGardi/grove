@@ -3,8 +3,9 @@ import fs from 'node:fs'
 import os from 'node:os'
 import path from 'node:path'
 import type { RpcClient } from '../protocol/client.ts'
-import { ERROR_CODES, METHODS, type MethodMap, type SpaceInfo, type SpaceTabInfo } from '../protocol/messages.ts'
+import { ERROR_CODES, METHODS, type DiffMode, type DiffPrefs, type MethodMap, type SpaceInfo, type SpaceTabInfo } from '../protocol/messages.ts'
 import { RpcError } from '../protocol/errors.ts'
+import { pushRecentBase } from './diff/bases.ts'
 import { addWorktree, listWorktrees, removeWorktree, spaceGitInfo } from './git.ts'
 import type { AgentKind } from './status/adapter.ts'
 import {
@@ -289,6 +290,37 @@ export class SpacesService {
     } else {
       this.saveAgentTab({ ...record, agent: kind, found: found || undefined })
     }
+  }
+
+  // The folder a tab's space is at now, or where the tab was saved when its space is gone. undefined: no such tab.
+  tabSpacePath(tabId: string): string | undefined {
+    const tab = this.tabRecord(tabId)
+    return tab === undefined ? undefined : (this.spaceById(tabSpaceId(tab))?.path ?? tab.spacePath)
+  }
+
+  // The diff panel's remembered view of a folder (its real path). A folder never chosen for, or an entry that does not read right,
+  // is branch mode against the default branch.
+  diffPrefs(folder: string): DiffPrefs {
+    const saved: Partial<DiffPrefs> | undefined = this.state.diffPrefs?.[folder]
+    const mode: DiffMode = saved?.mode === 'uncommitted' || saved?.mode === 'last-commit' ? saved.mode : 'branch'
+    const recents = Array.isArray(saved?.recents) ? saved.recents.filter((recent) => typeof recent === 'string') : []
+    return { mode, base: typeof saved?.base === 'string' ? saved.base : null, recents }
+  }
+
+  // Sets the parts given. A base that is not null also goes first in the folder's recents.
+  setDiffPrefs(folder: string, change: { mode?: DiffMode; base?: string | null }): DiffPrefs {
+    this.assertNotRefused()
+    const before = this.diffPrefs(folder)
+    const base = change.base === undefined ? before.base : change.base
+    const prefs: DiffPrefs = {
+      mode: change.mode ?? before.mode,
+      base,
+      recents: change.base ? pushRecentBase(before.recents, change.base) : before.recents,
+    }
+    const next: StateV1 = { ...this.state, diffPrefs: { ...this.state.diffPrefs, [folder]: prefs } }
+    saveState(this.file, next)
+    this.state = next
+    return prefs
   }
 
   tabRecord(id: string): TabRecord | undefined {

@@ -22,6 +22,8 @@ import { Attention } from './attention/attention.ts'
 import { ConfigStore, atomicWrite, configFolder } from './config/store.ts'
 import { writeAgentsMd } from './config/agents-md.ts'
 import { watchConfig } from './config/watch.ts'
+import { diffBases } from './diff/bases.ts'
+import { diffAllModes } from './diff/compute.ts'
 
 const TAB_ID = /^[A-Za-z0-9_-]{1,64}$/
 // A holder call the status service makes must answer within this, or that call fails and its check is skipped.
@@ -390,6 +392,9 @@ async function dispatch(method: string, rawParams: unknown, holder: Promise<RpcC
     atomicWrite(notesFile(deps.home), stringParam(rawParams, 'text'))
     return {} satisfies MethodMap['notes.write']['result']
   }
+  if (method === METHODS.diffGet || method === METHODS.diffBases || method === METHODS.diffPrefsGet || method === METHODS.diffPrefsSet) {
+    return dispatchDiff(method, rawParams, await holder, deps)
+  }
   if (method === METHODS.configGet) {
     return deps.config.snapshot() satisfies MethodMap['config.get']['result']
   }
@@ -568,6 +573,69 @@ async function focusTab(rawParams: unknown, holder: RpcClient, deps: Deps): Prom
   const params: NotificationMap['tabs.focus'] = { id }
   deps.broadcast(notification('tabs.focus', params))
   return {} satisfies MethodMap['tabs.focus']['result']
+}
+
+const DIFF_MODES = new Set<string>(['branch', 'uncommitted', 'last-commit'])
+
+// The folder a diff call is about, from the tab or the space it names. The caller never sends a path: a tab's live folder (as the holder
+// lists it) when it has one, else its space's, then made a real path so a link cannot point the diff somewhere else unseen.
+async function diffFolder(params: unknown, holder: RpcClient, deps: Deps): Promise<string> {
+  const p = (params ?? {}) as Record<string, unknown>
+  const tabId = p.tabId
+  const spaceId = p.spaceId
+  if ((tabId === undefined) === (spaceId === undefined)) throw new RpcError(ERROR_CODES.invalidParams, 'name a tabId or a spaceId, not both')
+  const candidates: string[] = []
+  if (tabId !== undefined) {
+    if (typeof tabId !== 'string' || !TAB_ID.test(tabId)) throw new RpcError(ERROR_CODES.invalidParams, 'tab id is not valid')
+    const saved = deps.spaces.tabSpacePath(tabId)
+    const live = (await holder.request(METHODS.tabsList, {})).find((tab) => tab.id === tabId)
+    if (saved === undefined && live === undefined) throw new RpcError(ERROR_CODES.invalidParams, `no such tab: ${tabId}`)
+    if (live?.alive && live.cwd !== '') candidates.push(live.cwd)
+    if (saved !== undefined) candidates.push(saved)
+  } else {
+    if (typeof spaceId !== 'string') throw new RpcError(ERROR_CODES.invalidParams, 'space id is not valid')
+    const space = deps.spaces.spaceById(spaceId)
+    if (space === undefined) throw new RpcError(ERROR_CODES.invalidParams, `no such space: ${spaceId}`)
+    candidates.push(space.path)
+  }
+  for (const candidate of candidates) {
+    try {
+      const real = fs.realpathSync(candidate)
+      if (fs.statSync(real).isDirectory()) return real
+    } catch {
+      // a folder that is gone: try the next
+    }
+  }
+  throw new RpcError(ERROR_CODES.invalidParams, 'the folder is not there any more')
+}
+
+function diffModeParam(value: unknown): MethodMap['diff.get']['params']['mode'] {
+  if (typeof value !== 'string' || !DIFF_MODES.has(value)) throw new RpcError(ERROR_CODES.invalidParams, 'mode must be branch, uncommitted or last-commit')
+  return value as MethodMap['diff.get']['params']['mode']
+}
+
+// A base is a string or null; the checks that matter (an exact ref, never a flag) are the diff's own, so a bad one comes back as an error state.
+function diffBaseParam(value: unknown): string | null | undefined {
+  if (value === undefined || value === null) return value
+  if (typeof value !== 'string' || value.startsWith('-') || value.length > 255) throw new RpcError(ERROR_CODES.invalidParams, 'base is not a valid base')
+  return value
+}
+
+// The diff panel's calls. All read-only on the repo; the core never pushes a diff, the window asks again when it wants a fresh one.
+async function dispatchDiff(method: string, rawParams: unknown, holder: RpcClient, deps: Deps): Promise<unknown> {
+  const dir = await diffFolder(rawParams, holder, deps)
+  const p = rawParams as Record<string, unknown>
+  if (method === METHODS.diffGet) {
+    const base = diffBaseParam(p.base)
+    if (p.showUntracked !== undefined && typeof p.showUntracked !== 'boolean') throw new RpcError(ERROR_CODES.invalidParams, 'showUntracked must be a boolean')
+    return (await diffAllModes({ dir, mode: diffModeParam(p.mode), base, showUntracked: p.showUntracked })) satisfies MethodMap['diff.get']['result']
+  }
+  if (method === METHODS.diffBases) {
+    return { ...(await diffBases(dir)), recents: deps.spaces.diffPrefs(dir).recents } satisfies MethodMap['diff.bases']['result']
+  }
+  if (method === METHODS.diffPrefsGet) return deps.spaces.diffPrefs(dir) satisfies MethodMap['diff.prefs.get']['result']
+  const mode = p.mode === undefined ? undefined : diffModeParam(p.mode)
+  return deps.spaces.setDiffPrefs(dir, { mode, base: diffBaseParam(p.base) }) satisfies MethodMap['diff.prefs.set']['result']
 }
 
 function tabIdParam(params: unknown): string {
