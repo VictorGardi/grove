@@ -791,6 +791,9 @@ describe('agents typed by hand', () => {
   beforeEach(() => {
     home = fs.mkdtempSync(path.join(os.tmpdir(), 'gn-hand-'))
     process.env.GROVE_NEXT_HOME = home
+    // The core reads Claude's and Copilot's settings from these. Tests never let it reach the human's real config.
+    process.env.CLAUDE_CONFIG_DIR = path.join(home, 'claude-config')
+    process.env.COPILOT_HOME = path.join(home, 'copilot-home')
   })
 
   afterEach(async () => {
@@ -798,6 +801,8 @@ describe('agents typed by hand', () => {
     clients = []
     await stopHolder(holder)
     holder = undefined
+    delete process.env.CLAUDE_CONFIG_DIR
+    delete process.env.COPILOT_HOME
     fs.rmSync(home, { recursive: true, force: true })
   })
 
@@ -844,6 +849,41 @@ describe('agents typed by hand', () => {
       15000,
     )
     expect((await core.request(METHODS.spacesList, {})).tabs).toContainEqual(expect.objectContaining({ id, kind: 'terminal' }))
+  })
+
+  it.skipIf(!hasCompiler)('asks once about a typed claude with no hooks, writes nothing until a yes, then installs it', async () => {
+    const stack = await startStack()
+    holder = stack.holder
+    const core = stack.core
+    clients.push(core)
+    const space = fs.realpathSync(fs.mkdtempSync(path.join(home, 'space-')))
+    const bin = claudeStandIn(fs.mkdtempSync(path.join(home, 'bin-')))
+    if (bin === undefined) throw new Error('the C compiler is there but the stand-in did not build')
+    const prompts: unknown[] = []
+    core.onNotification('integration.prompt', (params) => prompts.push(params))
+    const { id: spaceId } = await core.request(METHODS.spacesAdd, { path: space })
+    const { id } = await core.request(METHODS.tabsOpen, { spaceId, cols: 80, rows: 24 })
+
+    await typeLine(core, id, `${bin}\n`)
+    await waitFor(
+      async () => prompts,
+      (seen) => seen.length > 0,
+      15000,
+    )
+    expect(prompts).toEqual([{ agent: 'claude' }])
+    const settings = path.join(home, 'claude-config', 'settings.json')
+    expect(fs.existsSync(settings)).toBe(false)
+
+    const before = (await core.request(METHODS.integrationStatus, {})).agents.find((agent) => agent.agent === 'claude')
+    expect(before).toMatchObject({ state: 'not-enabled', file: settings, pending: true })
+    await core.request(METHODS.integrationAnswer, { agent: 'claude', answer: 'not-now' })
+    expect((await core.request(METHODS.integrationStatus, {})).agents.find((agent) => agent.agent === 'claude')?.pending).toBe(false)
+    expect(fs.existsSync(settings)).toBe(false)
+
+    const installed = await core.request(METHODS.integrationInstall, { agent: 'claude' })
+    expect(installed).toMatchObject({ state: 'enabled', changed: true, written: null, pending: false })
+    expect(fs.existsSync(settings)).toBe(true)
+    await typeLine(core, id, '\u0003')
   })
 
   it('moves the space root when a plain tab cds, and keeps it while an agent sits elsewhere', async () => {

@@ -1147,3 +1147,25 @@ After restarting the dev app:
 - `npx vitest run` for the config, UI and grid tests: pass (new tests: keys schema for ctrl, tab and the new actions; binding matching for ctrl+tab and mod on macOS; `formatBinding`; grid membership and `canJoinGrid`; `recent-tabs`; `sidebarSpaceOrder` and `spaceAt`; `sidebar-state` including a throwing store).
 - `npm run typecheck` and `npm test` over the whole repo: this fix's files are clean. The repo-wide run had 6 failing tests and 2 type errors in the other child's uncommitted work (presence, pty table, status service, copilot adapter); not part of this commit.
 - Headless Chromium check of Ctrl+Tab against xterm, as described above.
+
+## Post-run fix 4
+
+Approved by the human after fix 2: the install of Claude's and Copilot's hooks is asked for in the app, not run by hand. Recorded as ADR 0050 (`docs/adr/0050-agent-hooks-installed-with-consent.md`), which reverses "user settings stay untouched" and "install by hand, once".
+
+### What was built
+
+- **Prompt once.** When a Claude or Copilot agent that Grove did not start is running, its settings have no Grove entry, and no answer is recorded, the app shows "Enable status for <agent>?" once. It names what is written and where, the backup path (`settings.json.grove-next.bak`), and how to remove it. Enable installs; Not now is recorded and not asked again by itself. Closing the prompt another way counts as Not now.
+- **Agent status** (sidebar footer). Each of Claude and Copilot shows Enabled, Not enabled, Out of date or Settings unreadable, with the resolved settings and backup paths. Enable, Update (Out of date only) and Remove are there. Remove deletes only Grove's entries. Settings unreadable offers no button, and the file is never touched.
+- **Out of date** means some of this version's hook events are missing. It never re-asks; Update adds the missing events and keeps the user's own hooks.
+- **The core** (`core/integrations/service.ts`): status, install, uninstall and the answer record in `integrations.json` in the Grove home. The only writer is `integration.install`, and the app sends it only from a button. Four RPCs (`integration.status`, `integration.install`, `integration.uninstall`, `integration.answer`) and one notification (`integration.prompt`). A core that connects later reads the pending list, so the prompt is not lost when the window opens after the detection.
+- **The CLI** (`grove-next integration install|uninstall`) is unchanged and remains the by-hand path.
+- **Tests:** the service (missing file, reads that write nothing, install with backup and the user's hooks kept, uninstall removing only Grove's, out of date, unreadable never touched, not-now kept across a restart), a daemon test where a typed Claude is asked once and nothing is written until the install call, the copy and row rules, and the panel's DOM behaviour (happy-dom). All write only to temporary `CLAUDE_CONFIG_DIR` and `COPILOT_HOME`.
+
+### What the human should try by hand
+
+1. Restart the app and the core (the human's own restart; the core was not restarted here). Open a terminal tab and run `claude` or `copilot`. The prompt should appear once, naming `~/.claude/settings.json` or `~/.copilot/settings.json` and the backup.
+2. Press Not now. The prompt should not return on the next detection. Open Agent status: the agent shows Not enabled with an Enable button.
+3. Press Enable on the prompt or in Agent status. Check the backup file exists beside the settings file, and that your own hooks are still in place.
+4. An agent that was already running when you enabled it does not load the hooks until it starts again. Restart it in its tab.
+5. Press Remove in Agent status. Only Grove's entries should leave the file.
+6. Optional: put a file that is not a JSON object in a test folder through `CLAUDE_CONFIG_DIR`. Agent status should say Settings unreadable, with no button.

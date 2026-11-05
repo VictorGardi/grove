@@ -22,6 +22,10 @@ export const METHODS = {
   tabsRename: 'tabs.rename',
   tabsFocus: 'tabs.focus',
   configGet: 'config.get',
+  integrationStatus: 'integration.status',
+  integrationInstall: 'integration.install',
+  integrationUninstall: 'integration.uninstall',
+  integrationAnswer: 'integration.answer',
 } as const
 
 export const ERROR_CODES = {
@@ -179,6 +183,24 @@ export interface StatusChange {
   source: string
 }
 
+// The agents whose status needs a hook entry in the user's own settings. OpenCode reads its service and needs none.
+export type IntegrationAgent = 'claude' | 'copilot'
+
+// enabled: every hook event of this version has Grove's entry. not-enabled: no Grove entry. out-of-date: some Grove
+// entries, not all of this version's events. unreadable: the settings file is not a JSON object; Grove never touches it.
+export type IntegrationState = 'enabled' | 'not-enabled' | 'out-of-date' | 'unreadable'
+
+export interface IntegrationInfo {
+  agent: IntegrationAgent
+  state: IntegrationState
+  // The settings file Grove edits, resolved from the core's environment, and the backup it keeps beside it.
+  file: string
+  backup: string
+  // Whether the app should ask the human to enable this agent now: it is running, has no entry, and nothing is recorded.
+  pending: boolean
+  error?: string
+}
+
 export interface MethodMap {
   // `build` fingerprints the core's own source (the holder sends none): a caller whose build differs is talking to an older core.
   'core.ping': { params: Empty; result: { protocolVersion: number; build?: string } }
@@ -219,6 +241,13 @@ export interface MethodMap {
   // Asks every client to show the tab; the window selects it and raises itself.
   'tabs.focus': { params: { id: string }; result: Empty }
   'config.get': { params: Empty; result: ConfigSnapshot }
+  'integration.status': { params: Empty; result: { agents: IntegrationInfo[] } }
+  // The only writer of an agent's settings file, and only on this call (a human's yes). `written` is the backup this change wrote, or null.
+  'integration.install': { params: { agent: IntegrationAgent }; result: IntegrationInfo & { changed: boolean; written: string | null } }
+  // Removes only Grove's entries; the recorded answer stays, so nothing asks again.
+  'integration.uninstall': { params: { agent: IntegrationAgent }; result: IntegrationInfo }
+  // Records that the human said not now; nothing is written.
+  'integration.answer': { params: { agent: IntegrationAgent; answer: 'not-now' }; result: Empty }
 }
 
 export interface NotificationMap {
@@ -231,6 +260,8 @@ export interface NotificationMap {
   'tabs.closed': { id: string }
   // The config folder changed and a value or a note is new: every window applies it.
   'config.changed': ConfigSnapshot
+  // An agent the app did not start is running and has no hook entry yet: ask the human once.
+  'integration.prompt': { agent: IntegrationAgent }
 }
 
 export type MethodName = keyof MethodMap

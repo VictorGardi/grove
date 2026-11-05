@@ -94,6 +94,19 @@ export function hasCopilotHooks(settings: JsonObject): boolean {
   return COPILOT_HOOK_EVENTS.every((event) => (Array.isArray(hooks[event]) ? (hooks[event] as HookEntry[]) : []).some(isOurs))
 }
 
+// Whether `settings` holds any entry Grove wrote, for any event and whether or not every event has one (Claude's are
+// inside groups, Copilot's are direct).
+export function hasAnyGroveHooks(settings: JsonObject): boolean {
+  return Object.values(objectOf(settings.hooks)).some((value) =>
+    Array.isArray(value) &&
+    value.some((item) => {
+      if (item === null || typeof item !== 'object') return false
+      const group = item as HookGroup
+      return isOurs(item as HookEntry) || (Array.isArray(group.hooks) && group.hooks.some(isOurs))
+    })
+  )
+}
+
 function objectOf(value: unknown): Record<string, unknown> {
   return value !== null && typeof value === 'object' && !Array.isArray(value) ? { ...(value as JsonObject) } : {}
 }

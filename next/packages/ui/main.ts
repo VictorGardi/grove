@@ -10,6 +10,7 @@ import { readSidebarHidden, writeSidebarHidden, type KeyValueStore } from './sid
 import { groupAgents, shortFolder, sidebarSpaceOrder, spaceAt, tabStateOf, tileIndex } from './sidebar-model.ts'
 import { createTabPill, type TabPill } from './tab-pill.ts'
 import { createRenameModal } from './rename-modal.ts'
+import { createIntegrationPanel } from './integrations.ts'
 import { indicatorClass, indicatorLabel } from './indicator.ts'
 import { iconSvg } from './icons.ts'
 import { rollupSpaces } from '../protocol/rollup.ts'
@@ -128,6 +129,28 @@ const renameModal = createRenameModal(
     closed: focusActive,
   },
 )
+// Agent status: the Agents panel and the one-time prompt. Each install, removal or answer is a call the human made here.
+const integrationPanel = createIntegrationPanel(
+  {
+    panel: byId('integrations-modal'),
+    list: byId('integrations-list'),
+    error: byId('integrations-error'),
+    close: byId('integrations-close') as HTMLButtonElement,
+    prompt: byId('integration-prompt'),
+    promptTitle: byId('integration-prompt-title'),
+    promptText: byId('integration-prompt-text'),
+    promptError: byId('integration-prompt-error'),
+    enable: byId('integration-enable') as HTMLButtonElement,
+    notNow: byId('integration-not-now') as HTMLButtonElement,
+  },
+  {
+    status: async () => (await bridge.rpc('integration.status', {})).agents,
+    install: (agent) => bridge.rpc('integration.install', { agent }),
+    uninstall: (agent) => bridge.rpc('integration.uninstall', { agent }),
+    answer: (agent) => bridge.rpc('integration.answer', { agent, answer: 'not-now' }),
+  },
+)
+
 // Each key action does what its button does, so a disabled button ignores the key as it ignores a click.
 const keyActions: Record<KeyAction, () => void> = {
   'grid-toggle': () => gridToggle.click(),
@@ -838,6 +861,10 @@ sidebarToggle.addEventListener('click', () => {
   writeSidebarHidden(storage(), hidden)
 })
 showSidebar(readSidebarHidden(storage()))
+byId('integrations-open').addEventListener('click', () => integrationPanel.open())
+bridge.on('integration.prompt', ({ agent }) => {
+  integrationPanel.ask(agent).catch(report)
+})
 installCliButton.addEventListener('click', () => {
   installCliButton.disabled = true
   invoke<string>('install_cli')
@@ -854,7 +881,7 @@ newTabButton.addEventListener('click', () => void newShellTab())
 window.addEventListener(
   'keydown',
   (event) => {
-    if (renameModal.isOpen()) return
+    if (renameModal.isOpen() || integrationPanel.isOpen()) return
     const action = findAction(keys, event, isMac)
     if (action === null) return
     event.preventDefault()
@@ -911,6 +938,7 @@ async function start(): Promise<void> {
   await bridge.connect()
   await loadConfig()
   await resync()
+  await integrationPanel.ask().catch(report)
 }
 
 document.documentElement.classList.toggle('mac', isMac)

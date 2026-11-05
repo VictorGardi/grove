@@ -33,6 +33,7 @@
           <ul id="agents" class="agents"></ul>
         </section>
         <footer class="sidebar-foot">
+          <button id="integrations-open" class="install-cli" type="button" title="Agent status: hooks for Claude and Copilot">Agent status</button>
           <button id="install-cli" class="install-cli" type="button" title="Write grove-next to ~/.local/bin">Install grove-next command</button>
           <a id="stress-link" href="./stress.html" hidden>Stress page</a>
         </footer>
@@ -67,6 +68,28 @@
           <button id="rename-save" class="modal-save" type="submit">Save</button>
         </div>
       </form>
+    </div>
+    <div id="integrations-modal" class="modal-backdrop" hidden>
+      <section class="modal" role="dialog" aria-modal="true" aria-labelledby="integrations-title">
+        <h2 id="integrations-title" class="modal-title">Agent status</h2>
+        <p class="modal-text">Grove reads Claude and Copilot through hooks in their own settings files. Each change is made only when you press its button, and a backup is kept beside the file.</p>
+        <ul id="integrations-list" class="integrations-list"></ul>
+        <p id="integrations-error" class="modal-error" role="alert" hidden></p>
+        <div class="modal-actions">
+          <button id="integrations-close" type="button">Close</button>
+        </div>
+      </section>
+    </div>
+    <div id="integration-prompt" class="modal-backdrop" hidden>
+      <section class="modal" role="dialog" aria-modal="true" aria-labelledby="integration-prompt-title">
+        <h2 id="integration-prompt-title" class="modal-title"></h2>
+        <div id="integration-prompt-text" class="modal-text"></div>
+        <p id="integration-prompt-error" class="modal-error" role="alert" hidden></p>
+        <div class="modal-actions">
+          <button id="integration-not-now" type="button">Not now</button>
+          <button id="integration-enable" class="modal-save" type="button">Enable</button>
+        </div>
+      </section>
     </div>
     <script type="module" src="./main.ts"></script>
   </body>

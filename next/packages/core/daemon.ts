@@ -6,6 +6,9 @@ import { connectRpc, type RpcClient } from '../protocol/client.ts'
 import { bytesToB64, createLineDecoder, encodeLine } from '../protocol/framing.ts'
 import { coreSocketPath, groveNextHome, holderSocketPath } from '../protocol/paths.ts'
 import { ERROR_CODES, METHODS, PROTOCOL_VERSION } from '../protocol/messages.ts'
+import type { IntegrationAgent, IntegrationInfo } from '../protocol/messages.ts'
+import { claudeSettingsFile, copilotSettingsFile } from './integrations/install.ts'
+import { IntegrationService, isIntegrationAgent } from './integrations/service.ts'
 import { buildId } from './build.ts'
 import { Presence } from './presence.ts'
 import type { Empty, JsonRpcId, JsonRpcRequest, MethodMap, MethodName, NotificationMap } from '../protocol/messages.ts'
@@ -55,6 +58,7 @@ export async function startCoreDaemon(
     home?: string
     adapters?: Partial<Record<AgentKind, AgentAdapter>>
     status?: StatusService
+    integrations?: IntegrationService
   } = {},
 ): Promise<CoreServer> {
   const socketPath = options.socketPath ?? coreSocketPath()
@@ -101,6 +105,21 @@ export async function startCoreDaemon(
     })
   // A holder that cannot be reached at start leaves every saved agent tab unknown.
   const aliveAtStart = await alive().catch(() => new Set<string>())
+  // The hook entries Grove asks the human to enable, for Claude and Copilot. Only an install request writes them.
+  const integrations =
+    options.integrations ??
+    new IntegrationService({
+      files: { claude: claudeSettingsFile(), copilot: copilotSettingsFile() },
+      consentFile: path.join(home, 'integrations.json'),
+    })
+  // Asked at most once per core run; a window that connects later reads the pending list instead.
+  const asked = new Set<IntegrationAgent>()
+  const offerIntegration = (kind: AgentKind): void => {
+    if (!isIntegrationAgent(kind) || asked.has(kind)) return
+    if (!integrations.status(kind, true).pending) return
+    asked.add(kind)
+    broadcast(notification('integration.prompt', { agent: kind }))
+  }
   // Agents typed by hand: each tick finds the agent in each tab's foreground, adopts it, and applies the root rule.
   const presence = new Presence({
     clock: Date.now,
@@ -116,7 +135,10 @@ export async function startCoreDaemon(
     agentRecorded: (tabId) => spaces.tabRecord(tabId)?.agent,
     setAgent: (tabId, kind) => spaces.setTabAgent(tabId, kind, true),
     setRoot: (spaceId, root) => spaces.setRoot(spaceId, root),
-    adopt: (tabId, kind, sessionId) => status.adopt({ tabId, kind, sessionId }),
+    adopt: (tabId, kind, sessionId) => {
+      status.adopt({ tabId, kind, sessionId })
+      offerIntegration(kind)
+    },
     identify: (tabId, sessionId) => status.identify(tabId, sessionId),
     release: (tabId) => status.untrack(tabId),
     adoptedKind: (tabId) => status.adoptedKind(tabId),
@@ -154,7 +176,7 @@ export async function startCoreDaemon(
   // Agent tabs are rebuilt before the core listens, so the first client already sees their state.
   status.restore(spaces.agentTabs(), aliveAtStart)
   status.start()
-  const deps: Deps = { spaces, status, attention, home, configDir, config, adapters, available, broadcast }
+  const deps: Deps = { spaces, status, attention, home, configDir, config, adapters, available, broadcast, integrations }
 
   const server = net.createServer((socket) => {
     sockets.add(socket)
@@ -284,6 +306,18 @@ interface Deps {
   adapters: Partial<Record<AgentKind, AgentAdapter>>
   available: Set<AgentKind>
   broadcast: (message: unknown) => void
+  integrations: IntegrationService
+}
+
+// The agent kinds of the tabs the app did not start that are running now.
+function adoptedAgentsOf(status: StatusService): Set<AgentKind> {
+  return new Set(status.list(new Set()).filter((agent) => status.adoptedKind(agent.tabId) === agent.agent).map((agent) => agent.agent))
+}
+
+function integrationAgentParam(params: unknown): IntegrationAgent {
+  const agent = (params as { agent?: unknown } | null)?.agent
+  if (!isIntegrationAgent(agent)) throw new RpcError(ERROR_CODES.invalidParams, 'agent must be claude or copilot')
+  return agent
 }
 
 async function dispatch(method: string, rawParams: unknown, holder: Promise<RpcClient>, deps: Deps): Promise<unknown> {
@@ -307,6 +341,25 @@ async function dispatch(method: string, rawParams: unknown, holder: Promise<RpcC
   }
   if (method === METHODS.configGet) {
     return deps.config.snapshot() satisfies MethodMap['config.get']['result']
+  }
+  if (method === METHODS.integrationStatus) {
+    const running = adoptedAgentsOf(deps.status)
+    const agents: IntegrationInfo[] = (['claude', 'copilot'] as const).map((agent) => deps.integrations.status(agent, running.has(agent)))
+    return { agents } satisfies MethodMap['integration.status']['result']
+  }
+  if (method === METHODS.integrationInstall) {
+    const agent = integrationAgentParam(rawParams)
+    return deps.integrations.install(agent, adoptedAgentsOf(deps.status).has(agent)) satisfies MethodMap['integration.install']['result']
+  }
+  if (method === METHODS.integrationUninstall) {
+    const agent = integrationAgentParam(rawParams)
+    return deps.integrations.uninstall(agent, adoptedAgentsOf(deps.status).has(agent)) satisfies MethodMap['integration.uninstall']['result']
+  }
+  if (method === METHODS.integrationAnswer) {
+    const agent = integrationAgentParam(rawParams)
+    if ((rawParams as { answer?: unknown }).answer !== 'not-now') throw new RpcError(ERROR_CODES.invalidParams, 'answer must be not-now')
+    deps.integrations.answer(agent, 'not-now')
+    return {} satisfies MethodMap['integration.answer']['result']
   }
   if (method === METHODS.corePing) {
     const result: MethodMap['core.ping']['result'] = { protocolVersion: PROTOCOL_VERSION, build: buildId() }
