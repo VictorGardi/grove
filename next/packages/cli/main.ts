@@ -3,31 +3,85 @@ import path from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { ensureHolder } from '../core/holder-client.ts'
 import { connectWhenReady, type RpcClient } from '../protocol/client.ts'
-import { METHODS, type SpaceInfo } from '../protocol/messages.ts'
+import { METHODS, type AgentInfo, type SpaceTabInfo } from '../protocol/messages.ts'
 import { coreSocketPath } from '../protocol/paths.ts'
+import { parseCommand, UsageError, type Command } from './args.ts'
+import { formatError, formatLsJson, formatNew, formatRead, formatTree, turnExit, type LsTab, type TurnOutcome } from './output.ts'
+import { pasteText, waitStable } from './paste.ts'
+import { resolveTabRef } from './ref.ts'
+import { waitForWorking, waitTurn, type WaitDeps, type WaitTab } from './wait.ts'
 
-const USAGE = 'usage: grove-next space add [path] | grove-next space ls | grove-next ls'
+const CORE_UNREACHABLE = 3
+const COLS = 120
+const ROWS = 40
+const DEFAULT_TIMEOUT_S = 600
 
-// Runs one CLI command and returns its exit code: 0 ok, 1 error (one line on stderr), 2 usage.
+// The holder or the core could not be reached: exit 3, not a generic error.
+class CoreUnreachable extends Error {}
+
+// Runs one CLI command and returns its exit code: 0 ok, 1 error (one line on stderr), 2 usage, 3 core unreachable,
+// 5 gone, 124 timeout.
 export async function main(argv: string[]): Promise<number> {
-  const [first, second, ...rest] = argv
+  const command = parseCommand(argv)
+  if (command instanceof UsageError) {
+    console.error(command.message)
+    return 2
+  }
   try {
-    if (first === 'ls' && argv.length === 1) return await listSpaces()
-    if (first === 'space' && second === 'ls' && argv.length === 2) return await listSpaces()
-    if (first === 'space' && second === 'add' && rest.length <= 1) return await addSpace(rest[0])
+    return await run(command)
   } catch (error) {
     const message = error instanceof Error ? error.message : String(error)
-    console.error(`error: ${message.replace(/\s*\n\s*/g, ' ')}`)
-    return 1
+    console.error(formatError(message))
+    return error instanceof CoreUnreachable ? CORE_UNREACHABLE : 1
   }
-  console.error(USAGE)
-  return 2
+}
+
+async function run(command: Command): Promise<number> {
+  switch (command.cmd) {
+    case 'ls':
+      return listTabs(command.json)
+    case 'space-ls':
+      return listTabs(false)
+    case 'space-add':
+      return addSpace(command.path)
+    case 'new':
+      return newTab(command)
+    case 'send':
+      return send(command)
+    case 'wait':
+      return waitCommand(command)
+    case 'focus':
+      return withCore(async (core) => {
+        await core.request(METHODS.tabsFocus, { id: (await resolveRef(core, command.ref)).id })
+        return 0
+      })
+    case 'kill':
+      return withCore(async (core) => {
+        await core.request(METHODS.tabsClose, { id: (await resolveRef(core, command.ref)).id })
+        return 0
+      })
+    case 'read':
+      return withCore(async (core) => {
+        const { text } = await core.request(METHODS.tabsScreen, { id: (await resolveRef(core, command.ref)).id })
+        console.log(formatRead(text, command.lines))
+        return 0
+      })
+  }
 }
 
 // Starts the holder (and through it the core) when needed, then runs one call against the core.
 async function withCore<T>(call: (core: RpcClient) => Promise<T>): Promise<T> {
-  await ensureHolder()
-  const core = await connectWhenReady(coreSocketPath())
+  try {
+    await ensureHolder()
+  } catch (error) {
+    throw new CoreUnreachable(error instanceof Error ? error.message : String(error))
+  }
+  let core: RpcClient
+  try {
+    core = await connectWhenReady(coreSocketPath())
+  } catch (error) {
+    throw new CoreUnreachable(error instanceof Error ? error.message : String(error))
+  }
   try {
     return await call(core)
   } finally {
@@ -42,29 +96,141 @@ async function addSpace(arg: string | undefined): Promise<number> {
     const before = await core.request(METHODS.spacesList, {})
     const real = realpathOrSelf(target)
     const existed = before.spaces.some((space) => space.path === real)
-    const space: SpaceInfo = await core.request(METHODS.spacesAdd, { path: target })
+    const space = await core.request(METHODS.spacesAdd, { path: target })
     console.log(existed ? `already a space: ${space.path}` : `added ${space.path}`)
     return 0
   })
 }
 
-async function listSpaces(): Promise<number> {
+async function listTabs(json: boolean): Promise<number> {
   return withCore(async (core) => {
-    const result = await core.request(METHODS.spacesList, {})
+    const [result, agents] = await Promise.all([core.request(METHODS.spacesList, {}), core.request(METHODS.agentsList, {})])
     if (result.refused !== null) {
-      console.error(`error: ${result.refused}`)
+      console.error(formatError(result.refused))
       return 1
     }
-    if (result.spaces.length === 0) console.log('no spaces')
-    for (const space of result.spaces) {
-      console.log(space.parent !== null ? `${space.path}  (worktree of ${space.parent})` : space.path)
-      const tabs = result.tabs.filter((tab) => tab.spacePath === space.path)
-      tabs.forEach((tab, index) => {
-        console.log(`  ${index + 1}  ${tab.id}  ${tab.alive ? 'alive' : 'exited'}`)
-      })
+    const tabs = lsTabs(result.tabs, agents)
+    if (json) {
+      console.log(formatLsJson(tabs))
+      return 0
     }
+    if (result.spaces.length === 0) console.log('no spaces')
+    for (const line of formatTree(result.spaces.map((space) => space.path), tabs)) console.log(line)
     return 0
   })
+}
+
+function lsTabs(tabs: SpaceTabInfo[], agents: AgentInfo[]): LsTab[] {
+  return tabs.map((tab) => ({
+    id: tab.id,
+    spacePath: tab.spacePath,
+    kind: tab.kind,
+    state: tab.kind === 'terminal' ? null : (agents.find((agent) => agent.tabId === tab.id)?.state ?? null),
+    label: tab.label,
+    alive: tab.alive,
+  }))
+}
+
+async function newTab(cmd: Extract<Command, { cmd: 'new' }>): Promise<number> {
+  const base = process.env.GROVE_NEXT_CALLER_CWD || process.cwd()
+  const dir = realpathOrSelf(path.resolve(base, cmd.cwd ?? ''))
+  return withCore(async (core) => {
+    const { spaces } = await core.request(METHODS.spacesList, {})
+    if (!spaces.some((space) => space.path === dir)) {
+      throw new Error(`not a space: ${dir}, add it with grove-next space add`)
+    }
+    const prompt = cmd.prompt === undefined ? undefined : readText(cmd.prompt)
+    const id =
+      cmd.kind === 'terminal'
+        ? (await core.request(METHODS.tabsOpen, { spacePath: dir, cols: COLS, rows: ROWS, label: cmd.label })).id
+        : (await core.request(METHODS.tabsCreate, { command: cmd.kind, cwd: dir, cols: COLS, rows: ROWS, label: cmd.label, agent: { kind: cmd.kind } })).id
+    console.log(formatNew({ id, kind: cmd.kind, spacePath: dir, label: cmd.label ?? null }, cmd.json))
+    if (prompt !== undefined) {
+      await settleAndPaste(core, id, prompt, true)
+      await afterPaste(core, { id, kind: cmd.kind }, true)
+    }
+    return cmd.wait ? reportTurn(id, await waitTurn(waitDeps(core), id, { expectStart: true, timeoutMs: timeoutMs(cmd.timeoutS) })) : 0
+  })
+}
+
+async function send(cmd: Extract<Command, { cmd: 'send' }>): Promise<number> {
+  return withCore(async (core) => {
+    const tab = await resolveRef(core, cmd.ref)
+    if (!tab.alive) {
+      if (tab.kind === 'terminal') throw new Error(`tab ${tab.id} is gone`)
+      await core.request(METHODS.tabsCreate, { id: tab.id, command: tab.kind, cwd: tab.spacePath, cols: COLS, rows: ROWS, agent: { kind: tab.kind } })
+      await settleAndPaste(core, tab.id, readText(cmd.text), cmd.submit)
+    } else {
+      await pasteText(writer(core, tab.id), readText(cmd.text), cmd.submit)
+    }
+    await afterPaste(core, tab, cmd.submit)
+    return cmd.wait ? reportTurn(tab.id, await waitTurn(waitDeps(core), tab.id, { expectStart: true, timeoutMs: timeoutMs(cmd.timeoutS) })) : 0
+  })
+}
+
+async function waitCommand(cmd: Extract<Command, { cmd: 'wait' }>): Promise<number> {
+  return withCore(async (core) => {
+    const tab = await resolveRef(core, cmd.ref)
+    return reportTurn(tab.id, await waitTurn(waitDeps(core), tab.id, { expectStart: false, timeoutMs: timeoutMs(cmd.timeoutS) }))
+  })
+}
+
+// A fresh or resumed agent draws its prompt first; its input is taken once the screen has settled.
+async function settleAndPaste(core: RpcClient, id: string, text: string, submit: boolean): Promise<void> {
+  const settled = await waitStable(async () => (await core.request(METHODS.tabsScreen, { id })).text)
+  if (!settled) throw new Error(`tab ${id} did not settle within 20 s`)
+  await pasteText(writer(core, id), text, submit)
+}
+
+// After a submitted paste, an agent is given time to start its turn; a timeout here is not an error.
+async function afterPaste(core: RpcClient, tab: { id: string; kind: string }, submit: boolean): Promise<void> {
+  if (submit && tab.kind !== 'terminal') await waitForWorking(tabFinder(core), tab.id)
+}
+
+function writer(core: RpcClient, id: string): (data: string) => Promise<void> {
+  return async (data) => {
+    await core.request(METHODS.tabsWrite, { id, dataB64: Buffer.from(data).toString('base64') })
+  }
+}
+
+// Prints why a wait ended without a turn, and returns its exit code.
+function reportTurn(id: string, outcome: TurnOutcome): number {
+  if (outcome.ok && outcome.data.status === 'idle') return 0
+  if (outcome.ok) console.error(formatError(`tab ${id} is gone`))
+  else if (outcome.error === 'timeout') console.error(formatError(`timed out waiting for tab ${id}`))
+  else if (outcome.error === 'no-status') console.error(formatError(`tab ${id} is a shell, it has no agent state to wait on`))
+  else console.error(formatError(`no such tab: ${id}`))
+  return turnExit(outcome)
+}
+
+function tabFinder(core: RpcClient): (id: string) => Promise<WaitTab | undefined> {
+  return async (id) => {
+    const [result, agents] = await Promise.all([core.request(METHODS.spacesList, {}), core.request(METHODS.agentsList, {})])
+    const tab = result.tabs.find((candidate) => candidate.id === id)
+    if (!tab) return undefined
+    const agent = agents.find((candidate) => candidate.tabId === id)
+    return { kind: tab.kind, alive: tab.alive, state: agent?.state ?? null, reason: agent?.reason }
+  }
+}
+
+function waitDeps(core: RpcClient): WaitDeps {
+  return { find: tabFinder(core), onChange: (cb) => core.onNotification('status.changed', () => cb()) }
+}
+
+async function resolveRef(core: RpcClient, ref: string): Promise<SpaceTabInfo> {
+  const { tabs } = await core.request(METHODS.spacesList, {})
+  const found = resolveTabRef(tabs, ref)
+  if (!found.ok) {
+    throw new Error(found.error === 'ambiguous' ? `${ref} matches more than one tab` : `no tab matches ${ref}`)
+  }
+  return tabs.find((tab) => tab.id === found.id) as SpaceTabInfo
+}
+
+const timeoutMs = (timeoutS: number | undefined): number => (timeoutS ?? DEFAULT_TIMEOUT_S) * 1000
+
+// A text argument, or standard input for `-`.
+function readText(arg: string): string {
+  return arg === '-' ? fs.readFileSync(0, 'utf8') : arg
 }
 
 function realpathOrSelf(target: string): string {

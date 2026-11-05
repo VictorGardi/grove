@@ -209,6 +209,11 @@ export class StatusService {
     this.apply(watch, applyEvent(watch.status, { kind: 'idle' }, this.clock()))
   }
 
+  // Drops a tab that was removed: its watch, its source and its timers go, and it is no longer listed.
+  untrack(tabId: string): void {
+    this.close(tabId)
+  }
+
   close(tabId?: string): void {
     const ids = tabId === undefined ? [...this.watches.keys()] : [tabId]
     for (const id of ids) {

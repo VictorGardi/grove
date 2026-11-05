@@ -5,13 +5,14 @@ export interface SpaceRecord {
   path: string
 }
 
-// Tab order within a space is the array order. `agent` and `agentSessionId` are optional and were added
-// without a version bump: a version-1 file written before them loads unchanged, with neither set.
+// Tab order within a space is the array order. `agent`, `agentSessionId` and `label` are optional and were added
+// without a version bump: a version-1 file written before them loads unchanged, with none set.
 export interface TabRecord {
   id: string
   spacePath: string
   agent?: AgentKind
   agentSessionId?: string
+  label?: string
 }
 
 export interface StateV1 {

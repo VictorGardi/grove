@@ -56,6 +56,7 @@ const newAgentButtons = [
 ] satisfies Array<{ kind: AgentKind; button: HTMLButtonElement }>
 const agentList = byId('agents')
 const agentsEmpty = byId('agents-empty')
+const installCliButton = byId('install-cli') as HTMLButtonElement
 
 // The command the window starts; the core builds the args from the agent kind.
 const AGENT_COMMANDS: Record<AgentKind, string> = { claude: 'claude', opencode: 'opencode', copilot: 'copilot' }
@@ -552,6 +553,21 @@ bridge.on('attention.notify', (notice) => {
   invoke('notify', { title, body: noticeBody(notice), sound: playSound(notice) }).catch(report)
 })
 
+// The CLI asked for a tab: its space and tab are shown, then the window comes forward. An unknown tab only raises the window.
+bridge.on('tabs.focus', ({ id }) => {
+  const tab = tabs.get(id)
+  if (tab) activate(tab)
+  invoke('raise_window').catch(report)
+})
+
+// The CLI closed the tab: it leaves the strip and the agents list at once, not at the next resync.
+bridge.on('tabs.closed', ({ id }) => {
+  const tab = tabs.get(id)
+  if (tab) removeTab(tab)
+  agents.delete(id)
+  renderAgents()
+})
+
 bridge.onStatus((status) => {
   if (status === 'closed') {
     statusLine.textContent = 'Reconnecting to the core...'
@@ -569,6 +585,17 @@ gridToggle.addEventListener('click', () => {
   gridOn = !gridOn
   gridToggle.setAttribute('aria-pressed', String(gridOn))
   paint()
+})
+installCliButton.addEventListener('click', () => {
+  installCliButton.disabled = true
+  invoke<string>('install_cli')
+    .then((path) => {
+      statusLine.textContent = `Installed ${path}`
+    })
+    .catch(report)
+    .finally(() => {
+      installCliButton.disabled = false
+    })
 })
 newTabButton.addEventListener('click', () => void newShellTab())
 for (const { kind, button } of newAgentButtons) {

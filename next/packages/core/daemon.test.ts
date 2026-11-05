@@ -143,6 +143,87 @@ describe('core daemon', () => {
     await first.request(METHODS.tabsResize, { id, cols: 90, rows: 26 })
     expect(await holderSize(id)).toEqual({ cols: 90, rows: 26 })
   })
+  it('closes a shell tab: it is gone from the holder and from spaces.list, and does not come back after a restart', async () => {
+    const stack = await startStack()
+    holder = stack.holder
+    const core = stack.core
+    clients.push(core)
+    const space = fs.realpathSync(fs.mkdtempSync(path.join(home, 'space-')))
+    await core.request(METHODS.spacesAdd, { path: space })
+    const { id } = await core.request(METHODS.tabsOpen, { spacePath: space, cols: 80, rows: 24, label: 'scratch' })
+    expect((await core.request(METHODS.spacesList, {})).tabs).toContainEqual(
+      expect.objectContaining({ id, kind: 'terminal', label: 'scratch', alive: true }),
+    )
+
+    expect(await core.request(METHODS.tabsClose, { id })).toEqual({})
+    expect((await core.request(METHODS.tabsList, {})).some((tab) => tab.id === id)).toBe(false)
+    expect((await core.request(METHODS.spacesList, {})).tabs.some((tab) => tab.id === id)).toBe(false)
+
+    core.close()
+    clients = []
+    await killCore(holder!)
+    const next = await connectWhenReady(coreSocketPath())
+    clients.push(next)
+    expect((await next.request(METHODS.tabsList, {})).some((tab) => tab.id === id)).toBe(false)
+    expect((await next.request(METHODS.spacesList, {})).tabs.some((tab) => tab.id === id)).toBe(false)
+  })
+
+  it('refuses to close a tab that is neither saved nor in the holder', async () => {
+    const stack = await startStack()
+    holder = stack.holder
+    const core = stack.core
+    clients.push(core)
+    await expect(core.request(METHODS.tabsClose, { id: 'nope0001' })).rejects.toThrow('no such tab: nope0001')
+  })
+
+  it('sends tabs.focus to every connected client and refuses an unknown tab', async () => {
+    const stack = await startStack()
+    holder = stack.holder
+    const first = stack.core
+    clients.push(first)
+    const second = await connectWhenReady(coreSocketPath())
+    clients.push(second)
+
+    const focused: Array<{ id: string }> = []
+    const focusedOnSecond: Array<{ id: string }> = []
+    first.onNotification(METHODS.tabsFocus, (params) => focused.push(params))
+    second.onNotification(METHODS.tabsFocus, (params) => focusedOnSecond.push(params))
+
+    const { id } = await first.request(METHODS.tabsCreate, { command: '/bin/sh', cwd: home, cols: 80, rows: 24 })
+    expect(await first.request(METHODS.tabsFocus, { id })).toEqual({})
+    await waitFor(
+      async () => focused.length + focusedOnSecond.length,
+      (count) => count === 2,
+    )
+    expect(focused).toEqual([{ id }])
+    expect(focusedOnSecond).toEqual([{ id }])
+
+    await expect(first.request(METHODS.tabsFocus, { id: 'nope0001' })).rejects.toThrow('no such tab: nope0001')
+    await expect(first.request(METHODS.tabsFocus, { id: 'bad id!' })).rejects.toThrow('tab id is not valid')
+  })
+
+  it('tells every connected client when a tab is closed', async () => {
+    const stack = await startStack()
+    holder = stack.holder
+    const first = stack.core
+    clients.push(first)
+    const second = await connectWhenReady(coreSocketPath())
+    clients.push(second)
+
+    const closed: Array<{ id: string }> = []
+    const closedOnSecond: Array<{ id: string }> = []
+    first.onNotification('tabs.closed', (params) => closed.push(params))
+    second.onNotification('tabs.closed', (params) => closedOnSecond.push(params))
+
+    const { id } = await first.request(METHODS.tabsCreate, { command: '/bin/sh', cwd: home, cols: 80, rows: 24 })
+    await first.request(METHODS.tabsClose, { id })
+    await waitFor(
+      async () => closed.length + closedOnSecond.length,
+      (count) => count === 2,
+    )
+    expect(closed).toEqual([{ id }])
+    expect(closedOnSecond).toEqual([{ id }])
+  })
 })
 
 // Claude tabs run a fake launch (a shell that prints a line and sleeps) and a fake source, which replays
@@ -564,5 +645,29 @@ describe('core daemon agents', () => {
     expect(await aliveFromHolder()).toEqual(new Set())
     const saved = JSON.parse(fs.readFileSync(stateFile, 'utf8')) as { tabs: unknown[] }
     expect(saved.tabs).toEqual([])
+  })
+
+  it('saves the label of a new Claude tab, keeps it on a resume, and closing the tab removes it and its status', async () => {
+    const { core } = await startDaemon()
+    const { id } = await core.request(METHODS.tabsCreate, {
+      command: 'claude',
+      cwd: space,
+      cols: 80,
+      rows: 24,
+      label: 'api fix',
+      agent: { kind: 'claude' },
+    })
+    expect((await core.request(METHODS.spacesList, {})).tabs).toContainEqual(
+      expect.objectContaining({ id, kind: 'claude', label: 'api fix' }),
+    )
+
+    await core.request(METHODS.tabsKill, { id })
+    await core.request(METHODS.tabsCreate, { id, command: 'claude', cwd: space, cols: 80, rows: 24, agent: { kind: 'claude' } })
+    expect((await core.request(METHODS.spacesList, {})).tabs).toContainEqual(expect.objectContaining({ id, label: 'api fix' }))
+
+    expect(await core.request(METHODS.tabsClose, { id })).toEqual({})
+    expect(await agentState(core, id)).toBeUndefined()
+    expect((await core.request(METHODS.spacesList, {})).tabs.some((tab) => tab.id === id)).toBe(false)
+    expect(await aliveFromHolder()).not.toContain(id)
   })
 })

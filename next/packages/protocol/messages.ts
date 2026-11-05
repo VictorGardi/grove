@@ -18,6 +18,8 @@ export const METHODS = {
   tabsScreen: 'tabs.screen',
   agentsList: 'agents.list',
   attentionFocus: 'attention.focus',
+  tabsClose: 'tabs.close',
+  tabsFocus: 'tabs.focus',
 } as const
 
 export const ERROR_CODES = {
@@ -81,6 +83,8 @@ export interface SpaceInfo {
 export interface SpaceTabInfo {
   id: string
   spacePath: string
+  kind: 'terminal' | AgentKind
+  label: string | null
   alive: boolean
   exitCode: number | null
 }
@@ -127,6 +131,7 @@ export interface MethodMap {
       cols: number
       rows: number
       agent?: { kind: AgentKind; resumeId?: string }
+      label?: string
     }
     result: { id: string }
   }
@@ -140,11 +145,15 @@ export interface MethodMap {
     result: { spaces: SpaceInfo[]; tabs: SpaceTabInfo[]; refused: string | null }
   }
   'spaces.add': { params: { path: string }; result: SpaceInfo }
-  'tabs.open': { params: { spacePath: string; cols: number; rows: number }; result: { id: string } }
+  'tabs.open': { params: { spacePath: string; cols: number; rows: number; label?: string }; result: { id: string } }
   'tabs.screen': { params: { id: string }; result: { text: string } }
   'agents.list': { params: Empty; result: AgentInfo[] }
   // The tab on screen (null when none) and whether the window has focus.
   'attention.focus': { params: { tabId: string | null; windowFocused: boolean }; result: Empty }
+  // Kills the tab in the holder and removes its saved record.
+  'tabs.close': { params: { id: string }; result: Empty }
+  // Asks every client to show the tab; the window selects it and raises itself.
+  'tabs.focus': { params: { id: string }; result: Empty }
 }
 
 export interface NotificationMap {
@@ -152,6 +161,9 @@ export interface NotificationMap {
   'tabs.exit': { id: string; exitCode: number | null }
   'status.changed': StatusChange
   'attention.notify': AttentionNotice
+  'tabs.focus': { id: string }
+  // A tab was closed on purpose: every window drops it.
+  'tabs.closed': { id: string }
 }
 
 export type MethodName = keyof MethodMap

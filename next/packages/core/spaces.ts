@@ -39,6 +39,8 @@ export class SpacesService {
       return {
         id: tab.id,
         spacePath: tab.spacePath,
+        kind: tab.agent ?? 'terminal',
+        label: tab.label ?? null,
         alive: live?.alive ?? false,
         exitCode: live?.exitCode ?? null,
       }
@@ -69,7 +71,13 @@ export class SpacesService {
     return this.describe(real, spacePaths)
   }
 
-  async openTab(spacePath: string, cols: number, rows: number, holder: RpcClient): Promise<{ id: string }> {
+  async openTab(
+    spacePath: string,
+    cols: number,
+    rows: number,
+    holder: RpcClient,
+    label?: string,
+  ): Promise<{ id: string }> {
     this.assertNotRefused()
     if (!this.state.spaces.some((space) => space.path === spacePath)) {
       throw new RpcError(ERROR_CODES.invalidParams, `not a space: ${spacePath}`)
@@ -83,7 +91,7 @@ export class SpacesService {
       cols,
       rows,
     })
-    const tab: TabRecord = { id, spacePath }
+    const tab: TabRecord = label === undefined ? { id, spacePath } : { id, spacePath, label }
     const next: StateV1 = { ...this.state, tabs: [...this.state.tabs, tab] }
     saveState(this.file, next)
     this.state = next
@@ -136,6 +144,15 @@ export class SpacesService {
     const index = this.state.tabs.findIndex((candidate) => candidate.id === tab.id)
     const tabs = index === -1 ? [...this.state.tabs, tab] : this.state.tabs.map((candidate, i) => (i === index ? tab : candidate))
     const next: StateV1 = { ...this.state, tabs }
+    saveState(this.file, next)
+    this.state = next
+  }
+
+  // Drops a tab's saved record, so a restart does not recreate it. An id with no record is left as it is.
+  removeTab(id: string): void {
+    this.assertNotRefused()
+    if (!this.tabRecord(id)) return
+    const next: StateV1 = { ...this.state, tabs: this.state.tabs.filter((tab) => tab.id !== id) }
     saveState(this.file, next)
     this.state = next
   }

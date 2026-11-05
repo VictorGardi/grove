@@ -6,9 +6,10 @@ import { connectRpc, type RpcClient } from '../protocol/client.ts'
 import { bytesToB64, createLineDecoder, encodeLine } from '../protocol/framing.ts'
 import { coreSocketPath, groveNextHome, holderSocketPath } from '../protocol/paths.ts'
 import { ERROR_CODES, METHODS, PROTOCOL_VERSION } from '../protocol/messages.ts'
-import type { JsonRpcId, JsonRpcRequest, MethodMap, MethodName } from '../protocol/messages.ts'
+import type { Empty, JsonRpcId, JsonRpcRequest, MethodMap, MethodName, NotificationMap } from '../protocol/messages.ts'
 import { RpcError } from '../protocol/errors.ts'
 import { SpacesService } from './spaces.ts'
+import type { TabRecord } from './store/state.ts'
 import { adapters as registry } from './agents/registry.ts'
 import type { AgentAdapter, AgentKind, AgentLaunch } from './status/adapter.ts'
 import { StatusService } from './status/service.ts'
@@ -107,7 +108,7 @@ export async function startCoreDaemon(
   // Agent tabs are rebuilt before the core listens, so the first client already sees their state.
   status.restore(spaces.agentTabs(), aliveAtStart)
   status.start()
-  const deps: Deps = { spaces, status, attention, home, adapters, available }
+  const deps: Deps = { spaces, status, attention, home, adapters, available, broadcast }
 
   const server = net.createServer((socket) => {
     sockets.add(socket)
@@ -139,7 +140,9 @@ export async function startCoreDaemon(
         if (request.method === METHODS.tabsResize || request.method === METHODS.tabsAttach) {
           tabOwners.set((request.params as MethodMap['tabs.attach']['params']).id, socket)
         }
-        if (request.method === METHODS.tabsKill) tabOwners.delete((request.params as MethodMap['tabs.kill']['params']).id)
+        if (request.method === METHODS.tabsKill || request.method === METHODS.tabsClose) {
+          tabOwners.delete((request.params as MethodMap['tabs.kill']['params']).id)
+        }
         if (request.id !== undefined) send({ jsonrpc: '2.0', id: request.id, result })
       } catch (error) {
         if (request.id !== undefined) send(toFailure(request.id, error))
@@ -230,6 +233,7 @@ interface Deps {
   home: string
   adapters: Partial<Record<AgentKind, AgentAdapter>>
   available: Set<AgentKind>
+  broadcast: (message: unknown) => void
 }
 
 async function dispatch(method: string, rawParams: unknown, holder: Promise<RpcClient>, deps: Deps): Promise<unknown> {
@@ -241,6 +245,12 @@ async function dispatch(method: string, rawParams: unknown, holder: Promise<RpcC
     if (typeof p?.windowFocused !== 'boolean') throw new RpcError(ERROR_CODES.invalidParams, 'windowFocused must be a boolean')
     deps.attention.focus(p.tabId, p.windowFocused)
     return {} satisfies MethodMap['attention.focus']['result']
+  }
+  if (method === METHODS.tabsClose) {
+    return closeTab(rawParams, await holder, deps)
+  }
+  if (method === METHODS.tabsFocus) {
+    return focusTab(rawParams, await holder, deps)
   }
   if (method === METHODS.corePing) {
     const result: MethodMap['core.ping']['result'] = { protocolVersion: PROTOCOL_VERSION }
@@ -278,6 +288,7 @@ async function createAgentTab(
     throw new RpcError(ERROR_CODES.invalidParams, `agent.kind must be one of ${known}`)
   }
   if (p.id !== undefined && !TAB_ID.test(p.id)) throw new RpcError(ERROR_CODES.invalidParams, 'tab id is not valid')
+  const labelParam = optionalLabel(p)
   // Before the lookup: a refused state must not even start a tab in the holder.
   deps.spaces.assertNotRefused()
   const id = p.id ?? randomUUID().slice(0, 8)
@@ -289,6 +300,8 @@ async function createAgentTab(
     throw new RpcError(ERROR_CODES.invalidParams, `tab ${id} is a ${saved.agent} tab`)
   }
   const spacePath = saved?.spacePath ?? stringParam(p, 'cwd')
+  // A resume keeps the label it was saved with.
+  const label = saved?.label ?? labelParam
   if (!deps.spaces.isSpace(spacePath)) throw new RpcError(ERROR_CODES.invalidParams, `not a space: ${spacePath}`)
 
   // A command that is not on the login shell's PATH is refused before anything is written for it.
@@ -308,7 +321,8 @@ async function createAgentTab(
   }
   if (p.id !== undefined) await removeExitedTab(holder, id)
   // Saved before the holder create: if the create fails, the record stays and the tab can be resumed.
-  deps.spaces.saveAgentTab({ id, spacePath, agent: kind, agentSessionId: launch.sessionId })
+  const record: TabRecord = { id, spacePath, agent: kind, agentSessionId: launch.sessionId }
+  deps.spaces.saveAgentTab(label === undefined ? record : { ...record, label })
   await holder.request(METHODS.tabsCreate, {
     id,
     command: launch.command,
@@ -337,6 +351,38 @@ async function removeExitedTab(holder: RpcClient, id: string): Promise<void> {
   }
 }
 
+// Kills the tab in the holder, then drops its record and its status. An id that is neither saved nor in the holder is refused.
+async function closeTab(rawParams: unknown, holder: RpcClient, deps: Deps): Promise<Empty> {
+  const id = tabIdParam(rawParams)
+  deps.spaces.assertNotRefused()
+  const saved = deps.spaces.tabRecord(id) !== undefined
+  const live = (await holder.request(METHODS.tabsList, {})).some((tab) => tab.id === id)
+  if (!saved && !live) throw new RpcError(ERROR_CODES.invalidParams, `no such tab: ${id}`)
+  if (live) await holder.request(METHODS.tabsKill, { id })
+  deps.spaces.removeTab(id)
+  deps.status.untrack(id)
+  const params: NotificationMap['tabs.closed'] = { id }
+  deps.broadcast(notification('tabs.closed', params))
+  return {} satisfies MethodMap['tabs.close']['result']
+}
+
+// Tells every connected window to show the tab. The tab must be saved or live in the holder.
+async function focusTab(rawParams: unknown, holder: RpcClient, deps: Deps): Promise<Empty> {
+  const id = tabIdParam(rawParams)
+  const saved = deps.spaces.tabRecord(id) !== undefined
+  const live = (await holder.request(METHODS.tabsList, {})).some((tab) => tab.id === id)
+  if (!saved && !live) throw new RpcError(ERROR_CODES.invalidParams, `no such tab: ${id}`)
+  const params: NotificationMap['tabs.focus'] = { id }
+  deps.broadcast(notification('tabs.focus', params))
+  return {} satisfies MethodMap['tabs.focus']['result']
+}
+
+function tabIdParam(params: unknown): string {
+  const id = (params as Record<string, unknown> | null)?.id
+  if (typeof id !== 'string' || !TAB_ID.test(id)) throw new RpcError(ERROR_CODES.invalidParams, 'tab id is not valid')
+  return id
+}
+
 async function dispatchSpaces(
   method: string,
   rawParams: unknown,
@@ -349,12 +395,20 @@ async function dispatchSpaces(
     return spaces.add(stringParam(p, 'path'))
   }
   const p = rawParams as MethodMap['tabs.open']['params']
-  return spaces.openTab(stringParam(p, 'spacePath'), numberParam(p, 'cols'), numberParam(p, 'rows'), holder)
+  return spaces.openTab(stringParam(p, 'spacePath'), numberParam(p, 'cols'), numberParam(p, 'rows'), holder, optionalLabel(p))
 }
 
 function stringParam(params: unknown, key: string): string {
   const value = (params as Record<string, unknown> | null)?.[key]
   if (typeof value !== 'string') throw new RpcError(ERROR_CODES.invalidParams, `${key} must be a string`)
+  return value
+}
+
+// A label is optional; when given it is a non-empty string.
+function optionalLabel(params: unknown): string | undefined {
+  const value = (params as Record<string, unknown> | null)?.label
+  if (value === undefined) return undefined
+  if (typeof value !== 'string' || value === '') throw new RpcError(ERROR_CODES.invalidParams, 'label must be a non-empty string')
   return value
 }
 

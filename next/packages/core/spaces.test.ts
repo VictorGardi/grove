@@ -8,7 +8,7 @@ import { afterEach, beforeEach, describe, expect, it } from 'vitest'
 import type { RpcClient } from '../protocol/client.ts'
 import { connectRpc } from '../protocol/client.ts'
 import { b64ToBytes, bytesToB64 } from '../protocol/framing.ts'
-import { coreSocketPath } from '../protocol/paths.ts'
+import { coreSocketPath, holderSocketPath } from '../protocol/paths.ts'
 import { ERROR_CODES, METHODS } from '../protocol/messages.ts'
 import { RpcError } from '../protocol/errors.ts'
 import { SpacesService } from './spaces.ts'
@@ -167,7 +167,7 @@ describe('spaces and tabs', () => {
     clients.push(restored)
     const listed = await restored.request(METHODS.spacesList, {})
     expect(listed.spaces.map((space) => space.path)).toEqual([worktree])
-    expect(listed.tabs).toEqual([{ id, spacePath: worktree, alive: true, exitCode: null }])
+    expect(listed.tabs).toEqual([{ id, spacePath: worktree, kind: 'terminal', label: null, alive: true, exitCode: null }])
     expect(await shellDirectory(restored, id)).toBe(worktree)
   })
 
@@ -207,5 +207,50 @@ describe('spaces and tabs', () => {
     expect(listed.tabs.find((tab) => tab.id === 'dup0001')?.alive).toBe(true)
     expect(listed.tabs.find((tab) => tab.id === 'other001')?.alive).toBe(true)
     expect(await shellDirectory(next.core, 'other001')).toBe(space)
+  })
+
+  it('lists each tab with its kind and label, and a shell tab with no label as terminal and null', async () => {
+    const stack = await startStack()
+    holder = stack.holder
+    clients.push(stack.core)
+    const holderClient = await connectRpc(holderSocketPath())
+    clients.push(holderClient)
+    const service = new SpacesService(path.join(home, 'service.json'))
+    const space = fs.realpathSync(fs.mkdtempSync(path.join(root, 'labels-')))
+    await service.add(space)
+
+    const plain = await service.openTab(space, 80, 24, holderClient)
+    const named = await service.openTab(space, 80, 24, holderClient, 'api fix')
+    service.saveAgentTab({ id: 'claude01', spacePath: space, agent: 'claude', label: 'review' })
+
+    const listed = await service.list(holderClient)
+    expect(listed.tabs).toEqual([
+      { id: plain.id, spacePath: space, kind: 'terminal', label: null, alive: true, exitCode: null },
+      { id: named.id, spacePath: space, kind: 'terminal', label: 'api fix', alive: true, exitCode: null },
+      { id: 'claude01', spacePath: space, kind: 'claude', label: 'review', alive: false, exitCode: null },
+    ])
+  })
+
+  it('removes a saved tab, and a new stack does not recreate it after its holder tab is gone', async () => {
+    const stack = await startStack()
+    holder = stack.holder
+    clients.push(stack.core)
+    const holderClient = await connectRpc(holderSocketPath())
+    clients.push(holderClient)
+    const file = path.join(home, 'service.json')
+    const service = new SpacesService(file)
+    const space = fs.realpathSync(fs.mkdtempSync(path.join(root, 'remove-')))
+    await service.add(space)
+    const { id } = await service.openTab(space, 80, 24, holderClient)
+
+    service.removeTab(id)
+    expect(service.tabRecord(id)).toBeUndefined()
+    expect(JSON.parse(fs.readFileSync(file, 'utf8')).tabs).toEqual([])
+    await holderClient.request(METHODS.tabsKill, { id })
+
+    const next = new SpacesService(file)
+    expect(await next.restore(holderClient)).toBe(0)
+    expect((await holderClient.request(METHODS.tabsList, {})).some((tab) => tab.id === id)).toBe(false)
+    expect((await next.list(holderClient)).tabs).toEqual([])
   })
 })

@@ -84,7 +84,8 @@ button {
   color: var(--muted);
 }
 
-.space {
+.space,
+.install-cli {
   width: 100%;
   text-align: left;
   background: var(--surface);
@@ -247,6 +248,7 @@ button {
 
 .add-space input:disabled,
 .add-space button:disabled,
+.install-cli:disabled,
 .new-tab:disabled {
   opacity: 0.5;
   cursor: default;
@@ -259,6 +261,13 @@ button {
 
 .sidebar-foot {
   margin-top: auto;
+  display: flex;
+  flex-direction: column;
+  gap: inherit;
+}
+
+.install-cli {
+  cursor: pointer;
 }
 
 .sidebar-foot a {

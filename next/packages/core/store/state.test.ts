@@ -105,6 +105,25 @@ describe('state store', () => {
     expect(loadState(file)).toEqual({ kind: 'ok', state })
   })
 
+  it('loads a version-1 file written before labels, with no label set', () => {
+    const bytes = '{"version":1,"spaces":[{"path":"/a"}],"tabs":[{"id":"abc12345","spacePath":"/a","agent":"claude"}]}'
+    fs.writeFileSync(file, bytes)
+    const result = loadState(file)
+    expect(result.kind).toBe('ok')
+    if (result.kind === 'ok') expect(result.state.tabs[0]).not.toHaveProperty('label')
+    expect(fs.readFileSync(file, 'utf8')).toBe(bytes)
+  })
+
+  it('round-trips a tab with its label', () => {
+    const state: StateV1 = {
+      version: 1,
+      spaces: [{ path: '/a' }],
+      tabs: [{ id: 'abc12345', spacePath: '/a', agent: 'claude', agentSessionId: 'sess-1', label: 'api fix' }],
+    }
+    saveState(file, state)
+    expect(loadState(file)).toEqual({ kind: 'ok', state })
+  })
+
   it('round-trips a saved state and leaves no tmp file behind', () => {
     const state: StateV1 = {
       version: 1,

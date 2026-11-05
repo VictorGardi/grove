@@ -1,7 +1,9 @@
 use serde::Serialize;
 use serde_json::Value;
 use std::collections::HashMap;
+use std::fs;
 use std::io::{BufRead, BufReader, Write};
+use std::os::unix::fs::PermissionsExt;
 use std::os::unix::net::UnixStream;
 use std::os::unix::process::CommandExt;
 use std::path::PathBuf;
@@ -11,7 +13,7 @@ use std::sync::{Arc, Mutex};
 use std::thread;
 use std::time::{Duration, Instant};
 use tauri::ipc::Channel;
-use tauri::{AppHandle, State};
+use tauri::{AppHandle, Manager, State};
 use tauri_plugin_notification::NotificationExt;
 
 const CLOSED_LINE: &str = r#"{"jsonrpc":"2.0","method":"bridge.closed","params":{}}"#;
@@ -194,6 +196,53 @@ fn env_info() -> EnvInfo {
     }
 }
 
+// Brings the main window forward for a CLI focus request.
+#[tauri::command]
+fn raise_window(app: AppHandle) -> Result<(), String> {
+    let window = app.get_webview_window("main").ok_or("the main window is not open")?;
+    window.show().map_err(|error| error.to_string())?;
+    window.unminimize().map_err(|error| error.to_string())?;
+    window.set_focus().map_err(|error| error.to_string())
+}
+
+// The first line of every wrapper written by install_cli; a file that starts with it is ours and may be replaced.
+const WRAPPER_START: &str = "#!/bin/sh\nexec '";
+
+// Writes ~/.local/bin/grove-next as a wrapper script, not a symlink: the script finds its folder from $0.
+#[tauri::command]
+fn install_cli() -> Result<String, String> {
+    let script = fs::canonicalize(next_root().join("bin/grove-next"))
+        .map_err(|error| format!("grove-next not found under {}: {error}", next_root().display()))?;
+    let dir = home_dir().join(".local/bin");
+    let target = dir.join("grove-next");
+    // A symlink is never followed here: it is not one of our wrappers, whatever it points at.
+    if let Ok(metadata) = fs::symlink_metadata(&target) {
+        let ours = !metadata.file_type().is_symlink()
+            && fs::read_to_string(&target).map(|text| text.starts_with(WRAPPER_START)).unwrap_or(false);
+        if !ours {
+            return Err(format!("{} exists and is not a grove-next command; remove it first", target.display()));
+        }
+    }
+    fs::create_dir_all(&dir).map_err(|error| format!("could not create {}: {error}", dir.display()))?;
+    let path = script.display().to_string();
+    // A line break in the path would split the wrapper's exec line, so such a checkout is refused.
+    if path.chars().any(char::is_control) {
+        return Err(format!("{path} has a control character in its path; the command cannot be installed from there"));
+    }
+    let quoted = path.replace('\'', r"'\''");
+    // Written beside the target and renamed over it, so a failed write never leaves a half-written wrapper behind.
+    let staged = dir.join(format!(".grove-next.{}.tmp", std::process::id()));
+    fs::write(&staged, format!("{WRAPPER_START}{quoted}' \"$@\"\n"))
+        .map_err(|error| format!("could not write {}: {error}", staged.display()))?;
+    fs::set_permissions(&staged, fs::Permissions::from_mode(0o755))
+        .map_err(|error| format!("could not make {} executable: {error}", staged.display()))?;
+    fs::rename(&staged, &target).map_err(|error| {
+        let _ = fs::remove_file(&staged);
+        format!("could not install {}: {error}", target.display())
+    })?;
+    Ok(target.display().to_string())
+}
+
 // Shows a notification and, when there is a sound file, plays it with afplay without waiting for it to finish.
 #[tauri::command]
 fn notify(app: AppHandle, title: String, body: String, sound: Option<String>) {
@@ -223,7 +272,7 @@ pub fn run() {
     tauri::Builder::default()
         .manage(Bridge::default())
         .plugin(tauri_plugin_notification::init())
-        .invoke_handler(tauri::generate_handler![connect, rpc, env_info, notify])
+        .invoke_handler(tauri::generate_handler![connect, rpc, env_info, notify, raise_window, install_cli])
         .run(tauri::generate_context!())
         .expect("error while running the Grove window");
 }
