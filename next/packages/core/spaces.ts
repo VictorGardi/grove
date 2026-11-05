@@ -49,8 +49,8 @@ export class SpacesService {
     }
   }
 
-  async list(holder: RpcClient): Promise<SpacesList> {
-    const spaces = await Promise.all(this.state.spaces.map((space) => this.describe(space, this.state.spaces)))
+  async list(holder: RpcClient, tabsOnly = false): Promise<SpacesList> {
+    const spaces = tabsOnly ? [] : await Promise.all(this.state.spaces.map((space) => this.describe(space, this.state.spaces)))
     const holderTabs = await holder.request(METHODS.tabsList, {})
     const tabs: SpaceTabInfo[] = this.state.tabs.map((tab) => {
       const live = holderTabs.find((candidate) => candidate.id === tab.id)

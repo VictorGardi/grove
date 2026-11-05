@@ -541,5 +541,7 @@ describe('StatusService', () => {
     service.identify('t1', 'S1')
     service.identify('t1', 'S1')
     expect(started).toEqual(['', 'S1'])
+    // The id is saved once, so a core restart can watch and resume the tab.
+    expect(sessions).toEqual([{ tabId: 't1', sessionId: 'S1' }])
   })
 })

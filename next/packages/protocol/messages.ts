@@ -239,8 +239,9 @@ export interface MethodMap {
   'tabs.resize': { params: { id: string; cols: number; rows: number }; result: Empty }
   'tabs.kill': { params: { id: string }; result: Empty }
   'tabs.attach': { params: { id: string }; result: { screenB64: string; cols: number; rows: number } }
+  // With `tabsOnly` the spaces come back empty: git is not asked about each folder, for a caller that polls for one tab.
   'spaces.list': {
-    params: Empty
+    params: { tabsOnly?: boolean }
     result: { spaces: SpaceInfo[]; tabs: SpaceTabInfo[]; refused: string | null }
   }
   // Always adds a new space, even when the folder is already one.

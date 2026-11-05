@@ -240,7 +240,7 @@ function reportTurn(id: string, outcome: TurnOutcome): number {
 
 function tabFinder(core: RpcClient): (id: string) => Promise<WaitTab | undefined> {
   return async (id) => {
-    const [result, agents] = await Promise.all([core.request(METHODS.spacesList, {}), core.request(METHODS.agentsList, {})])
+    const [result, agents] = await Promise.all([core.request(METHODS.spacesList, { tabsOnly: true }), core.request(METHODS.agentsList, {})])
     const tab = result.tabs.find((candidate) => candidate.id === id)
     if (!tab) return undefined
     const agent = agents.find((candidate) => candidate.tabId === id)
@@ -253,7 +253,7 @@ function waitDeps(core: RpcClient): WaitDeps {
 }
 
 async function resolveRef(core: RpcClient, ref: string): Promise<SpaceTabInfo> {
-  const { tabs } = await core.request(METHODS.spacesList, {})
+  const { tabs } = await core.request(METHODS.spacesList, { tabsOnly: true })
   const found = resolveTabRef(tabs, ref)
   if (!found.ok) {
     throw new Error(found.error === 'ambiguous' ? `${ref} matches more than one tab` : `no tab matches ${ref}`)

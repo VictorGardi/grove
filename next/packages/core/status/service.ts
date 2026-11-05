@@ -123,6 +123,7 @@ export class StatusService {
       adopted: true,
     })
     this.writeSnapshot(watch)
+    if (input.sessionId !== '') this.saveSession(input.tabId, input.sessionId)
   }
 
   // Gives an adopted tab its session id once it is known. A source that started without one (Copilot's, which reads its
@@ -134,6 +135,8 @@ export class StatusService {
     watch.source = this.startSource(watch, sessionId)
     watch.resumeId = sessionId
     this.writeSnapshot(watch)
+    // Saved with the tab, so a core restart can still watch it and resume it.
+    this.saveSession(tabId, sessionId)
   }
 
   // The agent kind of an adopted tab, or undefined for a tab the app launched or that has no watch.
@@ -337,11 +340,7 @@ export class StatusService {
     if (event.kind === 'session') {
       if (event.resumeId !== watch.resumeId) {
         watch.resumeId = event.resumeId
-        try {
-          this.options.onSession?.(watch.tabId, event.resumeId)
-        } catch (error) {
-          console.error(`core: could not save the session for tab ${watch.tabId}: ${errorText(error)}`)
-        }
+        this.saveSession(watch.tabId, event.resumeId)
       }
       return
     }
@@ -349,6 +348,14 @@ export class StatusService {
   }
 
   // Sets unknown for a tab that is gone or whose reader or screen cannot be read. A tab already unknown is left alone.
+  private saveSession(tabId: string, sessionId: string): void {
+    try {
+      this.options.onSession?.(tabId, sessionId)
+    } catch (error) {
+      console.error(`core: could not save the session for tab ${tabId}: ${errorText(error)}`)
+    }
+  }
+
   private fallToUnknown(watch: Watch, now: number): void {
     if (watch.status.state !== 'unknown') this.apply(watch, unknownStatus(now))
   }

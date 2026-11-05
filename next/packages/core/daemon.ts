@@ -545,7 +545,7 @@ function tabIdParam(params: unknown): string {
 
 async function dispatchSpaces(method: string, rawParams: unknown, holder: RpcClient, deps: Deps): Promise<unknown> {
   const { spaces } = deps
-  if (method === METHODS.spacesList) return spaces.list(holder)
+  if (method === METHODS.spacesList) return spaces.list(holder, (rawParams as { tabsOnly?: boolean } | null)?.tabsOnly === true)
   if (method === METHODS.spacesAdd) {
     const p = rawParams as MethodMap['spaces.add']['params']
     return spaces.add(stringParam(p, 'path'))

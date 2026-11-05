@@ -243,6 +243,23 @@ describe('spaces and tabs', () => {
     expect((await service.list(holderClient)).tabs.find((tab) => tab.id === plain.id)?.label).toBe('renamed')
   })
 
+  it('lists only the tabs, with no spaces, when asked to (a poll for one tab skips the git lookups)', async () => {
+    const stack = await startStack()
+    holder = stack.holder
+    clients.push(stack.core)
+    const holderClient = await connectRpc(holderSocketPath())
+    clients.push(holderClient)
+    const service = new SpacesService(path.join(home, 'tabs-only.json'))
+    const space = fs.realpathSync(fs.mkdtempSync(path.join(root, 'tabs-only-')))
+    const { id: spaceId } = await service.add(space)
+    const tab = await service.openTab(spaceId, 80, 24, holderClient)
+
+    const listed = await service.list(holderClient, true)
+    expect(listed.spaces).toEqual([])
+    expect(listed.tabs.map((t) => t.id)).toEqual([tab.id])
+    expect((await service.list(holderClient)).spaces).toHaveLength(1)
+  })
+
   it('renames a tab: trims the label, clears it on a blank one, and rejects one over 80 characters', async () => {
     const stack = await startStack()
     holder = stack.holder

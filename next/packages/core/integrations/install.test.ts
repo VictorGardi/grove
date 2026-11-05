@@ -41,6 +41,14 @@ describe('integration install', () => {
     expect(fs.readFileSync(`${file}.grove-next.bak`, 'utf8')).toBe('{"model":"opus"}')
   })
 
+  it('keeps the permissions of a private settings file', () => {
+    const file = path.join(dir, 'settings.json')
+    fs.writeFileSync(file, '{"model":"opus"}', { mode: 0o600 })
+    fs.chmodSync(file, 0o600)
+    installClaude(file, '/usr/bin/node')
+    expect(fs.statSync(file).mode & 0o777).toBe(0o600)
+  })
+
   it('installing twice changes nothing the second time', () => {
     const file = path.join(dir, 'settings.json')
     installClaude(file, '/usr/bin/node')

@@ -179,7 +179,10 @@ export function writeSettings(file: string, next: JsonObject, previous: JsonObje
   }
   fs.mkdirSync(path.dirname(file), { recursive: true })
   const tmp = `${file}.grove-next.tmp`
-  fs.writeFileSync(tmp, `${JSON.stringify(next, null, 2)}\n`)
+  // The rewritten file keeps the permissions of the one it replaces: a settings file kept private stays private.
+  const mode = existed ? fs.statSync(file).mode & 0o777 : undefined
+  fs.writeFileSync(tmp, `${JSON.stringify(next, null, 2)}\n`, mode === undefined ? undefined : { mode })
+  if (mode !== undefined) fs.chmodSync(tmp, mode)
   fs.renameSync(tmp, file)
   return { file, backup, changed: true }
 }
