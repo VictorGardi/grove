@@ -27,6 +27,7 @@ export const KEY_ACTIONS = [
   'close-tab',
   'previous-tab',
   'grid-tab',
+  'next-urgent',
   'sidebar-toggle',
   'notes',
   'space-1',
@@ -72,6 +73,7 @@ export const DEFAULT_VALUES: ConfigValues = {
     'close-tab': 'mod+w',
     'previous-tab': 'ctrl+tab',
     'grid-tab': 'mod+shift+g',
+    'next-urgent': 'mod+.',
     'sidebar-toggle': 'mod+b',
     notes: 'mod+shift+n',
     'space-1': 'mod+1',
@@ -132,11 +134,11 @@ const MODIFIERS = ['mod', 'ctrl', 'alt', 'shift'] as const
 const NAMED_KEYS = ['tab'] as const
 
 // The canonical form of a key binding such as "mod+shift+1": one or more modifiers in a fixed order, then one
-// lowercase letter, digit or named key (tab). Returns null when the text is not a binding.
+// lowercase letter, digit, period or named key (tab). Returns null when the text is not a binding.
 export function canonicalBinding(text: string): string | null {
   const parts = text.split('+')
   const key = parts.pop() ?? ''
-  if (!/^[a-z0-9]$/.test(key) && !(NAMED_KEYS as readonly string[]).includes(key)) return null
+  if (!/^[a-z0-9.]$/.test(key) && !(NAMED_KEYS as readonly string[]).includes(key)) return null
   if (parts.length === 0) return null
   if (new Set(parts).size !== parts.length) return null
   if (!parts.every((part) => (MODIFIERS as readonly string[]).includes(part))) return null
@@ -150,6 +152,7 @@ const KEY_DESCRIPTIONS: Record<KeyAction, string> = {
   'close-tab': 'Closes the active tab.',
   'previous-tab': 'Goes back to the tab you were in before the active one, in the active space. Pressed again, it goes back to the one before.',
   'grid-tab': 'Puts the active tab into the grid and shows the grid. A tab already in the grid goes out of it and shows full screen. The grid holds nine tabs.',
+  'next-urgent': 'Goes to the tab that most needs you, in any space: tabs that need you first, then finished ones, the longest waiting first. With none of those, it goes to the working tabs. Pressed again, it goes to the next one.',
   'sidebar-toggle': 'Shows or hides the sidebar. The button in the tab strip does the same.',
   notes: 'Opens or closes the notes: one markdown page that saves as you type.',
   'space-1': 'Focuses the first space in the sidebar, with the tab it last showed.',
@@ -236,7 +239,7 @@ export const SCHEMAS: Record<ConfigFile, Schema> = {
   'keys.json': {
     file: 'keys.json',
     description:
-      'Key bindings of the window. A binding is one or more modifiers (mod, ctrl, alt, shift) and one letter, digit or "tab", joined by "+", in any order. "mod" is Cmd on macOS and Ctrl elsewhere; "ctrl" is the Control key on every platform. Two actions cannot share a binding. The space actions name the sidebar order, and a space past the last one is ignored.',
+      'Key bindings of the window. A binding is one or more modifiers (mod, ctrl, alt, shift) and one letter, digit, "." or "tab", joined by "+", in any order. "mod" is Cmd on macOS and Ctrl elsewhere; "ctrl" is the Control key on every platform. Two actions cannot share a binding. The space actions name the sidebar order, and a space past the last one is ignored.',
     fields: KEY_ACTIONS.map((action) => ({
       name: action,
       type: 'key binding, e.g. "mod+g"',

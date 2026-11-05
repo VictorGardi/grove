@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { previousOf, visited } from './recent-tabs.ts'
+import { previousOf, visited, stepFrom } from './recent-tabs.ts'
 
 describe('visited', () => {
   it('moves the tab to the front and keeps the rest in order', () => {
@@ -33,5 +33,17 @@ describe('previousOf', () => {
 
   it('is the most recent tab when the current one is not in the history', () => {
     expect(previousOf(['b'], 'a')).toBe('b')
+  })
+})
+
+describe('stepFrom', () => {
+  it('steps along the tabs and wraps', () => {
+    expect(stepFrom(['a', 'b', 'c'], 'c', 1)).toBe('a')
+    expect(stepFrom(['a', 'b', 'c'], 'a', -1)).toBe('c')
+    expect(stepFrom(['a', 'b'], 'a', 1)).toBe('b')
+  })
+  it('has nowhere to go with fewer than two tabs', () => {
+    expect(stepFrom(['a'], 'a', 1)).toBeUndefined()
+    expect(stepFrom([], null, 1)).toBeUndefined()
   })
 })

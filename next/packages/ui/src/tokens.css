@@ -32,7 +32,6 @@
   --color-raised: #1c1c1e;
   --color-selected: #262628;
   --color-well: #131314;
-  --color-brand: #2b2b2e;
   --color-line: #2a2a2d;
   --color-rule: #1d1d1f;
   --color-tab-line: #2c2c30;
@@ -73,7 +72,6 @@
   --header-h: 38px;
   --pane-head-h: 40px;
   --pane-title-h: 26px;
-  --statusbar-h: 28px;
   --sidebar-width: 240px;
   --radius-lg: 12px;
   --radius-pill: 999px;
@@ -87,11 +85,21 @@
   --size-mark-tab: 16px;
   --size-tab-close: 20px;
   --size-mark-pane: 14px;
-  --size-brand: 20px;
   --size-control: 24px;
+  --size-slider: 64px;
+  --size-slider-thumb: 10px;
+  --size-slider-track: 2px;
   --size-tab: 220px;
   --size-tab-label: 150px;
   --size-modal: 340px;
+  --settings-w: 760px;
+  --settings-h: 520px;
+  --settings-nav-w: 200px;
+  --keys-chip-w: 96px;
+  --size-switch-w: 36px;
+  --size-switch-h: 20px;
+  --size-switch-knob: 14px;
+  --tracking-label: 0.06em;
   --dock-width: 360px;
   --fade: 120ms;
   --icon-size: 15px;

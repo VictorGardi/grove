@@ -71,7 +71,7 @@ A reboot brings the spaces and their tabs back, but the shells are fresh: each t
 ```sh
 grove-next ls [--json]                          spaces, then their tabs
 grove-next space add [path] | space ls          add a space, or list them
-grove-next new <terminal|claude|opencode|copilot> [--cwd DIR] [--label L] [--prompt TEXT|-] [--wait] [--timeout S] [--json]
+grove-next new <terminal|claude|opencode|copilot> [--cwd DIR | --space REF] [--label L] [--prompt TEXT|-] [--wait] [--timeout S] [--json]
 grove-next send <ref> <TEXT|-> [--no-enter] [--wait] [--timeout S]
 grove-next wait <ref> [--timeout S]
 grove-next focus <ref>                          show the tab in the app and raise its window
@@ -82,7 +82,7 @@ grove-next skill                                install the grove-next-config sk
 ```
 
 - `<ref>` is a tab's full id, an id prefix of at least four characters, or its label (exact). A ref that matches two tabs is an error.
-- `new` starts the tab in `--cwd` (default: the folder you run it from), which must be a space. It prints the tab's id, or the object with `--json`. `--label` is a name you can use as a ref.
+- `new` starts the tab in `--cwd` (default: the folder you run it from), which must be a space; a folder with two spaces means the first. `--space REF` picks one exactly: a space id, a unique id prefix (4+ characters), or the heading `ls` shows (`/path`, `/path#2`). It cannot be combined with `--cwd`. It prints the tab's id, or the object with `--json`. `--label` is a name you can use as a ref.
 - `--prompt` pastes the text once the agent has drawn its screen, and submits it. `-` reads standard input. `send` does the same for its text, and `--no-enter` pastes without submitting. A send to an agent tab that has exited resumes it with its saved session.
 - After a submitted paste, `new` and `send` wait up to 30 s for an agent to start working. That wait is not an error if the agent does not start.
 - `wait` blocks until the agent stops working. A permission prompt or a question keeps it waiting, since the human answers those. A shell tab has no agent state, so `wait` on one is an error.

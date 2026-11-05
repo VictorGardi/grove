@@ -254,7 +254,8 @@ export class SpacesService {
   }
 
   // Moves a space's root to another folder (a real folder, as an absolute path). The space keeps its id and its tabs.
-  setRoot(spaceId: string, folder: string): void {
+  // Returns whether the root changed.
+  setRoot(spaceId: string, folder: string): boolean {
     this.assertNotRefused()
     const space = this.spaceById(spaceId)
     if (space === undefined) throw new RpcError(ERROR_CODES.invalidParams, `no such space: ${spaceId}`)
@@ -263,12 +264,13 @@ export class SpacesService {
     try {
       real = fs.realpathSync(folder)
     } catch {
-      return
+      return false
     }
-    if (real === space.path || !fs.statSync(real).isDirectory()) return
+    if (real === space.path || !fs.statSync(real).isDirectory()) return false
     const next: StateV1 = { ...this.state, spaces: this.state.spaces.map((s) => (s.id === spaceId ? { ...s, path: real } : s)) }
     saveState(this.file, next)
     this.state = next
+    return true
   }
 
   // Records or clears the agent kind of a tab. A found agent is marked so a restart releases it when its program ends.
@@ -351,6 +353,12 @@ export class SpacesService {
       const id = `sp_${crypto.randomBytes(6).toString('hex')}`
       if (!ids.has(id)) return id
     }
+  }
+
+  // The sidebar's view of one space, or undefined when it is gone.
+  async spaceInfo(spaceId: string): Promise<SpaceInfo | undefined> {
+    const space = this.spaceById(spaceId)
+    return space === undefined ? undefined : this.describe(space, this.state.spaces)
   }
 
   private async describe(space: SpaceRecord, spaces: SpaceRecord[]): Promise<SpaceInfo> {

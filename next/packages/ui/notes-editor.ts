@@ -4,6 +4,7 @@ import { syntaxTree } from '@codemirror/language'
 import { type Range } from '@codemirror/state'
 import { Decoration, type DecorationSet, EditorView, ViewPlugin, type ViewUpdate, WidgetType, keymap, placeholder } from '@codemirror/view'
 import { GFM } from '@lezer/markdown'
+import { slashMenu } from './slash-menu.ts'
 
 // The notes editor: plain markdown in CodeMirror, drawn the way it reads. Headings, bold, italic, strike, code, links, quotes, rules,
 // bullets and check boxes are decorations over the text, and the syntax marks hide until the caret is in them. The document text is
@@ -193,6 +194,7 @@ export function createNotesEditor(parent: HTMLElement, text: string, handlers: N
         ...historyKeymap,
       ]),
       liveMarkdown,
+      slashMenu,
       EditorView.lineWrapping,
       placeholder('Jot something down…'),
       EditorView.contentAttributes.of({ 'aria-label': 'Notes', spellcheck: 'true' }),

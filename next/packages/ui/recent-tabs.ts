@@ -10,3 +10,11 @@ export function visited<T>(recent: T[], tab: T): T[] {
 export function previousOf<T>(recent: T[], current: T | null): T | undefined {
   return recent.find((tab) => tab !== current)
 }
+
+// The tab one step from the current one in strip order, wrapping round. Undefined when there is no other tab.
+export function stepFrom<T>(tabs: T[], current: T | null, step: 1 | -1): T | undefined {
+  if (tabs.length < 2) return undefined
+  const at = current === null ? -1 : tabs.indexOf(current)
+  const next = at === -1 ? (step === 1 ? 0 : tabs.length - 1) : (at + step + tabs.length) % tabs.length
+  return tabs[next]
+}

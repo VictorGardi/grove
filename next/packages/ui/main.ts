@@ -1,13 +1,15 @@
 import { invoke } from '@tauri-apps/api/core'
 import { getCurrentWindow } from '@tauri-apps/api/window'
 import { createBridge, fromBase64, toBase64 } from './bridge.ts'
-import { createSoundGate, noticeBody } from './alerts.ts'
+import { createSoundGate, noticeBody, soundFile } from './alerts.ts'
+import { readSound, writeSound } from './sound-pref.ts'
 import { applyLayout, applySettings, applyTheme, findAction, formatBinding, launcherLine } from './config.ts'
 import { openTerminal, terminalFontSize, tokenValue, type TerminalView } from './terminal.ts'
 import { canJoinGrid, gridMembers, gridShape, paneSpans } from './grid/layout.ts'
-import { previousOf, visited } from './recent-tabs.ts'
+import { previousOf, stepFrom, visited } from './recent-tabs.ts'
+import { PANE_DIM_RANGE, readPaneDim, writePaneDim } from './pane-dim.ts'
 import { readSidebarHidden, writeSidebarHidden, type KeyValueStore } from './sidebar-state.ts'
-import { groupAgents, shortFolder, sidebarSpaceOrder, spaceAt, tabStateOf, tileIndex } from './sidebar-model.ts'
+import { groupAgents, jumpTargets, nextUrgent, shortFolder, sidebarSpaceOrder, spaceAt, tabStateOf, tileIndex, urgentTabs } from './sidebar-model.ts'
 import { createTabPill, type TabPill } from './tab-pill.ts'
 import { createNotesEditor } from './notes-editor.ts'
 import { createNotesPanel } from './notes-panel.ts'
@@ -16,6 +18,7 @@ import { createRenameModal } from './rename-modal.ts'
 import { createContextMenu } from './context-menu.ts'
 import { createSpaceDialog } from './space-dialog.ts'
 import { createIntegrationPanel } from './integrations.ts'
+import { createKeysPanel } from './keys-panel.ts'
 import { indicatorClass, indicatorLabel } from './indicator.ts'
 import { agentIconSvg, iconSvg } from './icons.ts'
 import { rollupSpaces } from '../protocol/rollup.ts'
@@ -97,6 +100,7 @@ let sentFocus: string | null = null
 // The states page (?demo=states) runs without a core: nothing is sent to it.
 let demoMode = false
 const playSound = createSoundGate()
+let soundOn = readSound(storage())
 
 const appEl = byId('app')
 const contextMenu = createContextMenu(document.body, { closed: focusActive })
@@ -105,13 +109,18 @@ const tabStrip = byId('tabs')
 const terminals = byId('terminals')
 const statusLine = byId('status')
 const spaceList = byId('spaces')
-const newTabButton = byId('new-tab') as HTMLButtonElement
 const gridToggle = byId('grid-toggle') as HTMLButtonElement
+const paneDim = byId('pane-dim') as HTMLInputElement
 const agentList = byId('agents')
 const agentsEmpty = byId('agents-empty')
 const installCliButton = byId('install-cli') as HTMLButtonElement
+const installCliStatus = byId('install-cli-status')
+const soundToggle = byId('sound-toggle') as HTMLButtonElement
+const settingsTabs = Array.from(document.querySelectorAll<HTMLButtonElement>('.settings-tab'))
+const settingsSections = Array.from(document.querySelectorAll<HTMLElement>('.settings-section'))
 const sidebar = byId('sidebar')
 const sidebarToggle = byId('sidebar-toggle') as HTMLButtonElement
+const urgentBanner = byId('urgent-banner') as HTMLButtonElement
 const launcherBar = byId('launchers')
 const emptyState = byId('empty-state')
 const emptyTitle = byId('empty-title')
@@ -164,6 +173,13 @@ dock.register(
     createEditor: createNotesEditor,
   }),
 )
+// Keys: the settings section that rebinds an action. The core checks and saves it, then every window applies the new config.
+const keysPanel = createKeysPanel(byId('keys-list'), byId('keys-error'), {
+  keys: () => keys,
+  defaults: DEFAULT_VALUES.keys,
+  isMac,
+  save: async (action, binding) => applyConfig(await bridge.rpc('config.setKey', { action, binding })),
+})
 // Agent status: the Agents panel and the one-time prompt. Each install, removal or answer is a call the human made here.
 const integrationPanel = createIntegrationPanel(
   {
@@ -189,17 +205,22 @@ const integrationPanel = createIntegrationPanel(
 // Each key action does what its button does, so a disabled button ignores the key as it ignores a click.
 const keyActions: Record<KeyAction, () => void> = {
   'grid-toggle': () => gridToggle.click(),
-  'new-shell': () => newTabButton.click(),
+  // Like the tab-strip button this replaced, the key does nothing with no space open or a refused one.
+  'new-shell': () => {
+    if (activeSpace !== null && refused === null) void newShellTab()
+  },
   'new-space': () => void newSpaceTab().catch(report),
   'close-tab': () => {
     if (active) void closeTab(active).catch(report)
   },
   'previous-tab': () => {
     const recent = activeSpace === null ? [] : (recentBySpace.get(activeSpace) ?? [])
-    const previous = previousOf(recent, active)
+    // A tab not visited yet is not in the recent list, so with no other visited tab the key steps along the strip instead of doing nothing.
+    const previous = previousOf(recent, active) ?? stepFrom(spaceTabs(), active, 1)
     if (previous) activate(previous)
   },
   'grid-tab': () => toggleGridTab(),
+  'next-urgent': () => jumpToUrgent(),
   'sidebar-toggle': () => sidebarToggle.click(),
   notes: () => void dock.toggle('notes').catch(report),
   'space-1': () => focusSpace(1),
@@ -601,8 +622,8 @@ function paint(): void {
   paintStatusbar()
   paintEmpty()
   const idle = activeSpace === null || refused !== null
-  newTabButton.disabled = idle
   gridToggle.setAttribute('aria-pressed', String(gridOn))
+  paneDim.hidden = !gridOn
   gridToggle.disabled = !gridOn && (idle || shown.length === 0)
   for (const button of launcherBar.querySelectorAll('button')) button.disabled = idle
   reportFocus()
@@ -614,8 +635,8 @@ function shortcut(action: KeyAction): string {
 }
 
 function paintShortcuts(): void {
+  paintUrgent()
   byId('notes-toggle').title = `Notes (${shortcut('notes')})`
-  newTabButton.title = `New shell tab (${shortcut('new-shell')})`
   gridToggle.title = `Show the tabs put in the grid, from any space, (${shortcut('grid-toggle')}). ${shortcut('grid-tab')} puts the focused tab in it.`
   const hidden = appEl.classList.contains('sidebar-hidden')
   sidebarToggle.title = `${hidden ? 'Show' : 'Hide'} the sidebar (${shortcut('sidebar-toggle')})`
@@ -645,6 +666,34 @@ function focusActive(): void {
     active.view.fit()
     active.view.term.focus()
   }
+}
+
+// The tabs with something for the human, in any space (see urgentTabs). A gone tab shows idle, so it is not one.
+function tabItems(): Array<{ id: string; tab: Tab; state: AgentStateName; since: number }> {
+  return order.map((tab) => ({ id: tab.id, tab, state: stateOf(tab), since: agents.get(tab.id)?.since ?? 0 }))
+}
+
+function urgentItems(): ReturnType<typeof tabItems> {
+  return urgentTabs(tabItems())
+}
+
+// Cmd+. and the footer banner: goes to the next tab that needs you or has finished, in any space; with none, to the next working one.
+function jumpToUrgent(): void {
+  const next = nextUrgent(jumpTargets(tabItems()), active?.id ?? null)
+  if (next) activate(next.tab)
+}
+
+// The footer banner: how many tabs jumpToUrgent can reach, toned for the most urgent of them. Hidden when there are none.
+function paintUrgent(): void {
+  const urgent = urgentItems()
+  urgentBanner.hidden = urgent.length === 0
+  if (urgent.length === 0) return
+  const tone = urgent[0].state
+  urgentBanner.className = `urgent-banner tone-${tone}`
+  const needing = urgent.filter((item) => item.state === 'needs-you').length
+  const label = needing === 0 ? 'finished' : needing === urgent.length ? 'need you' : `· ${needing} need you`
+  urgentBanner.replaceChildren(indicatorEl(tone), element('span', 'urgent-count', String(urgent.length)), element('span', 'urgent-label', label))
+  urgentBanner.title = `Go to the next tab with something for you (${shortcut('next-urgent')})`
 }
 
 function activate(tab: Tab): void {
@@ -737,6 +786,10 @@ async function newShellTab(typed: string | null = null): Promise<void> {
 }
 
 // Cmd+1 to Cmd+9: focuses the space at that place in the sidebar order, with the tab it last showed. A place past the last space does nothing.
+function spaceTabs(): Tab[] {
+  return order.filter((tab) => tab.spaceId === activeSpace)
+}
+
 function focusSpace(place: number): void {
   const spaceId = spaceAt(sidebarSpaceOrder([...spaces.values()]), place)
   if (spaceId === null) return
@@ -805,7 +858,8 @@ function renderLaunchers(launchers: Launcher[]): void {
 // Applies the config in use: settings, keys, theme, layout and launchers. Notes about files that do not validate go to the status line.
 function applyConfig(snapshot: ConfigSnapshot): void {
   const { values } = snapshot
-  keys = values.keys
+  // A core from before an action existed sends no binding for it: the default stands until the core is restarted.
+  keys = { ...DEFAULT_VALUES.keys, ...values.keys }
   applySettings(document.documentElement, values.settings)
   themeTokens = applyTheme(document.documentElement, values.theme, themeTokens)
   applyLayout(
@@ -815,6 +869,7 @@ function applyConfig(snapshot: ConfigSnapshot): void {
     sidebar.querySelector<HTMLElement>('.sidebar-foot'),
   )
   renderLaunchers(values.launchers)
+  keysPanel.render()
   paintShortcuts()
   paintEmpty()
   const notes = Object.values(snapshot.notes).join(' ')
@@ -913,6 +968,7 @@ function agentRow(row: AgentRow): HTMLLIElement {
 
 // Rebuilds the sidebar list: one group per space, in the space order. Within a group, the most urgent row comes first.
 function renderAgents(): void {
+  paintUrgent()
   const rows: AgentRow[] = []
   for (const agent of agents.values()) {
     const tab = tabs.get(agent.tabId)
@@ -1012,7 +1068,7 @@ bridge.on('status.changed', (change) => {
 bridge.on('attention.notify', (notice) => {
   const tab = tabs.get(notice.tabId)
   const title = tab ? tabLabel(tab) : notice.tabId
-  invoke('notify', { title, body: noticeBody(notice), sound: playSound(notice) }).catch(report)
+  invoke('notify', { title, body: noticeBody(notice), sound: soundOn ? playSound(notice) : null }).catch(report)
 })
 
 bridge.on('config.changed', applyConfig)
@@ -1034,6 +1090,13 @@ bridge.on('tabs.closed', ({ id }) => {
 
 // Another window or the CLI removed a space: it leaves the sidebar at once.
 bridge.on('spaces.removed', ({ id }) => dropSpace(id))
+
+// A tab's cd moved a space's folder: the sidebar shows the new name and branch at once.
+bridge.on('spaces.changed', (info) => {
+  if (!spaces.has(info.id)) return
+  spaces.set(info.id, info)
+  paint()
+})
 
 bridge.onStatus((status) => {
   if (status === 'closed') {
@@ -1077,35 +1140,66 @@ sidebarToggle.addEventListener('click', () => {
   writeSidebarHidden(storage(), hidden)
 })
 showSidebar(readSidebarHidden(storage()))
+// The slider sets the unfocused panes' opacity over the theme's; it is shown with the grid.
+const chosenDim = readPaneDim(storage())
+if (chosenDim !== null) document.documentElement.style.setProperty('--pane-unfocused-opacity', String(chosenDim))
+paneDim.value = String(chosenDim ?? (getComputedStyle(document.documentElement).getPropertyValue('--pane-unfocused-opacity').trim() || PANE_DIM_RANGE.max))
+paneDim.addEventListener('input', () => {
+  document.documentElement.style.setProperty('--pane-unfocused-opacity', paneDim.value)
+  writePaneDim(storage(), Number(paneDim.value))
+})
 byId('new-space').addEventListener('click', () => void newSpaceTab().catch(report))
 byId('notes-toggle').addEventListener('click', () => void dock.toggle('notes').catch(report))
-byId('integrations-open').addEventListener('click', () => integrationPanel.open())
+byId('settings-open').addEventListener('click', () => integrationPanel.open())
+urgentBanner.addEventListener('click', () => jumpToUrgent())
 bridge.on('integration.prompt', ({ agent }) => {
   integrationPanel.ask(agent).catch(report)
 })
 installCliButton.addEventListener('click', () => {
   installCliButton.disabled = true
+  installCliStatus.textContent = ''
   invoke<string>('install_cli')
     .then((path) => {
-      statusLine.textContent = `Installed ${path}`
-      // A confirmation, not a problem: it goes away by itself, unless something else has replaced it.
-      const shown = statusLine.textContent
-      setTimeout(() => {
-        if (statusLine.textContent === shown) statusLine.textContent = ''
-      }, 5000)
+      installCliStatus.textContent = `Installed ${path}`
     })
-    .catch(report)
+    .catch((failure: unknown) => {
+      installCliStatus.textContent = `Could not install: ${failure instanceof Error ? failure.message : String(failure)}`
+    })
     .finally(() => {
       installCliButton.disabled = false
     })
 })
-newTabButton.addEventListener('click', () => void newShellTab())
+soundToggle.setAttribute('aria-checked', String(soundOn))
+soundToggle.addEventListener('click', () => {
+  soundOn = !soundOn
+  soundToggle.setAttribute('aria-checked', String(soundOn))
+  writeSound(storage(), soundOn)
+  // Turning it on plays the needs-you sound once, so the human hears that the switch and the volume work.
+  if (soundOn) invoke('play_sound', { file: soundFile('needs-you') }).catch(report)
+})
+settingsTabs.forEach((tab) =>
+  tab.addEventListener('click', () => {
+    settingsTabs.forEach((other) => other.toggleAttribute('aria-current', other === tab))
+    settingsSections.forEach((section) => (section.hidden = section.dataset.section !== tab.dataset.section))
+  }),
+)
 // Key bindings are read in the capture phase, so a matched key does not also reach the terminal. While the rename modal is open they wait.
 window.addEventListener(
   'keydown',
   (event) => {
     if (renameModal.isOpen() || integrationPanel.isOpen() || spaceDialog.isOpen() || contextMenu.isOpen()) return
-    const action = findAction(keys, event, isMac)
+    let action = findAction(keys, event, isMac)
+    if (action === null && event.shiftKey) {
+      // Shift added to the previous-tab key goes the other way, along the strip.
+      const plain = { code: event.code, key: event.key, metaKey: event.metaKey, ctrlKey: event.ctrlKey, altKey: event.altKey, shiftKey: false }
+      if (findAction(keys, plain, isMac) === 'previous-tab') {
+        event.preventDefault()
+        event.stopPropagation()
+        const back = stepFrom(spaceTabs(), active, -1)
+        if (back) activate(back)
+        return
+      }
+    }
     if (action === null) return
     event.preventDefault()
     event.stopPropagation()

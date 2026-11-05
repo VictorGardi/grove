@@ -26,6 +26,7 @@ export const METHODS = {
   tabsRename: 'tabs.rename',
   tabsFocus: 'tabs.focus',
   configGet: 'config.get',
+  configSetKey: 'config.setKey',
   notesRead: 'notes.read',
   notesWrite: 'notes.write',
   integrationStatus: 'integration.status',
@@ -147,6 +148,7 @@ export type KeyAction =
   | 'close-tab'
   | 'previous-tab'
   | 'grid-tab'
+  | 'next-urgent'
   | 'sidebar-toggle'
   | 'notes'
   | 'space-1'
@@ -227,6 +229,8 @@ export interface MethodMap {
       rows: number
       agent?: { kind: AgentKind; resumeId?: string }
       label?: string
+      // An agent tab goes in this space instead of the first space at `cwd`.
+      spaceId?: string
     }
     result: { id: string }
   }
@@ -262,6 +266,9 @@ export interface MethodMap {
   // Asks every client to show the tab; the window selects it and raises itself.
   'tabs.focus': { params: { id: string }; result: Empty }
   'config.get': { params: Empty; result: ConfigSnapshot }
+  // Rebinds one key action. The core checks the binding (syntax, and that no other action has it) and writes only that key
+  // into keys.json, keeping the file as it was in keys.json.bak. A refused binding is an error and changes nothing.
+  'config.setKey': { params: { action: KeyAction; binding: string }; result: ConfigSnapshot }
   // The notes page: one markdown file under the core's home. A file that does not exist yet reads as empty text.
   'notes.read': { params: Empty; result: { text: string } }
   'notes.write': { params: { text: string }; result: Empty }
@@ -284,6 +291,8 @@ export interface NotificationMap {
   'tabs.closed': { id: string }
   // A space was removed: every window drops it.
   'spaces.removed': { id: string }
+  // A space's folder moved (a cd in one of its tabs): every window shows its new name and branch.
+  'spaces.changed': SpaceInfo
   // The config folder changed and a value or a note is new: every window applies it.
   'config.changed': ConfigSnapshot
   // An agent the app did not start is running and has no hook entry yet: ask the human once.

@@ -1,8 +1,8 @@
 import crypto from 'node:crypto'
 import fs from 'node:fs'
 import path from 'node:path'
-import type { ConfigSnapshot, ConfigValues } from '../../protocol/messages.ts'
-import { DEFAULT_VALUES, defaultFile, FILES, SECTION, validateFile, type ConfigFile, type Validated } from './schema.ts'
+import type { ConfigSnapshot, ConfigValues, KeyAction } from '../../protocol/messages.ts'
+import { DEFAULT_VALUES, KEY_ACTIONS, canonicalBinding, defaultFile, FILES, SECTION, validateFile, type ConfigFile, type Validated } from './schema.ts'
 
 // The config folder under the core's home.
 export function configFolder(home: string): string {
@@ -57,6 +57,31 @@ export class ConfigStore {
       changed = true
     }
     return changed
+  }
+
+  // Rebinds one action in keys.json. The file with the change is checked as a whole (so a binding another action has is
+  // refused), then written with every other key as the user left it, after a copy of the old file in keys.json.bak.
+  // Throws with the reason when nothing was written.
+  setKey(action: KeyAction, binding: string): void {
+    if (!(KEY_ACTIONS as readonly string[]).includes(action)) throw new Error(`unknown key action "${action}"`)
+    const canonical = canonicalBinding(binding)
+    if (canonical === null) throw new Error('must be a key binding such as "mod+g", "mod+shift+n" or "ctrl+tab"')
+    const full = path.join(this.dir, 'keys.json')
+    let json: Record<string, unknown>
+    let before: string | null = null
+    try {
+      before = fs.readFileSync(full, 'utf8')
+      json = JSON.parse(before) as Record<string, unknown>
+    } catch (error) {
+      if (before === null && (error as NodeJS.ErrnoException).code === 'ENOENT') json = defaultFile('keys.json')
+      else throw new Error(`keys.json cannot be changed until it is fixed (${(error as Error).message})`)
+    }
+    const next = { ...json, [action]: canonical }
+    const checked = validateFile('keys.json', next)
+    if (!checked.ok) throw new Error(checked.message.replace(/^keys\.json: /, ''))
+    if (before !== null) atomicWrite(`${full}.bak`, before)
+    atomicWrite(full, `${JSON.stringify(next, null, 2)}\n`)
+    this.reload(['keys.json'])
   }
 
   snapshot(): ConfigSnapshot {

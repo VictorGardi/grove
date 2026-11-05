@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { resolveTabRef } from './ref.ts'
+import { resolveSpaceRef, resolveTabRef } from './ref.ts'
 
 describe('resolveTabRef', () => {
   const tabs = [
@@ -29,5 +29,23 @@ describe('resolveTabRef', () => {
   it('prefers an id match over a label', () => {
     const list = [{ id: 'wxyz1111', label: 'x' }, { id: 'other111', label: 'wxyz1111' }]
     expect(resolveTabRef(list, 'wxyz1111')).toEqual({ ok: true, id: 'wxyz1111' })
+  })
+})
+
+describe('resolveSpaceRef', () => {
+  const spaces = [
+    { id: 'sp_aaaa1111', path: '/w/a' },
+    { id: 'sp_aaaa2222', path: '/w/a' },
+    { id: 'sp_cccc3333', path: '/w/c' },
+  ]
+  it('takes an id, a unique prefix, or a heading', () => {
+    expect(resolveSpaceRef(spaces, 'sp_aaaa2222')).toEqual({ ok: true, id: 'sp_aaaa2222' })
+    expect(resolveSpaceRef(spaces, 'sp_cc')).toEqual({ ok: true, id: 'sp_cccc3333' })
+    expect(resolveSpaceRef(spaces, '/w/a')).toEqual({ ok: true, id: 'sp_aaaa1111' })
+    expect(resolveSpaceRef(spaces, '/w/a#2')).toEqual({ ok: true, id: 'sp_aaaa2222' })
+  })
+  it('refuses an ambiguous or unknown ref', () => {
+    expect(resolveSpaceRef(spaces, 'sp_aa')).toEqual({ ok: false, error: 'ambiguous' })
+    expect(resolveSpaceRef(spaces, '/w/zzz')).toEqual({ ok: false, error: 'not-found' })
   })
 })

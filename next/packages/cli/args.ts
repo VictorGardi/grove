@@ -6,7 +6,7 @@ export type Command =
   | { cmd: 'ls'; json: boolean }
   | { cmd: 'space-add'; path?: string }
   | { cmd: 'space-ls' }
-  | { cmd: 'new'; kind: TabKind; cwd?: string; label?: string; prompt?: string; json: boolean; wait: boolean; timeoutS?: number }
+  | { cmd: 'new'; kind: TabKind; cwd?: string; space?: string; label?: string; prompt?: string; json: boolean; wait: boolean; timeoutS?: number }
   | { cmd: 'send'; ref: string; text: string; submit: boolean; wait: boolean; timeoutS?: number }
   | { cmd: 'wait'; ref: string; timeoutS?: number }
   | { cmd: 'focus'; ref: string }
@@ -22,7 +22,7 @@ export const USAGE = `usage: grove-next <command>
   grove-next ls [--json]                         list spaces and their tabs
   grove-next space add [path]                    add a folder as a space (default: the caller folder)
   grove-next space ls                            list spaces and their tabs
-  grove-next new <terminal|claude|opencode|copilot> [--cwd DIR] [--label L] [--prompt TEXT|-] [--wait] [--timeout S] [--json]
+  grove-next new <terminal|claude|opencode|copilot> [--cwd DIR | --space REF] [--label L] [--prompt TEXT|-] [--wait] [--timeout S] [--json]
                                                  start a tab in a space (default: the caller folder); prints its id
   grove-next send <ref> <TEXT|-> [--no-enter] [--wait] [--timeout S]
                                                  paste text into a tab and submit it
@@ -68,17 +68,19 @@ export function parseCommand(argv: string[]): Command | UsageError {
     if (cmd === 'new') {
       const { values, positionals } = parseArgs({
         args: rest,
-        options: { cwd: { type: 'string' }, prompt: { type: 'string' }, label: { type: 'string' }, json: { type: 'boolean' }, ...TIMEOUT },
+        options: { cwd: { type: 'string' }, space: { type: 'string' }, prompt: { type: 'string' }, label: { type: 'string' }, json: { type: 'boolean' }, ...TIMEOUT },
         allowPositionals: true,
       })
       const [kind, ...extra] = positionals
       if (!kind || !KINDS.includes(kind) || extra.length) return new UsageError(`new takes one of: ${KINDS.join(', ')}\n${USAGE}`)
       const timeoutS = timeout(values.timeout)
       if (timeoutS instanceof UsageError) return timeoutS
+      if (values.space !== undefined && values.cwd !== undefined) return new UsageError(`--space and --cwd cannot be used together\n${USAGE}`)
+      if (values.space !== undefined && values.space === '') return new UsageError(`--space takes a space id or heading\n${USAGE}`)
       if (values.label !== undefined && values.label === '') return new UsageError(`--label takes a non-empty label\n${USAGE}`)
       if (values.wait && kind === 'terminal') return new UsageError(`--wait needs an agent: a shell tab has no state to wait on\n${USAGE}`)
       return {
-        cmd: 'new', kind: kind as TabKind, cwd: values.cwd, prompt: values.prompt, label: values.label,
+        cmd: 'new', kind: kind as TabKind, cwd: values.cwd, space: values.space, prompt: values.prompt, label: values.label,
         json: !!values.json, wait: !!values.wait, timeoutS,
       }
     }

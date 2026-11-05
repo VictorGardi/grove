@@ -77,3 +77,35 @@ export function sidebarSpaceOrder(spaces: SpaceOrderInput[]): string[] {
 export function spaceAt(order: string[], n: number): string | null {
   return order[n - 1] ?? null
 }
+
+export interface UrgentInput {
+  id: string
+  // The state as the tab shows it (see tabStateOf), so a gone tab is idle.
+  state: AgentStateName
+  since: number
+}
+
+const URGENT_STATES: readonly AgentStateName[] = ['needs-you', 'finished']
+
+// The tabs that have something for the human, in any space: tabs that need them first, then finished ones, the one waiting
+// longest (the smallest `since`) first. A working, unknown or idle tab, and a gone one, is not in it.
+export function urgentTabs<T extends UrgentInput>(tabs: T[]): T[] {
+  return tabs
+    .filter((tab) => URGENT_STATES.includes(tab.state))
+    .sort((a, b) => URGENT_STATES.indexOf(a.state) - URGENT_STATES.indexOf(b.state) || a.since - b.since)
+}
+
+// Where Cmd+. goes: the urgent tabs, or, when there are none, the working ones, the longest running (the smallest `since`) first.
+export function jumpTargets<T extends UrgentInput>(tabs: T[]): T[] {
+  const urgent = urgentTabs(tabs)
+  if (urgent.length > 0) return urgent
+  return tabs.filter((tab) => tab.state === 'working').sort((a, b) => a.since - b.since)
+}
+
+// The tab after the active one in `urgent`, wrapping round; the first one when the active tab is not in it. Null when there is
+// nothing to go to: no urgent tab, or the active tab is the only one.
+export function nextUrgent<T extends UrgentInput>(urgent: T[], activeId: string | null): T | null {
+  const at = urgent.findIndex((tab) => tab.id === activeId)
+  if (at === -1) return urgent[0] ?? null
+  return urgent.length > 1 ? urgent[(at + 1) % urgent.length] : null
+}

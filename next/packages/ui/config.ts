@@ -74,7 +74,22 @@ export function parseBinding(text: string): Binding | null {
 function keyOf(event: KeyEvent): string {
   if (/^Key[A-Z]$/.test(event.code)) return event.code.slice(3).toLowerCase()
   if (/^Digit[0-9]$/.test(event.code)) return event.code.slice(5)
+  if (event.code === 'Period') return '.'
   return event.key.toLowerCase()
+}
+
+// The binding a key event spells, as keys.json writes it, or null while it is not a binding yet: a modifier alone, no
+// modifier, or a key a binding cannot name. "mod" is Cmd on macOS and Ctrl elsewhere; on macOS Control is "ctrl", and
+// elsewhere Cmd (the Windows or Super key) is not a modifier a binding has.
+export function bindingFromEvent(event: KeyEvent, isMac: boolean): string | null {
+  if (!isMac && event.metaKey) return null
+  const parts = [
+    isMac ? (event.metaKey ? 'mod' : null) : event.ctrlKey ? 'mod' : null,
+    isMac && event.ctrlKey ? 'ctrl' : null,
+    event.altKey ? 'alt' : null,
+    event.shiftKey ? 'shift' : null,
+  ].filter((part) => part !== null)
+  return canonicalBinding([...parts, keyOf(event)].join('+'))
 }
 
 // A binding as the window shows it, such as "Cmd+Shift+N" on macOS or "Ctrl+Shift+N" elsewhere. Text that is not a binding is shown as it is.

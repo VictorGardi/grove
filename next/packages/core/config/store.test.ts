@@ -74,4 +74,39 @@ describe('config store', () => {
     expect(values.theme).toEqual({ accent: '#00ff00' })
     expect(values.layout).toEqual({ sidebarOrder: ['agents', 'spaces'] })
   })
+
+  describe('setKey', () => {
+    const keysFile = () => path.join(dir, 'keys.json')
+
+    it('writes only the changed key, keeps the others and a backup, and applies it', () => {
+      store.load()
+      write('keys.json', JSON.stringify({ version: 1, notes: 'mod+shift+m' }))
+      store.reload(['keys.json'])
+      store.setKey('next-urgent', 'shift+mod+.')
+      expect(JSON.parse(fs.readFileSync(keysFile(), 'utf8'))).toEqual({ version: 1, notes: 'mod+shift+m', 'next-urgent': 'mod+shift+.' })
+      expect(JSON.parse(fs.readFileSync(`${keysFile()}.bak`, 'utf8'))).toEqual({ version: 1, notes: 'mod+shift+m' })
+      expect(store.snapshot().values.keys['next-urgent']).toBe('mod+shift+.')
+      expect(store.snapshot().values.keys.notes).toBe('mod+shift+m')
+    })
+
+    it('refuses a binding another action has, and changes nothing', () => {
+      store.load()
+      const before = fs.readFileSync(keysFile(), 'utf8')
+      expect(() => store.setKey('next-urgent', 'mod+g')).toThrow('same binding as grid-toggle')
+      expect(fs.readFileSync(keysFile(), 'utf8')).toBe(before)
+    })
+
+    it('refuses text that is not a binding and an unknown action', () => {
+      store.load()
+      expect(() => store.setKey('notes', 'tab')).toThrow('key binding')
+      expect(() => store.setKey('nope' as never, 'mod+j')).toThrow('unknown key action')
+    })
+
+    it('refuses to rewrite a keys.json that is not valid JSON', () => {
+      store.load()
+      write('keys.json', '{ nope')
+      expect(() => store.setKey('notes', 'mod+j')).toThrow('cannot be changed')
+      expect(fs.readFileSync(keysFile(), 'utf8')).toBe('{ nope')
+    })
+  })
 })

@@ -6,7 +6,7 @@ import { connectRpc, type RpcClient } from '../protocol/client.ts'
 import { bytesToB64, createLineDecoder, encodeLine } from '../protocol/framing.ts'
 import { coreSocketPath, groveNextHome, holderSocketPath } from '../protocol/paths.ts'
 import { ERROR_CODES, METHODS, PROTOCOL_VERSION } from '../protocol/messages.ts'
-import type { IntegrationAgent, IntegrationInfo } from '../protocol/messages.ts'
+import type { IntegrationAgent, IntegrationInfo, KeyAction } from '../protocol/messages.ts'
 import { claudeSettingsFile, copilotSettingsFile } from './integrations/install.ts'
 import { IntegrationService, isIntegrationAgent } from './integrations/service.ts'
 import { buildId } from './build.ts'
@@ -142,7 +142,15 @@ export async function startCoreDaemon(
     spaceOf: (tabId) => spaces.spaceOfTab(tabId),
     agentRecorded: (tabId) => spaces.tabRecord(tabId)?.agent,
     setAgent: (tabId, kind) => spaces.setTabAgent(tabId, kind, true),
-    setRoot: (spaceId, root) => spaces.setRoot(spaceId, root),
+    setRoot: (spaceId, root) => {
+      if (!spaces.setRoot(spaceId, root)) return
+      void spaces
+        .spaceInfo(spaceId)
+        .then((info) => {
+          if (info !== undefined) broadcast(notification('spaces.changed', info))
+        })
+        .catch((error: unknown) => console.error(`core: space change not announced: ${error instanceof Error ? error.message : String(error)}`))
+    },
     adopt: (tabId, kind, sessionId) => {
       status.adopt({ tabId, kind, sessionId })
       offerIntegration(kind)
@@ -357,6 +365,18 @@ async function dispatch(method: string, rawParams: unknown, holder: Promise<RpcC
   if (method === METHODS.configGet) {
     return deps.config.snapshot() satisfies MethodMap['config.get']['result']
   }
+  if (method === METHODS.configSetKey) {
+    const action = stringParam(rawParams, 'action') as KeyAction
+    try {
+      deps.config.setKey(action, stringParam(rawParams, 'binding'))
+    } catch (error) {
+      if (error instanceof RpcError) throw error
+      throw new RpcError(ERROR_CODES.invalidParams, (error as Error).message)
+    }
+    const snapshot = deps.config.snapshot()
+    deps.broadcast(notification('config.changed', snapshot))
+    return snapshot satisfies MethodMap['config.setKey']['result']
+  }
   if (method === METHODS.integrationStatus) {
     const running = adoptedAgentsOf(deps.status)
     const agents: IntegrationInfo[] = (['claude', 'copilot'] as const).map((agent) => deps.integrations.status(agent, running.has(agent)))
@@ -423,10 +443,15 @@ async function createAgentTab(
   if (saved !== undefined && saved.agent !== kind) {
     throw new RpcError(ERROR_CODES.invalidParams, `tab ${id} is a ${saved.agent} tab`)
   }
-  // A resume keeps the space it was saved in; a new tab goes in the first space of the folder it names.
+  // A resume keeps the space it was saved in; a new tab goes in the space it names, else in the first space of the folder it names.
   const folder = saved?.spacePath ?? stringParam(p, 'cwd')
-  const space = saved === undefined ? deps.spaces.firstSpaceAt(folder) : deps.spaces.spaceById(tabSpaceId(saved))
-  if (space === undefined) throw new RpcError(ERROR_CODES.invalidParams, `not a space: ${folder}`)
+  const space =
+    saved !== undefined
+      ? deps.spaces.spaceById(tabSpaceId(saved))
+      : p.spaceId !== undefined
+        ? deps.spaces.spaceById(p.spaceId)
+        : deps.spaces.firstSpaceAt(folder)
+  if (space === undefined) throw new RpcError(ERROR_CODES.invalidParams, p.spaceId !== undefined && saved === undefined ? `no such space: ${p.spaceId}` : `not a space: ${folder}`)
   const spaceId = recordSpaceId(space)
   const spacePath = space.path
   // A resume keeps the label it was saved with.

@@ -251,21 +251,27 @@ fn notify(app: AppHandle, title: String, body: String, sound: Option<String>) {
         eprintln!("notification failed: {error}");
     }
     if let Some(file) = sound {
-        match Command::new("/usr/bin/afplay")
-            .arg(&file)
-            .stdin(Stdio::null())
-            .stdout(Stdio::null())
-            .stderr(Stdio::null())
-            .spawn()
-        {
-            // Reaped on a thread so the finished process does not linger as a zombie.
-            Ok(mut child) => {
-                thread::spawn(move || {
-                    let _ = child.wait();
-                });
-            }
-            Err(error) => eprintln!("sound failed: {error}"),
+        play_sound(file);
+    }
+}
+
+// Plays one system sound file apart from any notification: the Settings switch uses it to let the human hear the sound.
+#[tauri::command]
+fn play_sound(file: String) {
+    match Command::new("/usr/bin/afplay")
+        .arg(&file)
+        .stdin(Stdio::null())
+        .stdout(Stdio::null())
+        .stderr(Stdio::null())
+        .spawn()
+    {
+        // Reaped on a thread so the finished process does not linger as a zombie.
+        Ok(mut child) => {
+            thread::spawn(move || {
+                let _ = child.wait();
+            });
         }
+        Err(error) => eprintln!("sound failed: {error}"),
     }
 }
 
@@ -332,7 +338,7 @@ pub fn run() {
             }
             Ok(())
         })
-        .invoke_handler(tauri::generate_handler![connect, rpc, env_info, notify, raise_window, install_cli])
+        .invoke_handler(tauri::generate_handler![connect, rpc, env_info, notify, play_sound, raise_window, install_cli])
         .run(tauri::generate_context!())
         .expect("error while running the Grove window");
 }

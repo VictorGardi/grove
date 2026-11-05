@@ -45,6 +45,8 @@ export function openTerminal(host: HTMLElement, options: TerminalOptions): Termi
   const term = new Terminal({
     cursorBlink: true,
     scrollback: 5000,
+    // The fit addon reserves this width (0 counts as unset and gives a wide default) for the scrollbar, which styles.css hides.
+    overviewRuler: { width: 1 },
     ...terminalOptions(),
   })
   const fitAddon = new FitAddon()

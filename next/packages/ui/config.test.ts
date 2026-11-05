@@ -5,6 +5,7 @@ import {
   applyLayout,
   applySettings,
   applyTheme,
+  bindingFromEvent,
   bindingMatches,
   findAction,
   formatBinding,
@@ -206,5 +207,29 @@ describe('findAction', () => {
     const rebound = { ...keys, 'grid-toggle': 'alt+v' }
     expect(findAction(rebound, keyEvent({ key: 'v', code: 'KeyV', altKey: true }), true)).toBe('grid-toggle')
     expect(findAction(rebound, keyEvent({ key: 'g', code: 'KeyG', metaKey: true }), true)).toBeNull()
+  })
+})
+
+describe('bindingFromEvent', () => {
+  const period = { key: '.', code: 'Period' }
+
+  it('spells Cmd+. as mod+. on macOS and Ctrl+. as mod+. elsewhere', () => {
+    expect(bindingFromEvent(keyEvent({ ...period, metaKey: true }), true)).toBe('mod+.')
+    expect(bindingFromEvent(keyEvent({ ...period, ctrlKey: true }), false)).toBe('mod+.')
+  })
+
+  it('keeps Control apart from Cmd on macOS, and writes modifiers in the fixed order', () => {
+    expect(bindingFromEvent(keyEvent({ key: 'g', code: 'KeyG', metaKey: true, ctrlKey: true, shiftKey: true, altKey: true }), true)).toBe('mod+ctrl+alt+shift+g')
+  })
+
+  it('takes the key by its physical code, so Shift+1 is 1', () => {
+    expect(bindingFromEvent(keyEvent({ key: '!', code: 'Digit1', metaKey: true, shiftKey: true }), true)).toBe('mod+shift+1')
+  })
+
+  it('is null for a modifier alone, no modifier, an unnameable key, and Cmd off macOS', () => {
+    expect(bindingFromEvent(keyEvent({ key: 'Meta', code: 'MetaLeft', metaKey: true }), true)).toBeNull()
+    expect(bindingFromEvent(keyEvent({ key: 'g', code: 'KeyG' }), true)).toBeNull()
+    expect(bindingFromEvent(keyEvent({ key: 'F1', code: 'F1', metaKey: true }), true)).toBeNull()
+    expect(bindingFromEvent(keyEvent({ key: 'g', code: 'KeyG', metaKey: true }), false)).toBeNull()
   })
 })

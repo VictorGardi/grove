@@ -4,12 +4,12 @@ import path from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { ensureHolder } from '../core/holder-client.ts'
 import { connectWhenReady, type RpcClient } from '../protocol/client.ts'
-import { METHODS, type AgentInfo, type SpaceTabInfo } from '../protocol/messages.ts'
+import { METHODS, type AgentInfo, type SpaceInfo, type SpaceTabInfo } from '../protocol/messages.ts'
 import { coreSocketPath } from '../protocol/paths.ts'
 import { parseCommand, UsageError, type Command } from './args.ts'
 import { formatError, formatLsJson, formatNew, formatRead, formatTree, spaceHeadings, turnExit, type LsTab, type TurnOutcome } from './output.ts'
 import { pasteText, waitStable } from './paste.ts'
-import { resolveTabRef } from './ref.ts'
+import { resolveSpaceRef, resolveTabRef } from './ref.ts'
 import { agentSkillsDirs, installSkill } from './skill.ts'
 import { buildId } from '../core/build.ts'
 import { claudeSettingsFile, copilotSettingsFile, installClaude, installCopilot, uninstallClaude, uninstallCopilot } from '../core/integrations/install.ts'
@@ -159,19 +159,26 @@ function lsTabs(tabs: SpaceTabInfo[], agents: AgentInfo[]): LsTab[] {
 
 async function newTab(cmd: Extract<Command, { cmd: 'new' }>): Promise<number> {
   const base = process.env.GROVE_NEXT_CALLER_CWD || process.cwd()
-  const dir = realpathOrSelf(path.resolve(base, cmd.cwd ?? ''))
   return withCore(async (core) => {
-    // A folder means its first space.
+    // --space names a space; otherwise a folder means its first space.
     const { spaces } = await core.request(METHODS.spacesList, {})
-    const space = spaces.find((candidate) => candidate.path === dir)
-    if (space === undefined) {
-      throw new Error(`not a space: ${dir}, add it with grove-next space add`)
+    let space: SpaceInfo | undefined
+    if (cmd.space !== undefined) {
+      const found = resolveSpaceRef(spaces, cmd.space)
+      if (!found.ok) throw new Error(found.error === 'ambiguous' ? `more than one space matches ${cmd.space}` : `no such space: ${cmd.space}, see grove-next ls`)
+      space = spaces.find((candidate) => candidate.id === found.id)
+    } else {
+      const folder = realpathOrSelf(path.resolve(base, cmd.cwd ?? ''))
+      space = spaces.find((candidate) => candidate.path === folder)
+      if (space === undefined) throw new Error(`not a space: ${folder}, add it with grove-next space add`)
     }
+    if (space === undefined) throw new Error(`no such space: ${cmd.space}`)
+    const dir = space.path
     const prompt = cmd.prompt === undefined ? undefined : readText(cmd.prompt)
     const id =
       cmd.kind === 'terminal'
         ? (await core.request(METHODS.tabsOpen, { spaceId: space.id, cols: COLS, rows: ROWS, label: cmd.label })).id
-        : (await core.request(METHODS.tabsCreate, { command: cmd.kind, cwd: dir, cols: COLS, rows: ROWS, label: cmd.label, agent: { kind: cmd.kind } })).id
+        : (await core.request(METHODS.tabsCreate, { command: cmd.kind, cwd: dir, spaceId: space.id, cols: COLS, rows: ROWS, label: cmd.label, agent: { kind: cmd.kind } })).id
     console.log(formatNew({ id, kind: cmd.kind, spaceId: space.id, spacePath: dir, label: cmd.label ?? null }, cmd.json))
     if (prompt !== undefined) {
       await settleAndPaste(core, id, prompt, true)

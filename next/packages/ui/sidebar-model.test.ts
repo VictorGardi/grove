@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import type { AgentInfo, AgentStateName } from '../protocol/messages.ts'
-import { groupAgents, shortFolder, sidebarSpaceOrder, spaceAt, tabStateOf, tileIndex } from './sidebar-model.ts'
+import { groupAgents, jumpTargets, nextUrgent, shortFolder, sidebarSpaceOrder, spaceAt, tabStateOf, tileIndex, urgentTabs } from './sidebar-model.ts'
 
 function agent(state: AgentStateName, since: number): AgentInfo {
   return { tabId: 't', agent: 'claude', state, since, source: 'hook', resumable: false }
@@ -131,5 +131,53 @@ describe('spaceAt', () => {
     expect(spaceAt(order, 4)).toBeNull()
     expect(spaceAt(order, 0)).toBeNull()
     expect(spaceAt([], 1)).toBeNull()
+  })
+})
+
+describe('urgentTabs and nextUrgent', () => {
+  const tab = (id: string, state: AgentStateName, since: number) => ({ id, state, since })
+
+  it('keeps only needs-you and finished tabs: needs-you first, then the longest waiting', () => {
+    const tabs = [tab('a', 'finished', 1), tab('b', 'working', 0), tab('c', 'needs-you', 9), tab('d', 'needs-you', 5), tab('e', 'idle', 0), tab('f', 'unknown', 0)]
+    expect(urgentTabs(tabs).map((item) => item.id)).toEqual(['d', 'c', 'a'])
+  })
+
+  it('has no urgent tab when none waits', () => {
+    expect(urgentTabs([tab('a', 'working', 1), tab('b', 'idle', 2)])).toEqual([])
+  })
+
+  it('goes to the first when the active tab is not urgent, or there is none active', () => {
+    const urgent = urgentTabs([tab('a', 'needs-you', 1), tab('b', 'finished', 2)])
+    expect(nextUrgent(urgent, 'x')?.id).toBe('a')
+    expect(nextUrgent(urgent, null)?.id).toBe('a')
+  })
+
+  it('goes to the one after the active tab, and wraps round', () => {
+    const urgent = urgentTabs([tab('a', 'needs-you', 1), tab('b', 'needs-you', 2), tab('c', 'finished', 3)])
+    expect(nextUrgent(urgent, 'a')?.id).toBe('b')
+    expect(nextUrgent(urgent, 'b')?.id).toBe('c')
+    expect(nextUrgent(urgent, 'c')?.id).toBe('a')
+  })
+
+  it('goes nowhere when nothing is urgent, or the active tab is the only one', () => {
+    expect(nextUrgent([], 'a')).toBeNull()
+    expect(nextUrgent(urgentTabs([tab('a', 'needs-you', 1)]), 'a')).toBeNull()
+  })
+})
+
+describe('jumpTargets', () => {
+  const tab = (id: string, state: AgentStateName, since: number) => ({ id, state, since })
+
+  it('is the urgent tabs while any exist, and leaves working ones out', () => {
+    expect(jumpTargets([tab('a', 'working', 1), tab('b', 'finished', 2), tab('c', 'needs-you', 3)]).map((item) => item.id)).toEqual(['c', 'b'])
+  })
+
+  it('falls back to the working tabs, the longest running first, when none is urgent', () => {
+    const tabs = [tab('a', 'working', 9), tab('b', 'idle', 0), tab('c', 'working', 4), tab('d', 'unknown', 0)]
+    expect(jumpTargets(tabs).map((item) => item.id)).toEqual(['c', 'a'])
+  })
+
+  it('is empty when nothing is urgent or working', () => {
+    expect(jumpTargets([tab('a', 'idle', 1), tab('b', 'unknown', 2)])).toEqual([])
   })
 })

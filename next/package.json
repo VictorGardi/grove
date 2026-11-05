@@ -12,6 +12,7 @@
     "postinstall": "node scripts/fix-spawn-helper.mjs"
   },
   "dependencies": {
+    "@codemirror/autocomplete": "6.20.4",
     "@codemirror/commands": "6.8.1",
     "@codemirror/lang-markdown": "6.3.2",
     "@codemirror/language": "6.11.0",

@@ -49,6 +49,7 @@ describe('config schema', () => {
         'close-tab': 'mod+w',
         'previous-tab': 'ctrl+tab',
         'grid-tab': 'mod+shift+g',
+        'next-urgent': 'mod+.',
         'sidebar-toggle': 'mod+b',
         notes: 'mod+shift+n',
         'space-1': 'mod+1',
@@ -62,6 +63,11 @@ describe('config schema', () => {
         'space-9': 'mod+9',
       },
     })
+  })
+
+  it('accepts a period as the key, so next-urgent can be mod+.', () => {
+    expect(validateFile('keys.json', withFile('keys.json', { 'next-urgent': 'shift+mod+.' })).ok).toBe(true)
+    expect(canonicalBinding('shift+mod+.')).toBe('mod+shift+.')
   })
 
   it('accepts ctrl and the tab key, so previous-tab can be ctrl+tab', () => {
