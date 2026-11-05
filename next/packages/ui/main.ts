@@ -655,6 +655,14 @@ async function refreshAgents(): Promise<void> {
   const list = await bridge.rpc('agents.list', {})
   agents.clear()
   for (const agent of list) agents.set(agent.tabId, agent)
+  renderStates()
+}
+
+// Every place that shows a tab's state: the tab strip, the pane headers, the space tiles and the agents list. A state
+// change repaints all of them, not only the list; paint() does the same when the tabs themselves change.
+function renderStates(): void {
+  for (const tab of order) paintTab(tab)
+  renderSpaces()
   renderAgents()
 }
 
@@ -792,7 +800,7 @@ bridge.on('status.changed', (change) => {
     source: change.source,
     resumable: previous?.resumable ?? false,
   })
-  renderAgents()
+  renderStates()
   // resumable depends on the holder's liveness, which the change does not carry; the core's list settles it.
   refreshAgents().catch(report)
 })

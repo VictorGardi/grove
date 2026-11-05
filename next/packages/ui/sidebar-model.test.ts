@@ -7,9 +7,18 @@ function agent(state: AgentStateName, since: number): AgentInfo {
 }
 
 describe('tabStateOf', () => {
-  it('gives idle for a gone tab and for a shell, whatever state they hold', () => {
+  it('gives idle for a gone tab, whatever state it holds', () => {
     expect(tabStateOf({ exited: true, kind: 'claude', state: 'needs-you' })).toBe('idle')
-    expect(tabStateOf({ exited: false, kind: 'shell', state: 'working' })).toBe('idle')
+    expect(tabStateOf({ exited: true, kind: 'shell', state: 'working' })).toBe('idle')
+  })
+
+  it('gives idle for a shell with no agent watched', () => {
+    expect(tabStateOf({ exited: false, kind: 'shell', state: null })).toBe('idle')
+  })
+
+  it('gives the state of an agent typed into a shell tab, as of a launched one', () => {
+    expect(tabStateOf({ exited: false, kind: 'shell', state: 'working' })).toBe('working')
+    expect(tabStateOf({ exited: false, kind: 'shell', state: 'needs-you' })).toBe('needs-you')
   })
 
   it('gives unknown for an agent tab with no state yet', () => {

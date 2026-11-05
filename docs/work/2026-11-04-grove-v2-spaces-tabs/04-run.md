@@ -1169,3 +1169,33 @@ Approved by the human after fix 2: the install of Claude's and Copilot's hooks i
 4. An agent that was already running when you enabled it does not load the hooks until it starts again. Restart it in its tab.
 5. Press Remove in Agent status. Only Grove's entries should leave the file.
 6. Optional: put a file that is not a JSON object in a test folder through `CLAUDE_CONFIG_DIR`. Agent status should say Settings unreadable, with no button.
+
+## Post-run fix 5
+
+Reported by the human after fix 4: agents typed into a terminal tab (Claude, Copilot, OpenCode) made a sound when they finished, but the window drew no working, finished or needs-you indicator. Only grey rings. A typed Claude tab stayed `unknown`.
+
+### Found
+
+- **The window drew a typed agent's tab as idle, whatever the core said.** The window takes a tab's kind once, from `spaces.list` when the tab is created. A tab opened as a shell, with an agent typed into it, stays a shell in the window, and `tabStateOf` drew every shell as idle before it read the state. The core did watch the agent and sent `status.changed` with the right state; the sound comes from those same transitions. Launched agents were not affected, since their tab was created with the agent's kind. Reproduced in `status-window.test.ts` on the unchanged `main.ts`: a typed Claude's tab strip showed `ind-idle` for a `needs-you` change.
+- **A status change repainted only the agents list.** The tab strip indicator, the pane-header indicator and the space tile are drawn by `paint()`, which a status change never called. Even with the kind right, they kept their last paint until the next tab switch.
+- **OpenCode's core is not the cause.** Checked against a real OpenCode 2.0.20 on a scratch server with a scratch service file and a session in a scratch folder: discovery found the session by folder and creation time; the first re-sync gave `idle`; a prompt gave `working` on `session.execution.started` and `finished` when the execution ended. The human's `ls` `idle` is the state after a finished tab has been seen on screen.
+- **Typed Claude `413fe5b0` staying `unknown` is expected.** Its spool has one line, `SessionStart` (08:29:52 local), and no later hook event, so no prompt has been sent in it since. `SessionStart` leaves a tab `unknown` by design. All twelve Grove hook entries are in `~/.claude/settings.json`, so the next prompt should move it to `working`.
+- **Ruled out:** the `.ind-*` rules, the `--state-*` tokens, the spin that pauses while the window is unfocused, and the reduced-motion rule. The five state names are the same in the core and the window.
+
+### Changed
+
+- `sidebar-model.ts`, `tabStateOf`: a gone tab is idle; a tab the core watches shows its agent's state, whatever its kind; a shell with no agent is idle; an agent tab with no state yet is unknown.
+- `main.ts`: `renderStates()` repaints the tab strip, the pane headers, the space tiles and the agents list. A status change and an agents-list refresh call it.
+- Tests: `status-window.test.ts` (new) runs the real `main.ts` with Tauri and the terminal mocked. Typed Claude, Copilot and OpenCode tabs are each fed the five states through `status.changed`, and each asserts its strip, pane header, agents list and space tile. `sidebar-model.test.ts` covers the new rule.
+- The core is unchanged, so only the dev app needs restarting.
+
+### What the human should try
+
+1. Restart the dev app. In a space, open a typed Claude, Copilot and OpenCode tab, and send each a prompt. The ring should spin (while the window has focus) and then turn into a green finished dot when the turn ends. A permission ask should show the yellow needs-you dot. Unfocus the window: the spin should pause.
+2. Claude `413fe5b0`: send it a prompt. It should move from `unknown` to `working`, then `finished`.
+3. If an indicator still does not change, send `grove-next ls` and the window's console output.
+
+### Not verified
+
+- The Tauri window itself was not run. The test runs the real `main.ts` under happy-dom with Tauri mocked, and the OpenCode path was checked on the core, not in the window.
+- Real Claude and Copilot were not run in a typed tab here.

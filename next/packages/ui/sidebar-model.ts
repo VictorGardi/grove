@@ -9,10 +9,13 @@ export interface TabStateInput {
   state: AgentStateName | null
 }
 
-// A gone tab and a shell are idle. An agent tab with no status yet is unknown, not idle: a guess is not hidden behind idle.
+// A gone tab is idle. A tab the core watches shows its agent's state, whatever kind it was created as: an agent typed
+// into a shell tab is watched like a launched one. Otherwise a shell is idle, and an agent tab with no status yet is
+// unknown, not idle: a guess is not hidden behind idle.
 export function tabStateOf(tab: TabStateInput): AgentStateName {
-  if (tab.exited || tab.kind === 'shell') return 'idle'
-  return tab.state ?? 'unknown'
+  if (tab.exited) return 'idle'
+  if (tab.state !== null) return tab.state
+  return tab.kind === 'shell' ? 'idle' : 'unknown'
 }
 
 export interface AgentRowInput {
