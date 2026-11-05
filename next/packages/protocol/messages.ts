@@ -20,6 +20,7 @@ export const METHODS = {
   attentionFocus: 'attention.focus',
   tabsClose: 'tabs.close',
   tabsFocus: 'tabs.focus',
+  configGet: 'config.get',
 } as const
 
 export const ERROR_CODES = {
@@ -110,6 +111,36 @@ export interface AttentionNotice {
   reason?: NeedsYouReason
 }
 
+// Keys of the key bindings in keys.json.
+export type KeyAction = 'grid-toggle' | 'new-shell' | 'new-claude' | 'new-opencode' | 'new-copilot'
+
+export type LayoutSection = 'spaces' | 'agents'
+
+// A shell line the window can start in the active space (launchers.json).
+export interface Launcher {
+  id: string
+  label: string
+  command: string
+  args: string[]
+  env: Record<string, string>
+}
+
+// The validated values of the five config files, one section each.
+export interface ConfigValues {
+  settings: { sidebarWidth: number }
+  keys: Record<KeyAction, string>
+  launchers: Launcher[]
+  theme: Record<string, string>
+  layout: { sidebarOrder: LayoutSection[] }
+}
+
+// The values in use, the config folder, and a note per file that does not validate (its last good values stay in use).
+export interface ConfigSnapshot {
+  path: string
+  values: ConfigValues
+  notes: Record<string, string>
+}
+
 export interface StatusChange {
   tabId: string
   agent: AgentKind
@@ -154,6 +185,7 @@ export interface MethodMap {
   'tabs.close': { params: { id: string }; result: Empty }
   // Asks every client to show the tab; the window selects it and raises itself.
   'tabs.focus': { params: { id: string }; result: Empty }
+  'config.get': { params: Empty; result: ConfigSnapshot }
 }
 
 export interface NotificationMap {
@@ -164,6 +196,8 @@ export interface NotificationMap {
   'tabs.focus': { id: string }
   // A tab was closed on purpose: every window drops it.
   'tabs.closed': { id: string }
+  // The config folder changed and a value or a note is new: every window applies it.
+  'config.changed': ConfigSnapshot
 }
 
 export type MethodName = keyof MethodMap

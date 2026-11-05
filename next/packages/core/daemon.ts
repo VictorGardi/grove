@@ -14,6 +14,9 @@ import { adapters as registry } from './agents/registry.ts'
 import type { AgentAdapter, AgentKind, AgentLaunch } from './status/adapter.ts'
 import { StatusService } from './status/service.ts'
 import { Attention } from './attention/attention.ts'
+import { ConfigStore, configFolder } from './config/store.ts'
+import { writeAgentsMd } from './config/agents-md.ts'
+import { watchConfig } from './config/watch.ts'
 
 const TAB_ID = /^[A-Za-z0-9_-]{1,64}$/
 // A holder call the status service makes must answer within this, or that call fails and its check is skipped.
@@ -57,6 +60,11 @@ export async function startCoreDaemon(
   const available = new Set<AgentKind>()
   const spaces = options.spaces ?? new SpacesService(options.stateFile ?? path.join(home, 'state.json'))
   await removeStaleSocket(socketPath)
+  // Every tab gets the config folder in GROVE_NEXT_CONFIG. The core starts with the last good config and says so in AGENTS.md.
+  const configDir = configFolder(home)
+  const config = new ConfigStore(configDir)
+  config.load()
+  writeAgentsMd(configDir)
 
   // The status service reads screens and tab liveness through its own holder connection, so it does not depend on any window.
   let statusClient: Promise<RpcClient> | undefined
@@ -105,10 +113,11 @@ export async function startCoreDaemon(
     broadcast(notification('status.changed', change))
     attention.onStatus(change)
   })
+  const unwatch = watchConfig(config, (snapshot) => broadcast(notification('config.changed', snapshot)))
   // Agent tabs are rebuilt before the core listens, so the first client already sees their state.
   status.restore(spaces.agentTabs(), aliveAtStart)
   status.start()
-  const deps: Deps = { spaces, status, attention, home, adapters, available, broadcast }
+  const deps: Deps = { spaces, status, attention, home, configDir, config, adapters, available, broadcast }
 
   const server = net.createServer((socket) => {
     sockets.add(socket)
@@ -179,6 +188,7 @@ export async function startCoreDaemon(
     close: () =>
       new Promise<void>((resolve) => {
         unsubscribe()
+        unwatch()
         status.close()
         void statusClient?.then(
           (client) => client.close(),
@@ -231,6 +241,8 @@ interface Deps {
   status: StatusService
   attention: Attention
   home: string
+  configDir: string
+  config: ConfigStore
   adapters: Partial<Record<AgentKind, AgentAdapter>>
   available: Set<AgentKind>
   broadcast: (message: unknown) => void
@@ -252,6 +264,9 @@ async function dispatch(method: string, rawParams: unknown, holder: Promise<RpcC
   if (method === METHODS.tabsFocus) {
     return focusTab(rawParams, await holder, deps)
   }
+  if (method === METHODS.configGet) {
+    return deps.config.snapshot() satisfies MethodMap['config.get']['result']
+  }
   if (method === METHODS.corePing) {
     const result: MethodMap['core.ping']['result'] = { protocolVersion: PROTOCOL_VERSION }
     return result
@@ -264,7 +279,7 @@ async function dispatch(method: string, rawParams: unknown, holder: Promise<RpcC
   if (method === METHODS.tabsCreate && agentParam(rawParams) !== undefined) {
     return createAgentTab(rawParams as MethodMap['tabs.create']['params'], await holder, deps)
   }
-  if (SPACE_METHODS.has(method)) return dispatchSpaces(method, rawParams, await holder, deps.spaces)
+  if (SPACE_METHODS.has(method)) return dispatchSpaces(method, rawParams, await holder, deps)
   if (!PROXIED.has(method)) throw new RpcError(ERROR_CODES.methodNotFound, `unknown method ${method}`)
   const client = await holder
   return client.request(method as MethodName, rawParams as never)
@@ -327,7 +342,7 @@ async function createAgentTab(
     id,
     command: launch.command,
     args: launch.args,
-    env: launch.env,
+    env: { ...launch.env, GROVE_NEXT_CONFIG: deps.configDir },
     cwd: spacePath,
     cols: numberParam(p, 'cols'),
     rows: numberParam(p, 'rows'),
@@ -383,19 +398,16 @@ function tabIdParam(params: unknown): string {
   return id
 }
 
-async function dispatchSpaces(
-  method: string,
-  rawParams: unknown,
-  holder: RpcClient,
-  spaces: SpacesService,
-): Promise<unknown> {
+async function dispatchSpaces(method: string, rawParams: unknown, holder: RpcClient, deps: Deps): Promise<unknown> {
+  const { spaces } = deps
   if (method === METHODS.spacesList) return spaces.list(holder)
   if (method === METHODS.spacesAdd) {
     const p = rawParams as MethodMap['spaces.add']['params']
     return spaces.add(stringParam(p, 'path'))
   }
   const p = rawParams as MethodMap['tabs.open']['params']
-  return spaces.openTab(stringParam(p, 'spacePath'), numberParam(p, 'cols'), numberParam(p, 'rows'), holder, optionalLabel(p))
+  const env = { GROVE_NEXT_CONFIG: deps.configDir }
+  return spaces.openTab(stringParam(p, 'spacePath'), numberParam(p, 'cols'), numberParam(p, 'rows'), holder, optionalLabel(p), env)
 }
 
 function stringParam(params: unknown, key: string): string {

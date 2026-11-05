@@ -1,4 +1,5 @@
 import fs from 'node:fs'
+import os from 'node:os'
 import path from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { ensureHolder } from '../core/holder-client.ts'
@@ -9,6 +10,7 @@ import { parseCommand, UsageError, type Command } from './args.ts'
 import { formatError, formatLsJson, formatNew, formatRead, formatTree, turnExit, type LsTab, type TurnOutcome } from './output.ts'
 import { pasteText, waitStable } from './paste.ts'
 import { resolveTabRef } from './ref.ts'
+import { agentSkillsDirs, installSkill } from './skill.ts'
 import { waitForWorking, waitTurn, type WaitDeps, type WaitTab } from './wait.ts'
 
 const CORE_UNREACHABLE = 3
@@ -66,7 +68,22 @@ async function run(command: Command): Promise<number> {
         console.log(formatRead(text, command.lines))
         return 0
       })
+    case 'config-path':
+      return withCore(async (core) => {
+        const { path: folder } = await core.request(METHODS.configGet, {})
+        console.log(folder)
+        return 0
+      })
+    case 'skill':
+      return installSkills()
   }
+}
+
+// One line per folder: written, or why not. Exit 1 if any folder failed.
+function installSkills(): number {
+  const results = installSkill({ dirs: agentSkillsDirs(os.homedir(), process.env) })
+  for (const result of results) console.log(result.ok ? `✓ ${result.target}` : `✗ ${result.target}: ${result.error}`)
+  return results.every((result) => result.ok) ? 0 : 1
 }
 
 // Starts the holder (and through it the core) when needed, then runs one call against the core.

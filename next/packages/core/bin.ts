@@ -2,6 +2,7 @@ import path from 'node:path'
 import { connectRpc } from '../protocol/client.ts'
 import { groveNextHome, holderSocketPath } from '../protocol/paths.ts'
 import { startCoreDaemon } from './daemon.ts'
+import { configFolder } from './config/store.ts'
 import { ensureHolder } from './holder-client.ts'
 import { SpacesService } from './spaces.ts'
 
@@ -28,7 +29,7 @@ async function restoreTabs(spaces: SpacesService): Promise<void> {
   let holder: Awaited<ReturnType<typeof connectRpc>> | undefined
   try {
     holder = await connectRpc(holderSocketPath())
-    const restored = await spaces.restore(holder)
+    const restored = await spaces.restore(holder, { GROVE_NEXT_CONFIG: configFolder(groveNextHome()) })
     if (restored > 0) console.log(`core: restored ${restored} tab(s)`)
   } catch (error) {
     console.error(`core: restore failed: ${error instanceof Error ? error.message : String(error)}`)

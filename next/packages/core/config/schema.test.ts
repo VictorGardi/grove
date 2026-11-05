@@ -1,0 +1,104 @@
+import { describe, expect, it } from 'vitest'
+import { canonicalBinding, defaultFile, FILES, validateFile, type ConfigFile } from './schema.ts'
+
+const withFile = (file: ConfigFile, patch: Record<string, unknown>) => ({ ...defaultFile(file), ...patch })
+
+describe('config schema', () => {
+  it('accepts the defaults of every file', () => {
+    for (const file of FILES) {
+      expect(validateFile(file, defaultFile(file)).ok).toBe(true)
+    }
+  })
+
+  it('reads a file into its section of the values', () => {
+    expect(validateFile('settings.json', withFile('settings.json', { sidebarWidth: 300 }))).toEqual({
+      ok: true,
+      value: { sidebarWidth: 300 },
+    })
+    expect(validateFile('theme.json', withFile('theme.json', { tokens: { accent: '#ff0000' } }))).toEqual({
+      ok: true,
+      value: { accent: '#ff0000' },
+    })
+  })
+
+  it('rejects a missing version, an unknown key, a wrong type and an out-of-range width, naming the file', () => {
+    expect(validateFile('settings.json', { sidebarWidth: 200 })).toEqual({
+      ok: false,
+      message: 'settings.json: "version" must be 1',
+    })
+    expect(validateFile('settings.json', withFile('settings.json', { version: 2 })).ok).toBe(false)
+    const unknown = validateFile('settings.json', withFile('settings.json', { colour: 'red' }))
+    expect(unknown).toEqual({ ok: false, message: 'settings.json: unknown key "colour"' })
+    const wrongType = validateFile('settings.json', withFile('settings.json', { sidebarWidth: '240' }))
+    expect(wrongType).toEqual({
+      ok: false,
+      message: 'settings.json: sidebarWidth: must be an integer from 180 to 480',
+    })
+    const tooWide = validateFile('settings.json', withFile('settings.json', { sidebarWidth: 481 }))
+    expect(tooWide.ok).toBe(false)
+    expect(validateFile('settings.json', withFile('settings.json', { sidebarWidth: 200.5 })).ok).toBe(false)
+  })
+
+  it('rejects a duplicate key binding, and accepts the same modifiers in another order only as a duplicate', () => {
+    const duplicate = validateFile('keys.json', withFile('keys.json', { 'new-shell': 'mod+g' }))
+    expect(duplicate).toEqual({ ok: false, message: 'keys.json: new-shell: same binding as grid-toggle' })
+    const reordered = validateFile('keys.json', withFile('keys.json', { 'new-copilot': 'shift+mod+3', 'new-claude': 'mod+shift+1' }))
+    expect(reordered.ok).toBe(true)
+    const samePair = validateFile('keys.json', withFile('keys.json', { 'new-copilot': 'shift+mod+1' }))
+    expect(samePair).toEqual({ ok: false, message: 'keys.json: new-copilot: same binding as new-claude' })
+  })
+
+  it('rejects a binding that is not a modifier and a key, and an unknown action', () => {
+    expect(validateFile('keys.json', withFile('keys.json', { 'grid-toggle': 'g' })).ok).toBe(false)
+    expect(validateFile('keys.json', withFile('keys.json', { 'grid-toggle': 'mod+G' })).ok).toBe(false)
+    expect(validateFile('keys.json', withFile('keys.json', { 'grid-toggle': 'mod+x+g' })).ok).toBe(false)
+    expect(validateFile('keys.json', withFile('keys.json', { 'zoom': 'mod+z' }))).toEqual({
+      ok: false,
+      message: 'keys.json: unknown key "zoom"',
+    })
+  })
+
+  it('rejects an unknown theme token and a value with a semicolon', () => {
+    expect(validateFile('theme.json', withFile('theme.json', { tokens: { nope: '#fff' } }))).toEqual({
+      ok: false,
+      message: 'theme.json: tokens: unknown token "nope"',
+    })
+    const injected = validateFile('theme.json', withFile('theme.json', { tokens: { accent: 'red; color: blue' } }))
+    expect(injected).toEqual({
+      ok: false,
+      message: expect.stringMatching(/^theme\.json: tokens: token "accent" must be/),
+    })
+    expect(validateFile('theme.json', withFile('theme.json', { tokens: { accent: 'url(x)' } })).ok).toBe(false)
+  })
+
+  it('validates launchers: id shape, uniqueness, and the fields of each', () => {
+    const launcher = { id: 'plan', label: 'Plan', command: 'claude', args: ['plan'], env: { MODE: 'plan' } }
+    expect(validateFile('launchers.json', withFile('launchers.json', { launchers: [launcher] }))).toEqual({
+      ok: true,
+      value: [launcher],
+    })
+    const bad = (item: Record<string, unknown>) => validateFile('launchers.json', withFile('launchers.json', { launchers: [item] }))
+    expect(bad({ ...launcher, id: 'Plan!' }).ok).toBe(false)
+    expect(bad({ ...launcher, extra: 1 })).toEqual({ ok: false, message: 'launchers.json: launchers: launcher 1: unknown key "extra"' })
+    expect(bad({ ...launcher, env: { '1BAD': 'x' } }).ok).toBe(false)
+    const twice = validateFile('launchers.json', withFile('launchers.json', { launchers: [launcher, launcher] }))
+    expect(twice).toEqual({ ok: false, message: 'launchers.json: launchers: launcher 2: id "plan" is used by another launcher' })
+  })
+
+  it('requires the sidebar order to list both sections once', () => {
+    expect(validateFile('layout.json', withFile('layout.json', { sidebarOrder: ['agents', 'spaces'] })).ok).toBe(true)
+    expect(validateFile('layout.json', withFile('layout.json', { sidebarOrder: ['spaces'] })).ok).toBe(false)
+    expect(validateFile('layout.json', withFile('layout.json', { sidebarOrder: ['spaces', 'spaces'] })).ok).toBe(false)
+  })
+})
+
+describe('canonicalBinding', () => {
+  it('puts the modifiers in a fixed order and needs one modifier and one letter or digit', () => {
+    expect(canonicalBinding('mod+g')).toBe('mod+g')
+    expect(canonicalBinding('shift+alt+mod+9')).toBe('mod+alt+shift+9')
+    expect(canonicalBinding('g')).toBeNull()
+    expect(canonicalBinding('mod+')).toBeNull()
+    expect(canonicalBinding('mod+shift')).toBeNull()
+    expect(canonicalBinding('mod+mod+g')).toBeNull()
+  })
+})

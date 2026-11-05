@@ -2,10 +2,12 @@ import { invoke } from '@tauri-apps/api/core'
 import { getCurrentWindow } from '@tauri-apps/api/window'
 import { createBridge, fromBase64, toBase64 } from './bridge.ts'
 import { createSoundGate, noticeBody } from './alerts.ts'
+import { applyLayout, applySettings, applyTheme, findAction, launcherLine } from './config.ts'
 import { openTerminal, type TerminalView } from './terminal.ts'
 import { gridMembers, gridShape, paneSpans } from './grid/layout.ts'
-import type { AgentInfo, AgentStateName, SpaceInfo } from '../protocol/messages.ts'
+import type { AgentInfo, AgentStateName, ConfigSnapshot, KeyAction, Launcher, SpaceInfo } from '../protocol/messages.ts'
 import type { AgentKind } from '../core/status/adapter.ts'
+import { DEFAULT_VALUES } from '../core/config/schema.ts'
 import './styles.css'
 
 interface EnvInfo {
@@ -35,6 +37,11 @@ let activeSpace: string | null = null
 let refused: string | null = null
 let homeDir = ''
 let windowFocused = false
+// The config in use: the key bindings, the theme tokens set on the root, and the note the status line shows for them.
+let keys: Record<KeyAction, string> = DEFAULT_VALUES.keys
+let themeTokens: string[] = []
+let noteShown = ''
+const isMac = navigator.platform.startsWith('Mac')
 // Grid mode shows the active space's first tabs as panes instead of only the active one.
 let gridOn = false
 // The last attention.focus sent, as a key; an identical one is skipped until a reconnect clears it.
@@ -57,6 +64,16 @@ const newAgentButtons = [
 const agentList = byId('agents')
 const agentsEmpty = byId('agents-empty')
 const installCliButton = byId('install-cli') as HTMLButtonElement
+const sidebar = byId('sidebar')
+const launcherBar = byId('launchers')
+// The buttons a key binding presses; a disabled button ignores the press, as it does a click.
+const keyButtons: Record<KeyAction, HTMLButtonElement> = {
+  'grid-toggle': gridToggle,
+  'new-shell': newTabButton,
+  'new-claude': byId('new-claude') as HTMLButtonElement,
+  'new-opencode': byId('new-opencode') as HTMLButtonElement,
+  'new-copilot': byId('new-copilot') as HTMLButtonElement,
+}
 
 // The command the window starts; the core builds the args from the agent kind.
 const AGENT_COMMANDS: Record<AgentKind, string> = { claude: 'claude', opencode: 'opencode', copilot: 'copilot' }
@@ -238,6 +255,7 @@ function paint(): void {
   gridToggle.setAttribute('aria-pressed', String(gridOn))
   gridToggle.disabled = !gridOn && (activeSpace === null || refused !== null)
   for (const { button } of newAgentButtons) button.disabled = activeSpace === null || refused !== null
+  for (const button of launcherBar.querySelectorAll('button')) button.disabled = activeSpace === null || refused !== null
   for (const control of addSpaceForm.querySelectorAll<HTMLInputElement | HTMLButtonElement>('input, button')) {
     control.disabled = refused !== null
   }
@@ -322,7 +340,8 @@ function spaceButton(space: SpaceInfo, top: boolean): HTMLButtonElement {
   return button
 }
 
-async function newShellTab(): Promise<void> {
+// Opens a shell tab in the active space. A launcher passes the line it types once the tab's first output arrives.
+async function newShellTab(typed: string | null = null): Promise<void> {
   const spacePath = activeSpace
   if (!spacePath) return
   const tab = createTab(spacePath)
@@ -334,6 +353,7 @@ async function newShellTab(): Promise<void> {
     })
     adopt(tab, id)
     await attach(tab)
+    if (typed !== null) void bridge.rpc('tabs.write', { id, dataB64: toBase64(encoder.encode(`${typed}\r`)) }).catch(report)
     activate(tab)
   } catch (error) {
     removeTab(tab)
@@ -378,6 +398,46 @@ async function resumeAgent(tab: Tab, kind: AgentKind): Promise<void> {
   await attach(tab)
   activate(tab)
   await refreshAgents()
+}
+
+// The launcher buttons in the tab strip. A click opens a shell tab in the active space that types the launcher's line.
+function renderLaunchers(launchers: Launcher[]): void {
+  launcherBar.replaceChildren(
+    ...launchers.map((launcher) => {
+      const line = launcherLine(launcher)
+      const button = document.createElement('button')
+      button.type = 'button'
+      button.className = 'new-tab'
+      button.textContent = launcher.label
+      button.title = line
+      button.disabled = activeSpace === null || refused !== null
+      button.addEventListener('click', () => void newShellTab(line))
+      return button
+    }),
+  )
+}
+
+// Applies the config in use: settings, keys, theme, layout and launchers. Notes about files that do not validate go to the status line.
+function applyConfig(snapshot: ConfigSnapshot): void {
+  const { values } = snapshot
+  keys = values.keys
+  applySettings(document.documentElement, values.settings)
+  themeTokens = applyTheme(document.documentElement, values.theme, themeTokens)
+  applyLayout(
+    sidebar,
+    { spaces: byId('section-spaces'), agents: byId('section-agents') },
+    values.layout.sidebarOrder,
+    sidebar.querySelector<HTMLElement>('.sidebar-foot'),
+  )
+  renderLaunchers(values.launchers)
+  const notes = Object.values(snapshot.notes).join(' ')
+  if (notes !== '') statusLine.textContent = notes
+  else if (statusLine.textContent === noteShown) statusLine.textContent = ''
+  noteShown = notes
+}
+
+async function loadConfig(): Promise<void> {
+  applyConfig(await bridge.rpc('config.get', {}))
 }
 
 async function refreshAgents(): Promise<void> {
@@ -522,7 +582,8 @@ async function resync(): Promise<void> {
 
 bridge.on('tabs.output', ({ id, dataB64 }) => {
   const tab = tabs.get(id)
-  if (tab) deliver(tab, fromBase64(dataB64))
+  if (!tab) return
+  deliver(tab, fromBase64(dataB64))
 })
 
 bridge.on('tabs.exit', ({ id, exitCode }) => {
@@ -553,6 +614,8 @@ bridge.on('attention.notify', (notice) => {
   invoke('notify', { title, body: noticeBody(notice), sound: playSound(notice) }).catch(report)
 })
 
+bridge.on('config.changed', applyConfig)
+
 // The CLI asked for a tab: its space and tab are shown, then the window comes forward. An unknown tab only raises the window.
 bridge.on('tabs.focus', ({ id }) => {
   const tab = tabs.get(id)
@@ -574,9 +637,10 @@ bridge.onStatus((status) => {
     return
   }
   statusLine.textContent = ''
-  // A new core socket has no focus yet, so the focus is sent again.
+  // A new core socket has no focus yet, so the focus is sent again. The config may have changed while the core was down.
   sentFocus = null
   reportFocus()
+  loadConfig().catch(report)
   resync().catch(report)
 })
 
@@ -598,6 +662,18 @@ installCliButton.addEventListener('click', () => {
     })
 })
 newTabButton.addEventListener('click', () => void newShellTab())
+// Key bindings are read in the capture phase, so a matched key does not also reach the terminal.
+window.addEventListener(
+  'keydown',
+  (event) => {
+    const action = findAction(keys, event, isMac)
+    if (action === null) return
+    event.preventDefault()
+    event.stopPropagation()
+    keyButtons[action].click()
+  },
+  { capture: true },
+)
 for (const { kind, button } of newAgentButtons) {
   button.addEventListener('click', () => void newAgentTab(kind))
 }
@@ -619,6 +695,7 @@ async function start(): Promise<void> {
     reportFocus()
   })
   await bridge.connect()
+  await loadConfig()
   await resync()
 }
 

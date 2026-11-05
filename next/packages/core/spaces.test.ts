@@ -231,6 +231,28 @@ describe('spaces and tabs', () => {
     ])
   })
 
+  it('starts a shell tab with the environment it is given', async () => {
+    const stack = await startStack()
+    holder = stack.holder
+    clients.push(stack.core)
+    const holderClient = await connectRpc(holderSocketPath())
+    clients.push(holderClient)
+    const service = new SpacesService(path.join(home, 'env.json'))
+    const space = fs.realpathSync(fs.mkdtempSync(path.join(root, 'env-')))
+    await service.add(space)
+
+    const { id } = await service.openTab(space, 200, 24, holderClient, undefined, { GROVE_TEST_ENV: 'env-7' })
+    await holderClient.request(METHODS.tabsWrite, {
+      id,
+      dataB64: bytesToB64(Buffer.from('echo "got=$GROVE_TEST_ENV=end"\n')),
+    })
+    const screen = await waitFor(
+      () => screenText(holderClient, id),
+      (text) => text.includes('got=env-7=end'),
+    )
+    expect(screen).toContain('got=env-7=end')
+  })
+
   it('removes a saved tab, and a new stack does not recreate it after its holder tab is gone', async () => {
     const stack = await startStack()
     holder = stack.holder

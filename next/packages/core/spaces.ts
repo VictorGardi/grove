@@ -77,6 +77,7 @@ export class SpacesService {
     rows: number,
     holder: RpcClient,
     label?: string,
+    env: Record<string, string> = {},
   ): Promise<{ id: string }> {
     this.assertNotRefused()
     if (!this.state.spaces.some((space) => space.path === spacePath)) {
@@ -88,6 +89,7 @@ export class SpacesService {
       command: loginShell(),
       args: ['-l'],
       cwd: spacePath,
+      env,
       cols,
       rows,
     })
@@ -101,7 +103,7 @@ export class SpacesService {
   // Recreates, as fresh login shells, the saved tabs the holder does not know at all.
   // Tabs the holder still has (alive or exited) are left alone. A tab that fails to start is logged
   // and skipped so the others are still restored. Returns the number actually restored.
-  async restore(holder: RpcClient): Promise<number> {
+  async restore(holder: RpcClient, env: Record<string, string> = {}): Promise<number> {
     if (this.refused !== null) return 0
     const known = new Set((await holder.request(METHODS.tabsList, {})).map((tab) => tab.id))
     let restored = 0
@@ -114,6 +116,7 @@ export class SpacesService {
           command: loginShell(),
           args: ['-l'],
           cwd: rootFor(tab.spacePath),
+          env,
           cols: SHELL_COLS,
           rows: SHELL_ROWS,
         })

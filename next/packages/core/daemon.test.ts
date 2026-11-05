@@ -6,7 +6,7 @@ import { afterEach, beforeEach, describe, expect, it } from 'vitest'
 import { fileURLToPath } from 'node:url'
 import { b64ToBytes, bytesToB64 } from '../protocol/framing.ts'
 import { coreSocketPath } from '../protocol/paths.ts'
-import { METHODS, type StatusChange } from '../protocol/messages.ts'
+import { METHODS, type ConfigSnapshot, type StatusChange } from '../protocol/messages.ts'
 import { connectRpc, connectWhenReady, type RpcClient } from '../protocol/client.ts'
 import { holderSocketPath } from '../protocol/paths.ts'
 import { ensureHolder } from './holder-client.ts'
@@ -17,6 +17,7 @@ import { StatusService } from './status/service.ts'
 import type { AdapterWatchInput, AgentAdapter, AgentKind, AgentWatch } from './status/adapter.ts'
 import type { StatusEvent } from './status/contract.ts'
 import { killCore, startStack, stopHolder, waitFor } from './test-helpers.ts'
+import { DEFAULT_VALUES } from './config/schema.ts'
 
 const screenText = async (client: RpcClient, id: string): Promise<string> => {
   const { screenB64 } = await client.request(METHODS.tabsAttach, { id })
@@ -224,6 +225,61 @@ describe('core daemon', () => {
     expect(closed).toEqual([{ id }])
     expect(closedOnSecond).toEqual([{ id }])
   })
+
+  it('writes the config folder and AGENTS.md at start, and serves config.get with the defaults', async () => {
+    const stack = await startStack()
+    holder = stack.holder
+    const core = stack.core
+    clients.push(core)
+    const configDir = path.join(home, 'config')
+    expect(fs.existsSync(path.join(configDir, 'AGENTS.md'))).toBe(true)
+    expect(fs.existsSync(path.join(configDir, 'theme.json'))).toBe(true)
+    expect(await core.request(METHODS.configGet, {})).toEqual({
+      path: configDir,
+      values: DEFAULT_VALUES,
+      notes: {},
+    })
+  })
+
+  it('tells every connected client when a config file changes', async () => {
+    const stack = await startStack()
+    holder = stack.holder
+    const first = stack.core
+    clients.push(first)
+    const second = await connectWhenReady(coreSocketPath())
+    clients.push(second)
+
+    const changed: ConfigSnapshot[] = []
+    const changedOnSecond: ConfigSnapshot[] = []
+    first.onNotification('config.changed', (snapshot) => changed.push(snapshot))
+    second.onNotification('config.changed', (snapshot) => changedOnSecond.push(snapshot))
+
+    fs.writeFileSync(path.join(home, 'config', 'settings.json'), JSON.stringify({ version: 1, sidebarWidth: 300 }))
+    await waitFor(
+      async () => changed.length + changedOnSecond.length,
+      (count) => count === 2,
+    )
+    expect(changed[0].values.settings).toEqual({ sidebarWidth: 300 })
+    expect(changedOnSecond[0].values.settings).toEqual({ sidebarWidth: 300 })
+    expect(await first.request(METHODS.configGet, {})).toMatchObject({ values: { settings: { sidebarWidth: 300 } } })
+  })
+
+  it('sets GROVE_NEXT_CONFIG in a shell tab', async () => {
+    const stack = await startStack()
+    holder = stack.holder
+    const core = stack.core
+    clients.push(core)
+    const space = fs.realpathSync(fs.mkdtempSync(path.join(home, 'space-')))
+    await core.request(METHODS.spacesAdd, { path: space })
+    const { id } = await core.request(METHODS.tabsOpen, { spacePath: space, cols: 200, rows: 24 })
+    const expected = `cfg=${path.join(home, 'config')}=end`
+    await core.request(METHODS.tabsWrite, { id, dataB64: bytesToB64(Buffer.from('echo "cfg=$GROVE_NEXT_CONFIG=end"\n')) })
+    const screen = await waitFor(
+      () => screenText(core, id),
+      (text) => text.includes(expected),
+    )
+    expect(screen).toContain(expected)
+  })
 })
 
 // Claude tabs run a fake launch (a shell that prints a line and sleeps) and a fake source, which replays
@@ -376,6 +432,24 @@ describe('core daemon agents', () => {
 
   const agentState = async (core: RpcClient, tabId: string) =>
     (await core.request(METHODS.agentsList, {})).find((agent) => agent.tabId === tabId)
+
+  it('sets GROVE_NEXT_CONFIG in a Claude tab', async () => {
+    launchScript = "printf 'cfg=%s\\n' \"$GROVE_NEXT_CONFIG\"; sleep 30"
+    const { core } = await startDaemon()
+    const { id } = await core.request(METHODS.tabsCreate, {
+      command: 'claude',
+      cwd: space,
+      cols: 200,
+      rows: 24,
+      agent: { kind: 'claude' },
+    })
+    const expected = `cfg=${path.join(home, 'config')}`
+    const screen = await waitFor(
+      () => screenFromHolder(id),
+      (text) => text.includes(expected),
+    )
+    expect(screen).toContain(expected)
+  })
 
   it('starts a Claude tab, lists its state, reads its screen and reports changes', async () => {
     const { core } = await startDaemon()

@@ -132,6 +132,13 @@ describe('grove-next cli', () => {
     expect(errors[0]).toContain('no tab matches nosuchtab')
   }, 20000)
 
+  it('prints the config folder under the home, from the running core', async () => {
+    holder = await ensureHolder()
+    expect(await main(['config', 'path'])).toBe(0)
+    expect(logs).toEqual([path.join(home, 'config')])
+    expect(errors).toEqual([])
+  }, 20000)
+
   it('prints usage and returns 2 for an unknown command or missing arguments', async () => {
     expect(await main(['space'])).toBe(2)
     expect(await main(['nope'])).toBe(2)

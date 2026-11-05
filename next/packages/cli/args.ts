@@ -12,6 +12,8 @@ export type Command =
   | { cmd: 'focus'; ref: string }
   | { cmd: 'kill'; ref: string }
   | { cmd: 'read'; ref: string; lines: number }
+  | { cmd: 'config-path' }
+  | { cmd: 'skill' }
 
 export class UsageError extends Error {}
 
@@ -26,7 +28,9 @@ export const USAGE = `usage: grove-next <command>
   grove-next wait <ref> [--timeout S]            block until the agent stops working (exit 0 idle, 5 gone, 124 timeout)
   grove-next focus <ref>                         show the tab in the app and raise its window
   grove-next kill <ref>                          end a tab and remove it
-  grove-next read <ref> [--lines N]              print the last N lines (default 100) of a tab's screen`
+  grove-next read <ref> [--lines N]              print the last N lines (default 100) of a tab's screen
+  grove-next config path                         print the config folder
+  grove-next skill                               install the grove-next-config skill for Claude, OpenCode and Copilot`
 
 const KINDS = ['terminal', 'claude', 'opencode', 'copilot']
 
@@ -99,6 +103,18 @@ export function parseCommand(argv: string[]): Command | UsageError {
       const lines = values.lines === undefined ? 100 : Number(values.lines)
       if (positionals.length !== 1 || !Number.isInteger(lines) || lines < 1) return new UsageError(`read takes a tab and optionally --lines N (≥ 1)\n${USAGE}`)
       return { cmd: 'read', ref: positionals[0], lines }
+    }
+    if (cmd === 'config') {
+      const [sub, ...args] = rest
+      if (sub === 'path') {
+        const { positionals } = parseArgs({ args, options: {}, allowPositionals: true })
+        return positionals.length ? new UsageError(`config path takes no arguments\n${USAGE}`) : { cmd: 'config-path' }
+      }
+      return new UsageError(`config takes: path\n${USAGE}`)
+    }
+    if (cmd === 'skill') {
+      const { positionals } = parseArgs({ args: rest, options: {}, allowPositionals: true })
+      return positionals.length ? new UsageError(`skill takes no arguments\n${USAGE}`) : { cmd: 'skill' }
     }
   } catch (e) {
     return new UsageError(`${(e as Error).message}\n${USAGE}`)

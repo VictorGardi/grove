@@ -1,0 +1,23 @@
+/* Design tokens. config.ts writes theme.json overrides on the root as --<name>; a token not overridden keeps the value here. */
+:root {
+  --accent: #4f7a5c;
+  --state-needs-you: #a86f22;
+  --state-working: #4f7a5c;
+  --state-finished: #5b7fa6;
+  --state-idle: #7a776f;
+  --state-unknown: #9a978f;
+  --pane-unfocused-opacity: 0.65;
+  --font-ui: -apple-system, BlinkMacSystemFont, 'Helvetica Neue', sans-serif;
+  --font-mono: ui-monospace, SFMono-Regular, Menlo, monospace;
+  --space-1: 4px;
+  --space-2: 6px;
+  --space-3: 8px;
+  --space-4: 12px;
+  --space-5: 16px;
+  --space-6: 20px;
+  --radius-sm: 4px;
+  --radius-md: 6px;
+  --text-sm: 11px;
+  --text-md: 13px;
+  --text-lg: 16px;
+}

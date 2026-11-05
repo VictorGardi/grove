@@ -78,8 +78,19 @@ describe('parseCommand', () => {
     for (const argv of [['focus'], ['kill'], ['kill', 'a', 'b']]) expect(parseCommand(argv)).toBeInstanceOf(UsageError)
   })
 
-  it('drops status, progress and skill', () => {
-    for (const argv of [['status', 'done'], ['progress', 'h', '2/5'], ['skill']]) {
+  it('parses config path and skill', () => {
+    expect(parseCommand(['config', 'path'])).toEqual({ cmd: 'config-path' })
+    expect(parseCommand(['skill'])).toEqual({ cmd: 'skill' })
+  })
+
+  it('refuses config without path, and extra arguments to config path and skill', () => {
+    for (const argv of [['config'], ['config', 'set'], ['config', 'path', 'x'], ['skill', 'x'], ['skill', '--force']]) {
+      expect(parseCommand(argv)).toBeInstanceOf(UsageError)
+    }
+  })
+
+  it('drops status and progress', () => {
+    for (const argv of [['status', 'done'], ['progress', 'h', '2/5']]) {
       expect(parseCommand(argv)).toBeInstanceOf(UsageError)
     }
   })

@@ -4,12 +4,13 @@
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>Grove</title>
+    <link rel="stylesheet" href="./src/tokens.css" />
     <link rel="stylesheet" href="./styles.css" />
   </head>
   <body>
     <div class="app">
-      <aside class="sidebar">
-        <section>
+      <aside id="sidebar" class="sidebar">
+        <section id="section-spaces">
           <h2 class="section-label">Spaces</h2>
           <ul id="spaces" class="spaces"></ul>
           <form id="add-space" class="add-space">
@@ -17,7 +18,7 @@
             <button type="submit">Add</button>
           </form>
         </section>
-        <section class="agents-section">
+        <section id="section-agents" class="agents-section">
           <h2 class="section-label">Agents</h2>
           <p id="agents-empty" class="empty">No agents yet.</p>
           <ul id="agents" class="agents"></ul>
@@ -30,6 +31,7 @@
       <main class="main">
         <div class="tabstrip">
           <div id="tabs" class="tabs" role="tablist"></div>
+          <div id="launchers" class="launchers"></div>
           <button id="grid-toggle" class="new-tab" type="button" aria-pressed="false" title="Show this space's tabs in a grid">grid</button>
           <button id="new-tab" class="new-tab" type="button" title="New shell tab">+</button>
           <button id="new-claude" class="new-tab" type="button" title="New Claude tab in this space">+ Claude</button>

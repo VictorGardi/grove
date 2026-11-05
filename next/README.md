@@ -18,6 +18,25 @@ npm install
 
 npm 11 skips node-pty's install script; if `npm install` warns about it, run `npm approve-scripts node-pty` (or the equivalent for your npm) and reinstall. `~/.npm` can hold root-owned files from an earlier `sudo npm`; fix ownership if the install fails with EACCES.
 
+## Install on a fresh Mac
+
+Grove next is run from source. On a Mac with nothing installed, do these in order:
+
+- Xcode command line tools: `xcode-select --install` (node-pty and the Tauri build need them; `git` comes with them)
+- Node.js and npm, the version you want to build node-pty for (for example `brew install node`, or the installer from nodejs.org)
+- Rust via rustup: `curl https://sh.rustup.rs -sSf | sh`, then open a new terminal so `cargo` is on your PATH
+
+Check them with `git --version`, `node --version`, `npm --version` and `cargo --version`.
+
+```sh
+git clone https://github.com/VictorGardi/grove.git
+cd grove/next
+npm install
+npm run dev
+```
+
+Then follow the Install notes above for the npm warning about node-pty. The first `npm run dev` builds the Rust bridge, so it takes a few minutes.
+
 ## Run
 
 ```sh
@@ -58,6 +77,8 @@ grove-next wait <ref> [--timeout S]
 grove-next focus <ref>                          show the tab in the app and raise its window
 grove-next kill <ref>                           end the tab and remove it
 grove-next read <ref> [--lines N]               the last N lines of the screen (default 100)
+grove-next config path                          print the config folder
+grove-next skill                                install the grove-next-config skill (see Config folder)
 ```
 
 - `<ref>` is a tab's full id, an id prefix of at least four characters, or its label (exact). A ref that matches two tabs is an error.
@@ -69,7 +90,33 @@ grove-next read <ref> [--lines N]               the last N lines of the screen (
 
 Exit codes: 0 ok (for `wait`, the agent went idle), 1 error (one line on stderr), 2 usage, 3 the core cannot be reached, 5 the tab is gone, 124 timeout.
 
-Not in v1: worktrees and branches, parent and child tabs, workflow status and progress, the agent skill, and a model per tab.
+Not in v1: worktrees and branches, parent and child tabs, workflow status and progress, and a model per tab.
+
+## Config folder
+
+The settings live in `~/.grove-next/config` (or `$GROVE_NEXT_HOME/config`). Print the path with:
+
+```sh
+grove-next config path
+```
+
+The folder holds five JSON files, each with `"version": 1`. A missing file means its defaults, and the app writes the defaults when it starts:
+
+- `settings.json`: `sidebarWidth`, in px (180 to 480, default 200).
+- `keys.json`: the shortcuts for `grid-toggle`, `new-shell`, `new-claude`, `new-opencode` and `new-copilot`. `mod` is Cmd on macOS and Ctrl elsewhere. A key bound to two actions is invalid.
+- `launchers.json`: a list of buttons, each `{ id, label, command, args, env }`. A launcher opens a shell tab in the active space and types the command.
+- `theme.json`: `tokens`, the colours and sizes the window uses, by token name (`accent`, `state-working`, `font-ui` and so on). Removing a token reverts it to its default.
+- `layout.json`: `sidebarOrder`, `["spaces", "agents"]` or the reverse.
+
+The app watches the folder and applies a saved change while it runs, with no restart. A file that does not validate keeps its last good values, and the window's status line shows a note with the file name and the problem until the file is fixed. The folder also gets an `AGENTS.md` that lists every file and key.
+
+Every tab the app starts has `GROVE_NEXT_CONFIG` set to the config folder, so an agent in that tab can find the files. To let agents change the settings for you, install the skill:
+
+```sh
+grove-next skill
+```
+
+It writes `grove-next-config/SKILL.md` into the Claude, OpenCode and Copilot user skill folders, one line per folder (`✓ <path>` or `✗ <path>: <error>`). The skill is generated, so running it again refreshes it. A file in those folders that grove-next did not write is left alone and named in the error; remove it first.
 
 To put `grove-next` on your PATH, click "Install grove-next command" at the bottom of the sidebar. It writes `~/.local/bin/grove-next`, a small script that runs this checkout's `bin/grove-next`, so `~/.local/bin` must be on your PATH. Keep the checkout where it is: the script points at it.
 
