@@ -132,9 +132,11 @@ describe('spaces and tabs', () => {
       name: 'widgets-feature',
       repoName: 'widgets',
       parent: mainSpace.id,
+      label: null,
+      worktree: true,
       branch: 'feature',
     })
-    expect(both.spaces).toContainEqual({ id: mainSpace.id, path: main, name: 'widgets', repoName: 'widgets', parent: null, branch: 'main' })
+    expect(both.spaces).toContainEqual({ id: mainSpace.id, path: main, name: 'widgets', label: null, worktree: false, repoName: 'widgets', parent: null, branch: 'main' })
     expect(both.refused).toBeNull()
 
     // Only the worktree is a space now (a fresh stack reads the same file).
@@ -148,7 +150,7 @@ describe('spaces and tabs', () => {
     const readded = await again.core.request(METHODS.spacesAdd, { path: worktree })
     const alone = await again.core.request(METHODS.spacesList, {})
     expect(alone.spaces).toEqual([
-      { id: readded.id, path: worktree, name: 'widgets-feature', repoName: 'widgets', parent: null, branch: 'feature' },
+      { id: readded.id, path: worktree, name: 'widgets-feature', label: null, worktree: true, repoName: 'widgets', parent: null, branch: 'feature' },
     ])
   })
 

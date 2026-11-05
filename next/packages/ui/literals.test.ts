@@ -25,7 +25,7 @@ function sourceFiles(dir: string, prefix = ''): string[] {
       continue
     }
     if (!/\.(css|ts|tsx)$/.test(entry.name)) continue
-    if (entry.name.endsWith('.test.ts') || entry.name.startsWith('stress')) continue
+    if (entry.name.endsWith('.test.ts')) continue
     if (SKIPPED_FILES.has(rel)) continue
     out.push(rel)
   }

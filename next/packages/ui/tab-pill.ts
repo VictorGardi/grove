@@ -14,6 +14,8 @@ export interface TabPillView {
   name: string
   title: string
   state: AgentStateName
+  // Whether the tab is one of the grid's panes: it shows a grid glyph.
+  inGrid?: boolean
 }
 
 export interface TabPill {
@@ -32,7 +34,12 @@ export function createTabPill(mark: HTMLElement, handlers: TabPillHandlers): Tab
   const label = document.createElement('span')
   label.className = 'tab-label'
   const indicator = document.createElement('span')
-  main.append(mark, label, indicator)
+  const grid = document.createElement('span')
+  grid.className = 'tab-grid'
+  grid.title = 'In the grid'
+  grid.innerHTML = iconSvg('grid')
+  grid.hidden = true
+  main.append(mark, label, grid, indicator)
   main.addEventListener('click', handlers.onActivate)
 
   const close = document.createElement('button')
@@ -54,7 +61,9 @@ export function createTabPill(mark: HTMLElement, handlers: TabPillHandlers): Tab
 
   return {
     root,
-    update({ name, title, state }) {
+    update({ name, title, state, inGrid = false }) {
+      grid.hidden = !inGrid
+      root.classList.toggle('in-grid', inGrid)
       main.title = title
       label.textContent = name
       indicator.className = indicatorClass(state)

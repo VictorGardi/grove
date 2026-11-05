@@ -45,11 +45,12 @@ describe('config schema', () => {
       value: {
         'grid-toggle': 'mod+g',
         'new-shell': 'mod+t',
-        'new-space': 'mod+shift+n',
+        'new-space': 'mod+n',
         'close-tab': 'mod+w',
         'previous-tab': 'ctrl+tab',
         'grid-tab': 'mod+shift+g',
         'sidebar-toggle': 'mod+b',
+        notes: 'mod+shift+n',
         'space-1': 'mod+1',
         'space-2': 'mod+2',
         'space-3': 'mod+3',
@@ -86,7 +87,7 @@ describe('config schema', () => {
     expect(duplicate).toEqual({ ok: false, message: 'keys.json: new-shell: same binding as grid-toggle' })
     const reordered = validateFile('keys.json', withFile('keys.json', { 'new-space': 'shift+mod+w', 'close-tab': 'mod+shift+x' }))
     expect(reordered.ok).toBe(true)
-    const samePair = validateFile('keys.json', withFile('keys.json', { 'close-tab': 'mod+shift+n' }))
+    const samePair = validateFile('keys.json', withFile('keys.json', { 'close-tab': 'mod+n' }))
     expect(samePair).toEqual({ ok: false, message: 'keys.json: close-tab: same binding as new-space' })
   })
 

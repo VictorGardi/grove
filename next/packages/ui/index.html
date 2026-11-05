@@ -18,10 +18,16 @@
           <button id="search-button" class="icon-button" type="button" aria-label="Search" title="Search">
             <svg class="icon icon-search" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="11" cy="11" r="8" /><path d="m21 21-4.3-4.3" /></svg>
           </button>
+          <button id="sidebar-toggle" class="icon-button" type="button" aria-label="Hide the sidebar" title="Hide the sidebar">
+            <svg class="icon icon-sidebar" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="3" y="3" width="18" height="18" rx="2" /><path d="M9 3v18" /></svg>
+          </button>
         </header>
         <section id="section-spaces" class="spaces-section">
           <div class="section-head">
             <h2 class="section-label">Spaces</h2>
+            <button id="new-space" class="icon-button" type="button" aria-label="New space" title="New space">
+              <svg class="icon icon-plus" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M5 12h14" /><path d="M12 5v14" /></svg>
+            </button>
           </div>
           <ul id="spaces" class="spaces"></ul>
         </section>
@@ -33,29 +39,50 @@
           <ul id="agents" class="agents"></ul>
         </section>
         <footer class="sidebar-foot">
-          <button id="integrations-open" class="install-cli" type="button" title="Agent status: hooks for Claude and Copilot">Agent status</button>
-          <button id="install-cli" class="install-cli" type="button" title="Write grove-next to ~/.local/bin">Install grove-next command</button>
-          <a id="stress-link" href="./stress.html" hidden>Stress page</a>
+          <button id="integrations-open" class="install-cli" type="button" title="Agent status: hooks for Claude and Copilot"><svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M22 12h-4l-3 9L9 3l-3 9H2" /></svg><span>Agent status</span></button>
+          <button id="install-cli" class="install-cli" type="button" title="Write grove-next to ~/.local/bin"><svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m4 17 6-6-6-6" /><path d="M12 19h8" /></svg><span>Install grove-next command</span></button>
         </footer>
       </aside>
       <main class="main">
-        <div class="tabstrip">
+        <div class="tabstrip" data-tauri-drag-region>
+          <button id="sidebar-show" class="icon-button sidebar-show" type="button" aria-label="Show the sidebar" title="Show the sidebar">
+            <svg class="icon icon-sidebar" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="3" y="3" width="18" height="18" rx="2" /><path d="M9 3v18" /></svg>
+          </button>
           <div id="tabs" class="tabs" role="tablist"></div>
           <div class="tab-actions">
-            <button id="sidebar-toggle" class="icon-button" type="button" aria-label="Hide the sidebar" title="Hide the sidebar">
-              <svg class="icon icon-sidebar" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="3" y="3" width="18" height="18" rx="2" /><path d="M9 3v18" /></svg>
-            </button>
             <div id="launchers" class="launchers"></div>
             <button id="grid-toggle" class="new-tab" type="button" aria-pressed="false" title="Show this space's tabs in a grid">Grid</button>
+            <button id="notes-toggle" class="new-tab dock-toggle" type="button" aria-pressed="false" title="Notes"><svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 20h9" /><path d="M16.5 3.5a2.1 2.1 0 0 1 3 3L7 19l-4 1 1-4Z" /></svg>Notes</button>
             <button id="new-tab" class="new-tab" type="button" title="New shell tab" aria-label="New shell tab">+</button>
           </div>
         </div>
-        <div id="terminals" class="terminals"></div>
-        <div id="empty-state" class="empty-state" hidden>
-          <h2 id="empty-title">No space open</h2>
-          <p id="empty-text">Press Cmd+Shift+N to open a space at your home folder.</p>
+        <div class="workarea">
+          <div class="stage">
+            <div id="terminals" class="terminals"></div>
+            <div id="empty-state" class="empty-state" hidden>
+              <h2 id="empty-title">No space open</h2>
+              <p id="empty-text">Press Cmd+N to open a space at your home folder.</p>
+            </div>
+          </div>
+          <aside id="dock" class="dock" aria-label="Side panel">
+            <div id="dock-edge" class="dock-edge" role="separator" aria-orientation="vertical" aria-label="Resize the side panel" aria-valuemin="280" aria-valuemax="640" tabindex="0"></div>
+            <header class="dock-head">
+              <h2 id="dock-title" class="dock-title"></h2>
+              <span id="dock-meta" class="dock-pill"></span>
+              <span id="dock-status" class="dock-status" role="status"></span>
+              <button id="dock-close" class="icon-button" type="button" aria-label="Close the side panel" title="Close (Esc)">
+                <svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M18 6 6 18" /><path d="m6 6 12 12" /></svg>
+              </button>
+            </header>
+            <p id="dock-error" class="modal-error dock-error" role="alert" hidden></p>
+            <div id="dock-body" class="dock-body"></div>
+          </aside>
         </div>
         <div id="status" class="status" role="status"></div>
+        <footer class="statusbar">
+          <button id="statusbar-branch" type="button" class="statusbar-item statusbar-branch" hidden></button>
+          <span id="statusbar-agents" class="statusbar-item"></span>
+        </footer>
       </main>
     </div>
     <div id="rename-modal" class="modal-backdrop" hidden>

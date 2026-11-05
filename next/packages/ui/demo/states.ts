@@ -31,10 +31,10 @@ export function demoRows(now: number = Date.now()): DemoRows {
   const worktree = `${home}/git/grove-wt`
   const notes = `${home}/git/notes`
   const spaces: SpaceInfo[] = [
-    { id: 'demo-space-grove', path: grove, name: 'grove', repoName: 'grove', parent: null, branch: 'main' },
-    { id: 'demo-space-wt', path: worktree, name: 'grove-wt', repoName: 'grove', parent: 'demo-space-grove', branch: 'feature/look' },
-    { id: 'demo-space-notes', path: notes, name: 'notes', repoName: null, parent: null, branch: null },
-    { id: 'demo-space-grove-2', path: grove, name: 'grove review', repoName: 'grove', parent: null, branch: 'main' },
+    { id: 'demo-space-grove', path: grove, name: 'grove', label: null, worktree: false, repoName: 'grove', parent: null, branch: 'main' },
+    { id: 'demo-space-wt', path: worktree, name: 'grove-wt', label: null, worktree: true, repoName: 'grove', parent: 'demo-space-grove', branch: 'feature/look' },
+    { id: 'demo-space-notes', path: notes, name: 'notes', label: null, worktree: false, repoName: null, parent: null, branch: null },
+    { id: 'demo-space-grove-2', path: grove, name: 'grove review', label: null, worktree: false, repoName: 'grove', parent: null, branch: 'main' },
   ]
   const tabs: DemoTab[] = [
     { id: 'demo-1', spaceId: 'demo-space-grove', kind: 'shell', label: null, exited: false },

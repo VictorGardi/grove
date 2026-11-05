@@ -12,6 +12,12 @@
     "postinstall": "node scripts/fix-spawn-helper.mjs"
   },
   "dependencies": {
+    "@codemirror/commands": "6.8.1",
+    "@codemirror/lang-markdown": "6.3.2",
+    "@codemirror/language": "6.11.0",
+    "@codemirror/state": "6.5.2",
+    "@codemirror/view": "6.36.3",
+    "@lezer/markdown": "1.4.3",
     "@tauri-apps/api": "2.12.4",
     "@xterm/addon-fit": "0.11.0",
     "@xterm/addon-serialize": "0.14.0",

@@ -9,10 +9,15 @@ import { previousOf, visited } from './recent-tabs.ts'
 import { readSidebarHidden, writeSidebarHidden, type KeyValueStore } from './sidebar-state.ts'
 import { groupAgents, shortFolder, sidebarSpaceOrder, spaceAt, tabStateOf, tileIndex } from './sidebar-model.ts'
 import { createTabPill, type TabPill } from './tab-pill.ts'
+import { createNotesEditor } from './notes-editor.ts'
+import { createNotesPanel } from './notes-panel.ts'
+import { createDock } from './dock.ts'
 import { createRenameModal } from './rename-modal.ts'
+import { createContextMenu } from './context-menu.ts'
+import { createSpaceDialog } from './space-dialog.ts'
 import { createIntegrationPanel } from './integrations.ts'
 import { indicatorClass, indicatorLabel } from './indicator.ts'
-import { iconSvg } from './icons.ts'
+import { agentIconSvg, iconSvg } from './icons.ts'
 import { rollupSpaces } from '../protocol/rollup.ts'
 import type {
   AgentInfo,
@@ -94,6 +99,8 @@ let demoMode = false
 const playSound = createSoundGate()
 
 const appEl = byId('app')
+const contextMenu = createContextMenu(document.body, { closed: focusActive })
+const spaceDialog = createSpaceDialog(document.body)
 const tabStrip = byId('tabs')
 const terminals = byId('terminals')
 const statusLine = byId('status')
@@ -128,6 +135,34 @@ const renameModal = createRenameModal(
     },
     closed: focusActive,
   },
+)
+// The dock is the right sidebar: one panel at a time, each with a key binding. The notes are the first panel; they are one markdown
+// file kept by the core. The dock is not modal, so key bindings keep working while a panel has focus.
+const dock = createDock(
+  {
+    app: appEl,
+    dock: byId('dock'),
+    title: byId('dock-title'),
+    status: byId('dock-status'),
+    meta: byId('dock-meta'),
+    error: byId('dock-error'),
+    body: byId('dock-body'),
+    close: byId('dock-close') as HTMLButtonElement,
+    edge: byId('dock-edge'),
+  },
+  {
+    store: storage(),
+    applyWidth: (width) => appEl.style.setProperty('--dock-width', `${width}px`),
+    closed: focusActive,
+    changed: (id) => byId('notes-toggle').setAttribute('aria-pressed', String(id === 'notes')),
+  },
+)
+dock.register(
+  createNotesPanel({
+    read: async () => (await bridge.rpc('notes.read', {})).text,
+    write: (text) => bridge.rpc('notes.write', { text }),
+    createEditor: createNotesEditor,
+  }),
 )
 // Agent status: the Agents panel and the one-time prompt. Each install, removal or answer is a call the human made here.
 const integrationPanel = createIntegrationPanel(
@@ -166,6 +201,7 @@ const keyActions: Record<KeyAction, () => void> = {
   },
   'grid-tab': () => toggleGridTab(),
   'sidebar-toggle': () => sidebarToggle.click(),
+  notes: () => void dock.toggle('notes').catch(report),
   'space-1': () => focusSpace(1),
   'space-2': () => focusSpace(2),
   'space-3': () => focusSpace(3),
@@ -179,8 +215,6 @@ const keyActions: Record<KeyAction, () => void> = {
 
 // The command the window starts; the core builds the args from the agent kind.
 const AGENT_COMMANDS: Record<AgentKind, string> = { claude: 'claude', opencode: 'opencode', copilot: 'copilot' }
-// The letter on a tab's mark: C, O and G for the agents (the reference's marks), $ for a shell.
-const MARK_TEXT: Record<TabKind, string> = { shell: '$', claude: 'C', opencode: 'O', copilot: 'G' }
 const AGE_REFRESH_MS = 5000
 
 function byId(id: string): HTMLElement {
@@ -208,7 +242,7 @@ function spaceName(spaceId: string): string {
 
 // The tab's name: the one the user gave it, else "Tab N".
 function tabName(tab: Tab): string {
-  return tab.label || `Tab ${tab.number}`
+  return tab.label || String(tab.number)
 }
 
 // The tab's name with its space, for titles and notifications.
@@ -230,7 +264,9 @@ function indicatorEl(state: AgentStateName): HTMLElement {
 }
 
 function markEl(kind: TabKind): HTMLElement {
-  return element('span', `agent-mark mark-${kind}`, MARK_TEXT[kind])
+  const mark = element('span', `agent-mark mark-${kind}`)
+  mark.innerHTML = kind === 'shell' ? iconSvg('terminal') : agentIconSvg(kind)
+  return mark
 }
 
 function createTab(spaceId: string, spacePath: string, kind: TabKind, label: string | null): Tab {
@@ -281,6 +317,8 @@ function createTab(spaceId: string, spacePath: string, kind: TabKind, label: str
     },
     onContextLoss: () => console.warn(`WebGL context lost in tab ${tab.id}; using the DOM renderer`),
   })
+  // The host's own size is what the terminal fits to, so it refits whenever that changes, shown or not.
+  new ResizeObserver(() => tab.view.fit()).observe(host)
   return tab
 }
 
@@ -312,6 +350,109 @@ async function closeTab(tab: Tab): Promise<void> {
   agents.delete(tab.id)
   removeTab(tab)
   focusActive()
+  // The last tab of a space is a likely end of the space: ask, and leave the empty space alone when the answer is no.
+  const space = spaces.get(tab.spaceId)
+  if (space && !order.some((other) => other.spaceId === space.id)) void askRemoveSpace(space, true).then(focusActive)
+}
+
+function baseName(folder: string): string {
+  return folder.split('/').filter(Boolean).pop() ?? folder
+}
+
+// Removes a space: its tabs close and it leaves the sidebar. A worktree's checkout is deleted too, and the dialog says so;
+// git refuses a checkout with changes, and the dialog then keeps the space and shows git's reason.
+function askRemoveSpace(space: SpaceInfo, lastTab = false): Promise<boolean> {
+  const count = order.filter((tab) => tab.spaceId === space.id).length
+  const tabsLine = count === 0 ? '' : ` Its ${count === 1 ? 'tab closes' : `${count} tabs close`}.`
+  const lead = lastTab ? 'That was the last tab. ' : ''
+  return spaceDialog.open({
+    title: space.worktree ? `Remove worktree ${space.name}?` : `Remove ${space.name}?`,
+    text: space.worktree
+      ? `${lead}This deletes the checkout at ${space.path}.${space.branch ? ` The branch ${space.branch} stays.` : ''} Git refuses if the checkout has changes.${tabsLine}`
+      : `${lead}The folder ${space.path} is not touched.${tabsLine}`,
+    confirm: space.worktree ? 'Remove worktree' : 'Remove space',
+    cancel: lastTab ? 'Keep space' : 'Cancel',
+    danger: space.worktree || !lastTab,
+    submit: async () => {
+      await bridge.rpc('spaces.remove', { id: space.id, removeWorktree: space.worktree })
+      dropSpace(space.id)
+    },
+  })
+}
+
+// Takes a space and its tabs out of the window. The core has already closed them; a second call finds nothing to do.
+function dropSpace(spaceId: string): void {
+  for (const tab of order.filter((other) => other.spaceId === spaceId)) {
+    agents.delete(tab.id)
+    removeTab(tab)
+  }
+  recentBySpace.delete(spaceId)
+  spaces.delete(spaceId)
+  if (activeSpace === spaceId) selectSpace(sidebarSpaceOrder([...spaces.values()])[0] ?? null)
+  else paint()
+}
+
+function askRenameSpace(space: SpaceInfo): Promise<boolean> {
+  return spaceDialog.open({
+    title: 'Rename space',
+    text: 'A name for the sidebar. The folder and the branch keep theirs. Empty goes back to the folder name.',
+    input: { placeholder: baseName(space.path), value: space.label ?? '' },
+    confirm: 'Save',
+    hint: 'save',
+    submit: async (name) => {
+      await bridge.rpc('spaces.rename', { id: space.id, name })
+      spaces.set(space.id, { ...space, name: name || baseName(space.path), label: name || null })
+      paint()
+    },
+  })
+}
+
+// Adds a space on a checkout of the branch the human names, and opens a shell in it.
+function askNewWorktree(space: SpaceInfo): Promise<boolean> {
+  return spaceDialog.open({
+    title: `New worktree of ${space.repoName ?? space.name}`,
+    text: `A new space on a checkout in ~/.grove/worktrees/${space.repoName ?? space.name}/. A branch that exists is checked out; a new one starts from here.`,
+    input: { placeholder: 'branch name' },
+    confirm: 'Create',
+    hint: 'create',
+    submit: async (branch) => {
+      const created = await bridge.rpc('worktrees.add', { spaceId: space.id, branch })
+      spaces.set(created.id, created)
+      selectSpace(created.id)
+      await newShellTab()
+    },
+  })
+}
+
+// Lists the repo's worktrees that are not spaces yet; picking one adds it as a space and opens a shell in it.
+async function askOpenWorktree(space: SpaceInfo): Promise<boolean> {
+  const { worktrees } = await bridge.rpc('worktrees.list', { spaceId: space.id })
+  return spaceDialog.open({
+    title: `Open worktree of ${space.repoName ?? space.name}`,
+    choices: worktrees.map((entry) => ({ label: baseName(entry.path), detail: entry.branch ?? 'detached', value: entry.path })),
+    empty: 'Every worktree of this repo is already a space.',
+    submit: async (folder) => {
+      const added = await bridge.rpc('spaces.add', { path: folder })
+      spaces.set(added.id, added)
+      selectSpace(added.id)
+      await newShellTab()
+    },
+  })
+}
+
+function openSpaceMenu(space: SpaceInfo, event: MouseEvent): void {
+  event.preventDefault()
+  const done = (): void => focusActive()
+  contextMenu.open(
+    [
+      { label: 'Rename', icon: iconSvg('edit'), run: () => void askRenameSpace(space).then(done) },
+      { label: 'New worktree', icon: iconSvg('branch'), run: () => void askNewWorktree(space).then(done) },
+      { label: 'Open worktree', icon: iconSvg('branch'), run: () => void askOpenWorktree(space).then(done).catch(report) },
+      { label: 'Close', icon: iconSvg('x'), separated: true, run: () => void askRemoveSpace(space).then(done) },
+    ],
+    event.clientX,
+    event.clientY,
+  )
 }
 
 function deliver(tab: Tab, bytes: Uint8Array): void {
@@ -347,9 +488,9 @@ async function attach(tab: Tab): Promise<void> {
   await bridge.rpc('tabs.resize', { id: tab.id, cols, rows })
 }
 
-// The active space's tabs the human put in the grid, in tab order: the panes grid mode shows.
+// The tabs the human put in the grid, from any space, in tab order: the panes grid mode shows.
 function gridTabs(): Tab[] {
-  return gridMembers(order.filter((tab) => tab.spaceId === activeSpace))
+  return gridMembers(order)
 }
 
 // Lays the panes out in grid mode, or clears the grid's classes and placement when it is off.
@@ -383,7 +524,7 @@ function fitShown(): void {
 function paintTab(tab: Tab): void {
   const state = stateOf(tab)
   const name = tabName(tab)
-  tab.pill.update({ name, title: tabLabel(tab), state })
+  tab.pill.update({ name, title: tabLabel(tab), state, inGrid: tab.inGrid })
   tab.head.replaceChildren(
     markEl(tab.kind),
     element('span', 'pane-kind', name),
@@ -401,6 +542,36 @@ function paintEmpty(): void {
   emptyText.textContent = none
     ? `Press ${shortcut('new-space')} to open a space at your home folder.`
     : `Press + in the tab strip (${shortcut('new-shell')}) to open a shell.`
+}
+
+// The bar under the panes: the active space's branch and how many agents are running in it.
+// A click on the footer's branch copies its name; the name reads "copied" for a moment.
+function copyBranch(): void {
+  const name = activeSpace ? spaces.get(activeSpace)?.branch : null
+  if (!name) return
+  navigator.clipboard.writeText(name).then(() => {
+    const label = byId('statusbar-branch').querySelector('span')
+    if (!label) return
+    label.textContent = 'copied'
+    setTimeout(paintStatusbar, 1000)
+  }, report)
+}
+byId('statusbar-branch').addEventListener('click', copyBranch)
+
+function paintStatusbar(): void {
+  const branch = byId('statusbar-branch')
+  const space = activeSpace ? spaces.get(activeSpace) : undefined
+  const name = space?.branch ?? null
+  branch.hidden = !name
+  branch.classList.toggle('worktree', space?.worktree === true)
+  branch.title = name ? 'Copy the branch name' : ''
+  branch.innerHTML = name ? `${iconSvg('branch')}<span></span>` : ''
+  if (name) branch.querySelector('span')!.textContent = name
+  const running = [...agents.values()].filter((agent) => {
+    const tab = tabs.get(agent.tabId)
+    return tab?.exited === false && tab.spaceId === activeSpace
+  }).length
+  byId('statusbar-agents').textContent = `${running} ${running === 1 ? 'agent' : 'agents'}`
 }
 
 // Tabs of other spaces stay mounted and only hidden, so their shells keep running and their screens keep filling.
@@ -427,6 +598,7 @@ function paint(): void {
   requestAnimationFrame(fitShown)
   renderSpaces()
   renderAgents()
+  paintStatusbar()
   paintEmpty()
   const idle = activeSpace === null || refused !== null
   newTabButton.disabled = idle
@@ -442,8 +614,9 @@ function shortcut(action: KeyAction): string {
 }
 
 function paintShortcuts(): void {
+  byId('notes-toggle').title = `Notes (${shortcut('notes')})`
   newTabButton.title = `New shell tab (${shortcut('new-shell')})`
-  gridToggle.title = `Show this space's tabs in a grid (${shortcut('grid-toggle')}). ${shortcut('grid-tab')} puts the focused tab in it.`
+  gridToggle.title = `Show the tabs put in the grid, from any space, (${shortcut('grid-toggle')}). ${shortcut('grid-tab')} puts the focused tab in it.`
   const hidden = appEl.classList.contains('sidebar-hidden')
   sidebarToggle.title = `${hidden ? 'Show' : 'Hide'} the sidebar (${shortcut('sidebar-toggle')})`
 }
@@ -476,15 +649,17 @@ function focusActive(): void {
 
 function activate(tab: Tab): void {
   recentBySpace.set(tab.spaceId, visited(recentBySpace.get(tab.spaceId) ?? [], tab))
-  selectSpace(tab.spaceId)
+  selectSpace(tab.spaceId, tab)
   focusActive()
 }
 
 // Shows the space's most recently visited tab, or its first tab, or nothing when the space has no tabs.
-function selectSpace(spaceId: string | null): void {
+function selectSpace(spaceId: string | null, chosen?: Tab): void {
   activeSpace = spaceId
   const remembered = spaceId ? recentBySpace.get(spaceId)?.[0] : undefined
-  active = remembered && order.includes(remembered) ? remembered : (order.find((tab) => tab.spaceId === spaceId) ?? null)
+  // With the grid showing, a space that has a pane in it keeps the grid by focusing that pane.
+  const gridPane = gridOn ? gridTabs().find((tab) => tab.spaceId === spaceId) : undefined
+  active = chosen ?? gridPane ?? (remembered && order.includes(remembered) ? remembered : (order.find((tab) => tab.spaceId === spaceId) ?? null))
   paint()
 }
 
@@ -517,24 +692,25 @@ function renderSpaces(): void {
 }
 
 function spaceButton(space: SpaceInfo, state: AgentStateName): HTMLButtonElement {
-  const worktree = space.parent !== null
+  const worktree = space.worktree || space.parent !== null
   const button = document.createElement('button')
   button.type = 'button'
   button.className = worktree ? 'space worktree' : 'space'
   button.title = space.path
   const tile = element(
     'span',
-    `space-tile tile-${tileIndex(space.name)}`,
+    worktree ? 'space-tile' : `space-tile tile-${tileIndex(space.name)}`,
     worktree ? '' : space.name.charAt(0).toUpperCase(),
   )
-  if (worktree) tile.innerHTML = iconSvg('worktree')
-  button.append(tile, element('span', 'space-name', space.name), element('span', 'space-branch', space.branch ?? ''))
+  if (worktree) tile.innerHTML = iconSvg('branch')
+  button.append(tile, element('span', 'space-name', space.name), element('span', 'space-branch', worktree ? '' : (space.branch ?? '')))
   button.append(indicatorEl(state))
   if (space.id === activeSpace) button.setAttribute('aria-current', 'true')
   button.addEventListener('click', () => {
     selectSpace(space.id)
     focusActive()
   })
+  if (!demoMode) button.addEventListener('contextmenu', (event) => openSpaceMenu(space, event))
   return button
 }
 
@@ -585,7 +761,7 @@ function toggleGridTab(): void {
   paint()
 }
 
-// Cmd+Shift+N: adds a new space at the home folder (spaces.add always adds one), selects it, and opens one shell tab there.
+// Cmd+N: adds a new space at the home folder (spaces.add always adds one), selects it, and opens one shell tab there.
 async function newSpaceTab(): Promise<void> {
   const space = await bridge.rpc('spaces.add', { path: homeDir })
   spaces.set(space.id, space)
@@ -655,7 +831,25 @@ async function refreshAgents(): Promise<void> {
   const list = await bridge.rpc('agents.list', {})
   agents.clear()
   for (const agent of list) agents.set(agent.tabId, agent)
+  syncKinds()
   renderStates()
+}
+
+// A tab's kind follows the agents list: an agent typed by hand into a shell tab turns the tab into an agent tab, and a tab whose
+// agent ended turns back into a shell. Only tabs this function changed are turned back; a launched agent tab keeps its kind.
+const detectedKinds = new Set<string>()
+function syncKinds(): void {
+  for (const tab of order) {
+    const agent = agents.get(tab.id)
+    if (agent && tab.kind === 'shell') {
+      tab.kind = agent.agent
+      detectedKinds.add(tab.id)
+      tab.pill.root.querySelector('.agent-mark')?.replaceWith(markEl(tab.kind))
+    } else if (!agent && detectedKinds.delete(tab.id)) {
+      tab.kind = 'shell'
+      tab.pill.root.querySelector('.agent-mark')?.replaceWith(markEl(tab.kind))
+    }
+  }
 }
 
 // Every place that shows a tab's state: the tab strip, the pane headers, the space tiles and the agents list. A state
@@ -688,7 +882,15 @@ function agentRow(row: AgentRow): HTMLLIElement {
   if (tab === active) focus.setAttribute('aria-current', 'true')
   const age = element('span', 'agent-age', formatAge(Date.now() - agent.since))
   age.dataset.since = String(agent.since)
-  focus.append(markEl(tab.kind), element('span', 'agent-label', tabName(tab)), age, indicatorEl(stateOf(tab)))
+  const tail = element('span', 'agent-tail', '')
+  if (tab.inGrid) {
+    const grid = element('span', 'tab-grid', '')
+    grid.title = 'In the grid'
+    grid.innerHTML = iconSvg('grid')
+    tail.append(grid)
+  }
+  tail.append(age)
+  focus.append(markEl(tab.kind), element('span', 'agent-label', tabName(tab)), tail, indicatorEl(stateOf(tab)))
   focus.addEventListener('click', () => activate(tab))
   li.append(focus)
 
@@ -717,6 +919,7 @@ function renderAgents(): void {
     if (tab) rows.push({ spaceId: tab.spaceId, tabNumber: tab.number, agent, exited: tab.exited, tab })
   }
   agentsEmpty.hidden = rows.length > 0
+  paintStatusbar()
   agentList.replaceChildren(
     ...groupAgents([...spaces.keys()], rows).map((group) => {
       const section = document.createElement('li')
@@ -800,6 +1003,7 @@ bridge.on('status.changed', (change) => {
     source: change.source,
     resumable: previous?.resumable ?? false,
   })
+  syncKinds()
   renderStates()
   // resumable depends on the holder's liveness, which the change does not carry; the core's list settles it.
   refreshAgents().catch(report)
@@ -827,6 +1031,9 @@ bridge.on('tabs.closed', ({ id }) => {
   if (tab) removeTab(tab)
   else renderAgents()
 })
+
+// Another window or the CLI removed a space: it leaves the sidebar at once.
+bridge.on('spaces.removed', ({ id }) => dropSpace(id))
 
 bridge.onStatus((status) => {
   if (status === 'closed') {
@@ -863,12 +1070,15 @@ function showSidebar(hidden: boolean): void {
   sidebarToggle.setAttribute('aria-label', hidden ? 'Show the sidebar' : 'Hide the sidebar')
   paintShortcuts()
 }
+byId('sidebar-show').addEventListener('click', () => sidebarToggle.click())
 sidebarToggle.addEventListener('click', () => {
   const hidden = !appEl.classList.contains('sidebar-hidden')
   showSidebar(hidden)
   writeSidebarHidden(storage(), hidden)
 })
 showSidebar(readSidebarHidden(storage()))
+byId('new-space').addEventListener('click', () => void newSpaceTab().catch(report))
+byId('notes-toggle').addEventListener('click', () => void dock.toggle('notes').catch(report))
 byId('integrations-open').addEventListener('click', () => integrationPanel.open())
 bridge.on('integration.prompt', ({ agent }) => {
   integrationPanel.ask(agent).catch(report)
@@ -878,6 +1088,11 @@ installCliButton.addEventListener('click', () => {
   invoke<string>('install_cli')
     .then((path) => {
       statusLine.textContent = `Installed ${path}`
+      // A confirmation, not a problem: it goes away by itself, unless something else has replaced it.
+      const shown = statusLine.textContent
+      setTimeout(() => {
+        if (statusLine.textContent === shown) statusLine.textContent = ''
+      }, 5000)
     })
     .catch(report)
     .finally(() => {
@@ -889,7 +1104,7 @@ newTabButton.addEventListener('click', () => void newShellTab())
 window.addEventListener(
   'keydown',
   (event) => {
-    if (renameModal.isOpen() || integrationPanel.isOpen()) return
+    if (renameModal.isOpen() || integrationPanel.isOpen() || spaceDialog.isOpen() || contextMenu.isOpen()) return
     const action = findAction(keys, event, isMac)
     if (action === null) return
     event.preventDefault()
@@ -924,7 +1139,6 @@ async function startDemo(rows: DemoRows): Promise<void> {
 
 async function start(): Promise<void> {
   if (import.meta.env.DEV) {
-    byId('stress-link').hidden = false
     const demo = await import('./demo/states.ts')
     if (demo.isDemoStates(window.location, import.meta.env.DEV)) {
       await loadFonts()

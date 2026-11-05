@@ -58,6 +58,14 @@ export class PtyTable {
     for (const [key, value] of Object.entries(process.env)) {
       if (value !== undefined) env[key] = value
     }
+    // The tab is its own terminal: nothing of the terminal or tmux the app was started from leaks into it.
+    for (const key of Object.keys(env)) {
+      if (key === 'TMUX' || key === 'TMUX_PANE' || key.startsWith('TERM_PROGRAM')) delete env[key]
+    }
+    env.TERM = 'xterm-256color'
+    env.COLORTERM = 'truecolor'
+    // An app started from the Dock has no locale, and zsh then draws the prompt's symbols wrong.
+    if (!env.LANG && !env.LC_ALL) env.LANG = 'en_US.UTF-8'
     Object.assign(env, spec.env)
 
     const proc = pty.spawn(spec.command, spec.args ?? [], {

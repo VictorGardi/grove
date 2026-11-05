@@ -2,9 +2,11 @@ import fs from 'node:fs'
 import type { AgentKind } from '../status/adapter.ts'
 
 // `id` is optional: a file written before spaces had ids has none, and loadState fills them in.
+// `name` is a display name the human gave; without it the space shows its folder's name.
 export interface SpaceRecord {
   id?: string
   path: string
+  name?: string
 }
 
 // Tab order within a space is the array order. `spaceId`, `agent`, `agentSessionId`, `label` and `found` are optional
@@ -42,7 +44,7 @@ function isPlainObject(value: unknown): value is Record<string, unknown> {
 }
 
 function isSpaceRecord(value: unknown): boolean {
-  return isPlainObject(value) && typeof value.path === 'string' && (value.id === undefined || typeof value.id === 'string')
+  return isPlainObject(value) && typeof value.path === 'string' && (value.id === undefined || typeof value.id === 'string') && (value.name === undefined || typeof value.name === 'string')
 }
 
 function isTabRecord(value: unknown): boolean {

@@ -5,7 +5,7 @@ import path from 'node:path'
 import type { RpcClient } from '../protocol/client.ts'
 import { ERROR_CODES, METHODS, type MethodMap, type SpaceInfo, type SpaceTabInfo } from '../protocol/messages.ts'
 import { RpcError } from '../protocol/errors.ts'
-import { spaceGitInfo } from './git.ts'
+import { addWorktree, listWorktrees, removeWorktree, spaceGitInfo } from './git.ts'
 import type { AgentKind } from './status/adapter.ts'
 import {
   emptyState,
@@ -33,7 +33,11 @@ export class SpacesService {
   // finds its spool.
   private readonly home: string
 
-  constructor(private readonly file: string) {
+  constructor(
+    private readonly file: string,
+    // Where new worktrees go: <root>/<repo>/<branch>.
+    private readonly worktreesRoot: string = path.join(os.homedir(), '.grove', 'worktrees'),
+  ) {
     this.home = path.dirname(file)
     const loaded = loadState(file)
     if (loaded.kind === 'refused') {
@@ -83,6 +87,87 @@ export class SpacesService {
     saveState(this.file, next)
     this.state = next
     return this.describe(space, next.spaces)
+  }
+
+  // Drops a space's record. Its tabs are the caller's to close first. An id with no record is refused.
+  removeSpace(spaceId: string): void {
+    this.assertNotRefused()
+    if (this.spaceById(spaceId) === undefined) throw new RpcError(ERROR_CODES.invalidParams, `no such space: ${spaceId}`)
+    const next: StateV1 = { ...this.state, spaces: this.state.spaces.filter((space) => recordSpaceId(space) !== spaceId) }
+    saveState(this.file, next)
+    this.state = next
+  }
+
+  tabIdsOf(spaceId: string): string[] {
+    return this.state.tabs.filter((tab) => tabSpaceId(tab) === spaceId).map((tab) => tab.id)
+  }
+
+  // Sets the name the sidebar shows in place of the folder's. Trimmed; an empty one clears it.
+  renameSpace(spaceId: string, name: string): void {
+    this.assertNotRefused()
+    const space = this.spaceById(spaceId)
+    if (space === undefined) throw new RpcError(ERROR_CODES.invalidParams, `no such space: ${spaceId}`)
+    const trimmed = name.trim()
+    if (trimmed.length > TAB_LABEL_MAX) {
+      throw new RpcError(ERROR_CODES.invalidParams, `name must be ${TAB_LABEL_MAX} characters or fewer`)
+    }
+    const { name: _cleared, ...unnamed } = space
+    const renamed: SpaceRecord = trimmed === '' ? unnamed : { ...unnamed, name: trimmed }
+    const next: StateV1 = { ...this.state, spaces: this.state.spaces.map((s) => (recordSpaceId(s) === spaceId ? renamed : s)) }
+    saveState(this.file, next)
+    this.state = next
+  }
+
+  // The worktrees of the space's repo that are not spaces yet. A space outside git has none.
+  async unopenedWorktrees(spaceId: string): Promise<{ path: string; branch: string | null }[]> {
+    const space = this.requireSpace(spaceId)
+    const all = await listWorktrees(space.path).catch(() => [])
+    const open = new Set(this.state.spaces.map((s) => s.path))
+    // The first entry is the main checkout, which is not a worktree to open.
+    return all.slice(1).filter((entry) => !open.has(realOrSame(entry.path)))
+  }
+
+  // Makes a checkout for `branch` under the worktrees folder and adds it as a space.
+  async addWorktreeSpace(spaceId: string, branch: string): Promise<SpaceInfo> {
+    this.assertNotRefused()
+    const space = this.requireSpace(spaceId)
+    const name = branch.trim()
+    if (name === '') throw new RpcError(ERROR_CODES.invalidParams, 'branch name is empty')
+    const git = await spaceGitInfo(space.path)
+    if (git.mainPath === null) throw new RpcError(ERROR_CODES.invalidParams, `not a git repository: ${space.path}`)
+    const dest = path.join(this.worktreesRoot, path.basename(git.mainPath), name.replace(/\//g, '-'))
+    if (fs.existsSync(dest)) throw new RpcError(ERROR_CODES.invalidParams, `${dest} already exists`)
+    fs.mkdirSync(path.dirname(dest), { recursive: true })
+    try {
+      await addWorktree(space.path, dest, name)
+    } catch (error) {
+      throw new RpcError(ERROR_CODES.invalidParams, error instanceof Error ? error.message : String(error))
+    }
+    return this.add(dest)
+  }
+
+  // Deletes the space's checkout. Refused for a main checkout, for a folder another space also uses, and by git when the
+  // checkout has changes. The branch stays.
+  async removeWorktreeFolder(spaceId: string): Promise<void> {
+    const space = this.requireSpace(spaceId)
+    const git = await spaceGitInfo(space.path)
+    if (git.mainPath === null || git.mainPath === space.path) {
+      throw new RpcError(ERROR_CODES.invalidParams, `${space.path} is not a worktree`)
+    }
+    if (this.state.spaces.some((other) => other !== space && other.path === space.path)) {
+      throw new RpcError(ERROR_CODES.invalidParams, `another space uses ${space.path}`)
+    }
+    try {
+      await removeWorktree(git.mainPath, space.path)
+    } catch (error) {
+      throw new RpcError(ERROR_CODES.invalidParams, error instanceof Error ? error.message : String(error))
+    }
+  }
+
+  private requireSpace(spaceId: string): SpaceRecord {
+    const space = this.spaceById(spaceId)
+    if (space === undefined) throw new RpcError(ERROR_CODES.invalidParams, `no such space: ${spaceId}`)
+    return space
   }
 
   async openTab(
@@ -275,16 +360,30 @@ export class SpacesService {
     return {
       id: recordSpaceId(space),
       path: space.path,
-      name: path.basename(space.path),
+      name: space.name ?? path.basename(space.path),
+      label: space.name ?? null,
       repoName: git.repoName,
       parent: main === undefined ? null : recordSpaceId(main),
+      worktree: git.mainPath !== null && git.mainPath !== space.path,
       branch: git.branch,
     }
   }
 }
 
+// zsh when the Mac has it (the user's own shell when that is zsh, else the system one), otherwise the user's shell.
 function loginShell(): string {
-  return process.env.SHELL || '/bin/zsh'
+  const own = process.env.SHELL
+  if (own && path.basename(own) === 'zsh') return own
+  if (fs.existsSync('/bin/zsh')) return '/bin/zsh'
+  return own || '/bin/sh'
+}
+
+function realOrSame(folder: string): string {
+  try {
+    return fs.realpathSync(folder)
+  } catch {
+    return folder
+  }
 }
 
 // A space whose folder is gone restarts its shells in the home folder; the record is kept.

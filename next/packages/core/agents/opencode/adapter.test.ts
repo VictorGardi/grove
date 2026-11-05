@@ -1,7 +1,7 @@
 import { describe, expect, it, vi } from 'vitest'
 import type { AdapterWatchInput } from '../../status/adapter.ts'
 import type { StatusEvent } from '../../status/contract.ts'
-import { createOpenCodeAdapter, mintSessionId } from './adapter.ts'
+import { createOpenCodeAdapter, mintSessionId, OPENCODE_CHROME } from './adapter.ts'
 import type { OpenCodeHub } from './hub.ts'
 
 // Port of src/core/opencodeId.test.ts.
@@ -52,7 +52,7 @@ describe('createOpenCodeAdapter', () => {
     const adapter = createOpenCodeAdapter({ hub: fakeHub().hub })
     const launch = adapter.launch({ tabId: 't1', cwd: '/w', home: '/h' })
     expect(launch.sessionId).toMatch(/^ses_/)
-    expect(launch).toEqual({ command: 'opencode', args: ['-s', launch.sessionId], env: {}, sessionId: launch.sessionId })
+    expect(launch).toEqual({ command: 'opencode', args: ['-s', launch.sessionId], env: { OPENCODE_CLI_CONFIG_CONTENT: OPENCODE_CHROME }, sessionId: launch.sessionId })
   })
 
   it('resumes the same session with the same argv', () => {

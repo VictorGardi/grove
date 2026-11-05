@@ -6,7 +6,7 @@
   --accent: #8ab4ff;
   --state-needs-you: #f0b44c;
   --state-working: #6ea0ff;
-  --state-finished: #4fcf86;
+  --state-finished: #6ea0ff;
   --state-idle: #6c6c72;
   --state-unknown: #4a4a50;
   --pane-unfocused-opacity: 0.65;
@@ -36,12 +36,13 @@
   --color-line: #2a2a2d;
   --color-rule: #1d1d1f;
   --color-tab-line: #2c2c30;
-  --color-pane-line: #232326;
-  --color-pane-focus: #3a3a40;
+  --color-pane-line: #2c2c30;
+  --color-pane-focus: #7f9fd6;
   --color-ink: #e8e8ea;
   --color-error: #f0857a;
   --color-mute: #8e8e93;
   --color-faint: #5f5f64;
+  --color-worktree: #a78bfa;
   --color-term-fg: #d4d4d8;
   --color-on-mark: #ffffff;
   --color-shell-mark: #cfcfd4;
@@ -57,7 +58,7 @@
   --tile-8: #3fa7c4;
 
   /* Agent and shell marks */
-  --agent-claude: #c7683f;
+  --agent-claude: #d97757;
   --agent-opencode: #3d6fe0;
   --agent-copilot: #6e56cf;
   --agent-shell: #3a3a3e;
@@ -69,27 +70,42 @@
   --text-terminal: 12.5px;
 
   /* Lengths */
-  --header-h: 50px;
+  --header-h: 38px;
   --pane-head-h: 40px;
+  --pane-title-h: 26px;
+  --statusbar-h: 28px;
   --sidebar-width: 240px;
-  --traffic-light-inset: 78px;
   --radius-lg: 12px;
   --radius-pill: 999px;
-  --ind-size: 10px;
+  --ind-size: 8px;
   --ind-stroke: 1.5px;
   --halo-size: 3px;
   --spin-period: 1s;
-  --size-tile: 22px;
+  --sidebar-ease: 0.2s cubic-bezier(0.3, 0, 0, 1);
+  --size-tile: 18px;
   --size-mark: 20px;
-  --size-mark-tab: 18px;
+  --size-mark-tab: 16px;
+  --size-tab-close: 20px;
+  --size-mark-pane: 14px;
   --size-brand: 20px;
   --size-control: 24px;
-  --size-input: 72px;
-  --size-stress-row: 260px;
   --size-tab: 220px;
   --size-tab-label: 150px;
   --size-modal: 340px;
+  --dock-width: 360px;
+  --fade: 120ms;
   --icon-size: 15px;
   --icon-size-sm: 12px;
   --icon-stroke: 1.6px;
+
+  /* Notes */
+  --text-notes: 13.5px;
+  --leading-notes: 1.7;
+  --notes-h1: 1.6em;
+  --notes-h2: 1.3em;
+  --notes-h3: 1.12em;
+  --notes-pad: 16px;
+  --notes-code-pad: 12px;
+  --notes-box: 1.05em;
+  --notes-box-drop: -0.18em;
 }

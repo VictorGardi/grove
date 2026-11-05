@@ -28,6 +28,10 @@ export interface OpenCodeAdapterOptions {
   shell?: string
 }
 
+// Grove draws its own tabs, so OpenCode's session tabs stay off (its default, auto, turns them on outside Herdr), and its theme
+// follows the terminal's palette, which the window sets from its tokens. Merged over the user's cli.json, so the rest still applies.
+export const OPENCODE_CHROME = JSON.stringify({ tabs: { mode: 'off' }, theme: { name: 'system', mode: 'dark' } })
+
 export function createOpenCodeAdapter(options: OpenCodeAdapterOptions = {}): AgentAdapter {
   let hub = options.hub
   // Created on the first watch, so an adapter that is only asked about its command never opens a connection.
@@ -52,7 +56,7 @@ export function createOpenCodeAdapter(options: OpenCodeAdapterOptions = {}): Age
       }
       // Start and resume are the same command: -s picks up the session's own history.
       const sessionId = input.resumeId ?? mintSessionId()
-      return { command: 'opencode', args: ['-s', sessionId], env: {}, sessionId }
+      return { command: 'opencode', args: ['-s', sessionId], env: { OPENCODE_CLI_CONFIG_CONTENT: OPENCODE_CHROME }, sessionId }
     },
     watch: (input) => {
       const stop = connection().watch({ sessionId: input.sessionId, clock: input.clock, onEvent: input.onEvent })

@@ -7,7 +7,7 @@ The window follows the Herdr reference (`docs/work/2026-11-04-grove-v2-spaces-ta
 | Token | Size | Used for |
 | --- | --- | --- |
 | `--text-xs` | 11px | agent and shell mark letters, brand letter |
-| `--text-sm` | 12px | tile letters, resume button, the new-tab labels, stress results |
+| `--text-sm` | 12px | tile letters, resume button, the new-tab labels |
 | `--text-meta` | 12.5px | branch, folder, age, empty and status text |
 | `--text-md` | 13.5px | section labels, tabs, pane kind |
 | `--text-lg` | 14.5px | space and agent names, empty-state heading |
@@ -41,7 +41,7 @@ Fonts: Geist for the interface (`--font-ui`), Geist Mono for the terminal (`--fo
 
 ## Sizes
 
-`--header-h` 50px (sidebar header and tab strip), `--pane-head-h` 40px, `--sidebar-width` 240px (overwritten by the saved setting), `--traffic-light-inset` 78px (room left for the macOS window controls), tiles 22px, marks 20px (18px in tabs and pane heads), icon buttons 24px, icons 15px (12px in tiles and close buttons), icon stroke 1.6px.
+`--header-h` 50px (sidebar header and tab strip), `--pane-head-h` 40px, `--sidebar-width` 240px (overwritten by the saved setting), tiles 22px, marks 20px (18px in tabs and pane heads), icon buttons 24px, icons 15px (12px in tiles and close buttons), icon stroke 1.6px.
 
 ## Indicators
 
@@ -55,11 +55,24 @@ One shape per agent state. The class is `indicator ind-<state>` (`indicator.ts`)
 | unknown | unknown | dashed ring | `--state-unknown` | none |
 | idle | idle | hollow ring | `--state-idle` | none |
 
-Indicator box: `--ind-size` 10px, ring stroke `--ind-stroke` 1.5px, halo `--halo-size` 3px.
+Indicator box: `--ind-size` 8px, ring stroke `--ind-stroke` 1.5px, halo `--halo-size` 3px.
 
 ## Surfaces
 
 Dark only. Ground `--color-ground` for the main area and terminals, sidebar `--color-sidebar`, page `--color-page` behind the window, raised `--color-raised` for hovered rows and the active tab, selected `--color-selected` for the current space or agent. Rules are `--color-rule` (quiet dividers) and `--color-line` (control borders).
+
+## Dock (the right sidebar)
+
+The dock is the one place for panels that sit beside the work: the notes now, the diff and the comments later. It follows Herdr's Changes panel: a card with the same border and radius as a terminal pane, in the work area beside the stage, one gutter away. A panel never draws its own frame. It implements `DockPanel` (`dock.ts`): an `id`, a `title` and `mount(body, context)`, which draws into the dock's body and returns `{ focus, destroy, canClose? }`. Through `context` a panel sets the status text at the right of the header (`status`), the count pill after the title (`meta`), an error banner under the header (`error`), and can ask to close. `canClose` may say no (unsaved work) after the panel has said why through `error`.
+
+To add a panel: write the `DockPanel`, add a `KeyAction` for it (`protocol/messages.ts`, `core/config/schema.ts`), add a pill button for it in the tab strip next to Notes (class `new-tab dock-toggle`, `aria-pressed` follows `changed`), register it in `main.ts` with `dock.register(...)`, and call `dock.toggle(id)` from the key action and the button. Opening a second panel swaps it in without closing the dock.
+
+Rules every panel gets for free, and should not redo:
+
+- Layout: the card is `--dock-width` wide (default 360px, 280 to 640, saved in the window's storage, `dock-state.ts`), margin `--space-3` like the terminals' padding. Resize by dragging the gutter on its left, with the arrow keys on it, or double-click to reset. Terminals refit beside it.
+- Header: `--pane-head-h` tall like a pane head: title (500), count pill, status (flexes, right-aligned), close button. Surface `--color-ground`, border `--color-pane-line`.
+- Not modal: no backdrop, the window's key bindings keep working while a panel has focus, and Esc in the panel closes it (a key the panel handled itself does not). Closing hands the keyboard back to the active terminal; a swap does not.
+- Body: a flex column the panel fills and scrolls itself. A panel that needs a footer (a commit box, say) puts it at the bottom of its own column, separated by a `--color-rule` line.
 
 ## Not in v1
 

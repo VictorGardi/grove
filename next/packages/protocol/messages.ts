@@ -14,6 +14,10 @@ export const METHODS = {
   tabsExit: 'tabs.exit',
   spacesList: 'spaces.list',
   spacesAdd: 'spaces.add',
+  spacesRemove: 'spaces.remove',
+  spacesRename: 'spaces.rename',
+  worktreesList: 'worktrees.list',
+  worktreesAdd: 'worktrees.add',
   tabsOpen: 'tabs.open',
   tabsScreen: 'tabs.screen',
   agentsList: 'agents.list',
@@ -22,6 +26,8 @@ export const METHODS = {
   tabsRename: 'tabs.rename',
   tabsFocus: 'tabs.focus',
   configGet: 'config.get',
+  notesRead: 'notes.read',
+  notesWrite: 'notes.write',
   integrationStatus: 'integration.status',
   integrationInstall: 'integration.install',
   integrationUninstall: 'integration.uninstall',
@@ -89,10 +95,15 @@ export interface SpaceInfo {
   // Opaque, and not a path. Spaces saved before ids existed have their path as their id.
   id: string
   path: string
+  // What the sidebar shows: the name the human gave, else the folder's name.
   name: string
+  // The name the human gave, or null.
+  label: string | null
   repoName: string | null
   // The id of the space the worktree belongs to, or null.
   parent: string | null
+  // Whether the folder is a linked worktree of a repo (its main checkout is elsewhere), even when the repo is not a space.
+  worktree: boolean
   // The branch checked out in the space; null when detached or when git cannot say.
   branch: string | null
 }
@@ -137,6 +148,7 @@ export type KeyAction =
   | 'previous-tab'
   | 'grid-tab'
   | 'sidebar-toggle'
+  | 'notes'
   | 'space-1'
   | 'space-2'
   | 'space-3'
@@ -229,6 +241,15 @@ export interface MethodMap {
   }
   // Always adds a new space, even when the folder is already one.
   'spaces.add': { params: { path: string }; result: SpaceInfo }
+  // Kills the space's tabs and drops it. With `removeWorktree` the checkout is deleted first, and git refuses one with changes
+  // in it (the space stays then). Only a worktree is ever deleted, never a main checkout; its branch is kept.
+  'spaces.remove': { params: { id: string; removeWorktree?: boolean }; result: Empty }
+  // An empty name clears it, so the space shows its folder's name again.
+  'spaces.rename': { params: { id: string; name: string }; result: Empty }
+  // The worktrees of the space's repo that are not spaces yet.
+  'worktrees.list': { params: { spaceId: string }; result: { worktrees: { path: string; branch: string | null }[] } }
+  // A new space on a checkout under ~/.grove/worktrees/<repo>/. A branch that exists is checked out; a new one starts from the space's HEAD.
+  'worktrees.add': { params: { spaceId: string; branch: string }; result: SpaceInfo }
   'tabs.open': { params: { spaceId: string; cols: number; rows: number; label?: string }; result: { id: string } }
   'tabs.screen': { params: { id: string }; result: { text: string } }
   'agents.list': { params: Empty; result: AgentInfo[] }
@@ -241,6 +262,9 @@ export interface MethodMap {
   // Asks every client to show the tab; the window selects it and raises itself.
   'tabs.focus': { params: { id: string }; result: Empty }
   'config.get': { params: Empty; result: ConfigSnapshot }
+  // The notes page: one markdown file under the core's home. A file that does not exist yet reads as empty text.
+  'notes.read': { params: Empty; result: { text: string } }
+  'notes.write': { params: { text: string }; result: Empty }
   'integration.status': { params: Empty; result: { agents: IntegrationInfo[] } }
   // The only writer of an agent's settings file, and only on this call (a human's yes). `written` is the backup this change wrote, or null.
   'integration.install': { params: { agent: IntegrationAgent }; result: IntegrationInfo & { changed: boolean; written: string | null } }
@@ -258,6 +282,8 @@ export interface NotificationMap {
   'tabs.focus': { id: string }
   // A tab was closed on purpose: every window drops it.
   'tabs.closed': { id: string }
+  // A space was removed: every window drops it.
+  'spaces.removed': { id: string }
   // The config folder changed and a value or a note is new: every window applies it.
   'config.changed': ConfigSnapshot
   // An agent the app did not start is running and has no hook entry yet: ask the human once.

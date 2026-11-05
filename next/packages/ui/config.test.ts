@@ -192,12 +192,13 @@ describe('findAction', () => {
 
   it('returns the action of the matching binding, or null', () => {
     expect(findAction(keys, keyEvent({ key: 't', code: 'KeyT', ctrlKey: true }), false)).toBe('new-shell')
-    expect(findAction(keys, keyEvent({ key: 'N', code: 'KeyN', metaKey: true, shiftKey: true }), true)).toBe('new-space')
+    expect(findAction(keys, keyEvent({ key: 'n', code: 'KeyN', metaKey: true }), true)).toBe('new-space')
     expect(findAction(keys, keyEvent({ key: 'w', code: 'KeyW', metaKey: true }), true)).toBe('close-tab')
     expect(findAction(keys, keyEvent({ key: 'x', code: 'KeyX', metaKey: true }), true)).toBeNull()
     expect(findAction(keys, keyEvent({ key: 'Tab', code: 'Tab', ctrlKey: true }), false)).toBe('previous-tab')
     expect(findAction(keys, keyEvent({ key: 'G', code: 'KeyG', metaKey: true, shiftKey: true }), true)).toBe('grid-tab')
     expect(findAction(keys, keyEvent({ key: 'b', code: 'KeyB', metaKey: true }), true)).toBe('sidebar-toggle')
+    expect(findAction(keys, keyEvent({ key: 'N', code: 'KeyN', metaKey: true, shiftKey: true }), true)).toBe('notes')
     expect(findAction(keys, keyEvent({ key: '7', code: 'Digit7', metaKey: true }), true)).toBe('space-7')
   })
 

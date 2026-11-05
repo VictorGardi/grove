@@ -257,6 +257,18 @@ describe('core daemon', () => {
     })
   })
 
+  it('keeps the notes page in one file under the home: empty until written, then what was written', async () => {
+    const stack = await startStack()
+    holder = stack.holder
+    const core = stack.core
+    clients.push(core)
+    expect(await core.request(METHODS.notesRead, {})).toEqual({ text: '' })
+    await core.request(METHODS.notesWrite, { text: '# Today\n- [ ] ship notes\n' })
+    expect(fs.readFileSync(path.join(home, 'notes.md'), 'utf8')).toBe('# Today\n- [ ] ship notes\n')
+    expect(await core.request(METHODS.notesRead, {})).toEqual({ text: '# Today\n- [ ] ship notes\n' })
+    await expect(core.request(METHODS.notesWrite, { text: 5 } as never)).rejects.toThrow(/text must be a string/)
+  })
+
   it('tells every connected client when a config file changes', async () => {
     const stack = await startStack()
     holder = stack.holder

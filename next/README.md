@@ -103,7 +103,7 @@ grove-next config path
 The folder holds five JSON files, each with `"version": 1`. A missing file means its defaults, and the app writes the defaults when it starts:
 
 - `settings.json`: `sidebarWidth`, in px (180 to 480, default 240).
-- `keys.json`: the shortcuts for `grid-toggle` (default `mod+g`, shows or hides the grid), `new-shell` (`mod+t`, a shell tab in the active space), `new-space` (`mod+shift+n`, a space at the home folder, or selects it if it exists, with one new shell tab), `close-tab` (`mod+w`, closes the active tab), `previous-tab` (`ctrl+tab`, goes back to the tab you were in before, per space), `grid-tab` (`mod+shift+g`, puts the active tab into the grid, or takes it out full screen), `sidebar-toggle` (`mod+b`, shows or hides the sidebar) and `space-1` to `space-9` (`mod+1` to `mod+9`, the space at that place in the sidebar). `mod` is Cmd on macOS and Ctrl elsewhere; `ctrl` is the Control key everywhere. A key bound to two actions is invalid; an action left out of the file keeps its default. The Claude, OpenCode and Copilot shortcuts (`new-claude`, `new-opencode`, `new-copilot`) were removed in slice 9; a `keys.json` that still names them is rejected.
+- `keys.json`: the shortcuts for `grid-toggle` (default `mod+g`, shows or hides the grid), `new-shell` (`mod+t`, a shell tab in the active space), `new-space` (`mod+n`, a space at the home folder, or selects it if it exists, with one new shell tab), `close-tab` (`mod+w`, closes the active tab), `previous-tab` (`ctrl+tab`, goes back to the tab you were in before, per space), `grid-tab` (`mod+shift+g`, puts the active tab into the grid, or takes it out full screen), `sidebar-toggle` (`mod+b`, shows or hides the sidebar), `notes` (`mod+shift+n`, opens or closes the notes) and `space-1` to `space-9` (`mod+1` to `mod+9`, the space at that place in the sidebar). `mod` is Cmd on macOS and Ctrl elsewhere; `ctrl` is the Control key everywhere. A key bound to two actions is invalid; an action left out of the file keeps its default. The Claude, OpenCode and Copilot shortcuts (`new-claude`, `new-opencode`, `new-copilot`) were removed in slice 9; a `keys.json` that still names them is rejected.
 - `launchers.json`: a list of buttons, each `{ id, label, command, args, env }`. A launcher opens a shell tab in the active space and types the command.
 - `theme.json`: `tokens`, the colours and sizes the window uses, by token name (`accent`, `state-working`, `font-ui` and so on). Removing a token reverts it to its default.
 - `layout.json`: `sidebarOrder`, `["spaces", "agents"]` or the reverse.
@@ -119,16 +119,6 @@ grove-next skill
 It writes `grove-next-config/SKILL.md` into the Claude, OpenCode and Copilot user skill folders, one line per folder (`✓ <path>` or `✗ <path>: <error>`). The skill is generated, so running it again refreshes it. A file in those folders that grove-next did not write is left alone and named in the error; remove it first.
 
 To put `grove-next` on your PATH, click "Install grove-next command" at the bottom of the sidebar. It writes `~/.local/bin/grove-next`, a small script that runs this checkout's `bin/grove-next`, so `~/.local/bin` must be on your PATH. Keep the checkout where it is: the script points at it.
-
-## Stress page
-
-Developer-only. In the dev window, click "Stress page" at the bottom of the sidebar (the link is hidden in production builds). It runs nine terminals fed with synthetic output and, on each run, prints:
-
-- key echo median and 95th percentile (a timed keystroke to a terminal and its first echo)
-- average frames per second, and the longest frame
-- lost WebGL contexts
-
-It ends each run with PASS or FAIL against the slice 1 bars: no frame over one second, no lost context, average 30 fps or better, echo median 50 ms or less, echo p95 100 ms or less. Set the run length in seconds before pressing "Start run" (default 60).
 
 ## Build the app bundle
 

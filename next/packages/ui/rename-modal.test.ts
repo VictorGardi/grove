@@ -50,7 +50,7 @@ describe('rename modal', () => {
 
     modal.open({ id: 't2', label: null, number: 3 })
     expect(el<HTMLInputElement>('rename-input').value).toBe('')
-    expect(el<HTMLInputElement>('rename-input').placeholder).toBe('Tab 3')
+    expect(el<HTMLInputElement>('rename-input').placeholder).toBe('3')
   })
 
   it('Enter saves the trimmed name, then closes', async () => {

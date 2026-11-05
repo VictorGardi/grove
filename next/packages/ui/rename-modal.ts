@@ -75,7 +75,7 @@ export function createRenameModal(elements: RenameElements, deps: RenameDeps): R
     open(next) {
       target = next
       input.value = next.label ?? ''
-      input.placeholder = `Tab ${next.number}`
+      input.placeholder = String(next.number)
       error.hidden = true
       error.textContent = ''
       modal.hidden = false

@@ -19,7 +19,7 @@ import { adapters as registry } from './agents/registry.ts'
 import type { AgentAdapter, AgentKind, AgentLaunch } from './status/adapter.ts'
 import { StatusService } from './status/service.ts'
 import { Attention } from './attention/attention.ts'
-import { ConfigStore, configFolder } from './config/store.ts'
+import { ConfigStore, atomicWrite, configFolder } from './config/store.ts'
 import { writeAgentsMd } from './config/agents-md.ts'
 import { watchConfig } from './config/watch.ts'
 
@@ -45,7 +45,15 @@ const PROXIED = new Set<string>([
 // How often the presence scan looks at each tab's foreground program and folder.
 const PRESENCE_MS = 1000
 
-const SPACE_METHODS = new Set<string>([METHODS.spacesList, METHODS.spacesAdd, METHODS.tabsOpen])
+const SPACE_METHODS = new Set<string>([
+  METHODS.spacesList,
+  METHODS.spacesAdd,
+  METHODS.spacesRemove,
+  METHODS.spacesRename,
+  METHODS.worktreesList,
+  METHODS.worktreesAdd,
+  METHODS.tabsOpen,
+])
 
 // Each core client gets its own holder connection, so holder attachments are released
 // when the client's connection closes and output is never shared between clients.
@@ -339,6 +347,13 @@ async function dispatch(method: string, rawParams: unknown, holder: Promise<RpcC
   if (method === METHODS.tabsRename) {
     return renameTab(rawParams, deps)
   }
+  if (method === METHODS.notesRead) {
+    return readNotes(deps.home) satisfies MethodMap['notes.read']['result']
+  }
+  if (method === METHODS.notesWrite) {
+    atomicWrite(notesFile(deps.home), stringParam(rawParams, 'text'))
+    return {} satisfies MethodMap['notes.write']['result']
+  }
   if (method === METHODS.configGet) {
     return deps.config.snapshot() satisfies MethodMap['config.get']['result']
   }
@@ -510,9 +525,46 @@ async function dispatchSpaces(method: string, rawParams: unknown, holder: RpcCli
     const p = rawParams as MethodMap['spaces.add']['params']
     return spaces.add(stringParam(p, 'path'))
   }
+  if (method === METHODS.spacesRemove) return removeSpace(rawParams, holder, deps)
+  if (method === METHODS.spacesRename) {
+    spaces.renameSpace(stringParam(rawParams, 'id'), stringParam(rawParams, 'name'))
+    return {} satisfies MethodMap['spaces.rename']['result']
+  }
+  if (method === METHODS.worktreesList) {
+    return { worktrees: await spaces.unopenedWorktrees(stringParam(rawParams, 'spaceId')) } satisfies MethodMap['worktrees.list']['result']
+  }
+  if (method === METHODS.worktreesAdd) {
+    return spaces.addWorktreeSpace(stringParam(rawParams, 'spaceId'), stringParam(rawParams, 'branch'))
+  }
   const p = rawParams as MethodMap['tabs.open']['params']
   const env = { GROVE_NEXT_CONFIG: deps.configDir }
   return spaces.openTab(stringParam(p, 'spaceId'), numberParam(p, 'cols'), numberParam(p, 'rows'), holder, optionalLabel(p), env)
+}
+
+// Closes every tab of the space, then drops the space. With removeWorktree the checkout goes first, so a refusal by git
+// (changes in it) leaves the space and its tabs as they were.
+async function removeSpace(rawParams: unknown, holder: RpcClient, deps: Deps): Promise<Empty> {
+  const id = stringParam(rawParams, 'id')
+  const removeWorktree = (rawParams as Record<string, unknown>).removeWorktree === true
+  deps.spaces.assertNotRefused()
+  if (!deps.spaces.isSpace(id)) throw new RpcError(ERROR_CODES.invalidParams, `no such space: ${id}`)
+  if (removeWorktree) await deps.spaces.removeWorktreeFolder(id)
+  for (const tabId of deps.spaces.tabIdsOf(id)) await closeTab({ id: tabId }, holder, deps)
+  deps.spaces.removeSpace(id)
+  const params: NotificationMap['spaces.removed'] = { id }
+  deps.broadcast(notification('spaces.removed', params))
+  return {} satisfies MethodMap['spaces.remove']['result']
+}
+
+const notesFile = (home: string): string => path.join(home, 'notes.md')
+
+function readNotes(home: string): { text: string } {
+  try {
+    return { text: fs.readFileSync(notesFile(home), 'utf8') }
+  } catch (error) {
+    if ((error as NodeJS.ErrnoException).code === 'ENOENT') return { text: '' }
+    throw error
+  }
 }
 
 function stringParam(params: unknown, key: string): string {

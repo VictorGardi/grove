@@ -304,6 +304,21 @@ fn build_menu(app: &AppHandle) -> tauri::Result<Menu<tauri::Wry>> {
     Menu::with_items(app, &[&app_menu, &edit_menu, &window_menu])
 }
 
+// The title bar stays (a titled window keeps its rounded corners and stays a standard window for tiling managers such as
+// AeroSpace); only the close, minimise and zoom buttons are hidden.
+#[cfg(target_os = "macos")]
+fn hide_window_buttons(window: &tauri::WebviewWindow) {
+    use objc2_app_kit::{NSWindow, NSWindowButton};
+    let Ok(ptr) = window.ns_window() else { return };
+    // SAFETY: Tauri hands out the window's live NSWindow, and setup runs on the main thread.
+    let ns_window: &NSWindow = unsafe { &*ptr.cast() };
+    for kind in [NSWindowButton::CloseButton, NSWindowButton::MiniaturizeButton, NSWindowButton::ZoomButton] {
+        if let Some(button) = ns_window.standardWindowButton(kind) {
+            button.setHidden(true);
+        }
+    }
+}
+
 pub fn run() {
     tauri::Builder::default()
         .manage(Bridge::default())
@@ -311,6 +326,10 @@ pub fn run() {
         .setup(|app| {
             let menu = build_menu(app.handle())?;
             app.set_menu(menu)?;
+            #[cfg(target_os = "macos")]
+            if let Some(window) = app.get_webview_window("main") {
+                hide_window_buttons(&window);
+            }
             Ok(())
         })
         .invoke_handler(tauri::generate_handler![connect, rpc, env_info, notify, raise_window, install_cli])

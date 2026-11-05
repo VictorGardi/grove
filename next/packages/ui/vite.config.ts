@@ -13,8 +13,5 @@ export default defineConfig(({ command }) => ({
   build: {
     outDir: 'dist',
     emptyOutDir: true,
-    rollupOptions: {
-      input: { main: `${root}index.html`, stress: `${root}stress.html` },
-    },
   },
 }))
