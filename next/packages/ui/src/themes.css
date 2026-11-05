@@ -1,0 +1,347 @@
+/* Theme presets: each block overrides the surface, text, state and terminal colours of tokens.css for one `data-theme` on the root.
+   Pick one in Settings > General (theme-pref.ts keeps the choice). The Grove theme is the plain tokens.css values, with no data-theme.
+   theme.json overrides are written inline on the root, so they still win over a preset. Generated blocks: keep the token names in step with tokens.css. */
+
+/* Catppuccin Mocha */
+:root[data-theme='mocha'] {
+  --accent: #89b4fa;
+  --state-needs-you: #f9e2af;
+  --state-working: #89b4fa;
+  --state-finished: #89b4fa;
+  --state-idle: #6c7086;
+  --state-unknown: #6c7086;
+  --color-page: #11111b;
+  --color-ground: #1e1e2e;
+  --color-sidebar: #181825;
+  --color-raised: #252537;
+  --color-selected: #313244;
+  --color-well: #181825;
+  --color-line: #313244;
+  --color-rule: #26263a;
+  --color-tab-line: #313244;
+  --color-pane-line: #313244;
+  --color-pane-focus: #b4befe;
+  --color-ink: #cdd6f4;
+  --color-error: #f38ba8;
+  --color-mute: #a6adc8;
+  --color-faint: #6c7086;
+  --color-worktree: #cba6f7;
+  --color-term-fg: #cdd6f4;
+  --ansi-black: #45475a;
+  --ansi-red: #f38ba8;
+  --ansi-green: #a6e3a1;
+  --ansi-yellow: #f9e2af;
+  --ansi-blue: #89b4fa;
+  --ansi-magenta: #f5c2e7;
+  --ansi-cyan: #94e2d5;
+  --ansi-white: #bac2de;
+  --ansi-bright-black: #585b70;
+  --ansi-bright-red: #f38ba8;
+  --ansi-bright-green: #a6e3a1;
+  --ansi-bright-yellow: #f9e2af;
+  --ansi-bright-blue: #89b4fa;
+  --ansi-bright-magenta: #f5c2e7;
+  --ansi-bright-cyan: #94e2d5;
+  --ansi-bright-white: #a6adc8;
+}
+
+/* Catppuccin Macchiato */
+:root[data-theme='macchiato'] {
+  --accent: #8aadf4;
+  --state-needs-you: #eed49f;
+  --state-working: #8aadf4;
+  --state-finished: #8aadf4;
+  --state-idle: #6e738d;
+  --state-unknown: #6e738d;
+  --color-page: #181926;
+  --color-ground: #24273a;
+  --color-sidebar: #1e2030;
+  --color-raised: #2b2e44;
+  --color-selected: #363a4f;
+  --color-well: #1e2030;
+  --color-line: #363a4f;
+  --color-rule: #2c2f45;
+  --color-tab-line: #363a4f;
+  --color-pane-line: #363a4f;
+  --color-pane-focus: #b7bdf8;
+  --color-ink: #cad3f5;
+  --color-error: #ed8796;
+  --color-mute: #a5adcb;
+  --color-faint: #6e738d;
+  --color-worktree: #c6a0f6;
+  --color-term-fg: #cad3f5;
+  --ansi-black: #494d64;
+  --ansi-red: #ed8796;
+  --ansi-green: #a6da95;
+  --ansi-yellow: #eed49f;
+  --ansi-blue: #8aadf4;
+  --ansi-magenta: #f5bde6;
+  --ansi-cyan: #8bd5ca;
+  --ansi-white: #b8c0e0;
+  --ansi-bright-black: #5b6078;
+  --ansi-bright-red: #ed8796;
+  --ansi-bright-green: #a6da95;
+  --ansi-bright-yellow: #eed49f;
+  --ansi-bright-blue: #8aadf4;
+  --ansi-bright-magenta: #f5bde6;
+  --ansi-bright-cyan: #8bd5ca;
+  --ansi-bright-white: #a5adcb;
+}
+
+/* Tokyo Night */
+:root[data-theme='tokyo-night'] {
+  --accent: #7aa2f7;
+  --state-needs-you: #e0af68;
+  --state-working: #7aa2f7;
+  --state-finished: #7aa2f7;
+  --state-idle: #565f89;
+  --state-unknown: #565f89;
+  --color-page: #16161e;
+  --color-ground: #1a1b26;
+  --color-sidebar: #16161e;
+  --color-raised: #202335;
+  --color-selected: #292e42;
+  --color-well: #16161e;
+  --color-line: #292e42;
+  --color-rule: #202335;
+  --color-tab-line: #292e42;
+  --color-pane-line: #292e42;
+  --color-pane-focus: #7aa2f7;
+  --color-ink: #c0caf5;
+  --color-error: #f7768e;
+  --color-mute: #9aa5ce;
+  --color-faint: #565f89;
+  --color-worktree: #bb9af7;
+  --color-term-fg: #c0caf5;
+  --ansi-black: #414868;
+  --ansi-red: #f7768e;
+  --ansi-green: #9ece6a;
+  --ansi-yellow: #e0af68;
+  --ansi-blue: #7aa2f7;
+  --ansi-magenta: #bb9af7;
+  --ansi-cyan: #7dcfff;
+  --ansi-white: #a9b1d6;
+  --ansi-bright-black: #565f89;
+  --ansi-bright-red: #ff899d;
+  --ansi-bright-green: #9fe044;
+  --ansi-bright-yellow: #faba4a;
+  --ansi-bright-blue: #8db0ff;
+  --ansi-bright-magenta: #c7a9ff;
+  --ansi-bright-cyan: #a4daff;
+  --ansi-bright-white: #c0caf5;
+}
+
+/* Tokyo Night Storm */
+:root[data-theme='tokyo-night-storm'] {
+  --accent: #7aa2f7;
+  --state-needs-you: #e0af68;
+  --state-working: #7aa2f7;
+  --state-finished: #7aa2f7;
+  --state-idle: #565f89;
+  --state-unknown: #565f89;
+  --color-page: #1f2335;
+  --color-ground: #24283b;
+  --color-sidebar: #1f2335;
+  --color-raised: #2a2f45;
+  --color-selected: #2f3549;
+  --color-well: #1f2335;
+  --color-line: #3b4261;
+  --color-rule: #2a2f45;
+  --color-tab-line: #3b4261;
+  --color-pane-line: #3b4261;
+  --color-pane-focus: #7aa2f7;
+  --color-ink: #c0caf5;
+  --color-error: #f7768e;
+  --color-mute: #a9b1d6;
+  --color-faint: #565f89;
+  --color-worktree: #bb9af7;
+  --color-term-fg: #c0caf5;
+  --ansi-black: #414868;
+  --ansi-red: #f7768e;
+  --ansi-green: #9ece6a;
+  --ansi-yellow: #e0af68;
+  --ansi-blue: #7aa2f7;
+  --ansi-magenta: #bb9af7;
+  --ansi-cyan: #7dcfff;
+  --ansi-white: #a9b1d6;
+  --ansi-bright-black: #565f89;
+  --ansi-bright-red: #ff899d;
+  --ansi-bright-green: #9fe044;
+  --ansi-bright-yellow: #faba4a;
+  --ansi-bright-blue: #8db0ff;
+  --ansi-bright-magenta: #c7a9ff;
+  --ansi-bright-cyan: #a4daff;
+  --ansi-bright-white: #c0caf5;
+}
+
+/* Rosé Pine */
+:root[data-theme='rose-pine'] {
+  --accent: #c4a7e7;
+  --state-needs-you: #f6c177;
+  --state-working: #9ccfd8;
+  --state-finished: #9ccfd8;
+  --state-idle: #6e6a86;
+  --state-unknown: #6e6a86;
+  --color-page: #13111e;
+  --color-ground: #191724;
+  --color-sidebar: #16141f;
+  --color-raised: #1f1d2e;
+  --color-selected: #26233a;
+  --color-well: #16141f;
+  --color-line: #2a2837;
+  --color-rule: #21202e;
+  --color-tab-line: #2a2837;
+  --color-pane-line: #2a2837;
+  --color-pane-focus: #c4a7e7;
+  --color-ink: #e0def4;
+  --color-error: #eb6f92;
+  --color-mute: #908caa;
+  --color-faint: #6e6a86;
+  --color-worktree: #c4a7e7;
+  --color-term-fg: #e0def4;
+  --ansi-black: #403d52;
+  --ansi-red: #eb6f92;
+  --ansi-green: #31748f;
+  --ansi-yellow: #f6c177;
+  --ansi-blue: #9ccfd8;
+  --ansi-magenta: #c4a7e7;
+  --ansi-cyan: #ebbcba;
+  --ansi-white: #e0def4;
+  --ansi-bright-black: #6e6a86;
+  --ansi-bright-red: #eb6f92;
+  --ansi-bright-green: #31748f;
+  --ansi-bright-yellow: #f6c177;
+  --ansi-bright-blue: #9ccfd8;
+  --ansi-bright-magenta: #c4a7e7;
+  --ansi-bright-cyan: #ebbcba;
+  --ansi-bright-white: #e0def4;
+}
+
+/* Gruvbox Dark */
+:root[data-theme='gruvbox'] {
+  --accent: #83a598;
+  --state-needs-you: #fabd2f;
+  --state-working: #83a598;
+  --state-finished: #83a598;
+  --state-idle: #7c6f64;
+  --state-unknown: #7c6f64;
+  --color-page: #1d2021;
+  --color-ground: #282828;
+  --color-sidebar: #1d2021;
+  --color-raised: #32302f;
+  --color-selected: #3c3836;
+  --color-well: #212121;
+  --color-line: #3c3836;
+  --color-rule: #32302f;
+  --color-tab-line: #3c3836;
+  --color-pane-line: #3c3836;
+  --color-pane-focus: #d79921;
+  --color-ink: #ebdbb2;
+  --color-error: #fb4934;
+  --color-mute: #a89984;
+  --color-faint: #7c6f64;
+  --color-worktree: #d3869b;
+  --color-term-fg: #ebdbb2;
+  --ansi-black: #504945;
+  --ansi-red: #cc241d;
+  --ansi-green: #98971a;
+  --ansi-yellow: #d79921;
+  --ansi-blue: #458588;
+  --ansi-magenta: #b16286;
+  --ansi-cyan: #689d6a;
+  --ansi-white: #a89984;
+  --ansi-bright-black: #928374;
+  --ansi-bright-red: #fb4934;
+  --ansi-bright-green: #b8bb26;
+  --ansi-bright-yellow: #fabd2f;
+  --ansi-bright-blue: #83a598;
+  --ansi-bright-magenta: #d3869b;
+  --ansi-bright-cyan: #8ec07c;
+  --ansi-bright-white: #ebdbb2;
+}
+
+/* Nord */
+:root[data-theme='nord'] {
+  --accent: #88c0d0;
+  --state-needs-you: #ebcb8b;
+  --state-working: #81a1c1;
+  --state-finished: #81a1c1;
+  --state-idle: #6b7690;
+  --state-unknown: #6b7690;
+  --color-page: #272c36;
+  --color-ground: #2e3440;
+  --color-sidebar: #2a303b;
+  --color-raised: #353c4a;
+  --color-selected: #3b4252;
+  --color-well: #2a303b;
+  --color-line: #434c5e;
+  --color-rule: #363d4b;
+  --color-tab-line: #434c5e;
+  --color-pane-line: #434c5e;
+  --color-pane-focus: #88c0d0;
+  --color-ink: #e5e9f0;
+  --color-error: #bf616a;
+  --color-mute: #aab3c5;
+  --color-faint: #6b7690;
+  --color-worktree: #b48ead;
+  --color-term-fg: #d8dee9;
+  --ansi-black: #3b4252;
+  --ansi-red: #bf616a;
+  --ansi-green: #a3be8c;
+  --ansi-yellow: #ebcb8b;
+  --ansi-blue: #81a1c1;
+  --ansi-magenta: #b48ead;
+  --ansi-cyan: #88c0d0;
+  --ansi-white: #e5e9f0;
+  --ansi-bright-black: #4c566a;
+  --ansi-bright-red: #bf616a;
+  --ansi-bright-green: #a3be8c;
+  --ansi-bright-yellow: #ebcb8b;
+  --ansi-bright-blue: #81a1c1;
+  --ansi-bright-magenta: #b48ead;
+  --ansi-bright-cyan: #8fbcbb;
+  --ansi-bright-white: #eceff4;
+}
+
+/* Dracula */
+:root[data-theme='dracula'] {
+  --accent: #bd93f9;
+  --state-needs-you: #f1fa8c;
+  --state-working: #8be9fd;
+  --state-finished: #8be9fd;
+  --state-idle: #6272a4;
+  --state-unknown: #6272a4;
+  --color-page: #21222c;
+  --color-ground: #282a36;
+  --color-sidebar: #21222c;
+  --color-raised: #303241;
+  --color-selected: #44475a;
+  --color-well: #21222c;
+  --color-line: #44475a;
+  --color-rule: #303241;
+  --color-tab-line: #44475a;
+  --color-pane-line: #44475a;
+  --color-pane-focus: #bd93f9;
+  --color-ink: #f8f8f2;
+  --color-error: #ff5555;
+  --color-mute: #b0b4c8;
+  --color-faint: #6272a4;
+  --color-worktree: #ff79c6;
+  --color-term-fg: #f8f8f2;
+  --ansi-black: #44475a;
+  --ansi-red: #ff5555;
+  --ansi-green: #50fa7b;
+  --ansi-yellow: #f1fa8c;
+  --ansi-blue: #bd93f9;
+  --ansi-magenta: #ff79c6;
+  --ansi-cyan: #8be9fd;
+  --ansi-white: #f8f8f2;
+  --ansi-bright-black: #6272a4;
+  --ansi-bright-red: #ff6e6e;
+  --ansi-bright-green: #69ff94;
+  --ansi-bright-yellow: #ffffa5;
+  --ansi-bright-blue: #d6acff;
+  --ansi-bright-magenta: #ff92df;
+  --ansi-bright-cyan: #a4ffff;
+  --ansi-bright-white: #ffffff;
+}

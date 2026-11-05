@@ -67,6 +67,11 @@ export class SpacesService {
     return { spaces, tabs, refused: this.refused }
   }
 
+  // Every space's sidebar view, read fresh from git.
+  async allInfo(): Promise<SpaceInfo[]> {
+    return Promise.all(this.state.spaces.map((space) => this.describe(space, this.state.spaces)))
+  }
+
   async add(spacePath: string): Promise<SpaceInfo> {
     this.assertNotRefused()
     if (!path.isAbsolute(spacePath)) {
@@ -147,8 +152,9 @@ export class SpacesService {
   }
 
   // Deletes the space's checkout. Refused for a main checkout, for a folder another space also uses, and by git when the
-  // checkout has changes. The branch stays.
-  async removeWorktreeFolder(spaceId: string): Promise<void> {
+  // checkout has changes or a lock, unless `force`. The branch stays. A refusal by git has its own error code, so the human can
+  // be asked whether to force.
+  async removeWorktreeFolder(spaceId: string, force = false): Promise<void> {
     const space = this.requireSpace(spaceId)
     const git = await spaceGitInfo(space.path)
     if (git.mainPath === null || git.mainPath === space.path) {
@@ -158,9 +164,9 @@ export class SpacesService {
       throw new RpcError(ERROR_CODES.invalidParams, `another space uses ${space.path}`)
     }
     try {
-      await removeWorktree(git.mainPath, space.path)
+      await removeWorktree(git.mainPath, space.path, force)
     } catch (error) {
-      throw new RpcError(ERROR_CODES.invalidParams, error instanceof Error ? error.message : String(error))
+      throw new RpcError(ERROR_CODES.gitRefused, error instanceof Error ? error.message : String(error))
     }
   }
 

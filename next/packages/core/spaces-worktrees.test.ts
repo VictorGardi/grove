@@ -3,6 +3,7 @@ import fs from 'node:fs'
 import os from 'node:os'
 import path from 'node:path'
 import { afterEach, beforeEach, describe, expect, it } from 'vitest'
+import { ERROR_CODES } from '../protocol/messages.ts'
 import { SpacesService } from './spaces.ts'
 
 const git = (cwd: string, args: string[]) =>
@@ -64,12 +65,31 @@ describe('worktree spaces', () => {
     await expect(service.removeWorktreeFolder(repo.id)).rejects.toThrow('is not a worktree')
     const created = await service.addWorktreeSpace(repo.id, 'gone')
     fs.writeFileSync(path.join(created.path, 'dirty.txt'), 'x')
-    await expect(service.removeWorktreeFolder(created.id)).rejects.toThrow()
+    await expect(service.removeWorktreeFolder(created.id)).rejects.toMatchObject({ code: ERROR_CODES.gitRefused })
     expect(fs.existsSync(created.path)).toBe(true)
     fs.rmSync(path.join(created.path, 'dirty.txt'))
     await service.removeWorktreeFolder(created.id)
     expect(fs.existsSync(created.path)).toBe(false)
     expect(git(main, ['branch', '--list', 'gone']).toString()).toContain('gone')
+  })
+
+  it('force-removes a dirty checkout that git refused, and keeps the branch', async () => {
+    const repo = await service.add(main)
+    const created = await service.addWorktreeSpace(repo.id, 'dirty')
+    fs.writeFileSync(path.join(created.path, 'dirty.txt'), 'x')
+    await expect(service.removeWorktreeFolder(created.id)).rejects.toMatchObject({ code: ERROR_CODES.gitRefused })
+    await service.removeWorktreeFolder(created.id, true)
+    expect(fs.existsSync(created.path)).toBe(false)
+    expect(git(main, ['branch', '--list', 'dirty']).toString()).toContain('dirty')
+  })
+
+  it('force-removes a locked checkout that git refused', async () => {
+    const repo = await service.add(main)
+    const created = await service.addWorktreeSpace(repo.id, 'locked')
+    git(main, ['worktree', 'lock', '--reason', 'a grove session is running here', created.path])
+    await expect(service.removeWorktreeFolder(created.id)).rejects.toMatchObject({ code: ERROR_CODES.gitRefused })
+    await service.removeWorktreeFolder(created.id, true)
+    expect(fs.existsSync(created.path)).toBe(false)
   })
 
   it('removes a space record and renames a space with a display name that clears when empty', async () => {

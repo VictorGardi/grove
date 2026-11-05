@@ -4,6 +4,7 @@ export const PROTOCOL_VERSION = 1
 
 export const METHODS = {
   corePing: 'core.ping',
+  coreRestart: 'core.restart',
   tabsCreate: 'tabs.create',
   tabsList: 'tabs.list',
   tabsWrite: 'tabs.write',
@@ -45,6 +46,7 @@ export const ERROR_CODES = {
   tabExists: -32002,
   stateRefused: -32003,
   agentMissing: -32004,
+  gitRefused: -32005,
 } as const
 
 export type JsonRpcId = number | string
@@ -218,6 +220,8 @@ export interface IntegrationInfo {
 export interface MethodMap {
   // `build` fingerprints the core's own source (the holder sends none): a caller whose build differs is talking to an older core.
   'core.ping': { params: Empty; result: { protocolVersion: number; build?: string } }
+  // The core answers, then exits; the holder starts a new one. Running tabs are in the holder and keep running.
+  'core.restart': { params: Empty; result: Record<string, never> }
   'tabs.create': {
     params: {
       id?: string
@@ -248,7 +252,7 @@ export interface MethodMap {
   'spaces.add': { params: { path: string }; result: SpaceInfo }
   // Kills the space's tabs and drops it. With `removeWorktree` the checkout is deleted first, and git refuses one with changes
   // in it (the space stays then). Only a worktree is ever deleted, never a main checkout; its branch is kept.
-  'spaces.remove': { params: { id: string; removeWorktree?: boolean }; result: Empty }
+  'spaces.remove': { params: { id: string; removeWorktree?: boolean; force?: boolean }; result: Empty }
   // An empty name clears it, so the space shows its folder's name again.
   'spaces.rename': { params: { id: string; name: string }; result: Empty }
   // The worktrees of the space's repo that are not spaces yet.

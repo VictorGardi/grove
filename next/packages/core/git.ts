@@ -71,7 +71,9 @@ export async function addWorktree(dir: string, dest: string, branch: string): Pr
   await git(dir, exists ? ['worktree', 'add', dest, branch] : ['worktree', 'add', '-b', branch, dest, 'HEAD'])
 }
 
-// Removes the checkout. Git refuses a checkout with changes in it; the branch is kept.
-export async function removeWorktree(dir: string, worktree: string): Promise<void> {
-  await git(dir, ['worktree', 'remove', worktree])
+// Removes the checkout. Git refuses a checkout with changes in it or a lock, unless `force`; the branch is kept. A locked
+// checkout needs --force twice (the old Grove locks the ones it has a session in), and force is only asked for after the human
+// confirmed it.
+export async function removeWorktree(dir: string, worktree: string, force = false): Promise<void> {
+  await git(dir, ['worktree', 'remove', ...(force ? ['--force', '--force'] : []), worktree])
 }

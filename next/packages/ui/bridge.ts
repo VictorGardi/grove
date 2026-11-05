@@ -70,7 +70,7 @@ export function createBridge(): Bridge {
       const id = nextId++
       const line = await invoke<string>('rpc', { request: { jsonrpc: '2.0', id, method, params: params ?? {} } })
       const response = JSON.parse(line) as JsonRpcResponse
-      if ('error' in response) throw new Error(response.error.message)
+      if ('error' in response) throw Object.assign(new Error(response.error.message), { code: response.error.code })
       return (response as JsonRpcSuccess).result as never
     },
     on(method, handler) {

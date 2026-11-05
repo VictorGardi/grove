@@ -3,6 +3,7 @@ import { getCurrentWindow } from '@tauri-apps/api/window'
 import { createBridge, fromBase64, toBase64 } from './bridge.ts'
 import { createSoundGate, noticeBody, soundFile } from './alerts.ts'
 import { readSound, writeSound } from './sound-pref.ts'
+import { THEMES, applyThemeChoice, isThemeId, readTheme, writeTheme } from './theme-pref.ts'
 import { applyLayout, applySettings, applyTheme, findAction, formatBinding, launcherLine } from './config.ts'
 import { openTerminal, terminalFontSize, tokenValue, type TerminalView } from './terminal.ts'
 import { canJoinGrid, gridMembers, gridShape, paneSpans } from './grid/layout.ts'
@@ -22,6 +23,7 @@ import { createKeysPanel } from './keys-panel.ts'
 import { indicatorClass, indicatorLabel } from './indicator.ts'
 import { agentIconSvg, iconSvg } from './icons.ts'
 import { rollupSpaces } from '../protocol/rollup.ts'
+import { ERROR_CODES } from '../protocol/messages.ts'
 import type {
   AgentInfo,
   AgentStateName,
@@ -101,6 +103,9 @@ let sentFocus: string | null = null
 let demoMode = false
 const playSound = createSoundGate()
 let soundOn = readSound(storage())
+// The chosen theme goes on the root before the first terminal opens, so every terminal starts with its colours.
+let themeId = readTheme(storage())
+applyThemeChoice(document.documentElement, themeId)
 
 const appEl = byId('app')
 const contextMenu = createContextMenu(document.body, { closed: focusActive })
@@ -116,6 +121,10 @@ const agentsEmpty = byId('agents-empty')
 const installCliButton = byId('install-cli') as HTMLButtonElement
 const installCliStatus = byId('install-cli-status')
 const soundToggle = byId('sound-toggle') as HTMLButtonElement
+const restartCoreButton = byId('restart-core') as HTMLButtonElement
+const coreIndicator = byId('core-indicator')
+const coreStatusText = byId('core-status-text')
+const themeSelect = byId('theme-select') as HTMLSelectElement
 const settingsTabs = Array.from(document.querySelectorAll<HTMLButtonElement>('.settings-tab'))
 const settingsSections = Array.from(document.querySelectorAll<HTMLElement>('.settings-section'))
 const sidebar = byId('sidebar')
@@ -382,7 +391,29 @@ function baseName(folder: string): string {
 
 // Removes a space: its tabs close and it leaves the sidebar. A worktree's checkout is deleted too, and the dialog says so;
 // git refuses a checkout with changes, and the dialog then keeps the space and shows git's reason.
-function askRemoveSpace(space: SpaceInfo, lastTab = false): Promise<boolean> {
+async function askRemoveSpace(space: SpaceInfo, lastTab = false): Promise<boolean> {
+  let refusal: string | null = null
+  const removed = await askRemoveSpaceOnce(space, lastTab, (reason) => (refusal = reason))
+  if (refusal === null) return removed
+  return askForceRemove(space, refusal)
+}
+
+// Git said no to deleting the checkout: its message is shown, and the human may force it, losing what git refused to lose.
+function askForceRemove(space: SpaceInfo, reason: string): Promise<boolean> {
+  return spaceDialog.open({
+    title: `Force remove worktree ${space.name}?`,
+    text: `Git refused to remove ${space.path}:\n${reason.trim()}\n\nForcing deletes the checkout, including uncommitted changes.${space.branch ? ` The branch ${space.branch} stays.` : ''}`,
+    confirm: 'Force remove',
+    cancel: 'Keep space',
+    danger: true,
+    submit: async () => {
+      await bridge.rpc('spaces.remove', { id: space.id, removeWorktree: true, force: true })
+      dropSpace(space.id)
+    },
+  })
+}
+
+function askRemoveSpaceOnce(space: SpaceInfo, lastTab: boolean, refused: (reason: string) => void): Promise<boolean> {
   const count = order.filter((tab) => tab.spaceId === space.id).length
   const tabsLine = count === 0 ? '' : ` Its ${count === 1 ? 'tab closes' : `${count} tabs close`}.`
   const lead = lastTab ? 'That was the last tab. ' : ''
@@ -395,7 +426,13 @@ function askRemoveSpace(space: SpaceInfo, lastTab = false): Promise<boolean> {
     cancel: lastTab ? 'Keep space' : 'Cancel',
     danger: space.worktree || !lastTab,
     submit: async () => {
-      await bridge.rpc('spaces.remove', { id: space.id, removeWorktree: space.worktree })
+      try {
+        await bridge.rpc('spaces.remove', { id: space.id, removeWorktree: space.worktree })
+      } catch (error) {
+        // The dialog closes and the force question replaces it; any other failure stays inside this dialog.
+        if ((error as { code?: number }).code !== ERROR_CODES.gitRefused) throw error
+        return refused(error instanceof Error ? error.message : String(error))
+      }
       dropSpace(space.id)
     },
   })
@@ -1098,12 +1135,53 @@ bridge.on('spaces.changed', (info) => {
   paint()
 })
 
+// A restart the human asked for: from the press until the window is connected to the new core again.
+let coreRestart: { since: number; closed: boolean; timer: ReturnType<typeof setTimeout> } | null = null
+const CORE_RESTART_GIVE_UP_MS = 20000
+
+function showCoreRestart(text: string, busy: boolean): void {
+  coreStatusText.textContent = text
+  coreIndicator.hidden = !busy
+  restartCoreButton.disabled = busy
+}
+
+function finishCoreRestart(): void {
+  if (coreRestart === null) return
+  clearTimeout(coreRestart.timer)
+  const seconds = ((Date.now() - coreRestart.since) / 1000).toFixed(1)
+  coreRestart = null
+  showCoreRestart(`Core restarted in ${seconds} s. You can keep working.`, false)
+}
+
+restartCoreButton.addEventListener('click', () => {
+  if (coreRestart !== null) return
+  const timer = setTimeout(() => {
+    coreRestart = null
+    statusLine.textContent = ''
+    showCoreRestart('The core did not come back. Close and reopen the window to start it.', false)
+  }, CORE_RESTART_GIVE_UP_MS)
+  coreRestart = { since: Date.now(), closed: false, timer }
+  showCoreRestart('Restarting the core...', true)
+  statusLine.textContent = 'Restarting the core...'
+  // The core may drop the connection right behind its reply, so a dropped call is not an error: the reconnect tells. An answer with
+  // an error code means the core is up but refused (an older core does not know the call), and no reconnect will follow.
+  bridge.rpc('core.restart', {}).catch((failure: unknown) => {
+    if (coreRestart === null || typeof (failure as { code?: unknown }).code !== 'number') return
+    clearTimeout(coreRestart.timer)
+    coreRestart = null
+    statusLine.textContent = ''
+    showCoreRestart('This core is too old to restart itself. Stop it once with: pkill -f packages/core/bin.ts. The holder starts a new one, and this button works from then on.', false)
+  })
+})
+
 bridge.onStatus((status) => {
   if (status === 'closed') {
-    statusLine.textContent = 'Reconnecting to the core...'
+    if (coreRestart !== null) coreRestart.closed = true
+    statusLine.textContent = coreRestart !== null ? 'Restarting the core...' : 'Reconnecting to the core...'
     return
   }
   statusLine.textContent = ''
+  if (coreRestart?.closed) finishCoreRestart()
   // A new core socket has no focus yet, so the focus is sent again. The config may have changed while the core was down.
   sentFocus = null
   reportFocus()
@@ -1168,6 +1246,21 @@ installCliButton.addEventListener('click', () => {
     .finally(() => {
       installCliButton.disabled = false
     })
+})
+for (const theme of THEMES) {
+  const option = document.createElement('option')
+  option.value = theme.id
+  option.textContent = theme.label
+  themeSelect.append(option)
+}
+themeSelect.value = themeId
+themeSelect.addEventListener('change', () => {
+  if (!isThemeId(themeSelect.value)) return
+  themeId = themeSelect.value
+  applyThemeChoice(document.documentElement, themeId)
+  writeTheme(storage(), themeId)
+  // Open terminals read their colours when they open, so each one reads them again.
+  for (const tab of tabs.values()) tab.view?.restyle()
 })
 soundToggle.setAttribute('aria-checked', String(soundOn))
 soundToggle.addEventListener('click', () => {

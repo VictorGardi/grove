@@ -16,7 +16,7 @@ import { SpacesService } from './spaces.ts'
 import { StatusService } from './status/service.ts'
 import type { AdapterWatchInput, AgentAdapter, AgentKind, AgentWatch } from './status/adapter.ts'
 import type { StatusEvent } from './status/contract.ts'
-import { killCore, startStack, stopHolder, waitFor } from './test-helpers.ts'
+import { corePidOf, killCore, startStack, stopHolder, waitFor } from './test-helpers.ts'
 import { DEFAULT_VALUES } from './config/schema.ts'
 
 const screenText = async (client: RpcClient, id: string): Promise<string> => {
@@ -83,6 +83,33 @@ describe('core daemon', () => {
     const tabs = await next.request(METHODS.tabsList, {})
     expect(tabs).toContainEqual(expect.objectContaining({ id, alive: true }))
     expect(await screenText(next, id)).toContain('mark-21')
+  })
+
+  it('restarts the core on core.restart: the holder starts a new one and a tab keeps running', async () => {
+    const stack = await startStack()
+    holder = stack.holder
+    const first = stack.core
+    clients.push(first)
+    const { id } = await first.request(METHODS.tabsCreate, { command: '/bin/sh', cwd: home, cols: 80, rows: 24 })
+    const oldPid = corePidOf(holder!)
+
+    await first.request(METHODS.coreRestart, {})
+    first.close()
+    clients = []
+    await waitFor(
+      async () => {
+        try {
+          return corePidOf(holder!)
+        } catch {
+          return 0
+        }
+      },
+      (pid) => pid !== 0 && pid !== oldPid,
+    )
+
+    const next = await connectWhenReady(coreSocketPath())
+    clients.push(next)
+    expect(await next.request(METHODS.tabsList, {})).toContainEqual(expect.objectContaining({ id, alive: true }))
   })
 
   it('relays tab output and exit to an attached client', async () => {

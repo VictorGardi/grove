@@ -1141,6 +1141,18 @@ html.unfocused .ind-working {
   background: var(--color-selected);
 }
 
+.settings-select {
+  flex: none;
+  height: var(--size-control);
+  padding: 0 var(--space-3);
+  border: 1px solid var(--color-line);
+  border-radius: var(--radius-sm);
+  background: var(--color-well);
+  font: inherit;
+  font-size: var(--text-md);
+  color: var(--color-ink);
+}
+
 .settings-switch {
   position: relative;
   flex: none;
@@ -1185,6 +1197,7 @@ html.unfocused .ind-working {
   font-size: var(--text-sm);
   color: var(--color-mute);
   line-height: 1.5;
+  white-space: pre-line;
 }
 
 .modal-text p {
@@ -1782,4 +1795,17 @@ html.unfocused .ind-working {
 li[aria-selected] > .slash-tile {
   border-color: var(--accent);
   color: var(--accent);
+}
+
+.core-status {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+  margin: var(--space-3) 0 0;
+  font-size: var(--text-meta);
+  color: var(--color-mute);
+}
+
+.core-status:not(:has(#core-status-text:not(:empty))) {
+  display: none;
 }

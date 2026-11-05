@@ -26,6 +26,7 @@ import { watchConfig } from './config/watch.ts'
 const TAB_ID = /^[A-Za-z0-9_-]{1,64}$/
 // A holder call the status service makes must answer within this, or that call fails and its check is skipped.
 const STATUS_CALL_MS = 2000
+const RESTART_DELAY_MS = 100
 
 export interface CoreServer {
   socketPath: string
@@ -44,6 +45,7 @@ const PROXIED = new Set<string>([
 
 // How often the presence scan looks at each tab's foreground program and folder.
 const PRESENCE_MS = 1000
+const GIT_POLL_MS = 3000
 
 const SPACE_METHODS = new Set<string>([
   METHODS.spacesList,
@@ -173,6 +175,30 @@ export async function startCoreDaemon(
       })
   }, PRESENCE_MS)
 
+  // A branch switched outside Grove (git checkout in any terminal) shows in the sidebar and footer within a poll.
+  const lastInfo = new Map<string, string>()
+  let gitBusy = false
+  const gitTimer = setInterval(() => {
+    if (gitBusy) return
+    gitBusy = true
+    spaces
+      .allInfo()
+      .then((infos) => {
+        const ids = new Set(infos.map((info) => info.id))
+        for (const id of lastInfo.keys()) if (!ids.has(id)) lastInfo.delete(id)
+        for (const info of infos) {
+          const key = JSON.stringify(info)
+          const before = lastInfo.get(info.id)
+          lastInfo.set(info.id, key)
+          if (before !== undefined && before !== key) broadcast(notification('spaces.changed', info))
+        }
+      })
+      .catch((error: unknown) => console.error(`core: git poll failed: ${error instanceof Error ? error.message : String(error)}`))
+      .finally(() => {
+        gitBusy = false
+      })
+  }, GIT_POLL_MS)
+
   const sockets = new Set<net.Socket>()
   const broadcast = (message: unknown) => {
     for (const socket of sockets) if (!socket.destroyed) socket.write(encodeLine(message))
@@ -266,6 +292,7 @@ export async function startCoreDaemon(
         unsubscribe()
         unwatch()
         clearInterval(presenceTimer)
+        clearInterval(gitTimer)
         status.close()
         void statusClient?.then(
           (client) => client.close(),
@@ -400,6 +427,11 @@ async function dispatch(method: string, rawParams: unknown, holder: Promise<RpcC
   if (method === METHODS.corePing) {
     const result: MethodMap['core.ping']['result'] = { protocolVersion: PROTOCOL_VERSION, build: buildId() }
     return result
+  }
+  if (method === METHODS.coreRestart) {
+    // After the reply has gone out, the core's own SIGTERM handler (bin.ts) closes it cleanly and the holder starts a new one.
+    setTimeout(() => process.kill(process.pid, 'SIGTERM'), RESTART_DELAY_MS)
+    return {} satisfies MethodMap['core.restart']['result']
   }
   if (method === METHODS.agentsList) {
     const client = await holder
@@ -574,7 +606,7 @@ async function removeSpace(rawParams: unknown, holder: RpcClient, deps: Deps): P
   const removeWorktree = (rawParams as Record<string, unknown>).removeWorktree === true
   deps.spaces.assertNotRefused()
   if (!deps.spaces.isSpace(id)) throw new RpcError(ERROR_CODES.invalidParams, `no such space: ${id}`)
-  if (removeWorktree) await deps.spaces.removeWorktreeFolder(id)
+  if (removeWorktree) await deps.spaces.removeWorktreeFolder(id, (rawParams as Record<string, unknown>).force === true)
   for (const tabId of deps.spaces.tabIdsOf(id)) await closeTab({ id: tabId }, holder, deps)
   deps.spaces.removeSpace(id)
   const params: NotificationMap['spaces.removed'] = { id }

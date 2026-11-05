@@ -6,7 +6,7 @@ import { describe, expect, it } from 'vitest'
 // refers to them with var(--...). This scan fails on a literal colour or a literal length.
 const UI = fileURLToPath(new URL('.', import.meta.url))
 const SKIPPED_DIRS = new Set(['src-tauri', 'dist', 'node_modules', 'demo'])
-const SKIPPED_FILES = new Set(['src/tokens.css'])
+const SKIPPED_FILES = new Set(['src/tokens.css', 'src/themes.css'])
 
 // `#` followed by 3, 4, 6 or 8 hex digits, not followed by a name character (so `#add-space` is not a colour).
 const HEX = /#[0-9a-fA-F]{3,8}(?![\w-])/g

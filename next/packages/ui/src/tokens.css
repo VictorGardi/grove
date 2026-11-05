@@ -1,6 +1,6 @@
 /* Design tokens: the only place a colour or a length is written. Values follow the Herdr reference (docs/work/.../reference/herdr-look.html).
    config.ts writes theme.json overrides on the root as --<name>; only the twenty names of the first block can be overridden.
-   Dark only: there is no light palette. See ../design-notes.md for the scales. */
+   Dark only: there is no light palette. src/themes.css holds the selectable presets that override these. See ../design-notes.md for the scales. */
 :root {
   /* Overridable by the theme file */
   --accent: #8ab4ff;
@@ -45,6 +45,24 @@
   --color-term-fg: #d4d4d8;
   --color-on-mark: #ffffff;
   --color-shell-mark: #cfcfd4;
+
+  /* Terminal ANSI palette: what agents and shells colour their output with. Theme presets override these. */
+  --ansi-black: #3a3a3e;
+  --ansi-red: #f0857a;
+  --ansi-green: #7fc98f;
+  --ansi-yellow: #f0b44c;
+  --ansi-blue: #6ea0ff;
+  --ansi-magenta: #a78bfa;
+  --ansi-cyan: #5fc4d0;
+  --ansi-white: #d4d4d8;
+  --ansi-bright-black: #5f5f64;
+  --ansi-bright-red: #f5a39a;
+  --ansi-bright-green: #9fdcab;
+  --ansi-bright-yellow: #f5c978;
+  --ansi-bright-blue: #8ab4ff;
+  --ansi-bright-magenta: #c0a8fb;
+  --ansi-bright-cyan: #86d5df;
+  --ansi-bright-white: #f2f2f4;
 
   /* Space tiles (one per space, chosen from a hash of its name) */
   --tile-1: #2aa889;
