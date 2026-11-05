@@ -31,7 +31,7 @@ function realFolder(folder: string): string {
 // The session a hand-started Copilot is running: the earliest session in `cwd` created at or after `since` (ms).
 // Copilot writes <home>/session-state/<id>/workspace.yaml when a session starts, before any prompt, so this finds the
 // session with no hook. Undefined while none is found.
-export function findCopilotSession(options: { copilotHome: string; cwd: string; since: number }): string | undefined {
+export function findCopilotSession(options: { copilotHome: string; cwd: string; since: number; exclude?: ReadonlySet<string> }): string | undefined {
   const root = path.join(options.copilotHome, 'session-state')
   let names: string[]
   try {
@@ -42,7 +42,7 @@ export function findCopilotSession(options: { copilotHome: string; cwd: string; 
   const folder = realFolder(options.cwd)
   let best: { id: string; created: number } | undefined
   for (const id of names) {
-    if (!SESSION.test(id)) continue
+    if (!SESSION.test(id) || options.exclude?.has(id)) continue
     const dir = path.join(root, id)
     let changed: number
     try {

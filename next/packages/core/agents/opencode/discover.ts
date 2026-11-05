@@ -4,12 +4,14 @@ export type Fetch = (input: URL, init?: RequestInit) => Promise<Response>
 
 // Finds the OpenCode session an agent started by hand is running. The shared service lists every session with the
 // folder it runs in (`location.directory`) and when it was created (`time.created`, ms). The newest session in
-// `cwd` created at or after `since` is the one. Undefined while there is none, or when the service cannot be read:
+// `cwd` created at or after `since`, and not already `exclude`d (claimed by another tab), is the one: the earliest, as
+// for Copilot, since the tab that was found first is the one whose session shows first. Undefined while there is none, or when the service cannot be read:
 // the caller asks again on its next tick.
 export async function findOpenCodeSession(input: {
   serviceFile: string
   cwd: string
   since: number
+  exclude?: ReadonlySet<string>
   fetch?: Fetch
   readFile?: (file: string) => string
 }): Promise<string | undefined> {
@@ -35,10 +37,10 @@ export async function findOpenCodeSession(input: {
   if (!Array.isArray(data)) return undefined
   let best: { id: string; created: number } | undefined
   for (const session of data as Array<{ id?: unknown; location?: { directory?: unknown }; time?: { created?: unknown } }>) {
-    if (typeof session.id !== 'string' || session.location?.directory !== input.cwd) continue
+    if (typeof session.id !== 'string' || input.exclude?.has(session.id) || session.location?.directory !== input.cwd) continue
     const created = session.time?.created
     if (typeof created !== 'number' || created < input.since) continue
-    if (best === undefined || created > best.created) best = { id: session.id, created }
+    if (best === undefined || created < best.created) best = { id: session.id, created }
   }
   return best?.id
 }

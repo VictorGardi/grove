@@ -24,7 +24,7 @@ function fakeFetch(data: unknown[]) {
 describe('findOpenCodeSession', () => {
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'grove-oc-discover-'))
 
-  it('picks the newest session in the folder created since the tab was found', async () => {
+  it('picks the earliest session in the folder created since the tab was found', async () => {
     const { fetch, calls } = fakeFetch([
       { id: 'ses_old', location: { directory: CWD }, time: { created: 100 } },
       { id: 'ses_other', location: { directory: '/elsewhere' }, time: { created: 900 } },
@@ -35,6 +35,17 @@ describe('findOpenCodeSession', () => {
     expect(id).toBe('ses_new')
     expect(calls[0].url).toBe('http://127.0.0.1:1234/api/session')
     expect(calls[0].auth).toBe('Basic ' + Buffer.from('opencode:secret').toString('base64'))
+  })
+
+  it('takes the earliest session, and skips ones another tab already has, so two tabs in one folder get their own', async () => {
+    const { fetch } = fakeFetch([
+      { id: 'ses_a', location: { directory: CWD }, time: { created: 600 } },
+      { id: 'ses_b', location: { directory: CWD }, time: { created: 700 } },
+    ])
+    const input = { serviceFile: serviceFile(dir), cwd: CWD, since: 500, fetch }
+    expect(await findOpenCodeSession(input)).toBe('ses_a')
+    expect(await findOpenCodeSession({ ...input, exclude: new Set(['ses_a']) })).toBe('ses_b')
+    expect(await findOpenCodeSession({ ...input, exclude: new Set(['ses_a', 'ses_b']) })).toBeUndefined()
   })
 
   it('is undefined while no session matches, or when the service cannot be reached', async () => {

@@ -48,7 +48,7 @@ export function createCopilotAdapter(options: CopilotAdapterOptions = {}): Agent
     launch: (input) => launch(input, userHooksInstalled()),
     watch: (input) => watch(input, { ...options, copilotHome: copilotHome() }),
     // A hand-started session is found from its folder and start time, before its first hook.
-    discover: async ({ cwd, since }) => findCopilotSession({ copilotHome: copilotHome(), cwd, since }),
+    discover: async ({ cwd, since, exclude }) => findCopilotSession({ copilotHome: copilotHome(), cwd, since, exclude }),
     available: () => commandOnPath('copilot', options.shell ?? process.env.SHELL ?? '/bin/zsh'),
   }
 }

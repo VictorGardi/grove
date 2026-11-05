@@ -49,7 +49,7 @@ export function createOpenCodeAdapter(options: OpenCodeAdapterOptions = {}): Age
     kind: 'opencode',
     // The shared service is keyed by session, so a tab found by hand waits for its session before it can be watched.
     needsSession: true,
-    discover: ({ cwd, since }) => findOpenCodeSession({ serviceFile: serviceFile(), cwd, since }),
+    discover: ({ cwd, since, exclude }) => findOpenCodeSession({ serviceFile: serviceFile(), cwd, since, exclude }),
     launch: (input) => {
       if (input.resumeId !== undefined && !SESSION_ID.test(input.resumeId)) {
         throw new Error('resume id is not an OpenCode session id')

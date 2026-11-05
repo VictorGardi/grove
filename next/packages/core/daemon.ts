@@ -158,7 +158,8 @@ export async function startCoreDaemon(
     identify: (tabId, sessionId) => status.identify(tabId, sessionId),
     release: (tabId) => status.untrack(tabId),
     adoptedKind: (tabId) => status.adoptedKind(tabId),
-    discover: async (kind, cwd, since) => adapters[kind]?.discover?.({ cwd, since }),
+    discover: async (kind, cwd, since, exclude) => adapters[kind]?.discover?.({ cwd, since, exclude }),
+    claimedSessions: () => spaces.agentTabs().flatMap((tab) => (tab.agentSessionId === undefined ? [] : [tab.agentSessionId])),
   })
   let presenceBusy = false
   const presenceTimer = setInterval(() => {

@@ -50,7 +50,10 @@ export interface PresencePorts {
   // The kind of a tab the presence scan adopted (not one the app launched), if any.
   adoptedKind: (tabId: string) => AgentKind | undefined
   // Finds the session id of a found agent (OpenCode asks its service); undefined while none.
-  discover: (kind: AgentKind, cwd: string, since: number) => Promise<string | undefined>
+  // `exclude` holds the sessions other tabs already have, so two agents in one folder never bind to the same session.
+  discover: (kind: AgentKind, cwd: string, since: number, exclude: ReadonlySet<string>) => Promise<string | undefined>
+  // The session ids saved on tab records.
+  claimedSessions: () => string[]
 }
 
 // Looking back this far when a found agent is first seen: an agent started just before the scan is still its session.
@@ -104,7 +107,7 @@ export class Presence {
         const kindNow = this.ports.adoptedKind(tab.id)
         if (kindNow !== undefined) {
           const since = (this.seenAt.get(tab.id) ?? now) - SINCE_SLACK_MS
-          const sessionId = await this.ports.discover(kindNow, tab.cwd, since)
+          const sessionId = await this.ports.discover(kindNow, tab.cwd, since, new Set(this.ports.claimedSessions()))
           if (sessionId !== undefined) {
             this.ports.identify(tab.id, sessionId)
             this.awaitingId.delete(tab.id)

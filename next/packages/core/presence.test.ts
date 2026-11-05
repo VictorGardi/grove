@@ -38,6 +38,7 @@ function world(initial: PresenceTab[], spaceRoot = '/work') {
     },
     adoptedKind: (id) => adopted.get(id),
     discover: async () => undefined,
+    claimedSessions: () => [],
   }
   return { tabs, recorded, adopted, identified, roots, log, ports, root: () => root }
 }
@@ -117,6 +118,18 @@ describe('Presence', () => {
     found = 'ses_abc'
     await presence.tick()
     expect(w.identified.get('t1')).toBe('ses_abc')
+  })
+
+  it('asks discovery to skip the sessions other tabs already have', async () => {
+    const w = world([{ id: 't1', alive: true, foreground: 'opencode', cwd: '/work' }])
+    const asked: string[][] = []
+    w.ports.claimedSessions = () => ['ses_other']
+    w.ports.discover = async (_kind, _cwd, _since, exclude) => {
+      asked.push([...exclude])
+      return undefined
+    }
+    await new Presence(w.ports).tick()
+    expect(asked).toEqual([['ses_other']])
   })
 
   it('moves the space root on a cd in a plain tab when no agent is in another folder', async () => {
