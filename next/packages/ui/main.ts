@@ -2,10 +2,12 @@ import { invoke } from '@tauri-apps/api/core'
 import { getCurrentWindow } from '@tauri-apps/api/window'
 import { createBridge, fromBase64, toBase64 } from './bridge.ts'
 import { createSoundGate, noticeBody } from './alerts.ts'
-import { applyLayout, applySettings, applyTheme, findAction, launcherLine } from './config.ts'
+import { applyLayout, applySettings, applyTheme, findAction, formatBinding, launcherLine } from './config.ts'
 import { openTerminal, terminalFontSize, tokenValue, type TerminalView } from './terminal.ts'
-import { gridMembers, gridShape, paneSpans } from './grid/layout.ts'
-import { groupAgents, shortFolder, tabStateOf, tileIndex } from './sidebar-model.ts'
+import { canJoinGrid, gridMembers, gridShape, paneSpans } from './grid/layout.ts'
+import { previousOf, visited } from './recent-tabs.ts'
+import { readSidebarHidden, writeSidebarHidden, type KeyValueStore } from './sidebar-state.ts'
+import { groupAgents, shortFolder, sidebarSpaceOrder, spaceAt, tabStateOf, tileIndex } from './sidebar-model.ts'
 import { createTabPill, type TabPill } from './tab-pill.ts'
 import { createRenameModal } from './rename-modal.ts'
 import { indicatorClass, indicatorLabel } from './indicator.ts'
@@ -41,6 +43,8 @@ interface Tab {
   label: string | null
   // The tab's number in its space, counted in the order the tabs were opened.
   number: number
+  // Whether the human put the tab in the grid. Kept in the window only: a reload starts with no tab in the grid.
+  inGrid: boolean
   attached: boolean
   exited: boolean
   queue: Uint8Array[] | null
@@ -67,7 +71,8 @@ const encoder = new TextEncoder()
 const tabs = new Map<string, Tab>()
 const order: Tab[] = []
 const spaces = new Map<string, SpaceInfo>()
-const activeBySpace = new Map<string, Tab>()
+// Each space's tabs, most recently visited first: the previous-tab key goes back through them, and a space shows its first.
+const recentBySpace = new Map<string, Tab[]>()
 const agents = new Map<string, AgentInfo>()
 let active: Tab | null = null
 let activeSpace: string | null = null
@@ -131,6 +136,22 @@ const keyActions: Record<KeyAction, () => void> = {
   'close-tab': () => {
     if (active) void closeTab(active).catch(report)
   },
+  'previous-tab': () => {
+    const recent = activeSpace === null ? [] : (recentBySpace.get(activeSpace) ?? [])
+    const previous = previousOf(recent, active)
+    if (previous) activate(previous)
+  },
+  'grid-tab': () => toggleGridTab(),
+  'sidebar-toggle': () => sidebarToggle.click(),
+  'space-1': () => focusSpace(1),
+  'space-2': () => focusSpace(2),
+  'space-3': () => focusSpace(3),
+  'space-4': () => focusSpace(4),
+  'space-5': () => focusSpace(5),
+  'space-6': () => focusSpace(6),
+  'space-7': () => focusSpace(7),
+  'space-8': () => focusSpace(8),
+  'space-9': () => focusSpace(9),
 }
 
 // The command the window starts; the core builds the args from the agent kind.
@@ -216,6 +237,7 @@ function createTab(spaceId: string, spacePath: string, kind: TabKind, label: str
     kind,
     label,
     number: 0,
+    inGrid: false,
     attached: false,
     exited: false,
     queue: null,
@@ -253,6 +275,8 @@ function removeTab(tab: Tab): void {
   if (tab.id) tabs.delete(tab.id)
   const index = order.indexOf(tab)
   if (index !== -1) order.splice(index, 1)
+  const recent = recentBySpace.get(tab.spaceId)
+  if (recent) recentBySpace.set(tab.spaceId, recent.filter((other) => other !== tab))
   if (active === tab) active = null
   if (active === null) selectSpace(activeSpace)
   else paint()
@@ -300,11 +324,9 @@ async function attach(tab: Tab): Promise<void> {
   await bridge.rpc('tabs.resize', { id: tab.id, cols, rows })
 }
 
-// The active space's first nine tabs, in tab order: the panes grid mode shows.
+// The active space's tabs the human put in the grid, in tab order: the panes grid mode shows.
 function gridTabs(): Tab[] {
-  const spaceTabs = order.filter((tab) => tab.spaceId === activeSpace)
-  const ids = gridMembers(spaceTabs.map((tab) => tab.id))
-  return spaceTabs.filter((tab) => ids.includes(tab.id))
+  return gridMembers(order.filter((tab) => tab.spaceId === activeSpace))
 }
 
 // Lays the panes out in grid mode, or clears the grid's classes and placement when it is off.
@@ -353,14 +375,17 @@ function paintEmpty(): void {
   const bare = !order.some((tab) => tab.spaceId === activeSpace)
   emptyState.hidden = !(none || bare)
   emptyTitle.textContent = none ? 'No space open' : 'No tabs in this space'
-  emptyText.textContent = none ? 'Press Cmd+Shift+N to open a space at your home folder.' : 'Press + in the tab strip to open a shell.'
+  emptyText.textContent = none
+    ? `Press ${shortcut('new-space')} to open a space at your home folder.`
+    : `Press + in the tab strip (${shortcut('new-shell')}) to open a shell.`
 }
 
 // Tabs of other spaces stay mounted and only hidden, so their shells keep running and their screens keep filling.
 function paint(): void {
-  // A tab the grid does not show cannot be focused there, so the grid gives way to it.
-  if (gridOn && active && !gridTabs().includes(active)) gridOn = false
-  const members = gridOn ? gridTabs() : []
+  // The grid gives way when it holds no tabs, or the focused tab is not one of its panes: a tab the grid does not show cannot be focused there.
+  const shown = gridTabs()
+  if (gridOn && (shown.length === 0 || (active !== null && !shown.includes(active)))) gridOn = false
+  const members = gridOn ? shown : []
   const counts = new Map<string, number>()
   for (const tab of order) {
     const on = tab === active
@@ -383,9 +408,21 @@ function paint(): void {
   const idle = activeSpace === null || refused !== null
   newTabButton.disabled = idle
   gridToggle.setAttribute('aria-pressed', String(gridOn))
-  gridToggle.disabled = !gridOn && idle
+  gridToggle.disabled = !gridOn && (idle || shown.length === 0)
   for (const button of launcherBar.querySelectorAll('button')) button.disabled = idle
   reportFocus()
+}
+
+// The shortcuts the window lists are written from the bindings in use, so a rebound key shows its new name.
+function shortcut(action: KeyAction): string {
+  return formatBinding(keys[action], isMac)
+}
+
+function paintShortcuts(): void {
+  newTabButton.title = `New shell tab (${shortcut('new-shell')})`
+  gridToggle.title = `Show this space's tabs in a grid (${shortcut('grid-toggle')}). ${shortcut('grid-tab')} puts the focused tab in it.`
+  const hidden = appEl.classList.contains('sidebar-hidden')
+  sidebarToggle.title = `${hidden ? 'Show' : 'Hide'} the sidebar (${shortcut('sidebar-toggle')})`
 }
 
 // The root's unfocused class pauses the spinners: the window is in the background or the page is hidden.
@@ -415,15 +452,15 @@ function focusActive(): void {
 }
 
 function activate(tab: Tab): void {
-  activeBySpace.set(tab.spaceId, tab)
+  recentBySpace.set(tab.spaceId, visited(recentBySpace.get(tab.spaceId) ?? [], tab))
   selectSpace(tab.spaceId)
   focusActive()
 }
 
-// Shows the space's last active tab, or its first tab, or nothing when the space has no tabs.
+// Shows the space's most recently visited tab, or its first tab, or nothing when the space has no tabs.
 function selectSpace(spaceId: string | null): void {
   activeSpace = spaceId
-  const remembered = spaceId ? activeBySpace.get(spaceId) : undefined
+  const remembered = spaceId ? recentBySpace.get(spaceId)?.[0] : undefined
   active = remembered && order.includes(remembered) ? remembered : (order.find((tab) => tab.spaceId === spaceId) ?? null)
   paint()
 }
@@ -500,6 +537,31 @@ async function newShellTab(typed: string | null = null): Promise<void> {
   }
 }
 
+// Cmd+1 to Cmd+9: focuses the space at that place in the sidebar order, with the tab it last showed. A place past the last space does nothing.
+function focusSpace(place: number): void {
+  const spaceId = spaceAt(sidebarSpaceOrder([...spaces.values()]), place)
+  if (spaceId === null) return
+  selectSpace(spaceId)
+  focusActive()
+}
+
+// Cmd+Shift+G: the active tab goes into the grid, and the grid shows. A tab already in the grid goes out of it and shows full screen.
+// A tenth tab is refused, with the reason in the status line.
+function toggleGridTab(): void {
+  if (!active) return
+  if (active.inGrid) {
+    active.inGrid = false
+    gridOn = false
+  } else if (canJoinGrid(gridTabs().length)) {
+    active.inGrid = true
+    gridOn = true
+  } else {
+    statusLine.textContent = 'The grid holds nine tabs. Take a tab out of it first.'
+    return
+  }
+  paint()
+}
+
 // Cmd+Shift+N: adds a new space at the home folder (spaces.add always adds one), selects it, and opens one shell tab there.
 async function newSpaceTab(): Promise<void> {
   const space = await bridge.rpc('spaces.add', { path: homeDir })
@@ -554,6 +616,8 @@ function applyConfig(snapshot: ConfigSnapshot): void {
     sidebar.querySelector<HTMLElement>('.sidebar-foot'),
   )
   renderLaunchers(values.launchers)
+  paintShortcuts()
+  paintEmpty()
   const notes = Object.values(snapshot.notes).join(' ')
   if (notes !== '') statusLine.textContent = notes
   else if (statusLine.textContent === noteShown) statusLine.textContent = ''
@@ -748,16 +812,32 @@ bridge.onStatus((status) => {
 
 new ResizeObserver(() => fitShown()).observe(terminals)
 gridToggle.addEventListener('click', () => {
+  const shown = gridTabs()
+  // Showing the grid focuses its first pane when the focused tab is not one of them.
+  if (!gridOn && shown.length > 0 && (active === null || !shown.includes(active))) activate(shown[0])
   gridOn = !gridOn
   gridToggle.setAttribute('aria-pressed', String(gridOn))
   paint()
 })
+// The button and Cmd+B both come here, so they show the same state. The state is kept in the window's storage across a reload.
+function storage(): KeyValueStore | null {
+  try {
+    return localStorage
+  } catch {
+    return null
+  }
+}
+function showSidebar(hidden: boolean): void {
+  appEl.classList.toggle('sidebar-hidden', hidden)
+  sidebarToggle.setAttribute('aria-label', hidden ? 'Show the sidebar' : 'Hide the sidebar')
+  paintShortcuts()
+}
 sidebarToggle.addEventListener('click', () => {
-  const hidden = appEl.classList.toggle('sidebar-hidden')
-  const label = hidden ? 'Show the sidebar' : 'Hide the sidebar'
-  sidebarToggle.title = label
-  sidebarToggle.setAttribute('aria-label', label)
+  const hidden = !appEl.classList.contains('sidebar-hidden')
+  showSidebar(hidden)
+  writeSidebarHidden(storage(), hidden)
 })
+showSidebar(readSidebarHidden(storage()))
 installCliButton.addEventListener('click', () => {
   installCliButton.disabled = true
   invoke<string>('install_cli')

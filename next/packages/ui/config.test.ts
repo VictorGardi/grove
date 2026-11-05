@@ -1,11 +1,13 @@
 import { describe, expect, it } from 'vitest'
 import type { KeyAction, Launcher, LayoutSection } from '../protocol/messages.ts'
+import { DEFAULT_VALUES } from '../core/config/schema.ts'
 import {
   applyLayout,
   applySettings,
   applyTheme,
   bindingMatches,
   findAction,
+  formatBinding,
   launcherLine,
   parseBinding,
   type KeyEvent,
@@ -120,8 +122,9 @@ describe('launcherLine', () => {
 
 describe('parseBinding', () => {
   it('reads the modifiers and the key of a canonical or reordered binding', () => {
-    expect(parseBinding('mod+shift+1')).toEqual({ mod: true, alt: false, shift: true, key: '1' })
-    expect(parseBinding('shift+alt+mod+g')).toEqual({ mod: true, alt: true, shift: true, key: 'g' })
+    expect(parseBinding('mod+shift+1')).toEqual({ mod: true, ctrl: false, alt: false, shift: true, key: '1' })
+    expect(parseBinding('shift+alt+mod+g')).toEqual({ mod: true, ctrl: false, alt: true, shift: true, key: 'g' })
+    expect(parseBinding('ctrl+tab')).toEqual({ mod: false, ctrl: true, alt: false, shift: false, key: 'tab' })
   })
 
   it('returns null for text that is not a binding', () => {
@@ -157,21 +160,45 @@ describe('bindingMatches', () => {
   it('does not match when the other command key is also down', () => {
     expect(bindingMatches(grid, keyEvent({ key: 'g', code: 'KeyG', metaKey: true, ctrlKey: true }), true)).toBe(false)
   })
+
+  it('matches ctrl+tab on every platform, and only with Control down', () => {
+    const previous = parseBinding('ctrl+tab')!
+    const tab = { key: 'Tab', code: 'Tab' }
+    expect(bindingMatches(previous, keyEvent({ ...tab, ctrlKey: true }), true)).toBe(true)
+    expect(bindingMatches(previous, keyEvent({ ...tab, ctrlKey: true }), false)).toBe(true)
+    expect(bindingMatches(previous, keyEvent({ ...tab }), true)).toBe(false)
+    expect(bindingMatches(previous, keyEvent({ ...tab, ctrlKey: true, shiftKey: true }), true)).toBe(false)
+    expect(bindingMatches(previous, keyEvent({ ...tab, ctrlKey: true, metaKey: true }), true)).toBe(false)
+  })
+
+  it('keeps Cmd and Ctrl apart on macOS: mod+b does not match Ctrl+B', () => {
+    const sidebar = parseBinding('mod+b')!
+    expect(bindingMatches(sidebar, keyEvent({ key: 'b', code: 'KeyB', ctrlKey: true }), true)).toBe(false)
+    expect(bindingMatches(sidebar, keyEvent({ key: 'b', code: 'KeyB', metaKey: true }), true)).toBe(true)
+  })
+})
+
+describe('formatBinding', () => {
+  it('names the keys the way the window shows them, with Cmd on macOS and Ctrl elsewhere', () => {
+    expect(formatBinding('mod+shift+n', true)).toBe('Cmd+Shift+N')
+    expect(formatBinding('mod+shift+n', false)).toBe('Ctrl+Shift+N')
+    expect(formatBinding('ctrl+tab', true)).toBe('Ctrl+Tab')
+    expect(formatBinding('mod+1', true)).toBe('Cmd+1')
+  })
 })
 
 describe('findAction', () => {
-  const keys: Record<KeyAction, string> = {
-    'grid-toggle': 'mod+g',
-    'new-shell': 'mod+t',
-    'new-space': 'mod+shift+n',
-    'close-tab': 'mod+w',
-  }
+  const keys: Record<KeyAction, string> = DEFAULT_VALUES.keys
 
   it('returns the action of the matching binding, or null', () => {
     expect(findAction(keys, keyEvent({ key: 't', code: 'KeyT', ctrlKey: true }), false)).toBe('new-shell')
     expect(findAction(keys, keyEvent({ key: 'N', code: 'KeyN', metaKey: true, shiftKey: true }), true)).toBe('new-space')
     expect(findAction(keys, keyEvent({ key: 'w', code: 'KeyW', metaKey: true }), true)).toBe('close-tab')
     expect(findAction(keys, keyEvent({ key: 'x', code: 'KeyX', metaKey: true }), true)).toBeNull()
+    expect(findAction(keys, keyEvent({ key: 'Tab', code: 'Tab', ctrlKey: true }), false)).toBe('previous-tab')
+    expect(findAction(keys, keyEvent({ key: 'G', code: 'KeyG', metaKey: true, shiftKey: true }), true)).toBe('grid-tab')
+    expect(findAction(keys, keyEvent({ key: 'b', code: 'KeyB', metaKey: true }), true)).toBe('sidebar-toggle')
+    expect(findAction(keys, keyEvent({ key: '7', code: 'Digit7', metaKey: true }), true)).toBe('space-7')
   })
 
   it('follows a rebound key and ignores the old one', () => {

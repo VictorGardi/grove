@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import type { AgentInfo, AgentStateName } from '../protocol/messages.ts'
-import { groupAgents, shortFolder, tabStateOf, tileIndex } from './sidebar-model.ts'
+import { groupAgents, shortFolder, sidebarSpaceOrder, spaceAt, tabStateOf, tileIndex } from './sidebar-model.ts'
 
 function agent(state: AgentStateName, since: number): AgentInfo {
   return { tabId: 't', agent: 'claude', state, since, source: 'hook', resumable: false }
@@ -92,5 +92,35 @@ describe('shortFolder', () => {
 
   it('leaves the path alone when there is no home folder', () => {
     expect(shortFolder('/srv/app', '')).toBe('/srv/app')
+  })
+})
+
+describe('sidebarSpaceOrder', () => {
+  it('lists each top-level space, then its worktrees, as the sidebar draws them', () => {
+    const spaces = [
+      { id: 'a', parent: null },
+      { id: 'a-wt', parent: 'a' },
+      { id: 'c', parent: null },
+      { id: 'd', parent: null },
+      { id: 'd-wt', parent: 'd' },
+    ]
+    expect(sidebarSpaceOrder(spaces)).toEqual(['a', 'a-wt', 'c', 'd', 'd-wt'])
+  })
+  it('lists a worktree whose repo is missing as top-level', () => {
+    expect(sidebarSpaceOrder([{ id: 'x', parent: 'gone' }])).toEqual(['x'])
+  })
+  it('is empty for no spaces', () => {
+    expect(sidebarSpaceOrder([])).toEqual([])
+  })
+})
+
+describe('spaceAt', () => {
+  it('counts places from 1 and is null past the last space', () => {
+    const order = ['a', 'a-wt', 'c']
+    expect(spaceAt(order, 1)).toBe('a')
+    expect(spaceAt(order, 3)).toBe('c')
+    expect(spaceAt(order, 4)).toBeNull()
+    expect(spaceAt(order, 0)).toBeNull()
+    expect(spaceAt([], 1)).toBeNull()
   })
 })

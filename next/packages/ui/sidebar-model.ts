@@ -57,3 +57,20 @@ export function shortFolder(path: string, home: string): string {
   if (path.startsWith(`${home}/`)) return `~${path.slice(home.length)}`
   return path
 }
+
+export interface SpaceOrderInput {
+  id: string
+  parent: string | null
+}
+
+// The space ids in the order the sidebar lists them: each top-level space, then its worktrees. A worktree whose repo is not listed is top-level.
+export function sidebarSpaceOrder(spaces: SpaceOrderInput[]): string[] {
+  const ids = new Set(spaces.map((space) => space.id))
+  const top = spaces.filter((space) => !space.parent || !ids.has(space.parent))
+  return top.flatMap((space) => [space.id, ...spaces.filter((child) => child.parent === space.id).map((child) => child.id)])
+}
+
+// The space at place n of the sidebar order, counted from 1. Null for a place past the last space.
+export function spaceAt(order: string[], n: number): string | null {
+  return order[n - 1] ?? null
+}

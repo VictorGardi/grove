@@ -76,6 +76,9 @@ export interface TabInfo {
   exitCode: number | null
   // The name of the program in the foreground, e.g. `claude`; the shell's own name when nothing else runs; null when gone.
   foreground: string | null
+  // The base name the foreground program was run under (the first word of its command line). It can differ from
+  // `foreground`: Claude's native install runs as versions/<number>, reached through a link named claude. Null when unknown.
+  argv0: string | null
 }
 
 export interface SpaceInfo {
@@ -122,7 +125,23 @@ export interface AttentionNotice {
 }
 
 // Keys of the key bindings in keys.json.
-export type KeyAction = 'grid-toggle' | 'new-shell' | 'new-space' | 'close-tab'
+export type KeyAction =
+  | 'grid-toggle'
+  | 'new-shell'
+  | 'new-space'
+  | 'close-tab'
+  | 'previous-tab'
+  | 'grid-tab'
+  | 'sidebar-toggle'
+  | 'space-1'
+  | 'space-2'
+  | 'space-3'
+  | 'space-4'
+  | 'space-5'
+  | 'space-6'
+  | 'space-7'
+  | 'space-8'
+  | 'space-9'
 
 export type LayoutSection = 'spaces' | 'agents'
 

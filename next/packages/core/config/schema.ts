@@ -20,7 +20,24 @@ export const SECTION: Record<ConfigFile, keyof ConfigValues> = {
   'layout.json': 'layout',
 }
 
-export const KEY_ACTIONS = ['grid-toggle', 'new-shell', 'new-space', 'close-tab'] as const satisfies readonly KeyAction[]
+export const KEY_ACTIONS = [
+  'grid-toggle',
+  'new-shell',
+  'new-space',
+  'close-tab',
+  'previous-tab',
+  'grid-tab',
+  'sidebar-toggle',
+  'space-1',
+  'space-2',
+  'space-3',
+  'space-4',
+  'space-5',
+  'space-6',
+  'space-7',
+  'space-8',
+  'space-9',
+] as const satisfies readonly KeyAction[]
 export const LAYOUT_SECTIONS = ['spaces', 'agents'] as const satisfies readonly LayoutSection[]
 export const THEME_TOKENS = [
   'accent',
@@ -52,6 +69,18 @@ export const DEFAULT_VALUES: ConfigValues = {
     'new-shell': 'mod+t',
     'new-space': 'mod+shift+n',
     'close-tab': 'mod+w',
+    'previous-tab': 'ctrl+tab',
+    'grid-tab': 'mod+shift+g',
+    'sidebar-toggle': 'mod+b',
+    'space-1': 'mod+1',
+    'space-2': 'mod+2',
+    'space-3': 'mod+3',
+    'space-4': 'mod+4',
+    'space-5': 'mod+5',
+    'space-6': 'mod+6',
+    'space-7': 'mod+7',
+    'space-8': 'mod+8',
+    'space-9': 'mod+9',
   },
   launchers: [],
   // Tokens not in the file keep their defaults in tokens.css, so the default is no override at all.
@@ -95,24 +124,40 @@ function integerIn(min: number, max: number): (value: unknown) => Parsed<number>
       : no(`must be an integer from ${min} to ${max}`)
 }
 
-const MODIFIERS = ['mod', 'alt', 'shift'] as const
+const MODIFIERS = ['mod', 'ctrl', 'alt', 'shift'] as const
+
+// The keys a binding can name besides a letter or digit.
+const NAMED_KEYS = ['tab'] as const
 
 // The canonical form of a key binding such as "mod+shift+1": one or more modifiers in a fixed order, then one
-// lowercase letter or digit. Returns null when the text is not a binding.
+// lowercase letter, digit or named key (tab). Returns null when the text is not a binding.
 export function canonicalBinding(text: string): string | null {
   const parts = text.split('+')
   const key = parts.pop() ?? ''
-  if (!/^[a-z0-9]$/.test(key) || parts.length === 0) return null
+  if (!/^[a-z0-9]$/.test(key) && !(NAMED_KEYS as readonly string[]).includes(key)) return null
+  if (parts.length === 0) return null
   if (new Set(parts).size !== parts.length) return null
   if (!parts.every((part) => (MODIFIERS as readonly string[]).includes(part))) return null
   return [...MODIFIERS.filter((modifier) => parts.includes(modifier)), key].join('+')
 }
 
 const KEY_DESCRIPTIONS: Record<KeyAction, string> = {
-  'grid-toggle': 'Shows or hides the grid of tabs.',
+  'grid-toggle': 'Shows or hides the grid of the active space\'s tabs in it.',
   'new-shell': 'Opens a shell tab in the active space.',
   'new-space': 'Adds a space at the home folder, or selects it if it exists, and opens a shell tab there.',
   'close-tab': 'Closes the active tab.',
+  'previous-tab': 'Goes back to the tab you were in before the active one, in the active space. Pressed again, it goes back to the one before.',
+  'grid-tab': 'Puts the active tab into the grid and shows the grid. A tab already in the grid goes out of it and shows full screen. The grid holds nine tabs.',
+  'sidebar-toggle': 'Shows or hides the sidebar. The button in the tab strip does the same.',
+  'space-1': 'Focuses the first space in the sidebar, with the tab it last showed.',
+  'space-2': 'Focuses the second space in the sidebar, with the tab it last showed.',
+  'space-3': 'Focuses the third space in the sidebar, with the tab it last showed.',
+  'space-4': 'Focuses the fourth space in the sidebar, with the tab it last showed.',
+  'space-5': 'Focuses the fifth space in the sidebar, with the tab it last showed.',
+  'space-6': 'Focuses the sixth space in the sidebar, with the tab it last showed.',
+  'space-7': 'Focuses the seventh space in the sidebar, with the tab it last showed.',
+  'space-8': 'Focuses the eighth space in the sidebar, with the tab it last showed.',
+  'space-9': 'Focuses the ninth space in the sidebar, with the tab it last showed.',
 }
 
 const LAUNCHER_KEYS: readonly string[] = ['id', 'label', 'command', 'args', 'env']
@@ -188,7 +233,7 @@ export const SCHEMAS: Record<ConfigFile, Schema> = {
   'keys.json': {
     file: 'keys.json',
     description:
-      'Key bindings of the window. A binding is one or more modifiers (mod, alt, shift) and one letter or digit, joined by "+", in any order. "mod" is Cmd on macOS and Ctrl elsewhere. Two actions cannot share a binding.',
+      'Key bindings of the window. A binding is one or more modifiers (mod, ctrl, alt, shift) and one letter, digit or "tab", joined by "+", in any order. "mod" is Cmd on macOS and Ctrl elsewhere; "ctrl" is the Control key on every platform. Two actions cannot share a binding. The space actions name the sidebar order, and a space past the last one is ignored.',
     fields: KEY_ACTIONS.map((action) => ({
       name: action,
       type: 'key binding, e.g. "mod+g"',
@@ -197,7 +242,7 @@ export const SCHEMAS: Record<ConfigFile, Schema> = {
       parse: (value: unknown) =>
         typeof value === 'string' && canonicalBinding(value) !== null
           ? ok(value)
-          : no('must be a key binding such as "mod+g" or "mod+shift+n"'),
+          : no('must be a key binding such as "mod+g", "mod+shift+n" or "ctrl+tab"'),
     })),
     check: (fields) => {
       const seen = new Map<string, string>()

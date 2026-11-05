@@ -39,10 +39,45 @@ describe('config schema', () => {
     expect(validateFile('settings.json', withFile('settings.json', { sidebarWidth: 200.5 })).ok).toBe(false)
   })
 
-  it('has the four key actions with their defaults', () => {
+  it('has every key action with its default', () => {
     expect(validateFile('keys.json', defaultFile('keys.json'))).toEqual({
       ok: true,
-      value: { 'grid-toggle': 'mod+g', 'new-shell': 'mod+t', 'new-space': 'mod+shift+n', 'close-tab': 'mod+w' },
+      value: {
+        'grid-toggle': 'mod+g',
+        'new-shell': 'mod+t',
+        'new-space': 'mod+shift+n',
+        'close-tab': 'mod+w',
+        'previous-tab': 'ctrl+tab',
+        'grid-tab': 'mod+shift+g',
+        'sidebar-toggle': 'mod+b',
+        'space-1': 'mod+1',
+        'space-2': 'mod+2',
+        'space-3': 'mod+3',
+        'space-4': 'mod+4',
+        'space-5': 'mod+5',
+        'space-6': 'mod+6',
+        'space-7': 'mod+7',
+        'space-8': 'mod+8',
+        'space-9': 'mod+9',
+      },
+    })
+  })
+
+  it('accepts ctrl and the tab key, so previous-tab can be ctrl+tab', () => {
+    expect(validateFile('keys.json', withFile('keys.json', { 'previous-tab': 'ctrl+tab' })).ok).toBe(true)
+    expect(validateFile('keys.json', withFile('keys.json', { 'previous-tab': 'shift+ctrl+tab' })).ok).toBe(true)
+    expect(validateFile('keys.json', withFile('keys.json', { 'previous-tab': 'tab' })).ok).toBe(false)
+    expect(validateFile('keys.json', withFile('keys.json', { 'previous-tab': 'ctrl+f1' })).ok).toBe(false)
+  })
+
+  it('reports a space or grid binding that another action already has', () => {
+    expect(validateFile('keys.json', withFile('keys.json', { 'space-3': 'mod+g' }))).toEqual({
+      ok: false,
+      message: 'keys.json: space-3: same binding as grid-toggle',
+    })
+    expect(validateFile('keys.json', withFile('keys.json', { 'grid-tab': 'mod+b' }))).toEqual({
+      ok: false,
+      message: 'keys.json: sidebar-toggle: same binding as grid-tab',
     })
   })
 
@@ -116,5 +151,11 @@ describe('canonicalBinding', () => {
     expect(canonicalBinding('mod+')).toBeNull()
     expect(canonicalBinding('mod+shift')).toBeNull()
     expect(canonicalBinding('mod+mod+g')).toBeNull()
+  })
+
+  it('takes tab as a key and ctrl as a modifier, in the fixed order', () => {
+    expect(canonicalBinding('shift+ctrl+tab')).toBe('ctrl+shift+tab')
+    expect(canonicalBinding('tab')).toBeNull()
+    expect(canonicalBinding('mod+enter')).toBeNull()
   })
 })

@@ -18,6 +18,7 @@ export interface KeyEvent {
 
 export interface Binding {
   mod: boolean
+  ctrl: boolean
   alt: boolean
   shift: boolean
   key: string
@@ -62,6 +63,7 @@ export function parseBinding(text: string): Binding | null {
   const parts = canonical.split('+')
   return {
     mod: parts.includes('mod'),
+    ctrl: parts.includes('ctrl'),
     alt: parts.includes('alt'),
     shift: parts.includes('shift'),
     key: parts.at(-1) ?? '',
@@ -75,13 +77,28 @@ function keyOf(event: KeyEvent): string {
   return event.key.toLowerCase()
 }
 
-// "mod" is Cmd on macOS and Ctrl elsewhere. The modifiers must match exactly: the other command key must not be down.
+// A binding as the window shows it, such as "Cmd+Shift+N" on macOS or "Ctrl+Shift+N" elsewhere. Text that is not a binding is shown as it is.
+export function formatBinding(text: string, isMac: boolean): string {
+  const binding = parseBinding(text)
+  if (binding === null) return text
+  const names = [
+    binding.mod ? (isMac ? 'Cmd' : 'Ctrl') : null,
+    binding.ctrl ? 'Ctrl' : null,
+    binding.alt ? (isMac ? 'Option' : 'Alt') : null,
+    binding.shift ? 'Shift' : null,
+  ]
+  const key = binding.key.length === 1 ? binding.key.toUpperCase() : binding.key.charAt(0).toUpperCase() + binding.key.slice(1)
+  return [...names.filter((name) => name !== null), key].join('+')
+}
+
+// "mod" is Cmd on macOS and Ctrl elsewhere; "ctrl" is the Control key everywhere. The modifiers must match exactly: a key that is down
+// and not in the binding stops the match, so Cmd+B does not match Ctrl+B on macOS.
 export function bindingMatches(binding: Binding, event: KeyEvent, isMac: boolean): boolean {
-  const primary = isMac ? event.metaKey : event.ctrlKey
-  const other = isMac ? event.ctrlKey : event.metaKey
+  const meta = binding.mod && isMac
+  const ctrl = binding.ctrl || (binding.mod && !isMac)
   return (
-    primary === binding.mod &&
-    !other &&
+    event.metaKey === meta &&
+    event.ctrlKey === ctrl &&
     event.altKey === binding.alt &&
     event.shiftKey === binding.shift &&
     keyOf(event) === binding.key

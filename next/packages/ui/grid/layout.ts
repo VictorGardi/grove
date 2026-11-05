@@ -17,7 +17,17 @@ export function paneSpans(n: number): { cols: number; rows: number }[] {
   return Array.from({ length: n }, (_, i) => ({ cols: i === n - 1 ? shape.cols - (i % shape.cols) : 1, rows: 1 }))
 }
 
-// The first max members, in order.
-export function gridMembers(ids: string[], max = GRID_MAX): string[] {
-  return ids.slice(0, max)
+// A tab as the grid sees it: whether the human put it in the grid.
+export interface GridTab {
+  inGrid: boolean
+}
+
+// The tabs the human put in the grid, in tab order, at most max. A tab not put there is not a pane.
+export function gridMembers<T extends GridTab>(tabs: T[], max = GRID_MAX): T[] {
+  return tabs.filter((tab) => tab.inGrid).slice(0, max)
+}
+
+// Whether one more tab fits in a grid that already holds count tabs.
+export function canJoinGrid(count: number, max = GRID_MAX): boolean {
+  return count < max
 }

@@ -1059,3 +1059,54 @@ Not verified: the real Claude's hook path end to end. A fresh config folder stop
 5. Run `grove-next integration uninstall claude` when you are done with it.
 
 Known gaps: a Copilot agent typed by hand gets its state only after its first prompt (its start hook needs one). OpenCode's session is found only after OpenCode has created it. The `found` flag is saved in the state file; a state file written before this change loads unchanged, and its tabs are not marked found.
+
+## Post-run fix 3
+
+Keyboard navigation, the grid toggle, and Cmd+B, asked for by the human. The window needs a restart of the dev app to see them; the core did not change.
+
+### What was built
+
+- Five new actions in `keys.json`, each with a default, a description in the schema (so `AGENTS.md` lists it), validation and rebinding:
+  - `previous-tab` (`ctrl+tab`): goes back to the tab the human was in before the active one, per space. Pressed again, it goes back to the one before. Tabs are kept most-recently-visited first for each space; a closed tab leaves its list.
+  - `grid-tab` (`mod+shift+g`): puts the active tab into the grid and shows the grid. A tab already in the grid goes out of it and shows full screen.
+  - `sidebar-toggle` (`mod+b`): shows or hides the sidebar. It calls the sidebar button's click, so the button and the key always show the same state.
+  - `space-1` to `space-9` (`mod+1` to `mod+9`): focus the space at that place in the sidebar order, with the tab it last showed. A place past the last space does nothing. Nine actions, not an open-ended N, because a key binding names one digit.
+- `ctrl` is a modifier in bindings: the Control key on every platform. `mod` stays Cmd on macOS and Ctrl elsewhere, so `mod+b` does not match Ctrl+B on macOS. The key `tab` is allowed, so `ctrl+tab` is a binding.
+- The keys all work while a terminal has focus. The window's key listener is in the capture phase, so it sees the key before xterm does and stops it there.
+- The shortcuts the window shows come from the bindings in use, so a rebound key shows its new name: the empty-state text, the titles of the + and Grid buttons and of the sidebar button.
+- The sidebar's shown or hidden state is kept in the window's storage (`localStorage`, key `grove-next.sidebar-hidden`) across a reload. It is not in `settings.json` or `layout.json`: those are files the human edits and the window does not write. Storage that cannot be read or written leaves the sidebar shown, and a change is then not kept.
+- The grid: see the deviations below.
+
+### Deviations (the grid)
+
+- The grid holds the tabs the human puts there, not the first nine of the space. Each tab has an in-grid flag; the grid shows the active space's flagged tabs in tab order, at most nine. Slice 6's layout, dimming, focus-owns-seen and the size rule are unchanged; the only changed code is the membership.
+- The membership is kept in the window only. A reload starts with no tab in the grid. Keeping it across a restart would need core state; not done.
+- A tenth tab is refused with a line in the status line ("The grid holds nine tabs. Take a tab out of it first."). Nothing else changes.
+- When the grid holds no tabs (the last one left by closing it, or taken out), the grid view closes and the focused tab shows full screen. The Grid button is disabled when no tab is in the grid.
+- Turning the grid on with the Grid button, while the focused tab is not in it, focuses the grid's first pane. The rule that switching to a tab outside the grid closes the grid view is unchanged.
+- The sidebar toggle button moved from the sidebar header into the tab strip, next to Grid. In slice 9 it sat inside the sidebar, which is `display: none` when the sidebar is hidden, so it could not bring the sidebar back. Cmd+B now does, and the button too.
+
+### The Ctrl+Tab check
+
+`previous-tab` is Ctrl+Tab, not Shift+Tab. Checked in headless Chromium over the DevTools protocol (a page with xterm focused, Ctrl+Tab sent as a real key event):
+- With xterm alone, Ctrl+Tab reaches the shell as a plain Tab (`\t`). So today a shell gets Ctrl+Tab as Tab.
+- With the window's capture-phase listener in place, the page sees the key first, prevents it, and xterm sends nothing.
+- Not checked: the Tauri window on macOS (WKWebView) and macOS itself. The Tauri menu has no Ctrl+Tab item, so the menu does not take it, but the app was not run to confirm the webview delivers it. Check this first by hand.
+
+The cost: a shell or a program in the terminal no longer gets Ctrl+Tab. Shells do not use it by default; Tab itself is unaffected.
+
+### What to try by hand
+
+After restarting the dev app:
+1. Open two tabs in one space; Ctrl+Tab goes to the other one, and Ctrl+Tab again goes back. Open a third tab, click the first, and check that Ctrl+Tab goes to the last one visited.
+2. Open two spaces with tabs; Cmd+1 and Cmd+2 switch between them, each restoring its last tab. Cmd+3 with two spaces does nothing.
+3. Cmd+Shift+G on a tab puts it in the grid and shows the grid; with several in the grid, Cmd+Shift+G on one of them takes it out full screen. Put a tenth tab in: the status line says the grid holds nine. Close the last tab in the grid and the grid view closes.
+4. Cmd+B hides and shows the sidebar; the button in the tab strip does the same. Reload the window with the sidebar hidden: it stays hidden.
+5. Edit `keys.json`: rebind `sidebar-toggle` to `mod+shift+b`. The button's title and the empty-state text change at once, and `mod+b` no longer toggles. Set two actions to one binding: the file is refused and the status line says why.
+6. Terminal focus: with a shell running, Ctrl+Tab and Cmd+B must act on the window and not print anything in the shell.
+
+### Verification
+
+- `npx vitest run` for the config, UI and grid tests: pass (new tests: keys schema for ctrl, tab and the new actions; binding matching for ctrl+tab and mod on macOS; `formatBinding`; grid membership and `canJoinGrid`; `recent-tabs`; `sidebarSpaceOrder` and `spaceAt`; `sidebar-state` including a throwing store).
+- `npm run typecheck` and `npm test` over the whole repo: this fix's files are clean. The repo-wide run had 6 failing tests and 2 type errors in the other child's uncommitted work (presence, pty table, status service, copilot adapter); not part of this commit.
+- Headless Chromium check of Ctrl+Tab against xterm, as described above.
