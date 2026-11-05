@@ -98,6 +98,8 @@ export async function startCoreDaemon(
   })
   // The client that last sent attention.focus; when its connection closes the window is no longer focused.
   let focusOwner: net.Socket | undefined
+  // The client that last resized or attached each tab owns its size; a killed tab or a closed client drops its entry.
+  const tabOwners = new Map<string, net.Socket>()
   const unsubscribe = status.subscribe((change) => {
     broadcast(notification('status.changed', change))
     attention.onStatus(change)
@@ -134,6 +136,10 @@ export async function startCoreDaemon(
       try {
         const result = await dispatch(request.method, request.params, holder, deps)
         if (request.method === METHODS.attentionFocus) focusOwner = socket
+        if (request.method === METHODS.tabsResize || request.method === METHODS.tabsAttach) {
+          tabOwners.set((request.params as MethodMap['tabs.attach']['params']).id, socket)
+        }
+        if (request.method === METHODS.tabsKill) tabOwners.delete((request.params as MethodMap['tabs.kill']['params']).id)
         if (request.id !== undefined) send({ jsonrpc: '2.0', id: request.id, result })
       } catch (error) {
         if (request.id !== undefined) send(toFailure(request.id, error))
@@ -148,6 +154,7 @@ export async function startCoreDaemon(
         focusOwner = undefined
         attention.focus(null, false)
       }
+      for (const [tabId, owner] of tabOwners) if (owner === socket) tabOwners.delete(tabId)
       void holder.then(
         (client) => client.close(),
         () => undefined,

@@ -3,6 +3,7 @@ import { getCurrentWindow } from '@tauri-apps/api/window'
 import { createBridge, fromBase64, toBase64 } from './bridge.ts'
 import { createSoundGate, noticeBody } from './alerts.ts'
 import { openTerminal, type TerminalView } from './terminal.ts'
+import { gridMembers, gridShape, paneSpans } from './grid/layout.ts'
 import type { AgentInfo, AgentStateName, SpaceInfo } from '../protocol/messages.ts'
 import type { AgentKind } from '../core/status/adapter.ts'
 import './styles.css'
@@ -34,6 +35,8 @@ let activeSpace: string | null = null
 let refused: string | null = null
 let homeDir = ''
 let windowFocused = false
+// Grid mode shows the active space's first tabs as panes instead of only the active one.
+let gridOn = false
 // The last attention.focus sent, as a key; an identical one is skipped until a reconnect clears it.
 let sentFocus: string | null = null
 const playSound = createSoundGate()
@@ -45,6 +48,7 @@ const spaceList = byId('spaces')
 const addSpaceForm = byId('add-space') as HTMLFormElement
 const spacePathInput = byId('space-path') as HTMLInputElement
 const newTabButton = byId('new-tab') as HTMLButtonElement
+const gridToggle = byId('grid-toggle') as HTMLButtonElement
 const newAgentButtons = [
   { kind: 'claude', button: byId('new-claude') as HTMLButtonElement },
   { kind: 'opencode', button: byId('new-opencode') as HTMLButtonElement },
@@ -101,6 +105,7 @@ function createTab(spacePath: string): Tab {
   button.setAttribute('role', 'tab')
   button.addEventListener('click', () => activate(tab))
   tabStrip.append(button)
+  host.addEventListener('click', () => activate(tab))
 
   const tab: Tab = {
     id: '',
@@ -175,8 +180,44 @@ async function attach(tab: Tab): Promise<void> {
   await bridge.rpc('tabs.resize', { id: tab.id, cols, rows })
 }
 
+// The active space's first nine tabs, in tab order: the panes grid mode shows.
+function gridTabs(): Tab[] {
+  const spaceTabs = order.filter((tab) => tab.spacePath === activeSpace)
+  const ids = gridMembers(spaceTabs.map((tab) => tab.id))
+  return spaceTabs.filter((tab) => ids.includes(tab.id))
+}
+
+// Lays the panes out in grid mode, or clears the grid's classes and placement when it is off.
+function paintGrid(members: Tab[]): void {
+  terminals.classList.toggle('grid-panes', gridOn)
+  if (gridOn) {
+    const shape = gridShape(members.length)
+    terminals.style.setProperty('--grid-cols', String(shape.cols))
+    terminals.style.setProperty('--grid-rows', String(shape.rows))
+  } else {
+    terminals.style.removeProperty('--grid-cols')
+    terminals.style.removeProperty('--grid-rows')
+  }
+  const spans = paneSpans(members.length)
+  for (const tab of order) {
+    const index = members.indexOf(tab)
+    const span = gridOn && index >= 0 ? spans[index] : undefined
+    tab.host.style.gridColumn = span ? `span ${span.cols}` : ''
+    tab.host.style.gridRow = span ? `span ${span.rows}` : ''
+    tab.host.classList.toggle('pane-dim', span !== undefined && tab !== active)
+  }
+}
+
+// Refits what is on screen: the grid's panes, else the active tab.
+function fitShown(): void {
+  for (const tab of gridOn ? gridTabs() : active ? [active] : []) tab.view.fit()
+}
+
 // Tabs of other spaces stay mounted and only hidden, so their shells keep running and their screens keep filling.
 function paint(): void {
+  // A tab the grid does not show cannot be focused there, so the grid gives way to it.
+  if (gridOn && active && !gridTabs().includes(active)) gridOn = false
+  const members = gridOn ? gridTabs() : []
   const counts = new Map<string, number>()
   for (const tab of order) {
     const on = tab === active
@@ -185,12 +226,16 @@ function paint(): void {
     tab.button.textContent = String(number)
     tab.button.title = `${spaceName(tab.spacePath)}: tab ${number}`
     tab.button.hidden = tab.spacePath !== activeSpace
-    tab.host.hidden = !on
+    tab.host.hidden = gridOn ? !members.includes(tab) : !on
     tab.button.classList.toggle('active', on)
     tab.button.setAttribute('aria-selected', String(on))
   }
+  paintGrid(members)
+  requestAnimationFrame(fitShown)
   renderSpaces()
   newTabButton.disabled = activeSpace === null || refused !== null
+  gridToggle.setAttribute('aria-pressed', String(gridOn))
+  gridToggle.disabled = !gridOn && (activeSpace === null || refused !== null)
   for (const { button } of newAgentButtons) button.disabled = activeSpace === null || refused !== null
   for (const control of addSpaceForm.querySelectorAll<HTMLInputElement | HTMLButtonElement>('input, button')) {
     control.disabled = refused !== null
@@ -212,8 +257,10 @@ function reportFocus(): void {
 }
 
 function focusActive(): void {
-  active?.view.fit()
-  active?.view.term.focus()
+  if (active && !active.host.hidden) {
+    active.view.fit()
+    active.view.term.focus()
+  }
 }
 
 function activate(tab: Tab): void {
@@ -517,7 +564,12 @@ bridge.onStatus((status) => {
   resync().catch(report)
 })
 
-new ResizeObserver(() => active?.view.fit()).observe(terminals)
+new ResizeObserver(() => fitShown()).observe(terminals)
+gridToggle.addEventListener('click', () => {
+  gridOn = !gridOn
+  gridToggle.setAttribute('aria-pressed', String(gridOn))
+  paint()
+})
 newTabButton.addEventListener('click', () => void newShellTab())
 for (const { kind, button } of newAgentButtons) {
   button.addEventListener('click', () => void newAgentTab(kind))

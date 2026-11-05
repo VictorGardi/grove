@@ -372,6 +372,28 @@ button {
   padding: 4px;
 }
 
+:root {
+  --pane-unfocused-opacity: 0.65;
+}
+
+.terminals.grid-panes {
+  display: grid;
+  grid-template-columns: repeat(var(--grid-cols), minmax(0, 1fr));
+  grid-template-rows: repeat(var(--grid-rows), minmax(0, 1fr));
+  gap: 6px;
+  padding: 6px;
+}
+
+.terminals.grid-panes .term-host {
+  min-width: 0;
+  min-height: 0;
+  padding: 4px;
+}
+
+.term-host.pane-dim {
+  opacity: var(--pane-unfocused-opacity);
+}
+
 .results {
   margin: 0;
   padding: 12px;

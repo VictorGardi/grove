@@ -606,4 +606,69 @@ Fix rounds: 1 of 2 (both blocking findings from round 1, one round).
 - Live captures: the OpenCode and Copilot fixtures are the old tests' shapes; a real capture would confirm them.
 - Non-blocking review items above (1 to 7), and the per-tab Copilot files that are not removed.
 
+## Slice 6
+
+Session: 6 the grid
+Status: done
+Commit: this commit (see git log)
+
+### Slice plan
+
+Found in the code: the window (`next/packages/ui/main.ts`) keeps every tab mounted, shows only the active one (`host.hidden`), and fits only the active terminal on resize. The tab strip has no grid control. `tabs.resize` is sent by each attached window tab on fit and on attach; the core passes it to the holder and keeps no per-viewer state. The old grid's pure layout code (`src/shared/grid.ts`, `src/renderer/src/gridView.ts`) has automatic columns (`gridCols`: 1; 2-4 -> 2; 5-9 -> 3), the auto-fill rule that the last pane stretches across its row (`paneSpans` with no manual span), and membership capped at nine (`withMember`). Its manual spans, dividers, track sizes and swap are out of v1. `next/packages/ui/styles.css` already has a `.grid` rule (three columns, 260 px rows) that is not wired to anything.
+
+Decisions taken for this slice (the plan leaves them open; recorded here so the review can see them):
+- Membership: the grid shows the active space's tabs in tab order, the first nine. It is view state in the window only (not saved, not in the core). Exited tabs stay in the grid and show their exit text.
+- Layout: automatic only. Columns from the count as above, rows = ceil(count / columns), the last pane stretches across its row.
+- Toggle: a `grid` button in the tab strip (`#grid-toggle`); the shortcut comes in slice 8.
+- Focus and seen: a click on a pane calls `activate` for that tab, so the window still reports one focused tab to the core. Only that pane counts as seen.
+- Dimming: unfocused panes get the class `pane-dim` and `opacity: var(--pane-unfocused-opacity)`. The variable is defined in `styles.css` `:root` with a default of 0.65 for now; slice 8 moves it into `tokens.css`.
+- Size rule: the most recently active viewer owns a tab's size. The core records, per tab, the connection that last sent `tabs.resize` or `tabs.attach`, and applies the size of each `tabs.resize` it receives (last one wins). With one window today this is what the code already does; the slice adds the owner record and a daemon test for two connections.
+
+Implementer 1 (window and layout, one subagent):
+- [ ] `next/packages/ui/grid/layout.ts` (new, pure, no DOM): `GRID_MAX = 9`; `gridCols(n)`; `gridShape(n)` returning `{ cols, rows }`; `paneSpans(n)` returning `{ cols, rows }[]` with the last pane stretching across its row (port of the auto branch of `paneSpans` in `src/shared/grid.ts`, manual spans dropped); `gridMembers(ids, max = GRID_MAX)`: the first `max` ids in order.
+- [ ] `next/packages/ui/grid/layout.test.ts` (new): ported from `src/renderer/src/gridView.test.ts` (gridCols cases, the auto cases of `paneSpans` in `src/shared/grid.test.ts`) plus `gridMembers` cases (order kept, cut at nine, empty).
+- [ ] `next/packages/ui/index.html`: a `<button id="grid-toggle" class="new-tab" type="button" aria-pressed="false" title="Show this space's tabs in a grid">grid</button>` in the tab strip, before the `+` button.
+- [ ] `next/packages/ui/main.ts`: `let gridOn = false` (in memory). When on: the terminals container gets class `grid` and CSS variables for columns and rows from `gridShape`; each member tab of the active space (`gridMembers`) is shown and placed with `gridColumn`/`gridRow` spans from `paneSpans`; a non-member tab stays hidden; the active tab is the focused pane (no class `pane-dim`), other members get `pane-dim`. When off: current behaviour (one tab shown). Toggling, switching space, and any change of tab count calls `paint()`, and each shown terminal is fitted after layout (`requestAnimationFrame` then `fit()` for each shown tab, so the core gets `tabs.resize` per pane). The `ResizeObserver` fits every shown tab, not only the active one. Clicking a pane calls `activate(tab)`. The grid toggle is disabled when there is no active space and sets `aria-pressed`.
+- [ ] `next/packages/ui/styles.css`: `:root { --pane-unfocused-opacity: 0.65 }`; `.terminals.grid` is a CSS grid filling the area with a gap and padding, template columns and rows from the variables; `.term-host` in grid mode gets `min-height: 0`, `min-width: 0`; `.term-host.pane-dim { opacity: var(--pane-unfocused-opacity) }`; the old `.grid` rule is replaced by this one (no other rule uses it).
+- [ ] Gates: `npx vitest run` in `next/` (291 passing before this slice, plus the new tests), `npm run typecheck`, and the UI builds with `npx vite build` in `next/packages/ui` if the config builds without the Tauri shell (if it cannot, say so in Deviations).
+
+Implementer 2 (core size rule, one subagent, may run in parallel with 1, disjoint files):
+- [ ] `next/packages/core/daemon.ts`: record, per tab id, the connection that last sent `tabs.resize` or `tabs.attach` (a map, cleared when the tab is removed). Keep applying every `tabs.resize` to the holder (last one wins); no new RPC.
+- [ ] `next/packages/core/daemon.test.ts`: a case with two client connections on one tab: after the second connection sends `tabs.resize`, the holder reports that size on `tabs.attach`; and the owner record does not block the first connection's resize.
+
+Models passed: cto=inherit, researcher=inherit, planner=inherit, reviewer=inherit, implementer=inherit (general-purpose subagents, no `model`).
+
+Verification: `cd next && npx vitest run` passes with the new tests; `npm run typecheck` passes; the UI builds if it can. By hand, not run here (left for the human): nine tabs in one space, output-heavy commands in all of them, every pane keeps updating and the console shows no lost-context warning; the window's memory use recorded here (informational).
+
+### Review rounds
+
+Round 1 (fresh reviewer, whole slice): 3 blocking, 3 non-blocking. Blocking: (a) in grid mode a tab beyond the first nine could become active (a new tab in a full space, or an agent row for tab ten); it was hidden but still reported to the core as focused, so its output was marked seen; (b) `focusActive` fitted a hidden tab, which sized its pty to zero; (c) turning the grid off did not refit the tab that became visible. Fixed: the grid turns off when a tab outside it is made active; `focusActive` fits only a shown tab; every paint refits what is shown. Non-blocking, fixed: the container's class is `grid-panes`, so the old `.grid` rules stay for the stress page and no longer apply to the window; the grid toggle stays enabled while the grid is on. Non-blocking, not fixed: the owner record is written but nothing reads it (no behaviour depends on it, see Deviations); an exited tab that is not killed keeps its owner entry until its client closes.
+
+Fix rounds: 1 of 2. The fix round was checked by reading the code and by the UI tests, typecheck and build. It was not sent back to a reviewer.
+
+### Deviations
+
+- Plan change during the run: the plan was re-approved as version 10 (commit af0c1f7: slice 9 added at the end, slice 8's Files line extended; slices 1 to 7 unchanged). This slice builds on it; the commit before this one is slice 5 (3637fb5).
+- Reused from the old Grove: `gridCols` (1; 2-4 -> 2; 5-9 -> 3), the auto branch of `paneSpans` (the last pane stretches across its row), the cap of nine (`withMember` became `gridMembers`), and the matching cases of `src/renderer/src/gridView.test.ts` and `src/shared/grid.test.ts`. The signature is `paneSpans(n)`, not `(ids, spans, shape)`, since v1 has no manual spans.
+- Dropped as the plan says: manual spans, draggable dividers, track sizes, header-drag swap, the layout picker, hide-ended, the dim slider and its range. Dimming is fixed at `--pane-unfocused-opacity`.
+- Membership (the plan leaves it open): the first nine tabs of the active space in tab order. Not saved, not in the core. Exited tabs stay in the grid and show their exit text.
+- Not in the plan: when a tab outside the first nine is made active while the grid is on, the grid turns off so that the tab can be seen.
+- The toggle is a `grid` button in the tab strip; the shortcut comes in slice 8.
+- The dim value is defined on `:root` in `styles.css` as 0.65 for now; slice 8 moves `--pane-unfocused-opacity` into `tokens.css`.
+- Size rule (plan: the most recently active viewer owns the size): the core records, per tab, the connection that last sent `tabs.resize` or `tabs.attach` (`tabOwners`, cleared on kill and on close). Every resize is still applied, so the last one wins, which is what the code did already. Nothing reads the record yet, so no behaviour depends on it. The test named "owner" checks last-wins across two connections, and it passes without the record, so it is a regression guard, not a test of the record. A second viewer that needs the rule will need the record read.
+
+### Verification
+
+- `cd next && npx vitest run`: a full run after the core change and before the UI fix round passed: 32 files, 302 tests. One earlier full run failed 3 tests in core while the core agent was still editing; the next clean run passed. The cause was not investigated. After the UI fix round, `npx vitest run packages/ui` passes: 3 files, 19 tests (including the 9 grid tests in `grid/layout.test.ts`).
+- `npm run typecheck` is clean (checked after the core change and after the fix round).
+- `npx vite build` in `next/packages/ui` builds (before and after the fix round). No Rust change, so `cargo check` was not run.
+- Not run here: the window by hand (see below). The CSS layout is checked only by the build, not by looking at the app.
+
+### Left for the human
+
+- By hand, in the built app or `npm run dev`: nine tabs in one space; run output-heavy commands in all of them (for example `seq 1 200000` in each); every pane keeps updating, and the console shows no "WebGL context lost" warning.
+- Record the window's memory use with those nine panes here (informational; v1 sets no limit).
+- Turn the grid on with one tab, then off again: the tab fills the window and takes the keyboard. With the grid on, a click on a pane focuses it and dims the others; a tenth tab turns the grid off.
+- The plan's render-stall check for nine panes (slice 1's stress page and this slice re-measure it; the fallback is disposing hidden panes): not measured here.
+
 ## Open questions

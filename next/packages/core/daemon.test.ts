@@ -23,6 +23,17 @@ const screenText = async (client: RpcClient, id: string): Promise<string> => {
   return b64ToBytes(screenB64).toString('utf8')
 }
 
+// The size the holder has for a tab, read on a holder connection of its own so the core records no owner.
+const holderSize = async (id: string): Promise<{ cols: number; rows: number }> => {
+  const client = await connectRpc(holderSocketPath())
+  try {
+    const { cols, rows } = await client.request(METHODS.tabsAttach, { id })
+    return { cols, rows }
+  } finally {
+    client.close()
+  }
+}
+
 describe('core daemon', () => {
   let home: string
   let holder: ChildProcess | undefined
@@ -98,6 +109,39 @@ describe('core daemon', () => {
       (count) => count > 0,
     )
     expect(exits).toEqual([{ id, exitCode: 3 }])
+  })
+
+  it('applies every resize to the holder, the last one wins, whichever client owns the tab', async () => {
+    const stack = await startStack()
+    holder = stack.holder
+    const first = stack.core
+    clients.push(first)
+    const second = await connectWhenReady(coreSocketPath())
+    clients.push(second)
+
+    const { id } = await first.request(METHODS.tabsCreate, { command: '/bin/sh', cwd: home, cols: 80, rows: 24 })
+    await first.request(METHODS.tabsAttach, { id })
+    await second.request(METHODS.tabsResize, { id, cols: 100, rows: 30 })
+    expect(await holderSize(id)).toEqual({ cols: 100, rows: 30 })
+
+    await first.request(METHODS.tabsResize, { id, cols: 120, rows: 40 })
+    expect(await holderSize(id)).toEqual({ cols: 120, rows: 40 })
+  })
+
+  it('keeps applying resizes from another client after the owning client closes', async () => {
+    const stack = await startStack()
+    holder = stack.holder
+    const first = stack.core
+    clients.push(first)
+    const second = await connectWhenReady(coreSocketPath())
+
+    const { id } = await first.request(METHODS.tabsCreate, { command: '/bin/sh', cwd: home, cols: 80, rows: 24 })
+    await second.request(METHODS.tabsAttach, { id })
+    second.close()
+    clients = clients.filter((client) => client !== second)
+
+    await first.request(METHODS.tabsResize, { id, cols: 90, rows: 26 })
+    expect(await holderSize(id)).toEqual({ cols: 90, rows: 26 })
   })
 })
 
