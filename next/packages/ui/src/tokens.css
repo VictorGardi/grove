@@ -1,0 +1,119 @@
+/* Design tokens: the only place a colour or a length is written. Values follow the Herdr reference (docs/work/.../reference/herdr-look.html).
+   config.ts writes theme.json overrides on the root as --<name>; only the twenty names of the first block can be overridden.
+   Dark only: there is no light palette. See ../design-notes.md for the scales. */
+:root {
+  /* Overridable by the theme file */
+  --accent: #8ab4ff;
+  --state-needs-you: #f0b44c;
+  --state-working: #6ea0ff;
+  --state-finished: #6ea0ff;
+  --state-idle: #6c6c72;
+  --state-unknown: #4a4a50;
+  --pane-unfocused-opacity: 0.65;
+  --font-ui: 'Geist', system-ui, -apple-system, 'Segoe UI', sans-serif;
+  --font-mono: 'Geist Mono', ui-monospace, Menlo, monospace;
+  --space-1: 4px;
+  --space-2: 6px;
+  --space-3: 8px;
+  --space-4: 10px;
+  --space-5: 12px;
+  --space-6: 16px;
+  --space-xs: 2px;
+  --radius-sm: 6px;
+  --radius-md: 9px;
+  --text-sm: 12px;
+  --text-md: 13.5px;
+  --text-lg: 14.5px;
+
+  /* Surfaces and text */
+  --color-page: #0b0b0c;
+  --color-ground: #161617;
+  --color-sidebar: #111112;
+  --color-raised: #1c1c1e;
+  --color-selected: #262628;
+  --color-well: #131314;
+  --color-line: #2a2a2d;
+  --color-rule: #1d1d1f;
+  --color-tab-line: #2c2c30;
+  --color-pane-line: #2c2c30;
+  --color-pane-focus: #7f9fd6;
+  --color-ink: #e8e8ea;
+  --color-error: #f0857a;
+  --color-mute: #8e8e93;
+  --color-faint: #5f5f64;
+  --color-worktree: #a78bfa;
+  --color-term-fg: #d4d4d8;
+  --color-on-mark: #ffffff;
+  --color-shell-mark: #cfcfd4;
+
+  /* Space tiles (one per space, chosen from a hash of its name) */
+  --tile-1: #2aa889;
+  --tile-2: #e0743c;
+  --tile-3: #4f7fe8;
+  --tile-4: #8a6fe0;
+  --tile-5: #d1537a;
+  --tile-6: #c9a227;
+  --tile-7: #5aa84f;
+  --tile-8: #3fa7c4;
+
+  /* Agent and shell marks */
+  --agent-claude: #d97757;
+  --agent-opencode: #3d6fe0;
+  --agent-copilot: #6e56cf;
+  --agent-shell: #3a3a3e;
+
+  /* Type beyond the scale */
+  --text-xs: 11px;
+  --text-meta: 12.5px;
+  --text-brand: 15px;
+  --text-terminal: 12.5px;
+
+  /* Lengths */
+  --header-h: 38px;
+  --pane-head-h: 40px;
+  --pane-title-h: 26px;
+  --sidebar-width: 240px;
+  --radius-lg: 12px;
+  --radius-pill: 999px;
+  --ind-size: 8px;
+  --ind-stroke: 1.5px;
+  --halo-size: 3px;
+  --spin-period: 1s;
+  --sidebar-ease: 0.2s cubic-bezier(0.3, 0, 0, 1);
+  --size-tile: 18px;
+  --size-mark: 20px;
+  --size-mark-tab: 16px;
+  --size-tab-close: 20px;
+  --size-mark-pane: 14px;
+  --size-control: 24px;
+  --size-slider: 64px;
+  --size-slider-thumb: 10px;
+  --size-slider-track: 2px;
+  --size-tab: 220px;
+  --size-tab-label: 150px;
+  --size-modal: 340px;
+  --settings-w: 760px;
+  --settings-h: 520px;
+  --settings-nav-w: 200px;
+  --keys-chip-w: 96px;
+  --size-switch-w: 36px;
+  --size-switch-h: 20px;
+  --size-switch-knob: 14px;
+  --tracking-label: 0.06em;
+  --dock-width: 360px;
+  --fade: 120ms;
+  --icon-size: 15px;
+  --icon-size-sm: 12px;
+  --icon-stroke: 1.6px;
+
+  /* Notes */
+  --text-notes: 13.5px;
+  --leading-notes: 1.7;
+  --notes-h1: 1.6em;
+  --notes-h2: 1.3em;
+  --notes-h3: 1.12em;
+  --notes-pad: 16px;
+  --notes-code-pad: 12px;
+  --notes-box: 1.05em;
+  --notes-box-drop: -0.18em;
+}

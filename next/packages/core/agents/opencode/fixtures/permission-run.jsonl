@@ -1,0 +1,6 @@
+{"id":"evt_1","type":"session.execution.started","created":1791194400000,"data":{"sessionID":"ses_a"}}
+{"id":"evt_2","type":"permission.asked","created":1791194401000,"data":{"id":"per_1","sessionID":"ses_a","action":"edit","resources":[]}}
+{"id":"evt_3","type":"session.created","created":1791194401500,"data":{"sessionID":"ses_c","parentID":"ses_a"}}
+{"id":"evt_4","type":"permission.replied","created":1791194402000,"data":{"sessionID":"ses_a","requestID":"per_1","reply":"once"}}
+{"id":"evt_5","type":"session.execution.started","created":1791194402500,"data":{"sessionID":"ses_other"}}
+{"id":"evt_6","type":"session.execution.succeeded","created":1791194403000,"data":{"sessionID":"ses_a"}}

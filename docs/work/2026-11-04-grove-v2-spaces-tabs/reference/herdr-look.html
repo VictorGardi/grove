@@ -1,0 +1,127 @@
+<title>Grove v2 Herdr Look</title>
+<meta name="claude:viewport-fit-sides" content="cover">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Geist:wght@400;500;600&family=Geist+Mono:wght@400;500&display=swap">
+<style>
+/* Grove v2 window drawn after the Herdr screenshot: near-black ground, darker sidebar, coloured letter tiles for spaces, agents grouped under their space,
+   top tab strip with an active pill, panes with their own header (agent, folder, state). Single dark theme.
+   Layout: sidebar (spaces / agents) | tab strip + one or two panes. */
+:root{
+  color-scheme:dark;
+  --page:#0b0b0c; --pfg:#e6e6e6; --pdim:#8b8b8f;
+  --ground:#161617; --side:#111112; --card:#1c1c1e; --sel:#262628; --line:#2a2a2d; --well:#131314;
+  --ink:#e8e8ea; --mute:#8e8e93; --faint:#5f5f64;
+  --need:#f0b44c; --work:#6ea0ff; --fin:#4fcf86; --idle:#6c6c72; --unk:#4a4a50;
+  --ui:'Geist',system-ui,-apple-system,'Segoe UI',sans-serif; --tm:'Geist Mono',ui-monospace,Menlo,monospace;
+}
+*{box-sizing:border-box}
+body{margin:0;background:var(--page);color:var(--pfg);font:14px/1.5 var(--ui);
+  padding-block:28px 64px;padding-left:max(16px,env(safe-area-inset-left,0px));padding-right:max(16px,env(safe-area-inset-right,0px))}
+.wrap{max-width:1240px;margin:0 auto;display:grid;gap:18px}
+.intro{max-width:76ch}
+.intro h1{font:600 20px/1.3 var(--ui);margin:0 0 8px}
+.intro p{margin:0 0 6px;color:var(--pdim)}
+.legend{display:flex;gap:18px;flex-wrap:wrap;color:var(--pdim);font-size:12.5px;align-items:center}
+.legend span{display:inline-flex;gap:7px;align-items:center}
+.frame{overflow-x:auto;border-radius:14px}
+
+.win{min-width:980px;height:640px;display:grid;grid-template-columns:250px minmax(0,1fr);background:var(--ground);color:var(--ink);font:13.5px/1.5 var(--ui);border-radius:14px;overflow:hidden;border:1px solid #232326}
+.side{background:var(--side);display:flex;flex-direction:column;min-width:0;min-height:0;border-right:1px solid #1d1d1f}
+.top{height:50px;display:flex;align-items:center;gap:8px;padding:0 14px;flex:none}
+.lights{display:flex;gap:8px;margin-right:6px}
+.lights i{width:12px;height:12px;border-radius:50%;display:block}
+.brand{font-weight:600;font-size:15px;display:flex;align-items:center;gap:8px;margin-right:auto}
+.brand b{width:20px;height:20px;border-radius:6px;background:#2b2b2e;display:grid;place-items:center;font-size:11px;color:#fff;font-weight:600}
+.ib{width:24px;height:24px;display:grid;place-items:center;color:var(--mute);border-radius:6px}
+.ib svg{width:15px;height:15px;stroke:currentColor;fill:none;stroke-width:1.6;stroke-linecap:round;stroke-linejoin:round}
+.sec{display:flex;justify-content:space-between;align-items:center;padding:14px 18px 8px;color:var(--mute);font-size:13px}
+.scroll{flex:1;overflow:hidden;padding:0 10px}
+.row{display:grid;grid-template-columns:26px minmax(0,1fr) auto;gap:11px;align-items:center;padding:8px 10px;border-radius:9px;min-width:0}
+.row.cur{background:var(--sel)}
+.tile{width:22px;height:22px;border-radius:6px;display:grid;place-items:center;font-size:12px;font-weight:600;color:#fff}
+.nm{overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-size:14.5px}
+.meta{display:flex;gap:9px;align-items:center;color:var(--faint);font-size:12.5px}
+.sp-row{grid-template-columns:26px minmax(0,1fr) auto}
+.sub-l{padding:14px 12px 6px;color:var(--faint);font-size:12.5px}
+.agents{border-top:1px solid #1d1d1f;margin-top:10px}
+.ag{grid-template-columns:22px minmax(0,1fr) auto;gap:10px;padding:7px 10px}
+.mark{width:20px;height:20px;border-radius:5px;display:grid;place-items:center;font-size:11px;font-weight:600;color:#fff}
+.m-c{background:#c7683f}.m-o{background:#3d6fe0}.m-g{background:#6e56cf}.m-s{background:#3a3a3e;color:#cfcfd4}
+.age{color:var(--faint);font-size:12.5px;font-variant-numeric:tabular-nums}
+
+/* state indicators */
+.st{width:12px;height:12px;display:inline-block;flex:none;position:relative}
+.st.need{background:var(--need);border-radius:50%;width:9px;height:9px;margin:1.5px;box-shadow:0 0 0 3px #f0b44c26}
+.st.fin{background:var(--fin);border-radius:50%;width:9px;height:9px;margin:1.5px}
+.st.idle{border:1.5px solid var(--idle);border-radius:50%}
+.st.unk{border:1.5px dashed var(--unk);border-radius:50%}
+.st.work{border:2px solid #6ea0ff33;border-top-color:var(--work);border-radius:50%;animation:spin 1s linear infinite}
+@keyframes spin{to{transform:rotate(360deg)}}
+@media (prefers-reduced-motion:reduce){.st.work{animation:none;border-color:var(--work)}}
+
+.main{display:flex;flex-direction:column;min-width:0;min-height:0}
+.tabs{height:50px;display:flex;align-items:center;gap:6px;padding:0 12px;flex:none;border-bottom:1px solid #1e1e20}
+.tab{display:flex;align-items:center;gap:9px;padding:6px 13px;border-radius:9px;color:var(--mute);font-size:14px}
+.tab.on{background:var(--card);color:var(--ink);border:1px solid #2c2c30;padding:5px 12px}
+.tab .x{color:var(--faint);font-size:15px;line-height:1;margin-left:2px}
+.tab .mark{width:18px;height:18px;font-size:10px}
+.tabs .plus{margin-left:auto;color:var(--mute);padding:0 10px;font-size:18px}
+.panes{flex:1;display:grid;grid-template-columns:1fr 1fr;gap:10px;padding:10px;min-height:0}
+.pane{border:1px solid #232326;border-radius:12px;display:flex;flex-direction:column;min-width:0;min-height:0;overflow:hidden;background:var(--ground)}
+.pane.foc{border-color:#3a3a40}
+.ph{height:40px;display:flex;align-items:center;gap:9px;padding:0 12px;border-bottom:1px solid #202023;flex:none;font-size:13.5px}
+.ph .pth{color:var(--faint)}
+.ph .st{margin-left:auto}
+.tui{flex:1;overflow:hidden;padding:12px 14px;font:12.5px/1.62 var(--tm);color:#d4d4d8;white-space:pre-wrap}
+.tui .d{color:#6f6f76}.tui .ok{color:#6fd49c}.tui b{color:#fff;font-weight:500}.tui .c{color:#7fb0ff}
+.tui .u{display:block;margin:2px -14px;padding:2px 14px;background:#232326}
+.tui .rm{display:block;margin:0 -14px;padding:0 14px;background:#4b2428;color:#e8c9cb}
+.tui .ad{display:block;margin:0 -14px;padding:0 14px;background:#1f4a2c;color:#c9e8d2}
+.perm{margin:8px 0;padding:10px 12px;border-radius:8px;background:#212124;display:grid;gap:3px;white-space:normal}
+.perm .first{color:var(--need)}
+.pbar{margin:0 12px 12px;padding:8px 12px;border-radius:9px;background:var(--card);font:12.5px var(--tm);color:var(--mute);flex:none}
+</style>
+<div class="wrap">
+  <div class="intro">
+    <h1>Grove v2 drawn after Herdr</h1>
+    <p>Same structure as the Herdr screenshot: coloured letter tiles for spaces with their branch, agents grouped under their space, a tab strip with an active pill and a state indicator on every space, agent and tab, and panes with their own header. Remote machines, Files and Changes are left out because they are outside v1.</p>
+    <div class="legend">
+      <span><i class="st need"></i>needs you</span><span><i class="st work"></i>working</span><span><i class="st fin"></i>finished</span><span><i class="st idle"></i>idle</span><span><i class="st unk"></i>unknown</span>
+    </div>
+  </div>
+  <div class="frame"><div class="win" id="m"></div></div>
+</div>
+<script>
+var ST=function(k){return '<i class="st '+k+'"></i>'};
+var SP=[
+ {t:'G',c:'#2aa889',n:'grove',b:'main',k:'need',cur:1},
+ {t:'G',c:'#2aa889',n:'feature/grove-v2',b:'worktree',k:'work',sub:1},
+ {t:'A',c:'#e0743c',n:'api',b:'master',k:'fin'},
+ {t:'P',c:'#4f7fe8',n:'plugins',b:'main',k:'idle'},
+ {t:'N',c:'#8a6fe0',n:'notes',b:'main',k:'idle'}];
+var AG=[
+ {g:'grove',a:[{m:'c',n:'v2 plan',t:'12s',k:'need',cur:1},{m:'o',n:'store',t:'2m',k:'work'},{m:'c',n:'slice 2',t:'3m',k:'fin'}]},
+ {g:'api',a:[{m:'g',n:'flaky test',t:'40s',k:'work'},{m:'c',n:'docs',t:'1h',k:'idle'}]},
+ {g:'plugins',a:[{m:'g',n:'scratch',t:'—',k:'unk'}]}];
+var MK={c:'C',o:'O',g:'G'};
+var svgSearch='<svg viewBox="0 0 16 16"><circle cx="7" cy="7" r="4.5"/><path d="M10.5 10.5L14 14"/></svg>';
+var svgSide='<svg viewBox="0 0 16 16"><rect x="2" y="3" width="12" height="10" rx="2"/><path d="M6 3v10"/></svg>';
+var h='<div class="side"><div class="top"><div class="lights"><i style="background:#ff5f57"></i><i style="background:#febc2e"></i><i style="background:#28c840"></i></div><div class="brand"><b>G</b>Grove</div><span class="ib">'+svgSearch+'</span><span class="ib">'+svgSide+'</span></div>';
+h+='<div class="sec"><span>Spaces</span><span>+</span></div><div class="scroll">';
+SP.forEach(function(s){
+  h+='<div class="row sp-row'+(s.cur?' cur':'')+'"'+(s.sub?' style="margin-left:14px"':'')+'><span class="tile" style="background:'+s.c+'">'+(s.sub?'⑂':s.t)+'</span><span class="nm">'+s.n+'</span><span class="meta">'+s.b+ST(s.k)+'</span></div>';
+});
+h+='</div><div class="agents"><div class="sec"><span>Agents</span></div><div class="scroll">';
+AG.forEach(function(g){
+  h+='<div class="sub-l">'+g.g+'</div>';
+  g.a.forEach(function(a){
+    h+='<div class="row ag'+(a.cur?' cur':'')+'"><span class="mark m-'+a.m+'">'+MK[a.m]+'</span><span class="nm">'+a.n+'</span><span class="meta"><span class="age">'+a.t+'</span>'+ST(a.k)+'</span></div>';
+  });
+});
+h+='</div></div></div>';
+var TUI1='<span class="d">✻ Worked for 27s</span>\n\n<span class="u"><span class="d">❯</span> nice. same rules for the faq below it</span>\n<span class="ok">●</span> <b>Read</b>(<span class="c">src/pages/index.astro</span>)\n<span class="d">  ⎿ Read 64 lines</span>\n\n<span class="ok">●</span> <b>Update</b>(<span class="c">src/pages/index.astro</span>)\n<span class="d">  ⎿ Updated with 2 additions and 2 removals</span>\n<span class="rm">161 - &lt;dd&gt;Yes, your terminals keep running even after you have closed the app window.&lt;/dd&gt;</span><span class="ad">161 + &lt;dd&gt;Yes. Close the app, they keep running.&lt;/dd&gt;</span>\n<span class="ok">●</span> <b>Bash</b>(<span class="c">git diff --stat</span>)\n<div class="perm"><div>Allow this command?</div><div class="first">❯ 1. Yes</div><div>  2. Yes, and don\'t ask again</div><div>  3. No, and tell Claude what to do differently</div></div>';
+var TUI2='<span class="u"><span class="d">›</span> find unused css selectors and remove five of them</span>\n<span class="d">•</span> <b>Explored</b>\n<span class="d">  └</span> <span class="c">Read</span> site.css\n<span class="d">  └</span> <span class="c">Search</span> hero-meta|cap-soon in src\n\n<span class="d">•</span> <b>Edited</b> public/css/site.css (+0 -5)\n<span class="rm">110 - body.site .hd-nav .ico.wide:has(b:empty) { width: 30px; }</span><span class="rm">111 - .hero-meta &gt; .meta { opacity: .7; }</span><span class="rm">112 - .caps .cap-soon .mask { inset: 0; }</span>\n<span class="d">•</span> Removed five unused selector rules.\n<span class="d">── Worked for 10s ──────────────</span>';
+h+='<div class="main"><div class="tabs"><div class="tab on"><span class="mark m-c">C</span>v2 plan'+ST('need')+'<span class="x">×</span></div><div class="tab"><span class="mark m-o">O</span>store'+ST('work')+'</div><div class="tab"><span class="mark m-s">$</span>shell'+ST('idle')+'</div><div class="plus">+</div></div>';
+h+='<div class="panes"><div class="pane foc"><div class="ph"><span class="mark m-c">C</span><span>Claude Code</span><span class="pth">~/git/grove</span>'+ST('need')+'</div><div class="tui">'+TUI1+'</div><div class="pbar">&gt; Do you want to proceed?</div></div>';
+h+='<div class="pane"><div class="ph"><span class="mark m-o">O</span><span>OpenCode</span><span class="pth">~/git/grove</span>'+ST('work')+'</div><div class="tui">'+TUI2+'</div></div></div></div>';
+document.getElementById('m').innerHTML=h;
+</script>
