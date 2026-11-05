@@ -14,6 +14,7 @@ export type Command =
   | { cmd: 'read'; ref: string; lines: number }
   | { cmd: 'config-path' }
   | { cmd: 'skill' }
+  | { cmd: 'integration'; action: 'install' | 'uninstall'; agent: 'claude' | 'copilot' | 'opencode' }
 
 export class UsageError extends Error {}
 
@@ -30,7 +31,9 @@ export const USAGE = `usage: grove-next <command>
   grove-next kill <ref>                          end a tab and remove it
   grove-next read <ref> [--lines N]              print the last N lines (default 100) of a tab's screen
   grove-next config path                         print the config folder
-  grove-next skill                               install the grove-next-config skill for Claude, OpenCode and Copilot`
+  grove-next skill                               install the grove-next-config skill for Claude, OpenCode and Copilot
+  grove-next integration <install|uninstall> <claude|copilot>
+                                                 add or remove the hooks that report agents typed by hand, in the agent's own settings (backs up first; opencode needs none)`
 
 const KINDS = ['terminal', 'claude', 'opencode', 'copilot']
 
@@ -111,6 +114,13 @@ export function parseCommand(argv: string[]): Command | UsageError {
         return positionals.length ? new UsageError(`config path takes no arguments\n${USAGE}`) : { cmd: 'config-path' }
       }
       return new UsageError(`config takes: path\n${USAGE}`)
+    }
+    if (cmd === 'integration') {
+      const [action, agent, ...more] = rest
+      if ((action !== 'install' && action !== 'uninstall') || (agent !== 'claude' && agent !== 'copilot' && agent !== 'opencode') || more.length) {
+        return new UsageError(`integration takes install or uninstall, then claude, copilot or opencode\n${USAGE}`)
+      }
+      return { cmd: 'integration', action, agent }
     }
     if (cmd === 'skill') {
       const { positionals } = parseArgs({ args: rest, options: {}, allowPositionals: true })

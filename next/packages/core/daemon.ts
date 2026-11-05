@@ -6,6 +6,8 @@ import { connectRpc, type RpcClient } from '../protocol/client.ts'
 import { bytesToB64, createLineDecoder, encodeLine } from '../protocol/framing.ts'
 import { coreSocketPath, groveNextHome, holderSocketPath } from '../protocol/paths.ts'
 import { ERROR_CODES, METHODS, PROTOCOL_VERSION } from '../protocol/messages.ts'
+import { buildId } from './build.ts'
+import { Presence } from './presence.ts'
 import type { Empty, JsonRpcId, JsonRpcRequest, MethodMap, MethodName, NotificationMap } from '../protocol/messages.ts'
 import { RpcError } from '../protocol/errors.ts'
 import { SpacesService } from './spaces.ts'
@@ -36,6 +38,9 @@ const PROXIED = new Set<string>([
   METHODS.tabsAttach,
   METHODS.tabsScreen,
 ])
+
+// How often the presence scan looks at each tab's foreground program and folder.
+const PRESENCE_MS = 1000
 
 const SPACE_METHODS = new Set<string>([METHODS.spacesList, METHODS.spacesAdd, METHODS.tabsOpen])
 
@@ -96,6 +101,37 @@ export async function startCoreDaemon(
     })
   // A holder that cannot be reached at start leaves every saved agent tab unknown.
   const aliveAtStart = await alive().catch(() => new Set<string>())
+  // Agents typed by hand: each tick finds the agent in each tab's foreground, adopts it, and applies the root rule.
+  const presence = new Presence({
+    clock: Date.now,
+    tabs: async () =>
+      (await holderStatusCall((client) => client.request(METHODS.tabsList, {}))).map((tab) => ({
+        id: tab.id,
+        alive: tab.alive,
+        foreground: tab.foreground,
+        cwd: tab.cwd,
+      })),
+    spaceOf: (tabId) => spaces.spaceOfTab(tabId),
+    agentRecorded: (tabId) => spaces.tabRecord(tabId)?.agent,
+    setAgent: (tabId, kind) => spaces.setTabAgent(tabId, kind, true),
+    setRoot: (spaceId, root) => spaces.setRoot(spaceId, root),
+    adopt: (tabId, kind, sessionId) => status.adopt({ tabId, kind, sessionId }),
+    identify: (tabId, sessionId) => status.identify(tabId, sessionId),
+    release: (tabId) => status.untrack(tabId),
+    adoptedKind: (tabId) => status.adoptedKind(tabId),
+    discover: async (kind, cwd, since) => adapters[kind]?.discover?.({ cwd, since }),
+  })
+  let presenceBusy = false
+  const presenceTimer = setInterval(() => {
+    if (presenceBusy) return
+    presenceBusy = true
+    presence
+      .tick()
+      .catch((error: unknown) => console.error(`core: presence scan failed: ${error instanceof Error ? error.message : String(error)}`))
+      .finally(() => {
+        presenceBusy = false
+      })
+  }, PRESENCE_MS)
 
   const sockets = new Set<net.Socket>()
   const broadcast = (message: unknown) => {
@@ -189,6 +225,7 @@ export async function startCoreDaemon(
       new Promise<void>((resolve) => {
         unsubscribe()
         unwatch()
+        clearInterval(presenceTimer)
         status.close()
         void statusClient?.then(
           (client) => client.close(),
@@ -271,7 +308,7 @@ async function dispatch(method: string, rawParams: unknown, holder: Promise<RpcC
     return deps.config.snapshot() satisfies MethodMap['config.get']['result']
   }
   if (method === METHODS.corePing) {
-    const result: MethodMap['core.ping']['result'] = { protocolVersion: PROTOCOL_VERSION }
+    const result: MethodMap['core.ping']['result'] = { protocolVersion: PROTOCOL_VERSION, build: buildId() }
     return result
   }
   if (method === METHODS.agentsList) {
@@ -349,7 +386,7 @@ async function createAgentTab(
     id,
     command: launch.command,
     args: launch.args,
-    env: { ...launch.env, GROVE_NEXT_CONFIG: deps.configDir },
+    env: { ...launch.env, GROVE_NEXT_CONFIG: deps.configDir, GROVE_NEXT_TAB: id, GROVE_NEXT_HOME: deps.home },
     cwd: spacePath,
     cols: numberParam(p, 'cols'),
     rows: numberParam(p, 'rows'),

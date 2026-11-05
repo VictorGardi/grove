@@ -7,8 +7,9 @@ export interface SpaceRecord {
   path: string
 }
 
-// Tab order within a space is the array order. `spaceId`, `agent`, `agentSessionId` and `label` are optional and were
-// added without a version bump: a version-1 file written before them loads unchanged, with them filled in or unset.
+// Tab order within a space is the array order. `spaceId`, `agent`, `agentSessionId`, `label` and `found` are optional
+// and were added without a version bump: a version-1 file written before them loads unchanged, with them filled in or unset.
+// `found` marks an agent typed by hand into a shell tab (not launched by the app), so a restarted core knows to release it.
 export interface TabRecord {
   id: string
   spaceId?: string
@@ -16,6 +17,7 @@ export interface TabRecord {
   agent?: AgentKind
   agentSessionId?: string
   label?: string
+  found?: boolean
 }
 
 // loadState fills every id in, so these fallbacks only satisfy the optional fields' types. They are the same

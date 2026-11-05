@@ -1,7 +1,7 @@
 import fs from 'node:fs'
 import os from 'node:os'
 import path from 'node:path'
-import type { ChildProcess } from 'node:child_process'
+import { execFileSync, type ChildProcess } from 'node:child_process'
 import { afterEach, beforeEach, describe, expect, it } from 'vitest'
 import { fileURLToPath } from 'node:url'
 import { b64ToBytes, bytesToB64 } from '../protocol/framing.ts'
@@ -765,5 +765,103 @@ describe('core daemon agents', () => {
     expect(await agentState(core, id)).toBeUndefined()
     expect((await core.request(METHODS.spacesList, {})).tabs.some((tab) => tab.id === id)).toBe(false)
     expect(await aliveFromHolder()).not.toContain(id)
+  })
+})
+
+// An agent typed into a plain tab, found by its foreground program. A small program named `claude` (built with the
+// C compiler, sleeping for a minute) stands in for the real binary: the foreground name is what the scan reads.
+// A copy of a system binary or a symlink would not do: macOS kills the first, and a symlink reports its target's name.
+function claudeStandIn(dir: string): string | undefined {
+  const source = path.join(dir, 'claude.c')
+  const binary = path.join(dir, 'claude')
+  fs.writeFileSync(source, '#include <unistd.h>\nint main(void) { sleep(60); return 0; }\n')
+  try {
+    execFileSync('cc', ['-o', binary, source])
+    return binary
+  } catch {
+    return undefined
+  }
+}
+
+describe('agents typed by hand', () => {
+  let home: string
+  let holder: ChildProcess | undefined
+  let clients: RpcClient[] = []
+
+  beforeEach(() => {
+    home = fs.mkdtempSync(path.join(os.tmpdir(), 'gn-hand-'))
+    process.env.GROVE_NEXT_HOME = home
+  })
+
+  afterEach(async () => {
+    for (const client of clients) client.close()
+    clients = []
+    await stopHolder(holder)
+    holder = undefined
+    fs.rmSync(home, { recursive: true, force: true })
+  })
+
+  const agentState = async (core: RpcClient, tabId: string) =>
+    (await core.request(METHODS.agentsList, {})).find((agent) => agent.tabId === tabId)
+
+  const typeLine = (core: RpcClient, id: string, text: string) =>
+    core.request(METHODS.tabsWrite, { id, dataB64: bytesToB64(Buffer.from(text)) })
+
+  // Without a C compiler the stand-in cannot be built, so this test is skipped rather than passing empty.
+  const hasCompiler = (() => {
+    try {
+      execFileSync('cc', ['--version'], { stdio: 'ignore' })
+      return true
+    } catch {
+      return false
+    }
+  })()
+
+  it.skipIf(!hasCompiler)('shows an agent typed in a plain tab as unknown, and drops it when its program ends', async () => {
+    const stack = await startStack()
+    holder = stack.holder
+    const core = stack.core
+    clients.push(core)
+    const space = fs.realpathSync(fs.mkdtempSync(path.join(home, 'space-')))
+    const bin = claudeStandIn(fs.mkdtempSync(path.join(home, 'bin-')))
+    if (bin === undefined) throw new Error('the C compiler is there but the stand-in did not build')
+    const { id: spaceId } = await core.request(METHODS.spacesAdd, { path: space })
+    const { id } = await core.request(METHODS.tabsOpen, { spaceId, cols: 80, rows: 24 })
+
+    await typeLine(core, id, `${bin}\n`)
+    const seen = await waitFor(
+      () => agentState(core, id),
+      (agent) => agent !== undefined,
+      15000,
+    )
+    expect(seen).toMatchObject({ tabId: id, agent: 'claude', state: 'unknown' })
+    expect((await core.request(METHODS.spacesList, {})).tabs).toContainEqual(expect.objectContaining({ id, kind: 'claude' }))
+
+    await typeLine(core, id, '\u0003')
+    await waitFor(
+      () => agentState(core, id),
+      (agent) => agent === undefined,
+      15000,
+    )
+    expect((await core.request(METHODS.spacesList, {})).tabs).toContainEqual(expect.objectContaining({ id, kind: 'terminal' }))
+  })
+
+  it('moves the space root when a plain tab cds, and keeps it while an agent sits elsewhere', async () => {
+    const stack = await startStack()
+    holder = stack.holder
+    const core = stack.core
+    clients.push(core)
+    const space = fs.realpathSync(fs.mkdtempSync(path.join(home, 'space-')))
+    const moved = fs.realpathSync(fs.mkdtempSync(path.join(home, 'moved-')))
+    const { id: spaceId } = await core.request(METHODS.spacesAdd, { path: space })
+    const { id } = await core.request(METHODS.tabsOpen, { spaceId, cols: 80, rows: 24 })
+
+    await typeLine(core, id, `cd '${moved}'\n`)
+    const root = await waitFor(
+      async () => (await core.request(METHODS.spacesList, {})).spaces.find((candidate) => candidate.id === spaceId)?.path,
+      (path) => path === moved,
+      15000,
+    )
+    expect(root).toBe(moved)
   })
 })

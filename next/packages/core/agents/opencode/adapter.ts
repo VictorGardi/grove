@@ -2,6 +2,7 @@ import { randomBytes } from 'node:crypto'
 import os from 'node:os'
 import type { AgentAdapter } from '../../status/adapter.ts'
 import { commandOnPath } from '../commandOnPath.ts'
+import { findOpenCodeSession } from './discover.ts'
 import { createOpenCodeHub, serviceFilePath, type OpenCodeHub } from './hub.ts'
 
 // Port of src/core/opencodeId.ts: OpenCode's descending id format, where newer ids sort first
@@ -31,15 +32,20 @@ export function createOpenCodeAdapter(options: OpenCodeAdapterOptions = {}): Age
   let hub = options.hub
   // Created on the first watch, so an adapter that is only asked about its command never opens a connection.
   const connection = (): OpenCodeHub => {
-    hub ??= createOpenCodeHub({ serviceFile: options.serviceFile ?? serviceFilePath(process.env, os.homedir()) })
+    hub ??= createOpenCodeHub({ serviceFile: serviceFile() })
     return hub
   }
   const onPath = options.onPath ?? (() => commandOnPath('opencode', options.shell ?? process.env.SHELL ?? '/bin/zsh'))
   // A positive probe is kept: the login shell's start-up costs time on every create.
   let found = false
 
+  const serviceFile = () => options.serviceFile ?? serviceFilePath(process.env, os.homedir())
+
   return {
     kind: 'opencode',
+    // The shared service is keyed by session, so a tab found by hand waits for its session before it can be watched.
+    needsSession: true,
+    discover: ({ cwd, since }) => findOpenCodeSession({ serviceFile: serviceFile(), cwd, since }),
     launch: (input) => {
       if (input.resumeId !== undefined && !SESSION_ID.test(input.resumeId)) {
         throw new Error('resume id is not an OpenCode session id')

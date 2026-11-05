@@ -70,9 +70,12 @@ export type Empty = Record<string, never>
 export interface TabInfo {
   id: string
   command: string
+  // The folder the shell is in now (listed live by the holder), or where the tab started when the holder cannot tell.
   cwd: string
   alive: boolean
   exitCode: number | null
+  // The name of the program in the foreground, e.g. `claude`; the shell's own name when nothing else runs; null when gone.
+  foreground: string | null
 }
 
 export interface SpaceInfo {
@@ -158,7 +161,8 @@ export interface StatusChange {
 }
 
 export interface MethodMap {
-  'core.ping': { params: Empty; result: { protocolVersion: number } }
+  // `build` fingerprints the core's own source (the holder sends none): a caller whose build differs is talking to an older core.
+  'core.ping': { params: Empty; result: { protocolVersion: number; build?: string } }
   'tabs.create': {
     params: {
       id?: string

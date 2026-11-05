@@ -4,7 +4,13 @@ import fs from 'node:fs'
 import path from 'node:path'
 
 const event = process.argv[2]
-const spool = process.env.GROVE_NEXT_SPOOL
+// The app's own launches set GROVE_NEXT_SPOOL. An agent typed into a tab the app started has only GROVE_NEXT_TAB and
+// GROVE_NEXT_HOME (set on every tab), and its spool is the tab's own file, the one the core watches for it.
+const spool =
+  process.env.GROVE_NEXT_SPOOL ||
+  (process.env.GROVE_NEXT_HOME && process.env.GROVE_NEXT_TAB
+    ? path.join(process.env.GROVE_NEXT_HOME, 'agents', 'claude', `${process.env.GROVE_NEXT_TAB}.jsonl`)
+    : '')
 
 async function readStdin() {
   process.stdin.setEncoding('utf8')

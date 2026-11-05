@@ -11,6 +11,8 @@ import { formatError, formatLsJson, formatNew, formatRead, formatTree, spaceHead
 import { pasteText, waitStable } from './paste.ts'
 import { resolveTabRef } from './ref.ts'
 import { agentSkillsDirs, installSkill } from './skill.ts'
+import { buildId } from '../core/build.ts'
+import { claudeSettingsFile, copilotSettingsFile, installClaude, installCopilot, uninstallClaude, uninstallCopilot } from '../core/integrations/install.ts'
 import { waitForWorking, waitTurn, type WaitDeps, type WaitTab } from './wait.ts'
 
 const CORE_UNREACHABLE = 3
@@ -76,6 +78,8 @@ async function run(command: Command): Promise<number> {
       })
     case 'skill':
       return installSkills()
+    case 'integration':
+      return integration(command.action, command.agent)
   }
 }
 
@@ -100,6 +104,11 @@ async function withCore<T>(call: (core: RpcClient) => Promise<T>): Promise<T> {
     throw new CoreUnreachable(error instanceof Error ? error.message : String(error))
   }
   try {
+    // A core that started before this build keeps its old code: it cannot see agents typed by hand, so say so.
+    const { build } = await core.request(METHODS.corePing, {})
+    if (build !== buildId()) {
+      throw new Error('the running core is from an older build; stop it (quit Grove, or end the grove-next core process) and run again')
+    }
     return await call(core)
   } finally {
     core.close()
@@ -282,3 +291,24 @@ if (isEntryPoint()) {
     },
   )
 }
+
+// Adds or removes the hooks that report agents typed by hand. Writes only the agent's own settings file, after a backup.
+// Running agents pick the change up at their next start. OpenCode is read through its shared service, so it needs none.
+function integration(action: 'install' | 'uninstall', agent: 'claude' | 'copilot' | 'opencode'): number {
+  if (agent === 'opencode') {
+    console.log('opencode needs no integration: grove-next reads its shared service.')
+    return 0
+  }
+  const file = agent === 'claude' ? claudeSettingsFile() : copilotSettingsFile()
+  const result =
+    agent === 'claude'
+      ? action === 'install' ? installClaude(file) : uninstallClaude(file)
+      : action === 'install' ? installCopilot(file) : uninstallCopilot(file)
+  if (!result.changed) console.log(`${file}: no change`)
+  else {
+    console.log(`${file}: ${action === 'install' ? 'hooks added' : 'hooks removed'}`)
+    if (result.backup !== null) console.log(`backup of the file as it was before the first change: ${result.backup}`)
+  }
+  return 0
+}
+

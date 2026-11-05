@@ -1,10 +1,13 @@
+import { execFile } from 'node:child_process'
 import { randomUUID } from 'node:crypto'
+import { promisify } from 'node:util'
 import pty from 'node-pty'
 import xtermHeadless from '@xterm/headless'
 import { SerializeAddon } from '@xterm/addon-serialize'
 import type { IPty } from 'node-pty'
 import type { TabInfo } from '../protocol/messages.ts'
 
+const execFileAsync = promisify(execFile)
 const { Terminal } = xtermHeadless
 const SCROLLBACK = 2000
 
@@ -102,7 +105,28 @@ export class PtyTable {
       cwd: tab.info.cwd,
       alive: tab.alive,
       exitCode: tab.exitCode,
+      foreground: null,
     }))
+  }
+
+  // The live view: the folder the shell is in now (not where it started) and the name of the program in the
+  // foreground (the shell itself when nothing else runs). A tab that has exited keeps its last cwd and has no foreground.
+  async listLive(): Promise<TabInfo[]> {
+    return Promise.all(
+      [...this.tabs.values()].map(async (tab) => {
+        const alive = tab.alive
+        const foreground = alive ? tab.proc.process : null
+        const cwd = alive ? await liveCwd(tab.proc.pid, tab.info.cwd) : tab.info.cwd
+        return {
+          id: tab.info.id,
+          command: tab.info.command,
+          cwd,
+          alive,
+          exitCode: tab.exitCode,
+          foreground,
+        }
+      })
+    )
   }
 
   write(id: string, data: string): void {
@@ -196,4 +220,25 @@ export class TabError extends Error {
   ) {
     super(message)
   }
+}
+
+// The working folder of a process, read with lsof (macOS and Linux have it; no native binding is needed). A failed
+// read keeps the fallback, the folder the tab started in, so a missing lsof never breaks the tab. Cached for a
+// short time: the core asks on every tick.
+const CWD_TTL_MS = 2000
+const cwdCache = new Map<number, { at: number; cwd: string }>()
+
+export async function liveCwd(pid: number, fallback: string): Promise<string> {
+  const hit = cwdCache.get(pid)
+  if (hit && Date.now() - hit.at < CWD_TTL_MS) return hit.cwd
+  let cwd = fallback
+  try {
+    const { stdout } = await execFileAsync('lsof', ['-a', '-p', String(pid), '-d', 'cwd', '-Fn'], { timeout: 2000 })
+    const line = stdout.split('\n').find((text) => text.startsWith('n'))
+    if (line !== undefined && line.length > 1) cwd = line.slice(1)
+  } catch {
+    // Keep the fallback.
+  }
+  cwdCache.set(pid, { at: Date.now(), cwd })
+  return cwd
 }

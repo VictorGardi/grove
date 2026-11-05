@@ -12,7 +12,8 @@ const shQuote = (s: string) => `'${s.replace(/'/g, `'\\''`)}'`
 
 // Never fails Copilot: a hook on preToolUse can gate a tool, so a spool that cannot be written exits 0.
 // An empty or brace-less stdin is recorded as {"empty":true} so the event is still seen.
-export function hookCommand(event: string, spool: string): string {
+// `rawSpool` is shell text to expand at run time (e.g. a path in a variable), not a literal path to quote.
+export function hookCommand(event: string, spool: string, rawSpool = false): string {
   const stamp = '"$(date -u +%Y-%m-%dT%H:%M:%SZ)"'
   return [
     'x=$(cat)',
@@ -20,7 +21,7 @@ export function hookCommand(event: string, spool: string): string {
     'b=${x#*{}',
     "case \"$x\" in *\"{\"*) ;; *) b='' ;; esac",
     `case "$b" in ""|"}"*|[[:space:]]"}"*) b='"empty":true}' ;; esac`,
-    `printf '{"t":"%s","e":{"hook_event_name":"%s",%s}\\n' ${stamp} ${event} "$b" >> ${shQuote(spool)} 2>/dev/null`,
+    `printf '{"t":"%s","e":{"hook_event_name":"%s",%s}\\n' ${stamp} ${event} "$b" >> ${rawSpool ? spool : shQuote(spool)} 2>/dev/null`,
     'exit 0',
   ].join('; ')
 }

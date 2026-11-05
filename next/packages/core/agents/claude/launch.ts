@@ -29,6 +29,9 @@ export interface ClaudeLaunchOptions {
   cwd: string
   home: string
   resumeId?: string
+  // False when the user's own Claude settings already carry Grove's hooks (grove-next integration install claude):
+  // the per-launch hooks would report every event twice, so the launch leaves them out.
+  perLaunchHooks?: boolean
 }
 
 export interface ClaudeLaunch {
@@ -61,9 +64,10 @@ export function claudeLaunch(options: ClaudeLaunchOptions): ClaudeLaunch {
   const spoolFile = claudeSpoolFile(options.home, options.tabId)
   const sessionId = options.resumeId ? options.resumeId : crypto.randomUUID()
   const identity = options.resumeId ? ['--resume', options.resumeId] : ['--session-id', sessionId]
+  const settings = options.perLaunchHooks === false ? [] : ['--settings', claudeSettings()]
   return {
     command: 'claude',
-    args: [...identity, '--settings', claudeSettings()],
+    args: [...identity, ...settings],
     env: { GROVE_NEXT_SPOOL: spoolFile },
     sessionId,
     spoolFile,

@@ -42,6 +42,8 @@ interface Watch {
   // The last normalised screen read for a working tab; a change in it is real activity.
   screen: string | undefined
   source: AgentWatch | undefined
+  // True for an agent found by hand (adopt) rather than launched by the app: it is released when its program ends.
+  adopted: boolean
 }
 
 const TICK_MS = 1000
@@ -92,6 +94,8 @@ export class StatusService {
           sessionId: record.agentSessionId ?? '',
           resumeId: record.agentSessionId,
           status,
+          // A tab found by hand is still released when its program ends, after a restart too.
+          adopted: record.found === true,
         })
         // The replay above may have set a needs-you or working from the spool; a gone tab is never shown as live.
         if (gone) {
@@ -102,6 +106,43 @@ export class StatusService {
         console.error(`core: could not restore status for tab ${record.id}: ${errorText(error)}`)
       }
     }
+  }
+
+  // An agent found running in a tab the app did not launch (typed into a shell). It starts unknown: nothing has
+  // reported yet, and the agent's own hooks or log will say what it is doing. An empty session id is allowed
+  // when the adapter can watch without one; otherwise there is no source until identify() gives the id.
+  adopt(input: { tabId: string; kind: AgentKind; sessionId: string }): void {
+    if (this.watches.has(input.tabId)) return
+    const now = this.clock()
+    const watch = this.open({
+      tabId: input.tabId,
+      kind: input.kind,
+      sessionId: input.sessionId,
+      resumeId: input.sessionId === '' ? undefined : input.sessionId,
+      status: unknownStatus(now),
+      adopted: true,
+    })
+    this.writeSnapshot(watch)
+  }
+
+  // Gives an adopted tab its session id once it is known, and starts the source that needed it.
+  identify(tabId: string, sessionId: string): void {
+    const watch = this.watches.get(tabId)
+    if (!watch || watch.source !== undefined) return
+    watch.source = this.startSource(watch, sessionId)
+    watch.resumeId = sessionId
+    this.writeSnapshot(watch)
+  }
+
+  // The agent kind of an adopted tab, or undefined for a tab the app launched or that has no watch.
+  adoptedKind(tabId: string): AgentKind | undefined {
+    const watch = this.watches.get(tabId)
+    return watch?.adopted ? watch.kind : undefined
+  }
+
+  // Whether a tab has a watch, launched or adopted.
+  isWatched(tabId: string): boolean {
+    return this.watches.has(tabId)
   }
 
   // A tab launched or resumed now starts idle: the agent is up and waiting for a prompt.
@@ -230,7 +271,14 @@ export class StatusService {
     }
   }
 
-  private open(input: { tabId: string; kind: AgentKind; sessionId: string; resumeId: string | undefined; status: Status }): Watch {
+  private open(input: {
+    tabId: string
+    kind: AgentKind
+    sessionId: string
+    resumeId: string | undefined
+    status: Status
+    adopted?: boolean
+  }): Watch {
     const adapter = this.options.adapters[input.kind]
     if (adapter === undefined) throw new Error(`no adapter for agent ${input.kind}`)
     const now = this.clock()
@@ -243,6 +291,7 @@ export class StatusService {
       watchdog: createWatchdog({ clock: this.clock, silenceMs: this.options.silenceMs }),
       screen: undefined,
       source: undefined,
+      adopted: input.adopted ?? false,
     }
     watch.check.observe(input.status)
     watch.watchdog.observe(input.status)
@@ -250,15 +299,23 @@ export class StatusService {
     // Counted as progress from now; replayed records below then set it to their own times.
     watch.watchdog.progress(now)
     this.watches.set(input.tabId, watch)
+    // An adapter that needs the id waits for it when the id is not known yet.
+    if (adapter.needsSession === true && input.sessionId === '') return watch
     // The adapter may deliver events before it returns, so the watch is already registered.
-    watch.source = adapter.watch({
-      tabId: input.tabId,
-      sessionId: input.sessionId,
+    watch.source = this.startSource(watch, input.sessionId)
+    return watch
+  }
+
+  private startSource(watch: Watch, sessionId: string): AgentWatch {
+    const adapter = this.options.adapters[watch.kind]
+    if (adapter === undefined) throw new Error(`no adapter for agent ${watch.kind}`)
+    return adapter.watch({
+      tabId: watch.tabId,
+      sessionId,
       home: this.options.home,
       clock: this.clock,
       onEvent: (event, at) => this.onEvent(watch, event, at),
     })
-    return watch
   }
 
   private onEvent(watch: Watch, event: StatusEvent, at: number): void {

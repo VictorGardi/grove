@@ -1,3 +1,6 @@
+import fs from 'node:fs'
+import os from 'node:os'
+import path from 'node:path'
 import { afterEach, describe, expect, it } from 'vitest'
 import { PtyTable } from './pty-table.ts'
 
@@ -106,5 +109,27 @@ describe('PtyTable', () => {
       (tabs) => tabs.some((item) => item.id === id && !item.alive),
     )
     expect(tab).toMatchObject({ id, alive: false, exitCode: 3 })
+  })
+  it('lists the folder the shell is in now and the foreground program, not where the tab started', async () => {
+    const table = new PtyTable()
+    tables.push(table)
+    const start = fs.mkdtempSync(path.join(os.tmpdir(), 'grove-start-'))
+    const moved = fs.mkdtempSync(path.join(os.tmpdir(), 'grove-moved-'))
+    const id = table.create({
+      command: SHELL,
+      args: ['-c', `cd "${moved}" && sleep 5`],
+      cwd: start,
+      cols: 80,
+      rows: 24,
+    })
+
+    const live = await waitFor(
+      () => table.listLive(),
+      (tabs) => tabs.find((tab) => tab.id === id)?.cwd === fs.realpathSync(moved),
+    )
+    const tab = live.find((candidate) => candidate.id === id)
+    expect(tab?.cwd).toBe(fs.realpathSync(moved))
+    expect(tab?.foreground).toEqual(expect.any(String))
+    expect(tab?.alive).toBe(true)
   })
 })

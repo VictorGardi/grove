@@ -61,11 +61,21 @@ function launch(input: AdapterLaunchInput): AgentLaunch {
 // generic source; the log is polled here, its first read folded silently and then reported once as the state it
 // leaves (when it had any), so a restored tab shows where it is without replaying an old end.
 function watch(input: AdapterWatchInput, options: CopilotAdapterOptions): AgentWatch {
-  const { home, tabId, sessionId, clock, onEvent } = input
+  const { home, tabId, clock, onEvent } = input
   const log = new CopilotEventLog(options.copilotHome ?? process.env.COPILOT_HOME ?? path.join(os.homedir(), '.copilot'))
   let fold: CopilotFold = emptyFold()
+  // An agent found by hand starts with no session id: its first hook says which session it is, and the log is read from then.
+  let logSession = input.sessionId
 
   const fromSpool = (record: SpoolRecord): StatusEvent[] => {
+    if (logSession === '') {
+      const found = sessionOf(record.payload)
+      if (found !== undefined) {
+        logSession = found
+        onEvent({ kind: 'session', resumeId: found }, clock())
+        for (const event of replayLog(found)) onEvent(event, clock())
+      }
+    }
     const out = step(fold, record, clock())
     fold = out.fold
     return out.events
@@ -88,18 +98,35 @@ function watch(input: AdapterWatchInput, options: CopilotAdapterOptions): AgentW
   }
   // Only when the log had records: a state the spool already delivered is not said twice. A turn the spool left
   // running that the log's abort or end closed is said once as finished, so it does not stay working.
-  const initial = log.read(sessionId)
+  const initial = logSession === '' ? [] : log.read(logSession)
   const wasRunning = fold.running
   fromLog(initial, true)
   if (wasRunning && !fold.running) onEvent({ kind: 'idle-prompt' }, clock())
   else if (initial.length > 0) for (const event of stateEvents(fold)) onEvent(event, clock())
-  const timer = setInterval(() => fromLog(log.read(sessionId), false), LOG_POLL_MS)
+  const timer = setInterval(() => {
+    if (logSession !== '') fromLog(log.read(logSession), false)
+  }, LOG_POLL_MS)
+
+  // The log of a session found by its first hook, folded silently: the hook records already said where it is.
+  function replayLog(id: string): StatusEvent[] {
+    const records = log.read(id)
+    const wasRunningNow = fold.running
+    fromLog(records, true)
+    return wasRunningNow && !fold.running ? [{ kind: 'idle-prompt' }] : stateEvents(fold)
+  }
 
   return {
     close: () => {
       clearInterval(timer)
       source.close()
-      log.forget(sessionId)
+      if (logSession !== '') log.forget(logSession)
     },
   }
+}
+
+// The session a Copilot hook names. Every hook's stdin carries its sessionId (verified on Copilot 1.0.105).
+function sessionOf(payload: unknown): string | undefined {
+  if (payload === null || typeof payload !== 'object') return undefined
+  const id = (payload as { sessionId?: unknown }).sessionId
+  return typeof id === 'string' && id !== '' ? id : undefined
 }

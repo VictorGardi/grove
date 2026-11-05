@@ -1026,3 +1026,36 @@ Suggested PR description: "Slice 9 of the Grove v2 rebuild: the look (spaces wit
 🤖 Generated with [Claude Code](https://claude.com/claude-code)
 
 ## Open questions
+
+## Post-run fix: agents in a terminal
+
+Reported by the human: an agent typed into a plain terminal tab (`claude`, `opencode` or `copilot`) did not appear in the agents list and had no status. Only agents started by the launch buttons did.
+
+What was found: agent status existed only for tabs the app launched. The launch wrote per-launch hooks and a spool, and started the watch; a typed agent had none of these, and nothing looked at what a tab was running. Space roots were fixed at creation, and nothing tracked where a tab's shell was. The old Grove had no by-hand detection either; it used tmux's pane path and command only for plain terminals.
+
+What changed:
+- Every tab gets `GROVE_NEXT_TAB` (its id) and `GROVE_NEXT_HOME` (the state folder). The holder's `tabs.list` now returns each tab's live folder (`lsof`, cached 2 s) and its foreground program name.
+- A presence scan runs each second. A tab whose foreground program is `claude`, `opencode` or `copilot` is adopted at once as `unknown`, and saved with `found: true` so a restart keeps it. It is released after three ticks in which the program is gone, so a tool that briefly takes the foreground does not drop it.
+- The state comes from the agent's own hooks. Claude's hook reads the tab's spool from the two variables. Copilot's watch starts from its first hook's `sessionId`. OpenCode is found through the shared service by folder and creation time.
+- A `cd` in a plain tab moves the space's root only when no agent tab in that space sits in a different folder. The space id does not change. A restored tab opens in the space's current root.
+- The per-launch Claude hooks are left out only when the user's Claude settings carry Grove's hooks, so no event is reported twice.
+- The core answers `core.ping` with a fingerprint of its own source. `grove-next` refuses to run against a core from an older build, and says so. It does not restart the core; the core must be stopped by hand.
+- Presence is driven by the foreground program name. Claude, OpenCode and Copilot are native binaries, so that name is the command name (checked in real pseudo-terminals).
+
+What the install writes (run it only by hand, once):
+- `grove-next integration install claude` edits `${CLAUDE_CONFIG_DIR:-~/.claude}/settings.json`: one command per Claude hook event, merged next to the user's own hooks. Each command runs only when `GROVE_NEXT_TAB` is set.
+- `grove-next integration install copilot` edits `${COPILOT_HOME:-~/.copilot}/settings.json`: a `hooks` entry per Copilot hook event, merged the same way.
+- Both write a backup of the file as it was before the first change, next to it (`settings.json.grove-next.bak`). `grove-next integration uninstall claude|copilot` removes only the entries it wrote.
+- OpenCode needs no install (`grove-next integration install opencode` only says so). Nothing is written to `~/.config/opencode`.
+- Entries are found again by the comment `# grove-next-hook` at the end of each command.
+
+Verified: the tests (`npm test`, 496 pass, typecheck clean) include a real shell running each installed hook command with and without `GROVE_NEXT_TAB`, a real `tabs.open` tab in which a program named `claude` is typed and adopted and then dropped, and a `cd` that moves a space's root. Process names of the three real agents were checked in pseudo-terminals. Copilot's user-level hooks fired on a real prompt (Copilot 1.0.105), and its `sessionStart` payload carries `sessionId` and `cwd`.
+
+Not verified: the real Claude's hook path end to end. A fresh config folder stops at the login screen before any hook runs, and the logged-in config was not touched. Please check it by hand:
+1. Quit Grove, and stop the old core (it does not see agents typed by hand).
+2. Run `grove-next integration install claude` (and `copilot` if you use it). Keep the backup it names.
+3. Start Grove. Cmd+Shift+N, then `cd` to a project folder in the terminal tab, then run `claude`. The agent should appear in the agents list as `unknown` at once, then change to `working` when you send a prompt, and `needs you` on a permission ask.
+4. Exit Claude: the agent should leave the list after a few seconds.
+5. Run `grove-next integration uninstall claude` when you are done with it.
+
+Known gaps: a Copilot agent typed by hand gets its state only after its first prompt (its start hook needs one). OpenCode's session is found only after OpenCode has created it. The `found` flag is saved in the state file; a state file written before this change loads unchanged, and its tabs are not marked found.

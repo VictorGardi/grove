@@ -6,6 +6,7 @@ import type { RpcClient } from '../protocol/client.ts'
 import { ERROR_CODES, METHODS, type MethodMap, type SpaceInfo, type SpaceTabInfo } from '../protocol/messages.ts'
 import { RpcError } from '../protocol/errors.ts'
 import { spaceGitInfo } from './git.ts'
+import type { AgentKind } from './status/adapter.ts'
 import {
   emptyState,
   loadState,
@@ -28,8 +29,12 @@ const TAB_LABEL_MAX = 80
 export class SpacesService {
   private state: StateV1
   private readonly refused: string | null
+  // The Grove home folder: the state file's folder. Every tab gets it in GROVE_NEXT_HOME, so an agent typed there
+  // finds its spool.
+  private readonly home: string
 
   constructor(private readonly file: string) {
+    this.home = path.dirname(file)
     const loaded = loadState(file)
     if (loaded.kind === 'refused') {
       this.state = emptyState()
@@ -99,7 +104,7 @@ export class SpacesService {
       command: loginShell(),
       args: ['-l'],
       cwd: space.path,
-      env,
+      env: this.tabEnv(id, env),
       cols,
       rows,
     })
@@ -126,8 +131,9 @@ export class SpacesService {
           id: tab.id,
           command: loginShell(),
           args: ['-l'],
-          cwd: rootFor(tab.spacePath),
-          env,
+          // A restored tab opens in its space's current root, which a cd may have moved.
+          cwd: rootFor(this.spaceById(tabSpaceId(tab))?.path ?? tab.spacePath),
+          env: this.tabEnv(tab.id, env),
           cols: SHELL_COLS,
           rows: SHELL_ROWS,
         })
@@ -151,6 +157,45 @@ export class SpacesService {
   // The first space of a folder, the one the CLI uses for a folder.
   firstSpaceAt(spacePath: string): SpaceRecord | undefined {
     return this.state.spaces.find((space) => space.path === spacePath)
+  }
+
+  // The space a tab belongs to, as the presence scan sees it: its key, its current root and every tab in it.
+  spaceOfTab(tabId: string): { key: string; root: string; members: string[] } | undefined {
+    const tab = this.tabRecord(tabId)
+    const space = tab === undefined ? undefined : this.spaceById(tabSpaceId(tab))
+    if (space === undefined) return undefined
+    const members = this.state.tabs.filter((candidate) => tabSpaceId(candidate) === space.id).map((candidate) => candidate.id)
+    return { key: recordSpaceId(space), root: space.path, members }
+  }
+
+  // Moves a space's root to another folder (a real folder, as an absolute path). The space keeps its id and its tabs.
+  setRoot(spaceId: string, folder: string): void {
+    this.assertNotRefused()
+    const space = this.spaceById(spaceId)
+    if (space === undefined) throw new RpcError(ERROR_CODES.invalidParams, `no such space: ${spaceId}`)
+    if (!path.isAbsolute(folder)) throw new RpcError(ERROR_CODES.invalidParams, `path must be absolute: ${folder}`)
+    let real: string
+    try {
+      real = fs.realpathSync(folder)
+    } catch {
+      return
+    }
+    if (real === space.path || !fs.statSync(real).isDirectory()) return
+    const next: StateV1 = { ...this.state, spaces: this.state.spaces.map((s) => (s.id === spaceId ? { ...s, path: real } : s)) }
+    saveState(this.file, next)
+    this.state = next
+  }
+
+  // Records or clears the agent kind of a tab. A found agent is marked so a restart releases it when its program ends.
+  setTabAgent(id: string, kind: AgentKind | undefined, found: boolean): void {
+    const record = this.tabRecord(id)
+    if (record === undefined || this.refused !== null) return
+    if (kind === undefined) {
+      const { agent: _agent, agentSessionId: _session, found: _found, ...plain } = record
+      this.saveAgentTab(plain)
+    } else {
+      this.saveAgentTab({ ...record, agent: kind, found: found || undefined })
+    }
   }
 
   tabRecord(id: string): TabRecord | undefined {
@@ -206,6 +251,12 @@ export class SpacesService {
 
   assertNotRefused(): void {
     if (this.refused !== null) throw new RpcError(ERROR_CODES.stateRefused, this.refused)
+  }
+
+  // The environment of a tab: the caller's, plus the tab's own id and the home folder. An agent typed in the tab
+  // reports through its tab-scoped spool, found from these two.
+  private tabEnv(id: string, env: Record<string, string>): Record<string, string> {
+    return { ...env, GROVE_NEXT_TAB: id, GROVE_NEXT_HOME: this.home }
   }
 
   // A random id not used by any space. Ids of spaces saved before ids existed are their paths, and are kept.

@@ -156,7 +156,7 @@ async function dispatch(method: string, rawParams: unknown, ctx: DispatchContext
       return { id } satisfies MethodMap['tabs.create']['result']
     }
     case METHODS.tabsList:
-      return table.list() satisfies MethodMap['tabs.list']['result']
+      return (await table.listLive()) satisfies MethodMap['tabs.list']['result']
     case METHODS.tabsWrite: {
       const p = params<MethodMap['tabs.write']['params']>(rawParams)
       table.write(str(p.id, 'id'), b64ToBytes(str(p.dataB64, 'dataB64')).toString('utf8'))
