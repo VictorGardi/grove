@@ -21,6 +21,8 @@ export interface PresenceTab {
   id: string
   alive: boolean
   foreground: string | null
+  // The name the foreground program was run under; it finds Claude's native install, whose binary is named by version.
+  argv0?: string | null
   cwd: string
 }
 
@@ -79,7 +81,7 @@ export class Presence {
     const now = this.ports.clock()
 
     for (const tab of tabs) {
-      const kind = agentOfProgram(tab.foreground)
+      const kind = agentOfProgram(tab.foreground) ?? agentOfProgram(tab.argv0 ?? null)
       const adopted = this.ports.adoptedKind(tab.id)
 
       if (adopted !== undefined && adopted !== kind) {

@@ -5,7 +5,9 @@ import path from 'node:path'
 import type { AdapterLaunchInput, AdapterWatchInput, AgentAdapter, AgentLaunch, AgentWatch } from '../../status/adapter.ts'
 import type { StatusEvent } from '../../status/contract.ts'
 import { createSpoolSource, type SpoolRecord } from '../../status/spool.ts'
+import { copilotSettingsFile, hasCopilotHooks, readSettings } from '../../integrations/install.ts'
 import { commandOnPath } from '../commandOnPath.ts'
+import { findCopilotSession } from './discover.ts'
 import { CopilotEventLog } from './events.ts'
 import { hooksJson, parseCopilotLine, pluginJson } from './hooks.ts'
 import { emptyFold, stateEvents, step, type CopilotFold } from './normalise.ts'
@@ -20,13 +22,33 @@ export interface CopilotAdapterOptions {
   copilotHome?: string
   // The login shell the command probe runs in. Default $SHELL or /bin/zsh.
   shell?: string
+  // Whether the user's Copilot settings already carry Grove's hooks. Default: read the settings file on each launch.
+  userHooksInstalled?: () => boolean
+}
+
+// Copilot's own dir: the option, else $COPILOT_HOME, else ~/.copilot.
+function copilotHomeOf(options: CopilotAdapterOptions): string {
+  return options.copilotHome ?? process.env.COPILOT_HOME ?? path.join(os.homedir(), '.copilot')
+}
+
+// Whether the user's own Copilot settings carry Grove's hooks. An unreadable file counts as not installed.
+function userHooksInstalledIn(copilotHome: string): boolean {
+  try {
+    return hasCopilotHooks(readSettings(copilotSettingsFile({ COPILOT_HOME: copilotHome })))
+  } catch {
+    return false
+  }
 }
 
 export function createCopilotAdapter(options: CopilotAdapterOptions = {}): AgentAdapter {
+  const copilotHome = () => copilotHomeOf(options)
+  const userHooksInstalled = options.userHooksInstalled ?? (() => userHooksInstalledIn(copilotHome()))
   return {
     kind: 'copilot',
-    launch: (input) => launch(input),
-    watch: (input) => watch(input, options),
+    launch: (input) => launch(input, userHooksInstalled()),
+    watch: (input) => watch(input, { ...options, copilotHome: copilotHome() }),
+    // A hand-started session is found from its folder and start time, before its first hook.
+    discover: async ({ cwd, since }) => findCopilotSession({ copilotHome: copilotHome(), cwd, since }),
     available: () => commandOnPath('copilot', options.shell ?? process.env.SHELL ?? '/bin/zsh'),
   }
 }
@@ -48,12 +70,14 @@ function writePlugin(home: string, tabId: string): string {
   return dir
 }
 
-// A fresh launch names its session; a resume reuses the id Copilot reported.
-function launch(input: AdapterLaunchInput): AgentLaunch {
+// A fresh launch names its session; a resume reuses the id Copilot reported. The per-launch plugin is left out when the
+// user's settings carry Grove's hooks: both would append every event to the same spool, and each would be read twice.
+function launch(input: AdapterLaunchInput, userHooksInstalled: boolean): AgentLaunch {
   if (input.resumeId !== undefined && !UUID.test(input.resumeId)) throw new Error('resume id is not a session id')
   const sessionId = input.resumeId ?? randomUUID()
-  const plugin = writePlugin(input.home, input.tabId)
   const identity = input.resumeId !== undefined ? [`--resume=${sessionId}`] : ['--session-id', sessionId]
+  if (userHooksInstalled) return { command: 'copilot', args: identity, env: {}, sessionId }
+  const plugin = writePlugin(input.home, input.tabId)
   return { command: 'copilot', args: [...identity, '--plugin-dir', plugin], env: {}, sessionId }
 }
 
@@ -64,8 +88,25 @@ function watch(input: AdapterWatchInput, options: CopilotAdapterOptions): AgentW
   const { home, tabId, clock, onEvent } = input
   const log = new CopilotEventLog(options.copilotHome ?? process.env.COPILOT_HOME ?? path.join(os.homedir(), '.copilot'))
   let fold: CopilotFold = emptyFold()
-  // An agent found by hand starts with no session id: its first hook says which session it is, and the log is read from then.
+  // An agent found by hand starts with no session id: discovery or its first hook says which session it is, and the log is read from then.
   let logSession = input.sessionId
+
+  // Defined before the spool source below: its first drain runs as the source is created, and a hand-started agent's
+  // first record reads the log through here.
+  const fromLog = (records: SpoolRecord[], initial: boolean) => {
+    for (const record of records) {
+      const out = step(fold, record, clock())
+      fold = out.fold
+      if (!initial) for (const event of out.events) onEvent(event, record.at ?? clock())
+    }
+  }
+  // The log of a session found by its first hook, folded silently: the hook records already said where it is.
+  const replayLog = (id: string): StatusEvent[] => {
+    const records = log.read(id)
+    const wasRunningNow = fold.running
+    fromLog(records, true)
+    return wasRunningNow && !fold.running ? [{ kind: 'idle-prompt' }] : stateEvents(fold)
+  }
 
   const fromSpool = (record: SpoolRecord): StatusEvent[] => {
     if (logSession === '') {
@@ -89,13 +130,6 @@ function watch(input: AdapterWatchInput, options: CopilotAdapterOptions): AgentW
     parse: parseCopilotLine,
   })
 
-  const fromLog = (records: SpoolRecord[], initial: boolean) => {
-    for (const record of records) {
-      const out = step(fold, record, clock())
-      fold = out.fold
-      if (!initial) for (const event of out.events) onEvent(event, record.at ?? clock())
-    }
-  }
   // Only when the log had records: a state the spool already delivered is not said twice. A turn the spool left
   // running that the log's abort or end closed is said once as finished, so it does not stay working.
   const initial = logSession === '' ? [] : log.read(logSession)
@@ -106,14 +140,6 @@ function watch(input: AdapterWatchInput, options: CopilotAdapterOptions): AgentW
   const timer = setInterval(() => {
     if (logSession !== '') fromLog(log.read(logSession), false)
   }, LOG_POLL_MS)
-
-  // The log of a session found by its first hook, folded silently: the hook records already said where it is.
-  function replayLog(id: string): StatusEvent[] {
-    const records = log.read(id)
-    const wasRunningNow = fold.running
-    fromLog(records, true)
-    return wasRunningNow && !fold.running ? [{ kind: 'idle-prompt' }] : stateEvents(fold)
-  }
 
   return {
     close: () => {

@@ -1060,6 +1060,43 @@ Not verified: the real Claude's hook path end to end. A fresh config folder stop
 
 Known gaps: a Copilot agent typed by hand gets its state only after its first prompt (its start hook needs one). OpenCode's session is found only after OpenCode has created it. The `found` flag is saved in the state file; a state file written before this change loads unchanged, and its tabs are not marked found.
 
+## Post-run fix 2
+
+Reported by the human after fix 1: (1) a `claude` typed by hand never appeared in the agents list; (2) before any install, agents showed only empty rings, with no working or waiting state; (3) after the Claude and Copilot installs, Claude and OpenCode showed status but Copilot showed nothing.
+
+### Found
+
+- **Claude typed by hand (1).** Presence reads the name of the foreground program, which on macOS is the executable's own base name. Claude's native install runs the binary `~/.local/share/claude/versions/<version>` through a link named `claude`, so the name is the version (`2.1.309`), and presence never matched it. Reproduced in a pty: a copy of the native layout reports `2.1.309`. The Homebrew build here is named `claude`, which is why the earlier check passed. The first word of the foreground's command line (`argv0`) keeps the name it was run under (`claude`) for both layouts.
+- **Copilot status (3), no session found.** The human's Copilot tab was started at 07:27, the install wrote `~/.copilot/settings.json` at 07:30:50, and that session then ran turns with no spool file. Copilot reads its hooks when a session starts, so a session started before the install never reports, and the restart is needed. A hand-started Copilot also learned its session id only from a hook, so with no hook its session log was never read, and it stayed unknown.
+- **Copilot status, a second fault.** On a hand-started Copilot's first record the watch threw `Cannot access 'fromLog' before initialization` (the first drain runs while the source is created), so the first record's state was lost and an error was logged. The next poll recovered it.
+- **Copilot status, duplicates.** A Copilot launched by the app after the install got both the per-launch plugin and the user hooks. Both write the same spool, so each event was recorded twice (`sessionStart sessionStart userPromptSubmitted userPromptSubmitted ...`), and a finished turn could be said twice.
+- **Copilot install itself: fine.** `settings.json` is written with the hook shape the CLI reads. Tested with Copilot 1.0.105 under a scratch `COPILOT_HOME` with the installer's file: `-p` and an interactive pty both wrote the spool, with `GROVE_NEXT_TAB` and `GROVE_NEXT_HOME` reaching the hook. The file the human has is the same shape.
+
+### What each agent can show without hooks (2)
+
+- **Claude:** unknown only (empty dashed ring) until its hooks report. Presence can say an agent is running, not what it is doing: a running `claude` may be working or waiting for a prompt, so presence must not say more.
+- **Copilot:** working and finished, from its session log, once the session is found from its folder and start time (`workspace.yaml` is written at session start, before any prompt). Verified with a real prompt in a scratch home with no settings and no spool: `working`, then `finished`. Permission and question waits need the hooks, so they are not shown without them.
+- **OpenCode:** working, idle and the rest from its shared service; no install needed.
+- The ring: `idle` is a solid gray ring and `unknown` a dashed darker one, so an idle agent can look like an empty ring too.
+
+### Changed
+
+- `holder`: each tab's `argv0` (the base name of the foreground's first command word, from one `ps` per listing) in `tabs.list`. Presence matches an agent by `foreground` or `argv0`.
+- `core/agents/copilot/discover.ts` (new): `findCopilotSession` finds the earliest session in the tab's folder created since the tab was first seen. Copilot's adapter has it as `discover`, and presence calls it as it does for OpenCode.
+- `status/service.ts`: `identify` restarts a source that started without a session id (Copilot's), so the log is read once the id is known. A repeated id changes nothing.
+- Copilot adapter: the TDZ is fixed (the log reader is defined before the spool source). The per-launch plugin is left out when the user's Copilot settings already carry Grove's hooks, as Claude's is (`hasCopilotHooks` in `integrations/install.ts`).
+- Tests: presence adoption by `argv0`; a real pty holder test with a native-layout binary (built with `cc`, linked as `claude`); the TDZ path with no session id; discovery by folder and time; no plugin when the hooks are installed; `identify` restarts once per id.
+
+Verified: `npm test` 521 pass, `npm run typecheck` clean. One run had a daemon test time out under load; it passes alone and on rerun. Real Copilot 1.0.105 was run only with scratch homes; the human's `~/.copilot` and `~/.claude` were read, not changed.
+
+### What to try by hand
+
+1. Stop the old core and the holder (fix 1 applies). Check the install: `ls -l "$(which claude)"`. If it points into `.../versions/<number>`, that is the native layout this fixes.
+2. Start Grove, open a terminal tab, `cd` to a project and run `claude`. It should show as an unknown ring at once (dashed), and then move with your prompts after the hooks are installed.
+3. Copilot: restart it in its tab after `grove-next integration install copilot` (a Copilot already running does not load the hooks). Without the install, a hand-started Copilot now shows working and finished from its session log, after a prompt starts; it still does not show waiting for a permission.
+4. After the install and a restart, an app-launched Copilot should show each state once, with no double notifications.
+5. If a Copilot tab still stays unknown, send `grove-next` the output of `ls ~/.copilot/session-state | tail -3` and the core's stderr; a folder mismatch (a `cd` after starting Copilot) is the likely cause.
+
 ## Post-run fix 3
 
 Keyboard navigation, the grid toggle, and Cmd+B, asked for by the human. The window needs a restart of the dev app to see them; the core did not change.

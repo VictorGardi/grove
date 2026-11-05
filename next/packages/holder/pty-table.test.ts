@@ -1,3 +1,4 @@
+import { execFileSync } from 'node:child_process'
 import fs from 'node:fs'
 import os from 'node:os'
 import path from 'node:path'
@@ -131,5 +132,27 @@ describe('PtyTable', () => {
     expect(tab?.cwd).toBe(fs.realpathSync(moved))
     expect(tab?.foreground).toEqual(expect.any(String))
     expect(tab?.alive).toBe(true)
+  })
+
+  it('names a foreground program by the name it was run under when its binary has another name', async () => {
+    // A native Claude install: the binary is versions/<number>, and the command is a link named claude. The binary is
+    // built with the C compiler: a copy of a system binary is killed by macOS, and a link reports its target's name.
+    const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'grove-native-'))
+    const versions = path.join(dir, 'versions')
+    fs.mkdirSync(versions)
+    const binary = path.join(versions, '2.1.309')
+    fs.writeFileSync(path.join(dir, 'sleeper.c'), '#include <unistd.h>\nint main(void) { sleep(5); return 0; }\n')
+    execFileSync('cc', ['-o', binary, path.join(dir, 'sleeper.c')])
+    const link = path.join(dir, 'claude')
+    fs.symlinkSync(binary, link)
+    const table = new PtyTable()
+    tables.push(table)
+    const id = table.create({ command: link, args: [], cwd: dir, cols: 80, rows: 24 })
+
+    const live = await waitFor(
+      () => table.listLive(),
+      (tabs) => tabs.find((tab) => tab.id === id)?.argv0 === 'claude',
+    )
+    expect(live.find((tab) => tab.id === id)).toMatchObject({ foreground: '2.1.309', argv0: 'claude' })
   })
 })

@@ -88,6 +88,12 @@ export function hasClaudeHooks(settings: JsonObject): boolean {
   )
 }
 
+// Whether `settings` holds our Copilot hooks for every event.
+export function hasCopilotHooks(settings: JsonObject): boolean {
+  const hooks = objectOf(settings.hooks)
+  return COPILOT_HOOK_EVENTS.every((event) => (Array.isArray(hooks[event]) ? (hooks[event] as HookEntry[]) : []).some(isOurs))
+}
+
 function objectOf(value: unknown): Record<string, unknown> {
   return value !== null && typeof value === 'object' && !Array.isArray(value) ? { ...(value as JsonObject) } : {}
 }

@@ -109,6 +109,7 @@ export async function startCoreDaemon(
         id: tab.id,
         alive: tab.alive,
         foreground: tab.foreground,
+        argv0: tab.argv0,
         cwd: tab.cwd,
       })),
     spaceOf: (tabId) => spaces.spaceOfTab(tabId),

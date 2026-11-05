@@ -513,4 +513,33 @@ describe('StatusService', () => {
     service.markSeen('nope')
     service.close()
   })
+
+  it('restarts an adopted source that started without a session id when identify gives it, and not for the same id', () => {
+    const started: string[] = []
+    const copilot: AgentAdapter = {
+      kind: 'copilot',
+      launch: () => {
+        throw new Error('not used: tabs are tracked directly')
+      },
+      watch: (input) => {
+        started.push(input.sessionId)
+        sources.set(input.tabId, input.onEvent)
+        return { close: () => sources.delete(input.tabId) }
+      },
+    }
+    const service = new StatusService({
+      home,
+      adapters: { copilot },
+      screen: async () => screen,
+      alive: async () => live,
+      onSession: (tabId, sessionId) => sessions.push({ tabId, sessionId }),
+      clock: () => now,
+      graceMs: 3000,
+      silenceMs: 30000,
+    })
+    service.adopt({ tabId: 't1', kind: 'copilot', sessionId: '' })
+    service.identify('t1', 'S1')
+    service.identify('t1', 'S1')
+    expect(started).toEqual(['', 'S1'])
+  })
 })

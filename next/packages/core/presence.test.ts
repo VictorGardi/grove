@@ -151,4 +151,11 @@ describe('Presence', () => {
     await presence.tick()
     expect(w.roots).toEqual([])
   })
+
+  it('adopts a Claude whose native binary is named by its version, by the name it was run under', async () => {
+    // Claude's native install runs as versions/2.1.309, reached through a link named claude: the foreground name is the version.
+    const w = world([{ id: 't1', alive: true, foreground: '2.1.309', argv0: 'claude', cwd: '/work' }])
+    await new Presence(w.ports).tick()
+    expect(w.log).toContain('adopt t1 claude')
+  })
 })

@@ -1,5 +1,6 @@
 import { execFile } from 'node:child_process'
 import { randomUUID } from 'node:crypto'
+import path from 'node:path'
 import { promisify } from 'node:util'
 import pty from 'node-pty'
 import xtermHeadless from '@xterm/headless'
@@ -106,16 +107,19 @@ export class PtyTable {
       alive: tab.alive,
       exitCode: tab.exitCode,
       foreground: null,
+      argv0: null,
     }))
   }
 
   // The live view: the folder the shell is in now (not where it started) and the name of the program in the
   // foreground (the shell itself when nothing else runs). A tab that has exited keeps its last cwd and has no foreground.
   async listLive(): Promise<TabInfo[]> {
+    const rows = await processTable()
     return Promise.all(
       [...this.tabs.values()].map(async (tab) => {
         const alive = tab.alive
         const foreground = alive ? tab.proc.process : null
+        const argv0 = alive ? argv0Of(rows, tab.proc.pid) : null
         const cwd = alive ? await liveCwd(tab.proc.pid, tab.info.cwd) : tab.info.cwd
         return {
           id: tab.info.id,
@@ -124,6 +128,7 @@ export class PtyTable {
           alive,
           exitCode: tab.exitCode,
           foreground,
+          argv0,
         }
       })
     )
@@ -241,4 +246,33 @@ export async function liveCwd(pid: number, fallback: string): Promise<string> {
   }
   cwdCache.set(pid, { at: Date.now(), cwd })
   return cwd
+}
+
+export interface ProcessRow {
+  // The foreground process group of the process's terminal (-1 with none).
+  tpgid: number
+  args: string
+}
+
+// Every process's command line, read with one `ps` for all tabs. A failed read is an empty table: no tab then has an argv name.
+export async function processTable(): Promise<Map<number, ProcessRow>> {
+  const rows = new Map<number, ProcessRow>()
+  try {
+    const { stdout } = await execFileAsync('ps', ['-axo', 'pid=,tpgid=,args='], { timeout: 2000 })
+    for (const line of stdout.split('\n')) {
+      const match = /^\s*(\d+)\s+(-?\d+)\s+(.*)$/.exec(line)
+      if (match) rows.set(Number(match[1]), { tpgid: Number(match[2]), args: match[3] })
+    }
+  } catch {
+    // Keep the empty table.
+  }
+  return rows
+}
+
+// The base name of the first word of the command line of the program in a tab's foreground: the name it was run under.
+export function argv0Of(rows: Map<number, ProcessRow>, shellPid: number): string | null {
+  const foreground = rows.get(shellPid)?.tpgid
+  const args = foreground === undefined ? undefined : rows.get(foreground)?.args
+  if (args === undefined) return null
+  return path.basename(args.split(' ')[0]) || null
 }

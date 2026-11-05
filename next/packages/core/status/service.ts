@@ -125,10 +125,12 @@ export class StatusService {
     this.writeSnapshot(watch)
   }
 
-  // Gives an adopted tab its session id once it is known, and starts the source that needed it.
+  // Gives an adopted tab its session id once it is known. A source that started without one (Copilot's, which reads its
+  // spool at once) is restarted with it, so its log is read too; a source that needed the id is started now.
   identify(tabId: string, sessionId: string): void {
     const watch = this.watches.get(tabId)
-    if (!watch || watch.source !== undefined) return
+    if (!watch || watch.resumeId === sessionId) return
+    watch.source?.close()
     watch.source = this.startSource(watch, sessionId)
     watch.resumeId = sessionId
     this.writeSnapshot(watch)
