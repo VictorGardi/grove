@@ -52,6 +52,7 @@ describe('config schema', () => {
         'next-urgent': 'mod+.',
         'sidebar-toggle': 'mod+b',
         notes: 'mod+shift+n',
+        diff: 'mod+shift+d',
         'space-1': 'mod+1',
         'space-2': 'mod+2',
         'space-3': 'mod+3',

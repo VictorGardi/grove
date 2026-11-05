@@ -15,6 +15,8 @@ import { createTabPill, type TabPill } from './tab-pill.ts'
 import { createNotesEditor } from './notes-editor.ts'
 import { createNotesPanel } from './notes-panel.ts'
 import { createDock } from './dock.ts'
+import { settled } from './diff-model.ts'
+import { createDiffPanel } from './diff-panel.ts'
 import { createRenameModal } from './rename-modal.ts'
 import { createContextMenu } from './context-menu.ts'
 import { createSpaceDialog } from './space-dialog.ts'
@@ -86,6 +88,8 @@ const spaces = new Map<string, SpaceInfo>()
 const recentBySpace = new Map<string, Tab[]>()
 const agents = new Map<string, AgentInfo>()
 let active: Tab | null = null
+// Whether the window is connected to the core: the changes panel says so instead of showing an empty diff.
+let coreConnected = false
 let activeSpace: string | null = null
 let refused: string | null = null
 let homeDir = ''
@@ -172,7 +176,10 @@ const dock = createDock(
     store: storage(),
     applyWidth: (width) => appEl.style.setProperty('--dock-width', `${width}px`),
     closed: focusActive,
-    changed: (id) => byId('notes-toggle').setAttribute('aria-pressed', String(id === 'notes')),
+    changed: (id) => {
+      byId('notes-toggle').setAttribute('aria-pressed', String(id === 'notes'))
+      byId('diff-toggle').setAttribute('aria-pressed', String(id === 'diff'))
+    },
   },
 )
 dock.register(
@@ -182,6 +189,17 @@ dock.register(
     createEditor: createNotesEditor,
   }),
 )
+// The changes panel shows the active tab's folder. It names the tab and the core finds the folder; it asks again on the triggers below
+// (tab switch, an agent that stopped working, a new connection), the core never pushes.
+const diffPanel = createDiffPanel({
+  tab: () => active?.id ?? null,
+  connected: () => coreConnected,
+  get: (tabId, mode, base, showUntracked) => bridge.rpc('diff.get', { tabId, mode, base, showUntracked }),
+  bases: (tabId) => bridge.rpc('diff.bases', { tabId }),
+  prefs: (tabId) => bridge.rpc('diff.prefs.get', { tabId }),
+  setPrefs: (tabId, prefs) => bridge.rpc('diff.prefs.set', { tabId, ...prefs }),
+})
+dock.register(diffPanel.panel)
 // Keys: the settings section that rebinds an action. The core checks and saves it, then every window applies the new config.
 const keysPanel = createKeysPanel(byId('keys-list'), byId('keys-error'), {
   keys: () => keys,
@@ -232,6 +250,7 @@ const keyActions: Record<KeyAction, () => void> = {
   'next-urgent': () => jumpToUrgent(),
   'sidebar-toggle': () => sidebarToggle.click(),
   notes: () => void dock.toggle('notes').catch(report),
+  diff: () => void dock.toggle('diff').catch(report),
   'space-1': () => focusSpace(1),
   'space-2': () => focusSpace(2),
   'space-3': () => focusSpace(3),
@@ -658,6 +677,7 @@ function paint(): void {
   renderAgents()
   paintStatusbar()
   paintEmpty()
+  diffPanel.retarget()
   const idle = activeSpace === null || refused !== null
   gridToggle.setAttribute('aria-pressed', String(gridOn))
   paneDim.hidden = !gridOn
@@ -674,6 +694,7 @@ function shortcut(action: KeyAction): string {
 function paintShortcuts(): void {
   paintUrgent()
   byId('notes-toggle').title = `Notes (${shortcut('notes')})`
+  byId('diff-toggle').title = `Changes (${shortcut('diff')})`
   gridToggle.title = `Show the tabs put in the grid, from any space, (${shortcut('grid-toggle')}). ${shortcut('grid-tab')} puts the focused tab in it.`
   const hidden = appEl.classList.contains('sidebar-hidden')
   sidebarToggle.title = `${hidden ? 'Show' : 'Hide'} the sidebar (${shortcut('sidebar-toggle')})`
@@ -1098,6 +1119,7 @@ bridge.on('status.changed', (change) => {
   })
   syncKinds()
   renderStates()
+  diffPanel.agentChanged(change.tabId, settled(previous?.state, change.state))
   // resumable depends on the holder's liveness, which the change does not carry; the core's list settles it.
   refreshAgents().catch(report)
 })
@@ -1175,7 +1197,9 @@ restartCoreButton.addEventListener('click', () => {
 })
 
 bridge.onStatus((status) => {
+  coreConnected = status === 'open'
   if (status === 'closed') {
+    diffPanel.connection(false)
     if (coreRestart !== null) coreRestart.closed = true
     statusLine.textContent = coreRestart !== null ? 'Restarting the core...' : 'Reconnecting to the core...'
     return
@@ -1187,6 +1211,7 @@ bridge.onStatus((status) => {
   reportFocus()
   loadConfig().catch(report)
   resync().catch(report)
+  diffPanel.connection(true)
 })
 
 new ResizeObserver(() => fitShown()).observe(terminals)
@@ -1228,6 +1253,7 @@ paneDim.addEventListener('input', () => {
 })
 byId('new-space').addEventListener('click', () => void newSpaceTab().catch(report))
 byId('notes-toggle').addEventListener('click', () => void dock.toggle('notes').catch(report))
+byId('diff-toggle').addEventListener('click', () => void dock.toggle('diff').catch(report))
 byId('settings-open').addEventListener('click', () => integrationPanel.open())
 urgentBanner.addEventListener('click', () => jumpToUrgent())
 bridge.on('integration.prompt', ({ agent }) => {

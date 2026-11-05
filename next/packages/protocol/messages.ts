@@ -157,6 +157,7 @@ export type KeyAction =
   | 'next-urgent'
   | 'sidebar-toggle'
   | 'notes'
+  | 'diff'
   | 'space-1'
   | 'space-2'
   | 'space-3'

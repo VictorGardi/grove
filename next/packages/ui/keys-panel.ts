@@ -15,6 +15,7 @@ export const KEY_LABELS: Record<KeyAction, string> = {
   'next-urgent': 'Next tab that needs you, or is working',
   'sidebar-toggle': 'Show or hide the sidebar',
   notes: 'Notes',
+  diff: 'Changes',
   'space-1': `Go to the ${SPACE_PLACES[0]} space`,
   'space-2': `Go to the ${SPACE_PLACES[1]} space`,
   'space-3': `Go to the ${SPACE_PLACES[2]} space`,

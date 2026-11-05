@@ -134,4 +134,15 @@
   --notes-code-pad: 12px;
   --notes-box: 1.05em;
   --notes-box-drop: -0.18em;
+
+  /* Changes */
+  --diff-add-bg: color-mix(in srgb, var(--ansi-green) 13%, transparent);
+  --diff-del-bg: color-mix(in srgb, var(--ansi-red) 13%, transparent);
+  --size-underline: 2px;
+  --size-diff-ln: 34px;
+  --size-diff-sign: 14px;
+  --size-diff-status: 14px;
+  --size-diff-indent: 12px;
+  --size-diff-popover: 260px;
+  --size-diff-file-h: 45%;
 }

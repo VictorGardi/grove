@@ -74,6 +74,10 @@ Rules every panel gets for free, and should not redo:
 - Not modal: no backdrop, the window's key bindings keep working while a panel has focus, and Esc in the panel closes it (a key the panel handled itself does not). Closing hands the keyboard back to the active terminal; a swap does not.
 - Body: a flex column the panel fills and scrolls itself. A panel that needs a footer (a commit box, say) puts it at the bottom of its own column, separated by a `--color-rule` line.
 
+### Changes panel
+
+`diff-panel.ts` is the dock's second panel (key `diff`, default Cmd+Shift+D; the "Changes" pill in the tab strip). It is read only: it names the active tab to the core (`diff.get`, `diff.bases`, `diff.prefs.*`) and the core resolves the folder. It looks again on open, tab switch, mode or base change, when the active tab's agent goes from working to idle, needs-you or finished, on reconnect, and on the refresh button; nothing watches files. Mode, base and recent bases are kept by the core per folder. Logic without DOM (tree rows, base choices, empty messages) is in `diff-model.ts`. Colours are tokens (`--diff-add-bg`, `--diff-del-bg`); rows truncate.
+
 ## Not in v1
 
 No light theme. The theme file (`theme.json`) overrides only the twenty names at the top of `tokens.css`; the other tokens are fixed.
