@@ -3,9 +3,10 @@ import fs from 'node:fs'
 import os from 'node:os'
 import path from 'node:path'
 import type { RpcClient } from '../protocol/client.ts'
-import { ERROR_CODES, METHODS, type DiffMode, type DiffPrefs, type MethodMap, type SpaceInfo, type SpaceTabInfo } from '../protocol/messages.ts'
+import { DIFF_COMMENT_LIMITS, ERROR_CODES, METHODS, type DiffComment, type DiffMode, type DiffPrefs, type MethodMap, type SpaceInfo, type SpaceTabInfo } from '../protocol/messages.ts'
 import { RpcError } from '../protocol/errors.ts'
 import { pushRecentBase } from './diff/bases.ts'
+import { makeComment, readComments, type CommentChange } from './diff/comments.ts'
 import { addWorktree, listWorktrees, removeWorktree, spaceGitInfo } from './git.ts'
 import type { AgentKind } from './status/adapter.ts'
 import {
@@ -321,6 +322,61 @@ export class SpacesService {
     saveState(this.file, next)
     this.state = next
     return prefs
+  }
+
+  // The review comments kept for a folder (its real path), oldest first. Entries that do not read right are left out.
+  diffComments(folder: string): DiffComment[] {
+    return readComments(this.state.diffComments?.[folder])
+  }
+
+  private saveDiffComments(folder: string, comments: DiffComment[]): void {
+    const next: StateV1 = { ...this.state, diffComments: { ...this.state.diffComments, [folder]: comments } }
+    saveState(this.file, next)
+    this.state = next
+  }
+
+  addDiffComment(folder: string, input: Parameters<typeof makeComment>[0]): DiffComment {
+    this.assertNotRefused()
+    const comments = this.diffComments(folder)
+    if (comments.length >= DIFF_COMMENT_LIMITS.perFolder) {
+      throw new RpcError(ERROR_CODES.invalidParams, `a folder keeps at most ${DIFF_COMMENT_LIMITS.perFolder} comments; delete some first`)
+    }
+    const comment = makeComment(input, Date.now())
+    this.saveDiffComments(folder, [...comments, comment])
+    return comment
+  }
+
+  updateDiffComment(folder: string, change: CommentChange): DiffComment {
+    this.assertNotRefused()
+    const comments = this.diffComments(folder)
+    const found = comments.find((comment) => comment.id === change.id)
+    if (found === undefined) throw new RpcError(ERROR_CODES.invalidParams, `no such comment: ${change.id}`)
+    const updated: DiffComment = { ...found, body: change.body ?? found.body, state: change.state ?? found.state }
+    this.saveDiffComments(folder, comments.map((comment) => (comment === found ? updated : comment)))
+    return updated
+  }
+
+  // The pending comments among `ids` become sent; any other id is left as it is. Returns the ones that changed.
+  markDiffCommentsSent(folder: string, ids: readonly string[]): DiffComment[] {
+    this.assertNotRefused()
+    const comments = this.diffComments(folder)
+    const wanted = new Set(ids)
+    const changed: DiffComment[] = []
+    const next = comments.map((comment) => {
+      if (comment.state !== 'pending' || !wanted.has(comment.id)) return comment
+      const sent: DiffComment = { ...comment, state: 'sent' }
+      changed.push(sent)
+      return sent
+    })
+    if (changed.length > 0) this.saveDiffComments(folder, next)
+    return changed
+  }
+
+  deleteDiffComment(folder: string, id: string): void {
+    this.assertNotRefused()
+    const comments = this.diffComments(folder)
+    if (!comments.some((comment) => comment.id === id)) throw new RpcError(ERROR_CODES.invalidParams, `no such comment: ${id}`)
+    this.saveDiffComments(folder, comments.filter((comment) => comment.id !== id))
   }
 
   tabRecord(id: string): TabRecord | undefined {

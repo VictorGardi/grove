@@ -23,6 +23,7 @@ import { ConfigStore, atomicWrite, configFolder } from './config/store.ts'
 import { writeAgentsMd } from './config/agents-md.ts'
 import { watchConfig } from './config/watch.ts'
 import { diffBases } from './diff/bases.ts'
+import { commentChangeParams, commentIdParam, commentIdsParam, newCommentParams } from './diff/comments.ts'
 import { diffAllModes } from './diff/compute.ts'
 
 const TAB_ID = /^[A-Za-z0-9_-]{1,64}$/
@@ -392,7 +393,7 @@ async function dispatch(method: string, rawParams: unknown, holder: Promise<RpcC
     atomicWrite(notesFile(deps.home), stringParam(rawParams, 'text'))
     return {} satisfies MethodMap['notes.write']['result']
   }
-  if (method === METHODS.diffGet || method === METHODS.diffBases || method === METHODS.diffPrefsGet || method === METHODS.diffPrefsSet) {
+  if (DIFF_METHODS.has(method)) {
     return dispatchDiff(method, rawParams, await holder, deps)
   }
   if (method === METHODS.configGet) {
@@ -592,6 +593,17 @@ async function focusTab(rawParams: unknown, holder: RpcClient, deps: Deps): Prom
 }
 
 const DIFF_MODES = new Set<string>(['branch', 'uncommitted', 'last-commit'])
+const DIFF_METHODS = new Set<string>([
+  METHODS.diffGet,
+  METHODS.diffBases,
+  METHODS.diffPrefsGet,
+  METHODS.diffPrefsSet,
+  METHODS.diffCommentsList,
+  METHODS.diffCommentsAdd,
+  METHODS.diffCommentsUpdate,
+  METHODS.diffCommentsDelete,
+  METHODS.diffCommentsMarkSent,
+])
 
 // The folder a diff call is about, from the tab or the space it names. The caller never sends a path: a tab's live folder (as the holder
 // lists it) when it has one, else its space's, then made a real path so a link cannot point the diff somewhere else unseen.
@@ -650,6 +662,14 @@ async function dispatchDiff(method: string, rawParams: unknown, holder: RpcClien
     return { ...(await diffBases(dir)), recents: deps.spaces.diffPrefs(dir).recents } satisfies MethodMap['diff.bases']['result']
   }
   if (method === METHODS.diffPrefsGet) return deps.spaces.diffPrefs(dir) satisfies MethodMap['diff.prefs.get']['result']
+  if (method === METHODS.diffCommentsList) return { comments: deps.spaces.diffComments(dir) } satisfies MethodMap['diff.comments.list']['result']
+  if (method === METHODS.diffCommentsAdd) return deps.spaces.addDiffComment(dir, newCommentParams(p)) satisfies MethodMap['diff.comments.add']['result']
+  if (method === METHODS.diffCommentsUpdate) return deps.spaces.updateDiffComment(dir, commentChangeParams(p)) satisfies MethodMap['diff.comments.update']['result']
+  if (method === METHODS.diffCommentsMarkSent) return { comments: deps.spaces.markDiffCommentsSent(dir, commentIdsParam(p)) } satisfies MethodMap['diff.comments.markSent']['result']
+  if (method === METHODS.diffCommentsDelete) {
+    deps.spaces.deleteDiffComment(dir, commentIdParam(p))
+    return {} satisfies MethodMap['diff.comments.delete']['result']
+  }
   const mode = p.mode === undefined ? undefined : diffModeParam(p.mode)
   return deps.spaces.setDiffPrefs(dir, { mode, base: diffBaseParam(p.base) }) satisfies MethodMap['diff.prefs.set']['result']
 }

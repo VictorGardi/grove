@@ -163,3 +163,12 @@ specific meaning, so humans and agents stay consistent.
   and the words are pasted, unsent, into that session through the `dictate`
   core command (no stability wait, no resume). Local-only: no network code,
   the temporary WAV is deleted right after (ADR 0046).
+- **Module** (grove-next window): a feature that lives in the dock and is
+  declared as a `DockModule` in `next/packages/ui/modules.ts`: a panel, its rail
+  button, its key action, and the **host events** it follows. Built-in only; the
+  window builds buttons, key handlers and wiring from the registry. The **host**
+  (terminals, spaces, tabs, status, config, the dock itself) is not a module.
+  "Module" in the sense of a source file keeps its ordinary meaning (ADR 0051).
+- **Host event**: a notice the window sends to modules on its typed bus
+  (`activeTabChanged`, `agentStateChanged`, `connectionChanged`), so a module
+  never needs a named call from `main.ts`.

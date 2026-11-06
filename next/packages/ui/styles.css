@@ -397,7 +397,8 @@ p {
   align-items: center;
   justify-content: space-between;
   gap: var(--space-2);
-  padding: var(--space-2) var(--space-3);
+  height: var(--statusbar-h);
+  padding: 0 var(--space-3);
   border-top: 1px solid var(--color-rule);
 }
 
@@ -624,6 +625,10 @@ p {
   height: var(--icon-size-sm);
 }
 
+.dock-toggles {
+  display: contents;
+}
+
 .tab-actions {
   display: flex;
   align-items: center;
@@ -680,8 +685,8 @@ p {
 
 .pane-dim-slider::-webkit-slider-runnable-track {
   height: var(--size-slider-track);
-  border-radius: var(--radius-sm);
-  background: var(--color-mute);
+  border-radius: var(--radius-pill);
+  background: var(--color-line);
 }
 
 .pane-dim-slider::-webkit-slider-thumb {
@@ -690,7 +695,7 @@ p {
   height: var(--size-slider-thumb);
   margin-top: calc((var(--size-slider-track) - var(--size-slider-thumb)) / 2);
   border-radius: var(--radius-pill);
-  background: var(--color-mute);
+  background: var(--color-ink);
 }
 
 .pane-dim-slider:hover::-webkit-slider-thumb {
@@ -828,7 +833,7 @@ p {
 .status {
   position: fixed;
   right: var(--space-6);
-  bottom: calc(var(--pane-title-h) + var(--space-5));
+  bottom: calc(var(--statusbar-h) + var(--space-5));
   z-index: 5;
   max-width: calc(var(--size-modal) * 1.5);
   padding: var(--space-3) var(--space-5);
@@ -841,16 +846,56 @@ p {
   overflow-wrap: anywhere;
 }
 
+/* A flat row at the window's foot, as tall as the sidebar's own foot so the two share one line. */
 .statusbar {
   display: flex;
   align-items: center;
-  gap: var(--space-6);
   flex: none;
-  height: var(--pane-title-h);
-  padding: 0 var(--space-4);
+  height: var(--statusbar-h);
+  padding: 0 var(--space-6);
   border-top: 1px solid var(--color-rule);
+}
+
+.statusbar-cap {
+  display: flex;
+  align-items: center;
+  gap: var(--space-5);
   font-size: var(--text-sm);
   color: var(--color-mute);
+}
+
+.statusbar-rule {
+  width: 1px;
+  height: var(--space-5);
+  background: var(--color-line);
+}
+
+.statusbar-branch[hidden] + .statusbar-rule {
+  display: none;
+}
+
+/* One segment per running agent, coloured by its state. */
+.agent-bar {
+  display: flex;
+  gap: var(--space-xs);
+  width: var(--size-bar-w);
+  height: var(--size-bar-h);
+}
+
+.agent-bar i {
+  flex: 1;
+  border-radius: var(--radius-pill);
+  background: var(--state-idle);
+}
+
+.agent-bar .seg-needs-you { background: var(--state-needs-you); }
+.agent-bar .seg-working { background: var(--state-working); }
+.agent-bar .seg-finished { background: var(--state-finished); opacity: 0.55; }
+.agent-bar .seg-unknown { background: var(--state-unknown); }
+
+.statusbar-count b {
+  font-weight: 500;
+  color: var(--color-ink);
 }
 
 .statusbar-item {
@@ -1262,6 +1307,8 @@ p {
   display: flex;
   flex: 1 1 auto;
   min-height: 0;
+  /* clip, not hidden: a panel that focuses or reveals something past the edge while the dock slides cannot scroll the window. */
+  overflow: clip;
 }
 
 .stage {
@@ -1418,19 +1465,56 @@ p {
   border-radius: 0 0 var(--radius-lg) var(--radius-lg);
 }
 
-/* The tab strip's button for the open panel: a raised pill, like Herdr's Changes button. */
-.dock-toggle {
+/* The tab strip's toggles: pills, with a tinted pill when on. Notes is the same pill with only the icon. */
+.pill,
+.icon-pill {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
   gap: var(--space-2);
+  height: var(--size-pill);
+  padding: 0 var(--space-5);
+  border: 1px solid var(--color-line);
+  border-radius: var(--radius-pill);
+  color: var(--color-mute);
+  font-size: var(--text-sm);
+  white-space: nowrap;
+}
+
+.icon-pill {
+  width: var(--size-pill);
+  padding: 0;
+  border-color: transparent;
+}
+
+.pill .icon,
+.icon-pill .icon {
+  width: var(--icon-size-pill);
+  height: var(--icon-size-pill);
+}
+
+.pill:hover,
+.icon-pill:hover {
   color: var(--color-ink);
-}
-
-.dock-toggle .icon {
-  width: var(--icon-size-sm);
-  height: var(--icon-size-sm);
-}
-
-.app.dock-open .dock-toggle {
   background: var(--color-raised);
+}
+
+.pill[aria-pressed='true'],
+.icon-pill[aria-pressed='true'] {
+  color: var(--accent);
+  border-color: color-mix(in srgb, var(--accent) 40%, transparent);
+  background: color-mix(in srgb, var(--accent) 12%, transparent);
+}
+
+/* The dim control: a pill that wraps the slider, shown only while the grid is on. */
+.dim-pill {
+  gap: var(--space-4);
+  padding: 0 var(--space-5);
+  cursor: pointer;
+}
+
+.dim-pill:has(.pane-dim-slider[hidden]) {
+  display: none;
 }
 
 /* Notes: the dock's first panel. Prose in the UI face, code in the mono face. Syntax marks dim, and hide off the caret's line. */
@@ -1711,6 +1795,7 @@ p {
 
 .statusbar-branch {
   padding: 0;
+  color: var(--color-ink);
   color: inherit;
   font: inherit;
   cursor: pointer;
@@ -1808,7 +1893,7 @@ li[aria-selected] > .slash-tile {
   display: none;
 }
 
-/* Changes: the dock's second panel. A bar, mode tabs, a filter, the tree of files, and the selected file's diff under a rule. Rows truncate, never wrap. */
+/* Changes: the dock's second panel. A bar, mode tabs, a summary, a filter with the viewed progress, and one scrolling column of file cards. Heads truncate, never wrap. */
 
 .diff {
   position: relative;
@@ -1918,97 +2003,162 @@ li[aria-selected] > .slash-tile {
   text-decoration: underline;
 }
 
-.diff-tree {
-  flex: 1 1 auto;
-  min-height: 0;
-  margin-top: var(--space-3);
-  padding: 0 var(--space-3) var(--space-3);
-  overflow-y: auto;
+.diff-summary {
+  display: flex;
+  flex: none;
+  align-items: center;
+  gap: var(--space-4);
+  padding: var(--space-4) var(--space-5);
 }
 
-.diff-tree:focus-visible {
+.diff-summary[hidden],
+.diff-summary [hidden] {
+  display: none;
+}
+
+.diff-summary-spacer {
+  flex: 1;
+}
+
+.diff-summary .diff-filter {
+  flex: 1 1 0;
+  min-width: 0;
+  margin: 0;
+}
+
+.diff-summary-files {
+  font-weight: 500;
+  white-space: nowrap;
+}
+
+.diff-progress-text {
+  flex: none;
+  color: var(--color-mute);
+  font-size: var(--text-xs);
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+
+.diff-progress {
+  display: block;
+  flex: none;
+  width: var(--size-diff-progress);
+  height: var(--size-diff-progress-h);
+  overflow: hidden;
+  border-radius: var(--radius-pill);
+  background: var(--color-selected);
+}
+
+.diff-progress-fill {
+  display: block;
+  width: calc(var(--done, 0) * 100%);
+  height: 100%;
+  background: var(--ansi-green);
+}
+
+.diff-cards {
+  flex: 1 1 auto;
+  min-height: 0;
+  padding: var(--space-3) var(--space-5) var(--space-5);
+  overflow-y: auto;
+  border-top: 1px solid var(--color-rule);
+}
+
+.diff-cards:focus-visible {
   outline: none;
 }
 
-.diff-row {
+.diff-cards[hidden] {
+  display: none;
+}
+
+/* clip, not hidden: hidden would make the card the scroll container and the head could not stick to the column. */
+.diff-card {
+  margin-bottom: var(--space-4);
+  overflow: clip;
+  border: 1px solid var(--color-line);
+  border-radius: var(--radius-md);
+  background: var(--color-ground);
+}
+
+.diff-card.selected {
+  border-color: var(--color-pane-focus);
+}
+
+.diff-card.viewed {
+  opacity: var(--diff-viewed-opacity);
+}
+
+.diff-card-head {
+  position: sticky;
+  z-index: 1;
+  top: 0;
   display: flex;
   align-items: center;
   gap: var(--space-2);
   min-width: 0;
-  padding: var(--space-1) var(--space-3);
-  padding-left: calc(var(--space-3) + var(--depth, 0) * var(--size-diff-indent));
-  border-radius: var(--radius-sm);
-  cursor: default;
-  white-space: nowrap;
-}
-
-.diff-row:hover {
+  height: var(--size-diff-head);
+  padding: 0 var(--space-3) 0 var(--space-xs);
   background: var(--color-raised);
 }
 
-.diff-row.selected {
-  background: var(--color-selected);
+.diff-card:not(.collapsed) .diff-card-head {
+  border-bottom: 1px solid var(--color-line);
 }
 
-.diff-caret {
-  width: var(--size-diff-status);
+.diff-chevron {
   flex: none;
-  color: var(--color-faint);
-  text-align: center;
 }
 
-.diff-name {
+.diff-card.collapsed .diff-chevron .icon {
+  transform: rotate(-90deg);
+}
+
+.diff-path {
+  display: flex;
   flex: 1;
   min-width: 0;
-  overflow: hidden;
-  text-overflow: ellipsis;
-}
-
-.diff-dir .diff-name {
-  flex: 0 1 auto;
-  color: var(--color-mute);
+  font-family: var(--font-mono);
+  font-size: var(--text-xs);
+  white-space: nowrap;
 }
 
 .diff-dirname {
+  flex: 0 1 auto;
+  min-width: 0;
+  overflow: hidden;
   color: var(--color-faint);
+  text-overflow: ellipsis;
 }
 
 .diff-basename {
+  flex: none;
   color: var(--color-ink);
+  font-weight: 500;
 }
 
-.diff-sub {
+.diff-chip {
   flex: none;
-  color: var(--color-faint);
-}
-
-.diff-status {
-  width: var(--size-diff-status);
-  flex: none;
-  font-family: var(--font-mono);
+  padding: 0 var(--space-3);
+  border-radius: var(--radius-pill);
   font-size: var(--text-xs);
-  font-weight: 600;
-  text-align: center;
+  line-height: var(--leading-chip);
 }
 
-.diff-modified {
-  color: var(--ansi-yellow);
+.diff-chip-added,
+.diff-chip-untracked {
+  background: var(--diff-chip-add);
+  color: var(--ansi-bright-green);
 }
 
-.diff-added {
-  color: var(--ansi-green);
+.diff-chip-deleted {
+  background: var(--diff-chip-del);
+  color: var(--ansi-bright-red);
 }
 
-.diff-deleted {
-  color: var(--ansi-red);
-}
-
-.diff-renamed {
-  color: var(--ansi-blue);
-}
-
-.diff-untracked {
-  color: var(--color-mute);
+.diff-chip-renamed {
+  background: var(--diff-chip-move);
+  color: var(--ansi-bright-blue);
 }
 
 .diff-add-n,
@@ -2020,62 +2170,136 @@ li[aria-selected] > .slash-tile {
 }
 
 .diff-add-n {
-  color: var(--ansi-green);
+  color: var(--ansi-bright-green);
 }
 
 .diff-del-n {
-  color: var(--ansi-red);
+  color: var(--ansi-bright-red);
 }
 
-.diff-file {
-  display: flex;
-  flex: 0 0 var(--size-diff-file-h);
-  flex-direction: column;
-  min-height: 0;
-  border-top: 1px solid var(--color-rule);
+.diff-squares {
+  display: inline-flex;
+  flex: none;
+  gap: var(--space-xs);
 }
 
-.diff-file:empty {
+.diff-square {
+  width: var(--size-diff-square);
+  height: var(--size-diff-square);
+  border-radius: var(--space-xs);
+  background: var(--ansi-black);
+}
+
+.diff-square-add {
+  background: var(--ansi-green);
+}
+
+.diff-square-del {
+  background: var(--ansi-red);
+}
+
+.diff-viewed {
+  position: relative;
+  display: inline-flex;
+  flex: none;
+  align-items: center;
+  gap: var(--space-2);
+  height: var(--size-control);
+  padding: 0 var(--space-3);
+  border: 1px solid var(--color-tab-line);
+  border-radius: var(--radius-sm);
+  color: var(--color-mute);
+  font-size: var(--text-xs);
+  cursor: default;
+}
+
+.diff-viewed:hover {
+  color: var(--color-ink);
+}
+
+.diff-viewed:has(:checked) {
+  border-color: var(--diff-viewed-line);
+  background: var(--diff-viewed-bg);
+  color: var(--ansi-bright-green);
+}
+
+.diff-viewed:has(:focus-visible) {
+  border-color: var(--accent);
+}
+
+/* The real checkbox stays in place for the keyboard and screen readers; the tick beside it is what is drawn. */
+.diff-viewed-box {
+  position: absolute;
+  width: 0;
+  height: 0;
+  margin: 0;
+  opacity: 0;
+}
+
+.diff-viewed-tick {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: var(--size-diff-check);
+  height: var(--size-diff-check);
+  border: 1px solid var(--color-mute);
+  border-radius: var(--radius-xs);
+  color: transparent;
+}
+
+.diff-viewed-tick .icon {
+  width: var(--icon-size-xs);
+  height: var(--icon-size-xs);
+  stroke-width: var(--icon-stroke-bold);
+}
+
+.diff-viewed:has(:checked) .diff-viewed-tick {
+  border-color: var(--ansi-green);
+  background: var(--ansi-green);
+  color: var(--color-page);
+}
+
+.diff-card-body {
+  overflow-x: auto;
+  font-family: var(--font-mono);
+  font-size: var(--text-xs);
+  line-height: var(--leading-diff);
+}
+
+.diff-card-pending {
+  height: calc(var(--lines) * var(--size-diff-band));
+}
+
+.diff-card-body[hidden] {
   display: none;
 }
 
-.diff-file-head {
-  flex: none;
-  padding: var(--space-3) var(--space-5);
-  overflow: hidden;
-  border-bottom: 1px solid var(--color-rule);
-  color: var(--color-mute);
-  font-family: var(--font-mono);
-  font-size: var(--text-xs);
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-
-.diff-file-body {
-  flex: 1;
-  min-height: 0;
-  overflow: auto;
-  font-family: var(--font-mono);
-  font-size: var(--text-xs);
-}
-
 .diff-cannot {
+  margin: 0;
   padding: var(--space-5);
   color: var(--color-mute);
   font-family: var(--font-ui);
   font-size: var(--text-meta);
 }
 
+/* The hunk is as wide as its longest line, so the bands of the shorter lines reach as far when the body scrolls sideways. */
+.diff-hunk {
+  width: max-content;
+  min-width: 100%;
+}
+
 .diff-hunk-head {
-  padding: var(--space-1) var(--space-5);
-  background: var(--color-well);
-  color: var(--color-faint);
+  height: var(--size-diff-band);
+  padding: 0 var(--space-5);
+  background: var(--diff-hunk-bg);
+  color: var(--color-mute);
+  line-height: var(--size-diff-band);
   white-space: pre;
 }
 
 .diff-line {
+  position: relative;
   display: flex;
-  min-width: max-content;
   white-space: pre;
 }
 
@@ -2087,6 +2311,11 @@ li[aria-selected] > .slash-tile {
   background: var(--diff-del-bg);
 }
 
+/* The lines a drag from the plus covers, until the mouse is let go. */
+.diff-line-picked {
+  background-image: linear-gradient(var(--diff-pick-bg), var(--diff-pick-bg));
+}
+
 .diff-ln {
   width: var(--size-diff-ln);
   flex: none;
@@ -2094,6 +2323,14 @@ li[aria-selected] > .slash-tile {
   color: var(--color-faint);
   text-align: right;
   user-select: none;
+}
+
+.diff-line-add .diff-ln {
+  background: var(--diff-add-gutter);
+}
+
+.diff-line-del .diff-ln {
+  background: var(--diff-del-gutter);
 }
 
 .diff-sign {
@@ -2104,16 +2341,301 @@ li[aria-selected] > .slash-tile {
 }
 
 .diff-line-add .diff-sign {
-  color: var(--ansi-green);
+  color: var(--ansi-bright-green);
 }
 
 .diff-line-del .diff-sign {
-  color: var(--ansi-red);
+  color: var(--ansi-bright-red);
 }
 
 .diff-text {
+  flex: 1;
   padding-right: var(--space-5);
   color: var(--color-term-fg);
+}
+
+.diff-line-add .diff-word {
+  background: var(--diff-add-word);
+}
+
+.diff-line-del .diff-word {
+  background: var(--diff-del-word);
+}
+
+.diff-word {
+  border-radius: var(--radius-xs);
+}
+
+/* The blue plus in the gutter: shown when the line is hovered or the button has the keyboard. */
+/* Hidden unless the pointer is in the cards or the button has the keyboard. */
+.diff-cards:not(:hover) .diff-add-comment:not(:focus-visible) {
+  visibility: hidden;
+}
+
+.diff-add-comment {
+  position: absolute;
+  z-index: 1;
+  top: 1px;
+  left: var(--space-xs);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: var(--size-diff-plus);
+  height: var(--size-diff-plus);
+  padding: 0;
+  border-radius: var(--radius-sm);
+  background: var(--accent);
+  color: var(--color-page);
+  font-family: var(--font-ui);
+  font-size: var(--text-lg);
+  font-weight: 600;
+  line-height: 1;
+  cursor: pointer;
+}
+
+/* A thread or a composer under its line: it stays put while a long line scrolls the body sideways. */
+.diff-thread {
+  position: sticky;
+  left: var(--space-5);
+  box-sizing: border-box;
+  width: var(--size-diff-thread);
+  margin: var(--space-2) var(--space-5) var(--space-3);
+  border: 1px solid var(--color-tab-line);
+  border-radius: var(--radius-md);
+  background: var(--color-raised);
+  font-family: var(--font-ui);
+  font-size: var(--text-sm);
+  line-height: var(--leading-chip);
+  white-space: normal;
+}
+
+.diff-thread-sent {
+  opacity: var(--diff-comment-sent-opacity);
+}
+
+.diff-thread-head {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+  padding: var(--space-3) var(--space-4) 0;
+}
+
+.diff-thread-author {
+  font-weight: 600;
+}
+
+.diff-thread-time {
+  color: var(--color-mute);
+}
+
+.diff-thread-spacer {
+  flex: 1;
+}
+
+.diff-thread-body {
+  margin: var(--space-2) var(--space-4) var(--space-3);
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+
+.diff-thread-resolved .diff-thread-body {
+  color: var(--color-mute);
+}
+
+.diff-thread-actions {
+  display: flex;
+  gap: var(--space-2);
+  padding: var(--space-2) var(--space-4);
+  border-top: 1px solid var(--color-tab-line);
+}
+
+.diff-comment-chip {
+  padding: 0 var(--space-3);
+  border-radius: var(--radius-pill);
+  font-size: var(--text-xs);
+}
+
+.diff-comment-chip-pending {
+  background: var(--diff-comment-chip-pending);
+  color: var(--ansi-yellow);
+}
+
+.diff-comment-chip-resolved {
+  background: var(--diff-comment-chip-resolved);
+  color: var(--ansi-bright-green);
+}
+
+.diff-comment-chip-sent {
+  background: var(--diff-comment-chip-sent);
+  color: var(--ansi-bright-blue);
+}
+
+.diff-comment-form {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+  padding: var(--space-3);
+}
+
+.diff-comment-input {
+  box-sizing: border-box;
+  width: 100%;
+  min-height: var(--size-diff-input);
+  padding: var(--space-3);
+  border: 1px solid var(--color-tab-line);
+  border-radius: var(--radius-sm);
+  background: var(--color-well);
+  color: var(--color-ink);
+  font: inherit;
+  resize: vertical;
+}
+
+.diff-comment-input:focus-visible {
+  border-color: var(--accent);
+  outline: none;
+}
+
+.diff-comment-error {
+  margin: 0;
+  color: var(--color-error);
+}
+
+.diff-comment-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: var(--space-2);
+}
+
+.diff-comment-button {
+  height: var(--size-control);
+  padding: 0 var(--space-3);
+  border: 1px solid var(--color-tab-line);
+  border-radius: var(--radius-sm);
+  color: var(--color-mute);
+  font-size: var(--text-xs);
+}
+
+.diff-comment-button:hover:not(:disabled) {
+  color: var(--color-ink);
+}
+
+.diff-comment-button:disabled {
+  opacity: var(--diff-viewed-opacity);
+}
+
+.diff-comment-submit {
+  border-color: var(--accent);
+  color: var(--accent);
+}
+
+.diff-comment-count {
+  flex: none;
+  padding: 0 var(--space-3);
+  border-radius: var(--radius-pill);
+  background: var(--color-selected);
+  color: var(--color-mute);
+  font-size: var(--text-xs);
+  line-height: var(--leading-chip);
+}
+
+.diff-comment-count[hidden],
+.diff-gone[hidden] {
+  display: none;
+}
+
+/* Send to the agent: at the end of the filter bar, an icon with the pending count; the reason it is off, or the notice from the last send, beside it. */
+.diff-send {
+  display: flex;
+  min-width: 0;
+  flex: 0 1 auto;
+  align-items: center;
+  gap: var(--space-3);
+}
+
+.diff-send[hidden] {
+  display: none;
+}
+
+.diff-send-button {
+  display: inline-flex;
+  width: auto;
+  height: var(--size-control);
+  flex: none;
+  align-items: center;
+  gap: var(--space-2);
+  padding: 0 var(--space-3);
+  border: 1px solid var(--accent);
+  border-radius: var(--radius-sm);
+  color: var(--accent);
+  font-size: var(--text-xs);
+  font-variant-numeric: tabular-nums;
+}
+
+.diff-send-button:disabled {
+  border-color: var(--color-tab-line);
+  color: var(--color-mute);
+  opacity: var(--diff-viewed-opacity);
+}
+
+.diff-send-icon {
+  display: inline-flex;
+}
+
+.diff-send-icon svg {
+  width: var(--text-xs);
+  height: var(--text-xs);
+}
+
+.diff-send-line {
+  overflow: hidden;
+  color: var(--color-mute);
+  font-size: var(--text-xs);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.diff-send-line:empty {
+  display: none;
+}
+
+/* Comments that no longer fit their line: shut by default, at the top of the file's card or above the cards. */
+.diff-gone {
+  padding: 0 var(--space-5);
+}
+
+.diff-outdated {
+  margin: var(--space-2) var(--space-5);
+  font-family: var(--font-ui);
+  font-size: var(--text-xs);
+  white-space: normal;
+}
+
+.diff-outdated-summary {
+  color: var(--color-mute);
+  cursor: pointer;
+}
+
+.diff-outdated-where {
+  display: block;
+  margin-top: var(--space-3);
+  color: var(--color-mute);
+  font-family: var(--font-mono);
+}
+
+.diff-outdated-anchor {
+  display: block;
+  overflow: hidden;
+  color: var(--color-term-fg);
+  font-family: var(--font-mono);
+  text-overflow: ellipsis;
+  white-space: pre;
+}
+
+.diff-name {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 
 .diff-picker {

@@ -51,10 +51,12 @@
           <div id="tabs" class="tabs" role="tablist"></div>
           <div class="tab-actions">
             <div id="launchers" class="launchers"></div>
-            <input id="pane-dim" class="pane-dim-slider" type="range" min="0.1" max="1" step="0.05" aria-label="Dim unfocused panes" title="How dimmed the unfocused panes are (left is darker)" hidden />
-            <button id="grid-toggle" class="new-tab" type="button" aria-pressed="false" title="Show this space's tabs in a grid">Grid</button>
-            <button id="notes-toggle" class="new-tab dock-toggle" type="button" aria-pressed="false" title="Notes"><svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 20h9" /><path d="M16.5 3.5a2.1 2.1 0 0 1 3 3L7 19l-4 1 1-4Z" /></svg>Notes</button>
-            <button id="diff-toggle" class="new-tab dock-toggle" type="button" aria-pressed="false" title="Changes"><svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="6" cy="6" r="2.5" /><circle cx="18" cy="18" r="2.5" /><path d="M6 8.5v4a4 4 0 0 0 4 4h5.5" /><path d="M13 13.5 15.5 16 13 18.5" /></svg>Changes</button>
+            <label class="pill dim-pill" title="How dimmed the unfocused panes are (left is darker)">
+              <svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="9" /><path d="M12 3a9 9 0 0 1 0 18z" fill="currentColor" /></svg>
+              <input id="pane-dim" class="pane-dim-slider" type="range" min="0.1" max="1" step="0.05" aria-label="Dim unfocused panes" hidden />
+            </label>
+            <button id="grid-toggle" class="pill" type="button" aria-pressed="false" title="Show this space's tabs in a grid"><svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="3" y="3" width="7" height="7" rx="1.5" /><rect x="14" y="3" width="7" height="7" rx="1.5" /><rect x="3" y="14" width="7" height="7" rx="1.5" /><rect x="14" y="14" width="7" height="7" rx="1.5" /></svg>Grid</button>
+            <div id="dock-toggles" class="dock-toggles"></div>
           </div>
         </div>
         <div class="workarea">
@@ -81,8 +83,11 @@
         </div>
         <div id="status" class="status" role="status"></div>
         <footer class="statusbar">
-          <button id="statusbar-branch" type="button" class="statusbar-item statusbar-branch" hidden></button>
-          <span id="statusbar-agents" class="statusbar-item"></span>
+          <div class="statusbar-cap">
+            <button id="statusbar-branch" type="button" class="statusbar-item statusbar-branch" hidden></button>
+            <span class="statusbar-rule"></span>
+            <span id="statusbar-agents" class="statusbar-item"></span>
+          </div>
         </footer>
       </main>
     </div>

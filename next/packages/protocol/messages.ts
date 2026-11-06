@@ -34,6 +34,11 @@ export const METHODS = {
   diffBases: 'diff.bases',
   diffPrefsGet: 'diff.prefs.get',
   diffPrefsSet: 'diff.prefs.set',
+  diffCommentsList: 'diff.comments.list',
+  diffCommentsAdd: 'diff.comments.add',
+  diffCommentsUpdate: 'diff.comments.update',
+  diffCommentsDelete: 'diff.comments.delete',
+  diffCommentsMarkSent: 'diff.comments.markSent',
   integrationStatus: 'integration.status',
   integrationInstall: 'integration.install',
   integrationUninstall: 'integration.uninstall',
@@ -298,6 +303,28 @@ export interface DiffPrefs {
   recents: string[]
 }
 
+// The limits the core keeps on a folder's comments. The window shortens the line it compares to an anchor the same way.
+export const DIFF_COMMENT_LIMITS = { body: 10000, line: 500, context: 2, perFolder: 500, path: 4096, range: 100 } as const
+
+// A line comment on a folder's diff. `line` is a line number of the `side` (old: a deleted line; new: an added or context line) and `anchor`
+// is that line's text when the comment was written. A comment on several lines has `endLine` (after `line`, at most 100 lines in all, same
+// side) and its `anchor` is the lines' texts joined with a newline; without `endLine` it is on the one line. The thread sits under the last line.
+// The text is that of the lines when the comment was written, so a later diff can tell the comment no longer fits. `before` and `after` are up to two
+// context lines each. `sent` is set only by sending the comment to an agent.
+export interface DiffComment {
+  id: string
+  path: string
+  side: 'old' | 'new'
+  line: number
+  endLine?: number
+  anchor: string
+  before: string[]
+  after: string[]
+  body: string
+  state: 'pending' | 'sent' | 'resolved'
+  createdAt: number
+}
+
 // The folder a diff call is about. The caller names a tab or a space and never a path: the core finds the folder itself.
 export type DiffTarget = { tabId: string; spaceId?: undefined } | { spaceId: string; tabId?: undefined }
 
@@ -369,6 +396,18 @@ export interface MethodMap {
   'diff.prefs.get': { params: DiffTarget; result: DiffPrefs }
   // Sets the parts given. A non-null base is also put first in the folder's recent bases (five at most).
   'diff.prefs.set': { params: DiffTarget & { mode?: DiffMode; base?: string | null }; result: DiffPrefs }
+  // The review comments kept for the folder, oldest first.
+  'diff.comments.list': { params: DiffTarget; result: { comments: DiffComment[] } }
+  // Adds a pending comment; the core makes the id and the time. Body 1 to 10000 characters, at most 500 comments per folder.
+  'diff.comments.add': {
+    params: DiffTarget & { path: string; side: 'old' | 'new'; line: number; endLine?: number; anchor: string; before: string[]; after: string[]; body: string }
+    result: DiffComment
+  }
+  // Changes the text or moves a comment between pending and resolved. State `sent` is refused: only sending sets it.
+  'diff.comments.update': { params: DiffTarget & { id: string; body?: string; state?: 'pending' | 'resolved' }; result: DiffComment }
+  'diff.comments.delete': { params: DiffTarget & { id: string }; result: Empty }
+  // Marks pending comments as sent, after the window pasted them to an agent. Ids that are not pending are skipped; the result is the ones that changed.
+  'diff.comments.markSent': { params: DiffTarget & { ids: string[] }; result: { comments: DiffComment[] } }
   'integration.status': { params: Empty; result: { agents: IntegrationInfo[] } }
   // The only writer of an agent's settings file, and only on this call (a human's yes). `written` is the backup this change wrote, or null.
   'integration.install': { params: { agent: IntegrationAgent }; result: IntegrationInfo & { changed: boolean; written: string | null } }

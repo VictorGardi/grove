@@ -257,6 +257,26 @@ describe('core daemon', () => {
     expect(await core.request(METHODS.diffPrefsSet, { tabId, base: null })).toEqual({ mode: 'uncommitted', base: null, recents: ['old'] })
     expect(await core.request(METHODS.diffBases, { tabId })).toEqual({ branches: ['main', 'old'], current: 'main', default: 'main', recents: ['old'] })
     expect(JSON.parse(fs.readFileSync(path.join(home, 'state.json'), 'utf8')).diffPrefs[repo].recents).toEqual(['old'])
+
+    // Review comments follow the same folder: a tab and its space see one list.
+    const note = { path: 'a.txt', side: 'new' as const, line: 1, anchor: 'two', before: [], after: [], body: 'why two?' }
+    expect(await core.request(METHODS.diffCommentsList, { tabId })).toEqual({ comments: [] })
+    const added = await core.request(METHODS.diffCommentsAdd, { tabId, ...note })
+    expect(added).toMatchObject({ ...note, state: 'pending' })
+    expect((await core.request(METHODS.diffCommentsList, { spaceId })).comments).toEqual([added])
+    expect(await core.request(METHODS.diffCommentsUpdate, { spaceId, id: added.id, state: 'resolved' })).toMatchObject({ state: 'resolved' })
+    await expect(core.request(METHODS.diffCommentsUpdate, { tabId, id: added.id, state: 'sent' as never })).rejects.toThrow('only by sending')
+    await expect(core.request(METHODS.diffCommentsAdd, { tabId, ...note, body: '' })).rejects.toThrow('must not be empty')
+    expect(JSON.parse(fs.readFileSync(path.join(home, 'state.json'), 'utf8')).diffComments[repo]).toHaveLength(1)
+    // Only pending comments become sent; a resolved one, an unknown id and a repeat are skipped.
+    const second = await core.request(METHODS.diffCommentsAdd, { tabId, ...note, line: 2, anchor: 'three' })
+    expect(await core.request(METHODS.diffCommentsMarkSent, { tabId, ids: [added.id, second.id, 'nope'] })).toEqual({ comments: [{ ...second, state: 'sent' }] })
+    expect(await core.request(METHODS.diffCommentsMarkSent, { spaceId, ids: [second.id] })).toEqual({ comments: [] })
+    expect((await core.request(METHODS.diffCommentsList, { tabId })).comments.map((c) => c.state)).toEqual(['resolved', 'sent'])
+    await expect(core.request(METHODS.diffCommentsMarkSent, { tabId, ids: 'x' as never })).rejects.toThrow('ids must be')
+    expect(await core.request(METHODS.diffCommentsDelete, { tabId, id: added.id })).toEqual({})
+    expect(await core.request(METHODS.diffCommentsDelete, { tabId, id: second.id })).toEqual({})
+    expect((await core.request(METHODS.diffCommentsList, { tabId })).comments).toEqual([])
   })
 
   it('refuses to close a tab that is neither saved nor in the holder', async () => {

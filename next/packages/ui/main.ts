@@ -14,10 +14,10 @@ import { readViewState, writeViewState } from './view-state.ts'
 import { groupAgents, jumpTargets, nextUrgent, shortFolder, sidebarSpaceOrder, spaceAt, tabStateOf, tileIndex, urgentTabs } from './sidebar-model.ts'
 import { createTabPill, type TabPill } from './tab-pill.ts'
 import { createNotesEditor } from './notes-editor.ts'
-import { createNotesPanel } from './notes-panel.ts'
+import { diffModule, notesModule } from './dock-modules.ts'
+import { createHostBus, mountModules } from './modules.ts'
 import { createDock } from './dock.ts'
 import { settled } from './diff-model.ts'
-import { createDiffPanel } from './diff-panel.ts'
 import { createRenameModal } from './rename-modal.ts'
 import { createContextMenu } from './context-menu.ts'
 import { createSpaceDialog } from './space-dialog.ts'
@@ -179,30 +179,50 @@ const dock = createDock(
     store: storage(),
     applyWidth: (width) => appEl.style.setProperty('--dock-width', `${width}px`),
     closed: focusActive,
-    changed: (id) => {
-      byId('notes-toggle').setAttribute('aria-pressed', String(id === 'notes'))
-      byId('diff-toggle').setAttribute('aria-pressed', String(id === 'diff'))
-    },
+    changed: (id) => rail.pressed(id),
   },
 )
-dock.register(
-  createNotesPanel({
-    read: async () => (await bridge.rpc('notes.read', {})).text,
-    write: (text) => bridge.rpc('notes.write', { text }),
-    createEditor: createNotesEditor,
-  }),
+// The modules in the dock (src modules.ts): each brings its panel, rail button and key action, and follows the host events the window
+// emits below (tab switch, an agent that stopped working, a connection that opened or closed).
+const hostBus = createHostBus((error) => report(error))
+const rail = mountModules(
+  [
+    notesModule({
+      read: async () => (await bridge.rpc('notes.read', {})).text,
+      write: (text) => bridge.rpc('notes.write', { text }),
+      createEditor: createNotesEditor,
+    }),
+    diffModule({
+      tab: () => active?.id ?? null,
+      connected: () => coreConnected,
+      get: (tabId, mode, base, showUntracked) => bridge.rpc('diff.get', { tabId, mode, base, showUntracked }),
+      bases: (tabId) => bridge.rpc('diff.bases', { tabId }),
+      prefs: (tabId) => bridge.rpc('diff.prefs.get', { tabId }),
+      setPrefs: (tabId, prefs) => bridge.rpc('diff.prefs.set', { tabId, ...prefs }),
+      comments: {
+        list: async (tabId) => (await bridge.rpc('diff.comments.list', { tabId })).comments,
+        add: (tabId, comment) => bridge.rpc('diff.comments.add', { tabId, ...comment }),
+        update: (tabId, id, change) => bridge.rpc('diff.comments.update', { tabId, id, ...change }),
+        remove: async (tabId, id) => void (await bridge.rpc('diff.comments.delete', { tabId, id })),
+        markSent: async (tabId, ids) => (await bridge.rpc('diff.comments.markSent', { tabId, ids })).comments,
+      },
+      target: () => {
+        if (!active) return null
+        const info = agents.get(active.id)
+        return { name: tabName(active), kind: active.kind, state: stateOf(active), ...(info?.reason ? { reason: info.reason } : {}), exited: active.exited }
+      },
+      write: async (tabId, data) => void (await bridge.rpc('tabs.write', { id: tabId, dataB64: toBase64(encoder.encode(data)) })),
+      focusTab: (tabId) => {
+        const tab = tabs.get(tabId)
+        if (tab) activate(tab)
+      },
+    }),
+  ],
+  byId('dock-toggles'),
+  dock,
+  hostBus,
+  (error) => report(error),
 )
-// The changes panel shows the active tab's folder. It names the tab and the core finds the folder; it asks again on the triggers below
-// (tab switch, an agent that stopped working, a new connection), the core never pushes.
-const diffPanel = createDiffPanel({
-  tab: () => active?.id ?? null,
-  connected: () => coreConnected,
-  get: (tabId, mode, base, showUntracked) => bridge.rpc('diff.get', { tabId, mode, base, showUntracked }),
-  bases: (tabId) => bridge.rpc('diff.bases', { tabId }),
-  prefs: (tabId) => bridge.rpc('diff.prefs.get', { tabId }),
-  setPrefs: (tabId, prefs) => bridge.rpc('diff.prefs.set', { tabId, ...prefs }),
-})
-dock.register(diffPanel.panel)
 // Keys: the settings section that rebinds an action. The core checks and saves it, then every window applies the new config.
 const keysPanel = createKeysPanel(byId('keys-list'), byId('keys-error'), {
   keys: () => keys,
@@ -252,8 +272,8 @@ const keyActions: Record<KeyAction, () => void> = {
   'grid-tab': () => toggleGridTab(),
   'next-urgent': () => jumpToUrgent(),
   'sidebar-toggle': () => sidebarToggle.click(),
-  notes: () => void dock.toggle('notes').catch(report),
-  diff: () => void dock.toggle('diff').catch(report),
+  notes: () => rail.toggle('notes')?.(),
+  diff: () => rail.toggle('diff')?.(),
   'space-1': () => focusSpace(1),
   'space-2': () => focusSpace(2),
   'space-3': () => focusSpace(3),
@@ -655,11 +675,14 @@ function paintStatusbar(): void {
   branch.title = name ? 'Copy the branch name' : ''
   branch.innerHTML = name ? `${iconSvg('branch')}<span></span>` : ''
   if (name) branch.querySelector('span')!.textContent = name
-  const running = [...agents.values()].filter((agent) => {
-    const tab = tabs.get(agent.tabId)
-    return tab?.exited === false && tab.spaceId === activeSpace
-  }).length
-  byId('statusbar-agents').textContent = `${running} ${running === 1 ? 'agent' : 'agents'}`
+  const running = [...agents.values()]
+    .map((agent) => tabs.get(agent.tabId))
+    .filter((tab): tab is Tab => tab !== undefined && !tab.exited && tab.spaceId === activeSpace)
+  const bar = element('span', 'agent-bar')
+  for (const tab of running) bar.append(element('i', `seg-${stateOf(tab)}`))
+  const count = element('span', 'statusbar-count')
+  count.innerHTML = `<b>${running.length}</b> ${running.length === 1 ? 'agent' : 'agents'}`
+  byId('statusbar-agents').replaceChildren(bar, count)
 }
 
 // Tabs of other spaces stay mounted and only hidden, so their shells keep running and their screens keep filling.
@@ -688,7 +711,7 @@ function paint(): void {
   renderAgents()
   paintStatusbar()
   paintEmpty()
-  diffPanel.retarget()
+  hostBus.emit('activeTabChanged', undefined)
   const idle = activeSpace === null || refused !== null
   gridToggle.setAttribute('aria-pressed', String(gridOn))
   paneDim.hidden = !gridOn
@@ -707,8 +730,7 @@ function shortcut(action: KeyAction): string {
 
 function paintShortcuts(): void {
   paintUrgent()
-  byId('notes-toggle').title = `Notes (${shortcut('notes')})`
-  byId('diff-toggle').title = `Changes (${shortcut('diff')})`
+  rail.paintShortcuts(shortcut)
   gridToggle.title = `Show the tabs put in the grid, from any space, (${shortcut('grid-toggle')}). ${shortcut('grid-tab')} puts the focused tab in it.`
   const hidden = appEl.classList.contains('sidebar-hidden')
   sidebarToggle.title = `${hidden ? 'Show' : 'Hide'} the sidebar (${shortcut('sidebar-toggle')})`
@@ -1154,7 +1176,7 @@ bridge.on('status.changed', (change) => {
   })
   syncKinds()
   renderStates()
-  diffPanel.agentChanged(change.tabId, settled(previous?.state, change.state))
+  hostBus.emit('agentStateChanged', { tabId: change.tabId, settled: settled(previous?.state, change.state) })
   // resumable depends on the holder's liveness, which the change does not carry; the core's list settles it.
   refreshAgents().catch(report)
 })
@@ -1233,7 +1255,7 @@ restartCoreButton.addEventListener('click', () => {
 bridge.onStatus((status) => {
   coreConnected = status === 'open'
   if (status === 'closed') {
-    diffPanel.connection(false)
+    hostBus.emit('connectionChanged', { open: false })
     if (coreRestart !== null) coreRestart.closed = true
     statusLine.textContent = coreRestart !== null ? 'Restarting the core...' : 'Reconnecting to the core...'
     return
@@ -1245,7 +1267,7 @@ bridge.onStatus((status) => {
   reportFocus()
   loadConfig().catch(report)
   resync().catch(report)
-  diffPanel.connection(true)
+  hostBus.emit('connectionChanged', { open: true })
 })
 
 new ResizeObserver(() => fitShown()).observe(terminals)
@@ -1286,8 +1308,6 @@ paneDim.addEventListener('input', () => {
   writePaneDim(storage(), Number(paneDim.value))
 })
 byId('new-space').addEventListener('click', () => void newSpaceTab().catch(report))
-byId('notes-toggle').addEventListener('click', () => void dock.toggle('notes').catch(report))
-byId('diff-toggle').addEventListener('click', () => void dock.toggle('diff').catch(report))
 byId('settings-open').addEventListener('click', () => integrationPanel.open())
 urgentBanner.addEventListener('click', () => jumpToUrgent())
 bridge.on('integration.prompt', ({ agent }) => {
