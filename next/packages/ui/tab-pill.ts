@@ -34,6 +34,7 @@ export function createTabPill(mark: HTMLElement, handlers: TabPillHandlers): Tab
   const label = document.createElement('span')
   label.className = 'tab-label'
   const indicator = document.createElement('span')
+  let shownState: string | null = null
   const grid = document.createElement('span')
   grid.className = 'tab-grid'
   grid.title = 'In the grid'
@@ -66,9 +67,13 @@ export function createTabPill(mark: HTMLElement, handlers: TabPillHandlers): Tab
       root.classList.toggle('in-grid', inGrid)
       main.title = title
       label.textContent = name
-      indicator.className = indicatorClass(state)
-      indicator.title = indicatorLabel(state)
-      indicator.setAttribute('aria-label', indicatorLabel(state))
+      // Written only on a change: rewriting the class of a spinning indicator can restart its animation.
+      if (shownState !== state) {
+        shownState = state
+        indicator.className = indicatorClass(state)
+        indicator.title = indicatorLabel(state)
+        indicator.setAttribute('aria-label', indicatorLabel(state))
+      }
     },
   }
 }
