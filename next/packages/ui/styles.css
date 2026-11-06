@@ -781,8 +781,22 @@ p {
   background-color: var(--color-ground);
 }
 
+/* xterm.css sets overflow-y: scroll on the viewport, so the system draws its own scrollbar there (a thin line down the right edge). */
+.term-host .xterm .xterm-viewport {
+  scrollbar-width: none;
+}
+
+.term-host .xterm .xterm-viewport::-webkit-scrollbar {
+  display: none;
+}
+
 /* No scrollbar: xterm 6 draws its own, and the wheel and trackpad still scroll without it. */
 .term-host .xterm .xterm-scrollable-element > .scrollbar {
+  display: none;
+}
+
+/* The overview ruler is kept at width 1 for the fit addon, and xterm paints it as a 1px line down the right edge; nothing here uses it. */
+.term-host .xterm .xterm-decoration-overview-ruler {
   display: none;
 }
 

@@ -43,6 +43,8 @@ function terminalTheme(): ITheme {
     foreground: tokenValue('--color-term-fg'),
     cursor: tokenValue('--color-ink'),
     selectionBackground: tokenValue('--color-selected'),
+    // The overview ruler is kept at width 1 for the fit addon, and xterm draws its border as a light 1px line down the right edge.
+    overviewRulerBorder: tokenValue('--color-ground'),
     black, red, green, yellow, blue, magenta, cyan, white,
     brightBlack, brightRed, brightGreen, brightYellow, brightBlue, brightMagenta, brightCyan, brightWhite,
   }
