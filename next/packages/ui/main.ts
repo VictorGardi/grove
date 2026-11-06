@@ -1381,6 +1381,8 @@ async function start(): Promise<void> {
   paintFocus()
   await loadFonts()
   await bridge.connect()
+  // The first connection reports no status (only a reconnect does), so the window notes it here.
+  coreConnected = true
   await loadConfig()
   await resync()
   await integrationPanel.ask().catch(report)
