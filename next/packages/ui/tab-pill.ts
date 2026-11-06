@@ -65,8 +65,8 @@ export function createTabPill(mark: HTMLElement, handlers: TabPillHandlers): Tab
     update({ name, title, state, inGrid = false }) {
       grid.hidden = !inGrid
       root.classList.toggle('in-grid', inGrid)
-      main.title = title
-      label.textContent = name
+      if (main.title !== title) main.title = title
+      if (label.textContent !== name) label.textContent = name
       // Written only on a change: rewriting the class of a spinning indicator can restart its animation.
       if (shownState !== state) {
         shownState = state

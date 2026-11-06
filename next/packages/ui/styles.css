@@ -477,6 +477,8 @@ p {
   border: var(--ind-stroke) solid color-mix(in srgb, var(--state-working) 20%, transparent);
   border-top-color: var(--state-working);
   animation: spin var(--spin-period) linear infinite;
+  /* Its own layer, so the spin runs on the compositor and a busy main thread (a tab switch) cannot stall it. */
+  will-change: transform;
 }
 
 @keyframes spin {
