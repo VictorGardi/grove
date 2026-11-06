@@ -6,7 +6,7 @@ import { afterEach, beforeEach, describe, expect, it } from 'vitest'
 import { fileURLToPath } from 'node:url'
 import { b64ToBytes, bytesToB64 } from '../protocol/framing.ts'
 import { coreSocketPath } from '../protocol/paths.ts'
-import { METHODS, type ConfigSnapshot, type StatusChange } from '../protocol/messages.ts'
+import { METHODS, type ConfigSnapshot, type SpaceInfo, type SpaceTabInfo, type StatusChange } from '../protocol/messages.ts'
 import { connectRpc, connectWhenReady, type RpcClient } from '../protocol/client.ts'
 import { holderSocketPath } from '../protocol/paths.ts'
 import { ensureHolder } from './holder-client.ts'
@@ -137,6 +137,24 @@ describe('core daemon', () => {
       (count) => count > 0,
     )
     expect(exits).toEqual([{ id, exitCode: 3 }])
+  })
+
+  it('announces CLI-created spaces and shell tabs to an already connected window', async () => {
+    const stack = await startStack()
+    holder = stack.holder
+    const cli = stack.core
+    const window = await connectRpc(coreSocketPath())
+    clients.push(cli, window)
+    const changed: SpaceInfo[] = []
+    const opened: SpaceTabInfo[] = []
+    window.onNotification('spaces.changed', (info) => changed.push(info))
+    window.onNotification('tabs.opened', (info) => opened.push(info))
+    const space = await cli.request(METHODS.spacesAdd, { path: home })
+    const { id } = await cli.request(METHODS.tabsOpen, { spaceId: space.id, cols: 80, rows: 24, label: 'CLI shell' })
+    await waitFor(async () => opened.length, (count) => count === 1)
+    expect(changed).toContainEqual(space)
+    expect(opened).toEqual([{ id, spaceId: space.id, spacePath: space.path, kind: 'terminal', label: 'CLI shell', alive: true, exitCode: null }])
+    await expect(window.request(METHODS.tabsAttach, { id })).resolves.toHaveProperty('screenB64')
   })
 
   it('applies every resize to the holder, the last one wins, whichever client owns the tab', async () => {
@@ -532,6 +550,25 @@ describe('core daemon agents', () => {
 
   const agentState = async (core: RpcClient, tabId: string) =>
     (await core.request(METHODS.agentsList, {})).find((agent) => agent.tabId === tabId)
+
+  it('announces newly created and resumed agent tabs to another client', async () => {
+    const { core } = await startDaemon()
+    const window = await connectRpc(coreSocketPath())
+    clients.push(window)
+    const opened: SpaceTabInfo[] = []
+    window.onNotification('tabs.opened', (info) => opened.push(info))
+    const { id } = await core.request(METHODS.tabsCreate, {
+      command: 'claude', cwd: space, cols: 80, rows: 24, label: 'CLI agent', agent: { kind: 'claude' },
+    })
+    await waitFor(async () => opened.length, (count) => count === 1)
+    expect(opened[0]).toMatchObject({ id, kind: 'claude', label: 'CLI agent', alive: true, spacePath: space })
+    await killOnHolder(id)
+    await core.request(METHODS.tabsCreate, {
+      id, command: 'claude', cwd: space, cols: 80, rows: 24, agent: { kind: 'claude' },
+    })
+    await waitFor(async () => opened.length, (count) => count === 2)
+    expect(opened[1]).toEqual(opened[0])
+  })
 
   it('sets GROVE_NEXT_CONFIG in a Claude tab', async () => {
     launchScript = "printf 'cfg=%s\\n' \"$GROVE_NEXT_CONFIG\"; sleep 30"

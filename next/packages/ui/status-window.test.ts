@@ -4,14 +4,17 @@
 // is typed by hand into a shell tab, as a human does, so its tab was created as a shell.
 import { readFileSync } from 'node:fs'
 import path from 'node:path'
-import { beforeAll, beforeEach, describe, expect, it, vi } from 'vitest'
+import { afterAll, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest'
 import type { AgentInfo, AgentStateName, SpaceTabInfo, StatusChange } from '../protocol/messages.ts'
 import { DEFAULT_VALUES } from '../core/config/schema.ts'
+import { VIEW_STATE_KEY } from './view-state.ts'
 
 const fake = vi.hoisted(() => ({
   channel: null as null | { onmessage: (line: string) => void },
   tabs: [] as unknown[],
   agents: [] as unknown[],
+  opening: null as SpaceTabInfo | null,
+  attaches: [] as string[],
 }))
 
 vi.mock('@tauri-apps/api/core', () => {
@@ -21,7 +24,7 @@ vi.mock('@tauri-apps/api/core', () => {
       fake.channel = this
     }
   }
-  const answer = (method: string): unknown => {
+  const answer = (method: string, params: { id?: string } = {}): unknown => {
     switch (method) {
       case 'spaces.list':
         return {
@@ -36,17 +39,22 @@ vi.mock('@tauri-apps/api/core', () => {
       case 'integration.status':
         return { agents: [] }
       case 'tabs.attach':
+        fake.attaches.push(params.id!)
         return { screenB64: '', cols: 80, rows: 24 }
+      case 'tabs.open':
+        if (!fake.opening) throw new Error('no tab configured')
+        fake.channel!.onmessage(JSON.stringify({ jsonrpc: '2.0', method: 'tabs.opened', params: fake.opening }))
+        return { id: fake.opening.id }
       default:
         return {}
     }
   }
-  const invoke = async (command: string, args?: { events?: unknown; request?: { id: number; method: string } }) => {
+  const invoke = async (command: string, args?: { events?: unknown; request?: { id: number; method: string; params?: { id?: string } } }) => {
     if (command === 'env_info') return { home: '/Users/test' }
     if (command === 'connect') return undefined
     if (command === 'rpc') {
       const request = args!.request!
-      return JSON.stringify({ jsonrpc: '2.0', id: request.id, result: answer(request.method) })
+      return JSON.stringify({ jsonrpc: '2.0', id: request.id, result: answer(request.method, request.params) })
     }
     return undefined
   }
@@ -125,12 +133,59 @@ describe('window status path', () => {
     document.body.innerHTML = body
     Object.defineProperty(document, 'fonts', { configurable: true, value: { load: async () => [] } })
     fake.tabs = TABS
+    const stored = new Map<string, string>()
+    vi.stubGlobal('localStorage', {
+      getItem: (key: string) => stored.get(key) ?? null,
+      setItem: (key: string, value: string) => { stored.set(key, value) },
+    })
+    localStorage.setItem(VIEW_STATE_KEY, JSON.stringify({
+      gridOn: true, gridTabs: ['tab-claude', 'tab-copilot', 'removed-tab'], activeSpace: 's1', activeTab: 'tab-copilot',
+    }))
     await import('./main.ts')
     await vi.waitFor(() => expect(document.querySelectorAll('#tabs > *').length).toBe(TABS.length))
+    await vi.waitFor(() => expect(document.querySelector('#grid-toggle')?.getAttribute('aria-pressed')).toBe('true'))
   })
 
   beforeEach(() => {
     fake.agents = []
+  })
+
+  afterAll(() => vi.unstubAllGlobals())
+
+  it('restores grid mode, its surviving sessions and the selected tab on startup', () => {
+    expect(document.querySelector('#terminals')?.classList.contains('grid-panes')).toBe(true)
+    expect(document.querySelectorAll('#terminals .pane:not([hidden])')).toHaveLength(2)
+    expect(document.querySelector('#tabs > .active')?.textContent).toContain('copilot')
+    expect(JSON.parse(localStorage.getItem(VIEW_STATE_KEY)!)).toEqual({
+      gridOn: true, gridTabs: ['tab-claude', 'tab-copilot'], activeSpace: 's1', activeTab: 'tab-copilot',
+    })
+  })
+
+  it('adds CLI sessions immediately without changing the active grid', async () => {
+    const info: SpaceTabInfo = { ...TABS[0], id: 'cli-tab', label: 'CLI session' }
+    notify('tabs.opened', info)
+    await vi.waitFor(() => expect(fake.attaches).toContain('cli-tab'))
+    expect(document.querySelectorAll('#tabs > *')).toHaveLength(4)
+    expect(document.querySelector('#tabs > .active')?.textContent).toContain('copilot')
+    expect(document.querySelector('#grid-toggle')?.getAttribute('aria-pressed')).toBe('true')
+    notify('tabs.closed', { id: info.id })
+  })
+
+  it('adds a CLI-created space to the sidebar immediately', () => {
+    notify('spaces.changed', { id: 'cli-space', path: '/cli', name: 'CLI space', label: null, repoName: null, parent: null, worktree: false, branch: null })
+    expect(document.querySelector('#spaces')?.textContent).toContain('CLI space')
+    notify('spaces.removed', { id: 'cli-space' })
+  })
+
+  it('does not duplicate a UI-created tab when the opened notification precedes the RPC reply', async () => {
+    fake.opening = { ...TABS[0], id: 'ui-tab', label: 'UI session' }
+    document.dispatchEvent(new KeyboardEvent('keydown', { key: 't', ctrlKey: true, bubbles: true }))
+    await vi.waitFor(() => expect(document.querySelector('#tabs > .active')?.textContent).toContain('UI session'))
+    expect(document.querySelectorAll('#tabs > *')).toHaveLength(4)
+    expect(fake.attaches.filter((id) => id === 'ui-tab')).toHaveLength(1)
+    expect(JSON.parse(localStorage.getItem(VIEW_STATE_KEY)!).activeTab).toBe('ui-tab')
+    notify('tabs.closed', { id: 'ui-tab' })
+    fake.opening = null
   })
 
   it('shows each typed agent tab in the same states as the core reports them', async () => {

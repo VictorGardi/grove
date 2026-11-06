@@ -10,6 +10,7 @@ import { canJoinGrid, gridMembers, gridShape, paneSpans } from './grid/layout.ts
 import { previousOf, stepFrom, visited } from './recent-tabs.ts'
 import { PANE_DIM_RANGE, readPaneDim, writePaneDim } from './pane-dim.ts'
 import { readSidebarHidden, writeSidebarHidden, type KeyValueStore } from './sidebar-state.ts'
+import { readViewState, writeViewState } from './view-state.ts'
 import { groupAgents, jumpTargets, nextUrgent, shortFolder, sidebarSpaceOrder, spaceAt, tabStateOf, tileIndex, urgentTabs } from './sidebar-model.ts'
 import { createTabPill, type TabPill } from './tab-pill.ts'
 import { createNotesEditor } from './notes-editor.ts'
@@ -56,9 +57,10 @@ interface Tab {
   label: string | null
   // The tab's number in its space, counted in the order the tabs were opened.
   number: number
-  // Whether the human put the tab in the grid. Kept in the window only: a reload starts with no tab in the grid.
+  // Whether the human put the tab in the grid, saved with the window's view state.
   inGrid: boolean
   attached: boolean
+  attaching: Promise<void> | null
   exited: boolean
   queue: Uint8Array[] | null
   // The tab's pane in the terminals area, its terminal, and its button in the strip.
@@ -99,8 +101,9 @@ let keys: Record<KeyAction, string> = DEFAULT_VALUES.keys
 let themeTokens: string[] = []
 let noteShown = ''
 const isMac = navigator.platform.startsWith('Mac')
-// Grid mode shows the active space's first tabs as panes instead of only the active one.
+// Grid mode shows the tabs the human put in it, across spaces.
 let gridOn = false
+let viewStateReady = false
 // The last attention.focus sent, as a key; an identical one is skipped until a reconnect clears it.
 let sentFocus: string | null = null
 // The states page (?demo=states) runs without a core: nothing is sent to it.
@@ -347,6 +350,7 @@ function createTab(spaceId: string, spacePath: string, kind: TabKind, label: str
     number: 0,
     inGrid: false,
     attached: false,
+    attaching: null,
     exited: false,
     queue: null,
     pane,
@@ -547,7 +551,14 @@ function markExited(tab: Tab, exitCode: number | null = null): void {
 }
 
 // Shows the core's saved screen first, then output that arrived while the attach was in flight.
-async function attach(tab: Tab): Promise<void> {
+function attach(tab: Tab): Promise<void> {
+  if (tab.attaching) return tab.attaching
+  const pending = attachScreen(tab).finally(() => { tab.attaching = null })
+  tab.attaching = pending
+  return pending
+}
+
+async function attachScreen(tab: Tab): Promise<void> {
   tab.queue = []
   try {
     const { screenB64 } = await bridge.rpc('tabs.attach', { id: tab.id })
@@ -683,6 +694,9 @@ function paint(): void {
   paneDim.hidden = !gridOn
   gridToggle.disabled = !gridOn && (idle || shown.length === 0)
   for (const button of launcherBar.querySelectorAll('button')) button.disabled = idle
+  if (viewStateReady && !demoMode) {
+    writeViewState(storage(), { gridOn, gridTabs: gridTabs().map((tab) => tab.id), activeSpace, activeTab: active?.id ?? null })
+  }
   reportFocus()
 }
 
@@ -826,19 +840,21 @@ async function newShellTab(typed: string | null = null): Promise<void> {
   const spaceId = activeSpace
   const space = spaceId ? spaces.get(spaceId) : undefined
   if (!spaceId || !space) return
-  const tab = createTab(spaceId, space.path, 'shell', null)
+  let tab: Tab | undefined
   try {
     const { id } = await bridge.rpc('tabs.open', {
       spaceId,
-      cols: tab.view.term.cols,
-      rows: tab.view.term.rows,
+      cols: active?.view.term.cols ?? 80,
+      rows: active?.view.term.rows ?? 24,
     })
-    adopt(tab, id)
-    await attach(tab)
+    // The opened notification can arrive before this call's reply.
+    tab = tabs.get(id) ?? createTab(spaceId, space.path, 'shell', null)
+    if (!tab.id) adopt(tab, id)
+    if (!tab.attached || tab.attaching) await attach(tab)
     if (typed !== null) void bridge.rpc('tabs.write', { id, dataB64: toBase64(encoder.encode(`${typed}\r`)) }).catch(report)
     activate(tab)
   } catch (error) {
-    removeTab(tab)
+    if (tab) removeTab(tab)
     report(error)
   }
 }
@@ -1090,8 +1106,18 @@ async function resync(): Promise<void> {
     }
   }
 
+  if (!viewStateReady && state.refused === null) {
+    const saved = readViewState(storage())
+    for (const tab of order) tab.inGrid = saved.gridTabs.includes(tab.id)
+    gridOn = saved.gridOn && gridTabs().length > 0
+    active = saved.activeTab ? tabs.get(saved.activeTab) ?? null : null
+    if (gridOn && (!active || !active.inGrid)) active = gridTabs()[0]
+    activeSpace = active?.spaceId ?? (saved.activeSpace && spaces.has(saved.activeSpace) ? saved.activeSpace : null)
+    if (active) recentBySpace.set(active.spaceId, visited(recentBySpace.get(active.spaceId) ?? [], active))
+    viewStateReady = true
+  }
   if (!activeSpace || !spaces.has(activeSpace)) activeSpace = state.spaces[0]?.id ?? null
-  selectSpace(activeSpace)
+  selectSpace(activeSpace, active?.spaceId === activeSpace ? active : undefined)
   await refreshAgents()
 }
 
@@ -1099,6 +1125,19 @@ bridge.on('tabs.output', ({ id, dataB64 }) => {
   const tab = tabs.get(id)
   if (!tab) return
   deliver(tab, fromBase64(dataB64))
+})
+
+bridge.on('tabs.opened', (info) => {
+  let tab = tabs.get(info.id)
+  if (!tab) {
+    tab = createTab(info.spaceId, info.spacePath, info.kind === 'terminal' ? 'shell' : info.kind, info.label)
+    adopt(tab, info.id)
+  } else {
+    tab.label = info.label
+    tab.kind = info.kind === 'terminal' ? 'shell' : info.kind
+  }
+  attach(tab).then(paint).catch(report)
+  refreshAgents().catch(report)
 })
 
 bridge.on('tabs.exit', ({ id, exitCode }) => {
@@ -1151,9 +1190,8 @@ bridge.on('tabs.closed', ({ id }) => {
 // Another window or the CLI removed a space: it leaves the sidebar at once.
 bridge.on('spaces.removed', ({ id }) => dropSpace(id))
 
-// A tab's cd moved a space's folder: the sidebar shows the new name and branch at once.
+// A space was added or changed: the sidebar updates at once.
 bridge.on('spaces.changed', (info) => {
-  if (!spaces.has(info.id)) return
   spaces.set(info.id, info)
   paint()
 })

@@ -386,9 +386,11 @@ export interface NotificationMap {
   'tabs.focus': { id: string }
   // A tab was closed on purpose: every window drops it.
   'tabs.closed': { id: string }
+  // A saved tab was opened or resumed: every window adds it or reattaches it.
+  'tabs.opened': SpaceTabInfo
   // A space was removed: every window drops it.
   'spaces.removed': { id: string }
-  // A space's folder moved (a cd in one of its tabs): every window shows its new name and branch.
+  // A space was added or changed: every window shows its current name and branch.
   'spaces.changed': SpaceInfo
   // The config folder changed and a value or a note is new: every window applies it.
   'config.changed': ConfigSnapshot

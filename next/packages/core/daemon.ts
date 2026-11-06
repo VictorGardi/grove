@@ -524,7 +524,23 @@ async function createAgentTab(
     rows: numberParam(p, 'rows'),
   })
   deps.status.track({ tabId: id, spaceId, spacePath, kind, sessionId: launch.sessionId })
+  announceTab(id, deps)
   return { id }
+}
+
+function announceTab(id: string, deps: Deps): void {
+  const tab = deps.spaces.tabRecord(id)
+  if (tab === undefined) throw new Error(`opened tab has no saved record: ${id}`)
+  const info: NotificationMap['tabs.opened'] = {
+    id,
+    spaceId: tabSpaceId(tab),
+    spacePath: tab.spacePath,
+    kind: tab.agent ?? 'terminal',
+    label: tab.label ?? null,
+    alive: true,
+    exitCode: null,
+  }
+  deps.broadcast(notification('tabs.opened', info))
 }
 
 // An agent tab that exits on its own (/exit, a crash, kill -9 of Claude) stays in the holder as an exited
@@ -649,7 +665,9 @@ async function dispatchSpaces(method: string, rawParams: unknown, holder: RpcCli
   if (method === METHODS.spacesList) return spaces.list(holder, (rawParams as { tabsOnly?: boolean } | null)?.tabsOnly === true)
   if (method === METHODS.spacesAdd) {
     const p = rawParams as MethodMap['spaces.add']['params']
-    return spaces.add(stringParam(p, 'path'))
+    const info = await spaces.add(stringParam(p, 'path'))
+    deps.broadcast(notification('spaces.changed', info))
+    return info
   }
   if (method === METHODS.spacesRemove) return removeSpace(rawParams, holder, deps)
   if (method === METHODS.spacesRename) {
@@ -660,11 +678,15 @@ async function dispatchSpaces(method: string, rawParams: unknown, holder: RpcCli
     return { worktrees: await spaces.unopenedWorktrees(stringParam(rawParams, 'spaceId')) } satisfies MethodMap['worktrees.list']['result']
   }
   if (method === METHODS.worktreesAdd) {
-    return spaces.addWorktreeSpace(stringParam(rawParams, 'spaceId'), stringParam(rawParams, 'branch'))
+    const info = await spaces.addWorktreeSpace(stringParam(rawParams, 'spaceId'), stringParam(rawParams, 'branch'))
+    deps.broadcast(notification('spaces.changed', info))
+    return info
   }
   const p = rawParams as MethodMap['tabs.open']['params']
   const env = { GROVE_NEXT_CONFIG: deps.configDir }
-  return spaces.openTab(stringParam(p, 'spaceId'), numberParam(p, 'cols'), numberParam(p, 'rows'), holder, optionalLabel(p), env)
+  const result = await spaces.openTab(stringParam(p, 'spaceId'), numberParam(p, 'cols'), numberParam(p, 'rows'), holder, optionalLabel(p), env)
+  announceTab(result.id, deps)
+  return result
 }
 
 // Closes every tab of the space, then drops the space. With removeWorktree the checkout goes first, so a refusal by git
