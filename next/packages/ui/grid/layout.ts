@@ -31,3 +31,17 @@ export function gridMembers<T extends GridTab>(tabs: T[], max = GRID_MAX): T[] {
 export function canJoinGrid(count: number, max = GRID_MAX): boolean {
   return count < max
 }
+
+export type PaneDirection = 'left' | 'right' | 'up' | 'down'
+
+// The pane next to pane index in a direction, or index when there is none. The last pane stretches across the rest of its row, so a move down into the last row lands on it.
+export function neighborPane(n: number, index: number, direction: PaneDirection): number {
+  const { cols } = gridShape(n)
+  const row = Math.floor(index / cols)
+  const col = index % cols
+  if (direction === 'left') return col > 0 ? index - 1 : index
+  if (direction === 'right') return col < cols - 1 && index + 1 < n ? index + 1 : index
+  if (direction === 'up') return row > 0 ? index - cols : index
+  const below = (row + 1) * cols
+  return below >= n ? index : Math.min(below + col, n - 1)
+}

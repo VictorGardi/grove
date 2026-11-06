@@ -6,7 +6,7 @@ import { readSound, writeSound } from './sound-pref.ts'
 import { THEMES, applyThemeChoice, isThemeId, readTheme, writeTheme } from './theme-pref.ts'
 import { applyLayout, applySettings, applyTheme, findAction, formatBinding, launcherLine } from './config.ts'
 import { openTerminal, terminalFontSize, tokenValue, type TerminalView } from './terminal.ts'
-import { canJoinGrid, gridMembers, gridShape, paneSpans } from './grid/layout.ts'
+import { canJoinGrid, gridMembers, gridShape, neighborPane, paneSpans, type PaneDirection } from './grid/layout.ts'
 import { previousOf, stepFrom, visited } from './recent-tabs.ts'
 import { PANE_DIM_RANGE, readPaneDim, writePaneDim } from './pane-dim.ts'
 import { readSidebarHidden, writeSidebarHidden, type KeyValueStore } from './sidebar-state.ts'
@@ -1336,6 +1336,7 @@ settingsTabs.forEach((tab) =>
     settingsSections.forEach((section) => (section.hidden = section.dataset.section !== tab.dataset.section))
   }),
 )
+const ARROW_DIRECTIONS: Record<string, PaneDirection | undefined> = { ArrowLeft: 'left', ArrowRight: 'right', ArrowUp: 'up', ArrowDown: 'down' }
 // Key bindings are read in the capture phase, so a matched key does not also reach the terminal. While the rename modal is open they wait.
 window.addEventListener(
   'keydown',
@@ -1353,7 +1354,19 @@ window.addEventListener(
         return
       }
     }
-    if (action === null) return
+    if (action === null) {
+      // In grid mode Cmd+Option+arrow (Ctrl+Alt off the Mac) moves between the panes. Plain Cmd+arrow never reaches the page, and Ctrl+arrow is Mission Control.
+      const direction = gridOn ? ARROW_DIRECTIONS[event.key] : undefined
+      const modifier = isMac ? event.metaKey && !event.ctrlKey : event.ctrlKey && !event.metaKey
+      if (!direction || !modifier || event.shiftKey || !event.altKey) return
+      event.preventDefault()
+      event.stopPropagation()
+      const members = gridTabs()
+      const at = active ? members.indexOf(active) : -1
+      const next = at >= 0 ? members[neighborPane(members.length, at, direction)] : undefined
+      if (next && next !== active) activate(next)
+      return
+    }
     event.preventDefault()
     event.stopPropagation()
     keyActions[action]()

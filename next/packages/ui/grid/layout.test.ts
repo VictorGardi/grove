@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { canJoinGrid, GRID_MAX, gridCols, gridMembers, paneSpans } from './layout.ts'
+import { canJoinGrid, GRID_MAX, gridCols, gridMembers, neighborPane, paneSpans } from './layout.ts'
 
 describe('gridCols', () => {
   it('picks 1, 2 or 3 columns by count', () => {
@@ -49,5 +49,18 @@ describe('canJoinGrid', () => {
     expect(canJoinGrid(GRID_MAX - 1)).toBe(true)
     expect(canJoinGrid(GRID_MAX)).toBe(false)
     expect(canJoinGrid(1, 1)).toBe(false)
+  })
+})
+
+describe('neighborPane', () => {
+  it('moves between panes and stays at the edges', () => {
+    // 5 panes in 3 columns: 0 1 2 / 3 4(spans 2)
+    expect(neighborPane(5, 0, 'right')).toBe(1)
+    expect(neighborPane(5, 0, 'left')).toBe(0)
+    expect(neighborPane(5, 0, 'down')).toBe(3)
+    expect(neighborPane(5, 2, 'down')).toBe(4)
+    expect(neighborPane(5, 4, 'up')).toBe(1)
+    expect(neighborPane(5, 4, 'right')).toBe(4)
+    expect(neighborPane(5, 3, 'right')).toBe(4)
   })
 })
