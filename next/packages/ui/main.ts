@@ -714,11 +714,6 @@ function paintShortcuts(): void {
   sidebarToggle.title = `${hidden ? 'Show' : 'Hide'} the sidebar (${shortcut('sidebar-toggle')})`
 }
 
-// The root's unfocused class pauses the spinners: the window is in the background or the page is hidden.
-function paintFocus(): void {
-  document.documentElement.classList.toggle('unfocused', !windowFocused || document.hidden)
-}
-
 // The core needs the tab on screen and whether the window has focus, to decide what to notify and mark seen.
 function reportFocus(): void {
   if (demoMode) return
@@ -1366,7 +1361,6 @@ window.addEventListener(
   { capture: true },
 )
 setInterval(refreshAges, AGE_REFRESH_MS)
-document.addEventListener('visibilitychange', paintFocus)
 // A window that comes back (from the background, or a night of sleep) repaints its terminals: the GPU may have dropped their contexts meanwhile.
 function repaintTerminals(): void {
   for (const tab of order) tab.view.repaint()
@@ -1394,7 +1388,6 @@ async function startDemo(rows: DemoRows): Promise<void> {
     tab.exited = item.exited
     adopt(tab, item.id)
   }
-  paintFocus()
   selectSpace(rows.spaces[0]?.id ?? null)
 }
 
@@ -1413,10 +1406,8 @@ async function start(): Promise<void> {
   windowFocused = await appWindow.isFocused()
   await appWindow.onFocusChanged(({ payload }: { payload: boolean }) => {
     windowFocused = payload
-    paintFocus()
-    reportFocus()
+      reportFocus()
   })
-  paintFocus()
   await loadFonts()
   await bridge.connect()
   // The first connection reports no status (only a reconnect does), so the window notes it here.

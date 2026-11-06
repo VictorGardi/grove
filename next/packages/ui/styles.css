@@ -445,7 +445,7 @@ p {
   font-variant-numeric: tabular-nums;
 }
 
-/* Indicators: one shape per state. The spin pauses while the window is not focused. */
+/* Indicators: one shape per state. The spin never pauses: a paused animation on a long-lived indicator could stay stuck. */
 
 .indicator {
   flex: none;
@@ -477,10 +477,6 @@ p {
   border: var(--ind-stroke) solid color-mix(in srgb, var(--state-working) 20%, transparent);
   border-top-color: var(--state-working);
   animation: spin var(--spin-period) linear infinite;
-}
-
-html.unfocused .ind-working {
-  animation-play-state: paused;
 }
 
 @keyframes spin {
