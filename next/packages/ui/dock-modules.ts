@@ -17,7 +17,7 @@ export function diffModule(deps: DiffDeps): DockModule {
   const diff = createDiffPanel(deps)
   return {
     panel: diff.panel,
-    button: { icon: 'diff', label: 'Changes', tooltip: 'Changes' },
+    button: { icon: 'diff', label: null, tooltip: 'Changes' },
     keyAction: 'diff',
     follow: (bus) => {
       bus.on('activeTabChanged', () => diff.retarget())

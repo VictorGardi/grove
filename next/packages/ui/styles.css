@@ -2008,6 +2008,7 @@ li[aria-selected] > .slash-tile {
   flex: none;
   align-items: center;
   gap: var(--space-4);
+  min-height: calc(var(--size-cap) + 2 * var(--space-4));
   padding: var(--space-4) var(--space-5);
 }
 
@@ -2020,10 +2021,49 @@ li[aria-selected] > .slash-tile {
   flex: 1;
 }
 
-.diff-summary .diff-filter {
+.diff-filter-box {
+  display: flex;
   flex: 1 1 0;
+  align-items: center;
+  gap: var(--space-3);
+  min-width: 0;
+  height: var(--size-cap);
+  padding: 0 var(--space-4);
+  border: 1px solid var(--color-line);
+  border-radius: var(--radius-sm);
+  background: var(--color-well);
+  color: var(--color-mute);
+}
+
+.diff-filter-box:focus-within {
+  border-color: var(--accent);
+}
+
+.diff-filter-box[hidden] {
+  display: none;
+}
+
+.diff-filter-icon {
+  display: grid;
+  flex: none;
+}
+
+.diff-filter-box .diff-filter {
+  flex: 1;
   min-width: 0;
   margin: 0;
+  padding: 0;
+  border: 0;
+  border-radius: 0;
+  background: transparent;
+}
+
+.diff-filter-box .diff-filter:focus-visible {
+  outline: none;
+}
+
+.diff-filter-box .diff-filter::-webkit-search-cancel-button {
+  display: none;
 }
 
 .diff-summary-files {
@@ -2076,13 +2116,8 @@ li[aria-selected] > .slash-tile {
 .diff-card {
   margin-bottom: var(--space-4);
   overflow: clip;
-  border: 1px solid var(--color-line);
   border-radius: var(--radius-md);
   background: var(--color-ground);
-}
-
-.diff-card.selected {
-  border-color: var(--color-pane-focus);
 }
 
 .diff-card.viewed {
@@ -2703,4 +2738,29 @@ li[aria-selected] > .slash-tile {
   border-radius: var(--radius-sm);
   color: var(--color-mute);
   font-size: var(--text-xs);
+}
+
+/* The dock's rail buttons: bare icons, with a soft square behind the open one. */
+.dock-toggle,
+.dock-toggle:hover,
+#grid-toggle,
+#grid-toggle:hover,
+.dim-pill {
+  width: var(--size-control);
+  height: var(--size-control);
+  padding: 0;
+  border: 0;
+  border-radius: var(--radius-sm);
+}
+
+.dim-pill {
+  width: auto;
+  padding: 0 var(--space-3);
+}
+
+.dock-toggle[aria-pressed='true'],
+#grid-toggle[aria-pressed='true'] {
+  color: var(--color-ink);
+  border: 0;
+  background: var(--color-raised);
 }

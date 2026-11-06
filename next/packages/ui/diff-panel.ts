@@ -164,9 +164,14 @@ function mountDiff(
   searchButton.setAttribute('aria-expanded', 'false')
   const filterInput = el('input', 'diff-filter')
   filterInput.type = 'search'
-  filterInput.placeholder = 'Filter files…'
+  filterInput.placeholder = 'Search files…'
   filterInput.setAttribute('aria-label', 'Filter files')
   filterInput.hidden = true
+  const filterBox = el('label', 'diff-filter-box')
+  filterBox.hidden = true
+  const filterIcon = el('span', 'diff-filter-icon')
+  filterIcon.innerHTML = iconSvg('search')
+  filterBox.append(filterIcon, filterInput)
   const progressText = el('span', 'diff-progress-text')
   const progressBar = el('span', 'diff-progress')
   progressBar.setAttribute('role', 'progressbar')
@@ -183,7 +188,7 @@ function mountDiff(
   const sendLine = el('span', 'diff-send-line')
   sendLine.setAttribute('role', 'status')
   sendBox.append(sendLine, sendButton)
-  summaryEl.append(filesText, addsText, delsText, el('span', 'diff-summary-spacer'), filterInput, searchButton, progressText, progressBar, sendBox)
+  summaryEl.append(filesText, addsText, delsText, el('span', 'diff-summary-spacer'), filterBox, searchButton, progressText, progressBar, sendBox)
   const message = el('div', 'diff-message')
   const noteEl = el('div', 'diff-note')
   noteEl.hidden = true
@@ -1009,6 +1014,7 @@ function mountDiff(
   // The filter is an icon until it is wanted: a click on it or Cmd+F (Ctrl+F off the Mac) opens the input; it shuts again when it is empty and loses focus.
   function showFilter(on: boolean): void {
     filterInput.hidden = !on
+    filterBox.hidden = !on
     searchButton.hidden = on
     searchButton.setAttribute('aria-expanded', String(on))
   }
