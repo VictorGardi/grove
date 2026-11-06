@@ -10,6 +10,8 @@ export interface TerminalView {
   fit(): void
   // Reads the colours from the tokens again, after the theme changed.
   restyle(): void
+  // Draws every row again. After the GPU was reset (a wake from sleep) a terminal can stay blank until it is told to repaint.
+  repaint(): void
   dispose(): void
 }
 
@@ -71,6 +73,8 @@ export function openTerminal(host: HTMLElement, options: TerminalOptions): Termi
     webgl.onContextLoss(() => {
       options.onContextLoss?.()
       webgl.dispose()
+      // The DOM renderer takes over with nothing drawn: without this the terminal stays blank until something is typed.
+      term.refresh(0, term.rows - 1)
     })
     term.loadAddon(webgl)
   } catch {
@@ -93,6 +97,10 @@ export function openTerminal(host: HTMLElement, options: TerminalOptions): Termi
     },
     restyle() {
       term.options.theme = terminalTheme()
+    },
+    repaint() {
+      term.clearTextureAtlas()
+      term.refresh(0, term.rows - 1)
     },
     dispose() {
       term.dispose()

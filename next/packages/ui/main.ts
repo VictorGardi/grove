@@ -1075,12 +1075,13 @@ async function resync(): Promise<void> {
       existing.kind = kind
     }
     if (info.alive) {
+      // One tab that fails to attach is reported and the others still attach, so a bad tab cannot leave every terminal blank.
       if (existing) {
-        await attach(existing)
+        await attach(existing).catch(report)
       } else {
         const tab = createTab(info.spaceId, info.spacePath, kind, info.label)
         adopt(tab, info.id)
-        await attach(tab)
+        await attach(tab).catch(report)
       }
     } else if (!existing) {
       const tab = createTab(info.spaceId, info.spacePath, kind, info.label)
@@ -1328,6 +1329,15 @@ window.addEventListener(
 )
 setInterval(refreshAges, AGE_REFRESH_MS)
 document.addEventListener('visibilitychange', paintFocus)
+// A window that comes back (from the background, or a night of sleep) repaints its terminals: the GPU may have dropped their contexts meanwhile.
+function repaintTerminals(): void {
+  for (const tab of order) tab.view.repaint()
+  requestAnimationFrame(fitShown)
+}
+document.addEventListener('visibilitychange', () => {
+  if (!document.hidden) repaintTerminals()
+})
+window.addEventListener('focus', repaintTerminals)
 
 // The bundled fonts load before the first terminal opens, so xterm measures Geist Mono and not a fallback.
 async function loadFonts(): Promise<void> {
