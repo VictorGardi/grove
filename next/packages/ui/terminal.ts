@@ -83,6 +83,11 @@ export function openTerminal(host: HTMLElement, options: TerminalOptions): Termi
   fitAddon.fit()
   term.onData((text) => options.onInput(text))
   term.onResize(({ cols, rows }) => options.onResize(cols, rows))
+  // Highlighted text goes to the clipboard at once. Clearing a selection leaves the clipboard alone.
+  term.onSelectionChange(() => {
+    const text = term.getSelection()
+    if (text) navigator.clipboard.writeText(text).catch(() => {})
+  })
 
   return {
     term,
