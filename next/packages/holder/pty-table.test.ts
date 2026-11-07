@@ -111,6 +111,27 @@ describe('PtyTable', () => {
     )
     expect(tab).toMatchObject({ id, alive: false, exitCode: 3 })
   })
+
+  it('forwards only root status records and parses their kind', async () => {
+    const table = new PtyTable()
+    tables.push(table)
+    const records = [
+      'state=blocked;kind=auth',
+      'state=blocked;kind=question;id=child',
+      'state=clear',
+      'state=future-state',
+    ]
+    const script = `for (const record of ${JSON.stringify(records)}) process.stdout.write('\\x1b]7501;' + record + '\\x1b\\\\')`
+    const id = table.create({ command: process.execPath, args: ['-e', script], cwd: process.cwd(), cols: 80, rows: 24 })
+    const statuses: Array<{ state: string; kind?: string }> = []
+    table.onStatus((tabId, status) => {
+      if (tabId === id) statuses.push(status)
+    })
+
+    await waitFor(async () => statuses.length, (count) => count === 3)
+    expect(statuses).toEqual([{ state: 'blocked', kind: 'auth' }, { state: 'clear' }, { state: 'future-state' }])
+  })
+
   it('lists the folder the shell is in now and the foreground program, not where the tab started', async () => {
     const table = new PtyTable()
     tables.push(table)

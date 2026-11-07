@@ -133,7 +133,7 @@ export interface SpaceTabInfo {
 
 export type AgentStateName = 'working' | 'needs-you' | 'finished' | 'idle' | 'unknown'
 
-export type NeedsYouReason = 'permission' | 'question' | 'error'
+export type NeedsYouReason = 'permission' | 'question' | 'error' | 'auth'
 
 export interface AgentInfo {
   tabId: string

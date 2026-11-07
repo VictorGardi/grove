@@ -74,6 +74,37 @@ describe('applyEvent', () => {
     expect(applyReport(idleStatus, { state: 'idle' }, 260)).toBe(idleStatus)
   })
 
+  it('maps every OSC report and derives finished from a working or blocked turn', () => {
+    const cases: Array<{ from: Status; report: { state: string; kind?: string }; expected: Status }> = [
+      { from: idle, report: { state: 'working' }, expected: { state: 'working', since: 200 } },
+      { from: idle, report: { state: 'blocked', kind: 'permission' }, expected: { state: 'needs-you', reason: 'permission', since: 200 } },
+      { from: idle, report: { state: 'blocked', kind: 'question' }, expected: { state: 'needs-you', reason: 'question', since: 200 } },
+      { from: idle, report: { state: 'blocked', kind: 'auth' }, expected: { state: 'needs-you', reason: 'auth', since: 200 } },
+      { from: idle, report: { state: 'blocked' }, expected: { state: 'needs-you', reason: 'permission', since: 200 } },
+      { from: idle, report: { state: 'error' }, expected: { state: 'needs-you', reason: 'error', since: 200 } },
+      { from: idle, report: { state: 'done' }, expected: { state: 'finished', since: 200 } },
+      { from: { state: 'working', since: 100 }, report: { state: 'idle' }, expected: { state: 'finished', since: 200 } },
+      {
+        from: { state: 'needs-you', reason: 'auth', since: 100 },
+        report: { state: 'done' },
+        expected: { state: 'finished', since: 200 },
+      },
+      {
+        from: { state: 'needs-you', reason: 'permission', since: 100 },
+        report: { state: 'idle' },
+        expected: { state: 'finished', since: 200 },
+      },
+    ]
+
+    for (const { from, report, expected } of cases) expect(applyReport(from, report, 200)).toEqual(expected)
+  })
+
+  it('ignores clear and unrecognised OSC states', () => {
+    const working: Status = { state: 'working', since: 150 }
+    expect(applyReport(working, { state: 'clear' }, 200)).toBe(working)
+    expect(applyReport(working, { state: 'future-state' }, 200)).toBe(working)
+  })
+
   it('leaves unknown on every real event', () => {
     const stuck = unknownStatus(900)
     expect(applyEvent(stuck, { kind: 'working' }, 1000)).toEqual({ state: 'working', since: 1000 })
