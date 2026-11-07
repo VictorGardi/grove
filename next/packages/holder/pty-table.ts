@@ -264,7 +264,7 @@ export class PtyTable {
 
 function parseStatusRecord(data: string): TabStatus | null {
   const fields = new Map<string, string>()
-  for (const field of data.split(';')) {
+  for (const field of data.split(':')) {
     const separator = field.indexOf('=')
     if (separator <= 0) continue
     fields.set(field.slice(0, separator), field.slice(separator + 1))

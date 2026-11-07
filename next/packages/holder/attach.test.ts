@@ -132,7 +132,7 @@ describe('holder attach', () => {
       command: '/bin/sh',
       args: [
         '-c',
-        "stty -echo -icanon; printf '\\033]7501;?\\033\\\\'; dd bs=1 count=10 2>/dev/null | od -An -tx1; printf '\\033]7501;id=ses_child;state=working\\033\\\\'; printf '\\033]7501;state=working\\033\\\\'; sleep 0.1; printf '\\033]7501;state=idle\\033\\\\'; sleep 5",
+        "stty -echo -icanon; printf '\\033]7501;?\\033\\\\'; dd bs=1 count=10 2>/dev/null | od -An -tx1; printf '\\033]7501;state=working:id=ses_child\\033\\\\'; printf '\\033]7501;state=working\\033\\\\'; sleep 0.1; printf '\\033]7501;state=idle\\033\\\\'; sleep 5",
       ],
       cwd: home,
       cols: 80,

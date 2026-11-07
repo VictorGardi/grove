@@ -116,8 +116,8 @@ describe('PtyTable', () => {
     const table = new PtyTable()
     tables.push(table)
     const records = [
-      'state=blocked;kind=auth',
-      'state=blocked;kind=question;id=child',
+      'state=blocked:kind=auth',
+      'state=blocked:kind=question:id=child',
       'state=clear',
       'state=future-state',
     ]
@@ -135,7 +135,7 @@ describe('PtyTable', () => {
   it('lists the last root status and excludes child status records', async () => {
     const table = new PtyTable()
     tables.push(table)
-    const records = ['state=working;kind=task', 'state=blocked;kind=question;id=child']
+    const records = ['state=working:kind=task', 'state=blocked:kind=question:id=child']
     const script = `for (const record of ${JSON.stringify(records)}) process.stdout.write('\\x1b]7501;' + record + '\\x1b\\\\')`
     const id = table.create({ command: process.execPath, args: ['-e', script], cwd: process.cwd(), cols: 80, rows: 24 })
 
