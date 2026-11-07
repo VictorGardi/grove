@@ -212,7 +212,7 @@ export interface StatusChange {
 }
 
 // The agents whose status needs a hook entry in the user's own settings. OpenCode reads its service and needs none.
-export type IntegrationAgent = 'claude' | 'copilot'
+export type IntegrationAgent = 'claude'
 
 // enabled: every hook event of this version has Grove's entry. not-enabled: no Grove entry. out-of-date: some Grove
 // entries, not all of this version's events. unreadable: the settings file is not a JSON object; Grove never touches it.

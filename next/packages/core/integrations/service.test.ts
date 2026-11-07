@@ -2,20 +2,18 @@ import fs from 'node:fs'
 import os from 'node:os'
 import path from 'node:path'
 import { afterEach, beforeEach, describe, expect, it } from 'vitest'
-import { HOOK_EVENTS as COPILOT_HOOK_EVENTS } from '../agents/copilot/hooks.ts'
+import { MARKER } from './install.ts'
 import { IntegrationService } from './service.ts'
 
-// Every file here lives under a temporary folder: the Claude and Copilot settings, and the consent record.
+// Every file here lives under a temporary folder: the Claude settings, and the consent record.
 describe('IntegrationService', () => {
   let dir: string
   let claude: string
-  let copilot: string
   let consent: string
 
   beforeEach(() => {
     dir = fs.mkdtempSync(path.join(os.tmpdir(), 'gn-integration-'))
     claude = path.join(dir, 'claude', 'settings.json')
-    copilot = path.join(dir, 'copilot', 'settings.json')
     consent = path.join(dir, 'home', 'integrations.json')
   })
 
@@ -23,7 +21,7 @@ describe('IntegrationService', () => {
     fs.rmSync(dir, { recursive: true, force: true })
   })
 
-  const service = () => new IntegrationService({ files: { claude, copilot }, consentFile: consent, node: '/usr/bin/node' })
+  const service = () => new IntegrationService({ files: { claude }, consentFile: consent, node: '/usr/bin/node' })
   const write = (file: string, value: unknown) => {
     fs.mkdirSync(path.dirname(file), { recursive: true })
     fs.writeFileSync(file, typeof value === 'string' ? value : `${JSON.stringify(value, null, 2)}\n`)
@@ -36,13 +34,13 @@ describe('IntegrationService', () => {
   })
 
   it('writes nothing while it reads: status, pending and consent leave every file as it was', () => {
-    service().status('copilot', true)
+    service().status('claude', true)
     service().consent()
-    expect(fs.existsSync(copilot)).toBe(false)
+    expect(fs.existsSync(claude)).toBe(false)
     expect(fs.existsSync(consent)).toBe(false)
   })
 
-  it('installs Claude hooks on a yes, enables the agent and stops asking', () => {
+  it('installs the Claude hook on a yes, enables the agent and stops asking', () => {
     const result = service().install('claude', true)
     expect(result).toMatchObject({ state: 'enabled', changed: true, written: null, pending: false })
     expect(fs.existsSync(claude)).toBe(true)
@@ -51,13 +49,13 @@ describe('IntegrationService', () => {
   })
 
   it('keeps the file as it was in a backup beside it, and keeps the user\'s own hooks', () => {
-    write(copilot, { hooks: { agentStop: [{ type: 'command', bash: 'echo mine' }] } })
-    const original = fs.readFileSync(copilot, 'utf8')
-    const result = service().install('copilot', false)
-    expect(result).toMatchObject({ state: 'enabled', written: `${copilot}.grove-next.bak` })
-    expect(fs.readFileSync(`${copilot}.grove-next.bak`, 'utf8')).toBe(original)
-    const hooks = JSON.parse(fs.readFileSync(copilot, 'utf8')).hooks
-    expect(hooks.agentStop.map((entry: { bash: string }) => entry.bash)).toContain('echo mine')
+    write(claude, { hooks: { SessionStart: [{ hooks: [{ type: 'command', command: 'echo mine' }] }] } })
+    const original = fs.readFileSync(claude, 'utf8')
+    const result = service().install('claude', false)
+    expect(result).toMatchObject({ state: 'enabled', written: `${claude}.grove-next.bak` })
+    expect(fs.readFileSync(`${claude}.grove-next.bak`, 'utf8')).toBe(original)
+    const hooks = JSON.parse(fs.readFileSync(claude, 'utf8')).hooks
+    expect(hooks.SessionStart.map((group: { hooks: Array<{ command: string }> }) => group.hooks[0].command)).toContain('echo mine')
   })
 
   it('removes only Grove\'s entries on uninstall, and does not ask again', () => {
@@ -69,13 +67,11 @@ describe('IntegrationService', () => {
     expect(service().consent()).toEqual({ claude: 'enabled' })
   })
 
-  it('shows out of date when some of this version\'s events are missing, and offers no prompt', () => {
-    service().install('copilot', false)
-    const settings = JSON.parse(fs.readFileSync(copilot, 'utf8'))
-    delete settings.hooks[COPILOT_HOOK_EVENTS[0]]
-    write(copilot, settings)
-    expect(service().status('copilot', true)).toMatchObject({ state: 'out-of-date', pending: false })
-    expect(service().install('copilot', true).state).toBe('enabled')
+  it('shows an older install with status events as out of date, offers no prompt, and install brings it current', () => {
+    write(claude, { hooks: { SessionStart: [{ hooks: [{ type: 'command', command: `x ${MARKER}` }] }], Stop: [{ hooks: [{ type: 'command', command: `x ${MARKER}` }] }] } })
+    expect(service().status('claude', true)).toMatchObject({ state: 'out-of-date', pending: false })
+    expect(service().install('claude', true).state).toBe('enabled')
+    expect(Object.keys(JSON.parse(fs.readFileSync(claude, 'utf8')).hooks)).toEqual(['SessionStart'])
   })
 
   it('refuses an unreadable file, never changes it, and says why', () => {

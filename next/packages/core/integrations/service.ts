@@ -5,12 +5,9 @@ import type { IntegrationAgent, IntegrationInfo, IntegrationState } from '../../
 import {
   hasAnyGroveHooks,
   hasClaudeHooks,
-  hasCopilotHooks,
   installClaude,
-  installCopilot,
   readSettings,
   uninstallClaude,
-  uninstallCopilot,
 } from './install.ts'
 
 // The human's answer for an agent, recorded once. Enabled comes from a successful install; not-now from the prompt.
@@ -18,7 +15,7 @@ export type ConsentAnswer = 'enabled' | 'not-now'
 type Consent = Partial<Record<IntegrationAgent, ConsentAnswer>>
 
 export interface IntegrationServiceOptions {
-  // The settings file each agent's hooks live in (Claude's and Copilot's own folders, resolved by the caller).
+  // The settings file the Claude hook lives in (Claude's own folder, resolved by the caller).
   files: Record<IntegrationAgent, string>
   // Where the answers are recorded: a small JSON file in the Grove home.
   consentFile: string
@@ -27,7 +24,7 @@ export interface IntegrationServiceOptions {
 }
 
 export function isIntegrationAgent(value: unknown): value is IntegrationAgent {
-  return value === 'claude' || value === 'copilot'
+  return value === 'claude'
 }
 
 // Nothing here writes a settings file except install(), which the daemon calls only for a request from the app's
@@ -61,8 +58,7 @@ export class IntegrationService {
     let error: string | undefined
     try {
       const settings = readSettings(file)
-      const complete = agent === 'claude' ? hasClaudeHooks(settings) : hasCopilotHooks(settings)
-      state = complete ? 'enabled' : hasAnyGroveHooks(settings) ? 'out-of-date' : 'not-enabled'
+      state = hasClaudeHooks(settings) ? 'enabled' : hasAnyGroveHooks(settings) ? 'out-of-date' : 'not-enabled'
     } catch (failure) {
       state = 'unreadable'
       error = failure instanceof Error ? failure.message : String(failure)
@@ -71,11 +67,11 @@ export class IntegrationService {
     return { agent, state, file, backup, pending, ...(error !== undefined ? { error } : {}) }
   }
 
-  // Writes Grove's hook entries, keeping the file's own. Refuses an unreadable file before any write (the installers read
+  // Writes Grove's SessionStart hook, replacing entries from older installs and keeping the file's own. Refuses an unreadable file before any write (the installers read
   // it first). The answer is recorded only once the install has worked.
   install(agent: IntegrationAgent, adopted: boolean): IntegrationInfo & { changed: boolean; written: string | null } {
     const file = this.options.files[agent]
-    const result = agent === 'claude' ? installClaude(file, this.options.node) : installCopilot(file)
+    const result = installClaude(file, this.options.node)
     this.answer(agent, 'enabled')
     return { ...this.status(agent, adopted), changed: result.changed, written: result.backup }
   }
@@ -83,8 +79,7 @@ export class IntegrationService {
   // Removes Grove's entries only. The recorded answer stays, so the app does not ask again by itself.
   uninstall(agent: IntegrationAgent, adopted: boolean): IntegrationInfo {
     const file = this.options.files[agent]
-    if (agent === 'claude') uninstallClaude(file)
-    else uninstallCopilot(file)
+    uninstallClaude(file)
     return this.status(agent, adopted)
   }
 }

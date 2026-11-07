@@ -28,18 +28,17 @@ describe('rowView', () => {
       backup: '/home/me/.claude/settings.json.grove-next.bak',
       error: 'settings.json is not a JSON object',
     })
-    expect(rowView(info({ agent: 'copilot' })).title).toBe('Copilot')
   })
 })
 
 describe('promptView', () => {
   it('asks by name, and says what is written and where, the backup, and how to remove it', () => {
-    const view = promptView(info({ agent: 'copilot', file: '/c/settings.json', backup: '/c/settings.json.grove-next.bak' }))
+    const view = promptView(info({ agent: 'claude', file: '/c/settings.json', backup: '/c/settings.json.grove-next.bak' }))
     const text = view.paragraphs.join('\n')
-    expect(view.title).toBe('Enable status for Copilot?')
-    expect(text).toContain('one hook command for each Copilot hook event to /c/settings.json')
+    expect(view.title).toBe('Enable session tracking for Claude?')
+    expect(text).toContain("one hook command, for Claude's session start, to /c/settings.json")
     expect(text).toContain('copied to /c/settings.json.grove-next.bak')
-    expect(text).toContain('grove-next integration uninstall copilot')
+    expect(text).toContain('grove-next integration uninstall claude')
     expect(text).toContain('Agent status')
   })
 })

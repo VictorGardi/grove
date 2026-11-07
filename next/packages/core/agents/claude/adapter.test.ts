@@ -19,11 +19,11 @@ describe('createClaudeAdapter', () => {
     fs.rmSync(home, { recursive: true, force: true })
   })
 
-  it('launches a fresh session with a session id and the hook settings', () => {
+  it('launches a fresh session with a session id and no environment', () => {
     const launch = createClaudeAdapter().launch({ tabId: 't1', cwd: home, home })
     expect(launch.command).toBe('claude')
     expect(launch.args.slice(0, 2)).toEqual(['--session-id', launch.sessionId])
-    expect(launch.env).toEqual({ GROVE_NEXT_SPOOL: claudeSpoolFile(home, 't1') })
+    expect(launch.env).toEqual({})
   })
 
   it('resumes the given session id', () => {

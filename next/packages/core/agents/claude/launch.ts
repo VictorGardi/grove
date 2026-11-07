@@ -2,21 +2,9 @@ import crypto from 'node:crypto'
 import path from 'node:path'
 import { fileURLToPath } from 'node:url'
 
-// Every Claude hook event Grove listens to. Each one runs hook.mjs with the event name as argv[2].
-export const CLAUDE_HOOK_EVENTS = [
-  'SessionStart',
-  'UserPromptSubmit',
-  'Stop',
-  'StopFailure',
-  'PermissionRequest',
-  'Notification',
-  'PreToolUse',
-  'PostToolUse',
-  'PostToolUseFailure',
-  'SubagentStart',
-  'SubagentStop',
-  'SessionEnd',
-] as const
+// The one Claude hook event Grove listens to: SessionStart carries the session id, which changes on /clear. It runs
+// hook.mjs with the event name as argv[2]. Status comes from OSC 7501, not hooks.
+export const CLAUDE_HOOK_EVENTS = ['SessionStart'] as const
 
 // A Claude session id is a UUID. Anything else must never reach the command line as a flag.
 export const SESSION_ID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i
@@ -29,8 +17,8 @@ export interface ClaudeLaunchOptions {
   cwd: string
   home: string
   resumeId?: string
-  // False when the user's own Claude settings already carry Grove's hooks (grove-next integration install claude):
-  // the per-launch hooks would report every event twice, so the launch leaves them out.
+  // False when the user's own Claude settings already carry Grove's hook (grove-next integration install claude):
+  // the per-launch hook would report the session twice, so the launch leaves it out.
   perLaunchHooks?: boolean
 }
 
@@ -46,7 +34,7 @@ export function claudeSpoolFile(home: string, tabId: string): string {
   return path.join(home, 'agents', 'claude', `${tabId}.jsonl`)
 }
 
-// The inline --settings JSON: one command hook per event, all pointing at hook.mjs.
+// The inline --settings JSON: a command hook for SessionStart, pointing at hook.mjs.
 export function claudeSettings(hookScript: string = CLAUDE_HOOK_SCRIPT): string {
   const hooks: Record<string, Array<{ hooks: Array<{ type: 'command'; command: string }> }>> = {}
   for (const event of CLAUDE_HOOK_EVENTS) {
@@ -68,7 +56,7 @@ export function claudeLaunch(options: ClaudeLaunchOptions): ClaudeLaunch {
   return {
     command: 'claude',
     args: [...identity, ...settings],
-    env: { GROVE_NEXT_SPOOL: spoolFile },
+    env: {},
     sessionId,
     spoolFile,
   }

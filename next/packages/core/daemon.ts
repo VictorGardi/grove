@@ -7,7 +7,7 @@ import { bytesToB64, createLineDecoder, encodeLine } from '../protocol/framing.t
 import { coreSocketPath, groveNextHome, holderSocketPath } from '../protocol/paths.ts'
 import { ERROR_CODES, METHODS, PROTOCOL_VERSION } from '../protocol/messages.ts'
 import type { IntegrationAgent, IntegrationInfo, KeyAction } from '../protocol/messages.ts'
-import { claudeSettingsFile, copilotSettingsFile } from './integrations/install.ts'
+import { claudeSettingsFile } from './integrations/install.ts'
 import { IntegrationService, isIntegrationAgent } from './integrations/service.ts'
 import { buildId } from './build.ts'
 import { Presence } from './presence.ts'
@@ -119,11 +119,11 @@ export async function startCoreDaemon(
     })
   // A holder that cannot be reached at start leaves every saved agent tab unknown.
   const tabsAtStart = await holderStatusCall((client) => client.request(METHODS.tabsList, {})).catch(() => [])
-  // The hook entries Grove asks the human to enable, for Claude and Copilot. Only an install request writes them.
+  // The Claude SessionStart hook Grove asks the human to enable. Only an install request writes them.
   const integrations =
     options.integrations ??
     new IntegrationService({
-      files: { claude: claudeSettingsFile(), copilot: copilotSettingsFile() },
+      files: { claude: claudeSettingsFile() },
       consentFile: path.join(home, 'integrations.json'),
     })
   // Asked at most once per core run; a window that connects later reads the pending list instead.
@@ -365,7 +365,7 @@ function adoptedAgentsOf(status: StatusService): Set<AgentKind> {
 
 function integrationAgentParam(params: unknown): IntegrationAgent {
   const agent = (params as { agent?: unknown } | null)?.agent
-  if (!isIntegrationAgent(agent)) throw new RpcError(ERROR_CODES.invalidParams, 'agent must be claude or copilot')
+  if (!isIntegrationAgent(agent)) throw new RpcError(ERROR_CODES.invalidParams, 'agent must be claude')
   return agent
 }
 
@@ -415,7 +415,7 @@ async function dispatch(method: string, rawParams: unknown, holder: Promise<RpcC
   }
   if (method === METHODS.integrationStatus) {
     const running = adoptedAgentsOf(deps.status)
-    const agents: IntegrationInfo[] = (['claude', 'copilot'] as const).map((agent) => deps.integrations.status(agent, running.has(agent)))
+    const agents: IntegrationInfo[] = (['claude'] as const).map((agent) => deps.integrations.status(agent, running.has(agent)))
     return { agents } satisfies MethodMap['integration.status']['result']
   }
   if (method === METHODS.integrationInstall) {

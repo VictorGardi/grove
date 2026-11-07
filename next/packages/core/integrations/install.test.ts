@@ -4,8 +4,7 @@ import os from 'node:os'
 import path from 'node:path'
 import { afterEach, beforeEach, describe, expect, it } from 'vitest'
 import { CLAUDE_HOOK_EVENTS } from '../agents/claude/launch.ts'
-import { hasClaudeHooks, claudeHookCommand, copilotUserHookCommand, installClaude, installCopilot, MARKER, readSettings, uninstallClaude, uninstallCopilot } from './install.ts'
-import { HOOK_EVENTS as COPILOT_EVENTS } from '../agents/copilot/hooks.ts'
+import { hasClaudeHooks, claudeHookCommand, installClaude, MARKER, readSettings, uninstallClaude, uninstallCopilot } from './install.ts'
 
 describe('integration install', () => {
   let dir: string
@@ -18,7 +17,7 @@ describe('integration install', () => {
     fs.rmSync(dir, { recursive: true, force: true })
   })
 
-  it('merges Claude hooks next to the user’s own hooks and keeps every other key', () => {
+  it('merges the Claude SessionStart hook next to the user’s own hooks and keeps every other key', () => {
     const file = path.join(dir, 'settings.json')
     const theirs = { model: 'opus', hooks: { Stop: [{ hooks: [{ type: 'command', command: 'their-tool stop' }] }] } }
     fs.writeFileSync(file, JSON.stringify(theirs))
@@ -27,9 +26,11 @@ describe('integration install', () => {
     expect(result.changed).toBe(true)
     const after = readSettings(file) as { model: string; hooks: Record<string, unknown[]> }
     expect(after.model).toBe('opus')
-    expect(after.hooks.Stop).toHaveLength(2)
+    expect(after.hooks.Stop).toHaveLength(1)
     expect(JSON.stringify(after.hooks.Stop[0])).toContain('their-tool stop')
-    for (const event of CLAUDE_HOOK_EVENTS) expect(after.hooks[event]).toHaveLength(event === 'Stop' ? 2 : 1)
+    expect(CLAUDE_HOOK_EVENTS).toEqual(['SessionStart'])
+    expect(Object.keys(after.hooks).sort()).toEqual(['SessionStart', 'Stop'])
+    expect(after.hooks.SessionStart).toHaveLength(1)
     expect(hasClaudeHooks(after)).toBe(true)
   })
 
@@ -80,30 +81,45 @@ describe('integration install', () => {
     expect(fs.readFileSync(file, 'utf8')).toBe('[1,2]')
   })
 
-  it('writes every command so it does nothing unless the tab has GROVE_NEXT_TAB, and carries the marker', () => {
+  it('writes the command so it does nothing unless the tab has GROVE_NEXT_TAB, and carries the marker', () => {
     const file = path.join(dir, 'settings.json')
     installClaude(file, '/usr/bin/node')
     const after = readSettings(file) as { hooks: Record<string, Array<{ hooks: Array<{ command: string }> }>> }
-    const command = after.hooks.PreToolUse[0].hooks[0].command
+    const command = after.hooks.SessionStart[0].hooks[0].command
     expect(command.startsWith('if [ -n "$GROVE_NEXT_TAB" ]; then ')).toBe(true)
     expect(command.endsWith(`; fi ${MARKER}`)).toBe(true)
   })
 
-  it('merges Copilot hooks into settings.json and removes them again', () => {
+  // What an older install wrote: a Grove entry for every event, status ones included.
+  const oldClaude = (extra: Record<string, unknown> = {}) => ({
+    hooks: {
+      ...extra,
+      ...Object.fromEntries(['SessionStart', 'UserPromptSubmit', 'Stop', 'PreToolUse'].map((e) => [e, [{ hooks: [{ type: 'command', command: `x ${MARKER}` }] }]])),
+    },
+  })
+
+  it('reports an older install with status events as not current, and install replaces it with SessionStart only', () => {
+    const file = path.join(dir, 'settings.json')
+    const mine = { type: 'command', command: 'their-tool stop' }
+    fs.writeFileSync(file, JSON.stringify(oldClaude({ Notification: [{ hooks: [mine] }] })))
+    expect(hasClaudeHooks(readSettings(file))).toBe(false)
+
+    installClaude(file, '/usr/bin/node')
+    const after = readSettings(file) as { hooks: Record<string, Array<{ hooks: Array<{ command: string }> }>> }
+    expect(hasClaudeHooks(after)).toBe(true)
+    expect(Object.keys(after.hooks).sort()).toEqual(['Notification', 'SessionStart'])
+    expect(after.hooks.Notification[0].hooks[0]).toEqual(mine)
+  })
+
+  it('removes Copilot entries an older install wrote and keeps the user\'s own', () => {
     const file = path.join(dir, 'copilot-settings.json')
     const theirs = { theme: 'dark', hooks: { sessionStart: [{ type: 'command', bash: 'their-tool start' }] } }
-    fs.writeFileSync(file, JSON.stringify(theirs))
-
-    installCopilot(file)
-    const merged = readSettings(file) as { theme: string; hooks: Record<string, Array<{ bash: string }>> }
-    expect(merged.theme).toBe('dark')
-    expect(merged.hooks.sessionStart).toHaveLength(2)
-    for (const event of COPILOT_EVENTS) expect(merged.hooks[event]).toBeDefined()
-    expect(merged.hooks.sessionStart[1].bash).toContain('GROVE_NEXT_HOME')
-
-    uninstallCopilot(file)
+    fs.writeFileSync(file, JSON.stringify({ theme: 'dark', hooks: { sessionStart: [...theirs.hooks.sessionStart, { type: 'command', bash: `grove ${MARKER}` }], agentStop: [{ type: 'command', bash: `grove ${MARKER}` }] } }))
+    expect(uninstallCopilot(file).changed).toBe(true)
     expect(readSettings(file)).toEqual(theirs)
+    expect(uninstallCopilot(file).changed).toBe(false)
   })
+
   // Runs a command the way an agent does (through sh), with the tab's environment and the event on stdin.
   const runHook = (command: string, env: Record<string, string>, stdin: string) =>
     spawnSync('/bin/sh', ['-c', command], { input: stdin, env: { PATH: process.env.PATH ?? '/usr/bin:/bin', ...env } })
@@ -122,22 +138,5 @@ describe('integration install', () => {
     const line = JSON.parse(fs.readFileSync(path.join(home, 'agents', 'claude', 'tab-7.jsonl'), 'utf8').trim())
     expect(line.event).toBe('SessionStart')
     expect(line.payload.session_id).toBe('11111111-2222-4333-8444-555555555555')
-  })
-
-  it('a typed Copilot session writes its hook events to the tab spool in the shape the reader expects', () => {
-    const home = path.join(dir, 'grove')
-    const payload = '{"sessionId":"63628a79-e8e2-433a-867f-25197bda8484","timestamp":1793858821291,"cwd":"/w"}'
-    const command = copilotUserHookCommand('sessionStart')
-
-    const outside = runHook(command, {}, payload)
-    expect(outside.status).toBe(0)
-    expect(fs.existsSync(home)).toBe(false)
-
-    const inside = runHook(command, { GROVE_NEXT_TAB: 'tab-8', GROVE_NEXT_HOME: home }, payload)
-    expect(inside.status).toBe(0)
-    const text = fs.readFileSync(path.join(home, 'agents', 'copilot', 'tab-8.jsonl'), 'utf8').trim()
-    const record = JSON.parse(text) as { e: { hook_event_name: string; sessionId: string } }
-    expect(record.e.hook_event_name).toBe('sessionStart')
-    expect(record.e.sessionId).toBe('63628a79-e8e2-433a-867f-25197bda8484')
   })
 })
