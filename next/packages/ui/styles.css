@@ -333,6 +333,7 @@ p {
   gap: var(--space-1);
 }
 
+.agent-context,
 .agent-age {
   font-size: var(--text-meta);
   color: var(--color-faint);

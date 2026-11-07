@@ -60,7 +60,7 @@ describe('claudeLaunch', () => {
     const launch = claudeLaunch({ tabId: 'tab-9', cwd: '/work', home })
     const spool = path.join(home, 'agents', 'claude', 'tab-9.jsonl')
     expect(launch.spoolFile).toBe(spool)
-    expect(launch.env).toEqual({ GROVE_NEXT_SPOOL: spool })
+    expect(launch.env).toEqual({ GROVE_NEXT_SPOOL: spool, GROVE_NEXT_USAGE: path.join(home, 'agents', 'claude', 'tab-9.usage.json') })
   })
 })
 

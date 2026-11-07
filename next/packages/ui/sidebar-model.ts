@@ -1,5 +1,5 @@
 // The sidebar and tab strip's rules as plain functions, so they run in tests without a DOM.
-import type { AgentInfo, AgentStateName } from '../protocol/messages.ts'
+import type { AgentInfo, AgentStateName, ContextUsage } from '../protocol/messages.ts'
 import type { AgentKind } from '../core/status/adapter.ts'
 import { URGENCY } from '../protocol/rollup.ts'
 
@@ -108,4 +108,22 @@ export function nextUrgent<T extends UrgentInput>(urgent: T[], activeId: string 
   const at = urgent.findIndex((tab) => tab.id === activeId)
   if (at === -1) return urgent[0] ?? null
   return urgent.length > 1 ? urgent[(at + 1) % urgent.length] : null
+}
+
+function compact(n: number): string {
+  if (n < 1000) return String(n)
+  if (n < 1_000_000) return `${Number((n / 1000).toFixed(1))}k`
+  return `${Number((n / 1_000_000).toFixed(1))}M`
+}
+
+// The sidebar label for an agent's context use. A missing or non-positive reading gives no label: never a 0.
+export function formatContext(context: ContextUsage | undefined): { text: string; title: string } | null {
+  if (!context || context.tokens === null || context.tokens <= 0) return null
+  const { tokens, window, percent, model } = context
+  const hasWindow = window !== null && window > 0
+  const text = hasWindow ? `${compact(tokens)}/${compact(window)}` : compact(tokens)
+  const pct = percent ?? (hasWindow ? Math.round((tokens / window) * 100) : null)
+  const used = hasWindow ? `${tokens.toLocaleString('en-US')} of ${window.toLocaleString('en-US')} tokens` : `${tokens.toLocaleString('en-US')} tokens`
+  const title = `Context: ${used}${pct === null ? '' : ` (${pct}%)`}${model ? `, ${model}` : ''}`
+  return { text, title }
 }

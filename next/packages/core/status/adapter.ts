@@ -1,3 +1,4 @@
+import type { ContextUsage } from '../../protocol/messages.ts'
 import type { StatusEvent } from './contract.ts'
 
 // The agents Grove can run. Each one has an adapter in agents/registry.ts.
@@ -24,6 +25,9 @@ export interface AdapterWatchInput {
   clock: () => number
   // `at` is the time the event happened; a source that cannot tell passes the clock.
   onEvent: (event: StatusEvent, at: number) => void
+  // Optional: an agent that reports its context window delivers each new reading here. A reading with `tokens` null is
+  // real (before the first request, after a compaction) and clears the last figure.
+  onContext?: (context: ContextUsage) => void
 }
 
 export interface AgentWatch {

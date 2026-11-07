@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
-import type { AgentInfo, AgentStateName } from '../protocol/messages.ts'
-import { groupAgents, jumpTargets, nextUrgent, shortFolder, sidebarSpaceOrder, spaceAt, tabStateOf, tileIndex, urgentTabs } from './sidebar-model.ts'
+import type { AgentInfo, AgentStateName, ContextUsage } from '../protocol/messages.ts'
+import { formatContext, groupAgents, jumpTargets, nextUrgent, shortFolder, sidebarSpaceOrder, spaceAt, tabStateOf, tileIndex, urgentTabs } from './sidebar-model.ts'
 
 function agent(state: AgentStateName, since: number): AgentInfo {
   return { tabId: 't', agent: 'claude', state, since, source: 'hook', resumable: false }
@@ -179,5 +179,39 @@ describe('jumpTargets', () => {
 
   it('is empty when nothing is urgent or working', () => {
     expect(jumpTargets([tab('a', 'idle', 1), tab('b', 'unknown', 2)])).toEqual([])
+  })
+})
+
+describe('formatContext', () => {
+  const usage = (tokens: number | null, window: number | null, percent: number | null = null): ContextUsage => ({
+    tokens,
+    window,
+    percent,
+    model: null,
+    at: 0,
+  })
+
+  it('gives no label without a reading', () => {
+    expect(formatContext(undefined)).toBeNull()
+    expect(formatContext(usage(null, 200_000))).toBeNull()
+    expect(formatContext(usage(0, 200_000))).toBeNull()
+  })
+
+  it('formats with and without a window', () => {
+    expect(formatContext(usage(45_123, 200_000, 23))?.text).toBe('45.1k/200k')
+    expect(formatContext(usage(45_000, null))?.text).toBe('45k')
+    expect(formatContext(usage(950, 1_000_000))?.text).toBe('950/1M')
+    expect(formatContext(usage(1_500_000, null))?.text).toBe('1.5M')
+  })
+
+  it('spells out the exact numbers in the title', () => {
+    const label = formatContext({ ...usage(45_123, 200_000, 23), model: 'opus' })
+    expect(label?.title).toBe('Context: 45,123 of 200,000 tokens (23%), opus')
+    expect(formatContext(usage(50_000, 200_000))?.title).toBe('Context: 50,000 of 200,000 tokens (25%)')
+    expect(formatContext(usage(50_000, null))?.title).toBe('Context: 50,000 tokens')
+  })
+
+  it('keeps two sessions apart', () => {
+    expect(formatContext(usage(10_000, 200_000))?.text).not.toBe(formatContext(usage(90_000, 200_000))?.text)
   })
 })

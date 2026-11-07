@@ -134,6 +134,17 @@ export type AgentStateName = 'working' | 'needs-you' | 'finished' | 'idle' | 'un
 
 export type NeedsYouReason = 'permission' | 'question' | 'error'
 
+// One reading of an agent's context window. `tokens` is the input-side context in use; it is null, never 0, before the
+// agent's first API request and after a compaction, until the next request. `window` and `percent` follow the provider
+// and are null when it reported none. `at` is when the reading was taken (epoch ms).
+export interface ContextUsage {
+  tokens: number | null
+  window: number | null
+  percent: number | null
+  model: string | null
+  at: number
+}
+
 export interface AgentInfo {
   tabId: string
   agent: AgentKind
@@ -142,6 +153,8 @@ export interface AgentInfo {
   since: number
   source: string
   resumable: boolean
+  // The latest context reading. Absent until the agent has reported one (and for agents that report none yet).
+  context?: ContextUsage
 }
 
 // A tab that needs the human: entered needs-you (any reason) or finished, and is not on screen.
@@ -421,6 +434,7 @@ export interface NotificationMap {
   'tabs.output': { id: string; dataB64: string }
   'tabs.exit': { id: string; exitCode: number | null }
   'status.changed': StatusChange
+  'context.changed': { tabId: string; context: ContextUsage }
   'attention.notify': AttentionNotice
   'tabs.focus': { id: string }
   // A tab was closed on purpose: every window drops it.

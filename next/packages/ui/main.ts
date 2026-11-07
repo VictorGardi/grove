@@ -11,7 +11,7 @@ import { previousOf, stepFrom, visited } from './recent-tabs.ts'
 import { PANE_DIM_RANGE, readPaneDim, writePaneDim } from './pane-dim.ts'
 import { readSidebarHidden, writeSidebarHidden, type KeyValueStore } from './sidebar-state.ts'
 import { readViewState, writeViewState } from './view-state.ts'
-import { groupAgents, jumpTargets, nextUrgent, shortFolder, sidebarSpaceOrder, spaceAt, tabStateOf, tileIndex, urgentTabs } from './sidebar-model.ts'
+import { formatContext, groupAgents, jumpTargets, nextUrgent, shortFolder, sidebarSpaceOrder, spaceAt, tabStateOf, tileIndex, urgentTabs } from './sidebar-model.ts'
 import { createTabPill, type TabPill } from './tab-pill.ts'
 import { createNotesEditor } from './notes-editor.ts'
 import { diffModule, notesModule } from './dock-modules.ts'
@@ -1035,6 +1035,12 @@ function agentRow(row: AgentRow): HTMLLIElement {
     grid.innerHTML = iconSvg('grid')
     tail.append(grid)
   }
+  const context = formatContext(agent.context)
+  if (context) {
+    const used = element('span', 'agent-context', context.text)
+    used.title = context.title
+    tail.append(used)
+  }
   tail.append(age)
   focus.append(markEl(tab.kind), element('span', 'agent-label', tabName(tab)), tail, indicatorEl(stateOf(tab)))
   focus.addEventListener('click', () => activate(tab))
@@ -1173,12 +1179,21 @@ bridge.on('status.changed', (change) => {
     since: change.since,
     source: change.source,
     resumable: previous?.resumable ?? false,
+    ...(previous?.context ? { context: previous.context } : {}),
   })
   syncKinds()
   renderStates()
   hostBus.emit('agentStateChanged', { tabId: change.tabId, settled: settled(previous?.state, change.state) })
   // resumable depends on the holder's liveness, which the change does not carry; the core's list settles it.
   refreshAgents().catch(report)
+})
+
+// A context reading belongs to one session's row; a tab with no entry yet waits for its status.
+bridge.on('context.changed', ({ tabId, context }) => {
+  const entry = agents.get(tabId)
+  if (!entry) return
+  agents.set(tabId, { ...entry, context })
+  renderAgents()
 })
 
 bridge.on('attention.notify', (notice) => {

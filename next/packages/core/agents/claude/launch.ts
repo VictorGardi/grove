@@ -22,6 +22,7 @@ export const CLAUDE_HOOK_EVENTS = [
 export const SESSION_ID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i
 
 export const CLAUDE_HOOK_SCRIPT = fileURLToPath(new URL('./hook.mjs', import.meta.url))
+export const CLAUDE_STATUSLINE_SCRIPT = fileURLToPath(new URL('./statusline.mjs', import.meta.url))
 
 export interface ClaudeLaunchOptions {
   tabId: string
@@ -40,6 +41,12 @@ export interface ClaudeLaunch {
   env: Record<string, string>
   sessionId: string
   spoolFile: string
+  usageFile: string
+}
+
+// The latest context reading of a tab, written by statusline.mjs.
+export function claudeUsageFile(home: string, tabId: string): string {
+  return path.join(home, 'agents', 'claude', `${tabId}.usage.json`)
 }
 
 export function claudeSpoolFile(home: string, tabId: string): string {
@@ -52,7 +59,12 @@ export function claudeSettings(hookScript: string = CLAUDE_HOOK_SCRIPT): string 
   for (const event of CLAUDE_HOOK_EVENTS) {
     hooks[event] = [{ hooks: [{ type: 'command', command: `node ${shellQuote(hookScript)} ${event}` }] }]
   }
-  return JSON.stringify({ hooks })
+  return JSON.stringify({ hooks, ...statusLineSetting() })
+}
+
+// --settings overrides the user's own statusLine, so Grove's records the reading and then runs the user's command.
+function statusLineSetting(script: string = CLAUDE_STATUSLINE_SCRIPT): { statusLine: { type: 'command'; command: string } } {
+  return { statusLine: { type: 'command', command: `node ${shellQuote(script)}` } }
 }
 
 function shellQuote(value: string): string {
@@ -64,12 +76,15 @@ export function claudeLaunch(options: ClaudeLaunchOptions): ClaudeLaunch {
   const spoolFile = claudeSpoolFile(options.home, options.tabId)
   const sessionId = options.resumeId ? options.resumeId : crypto.randomUUID()
   const identity = options.resumeId ? ['--resume', options.resumeId] : ['--session-id', sessionId]
-  const settings = options.perLaunchHooks === false ? [] : ['--settings', claudeSettings()]
+  // The user's own hooks replace the per-launch ones, but the status line is always Grove's: it is the only context source.
+  const settings = options.perLaunchHooks === false ? JSON.stringify(statusLineSetting()) : claudeSettings()
+  const usageFile = claudeUsageFile(options.home, options.tabId)
   return {
     command: 'claude',
-    args: [...identity, ...settings],
-    env: { GROVE_NEXT_SPOOL: spoolFile },
+    args: [...identity, '--settings', settings],
+    env: { GROVE_NEXT_SPOOL: spoolFile, GROVE_NEXT_USAGE: usageFile },
     sessionId,
     spoolFile,
+    usageFile,
   }
 }

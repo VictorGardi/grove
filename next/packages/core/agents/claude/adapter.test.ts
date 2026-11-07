@@ -4,7 +4,7 @@ import path from 'node:path'
 import { afterEach, beforeEach, describe, expect, it } from 'vitest'
 import type { StatusEvent } from '../../status/contract.ts'
 import { createClaudeAdapter } from './adapter.ts'
-import { claudeSpoolFile } from './launch.ts'
+import { claudeSpoolFile, claudeUsageFile } from './launch.ts'
 
 const SESSION = '00000000-0000-4000-8000-00000000000c'
 
@@ -23,7 +23,7 @@ describe('createClaudeAdapter', () => {
     const launch = createClaudeAdapter().launch({ tabId: 't1', cwd: home, home })
     expect(launch.command).toBe('claude')
     expect(launch.args.slice(0, 2)).toEqual(['--session-id', launch.sessionId])
-    expect(launch.env).toEqual({ GROVE_NEXT_SPOOL: claudeSpoolFile(home, 't1') })
+    expect(launch.env).toEqual({ GROVE_NEXT_SPOOL: claudeSpoolFile(home, 't1'), GROVE_NEXT_USAGE: claudeUsageFile(home, 't1') })
   })
 
   it('resumes the given session id', () => {

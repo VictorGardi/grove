@@ -218,6 +218,9 @@ export async function startCoreDaemon(
     broadcast(notification('status.changed', change))
     attention.onStatus(change)
   })
+  const unsubscribeContext = status.subscribeContext((tabId, context) =>
+    broadcast(notification('context.changed', { tabId, context })),
+  )
   const unwatch = watchConfig(config, (snapshot) => broadcast(notification('config.changed', snapshot)))
   // Agent tabs are rebuilt before the core listens, so the first client already sees their state.
   status.restore(spaces.agentTabs(), aliveAtStart)
@@ -293,6 +296,7 @@ export async function startCoreDaemon(
     close: () =>
       new Promise<void>((resolve) => {
         unsubscribe()
+        unsubscribeContext()
         unwatch()
         clearInterval(presenceTimer)
         clearInterval(gitTimer)
