@@ -1,16 +1,15 @@
-// Claude hook: appends one JSON line per hook event to the Grove spool. Runs as `node hook.mjs <Event>`.
+// Claude hook: appends one JSON line per SessionStart to the Grove spool. Runs as `node hook.mjs <Event>`.
 // It must never break Claude, so every failure is swallowed and the exit code stays 0.
 import fs from 'node:fs'
 import path from 'node:path'
 
 const event = process.argv[2]
-// The app's own launches set GROVE_NEXT_SPOOL. An agent typed into a tab the app started has only GROVE_NEXT_TAB and
-// GROVE_NEXT_HOME (set on every tab), and its spool is the tab's own file, the one the core watches for it.
+// Every tab the app starts sets GROVE_NEXT_TAB and GROVE_NEXT_HOME; the spool is the tab's own file, the one the core
+// watches for it.
 const spool =
-  process.env.GROVE_NEXT_SPOOL ||
-  (process.env.GROVE_NEXT_HOME && process.env.GROVE_NEXT_TAB
+  process.env.GROVE_NEXT_HOME && process.env.GROVE_NEXT_TAB
     ? path.join(process.env.GROVE_NEXT_HOME, 'agents', 'claude', `${process.env.GROVE_NEXT_TAB}.jsonl`)
-    : '')
+    : ''
 
 async function readStdin() {
   process.stdin.setEncoding('utf8')

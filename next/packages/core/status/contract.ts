@@ -1,18 +1,7 @@
-// The one status contract every agent adapter reports through (D3). Times are epoch milliseconds.
+// The shared status model. Times are epoch milliseconds.
 // `since` is when the state last changed, so a repeated event keeps the original time.
 
-export const GRACE_MS = 3000
-export const SILENCE_MS = 30000
-
-export interface TimingOptions {
-  // How long after needs-you the cross-check waits before it remembers the screen.
-  graceMs?: number
-  // How long a working tab may show no real activity, or any other state may go without the reader's
-  // heartbeat, before the watchdog falls to unknown.
-  silenceMs?: number
-}
-
-export type NeedsYouReason = 'permission' | 'question' | 'error'
+import type { NeedsYouReason } from '../../protocol/messages.ts'
 
 export type Status =
   | { state: 'working'; since: number }
@@ -21,31 +10,42 @@ export type Status =
   | { state: 'idle'; since: number }
   | { state: 'unknown'; since: number }
 
-// What an adapter emits. `heartbeat` is the source's reader still running (not a hook); it refreshes the
-// heartbeat only, never a working tab's activity. `session` carries the agent's own resume id (it changes
-// on /clear) and never changes the state. Every other event is a real hook record and counts as progress.
-// `lost` means the source cannot read its signal now (an OpenCode event connection dropped). The service sets the
-// tab to unknown, as for a gone tab, and it is not real activity.
-// `idle-prompt` is Claude's idle_prompt notification. It ends a turn that was interrupted, or had a question
-// rejected with Esc, when no other hook fires. A running turn (working, or needs-you with a pending permission
-// or question) goes to finished, as the old Grove ends it; finished and idle keep their since; unknown goes to idle.
+export interface StatusReport {
+  state: string
+  kind?: string
+}
+
+// Status arrives as OSC 7501 reports (applyReport); an adapter delivers only `session`, the resume id.
 export type StatusEvent =
   | { kind: 'working' }
   | { kind: 'needs-you'; reason: NeedsYouReason }
   | { kind: 'finished' }
   | { kind: 'idle' }
-  | { kind: 'idle-prompt' }
   | { kind: 'session'; resumeId: string }
-  | { kind: 'heartbeat' }
-  | { kind: 'lost' }
 
 export function unknownStatus(now: number): Status {
   return { state: 'unknown', since: now }
 }
 
-// Pure. A real event (working, needs-you, finished, idle) moves to its state and leaves unknown.
-// Setting the same state again keeps `since`, except that a needs-you with a new reason is a change.
-// `session`, `heartbeat` and `lost` never change the state; the service, not this reducer, decides their silence effect.
+// A report transition keeps the agent's state vocabulary out of the reducer.
+export function applyReport(status: Status, report: StatusReport, now: number): Status {
+  if (report.state === 'working') return applyEvent(status, { kind: 'working' }, now)
+  if (report.state === 'idle') {
+    if (status.state === 'working' || status.state === 'needs-you') return { state: 'finished', since: now }
+    if (status.state === 'idle' || status.state === 'finished') return status
+    return { state: 'idle', since: now }
+  }
+  if (report.state === 'done') return applyEvent(status, { kind: 'finished' }, now)
+  if (report.state === 'error') return applyEvent(status, { kind: 'needs-you', reason: 'error' }, now)
+  if (report.state === 'blocked') {
+    const reason: NeedsYouReason =
+      report.kind === 'question' || report.kind === 'auth' || report.kind === 'error' ? report.kind : 'permission'
+    return applyEvent(status, { kind: 'needs-you', reason }, now)
+  }
+  return status
+}
+
+// The reducer applyReport maps onto. A session event does not change status.
 export function applyEvent(status: Status, event: StatusEvent, now: number): Status {
   switch (event.kind) {
     case 'working':
@@ -57,13 +57,7 @@ export function applyEvent(status: Status, event: StatusEvent, now: number): Sta
       return status.state === 'finished' ? status : { state: 'finished', since: now }
     case 'idle':
       return status.state === 'idle' ? status : { state: 'idle', since: now }
-    case 'idle-prompt':
-      if (status.state === 'working' || status.state === 'needs-you') return { state: 'finished', since: now }
-      if (status.state === 'finished' || status.state === 'idle') return status
-      return { state: 'idle', since: now }
     case 'session':
-    case 'heartbeat':
-    case 'lost':
       return status
   }
 }

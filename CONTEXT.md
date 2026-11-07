@@ -58,6 +58,19 @@ specific meaning, so humans and agents stay consistent.
   **Waiting** means it's the human's move: a pending permission or question,
   or a finished turn not yet seen. Live only; `lastStatus` stores tmux
   liveness (ADR 0015).
+- **OSC 7501 status (v2)**: the status report an agent sends to its terminal
+  (`state=working|idle|blocked|done|error`, fields split on `:`, `kind=` and `id=`).
+  The holder parses it, answers the `?` query and keeps the last root record per tab;
+  only the root record decides a tab's status (ADR 0053). The old hook, spool,
+  event-log and service sources, the watchdog and the screen cross-check are gone.
+- **Tab state (v2)**: `working`, `needs-you`, `finished`, `idle` or `unknown`.
+  **Finished** is derived in core when the root report leaves working or needs-you
+  for idle (or says `done`). **Unknown** means no report: the agent is too old, sends
+  nothing, the PTY exited, or core restarted with no live holder entry. A live
+  agent tab in unknown names the minimum version (Claude 2.1.309, Copilot 1.0.107,
+  OpenCode 2.2.6).
+- **Needs-you reason**: why a tab needs the human: `permission`, `question`,
+  `auth` (the agent is not signed in or its key failed) or `error`.
 - **Seen mark**: `seenAt`, when the human last had a session on screen with the
   window focused; a finished turn after it makes the session waiting.
 - **Resume**: restarting a gone agent session in a new tmux session with

@@ -95,7 +95,7 @@ export function parseSpoolLine(line: string): SpoolRecord | null {
   }
 }
 
-// A source that reads a spool from its saved offset, delivers each new record's events, and beats the heartbeat.
+// A source that reads a spool from its saved offset, delivers each new record's events.
 export function createSpoolSource(options: SpoolSourceOptions): SpoolSource {
   const { spoolFile, offsetFile, clock, onEvent, toEvents, parse = parseSpoolLine } = options
   let offset = loadOffset(offsetFile)
@@ -148,15 +148,9 @@ export function createSpoolSource(options: SpoolSourceOptions): SpoolSource {
 
   drain()
   watch()
-  // The poll is the reader's heartbeat: it reports only after a drain that worked, never on hook activity.
   const timer = setInterval(() => {
     watch()
-    if (!drain()) return
-    try {
-      onEvent({ kind: 'heartbeat' }, clock())
-    } catch (error) {
-      console.error(`core: could not report the agent spool heartbeat: ${errorText(error)}`)
-    }
+    drain()
   }, POLL_MS)
 
   return {

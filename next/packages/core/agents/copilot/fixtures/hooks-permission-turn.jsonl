@@ -1,4 +1,0 @@
-{"t":"2026-10-22T10:00:00Z","e":{"hook_event_name":"userPromptSubmitted","sessionId":"s","prompt":"make a file"}}
-{"t":"2026-10-22T10:00:02Z","e":{"hook_event_name":"Notification","notification_type":"permission_prompt","message":"Allow edit?"}}
-{"t":"2026-10-22T10:00:05Z","e":{"hook_event_name":"postToolUse","cwd":"/w/proj","toolName":"apply_patch","toolArgs":"*** Begin Patch\n*** Add File: a.txt\n+hi\n*** End Patch\n","toolResult":{"resultType":"success","textResultForLlm":"Added 1 file(s)"}}}
-{"t":"2026-10-22T10:00:09Z","e":{"hook_event_name":"agentStop","stopReason":"end_turn"}}

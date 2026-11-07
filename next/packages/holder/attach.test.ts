@@ -26,15 +26,19 @@ function countLine(text: string, n: number): number {
 interface Observed {
   output: string
   exits: Array<{ id: string; exitCode: number | null }>
+  statuses: Array<{ id: string; state: string; kind?: string }>
 }
 
 function observe(client: RpcClient): Observed {
-  const observed: Observed = { output: '', exits: [] }
+  const observed: Observed = { output: '', exits: [], statuses: [] }
   client.onNotification(METHODS.tabsOutput, (params) => {
     observed.output += b64ToBytes(params.dataB64).toString('utf8')
   })
   client.onNotification(METHODS.tabsExit, (params) => {
     observed.exits.push(params)
+  })
+  client.onNotification(METHODS.tabsStatus, (params) => {
+    observed.statuses.push(params)
   })
   return observed
 }
@@ -116,5 +120,34 @@ describe('holder attach', () => {
     ])
     await expectNoDuplicates(observedFirst)
     await expectNoDuplicates(observedSecond)
+  })
+
+  it('answers OSC 7501 queries and broadcasts root status reports without an attachment', async () => {
+    const socketPath = holderSocketPath()
+    server = await startHolderServer({ socketPath, table: new PtyTable() })
+    const client = await connectRpc(socketPath)
+    clients.push(client)
+    const observed = observe(client)
+    const { id } = await client.request(METHODS.tabsCreate, {
+      command: '/bin/sh',
+      args: [
+        '-c',
+        "stty -echo -icanon; printf '\\033]7501;?\\033\\\\'; dd bs=1 count=10 2>/dev/null | od -An -tx1; printf '\\033]7501;state=working:id=ses_child\\033\\\\'; printf '\\033]7501;state=working\\033\\\\'; sleep 0.1; printf '\\033]7501;state=idle\\033\\\\'; sleep 5",
+      ],
+      cwd: home,
+      cols: 80,
+      rows: 24,
+    })
+
+    await waitFor(async () => observed.statuses.length, (count) => count === 2)
+    const screen = await waitFor(
+      async () => (await client.request(METHODS.tabsScreen, { id })).text,
+      (text) => /1b\s+5d\s+37\s+35\s+30\s+31\s+3b\s+3f\s+1b\s+5c/.test(text),
+    )
+    expect(observed.statuses).toEqual([
+      { id, state: 'working' },
+      { id, state: 'idle' },
+    ])
+    expect(screen).toMatch(/1b\s+5d\s+37\s+35\s+30\s+31\s+3b\s+3f\s+1b\s+5c/)
   })
 })

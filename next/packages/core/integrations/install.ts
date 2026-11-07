@@ -2,11 +2,12 @@ import fs from 'node:fs'
 import os from 'node:os'
 import path from 'node:path'
 import { CLAUDE_HOOK_EVENTS, CLAUDE_HOOK_SCRIPT } from '../agents/claude/launch.ts'
-import { HOOK_EVENTS as COPILOT_HOOK_EVENTS, hookCommand as copilotHookCommand } from '../agents/copilot/hooks.ts'
 
-// Agent hooks that report tabs typed by hand. Each command does nothing unless the tab it runs in has GROVE_NEXT_TAB
+// The Claude SessionStart hook that reports the resume id of tabs typed by hand and after /clear. Status itself is OSC 7501.
+// Each command does nothing unless the tab it runs in has GROVE_NEXT_TAB
 // (every tab the app starts sets it), so the same hook is harmless in every other terminal. Install merges these
-// entries into the agent's own user settings; uninstall removes exactly these entries and nothing else.
+// entry into Claude's own user settings; uninstall removes exactly these entries and nothing else. Copilot's entries from
+// older installs can still be removed (uninstallCopilot), but are no longer written.
 // The marker is a shell comment at the end of each command, so it is found again without a second file.
 export const MARKER = '# grove-next-hook'
 
@@ -15,12 +16,6 @@ const shQuote = (value: string): string => `'${value.replace(/'/g, `'\\''`)}'`
 // The Claude command for one event. `node` is the Node that runs the hook (the one running this install).
 export function claudeHookCommand(event: string, node: string, script: string = CLAUDE_HOOK_SCRIPT): string {
   return `if [ -n "$GROVE_NEXT_TAB" ]; then ${shQuote(node)} ${shQuote(script)} ${event}; fi ${MARKER}`
-}
-
-// The Copilot command for one event: the spool is per tab, found from the tab's environment.
-export function copilotUserHookCommand(event: string): string {
-  const spool = '"$GROVE_NEXT_HOME/agents/copilot/$GROVE_NEXT_TAB.jsonl"'
-  return `if [ -n "$GROVE_NEXT_TAB" ] && [ -n "$GROVE_NEXT_HOME" ]; then mkdir -p "$GROVE_NEXT_HOME/agents/copilot" 2>/dev/null; ${copilotHookCommand(event, spool, true)}; fi ${MARKER}`
 }
 
 interface HookEntry {
@@ -41,7 +36,8 @@ export function isOurs(entry: HookEntry): boolean {
   return [entry.command, entry.bash].some((text) => typeof text === 'string' && text.includes(MARKER))
 }
 
-// Returns a copy of `settings` with our Claude hook groups set for every event, other hooks untouched.
+// Returns a copy of `settings` with our Claude hook set for SessionStart only (entries from older installs for other
+// events are dropped), other hooks untouched.
 export function mergeClaudeHooks(settings: JsonObject, commandFor: (event: string) => string): JsonObject {
   const hooks = withoutOurs(objectOf(settings.hooks), 'claude')
   for (const event of CLAUDE_HOOK_EVENTS) {
@@ -60,16 +56,7 @@ export function removeClaudeHooks(settings: JsonObject): JsonObject {
   return next
 }
 
-// Returns a copy of `settings` with our Copilot user hooks set for every event, other hooks untouched.
-export function mergeCopilotHooks(settings: JsonObject, commandFor: (event: string) => string): JsonObject {
-  const hooks = withoutOurs(objectOf(settings.hooks), 'copilot')
-  for (const event of COPILOT_HOOK_EVENTS) {
-    const entries = Array.isArray(hooks[event]) ? (hooks[event] as HookEntry[]) : []
-    hooks[event] = [...entries, { type: 'command', bash: commandFor(event) }]
-  }
-  return { ...settings, hooks }
-}
-
+// Removes every Copilot hook entry an older install wrote, and drops events left empty.
 export function removeCopilotHooks(settings: JsonObject): JsonObject {
   const hooks = withoutOurs(objectOf(settings.hooks), 'copilot')
   const next: JsonObject = { ...settings }
@@ -78,20 +65,12 @@ export function removeCopilotHooks(settings: JsonObject): JsonObject {
   return next
 }
 
-// Whether `settings` holds our Claude hooks for every event.
+// Whether `settings` holds our Claude hook for SessionStart and nowhere else. An older install that also has entries for
+// other events is not current: it is out-of-date until the next install replaces it.
 export function hasClaudeHooks(settings: JsonObject): boolean {
   const hooks = objectOf(settings.hooks)
-  return CLAUDE_HOOK_EVENTS.every((event) =>
-    (Array.isArray(hooks[event]) ? (hooks[event] as HookGroup[]) : []).some((group) =>
-      (group.hooks ?? []).some(isOurs)
-    )
-  )
-}
-
-// Whether `settings` holds our Copilot hooks for every event.
-export function hasCopilotHooks(settings: JsonObject): boolean {
-  const hooks = objectOf(settings.hooks)
-  return COPILOT_HOOK_EVENTS.every((event) => (Array.isArray(hooks[event]) ? (hooks[event] as HookEntry[]) : []).some(isOurs))
+  const ours = (event: string) => (Array.isArray(hooks[event]) ? (hooks[event] as HookGroup[]) : []).some((group) => (group.hooks ?? []).some(isOurs))
+  return Object.keys(hooks).every((event) => ours(event) === (event === 'SessionStart')) && ours('SessionStart')
 }
 
 // Whether `settings` holds any entry Grove wrote, for any event and whether or not every event has one (Claude's are
@@ -198,13 +177,6 @@ export function uninstallClaude(file: string): InstallResult {
   if (!fs.existsSync(file)) return { file, backup: null, changed: false }
   const previous = readSettings(file)
   return writeSettings(file, removeClaudeHooks(previous), previous, true)
-}
-
-export function installCopilot(file: string): InstallResult {
-  const existed = fs.existsSync(file)
-  const previous = readSettings(file)
-  const next = mergeCopilotHooks(previous, copilotUserHookCommand)
-  return writeSettings(file, next, previous, existed)
 }
 
 export function uninstallCopilot(file: string): InstallResult {

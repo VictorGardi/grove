@@ -13,6 +13,7 @@ const BODY: Record<NeedsYouReason, string> = {
   permission: 'Needs permission',
   question: 'Has a question',
   error: 'Hit an error',
+  auth: 'Needs sign-in',
 }
 
 export function noticeBody(notice: AttentionNotice): string {

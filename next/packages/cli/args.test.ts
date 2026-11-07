@@ -78,6 +78,15 @@ describe('parseCommand', () => {
     for (const argv of [['focus'], ['kill'], ['kill', 'a', 'b']]) expect(parseCommand(argv)).toBeInstanceOf(UsageError)
   })
 
+  it('installs only the Claude hook, and uninstalls Claude or the old Copilot entries', () => {
+    expect(parseCommand(['integration', 'install', 'claude'])).toEqual({ cmd: 'integration', action: 'install', agent: 'claude' })
+    expect(parseCommand(['integration', 'uninstall', 'claude'])).toEqual({ cmd: 'integration', action: 'uninstall', agent: 'claude' })
+    expect(parseCommand(['integration', 'uninstall', 'copilot'])).toEqual({ cmd: 'integration', action: 'uninstall', agent: 'copilot' })
+    for (const argv of [['integration', 'install', 'copilot'], ['integration', 'install', 'opencode'], ['integration', 'uninstall', 'opencode'], ['integration', 'install']]) {
+      expect(parseCommand(argv)).toBeInstanceOf(UsageError)
+    }
+  })
+
   it('parses config path and skill', () => {
     expect(parseCommand(['config', 'path'])).toEqual({ cmd: 'config-path' })
     expect(parseCommand(['skill'])).toEqual({ cmd: 'skill' })

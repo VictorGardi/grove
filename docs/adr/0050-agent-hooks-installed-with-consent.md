@@ -8,6 +8,8 @@ Accepted
 
 Reverses the design decision that Grove never edits the user's own agent settings (Claude's per-launch settings and Copilot's per-launch plugin keep `~/.claude/settings.json` and `~/.copilot/settings.json` untouched; see `docs/work/2026-11-04-grove-v2-spaces-tabs/02-research.md`), and the post-run step "install by hand, once" in `04-run.md`.
 
+Amended by [0053](0053-agent-status-from-osc-7501.md): status now comes from OSC 7501, so the consent flow installs only a Claude SessionStart hook (its session id), and Copilot and OpenCode have no entry.
+
 ## Context
 
 Claude and Copilot report their state through hooks. A tab Grove launches gets them per launch, so Grove needs no edit to the user's settings. An agent the human types into a plain terminal gets no hooks, so it can show only what presence can see, and Copilot's permission and question waits never show. Writing the hooks into the user's global settings is the only way to report those, and it was done by hand with `grove-next integration install`. That step is easy to miss, and nothing told the human that status was partial. A file that a tool reads at every session start is a global change, so it should not happen silently, and it should not happen on the app's own initiative.

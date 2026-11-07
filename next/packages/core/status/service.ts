@@ -1,27 +1,25 @@
 import fs from 'node:fs'
 import path from 'node:path'
-import type { AgentInfo, AgentStateName, NeedsYouReason, StatusChange } from '../../protocol/messages.ts'
+import type { AgentInfo, AgentStateName, NeedsYouReason, StatusChange, TabInfo } from '../../protocol/messages.ts'
 import type { TabRecord } from '../store/state.ts'
+import { agentOfProgram } from '../presence.ts'
 import type { AgentAdapter, AgentKind, AgentWatch } from './adapter.ts'
-import { applyEvent, GRACE_MS, unknownStatus, type Status, type StatusEvent } from './contract.ts'
-import { createCrossCheck, normaliseScreen, type CrossCheck } from './cross-check.ts'
-import { createWatchdog, type Watchdog } from './watchdog.ts'
+import { applyEvent, applyReport, unknownStatus, type Status, type StatusEvent, type StatusReport } from './contract.ts'
 
 export interface StatusServiceOptions {
   home: string
   // One adapter per agent kind. A kind with no adapter cannot be tracked or restored.
   adapters: Partial<Record<AgentKind, AgentAdapter>>
-  // The visible text of a tab's screen, read from the holder. Asked on each tick for a needs-you tab.
-  screen: (tabId: string) => Promise<string>
   // The ids of the holder tabs that are alive. A tab not in this set is gone. One failed call is skipped, so a
   // blip cannot drop every tab; two in a row cannot confirm any tab alive, so every tab falls to unknown.
   alive: () => Promise<Set<string>>
+  // The holder's last report for each tab, as of the latest `alive` call. Each tick applies a report the push missed
+  // (a lost tabs.status notification) so a tab cannot stay on a stale state.
+  reports?: () => ReadonlyMap<string, StatusReport | null | undefined>
   // Called when a tab reports its agent session id, on start and again after /clear.
   onSession?: (tabId: string, sessionId: string) => void
   clock?: () => number
   tickMs?: number
-  graceMs?: number
-  silenceMs?: number
 }
 
 export interface TrackInput {
@@ -37,28 +35,24 @@ interface Watch {
   kind: AgentKind
   resumeId: string | undefined
   status: Status
-  check: CrossCheck
-  watchdog: Watchdog
-  // The last normalised screen read for a working tab; a change in it is real activity.
-  screen: string | undefined
   source: AgentWatch | undefined
   // True for an agent found by hand (adopt) rather than launched by the app: it is released when its program ends.
   adopted: boolean
+  // The last report seen for this tab, pushed or read from the holder, as reportKey. A holder record equal to it is not applied again.
+  lastReport: string | undefined
 }
 
-const TICK_MS = 1000
-const STATE_NAMES = new Set<string>(['working', 'needs-you', 'finished', 'idle', 'unknown'])
-const REASONS = new Set<string>(['permission', 'question', 'error'])
+const reportKey = (report: StatusReport | null | undefined): string | undefined =>
+  report === null || report === undefined ? undefined : `${report.state}:${report.kind ?? ''}`
 
-// One watch per agent tab. Each owns its adapter's watch, cross-check and watchdog, and folds the
-// watch's events into a status. The status is written to a sidecar file on every change, and the
-// adapter saves its own read position, so a restarted core rebuilds each tab instead of resetting it.
+const TICK_MS = 1000
+
+// One watch per agent tab. Adapter events retain only the resume-id path; status comes from holder reports.
 export class StatusService {
   private readonly watches = new Map<string, Watch>()
   private readonly listeners = new Set<(change: StatusChange) => void>()
   private readonly clock: () => number
   private readonly tickMs: number
-  private readonly graceMs: number
   private timer: ReturnType<typeof setInterval> | undefined
   private ticking = false
   // Consecutive failed holder calls; reset by a successful one.
@@ -67,7 +61,6 @@ export class StatusService {
   constructor(private readonly options: StatusServiceOptions) {
     this.clock = options.clock ?? Date.now
     this.tickMs = options.tickMs ?? TICK_MS
-    this.graceMs = options.graceMs ?? GRACE_MS
   }
 
   // Returns a function that stops the listener.
@@ -76,17 +69,21 @@ export class StatusService {
     return () => this.listeners.delete(listener)
   }
 
-  // Rebuilds each saved agent tab from its sidecar status and its watch from the saved offset.
-  // A tab whose holder tab is not in `alive` is gone, so it restores as unknown, never as a live state.
+  // Rebuilds each saved agent tab from the holder's last report when that agent is still in the foreground.
+  // A tab whose holder entry is missing or whose foreground is no longer an agent starts unknown.
   // A tab that fails to rebuild is logged and skipped.
-  restore(records: TabRecord[], alive: Set<string>): void {
+  restore(records: TabRecord[], tabs: TabInfo[]): void {
+    const tabsById = new Map(tabs.map((tab) => [tab.id, tab]))
     for (const record of records) {
       if (record.agent === undefined || this.watches.has(record.id)) continue
       try {
         const now = this.clock()
-        const saved = this.readSnapshot(record.agent, record.id)
-        const gone = !alive.has(record.id)
-        const status = gone ? unknownStatus(now) : (saved ?? unknownStatus(now))
+        const tab = tabsById.get(record.id)
+        const status =
+          tab?.alive && isForegroundAgent(tab.foreground, tab.argv0, record.agent)
+            ? statusFromHolderReport(tab.status, now)
+            : unknownStatus(now)
+        // A stale record of an agent that quit is seen too, so the tick never applies it.
         // A record with no session id gets '' here: the adapter then has nothing to resume, as before.
         const watch = this.open({
           tabId: record.id,
@@ -96,31 +93,39 @@ export class StatusService {
           status,
           // A tab found by hand is still released when its program ends, after a restart too.
           adopted: record.found === true,
+          lastReport: reportKey(tab?.status),
         })
-        // The replay above may have set a needs-you or working from the spool; a gone tab is never shown as live.
-        if (gone) {
-          this.fallToUnknown(watch, this.clock())
-          this.writeSnapshot(watch)
-        }
+        this.writeSnapshot(watch)
       } catch (error) {
         console.error(`core: could not restore status for tab ${record.id}: ${errorText(error)}`)
       }
     }
   }
 
-  // An agent found running in a tab the app did not launch (typed into a shell). It starts unknown: nothing has
-  // reported yet, and the agent's own hooks or log will say what it is doing. An empty session id is allowed
-  // when the adapter can watch without one; otherwise there is no source until identify() gives the id.
-  adopt(input: { tabId: string; kind: AgentKind; sessionId: string }): void {
+  // An agent found running in a tab the app did not launch (typed into a shell). Its holder report is used only
+  // while that agent is still in the foreground. An empty session id is allowed when the adapter can watch without
+  // one; otherwise there is no source until identify() gives the id.
+  adopt(input: {
+    tabId: string
+    kind: AgentKind
+    sessionId: string
+    status?: StatusReport | null
+    foreground?: string | null
+    argv0?: string | null
+  }): void {
     if (this.watches.has(input.tabId)) return
     const now = this.clock()
+    const status = isForegroundAgent(input.foreground ?? null, input.argv0 ?? null, input.kind)
+      ? statusFromHolderReport(input.status, now)
+      : unknownStatus(now)
     const watch = this.open({
       tabId: input.tabId,
       kind: input.kind,
       sessionId: input.sessionId,
       resumeId: input.sessionId === '' ? undefined : input.sessionId,
-      status: unknownStatus(now),
+      status,
       adopted: true,
+      lastReport: reportKey(input.status),
     })
     this.writeSnapshot(watch)
     if (input.sessionId !== '') this.saveSession(input.tabId, input.sessionId)
@@ -150,7 +155,7 @@ export class StatusService {
     return this.watches.has(tabId)
   }
 
-  // A tab launched or resumed now starts idle: the agent is up and waiting for a prompt.
+  // A launched tab starts unknown until the holder receives its first root status report.
   track(input: TrackInput): void {
     this.close(input.tabId)
     const watch = this.open({
@@ -158,9 +163,16 @@ export class StatusService {
       kind: input.kind,
       sessionId: input.sessionId,
       resumeId: input.sessionId,
-      status: { state: 'idle', since: this.clock() },
+      status: unknownStatus(this.clock()),
     })
     this.writeSnapshot(watch)
+  }
+
+  report(tabId: string, report: StatusReport): void {
+    const watch = this.watches.get(tabId)
+    if (!watch) return
+    watch.lastReport = reportKey(report)
+    this.apply(watch, applyReport(watch.status, report, this.clock()))
   }
 
   start(): void {
@@ -170,9 +182,7 @@ export class StatusService {
     }, this.tickMs)
   }
 
-  // One pass of the timers, for every tab: a tab whose holder tab is gone is unknown. A working tab reads
-  // its screen for real activity; then the watchdog checks silence, and each needs-you tab reads its screen
-  // for the cross-check. Public so tests can drive it with an injected clock.
+  // One pass of the liveness check: a tab whose holder tab is gone becomes unknown.
   async tick(): Promise<void> {
     if (this.ticking) return
     this.ticking = true
@@ -195,42 +205,13 @@ export class StatusService {
           this.fallToUnknown(watch, this.clock())
           continue
         }
-        if (watch.status.state === 'working') await this.readWorkingScreen(watch)
-        if (this.watches.get(watch.tabId) !== watch) continue
-        const silent = watch.watchdog.check(this.clock())
-        if (silent) {
-          this.apply(watch, silent)
-          continue
-        }
-        if (watch.status.state !== 'needs-you') continue
-        let screen: string
-        try {
-          screen = await this.options.screen(watch.tabId)
-        } catch {
-          this.fallToUnknown(watch, this.clock())
-          continue
-        }
-        if (this.watches.get(watch.tabId) !== watch) continue
-        const stuck = watch.check.check(screen, this.clock())
-        if (stuck) this.apply(watch, stuck)
+        // The holder's record differs from the last one seen: a push was lost, so apply it now.
+        const record = alive !== undefined ? this.options.reports?.().get(watch.tabId) : undefined
+        if (record && reportKey(record) !== watch.lastReport) this.report(watch.tabId, record)
       }
     } finally {
       this.ticking = false
     }
-  }
-
-  // A change in the normalised screen is real activity for a working tab, so a moving spinner or a
-  // ticking timer does not count. The first read is the baseline. A failed read is skipped: the watchdog decides.
-  private async readWorkingScreen(watch: Watch): Promise<void> {
-    let text: string
-    try {
-      text = normaliseScreen(await this.options.screen(watch.tabId))
-    } catch {
-      return
-    }
-    if (this.watches.get(watch.tabId) !== watch) return
-    if (watch.screen !== undefined && text !== watch.screen) watch.watchdog.progress(this.clock())
-    watch.screen = text
   }
 
   // Agents for the window's sidebar. A tab is resumable when its holder tab is gone and it has a session id.
@@ -256,7 +237,7 @@ export class StatusService {
     this.apply(watch, applyEvent(watch.status, { kind: 'idle' }, this.clock()))
   }
 
-  // Drops a tab that was removed: its watch, its source and its timers go, and it is no longer listed.
+  // Drops a tab that was removed: its watch and adapter source go, and it is no longer listed.
   untrack(tabId: string): void {
     this.close(tabId)
   }
@@ -283,26 +264,19 @@ export class StatusService {
     resumeId: string | undefined
     status: Status
     adopted?: boolean
+    lastReport?: string
   }): Watch {
     const adapter = this.options.adapters[input.kind]
     if (adapter === undefined) throw new Error(`no adapter for agent ${input.kind}`)
-    const now = this.clock()
     const watch: Watch = {
       tabId: input.tabId,
       kind: input.kind,
       resumeId: input.resumeId,
       status: input.status,
-      check: createCrossCheck({ clock: this.clock, graceMs: this.graceMs }),
-      watchdog: createWatchdog({ clock: this.clock, silenceMs: this.options.silenceMs }),
-      screen: undefined,
       source: undefined,
       adopted: input.adopted ?? false,
+      lastReport: input.lastReport,
     }
-    watch.check.observe(input.status)
-    watch.watchdog.observe(input.status)
-    watch.watchdog.heartbeat(now)
-    // Counted as progress from now; replayed records below then set it to their own times.
-    watch.watchdog.progress(now)
     this.watches.set(input.tabId, watch)
     // An adapter that needs the id waits for it when the id is not known yet.
     if (adapter.needsSession === true && input.sessionId === '') return watch
@@ -319,35 +293,20 @@ export class StatusService {
       sessionId,
       home: this.options.home,
       clock: this.clock,
-      onEvent: (event, at) => this.onEvent(watch, event, at),
+      onEvent: (event) => this.onEvent(watch, event),
     })
   }
 
-  private onEvent(watch: Watch, event: StatusEvent, at: number): void {
+  private onEvent(watch: Watch, event: StatusEvent): void {
     if (this.watches.get(watch.tabId) !== watch) return
-    const now = Number.isFinite(at) ? at : this.clock()
-    if (event.kind === 'heartbeat') {
-      watch.watchdog.heartbeat(this.clock())
-      return
+    if (event.kind !== 'session') return
+    if (event.resumeId !== watch.resumeId) {
+      watch.resumeId = event.resumeId
+      this.saveSession(watch.tabId, event.resumeId)
+      this.writeSnapshot(watch)
     }
-    // The source cannot read its signal now. This is not activity, so it does not reset the silence check.
-    if (event.kind === 'lost') {
-      this.fallToUnknown(watch, now)
-      return
-    }
-    // Every hook record is real activity, including one that changes no state.
-    watch.watchdog.progress(now)
-    if (event.kind === 'session') {
-      if (event.resumeId !== watch.resumeId) {
-        watch.resumeId = event.resumeId
-        this.saveSession(watch.tabId, event.resumeId)
-      }
-      return
-    }
-    this.apply(watch, applyEvent(watch.status, event, now))
   }
 
-  // Sets unknown for a tab that is gone or whose reader or screen cannot be read. A tab already unknown is left alone.
   private saveSession(tabId: string, sessionId: string): void {
     try {
       this.options.onSession?.(tabId, sessionId)
@@ -356,6 +315,7 @@ export class StatusService {
     }
   }
 
+  // Sets unknown for a tab that is gone. A tab already unknown is left alone.
   private fallToUnknown(watch: Watch, now: number): void {
     if (watch.status.state !== 'unknown') this.apply(watch, unknownStatus(now))
   }
@@ -363,8 +323,6 @@ export class StatusService {
   private apply(watch: Watch, next: Status): void {
     if (next === watch.status) return
     watch.status = next
-    watch.check.observe(next)
-    watch.watchdog.observe(next)
     this.writeSnapshot(watch)
     const change: StatusChange = {
       tabId: watch.tabId,
@@ -387,7 +345,7 @@ export class StatusService {
 
   private writeSnapshot(watch: Watch): void {
     const file = this.snapshotFile(watch.kind, watch.tabId)
-    const body = { status: watch.status, resumeId: watch.resumeId }
+    const body = { resumeId: watch.resumeId }
     try {
       fs.mkdirSync(this.agentDir(watch.kind), { recursive: true, mode: 0o700 })
       fs.writeFileSync(`${file}.tmp`, `${JSON.stringify(body)}\n`, { mode: 0o600 })
@@ -397,25 +355,18 @@ export class StatusService {
     }
   }
 
-  // A missing or unreadable snapshot is no status at all; the caller then starts unknown.
-  private readSnapshot(kind: AgentKind, tabId: string): Status | null {
-    let parsed: unknown
-    try {
-      parsed = JSON.parse(fs.readFileSync(this.snapshotFile(kind, tabId), 'utf8'))
-    } catch {
-      return null
-    }
-    const status = (parsed as { status?: Partial<Status> & { reason?: unknown } } | null)?.status
-    if (!status || typeof status.state !== 'string' || !STATE_NAMES.has(status.state)) return null
-    if (typeof status.since !== 'number' || !Number.isFinite(status.since)) return null
-    if (status.state === 'needs-you') {
-      if (typeof status.reason !== 'string' || !REASONS.has(status.reason)) return null
-      return { state: 'needs-you', reason: status.reason as NeedsYouReason, since: status.since }
-    }
-    return { state: status.state, since: status.since } as Status
-  }
 }
 
 function errorText(error: unknown): string {
   return error instanceof Error ? error.message : String(error)
+}
+
+function isForegroundAgent(foreground: string | null, argv0: string | null, kind: AgentKind): boolean {
+  return agentOfProgram(foreground) === kind || agentOfProgram(argv0) === kind
+}
+
+function statusFromHolderReport(report: StatusReport | null | undefined, now: number): Status {
+  if (report === null || report === undefined) return unknownStatus(now)
+  if (report.state === 'done') return { state: 'idle', since: now }
+  return applyReport(unknownStatus(now), report, now)
 }

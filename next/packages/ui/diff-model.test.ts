@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import type { DiffComment, DiffCompared, DiffFile, DiffLine } from '../protocol/messages.ts'
-import { baseChoices, branchNote, changeBar, commentContext, commentRange, commentWhere, commentKey, commentSide, placeComments, relativeTime, emptyMessage, lineWords, matchFiles, settled, splitPath, summarize, wordDiff, type WordSegment } from './diff-model.ts'
+import { baseChoices, branchNote, changeBar, commentContext, commentRange, commentWhere, commentKey, commentSide, placeComments, relativeTime, emptyMessage, lineWords, matchFiles, sendState, settled, splitPath, summarize, wordDiff, type SendTarget, type WordSegment } from './diff-model.ts'
 
 const file = (path: string, status: DiffFile['status'] = 'modified'): DiffFile => ({
   path, oldPath: null, status, binary: false, additions: 1, deletions: 0, hunks: [], truncated: false,
@@ -115,6 +115,16 @@ describe('refresh trigger', () => {
     expect(settled('working', 'unknown')).toBe(false)
     expect(settled('idle', 'working')).toBe(false)
     expect(settled(undefined, 'idle')).toBe(false)
+  })
+})
+
+describe('send state', () => {
+  it('disables Send while an agent needs auth, but allows it for an error', () => {
+    const target: SendTarget = { name: 'api', kind: 'claude', state: 'needs-you', reason: 'error', exited: false }
+    const authTarget: SendTarget = { ...target, reason: 'auth' }
+
+    expect(sendState(1, authTarget, true).reason).toBe('claude is waiting for an answer')
+    expect(sendState(1, target, true).reason).toBeNull()
   })
 })
 
