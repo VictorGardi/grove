@@ -143,6 +143,7 @@ export class PtyTable {
       cwd: tab.info.cwd,
       alive: tab.alive,
       exitCode: tab.exitCode,
+      status: tab.status,
       foreground: null,
       argv0: null,
     }))
@@ -169,6 +170,7 @@ export class PtyTable {
           cwd,
           alive,
           exitCode: tab.exitCode,
+          status: tab.status,
           foreground,
           argv0,
         }

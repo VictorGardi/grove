@@ -1,7 +1,8 @@
 import fs from 'node:fs'
 import path from 'node:path'
-import type { AgentInfo, AgentStateName, NeedsYouReason, StatusChange } from '../../protocol/messages.ts'
+import type { AgentInfo, AgentStateName, NeedsYouReason, StatusChange, TabInfo } from '../../protocol/messages.ts'
 import type { TabRecord } from '../store/state.ts'
+import { agentOfProgram } from '../presence.ts'
 import type { AgentAdapter, AgentKind, AgentWatch } from './adapter.ts'
 import { applyEvent, applyReport, unknownStatus, type Status, type StatusEvent, type StatusReport } from './contract.ts'
 
@@ -60,16 +61,20 @@ export class StatusService {
     return () => this.listeners.delete(listener)
   }
 
-  // Rebuilds each saved agent tab as unknown and its watch from the saved offset.
-  // A tab whose holder tab is not in `alive` is gone.
+  // Rebuilds each saved agent tab from the holder's last report when that agent is still in the foreground.
+  // A tab whose holder entry is missing or whose foreground is no longer an agent starts unknown.
   // A tab that fails to rebuild is logged and skipped.
-  restore(records: TabRecord[], alive: Set<string>): void {
+  restore(records: TabRecord[], tabs: TabInfo[]): void {
+    const tabsById = new Map(tabs.map((tab) => [tab.id, tab]))
     for (const record of records) {
       if (record.agent === undefined || this.watches.has(record.id)) continue
       try {
         const now = this.clock()
-        const gone = !alive.has(record.id)
-        const status = unknownStatus(now)
+        const tab = tabsById.get(record.id)
+        const status =
+          tab?.alive && isForegroundAgent(tab.foreground, tab.argv0, record.agent)
+            ? statusFromHolderReport(tab.status, now)
+            : unknownStatus(now)
         // A record with no session id gets '' here: the adapter then has nothing to resume, as before.
         const watch = this.open({
           tabId: record.id,
@@ -81,28 +86,34 @@ export class StatusService {
           adopted: record.found === true,
         })
         this.writeSnapshot(watch)
-        // A gone tab is never shown as live, even if an old source replays a status event.
-        if (gone) {
-          this.fallToUnknown(watch, this.clock())
-        }
       } catch (error) {
         console.error(`core: could not restore status for tab ${record.id}: ${errorText(error)}`)
       }
     }
   }
 
-  // An agent found running in a tab the app did not launch (typed into a shell). It starts unknown: nothing has
-  // reported yet, and the agent's own hooks or log will say what it is doing. An empty session id is allowed
-  // when the adapter can watch without one; otherwise there is no source until identify() gives the id.
-  adopt(input: { tabId: string; kind: AgentKind; sessionId: string }): void {
+  // An agent found running in a tab the app did not launch (typed into a shell). Its holder report is used only
+  // while that agent is still in the foreground. An empty session id is allowed when the adapter can watch without
+  // one; otherwise there is no source until identify() gives the id.
+  adopt(input: {
+    tabId: string
+    kind: AgentKind
+    sessionId: string
+    status?: StatusReport | null
+    foreground?: string | null
+    argv0?: string | null
+  }): void {
     if (this.watches.has(input.tabId)) return
     const now = this.clock()
+    const status = isForegroundAgent(input.foreground ?? null, input.argv0 ?? null, input.kind)
+      ? statusFromHolderReport(input.status, now)
+      : unknownStatus(now)
     const watch = this.open({
       tabId: input.tabId,
       kind: input.kind,
       sessionId: input.sessionId,
       resumeId: input.sessionId === '' ? undefined : input.sessionId,
-      status: unknownStatus(now),
+      status,
       adopted: true,
     })
     this.writeSnapshot(watch)
@@ -332,4 +343,14 @@ export class StatusService {
 
 function errorText(error: unknown): string {
   return error instanceof Error ? error.message : String(error)
+}
+
+function isForegroundAgent(foreground: string | null, argv0: string | null, kind: AgentKind): boolean {
+  return agentOfProgram(foreground) === kind || agentOfProgram(argv0) === kind
+}
+
+function statusFromHolderReport(report: StatusReport | null | undefined, now: number): Status {
+  if (report === null || report === undefined) return unknownStatus(now)
+  if (report.state === 'done') return { state: 'idle', since: now }
+  return applyReport(unknownStatus(now), report, now)
 }

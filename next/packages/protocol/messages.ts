@@ -97,6 +97,7 @@ export interface TabInfo {
   cwd: string
   alive: boolean
   exitCode: number | null
+  status: { state: string; kind?: string } | null
   // The name of the program in the foreground, e.g. `claude`; the shell's own name when nothing else runs; null when gone.
   foreground: string | null
   // The base name the foreground program was run under (the first word of its command line). It can differ from

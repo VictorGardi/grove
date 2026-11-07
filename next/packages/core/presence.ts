@@ -1,4 +1,5 @@
 import type { AgentKind } from './status/adapter.ts'
+import type { StatusReport } from './status/contract.ts'
 
 // The programs Grove knows by name. A tab whose foreground program has one of these names is running that agent,
 // whoever started it. Names are the binaries' own (verified on this Mac: claude, opencode and copilot are native
@@ -21,6 +22,7 @@ export interface PresenceTab {
   id: string
   alive: boolean
   foreground: string | null
+  status?: StatusReport | null
   // The name the foreground program was run under; it finds Claude's native install, whose binary is named by version.
   argv0?: string | null
   cwd: string
@@ -44,7 +46,14 @@ export interface PresencePorts {
   setAgent: (tabId: string, kind: AgentKind | undefined) => void
   setRoot: (spaceKey: string, root: string) => void
   // The status service: start a watch for a found agent (sessionId '' until known), or stop an adopted one.
-  adopt: (tabId: string, kind: AgentKind, sessionId: string) => void
+  adopt: (
+    tabId: string,
+    kind: AgentKind,
+    sessionId: string,
+    status?: StatusReport | null,
+    foreground?: string | null,
+    argv0?: string | null,
+  ) => void
   identify: (tabId: string, sessionId: string) => void
   release: (tabId: string) => void
   // The kind of a tab the presence scan adopted (not one the app launched), if any.
@@ -98,7 +107,7 @@ export class Presence {
       if (kind !== undefined && this.ports.adoptedKind(tab.id) === undefined && this.ports.agentRecorded(tab.id) === undefined) {
         if (!this.seenAt.has(tab.id)) this.seenAt.set(tab.id, now)
         this.ports.setAgent(tab.id, kind)
-        this.ports.adopt(tab.id, kind, '')
+        this.ports.adopt(tab.id, kind, '', tab.status, tab.foreground, tab.argv0)
         this.awaitingId.add(tab.id)
       }
       if (kind === undefined) this.seenAt.delete(tab.id)

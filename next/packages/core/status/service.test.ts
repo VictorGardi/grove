@@ -123,7 +123,7 @@ describe('StatusService', () => {
     service.close()
   })
 
-  it('restores saved tabs as unknown until holder reports are recovered', () => {
+  it('restores status from the holder only while the matching agent is in the foreground', () => {
     const service = make()
     const snapshotDir = path.join(home, 'agents', 'claude')
     fs.mkdirSync(snapshotDir, { recursive: true })
@@ -131,9 +131,49 @@ describe('StatusService', () => {
       path.join(snapshotDir, 't1.status.json'),
       JSON.stringify({ status: { state: 'working', since: 500 }, resumeId: 's1' }),
     )
-    service.restore([{ id: 't1', spaceId: home, spacePath: home, agent: 'claude', agentSessionId: 's1' }], live)
-    expect(stateOf(service)).toMatchObject({ state: 'unknown', since: 1000 })
+    service.restore(
+      [{ id: 't1', spaceId: home, spacePath: home, agent: 'claude', agentSessionId: 's1' }],
+      [{ id: 't1', command: '/bin/zsh', cwd: home, alive: true, exitCode: null, foreground: 'claude', argv0: 'claude', status: { state: 'working' } }],
+    )
+    expect(stateOf(service)).toMatchObject({ state: 'working', since: 1000 })
     expect(JSON.parse(fs.readFileSync(path.join(snapshotDir, 't1.status.json'), 'utf8'))).toEqual({ resumeId: 's1' })
+    service.close()
+  })
+
+  it.each(['done', 'idle'] as const)('restores a last %s report as idle', (report) => {
+    const service = make()
+    service.restore(
+      [{ id: 't1', spaceId: home, spacePath: home, agent: 'claude', agentSessionId: 's1' }],
+      [{ id: 't1', command: '/bin/zsh', cwd: home, alive: true, exitCode: null, foreground: 'claude', argv0: 'claude', status: { state: report } }],
+    )
+    expect(stateOf(service)).toMatchObject({ state: 'idle' })
+    service.close()
+  })
+
+  it('restores idle after a working-to-idle turn without replaying finished', () => {
+    const first = make()
+    track(first)
+    first.report('t1', { state: 'working' })
+    first.report('t1', { state: 'idle' })
+    expect(stateOf(first)).toMatchObject({ state: 'finished' })
+    first.close()
+
+    const restarted = make()
+    restarted.restore(
+      [{ id: 't1', spaceId: home, spacePath: home, agent: 'claude', agentSessionId: 's1' }],
+      [{ id: 't1', command: '/bin/zsh', cwd: home, alive: true, exitCode: null, foreground: 'claude', argv0: 'claude', status: { state: 'idle' } }],
+    )
+    expect(stateOf(restarted)).toMatchObject({ state: 'idle' })
+    restarted.close()
+  })
+
+  it('does not restore a stale working report when a shell is in the foreground', () => {
+    const service = make()
+    service.restore(
+      [{ id: 't1', spaceId: home, spacePath: home, agent: 'claude', agentSessionId: 's1' }],
+      [{ id: 't1', command: '/bin/zsh', cwd: home, alive: true, exitCode: null, foreground: 'zsh', argv0: 'zsh', status: { state: 'working' } }],
+    )
+    expect(stateOf(service)).toMatchObject({ state: 'unknown', since: 1000 })
     service.close()
   })
 
@@ -249,6 +289,53 @@ describe('StatusService', () => {
     expect(started).toEqual(['', 'S1'])
     expect(sessions).toEqual([{ tabId: 't1', sessionId: 'S1' }])
     expect(stateOf(service)).toMatchObject({ state: 'unknown' })
+    service.close()
+  })
+
+  it('adopts the holder status only for an agent foreground and keeps discovered session ids', () => {
+    const copilot: AgentAdapter = {
+      kind: 'copilot',
+      launch: () => {
+        throw new Error('not used: tabs are tracked directly')
+      },
+      discover: async () => 'copilot-session',
+      watch: (input) => {
+        sources.set(input.tabId, input.onEvent)
+        return { close: () => sources.delete(input.tabId) }
+      },
+    }
+    const service = new StatusService({
+      home,
+      adapters: { copilot },
+      alive: async () => live,
+      onSession: (tabId, sessionId) => sessions.push({ tabId, sessionId }),
+      clock: () => now,
+    })
+    service.adopt({
+      tabId: 't1',
+      kind: 'copilot',
+      sessionId: '',
+      status: { state: 'working' },
+      foreground: 'copilot',
+    })
+    expect(stateOf(service)).toMatchObject({ state: 'working' })
+    service.identify('t1', 'copilot-session')
+    expect(sessions).toEqual([{ tabId: 't1', sessionId: 'copilot-session' }])
+    expect(stateOf(service)).toMatchObject({ state: 'working', resumable: false })
+    service.close()
+  })
+
+  it('does not adopt a stale report when a shell is in the foreground', () => {
+    const service = make()
+    service.adopt({
+      tabId: 't1',
+      kind: 'claude',
+      sessionId: '',
+      status: { state: 'working' },
+      foreground: 'zsh',
+      argv0: 'zsh',
+    })
+    expect(stateOf(service)).toMatchObject({ state: 'unknown', since: 1000 })
     service.close()
   })
 

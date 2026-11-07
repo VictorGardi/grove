@@ -118,7 +118,7 @@ export async function startCoreDaemon(
       onSession: (tabId, sessionId) => spaces.setAgentSession(tabId, sessionId),
     })
   // A holder that cannot be reached at start leaves every saved agent tab unknown.
-  const aliveAtStart = await alive().catch(() => new Set<string>())
+  const tabsAtStart = await holderStatusCall((client) => client.request(METHODS.tabsList, {})).catch(() => [])
   // The hook entries Grove asks the human to enable, for Claude and Copilot. Only an install request writes them.
   const integrations =
     options.integrations ??
@@ -143,6 +143,7 @@ export async function startCoreDaemon(
         alive: tab.alive,
         foreground: tab.foreground,
         argv0: tab.argv0,
+        status: tab.status,
         cwd: tab.cwd,
       })),
     spaceOf: (tabId) => spaces.spaceOfTab(tabId),
@@ -157,8 +158,8 @@ export async function startCoreDaemon(
         })
         .catch((error: unknown) => console.error(`core: space change not announced: ${error instanceof Error ? error.message : String(error)}`))
     },
-    adopt: (tabId, kind, sessionId) => {
-      status.adopt({ tabId, kind, sessionId })
+    adopt: (tabId, kind, sessionId, report, foreground, argv0) => {
+      status.adopt({ tabId, kind, sessionId, status: report, foreground, argv0 })
       offerIntegration(kind)
     },
     identify: (tabId, sessionId) => status.identify(tabId, sessionId),
@@ -221,7 +222,7 @@ export async function startCoreDaemon(
   })
   const unwatch = watchConfig(config, (snapshot) => broadcast(notification('config.changed', snapshot)))
   // Agent tabs are rebuilt before the core listens, so the first client already sees their state.
-  status.restore(spaces.agentTabs(), aliveAtStart)
+  status.restore(spaces.agentTabs(), tabsAtStart)
   status.start()
   const deps: Deps = { spaces, status, attention, home, configDir, config, adapters, available, broadcast, integrations }
 

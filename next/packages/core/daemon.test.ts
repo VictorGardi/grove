@@ -687,6 +687,34 @@ describe('core daemon agents', () => {
     expect(launches.at(-1)).toEqual({ tabId: id, resumeId: 'updated-session' })
   })
 
+  it('restores a working root status from the holder after the core restarts', async () => {
+    const adapter: AgentAdapter = {
+      ...fakeAdapter,
+      launch: ({ tabId, resumeId }) => {
+        launches.push({ tabId, resumeId })
+        return {
+          command: '/bin/bash',
+          args: ['-c', "printf '\\033]7501;state=working\\033\\\\'; exec -a claude sleep 30"],
+          env: {},
+          sessionId: resumeId ?? sessionFor(tabId),
+        }
+      },
+    }
+    const first = await startDaemon({ adapters: { claude: adapter } })
+    const { id } = await first.core.request(METHODS.tabsCreate, {
+      command: 'claude',
+      cwd: space,
+      cols: 80,
+      rows: 24,
+      agent: { kind: 'claude' },
+    })
+    await waitFor(() => agentState(first.core, id), (agent) => agent?.state === 'working')
+    await stopDaemons()
+
+    const second = await startDaemon({ adapters: { claude: adapter } })
+    expect(await agentState(second.core, id)).toMatchObject({ tabId: id, state: 'working', resumable: false })
+  })
+
   it('falls to unknown when a working Claude tab is killed', async () => {
     launchScript = "printf '\\033]7501;state=working\\033\\\\'; sleep 30"
     const { core } = await startDaemon()
@@ -893,6 +921,7 @@ function claudeStandIn(dir: string): string | undefined {
 describe('agents typed by hand', () => {
   let home: string
   let holder: ChildProcess | undefined
+  let daemons: CoreServer[] = []
   let clients: RpcClient[] = []
 
   beforeEach(() => {
@@ -906,6 +935,8 @@ describe('agents typed by hand', () => {
   afterEach(async () => {
     for (const client of clients) client.close()
     clients = []
+    for (const daemon of daemons) await daemon.close()
+    daemons = []
     await stopHolder(holder)
     holder = undefined
     delete process.env.CLAUDE_CONFIG_DIR
@@ -918,6 +949,27 @@ describe('agents typed by hand', () => {
 
   const typeLine = (core: RpcClient, id: string, text: string) =>
     core.request(METHODS.tabsWrite, { id, dataB64: bytesToB64(Buffer.from(text)) })
+
+  const startTypedCore = async (adapters: Partial<Record<AgentKind, AgentAdapter>>): Promise<RpcClient> => {
+    const fakeCore = path.join(path.dirname(fileURLToPath(import.meta.url)), '..', 'holder', 'testdata', 'fake-core.mjs')
+    holder = await ensureHolder({
+      env: { ...process.env, GROVE_NEXT_HOME: home, GROVE_NEXT_CORE_CMD: `${process.execPath} ${fakeCore}` },
+    })
+    const spaces = new SpacesService(path.join(home, 'state.json'))
+    const alive = async () => {
+      const client = await connectRpc(holderSocketPath())
+      try {
+        return new Set((await client.request(METHODS.tabsList, {})).filter((tab) => tab.alive).map((tab) => tab.id))
+      } finally {
+        client.close()
+      }
+    }
+    const status = new StatusService({ home, adapters, alive, onSession: (tabId, sessionId) => spaces.setAgentSession(tabId, sessionId) })
+    daemons.push(await startCoreDaemon({ home, spaces, status, adapters }))
+    const core = await connectWhenReady(coreSocketPath())
+    clients.push(core)
+    return core
+  }
 
   // Without a C compiler the stand-in cannot be built, so this test is skipped rather than passing empty.
   const hasCompiler = (() => {
@@ -956,6 +1008,55 @@ describe('agents typed by hand', () => {
       15000,
     )
     expect((await core.request(METHODS.spacesList, {})).tabs).toContainEqual(expect.objectContaining({ id, kind: 'terminal' }))
+  })
+
+  it.skipIf(!hasCompiler)('adopts typed-by-hand Copilot and OpenCode from their first report and discovers resume ids', async () => {
+    const source = path.join(home, 'agent.c')
+    fs.writeFileSync(
+      source,
+      '#include <unistd.h>\nint main(void) { sleep(3); const char *s = "\\033]7501;state=working\\033\\\\"; write(1, s, sizeof("\\033]7501;state=working\\033\\\\") - 1); sleep(60); return 0; }\n',
+    )
+    const binaries = new Map<'copilot' | 'opencode', string>()
+    for (const kind of ['copilot', 'opencode'] as const) {
+      const binary = path.join(home, kind)
+      execFileSync('cc', ['-o', binary, source])
+      binaries.set(kind, binary)
+    }
+    const sessions = { copilot: 'copilot-session', opencode: 'opencode-session' }
+    const adapters: Partial<Record<AgentKind, AgentAdapter>> = {}
+    for (const kind of ['copilot', 'opencode'] as const) {
+      adapters[kind] = {
+        kind,
+        needsSession: kind === 'opencode',
+        launch: () => {
+          throw new Error('not used: agents are typed into shell tabs')
+        },
+        discover: async () => sessions[kind],
+        watch: () => ({ close: () => {} }),
+      }
+    }
+    const core = await startTypedCore(adapters)
+    const space = fs.realpathSync(fs.mkdtempSync(path.join(home, 'space-')))
+    const { id: spaceId } = await core.request(METHODS.spacesAdd, { path: space })
+    const changed: StatusChange[] = []
+    core.onNotification('status.changed', (change) => changed.push(change))
+
+    for (const kind of ['copilot', 'opencode'] as const) {
+      const { id } = await core.request(METHODS.tabsOpen, { spaceId, cols: 80, rows: 24 })
+      await typeLine(core, id, `${binaries.get(kind)}\n`)
+      await waitFor(() => agentState(core, id), (agent) => agent?.state === 'working', 15000)
+      expect(changed.filter((change) => change.tabId === id).map((change) => change.state)).toEqual(['working'])
+    }
+
+    const state = JSON.parse(fs.readFileSync(path.join(home, 'state.json'), 'utf8')) as {
+      tabs: Array<{ agent?: string; agentSessionId?: string }>
+    }
+    expect(state.tabs).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ agent: 'copilot', agentSessionId: sessions.copilot }),
+        expect.objectContaining({ agent: 'opencode', agentSessionId: sessions.opencode }),
+      ]),
+    )
   })
 
   it.skipIf(!hasCompiler)('asks once about a typed claude with no hooks, writes nothing until a yes, then installs it', async () => {
