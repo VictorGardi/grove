@@ -147,6 +147,20 @@ describe('StatusService', () => {
     service.close()
   })
 
+  it('resets a silent working tab only when the holder reports it gone', async () => {
+    const service = make()
+    track(service)
+    service.report('t1', { state: 'working' })
+    now += 30001
+    await service.tick()
+    expect(stateOf(service)).toMatchObject({ state: 'working' })
+
+    live = new Set()
+    await service.tick()
+    expect(stateOf(service)).toMatchObject({ state: 'unknown', since: now, resumable: true })
+    service.close()
+  })
+
   it('falls to unknown when the holder tab is gone', async () => {
     const service = make()
     track(service)

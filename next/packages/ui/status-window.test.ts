@@ -200,4 +200,22 @@ describe('window status path', () => {
       expect(spaceIndicator(), `space tile, ${state}`).toBe(`indicator ind-${state}`)
     }
   })
+
+  it('shows an unknown agent minimum-version hint only while its PTY is live', () => {
+    notify('status.changed', change('tab-copilot', 'copilot', 'unknown'))
+
+    const tab = [...document.querySelectorAll('#tabs > *')].find((el) => el.textContent?.includes('copilot'))
+    const indicator = tab?.querySelector('.tab-main .indicator')
+    expect(indicator).not.toBeNull()
+    for (const attribute of ['title', 'aria-label']) {
+      expect(indicator?.getAttribute(attribute)).toContain('no status report yet')
+      expect(indicator?.getAttribute(attribute)).toContain('1.0.107')
+    }
+
+    notify('tabs.exit', { id: 'tab-copilot', exitCode: 0 })
+    for (const attribute of ['title', 'aria-label']) {
+      expect(indicator?.getAttribute(attribute)).not.toContain('no status report yet')
+      expect(indicator?.getAttribute(attribute)).not.toContain('1.0.107')
+    }
+  })
 })
