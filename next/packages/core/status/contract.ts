@@ -3,14 +3,6 @@
 
 import type { NeedsYouReason } from '../../protocol/messages.ts'
 
-export const GRACE_MS = 3000
-export const SILENCE_MS = 30000
-
-export interface TimingOptions {
-  graceMs?: number
-  silenceMs?: number
-}
-
 export type Status =
   | { state: 'working'; since: number }
   | { state: 'needs-you'; reason: NeedsYouReason; since: number }
@@ -23,16 +15,13 @@ export interface StatusReport {
   kind?: string
 }
 
-// Legacy adapter events remain defined while the integrations are removed. Only session events are consumed.
+// Status arrives as OSC 7501 reports (applyReport); an adapter delivers only `session`, the resume id.
 export type StatusEvent =
   | { kind: 'working' }
   | { kind: 'needs-you'; reason: NeedsYouReason }
   | { kind: 'finished' }
   | { kind: 'idle' }
-  | { kind: 'idle-prompt' }
   | { kind: 'session'; resumeId: string }
-  | { kind: 'heartbeat' }
-  | { kind: 'lost' }
 
 export function unknownStatus(now: number): Status {
   return { state: 'unknown', since: now }
@@ -56,7 +45,7 @@ export function applyReport(status: Status, report: StatusReport, now: number): 
   return status
 }
 
-// The legacy adapter reducer remains until those event types are removed.
+// The reducer applyReport maps onto. A session event does not change status.
 export function applyEvent(status: Status, event: StatusEvent, now: number): Status {
   switch (event.kind) {
     case 'working':
@@ -68,13 +57,7 @@ export function applyEvent(status: Status, event: StatusEvent, now: number): Sta
       return status.state === 'finished' ? status : { state: 'finished', since: now }
     case 'idle':
       return status.state === 'idle' ? status : { state: 'idle', since: now }
-    case 'idle-prompt':
-      if (status.state === 'working' || status.state === 'needs-you') return { state: 'finished', since: now }
-      if (status.state === 'finished' || status.state === 'idle') return status
-      return { state: 'idle', since: now }
     case 'session':
-    case 'heartbeat':
-    case 'lost':
       return status
   }
 }

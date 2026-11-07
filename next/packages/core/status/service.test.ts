@@ -106,9 +106,6 @@ describe('StatusService', () => {
       { kind: 'needs-you', reason: 'permission' },
       { kind: 'finished' },
       { kind: 'idle' },
-      { kind: 'idle-prompt' },
-      { kind: 'heartbeat' },
-      { kind: 'lost' },
     ] as const) {
       emit('t1', event)
     }

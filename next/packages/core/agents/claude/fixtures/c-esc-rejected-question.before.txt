@@ -1,8 +1,0 @@
-
-  Which database should we use?
-
-  ❯ 1. Postgres
-    2. SQLite
-    3. Type something.
-
-  Enter to select · Esc to cancel

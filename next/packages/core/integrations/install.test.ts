@@ -5,7 +5,7 @@ import path from 'node:path'
 import { afterEach, beforeEach, describe, expect, it } from 'vitest'
 import { CLAUDE_HOOK_EVENTS } from '../agents/claude/launch.ts'
 import { hasClaudeHooks, claudeHookCommand, copilotUserHookCommand, installClaude, installCopilot, MARKER, readSettings, uninstallClaude, uninstallCopilot } from './install.ts'
-import { HOOK_EVENTS as COPILOT_EVENTS, parseCopilotLine } from '../agents/copilot/hooks.ts'
+import { HOOK_EVENTS as COPILOT_EVENTS } from '../agents/copilot/hooks.ts'
 
 describe('integration install', () => {
   let dir: string
@@ -136,8 +136,8 @@ describe('integration install', () => {
     const inside = runHook(command, { GROVE_NEXT_TAB: 'tab-8', GROVE_NEXT_HOME: home }, payload)
     expect(inside.status).toBe(0)
     const text = fs.readFileSync(path.join(home, 'agents', 'copilot', 'tab-8.jsonl'), 'utf8').trim()
-    const record = parseCopilotLine(text)
-    expect(record?.event).toBe('sessionStart')
-    expect((record?.payload as { sessionId: string }).sessionId).toBe('63628a79-e8e2-433a-867f-25197bda8484')
+    const record = JSON.parse(text) as { e: { hook_event_name: string; sessionId: string } }
+    expect(record.e.hook_event_name).toBe('sessionStart')
+    expect(record.e.sessionId).toBe('63628a79-e8e2-433a-867f-25197bda8484')
   })
 })

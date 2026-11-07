@@ -1,9 +1,5 @@
-import type { SpoolRecord } from '../../status/spool.ts'
-
-// Per-launch hooks for Copilot CLI, supplied as a plugin through `--plugin-dir` so the user's own
-// ~/.copilot/settings.json is never edited. Copilot's hook stdin is one JSON object that does not name its event
+// The hook entries Grove once installed for Copilot, kept for the integration cleanup. Copilot's hook stdin is one JSON object that does not name its event
 // (verified on 1.0.102), so each command stamps it in: {"t": <UTC, s>, "e": {"hook_event_name": <event>, ...stdin}}.
-// The spool is read by the generic spool source with parseCopilotLine.
 // No permissionRequest: it fires before Copilot's permission service, so auto-approved calls hit it too. `notification`
 // (permission_prompt, elicitation_dialog) fires only for a prompt actually shown.
 export const HOOK_EVENTS = ['sessionStart', 'userPromptSubmitted', 'preToolUse', 'postToolUse', 'postToolUseFailure', 'notification', 'agentStop', 'sessionEnd'] as const
@@ -24,33 +20,4 @@ export function hookCommand(event: string, spool: string, rawSpool = false): str
     `printf '{"t":"%s","e":{"hook_event_name":"%s",%s}\\n' ${stamp} ${event} "$b" >> ${rawSpool ? spool : shQuote(spool)} 2>/dev/null`,
     'exit 0',
   ].join('; ')
-}
-
-export const pluginJson = JSON.stringify({ name: 'grove', version: '1.0.0', hooks: 'hooks.json' })
-
-export function hooksJson(spool: string): string {
-  const hooks = Object.fromEntries(HOOK_EVENTS.map((e) => [e, [{ type: 'command', bash: hookCommand(e, spool) }]]))
-  return JSON.stringify({ version: 1, hooks })
-}
-
-// One spool line read back. The event is the payload's own hook_event_name when it has one (a Notification payload
-// names itself, and that wins over the stamp). The time is Copilot's own epoch-ms timestamp when the payload has one,
-// else the stamp. A line that is not that shape is corrupt.
-export function parseCopilotLine(line: string): SpoolRecord | null {
-  let value: unknown
-  try {
-    value = JSON.parse(line)
-  } catch {
-    return null
-  }
-  if (value === null || typeof value !== 'object') return null
-  const { t, e } = value as { t?: unknown; e?: unknown }
-  if (e === null || typeof e !== 'object') return null
-  const hook = e as { hook_event_name?: unknown; timestamp?: unknown }
-  const own = typeof hook.timestamp === 'number' ? hook.timestamp : typeof t === 'string' ? Date.parse(t) : NaN
-  return {
-    event: typeof hook.hook_event_name === 'string' ? hook.hook_event_name : '',
-    at: Number.isFinite(own) ? own : undefined,
-    payload: e,
-  }
 }

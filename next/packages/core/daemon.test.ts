@@ -463,13 +463,8 @@ describe('core daemon agents', () => {
       offset += Buffer.byteLength(complete)
       fs.writeFileSync(offsetFile, JSON.stringify({ offset }))
     }
-    // As the real source does: a heartbeat after each drain that worked, so the reader is seen to run.
-    const beat = () => {
-      drain()
-      onEvent({ kind: 'heartbeat' }, Date.now())
-    }
-    beat()
-    const timer = setInterval(beat, 20)
+    drain()
+    const timer = setInterval(drain, 20)
     return { close: () => clearInterval(timer) }
   }
 

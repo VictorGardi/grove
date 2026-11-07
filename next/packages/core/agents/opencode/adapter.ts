@@ -2,8 +2,7 @@ import { randomBytes } from 'node:crypto'
 import os from 'node:os'
 import type { AgentAdapter } from '../../status/adapter.ts'
 import { commandOnPath } from '../commandOnPath.ts'
-import { findOpenCodeSession } from './discover.ts'
-import { createOpenCodeHub, serviceFilePath, type OpenCodeHub } from './hub.ts'
+import { findOpenCodeSession, serviceFilePath } from './discover.ts'
 
 // Port of src/core/opencodeId.ts: OpenCode's descending id format, where newer ids sort first
 // (OC:packages/schema/src/identifier.ts).
@@ -20,8 +19,6 @@ export function mintSessionId(now = Date.now()): string {
 }
 
 export interface OpenCodeAdapterOptions {
-  // The shared connection. Default: one hub per adapter, on the service file below.
-  hub?: OpenCodeHub
   serviceFile?: string
   // Default: `opencode` on the login shell's PATH. Tests inject one.
   onPath?: () => Promise<boolean>
@@ -33,12 +30,6 @@ export interface OpenCodeAdapterOptions {
 export const OPENCODE_CHROME = JSON.stringify({ tabs: { mode: 'off' }, theme: { name: 'system', mode: 'dark' } })
 
 export function createOpenCodeAdapter(options: OpenCodeAdapterOptions = {}): AgentAdapter {
-  let hub = options.hub
-  // Created on the first watch, so an adapter that is only asked about its command never opens a connection.
-  const connection = (): OpenCodeHub => {
-    hub ??= createOpenCodeHub({ serviceFile: serviceFile() })
-    return hub
-  }
   const onPath = options.onPath ?? (() => commandOnPath('opencode', options.shell ?? process.env.SHELL ?? '/bin/zsh'))
   // A positive probe is kept: the login shell's start-up costs time on every create.
   let found = false
@@ -47,7 +38,7 @@ export function createOpenCodeAdapter(options: OpenCodeAdapterOptions = {}): Age
 
   return {
     kind: 'opencode',
-    // The shared service is keyed by session, so a tab found by hand waits for its session before it can be watched.
+    // A tab found by hand waits for discover() to name its session.
     needsSession: true,
     discover: ({ cwd, since, exclude }) => findOpenCodeSession({ serviceFile: serviceFile(), cwd, since, exclude }),
     launch: (input) => {
@@ -58,10 +49,8 @@ export function createOpenCodeAdapter(options: OpenCodeAdapterOptions = {}): Age
       const sessionId = input.resumeId ?? mintSessionId()
       return { command: 'opencode', args: ['-s', sessionId], env: { OPENCODE_CLI_CONFIG_CONTENT: OPENCODE_CHROME }, sessionId }
     },
-    watch: (input) => {
-      const stop = connection().watch({ sessionId: input.sessionId, clock: input.clock, onEvent: input.onEvent })
-      return { close: stop }
-    },
+    // Status comes from OSC 7501 through the holder; nothing here reports it.
+    watch: () => ({ close: () => {} }),
     available: async () => {
       if (!found) found = await onPath()
       return found

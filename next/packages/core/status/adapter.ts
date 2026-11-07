@@ -39,7 +39,7 @@ export interface AgentAdapter {
   discover?: (input: { cwd: string; since: number; exclude?: ReadonlySet<string> }) => Promise<string | undefined>
   // Throws an Error with a message when a resume id is not valid for this agent.
   launch(input: AdapterLaunchInput): AgentLaunch
-  // Starts reporting for one tab. Delivers StatusEvents; the service folds them and owns the sidecar and the cross-check.
+  // Starts reporting for one tab. Delivers `session` events; the service saves the resume id they carry.
   watch(input: AdapterWatchInput): AgentWatch
   // Optional: resolves false when the command is not on the login shell's PATH (the create is refused with agentMissing).
   available?: () => Promise<boolean>

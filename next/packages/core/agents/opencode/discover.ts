@@ -1,4 +1,10 @@
 import fs from 'node:fs'
+import path from 'node:path'
+
+// The shared OpenCode service's registration file. Holds a password: never log it, never push it.
+export function serviceFilePath(env: NodeJS.ProcessEnv, home: string): string {
+  return path.join(env.XDG_STATE_HOME || path.join(home, '.local', 'state'), 'opencode', 'service.json')
+}
 
 export type Fetch = (input: URL, init?: RequestInit) => Promise<Response>
 
