@@ -13,6 +13,7 @@ export const METHODS = {
   tabsAttach: 'tabs.attach',
   tabsOutput: 'tabs.output',
   tabsExit: 'tabs.exit',
+  tabsStatus: 'tabs.status',
   spacesList: 'spaces.list',
   spacesAdd: 'spaces.add',
   spacesRemove: 'spaces.remove',
@@ -96,6 +97,7 @@ export interface TabInfo {
   cwd: string
   alive: boolean
   exitCode: number | null
+  status: { state: string; kind?: string } | null
   // The name of the program in the foreground, e.g. `claude`; the shell's own name when nothing else runs; null when gone.
   foreground: string | null
   // The base name the foreground program was run under (the first word of its command line). It can differ from
@@ -132,7 +134,7 @@ export interface SpaceTabInfo {
 
 export type AgentStateName = 'working' | 'needs-you' | 'finished' | 'idle' | 'unknown'
 
-export type NeedsYouReason = 'permission' | 'question' | 'error'
+export type NeedsYouReason = 'permission' | 'question' | 'error' | 'auth'
 
 // One reading of an agent's context window. `tokens` is the input-side context in use; it is null, never 0, before the
 // agent's first API request and after a compaction, until the next request. `window` and `percent` follow the provider
@@ -223,7 +225,7 @@ export interface StatusChange {
 }
 
 // The agents whose status needs a hook entry in the user's own settings. OpenCode reads its service and needs none.
-export type IntegrationAgent = 'claude' | 'copilot'
+export type IntegrationAgent = 'claude'
 
 // enabled: every hook event of this version has Grove's entry. not-enabled: no Grove entry. out-of-date: some Grove
 // entries, not all of this version's events. unreadable: the settings file is not a JSON object; Grove never touches it.
@@ -433,6 +435,7 @@ export interface MethodMap {
 export interface NotificationMap {
   'tabs.output': { id: string; dataB64: string }
   'tabs.exit': { id: string; exitCode: number | null }
+  'tabs.status': { id: string; state: string; kind?: string }
   'status.changed': StatusChange
   'context.changed': { tabId: string; context: ContextUsage }
   'attention.notify': AttentionNotice

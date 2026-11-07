@@ -38,6 +38,7 @@ export async function startHolderServer(
     const send = (message: unknown) => {
       if (!socket.destroyed) socket.write(encodeLine(message))
     }
+    const unsubscribeStatus = table.onStatus((id, status) => send(notification(METHODS.tabsStatus, { id, ...status })))
     const detachAll = () => {
       for (const detach of attachments.values()) detach()
       attachments.clear()
@@ -89,6 +90,7 @@ export async function startHolderServer(
     socket.on('error', () => socket.destroy())
     socket.on('close', () => {
       detachAll()
+      unsubscribeStatus()
       sockets.delete(socket)
     })
   })

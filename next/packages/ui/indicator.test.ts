@@ -15,6 +15,24 @@ describe('indicator', () => {
     expect(indicatorLabel('needs-you')).toBe('needs you')
   })
 
+  it('names the minimum version for a live agent tab with no status report', () => {
+    expect(indicatorLabel('unknown', 'copilot', true)).toBe(
+      'no status report yet; requires Copilot 1.0.107 or later',
+    )
+    expect(indicatorLabel('unknown', 'opencode', true)).toBe(
+      'no status report yet; requires OpenCode 2.2.6 or later',
+    )
+    expect(indicatorLabel('unknown', 'claude', true)).toBe(
+      'no status report yet; requires Claude 2.1.309 or later',
+    )
+  })
+
+  it('does not show a version hint without a live agent tab', () => {
+    expect(indicatorLabel('unknown')).toBe('unknown')
+    expect(indicatorLabel('unknown', 'claude', false)).toBe('unknown')
+    expect(indicatorLabel('working', 'claude', true)).toBe('working')
+  })
+
   it('has a styles.css rule for every state, coloured from its state token', () => {
     for (const state of INDICATOR_STATES as readonly IndicatorState[]) {
       const rule = new RegExp(`\\.ind-${state}\\s*\\{[^}]*var\\(--state-${state}\\)`)

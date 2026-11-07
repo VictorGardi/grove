@@ -44,6 +44,7 @@ describe('noticeBody', () => {
     expect(noticeBody(needsYou('permission'))).toBe('Needs permission')
     expect(noticeBody(needsYou('question'))).toBe('Has a question')
     expect(noticeBody(needsYou('error'))).toBe('Hit an error')
+    expect(noticeBody(needsYou('auth'))).toBe('Needs sign-in')
   })
 
   it('falls back to a generic line when a needs-you notice has no reason', () => {

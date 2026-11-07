@@ -7,7 +7,7 @@ import { bytesToB64, createLineDecoder, encodeLine } from '../protocol/framing.t
 import { coreSocketPath, groveNextHome, holderSocketPath } from '../protocol/paths.ts'
 import { ERROR_CODES, METHODS, PROTOCOL_VERSION } from '../protocol/messages.ts'
 import type { IntegrationAgent, IntegrationInfo, KeyAction } from '../protocol/messages.ts'
-import { claudeSettingsFile, copilotSettingsFile } from './integrations/install.ts'
+import { claudeSettingsFile } from './integrations/install.ts'
 import { IntegrationService, isIntegrationAgent } from './integrations/service.ts'
 import { buildId } from './build.ts'
 import { Presence } from './presence.ts'
@@ -88,10 +88,14 @@ export async function startCoreDaemon(
   config.load()
   writeAgentsMd(configDir)
 
-  // The status service reads screens and tab liveness through its own holder connection, so it does not depend on any window.
+  // The status service receives reports and tab liveness through its own holder connection, so it does not depend on any window.
   let statusClient: Promise<RpcClient> | undefined
+  let status: StatusService
   const holderStatusCall = async <T>(use: (client: RpcClient) => Promise<T>): Promise<T> => {
-    const pending = (statusClient ??= connectRpc(holderSocket))
+    const pending = (statusClient ??= connectRpc(holderSocket).then((client) => {
+      client.onNotification(METHODS.tabsStatus, (report) => status.report(report.id, { state: report.state, kind: report.kind }))
+      return client
+    }))
     try {
       return await withTimeout(pending.then(use), STATUS_CALL_MS)
     } catch (error) {
@@ -103,26 +107,30 @@ export async function startCoreDaemon(
       throw error
     }
   }
-  const screen = (tabId: string): Promise<string> =>
-    holderStatusCall(async (client) => (await client.request(METHODS.tabsScreen, { id: tabId })).text)
+  // The holder's last report per tab from the latest tabs.list, which the status tick reconciles against.
+  let holderReports = new Map<string, { state: string; kind?: string } | null>()
   const alive = (): Promise<Set<string>> =>
-    holderStatusCall(async (client) => aliveIds(await client.request(METHODS.tabsList, {})))
-  const status =
+    holderStatusCall(async (client) => {
+      const tabs = await client.request(METHODS.tabsList, {})
+      holderReports = new Map(tabs.map((tab) => [tab.id, tab.status]))
+      return aliveIds(tabs)
+    })
+  status =
     options.status ??
     new StatusService({
       home,
       adapters,
-      screen,
       alive,
+      reports: () => holderReports,
       onSession: (tabId, sessionId) => spaces.setAgentSession(tabId, sessionId),
     })
   // A holder that cannot be reached at start leaves every saved agent tab unknown.
-  const aliveAtStart = await alive().catch(() => new Set<string>())
-  // The hook entries Grove asks the human to enable, for Claude and Copilot. Only an install request writes them.
+  const tabsAtStart = await holderStatusCall((client) => client.request(METHODS.tabsList, {})).catch(() => [])
+  // The Claude SessionStart hook Grove asks the human to enable. Only an install request writes them.
   const integrations =
     options.integrations ??
     new IntegrationService({
-      files: { claude: claudeSettingsFile(), copilot: copilotSettingsFile() },
+      files: { claude: claudeSettingsFile() },
       consentFile: path.join(home, 'integrations.json'),
     })
   // Asked at most once per core run; a window that connects later reads the pending list instead.
@@ -142,6 +150,7 @@ export async function startCoreDaemon(
         alive: tab.alive,
         foreground: tab.foreground,
         argv0: tab.argv0,
+        status: tab.status,
         cwd: tab.cwd,
       })),
     spaceOf: (tabId) => spaces.spaceOfTab(tabId),
@@ -156,8 +165,8 @@ export async function startCoreDaemon(
         })
         .catch((error: unknown) => console.error(`core: space change not announced: ${error instanceof Error ? error.message : String(error)}`))
     },
-    adopt: (tabId, kind, sessionId) => {
-      status.adopt({ tabId, kind, sessionId })
+    adopt: (tabId, kind, sessionId, report, foreground, argv0) => {
+      status.adopt({ tabId, kind, sessionId, status: report, foreground, argv0 })
       offerIntegration(kind)
     },
     identify: (tabId, sessionId) => status.identify(tabId, sessionId),
@@ -223,7 +232,7 @@ export async function startCoreDaemon(
   )
   const unwatch = watchConfig(config, (snapshot) => broadcast(notification('config.changed', snapshot)))
   // Agent tabs are rebuilt before the core listens, so the first client already sees their state.
-  status.restore(spaces.agentTabs(), aliveAtStart)
+  status.restore(spaces.agentTabs(), tabsAtStart)
   status.start()
   const deps: Deps = { spaces, status, attention, home, configDir, config, adapters, available, broadcast, integrations }
 
@@ -367,7 +376,7 @@ function adoptedAgentsOf(status: StatusService): Set<AgentKind> {
 
 function integrationAgentParam(params: unknown): IntegrationAgent {
   const agent = (params as { agent?: unknown } | null)?.agent
-  if (!isIntegrationAgent(agent)) throw new RpcError(ERROR_CODES.invalidParams, 'agent must be claude or copilot')
+  if (!isIntegrationAgent(agent)) throw new RpcError(ERROR_CODES.invalidParams, 'agent must be claude')
   return agent
 }
 
@@ -417,7 +426,7 @@ async function dispatch(method: string, rawParams: unknown, holder: Promise<RpcC
   }
   if (method === METHODS.integrationStatus) {
     const running = adoptedAgentsOf(deps.status)
-    const agents: IntegrationInfo[] = (['claude', 'copilot'] as const).map((agent) => deps.integrations.status(agent, running.has(agent)))
+    const agents: IntegrationInfo[] = (['claude'] as const).map((agent) => deps.integrations.status(agent, running.has(agent)))
     return { agents } satisfies MethodMap['integration.status']['result']
   }
   if (method === METHODS.integrationInstall) {

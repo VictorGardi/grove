@@ -1,6 +1,7 @@
 // The tab's button in the strip: the agent mark, the name, the state indicator and a close button. The DOM is made once and
 // updated in place. Every click re-paints the tab, and a rebuilt label would lose the second click of a double-click.
 import type { AgentStateName } from '../protocol/messages.ts'
+import type { AgentKind } from '../core/status/adapter.ts'
 import { iconSvg } from './icons.ts'
 import { indicatorClass, indicatorLabel } from './indicator.ts'
 
@@ -14,6 +15,8 @@ export interface TabPillView {
   name: string
   title: string
   state: AgentStateName
+  agent?: AgentKind
+  live?: boolean
   // Whether the tab is one of the grid's panes: it shows a grid glyph.
   inGrid?: boolean
 }
@@ -35,6 +38,7 @@ export function createTabPill(mark: HTMLElement, handlers: TabPillHandlers): Tab
   label.className = 'tab-label'
   const indicator = document.createElement('span')
   let shownState: string | null = null
+  let shownIndicatorLabel: string | null = null
   const grid = document.createElement('span')
   grid.className = 'tab-grid'
   grid.title = 'In the grid'
@@ -62,7 +66,7 @@ export function createTabPill(mark: HTMLElement, handlers: TabPillHandlers): Tab
 
   return {
     root,
-    update({ name, title, state, inGrid = false }) {
+    update({ name, title, state, agent, live = false, inGrid = false }) {
       grid.hidden = !inGrid
       root.classList.toggle('in-grid', inGrid)
       if (main.title !== title) main.title = title
@@ -71,8 +75,12 @@ export function createTabPill(mark: HTMLElement, handlers: TabPillHandlers): Tab
       if (shownState !== state) {
         shownState = state
         indicator.className = indicatorClass(state)
-        indicator.title = indicatorLabel(state)
-        indicator.setAttribute('aria-label', indicatorLabel(state))
+      }
+      const labelText = indicatorLabel(state, agent, live)
+      if (shownIndicatorLabel !== labelText) {
+        shownIndicatorLabel = labelText
+        indicator.title = labelText
+        indicator.setAttribute('aria-label', labelText)
       }
     },
   }

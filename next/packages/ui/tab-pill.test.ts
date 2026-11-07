@@ -66,4 +66,22 @@ describe('tab pill', () => {
     expect(label().textContent).toBe('docs nav')
     expect(pill.root.querySelector('.indicator')?.classList.contains('ind-needs-you')).toBe(true)
   })
+
+  it('shows a live unknown agent version hint as the indicator title and accessible label', () => {
+    pill.update({
+      name: 'Claude',
+      title: 'Space: Claude',
+      state: 'unknown',
+      agent: 'claude',
+      live: true,
+    })
+    const indicator = pill.root.querySelector<HTMLElement>('.indicator')!
+    const hint = 'no status report yet; requires Claude 2.1.309 or later'
+    expect(indicator.title).toBe(hint)
+    expect(indicator.getAttribute('aria-label')).toBe(hint)
+
+    pill.update({ name: 'Claude', title: 'Space: Claude', state: 'unknown', agent: 'claude', live: false })
+    expect(indicator.title).toBe('unknown')
+    expect(indicator.getAttribute('aria-label')).toBe('unknown')
+  })
 })

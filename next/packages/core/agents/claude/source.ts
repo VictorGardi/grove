@@ -24,49 +24,14 @@ function field(payload: unknown, key: string): string | undefined {
   return typeof value === 'string' ? value : undefined
 }
 
-// The status events one Claude hook record means. Empty for hooks that carry no status.
+// The events one Claude hook record means. Only SessionStart matters: it carries the resume id, which also changes on /clear.
 export function eventsFor(record: SpoolRecord): StatusEvent[] {
-  switch (record.event) {
-    case 'UserPromptSubmit':
-    // A failed tool (or a denied permission) still goes on with the turn, so it clears the needs-you as the old Grove does.
-    case 'PostToolUse':
-    case 'PostToolUseFailure':
-    case 'SubagentStart':
-      return [{ kind: 'working' }]
-    case 'PreToolUse':
-      // The old Grove shows a question the moment it is asked, not when the tool is allowed.
-      if (field(record.payload, 'tool_name') === 'AskUserQuestion') return [{ kind: 'needs-you', reason: 'question' }]
-      return [{ kind: 'working' }]
-    case 'PermissionRequest':
-      // The hook fires for a question too, and the question's own event already covers it.
-      if (field(record.payload, 'tool_name') === 'AskUserQuestion') return []
-      return [{ kind: 'needs-you', reason: 'permission' }]
-    case 'Notification': {
-      const type = field(record.payload, 'notification_type')
-      if (type === 'permission_prompt') return [{ kind: 'needs-you', reason: 'permission' }]
-      if (type === 'elicitation_dialog') return [{ kind: 'needs-you', reason: 'question' }]
-      if (type === 'idle_prompt') return [{ kind: 'idle-prompt' }]
-      return []
-    }
-    case 'StopFailure':
-    case 'Stop': {
-      // A subagent's Stop carries its agent_id and does not end the main turn. 'main' is the main agent.
-      const agentId = field(record.payload, 'agent_id')
-      if (agentId !== undefined && agentId !== 'main') return []
-      return record.event === 'Stop' ? [{ kind: 'finished' }] : [{ kind: 'needs-you', reason: 'error' }]
-    }
-    case 'SessionEnd':
-      return [{ kind: 'idle' }]
-    case 'SessionStart': {
-      const resumeId = field(record.payload, 'session_id')
-      return resumeId && SESSION_ID.test(resumeId) ? [{ kind: 'session', resumeId }] : []
-    }
-    default:
-      return []
-  }
+  if (record.event !== 'SessionStart') return []
+  const resumeId = field(record.payload, 'session_id')
+  return resumeId && SESSION_ID.test(resumeId) ? [{ kind: 'session', resumeId }] : []
 }
 
-// The status events a batch of records means, in order, each stamped with its own time.
+// The events a batch of records means, in order, each stamped with its own time.
 export function deliveriesFor(records: SpoolRecord[], fallbackAt: number): DeliveredEvent[] {
   const out: DeliveredEvent[] = []
   for (const record of records) {

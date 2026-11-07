@@ -12,7 +12,7 @@ import { pasteText, waitStable } from './paste.ts'
 import { resolveSpaceRef, resolveTabRef } from './ref.ts'
 import { agentSkillsDirs, installSkill } from './skill.ts'
 import { buildId } from '../core/build.ts'
-import { claudeSettingsFile, copilotSettingsFile, installClaude, installCopilot, uninstallClaude, uninstallCopilot } from '../core/integrations/install.ts'
+import { claudeSettingsFile, copilotSettingsFile, installClaude, uninstallClaude, uninstallCopilot } from '../core/integrations/install.ts'
 import { waitForWorking, waitTurn, type WaitDeps, type WaitTab } from './wait.ts'
 
 const CORE_UNREACHABLE = 3
@@ -299,21 +299,17 @@ if (isEntryPoint()) {
   )
 }
 
-// Adds or removes the hooks that report agents typed by hand. Writes only the agent's own settings file, after a backup.
-// Running agents pick the change up at their next start. OpenCode is read through its shared service, so it needs none.
-function integration(action: 'install' | 'uninstall', agent: 'claude' | 'copilot' | 'opencode'): number {
-  if (agent === 'opencode') {
-    console.log('opencode needs no integration: grove-next reads its shared service.')
-    return 0
-  }
+// Adds or removes the Claude SessionStart hook (its resume id). Copilot has only a removal, for entries from older installs.
+// Writes only the agent's own settings file, after a backup. Running agents pick the change up at their next start.
+function integration(action: 'install' | 'uninstall', agent: 'claude' | 'copilot'): number {
   const file = agent === 'claude' ? claudeSettingsFile() : copilotSettingsFile()
   const result =
     agent === 'claude'
       ? action === 'install' ? installClaude(file) : uninstallClaude(file)
-      : action === 'install' ? installCopilot(file) : uninstallCopilot(file)
+      : uninstallCopilot(file)
   if (!result.changed) console.log(`${file}: no change`)
   else {
-    console.log(`${file}: ${action === 'install' ? 'hooks added' : 'hooks removed'}`)
+    console.log(`${file}: ${action === 'install' ? 'hook added' : 'hooks removed'}`)
     if (result.backup !== null) console.log(`backup of the file as it was before the first change: ${result.backup}`)
   }
   return 0

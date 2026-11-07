@@ -64,7 +64,7 @@ describe('createIntegrationPanel', () => {
   it('asks once for a pending agent: the question names the file and the backup, and Not now is recorded', async () => {
     await panel.ask()
     expect(el('integration-prompt').hidden).toBe(false)
-    expect(el('integration-prompt-title').textContent).toBe('Enable status for Claude?')
+    expect(el('integration-prompt-title').textContent).toBe('Enable session tracking for Claude?')
     expect(el('integration-prompt-text').textContent).toContain('/cfg/claude/settings.json.grove-next.bak')
 
     el<HTMLButtonElement>('integration-not-now').click()
@@ -82,18 +82,18 @@ describe('createIntegrationPanel', () => {
   })
 
   it('does not ask for an agent that is not pending', async () => {
-    statuses = [info('copilot', { pending: false })]
-    await panel.ask('copilot')
+    statuses = [info('claude', { pending: false })]
+    await panel.ask('claude')
     expect(el('integration-prompt').hidden).toBe(true)
   })
 
-  it('lists every agent in the Agents panel, with Enable for one not enabled', async () => {
-    statuses = [info('claude', { pending: false }), info('copilot', { state: 'out-of-date', pending: false })]
+  it('lists the Claude hook in the Agents panel, with Update and Remove when out of date', async () => {
+    statuses = [info('claude', { state: 'out-of-date', pending: false })]
     panel.open()
-    await vi.waitFor(() => expect(el('integrations-list').querySelectorAll('li').length).toBe(2))
+    await vi.waitFor(() => expect(el('integrations-list').querySelectorAll('li').length).toBe(1))
     const rows = [...el('integrations-list').querySelectorAll('li')]
-    expect(rows[0].textContent).toContain('Not enabled')
-    expect([...rows[1].querySelectorAll('button')].map((button) => button.textContent)).toEqual(['Update', 'Remove'])
+    expect(rows[0].textContent).toContain('Out of date')
+    expect([...rows[0].querySelectorAll('button')].map((button) => button.textContent)).toEqual(['Update', 'Remove'])
     expect(panel.isOpen()).toBe(true)
   })
 })

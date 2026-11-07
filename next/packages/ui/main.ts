@@ -327,11 +327,12 @@ function stateOf(tab: Tab): AgentStateName {
   return tabStateOf({ exited: tab.exited, kind: tab.kind, state: agents.get(tab.id)?.state ?? null })
 }
 
-// The state indicator; its label is the same text as the shape's name.
-function indicatorEl(state: AgentStateName): HTMLElement {
+// The state indicator; a live agent tab with no report also names its minimum supported version.
+function indicatorEl(state: AgentStateName, agent?: AgentKind, live = false): HTMLElement {
   const node = element('span', indicatorClass(state))
-  node.title = indicatorLabel(state)
-  node.setAttribute('aria-label', indicatorLabel(state))
+  const label = indicatorLabel(state, agent, live)
+  node.title = label
+  node.setAttribute('aria-label', label)
   return node
 }
 
@@ -632,12 +633,13 @@ function fitShown(): void {
 function paintTab(tab: Tab): void {
   const state = stateOf(tab)
   const name = tabName(tab)
-  tab.pill.update({ name, title: tabLabel(tab), state, inGrid: tab.inGrid })
+  const agent = tab.kind === 'shell' ? undefined : tab.kind
+  tab.pill.update({ name, title: tabLabel(tab), state, agent, live: !tab.exited, inGrid: tab.inGrid })
   tab.head.replaceChildren(
     markEl(tab.kind),
     element('span', 'pane-kind', name),
     element('span', 'pane-folder', shortFolder(tab.spacePath, homeDir)),
-    indicatorEl(state),
+    indicatorEl(state, agent, !tab.exited),
   )
 }
 
@@ -1042,7 +1044,13 @@ function agentRow(row: AgentRow): HTMLLIElement {
     tail.append(used)
   }
   tail.append(age)
-  focus.append(markEl(tab.kind), element('span', 'agent-label', tabName(tab)), tail, indicatorEl(stateOf(tab)))
+  const agentKind = tab.kind === 'shell' ? undefined : tab.kind
+  focus.append(
+    markEl(tab.kind),
+    element('span', 'agent-label', tabName(tab)),
+    tail,
+    indicatorEl(stateOf(tab), agentKind, !tab.exited),
+  )
   focus.addEventListener('click', () => activate(tab))
   li.append(focus)
 

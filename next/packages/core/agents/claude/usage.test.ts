@@ -71,6 +71,18 @@ describe('statusline.mjs and the Claude usage path', () => {
     expect(readUsageFile(usage)?.tokens).toBe(60)
   })
 
+  it('writes the usage file from the tab env when no usage path is given', () => {
+    const groveHome = path.join(dir, 'grove-home')
+    const result = runStatusLine(JSON.stringify(input(50, 100)), {
+      GROVE_NEXT_USAGE: '',
+      GROVE_NEXT_HOME: groveHome,
+      GROVE_NEXT_TAB: 'tab-7',
+      CLAUDE_CONFIG_DIR: dir,
+    })
+    expect(result.status).toBe(0)
+    expect(readUsageFile(claudeUsageFile(groveHome, 'tab-7'))).toMatchObject({ tokens: 50, window: 100 })
+  })
+
   it('exits 0 and prints nothing without a user command or on bad input', () => {
     const usage = path.join(dir, 'tab.usage.json')
     const result = runStatusLine('not json', { GROVE_NEXT_USAGE: usage, CLAUDE_CONFIG_DIR: dir })
@@ -83,7 +95,7 @@ describe('statusline.mjs and the Claude usage path', () => {
     const launch = claudeLaunch({ tabId: 't', cwd: dir, home: dir, perLaunchHooks: false })
     const settings = JSON.parse(launch.args[launch.args.indexOf('--settings') + 1]) as Record<string, unknown>
     expect(Object.keys(settings)).toEqual(['statusLine'])
-    expect(launch.env.GROVE_NEXT_USAGE).toBe(claudeUsageFile(dir, 't'))
+    expect(claudeUsageFile(dir, 't')).toBe(path.join(dir, 'agents', 'claude', 't.usage.json'))
   })
 
   it('delivers a changed reading, including a null one after a compaction, once each', () => {
@@ -115,7 +127,6 @@ describe('statusline.mjs and the Claude usage path', () => {
     const service = new StatusService({
       home,
       adapters: { claude: createClaudeAdapter({ userHooksInstalled: () => false }) },
-      screen: async () => '',
       alive: async () => new Set(['tab-a', 'tab-b', 'tab-c']),
     })
     const notified: Array<[string, number | null]> = []

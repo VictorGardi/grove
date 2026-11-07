@@ -1,8 +1,8 @@
-// Agent status setup: the Agents panel (every agent's state, with Enable, Update and Remove) and the one-time prompt.
+// Agent session setup: the Agents panel (the Claude hook's state, with Enable, Update and Remove) and the one-time prompt.
 // The words and the actions are plain functions so they run in tests without a DOM; the controller is the DOM part.
 import type { IntegrationAgent, IntegrationInfo, IntegrationState } from '../protocol/messages.ts'
 
-const LABEL: Record<IntegrationAgent, string> = { claude: 'Claude', copilot: 'Copilot' }
+const LABEL: Record<IntegrationAgent, string> = { claude: 'Claude' }
 const STATE_TEXT: Record<IntegrationState, string> = {
   enabled: 'Enabled',
   'not-enabled': 'Not enabled',
@@ -39,9 +39,9 @@ export interface IntegrationRow {
 export function rowView(info: IntegrationInfo): IntegrationRow {
   const label = LABEL[info.agent]
   const hints: Record<IntegrationState, string> = {
-    enabled: `${label} reports through its hooks, so Grove can show it working and waiting for you.`,
-    'not-enabled': `Without hooks, Grove shows less of what ${label} is doing, and never that it is waiting for you.`,
-    'out-of-date': `Grove has hooks for fewer events than this version uses. Update adds the missing ones and keeps your own.`,
+    enabled: `${label} tells Grove its session id, so a tab you typed by hand, or one after /clear, resumes where it was.`,
+    'not-enabled': `Without the hook, a ${label} tab you typed by hand, or one after /clear, may resume an older session.`,
+    'out-of-date': `Grove has hooks from an older version. Update keeps only the session hook and keeps your own.`,
     unreadable: `Grove will not change this file until it can read it again.`,
   }
   return {
@@ -65,9 +65,9 @@ export interface PromptView {
 export function promptView(info: IntegrationInfo): PromptView {
   const label = LABEL[info.agent]
   return {
-    title: `Enable status for ${label}?`,
+    title: `Enable session tracking for ${label}?`,
     paragraphs: [
-      `Grove adds one hook command for each ${label} hook event to ${info.file}. Each command does nothing unless it runs in a tab Grove opened or found, so other terminals are unaffected.`,
+      `Grove adds one hook command, for ${label}'s session start, to ${info.file}. The command does nothing unless it runs in a tab Grove opened or found, so other terminals are unaffected.`,
       `Your own hooks stay. The file is first copied to ${info.backup}, so you can put it back by hand.`,
       `Remove it any time under Agent status in the sidebar, or with grove-next integration uninstall ${info.agent}.`,
     ],
