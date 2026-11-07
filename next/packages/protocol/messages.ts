@@ -13,6 +13,7 @@ export const METHODS = {
   tabsAttach: 'tabs.attach',
   tabsOutput: 'tabs.output',
   tabsExit: 'tabs.exit',
+  tabsStatus: 'tabs.status',
   spacesList: 'spaces.list',
   spacesAdd: 'spaces.add',
   spacesRemove: 'spaces.remove',
@@ -420,6 +421,7 @@ export interface MethodMap {
 export interface NotificationMap {
   'tabs.output': { id: string; dataB64: string }
   'tabs.exit': { id: string; exitCode: number | null }
+  'tabs.status': { id: string; state: string; kind?: string }
   'status.changed': StatusChange
   'attention.notify': AttentionNotice
   'tabs.focus': { id: string }

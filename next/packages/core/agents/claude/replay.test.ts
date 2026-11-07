@@ -3,11 +3,8 @@ import os from 'node:os'
 import path from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { afterEach, beforeEach, describe, expect, it } from 'vitest'
-import { applyEvent, GRACE_MS, SILENCE_MS, unknownStatus, type Status, type StatusEvent } from '../../status/contract.ts'
+import { applyEvent, GRACE_MS, unknownStatus, type Status, type StatusEvent } from '../../status/contract.ts'
 import { createCrossCheck } from '../../status/cross-check.ts'
-import { StatusService } from '../../status/service.ts'
-import { createClaudeAdapter } from './adapter.ts'
-import { claudeSpoolFile } from './launch.ts'
 import { createClaudeSource } from './source.ts'
 
 const here = path.dirname(fileURLToPath(import.meta.url))
@@ -15,7 +12,6 @@ const fixture = (name: string) => path.join(here, 'fixtures', name)
 
 // The first record's time in every fixture.
 const START = 1793750400000
-const SESSION = '00000000-0000-4000-8000-00000000000b'
 
 interface Step {
   event: StatusEvent
@@ -52,53 +48,6 @@ function replay(name: string, lines?: number) {
   }
 }
 
-// Plays a fixture's first `lines` records through the real StatusService and the real Claude source, the way
-// production runs them. The source replays the spool when the tab is tracked. After that, each second brings the
-// poll's heartbeat and then the service's tick, and `screen` is what the holder shows on each tick.
-function serviceOn(name: string, lines: number | undefined, screen: () => string) {
-  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'grove-claude-service-'))
-  const spool = claudeSpoolFile(dir, 'tab')
-  fs.mkdirSync(path.dirname(spool), { recursive: true })
-  const all = fs.readFileSync(fixture(name), 'utf8').split('\n').filter((line) => line !== '')
-  fs.writeFileSync(spool, all.slice(0, lines ?? all.length).join('\n') + '\n')
-  let now = START
-  let heartbeat: ((event: StatusEvent, at: number) => void) | undefined
-  const adapter = createClaudeAdapter()
-  const service = new StatusService({
-    home: dir,
-    adapters: {
-      claude: {
-        ...adapter,
-        watch: (input) => {
-          heartbeat = input.onEvent
-          return adapter.watch(input)
-        },
-      },
-    },
-    screen: async () => screen(),
-    alive: async () => new Set(['tab']),
-    clock: () => now,
-    graceMs: GRACE_MS,
-    silenceMs: SILENCE_MS,
-  })
-  service.track({ tabId: 'tab', spaceId: dir, spacePath: dir, kind: 'claude', sessionId: SESSION })
-  return {
-    state: () => service.list(new Set(['tab']))[0],
-    setNow: (at: number) => (now = at),
-    async run(seconds: number) {
-      for (let i = 0; i < seconds; i++) {
-        now += 1000
-        heartbeat!({ kind: 'heartbeat' }, now)
-        await service.tick()
-      }
-    },
-    close: () => {
-      service.close()
-      fs.rmSync(dir, { recursive: true, force: true })
-    },
-  }
-}
-
 describe('replay of the synthetic Claude fixtures', () => {
   it('(a) a permission ask, answered: needs-you, then working again, then finished', () => {
     expect(replay('a-permission-answered.jsonl').labels).toEqual([
@@ -115,47 +64,6 @@ describe('replay of the synthetic Claude fixtures', () => {
     const result = replay('b-interrupted-turn.jsonl')
     expect(result.labels).toEqual(['working', 'working', 'working', 'working', 'working', 'finished'])
     expect(result.status).toEqual({ state: 'finished', since: 1793750460600 })
-  })
-
-  it('(b) an interrupted turn with no next prompt falls to unknown once the screen and spool stay quiet', async () => {
-    // Records 1 to 3: prompt, PreToolUse, then the Esc that fires nothing. The screen never changes.
-    const { steps } = replay('b-interrupted-turn.jsonl', 3)
-    const last = steps[steps.length - 1]
-    expect(last.status).toEqual({ state: 'working', since: 1793750401000 })
-    const tab = serviceOn('b-interrupted-turn.jsonl', 3, () => 'Running npm run build')
-    try {
-      tab.setNow(last.at)
-      await tab.run(SILENCE_MS / 1000 - 1)
-      expect(tab.state()).toMatchObject({ state: 'working', since: 1793750401000 })
-      await tab.run(1)
-      expect(tab.state()).toMatchObject({ state: 'unknown', since: last.at + SILENCE_MS })
-    } finally {
-      tab.close()
-    }
-  })
-
-  it('(b) an interrupted turn whose spinner and timer keep moving falls to unknown too', async () => {
-    let seconds = 0
-    const tab = serviceOn('b-interrupted-turn.jsonl', 3, () => `⠋ Running npm run build (${seconds++}s)`)
-    try {
-      tab.setNow(START + 1200)
-      await tab.run(SILENCE_MS / 1000 + 1)
-      expect(tab.state()).toMatchObject({ state: 'unknown' })
-    } finally {
-      tab.close()
-    }
-  })
-
-  it('(b) a working turn whose screen keeps changing in real text stays working', async () => {
-    let step = 0
-    const tab = serviceOn('b-interrupted-turn.jsonl', 3, () => `Running step ${step++}`)
-    try {
-      tab.setNow(START + 1200)
-      await tab.run((SILENCE_MS * 2) / 1000)
-      expect(tab.state()).toMatchObject({ state: 'working', since: START + 1000 })
-    } finally {
-      tab.close()
-    }
   })
 
   it('(c) an Esc-rejected question: needs-you question, and the stream goes quiet', () => {
@@ -201,14 +109,4 @@ describe('replay of the synthetic Claude fixtures', () => {
     expect(result.steps[0].event).toEqual({ kind: 'session', resumeId: '00000000-0000-4000-8000-00000000000d' })
   })
 
-  it('(d) a silent working turn (first two records only) falls to unknown once nothing real happens', async () => {
-    const tab = serviceOn('d-background-task-turn.jsonl', 2, () => 'Reading build-output.log')
-    try {
-      tab.setNow(START + 2000)
-      await tab.run(SILENCE_MS)
-      expect(tab.state()).toMatchObject({ state: 'unknown', since: START + 2000 + SILENCE_MS })
-    } finally {
-      tab.close()
-    }
-  })
 })

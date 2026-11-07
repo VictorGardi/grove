@@ -420,8 +420,8 @@ describe('core daemon', () => {
   })
 })
 
-// Claude tabs run a fake launch (a shell that prints a line and sleeps) and a fake source, which replays
-// a JSONL spool from the saved offset the way the real source does. No real `claude` is started.
+// Claude tabs run a fake launch (a shell that prints OSC status records and sleeps) and a fake source
+// for session-id events. No real `claude` is started.
 describe('core daemon agents', () => {
   const fakeCore = path.join(path.dirname(fileURLToPath(import.meta.url)), '..', 'holder', 'testdata', 'fake-core.mjs')
   const savedHome = process.env.GROVE_NEXT_HOME
@@ -517,18 +517,15 @@ describe('core daemon agents', () => {
   }
 
   const startDaemon = async (
-    overrides: { silenceMs?: number; adapters?: Partial<Record<AgentKind, AgentAdapter>> } = {},
+    overrides: { adapters?: Partial<Record<AgentKind, AgentAdapter>> } = {},
   ): Promise<{ core: RpcClient; status: StatusService }> => {
     const adapters = overrides.adapters ?? { claude: fakeAdapter }
     const status = new StatusService({
       home,
       adapters,
-      screen: screenFromHolder,
       alive: aliveFromHolder,
       onSession: (tabId, sessionId) => spaces.setAgentSession(tabId, sessionId),
       tickMs: 20,
-      graceMs: 0,
-      silenceMs: overrides.silenceMs ?? 60000,
     })
     const spaces = new SpacesService(stateFile)
     daemons.push(await startCoreDaemon({ spaces, status, home, adapters }))
@@ -609,6 +606,8 @@ describe('core daemon agents', () => {
   })
 
   it('starts a Claude tab, lists its state, reads its screen and reports changes', async () => {
+    launchScript =
+      "printf '\\033]7501;state=working\\033\\\\'; sleep 0.1; printf '\\033]7501;state=idle\\033\\\\'; printf 'screen-line\\n'; sleep 30"
     const { core } = await startDaemon()
     const changes: StatusChange[] = []
     core.onNotification('status.changed', (change) => changes.push(change))
@@ -620,14 +619,12 @@ describe('core daemon agents', () => {
       rows: 24,
       agent: { kind: 'claude' },
     })
-    expect(await agentState(core, id)).toMatchObject({ tabId: id, agent: 'claude', state: 'idle', resumable: false })
-
-    appendEvent(id, { kind: 'working' })
     await waitFor(
-      () => agentState(core, id),
-      (agent) => agent?.state === 'working',
+      async () => changes.filter((change) => change.tabId === id).map((change) => change.state),
+      (states) => states.includes('finished'),
     )
-    expect(changes).toContainEqual(expect.objectContaining({ tabId: id, state: 'working' }))
+    expect(await agentState(core, id)).toMatchObject({ tabId: id, agent: 'claude', state: 'finished', resumable: false })
+    expect(changes.filter((change) => change.tabId === id).map((change) => change.state)).toEqual(['working', 'finished'])
 
     await waitFor(
       () => screenFromHolder(id),
@@ -664,7 +661,7 @@ describe('core daemon agents', () => {
     expect(await agentState(core, id)).toMatchObject({ tabId: id, resumable: false })
   })
 
-  it('rebuilds Claude tab state after a core restart from the saved offset, without replaying old events', async () => {
+  it('keeps restored tabs unknown and continues to save Claude session ids', async () => {
     const first = await startDaemon()
     const { id } = await first.core.request(METHODS.tabsCreate, {
       command: 'claude',
@@ -673,28 +670,25 @@ describe('core daemon agents', () => {
       rows: 24,
       agent: { kind: 'claude' },
     })
-    appendEvent(id, { kind: 'needs-you', reason: 'permission' })
-    const before = await waitFor(
-      () => agentState(first.core, id),
-      (agent) => agent?.state === 'needs-you',
-    )
-    expect(before).toMatchObject({ state: 'needs-you', reason: 'permission' })
+    appendEvent(id, { kind: 'session', resumeId: 'updated-session' })
+    await waitFor(async () => {
+      const state = JSON.parse(fs.readFileSync(stateFile, 'utf8')) as { tabs: Array<{ agentSessionId: string }> }
+      return state.tabs[0]?.agentSessionId
+    }, (sessionId) => sessionId === 'updated-session')
     await stopDaemons()
 
     delivered = []
     const second = await startDaemon()
-    expect(await agentState(second.core, id)).toEqual(before)
+    expect(await agentState(second.core, id)).toMatchObject({ state: 'unknown', resumable: false })
     expect(delivered).toEqual([])
 
-    appendEvent(id, { kind: 'finished' })
-    await waitFor(
-      () => agentState(second.core, id),
-      (agent) => agent?.state === 'finished',
-    )
-    expect(delivered).toEqual([{ tab: id, kind: 'finished' }])
+    await second.core.request(METHODS.tabsKill, { id })
+    await second.core.request(METHODS.tabsCreate, { id, command: 'claude', cwd: space, cols: 80, rows: 24, agent: { kind: 'claude' } })
+    expect(launches.at(-1)).toEqual({ tabId: id, resumeId: 'updated-session' })
   })
 
-  it('falls to unknown when the Claude tab is killed while it waits for you', async () => {
+  it('falls to unknown when a working Claude tab is killed', async () => {
+    launchScript = "printf '\\033]7501;state=working\\033\\\\'; sleep 30"
     const { core } = await startDaemon()
     const { id } = await core.request(METHODS.tabsCreate, {
       command: 'claude',
@@ -703,10 +697,9 @@ describe('core daemon agents', () => {
       rows: 24,
       agent: { kind: 'claude' },
     })
-    appendEvent(id, { kind: 'needs-you', reason: 'permission' })
     await waitFor(
       () => agentState(core, id),
-      (agent) => agent?.state === 'needs-you',
+      (agent) => agent?.state === 'working',
     )
 
     await killOnHolder(id)
@@ -717,10 +710,9 @@ describe('core daemon agents', () => {
     expect(after).toMatchObject({ tabId: id, state: 'unknown', resumable: true })
   })
 
-  it('falls a working tab to unknown when its screen and spool stay quiet, with the reader still running', async () => {
-    const { core } = await startDaemon({ silenceMs: 400 })
-    const changes: StatusChange[] = []
-    core.onNotification('status.changed', (change) => changes.push(change))
+  it('keeps a working tab working when its screen stays quiet', async () => {
+    launchScript = "printf '\\033]7501;state=working\\033\\\\'; sleep 3"
+    const { core } = await startDaemon()
     const { id } = await core.request(METHODS.tabsCreate, {
       command: 'claude',
       cwd: space,
@@ -728,27 +720,6 @@ describe('core daemon agents', () => {
       rows: 24,
       agent: { kind: 'claude' },
     })
-    appendEvent(id, { kind: 'working' })
-
-    await waitFor(
-      () => agentState(core, id),
-      (agent) => agent?.state === 'unknown',
-    )
-    const states = changes.filter((change) => change.tabId === id).map((change) => change.state)
-    expect(states.slice(-2)).toEqual(['working', 'unknown'])
-  })
-
-  it('keeps a working tab working while its real screen keeps changing', async () => {
-    launchScript = 'i=0; while true; do echo tick-$i; i=$((i+1)); sleep 0.1; done'
-    const { core } = await startDaemon({ silenceMs: 400 })
-    const { id } = await core.request(METHODS.tabsCreate, {
-      command: 'claude',
-      cwd: space,
-      cols: 80,
-      rows: 24,
-      agent: { kind: 'claude' },
-    })
-    appendEvent(id, { kind: 'working' })
     await waitFor(
       () => agentState(core, id),
       (agent) => agent?.state === 'working',
@@ -758,7 +729,7 @@ describe('core daemon agents', () => {
     expect(await agentState(core, id)).toMatchObject({ tabId: id, state: 'working' })
   })
 
-  it('resumes a Claude tab whose process exited on its own, under the same id, and is no longer unknown', async () => {
+  it('resumes an exited Claude tab as unknown until its next report', async () => {
     launchScript = "printf 'screen-line\\n'; exit 0"
     const { core } = await startDaemon()
     const { id } = await core.request(METHODS.tabsCreate, {
@@ -787,7 +758,7 @@ describe('core daemon agents', () => {
     expect(resumed).toEqual({ id })
     expect(launches.at(-1)).toEqual({ tabId: id, resumeId: sessionFor(id) })
     const after = await agentState(core, id)
-    expect(after).toMatchObject({ tabId: id, state: 'idle', resumable: false })
+    expect(after).toMatchObject({ tabId: id, state: 'unknown', resumable: false })
   })
 
   it('restores a Claude tab whose holder tab died while the core was down as unknown, not needs-you', async () => {
@@ -799,11 +770,6 @@ describe('core daemon agents', () => {
       rows: 24,
       agent: { kind: 'claude' },
     })
-    appendEvent(id, { kind: 'needs-you', reason: 'permission' })
-    await waitFor(
-      () => agentState(first.core, id),
-      (agent) => agent?.state === 'needs-you',
-    )
     await stopDaemons()
     await killOnHolder(id)
 

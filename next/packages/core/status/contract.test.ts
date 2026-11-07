@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { applyEvent, GRACE_MS, SILENCE_MS, unknownStatus, type Status } from './contract.ts'
+import { applyEvent, applyReport, unknownStatus, type Status } from './contract.ts'
 
 const idle: Status = { state: 'idle', since: 100 }
 
@@ -65,6 +65,15 @@ describe('applyEvent', () => {
     expect(applyEvent(unknownStatus(900), { kind: 'idle-prompt' }, 1000)).toEqual({ state: 'idle', since: 1000 })
   })
 
+  it('derives finished when a report leaves working for idle and keeps idle on repeated idle', () => {
+    expect(applyReport({ state: 'working', since: 200 }, { state: 'idle' }, 260)).toEqual({
+      state: 'finished',
+      since: 260,
+    })
+    const idleStatus: Status = { state: 'idle', since: 250 }
+    expect(applyReport(idleStatus, { state: 'idle' }, 260)).toBe(idleStatus)
+  })
+
   it('leaves unknown on every real event', () => {
     const stuck = unknownStatus(900)
     expect(applyEvent(stuck, { kind: 'working' }, 1000)).toEqual({ state: 'working', since: 1000 })
@@ -81,8 +90,4 @@ describe('applyEvent', () => {
     expect(applyEvent(idle, { kind: 'session', resumeId: 'abc' }, 999)).toBe(idle)
   })
 
-  it('exposes the default thresholds', () => {
-    expect(GRACE_MS).toBe(3000)
-    expect(SILENCE_MS).toBe(30000)
-  })
 })

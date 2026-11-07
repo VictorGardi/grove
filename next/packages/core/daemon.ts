@@ -88,10 +88,14 @@ export async function startCoreDaemon(
   config.load()
   writeAgentsMd(configDir)
 
-  // The status service reads screens and tab liveness through its own holder connection, so it does not depend on any window.
+  // The status service receives reports and tab liveness through its own holder connection, so it does not depend on any window.
   let statusClient: Promise<RpcClient> | undefined
+  let status: StatusService
   const holderStatusCall = async <T>(use: (client: RpcClient) => Promise<T>): Promise<T> => {
-    const pending = (statusClient ??= connectRpc(holderSocket))
+    const pending = (statusClient ??= connectRpc(holderSocket).then((client) => {
+      client.onNotification(METHODS.tabsStatus, (report) => status.report(report.id, { state: report.state, kind: report.kind }))
+      return client
+    }))
     try {
       return await withTimeout(pending.then(use), STATUS_CALL_MS)
     } catch (error) {
@@ -103,16 +107,13 @@ export async function startCoreDaemon(
       throw error
     }
   }
-  const screen = (tabId: string): Promise<string> =>
-    holderStatusCall(async (client) => (await client.request(METHODS.tabsScreen, { id: tabId })).text)
   const alive = (): Promise<Set<string>> =>
     holderStatusCall(async (client) => aliveIds(await client.request(METHODS.tabsList, {})))
-  const status =
+  status =
     options.status ??
     new StatusService({
       home,
       adapters,
-      screen,
       alive,
       onSession: (tabId, sessionId) => spaces.setAgentSession(tabId, sessionId),
     })

@@ -35,6 +35,11 @@ export interface AttachListener {
   onExit: (exitCode: number) => void
 }
 
+export interface TabStatus {
+  state: string
+  kind?: string
+}
+
 export interface Attachment {
   screen: string
   cols: number
@@ -52,11 +57,13 @@ interface Tab {
   rows: number
   alive: boolean
   exitCode: number | null
+  status: TabStatus | null
   listeners: Set<AttachListener>
 }
 
 export class PtyTable {
   private readonly tabs = new Map<string, Tab>()
+  private readonly statusListeners = new Set<(id: string, status: TabStatus) => void>()
 
   create(spec: TabSpec): string {
     const id = spec.id ?? randomUUID().slice(0, 8)
@@ -98,8 +105,20 @@ export class PtyTable {
       rows: spec.rows,
       alive: true,
       exitCode: null,
+      status: null,
       listeners: new Set(),
     }
+    term.parser.registerOscHandler(7501, (data) => {
+      if (data === '?') {
+        proc.write('\x1b]7501;?\x1b\\')
+        return true
+      }
+      const status = parseStatusRecord(data)
+      if (status === null) return false
+      tab.status = status
+      for (const listener of this.statusListeners) listener(id, status)
+      return true
+    })
     this.tabs.set(id, tab)
 
     proc.onData((data) => {
@@ -127,6 +146,11 @@ export class PtyTable {
       foreground: null,
       argv0: null,
     }))
+  }
+
+  onStatus(listener: (id: string, status: TabStatus) => void): () => void {
+    this.statusListeners.add(listener)
+    return () => this.statusListeners.delete(listener)
   }
 
   // The live view: the folder the shell is in now (not where it started) and the name of the program in the
@@ -234,6 +258,19 @@ export class PtyTable {
     if (!tab) throw new TabError('tabNotFound', `no tab ${id}`)
     return tab
   }
+}
+
+function parseStatusRecord(data: string): TabStatus | null {
+  const fields = new Map<string, string>()
+  for (const field of data.split(';')) {
+    const separator = field.indexOf('=')
+    if (separator <= 0) continue
+    fields.set(field.slice(0, separator), field.slice(separator + 1))
+  }
+  const state = fields.get('state')
+  if (state === undefined || fields.has('id')) return null
+  const kind = fields.get('kind')
+  return kind === undefined ? { state } : { state, kind }
 }
 
 export class TabError extends Error {
