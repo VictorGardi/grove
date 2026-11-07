@@ -13,6 +13,9 @@ export interface StatusServiceOptions {
   // The ids of the holder tabs that are alive. A tab not in this set is gone. One failed call is skipped, so a
   // blip cannot drop every tab; two in a row cannot confirm any tab alive, so every tab falls to unknown.
   alive: () => Promise<Set<string>>
+  // The holder's last report for each tab, as of the latest `alive` call. Each tick applies a report the push missed
+  // (a lost tabs.status notification) so a tab cannot stay on a stale state.
+  reports?: () => ReadonlyMap<string, StatusReport | null | undefined>
   // Called when a tab reports its agent session id, on start and again after /clear.
   onSession?: (tabId: string, sessionId: string) => void
   clock?: () => number
@@ -35,7 +38,12 @@ interface Watch {
   source: AgentWatch | undefined
   // True for an agent found by hand (adopt) rather than launched by the app: it is released when its program ends.
   adopted: boolean
+  // The last report seen for this tab, pushed or read from the holder, as reportKey. A holder record equal to it is not applied again.
+  lastReport: string | undefined
 }
+
+const reportKey = (report: StatusReport | null | undefined): string | undefined =>
+  report === null || report === undefined ? undefined : `${report.state}:${report.kind ?? ''}`
 
 const TICK_MS = 1000
 
@@ -75,6 +83,7 @@ export class StatusService {
           tab?.alive && isForegroundAgent(tab.foreground, tab.argv0, record.agent)
             ? statusFromHolderReport(tab.status, now)
             : unknownStatus(now)
+        // A stale record of an agent that quit is seen too, so the tick never applies it.
         // A record with no session id gets '' here: the adapter then has nothing to resume, as before.
         const watch = this.open({
           tabId: record.id,
@@ -84,6 +93,7 @@ export class StatusService {
           status,
           // A tab found by hand is still released when its program ends, after a restart too.
           adopted: record.found === true,
+          lastReport: reportKey(tab?.status),
         })
         this.writeSnapshot(watch)
       } catch (error) {
@@ -115,6 +125,7 @@ export class StatusService {
       resumeId: input.sessionId === '' ? undefined : input.sessionId,
       status,
       adopted: true,
+      lastReport: reportKey(input.status),
     })
     this.writeSnapshot(watch)
     if (input.sessionId !== '') this.saveSession(input.tabId, input.sessionId)
@@ -160,6 +171,7 @@ export class StatusService {
   report(tabId: string, report: StatusReport): void {
     const watch = this.watches.get(tabId)
     if (!watch) return
+    watch.lastReport = reportKey(report)
     this.apply(watch, applyReport(watch.status, report, this.clock()))
   }
 
@@ -191,7 +203,11 @@ export class StatusService {
         if (this.watches.get(watch.tabId) !== watch) continue
         if (alive !== undefined && !alive.has(watch.tabId)) {
           this.fallToUnknown(watch, this.clock())
+          continue
         }
+        // The holder's record differs from the last one seen: a push was lost, so apply it now.
+        const record = alive !== undefined ? this.options.reports?.().get(watch.tabId) : undefined
+        if (record && reportKey(record) !== watch.lastReport) this.report(watch.tabId, record)
       }
     } finally {
       this.ticking = false
@@ -248,6 +264,7 @@ export class StatusService {
     resumeId: string | undefined
     status: Status
     adopted?: boolean
+    lastReport?: string
   }): Watch {
     const adapter = this.options.adapters[input.kind]
     if (adapter === undefined) throw new Error(`no adapter for agent ${input.kind}`)
@@ -258,6 +275,7 @@ export class StatusService {
       status: input.status,
       source: undefined,
       adopted: input.adopted ?? false,
+      lastReport: input.lastReport,
     }
     this.watches.set(input.tabId, watch)
     // An adapter that needs the id waits for it when the id is not known yet.
@@ -282,16 +300,13 @@ export class StatusService {
   private onEvent(watch: Watch, event: StatusEvent): void {
     if (this.watches.get(watch.tabId) !== watch) return
     if (event.kind !== 'session') return
-    if (event.kind === 'session') {
-      if (event.resumeId !== watch.resumeId) {
-        watch.resumeId = event.resumeId
-        this.saveSession(watch.tabId, event.resumeId)
-        this.writeSnapshot(watch)
-      }
+    if (event.resumeId !== watch.resumeId) {
+      watch.resumeId = event.resumeId
+      this.saveSession(watch.tabId, event.resumeId)
+      this.writeSnapshot(watch)
     }
   }
 
-  // Sets unknown for a tab that is gone. A tab already unknown is left alone.
   private saveSession(tabId: string, sessionId: string): void {
     try {
       this.options.onSession?.(tabId, sessionId)
@@ -300,6 +315,7 @@ export class StatusService {
     }
   }
 
+  // Sets unknown for a tab that is gone. A tab already unknown is left alone.
   private fallToUnknown(watch: Watch, now: number): void {
     if (watch.status.state !== 'unknown') this.apply(watch, unknownStatus(now))
   }

@@ -2,7 +2,7 @@ import fs from 'node:fs'
 import os from 'node:os'
 import path from 'node:path'
 import { afterEach, beforeEach, describe, expect, it } from 'vitest'
-import type { StatusEvent } from './contract.ts'
+import type { StatusEvent, StatusReport } from './contract.ts'
 import { StatusService } from './service.ts'
 import type { AgentAdapter } from './adapter.ts'
 
@@ -26,10 +26,12 @@ describe('StatusService', () => {
     },
   })
 
+  let holderReports = new Map<string, StatusReport | null>()
   const make = (tickMs?: number) =>
     new StatusService({
       home,
       adapters: { claude: fakeAdapter() },
+      reports: () => holderReports,
       alive: async () => {
         if (holderDown) throw new Error('the holder did not answer in time')
         return live
@@ -46,6 +48,7 @@ describe('StatusService', () => {
     service.list(live).find((agent) => agent.tabId === tabId)
 
   beforeEach(() => {
+    holderReports = new Map()
     home = fs.mkdtempSync(path.join(os.tmpdir(), 'gn-service-'))
     now = 1000
     live = new Set(['t1'])
@@ -348,5 +351,44 @@ describe('StatusService', () => {
     expect(stateOf(service)).toMatchObject({ state: 'idle', since: 3000 })
     expect(changes.map(({ state }) => state)).toEqual(['working', 'finished', 'idle'])
     service.close()
+  })
+
+  describe('reconciling with the holder', () => {
+    it('applies a holder report whose push was lost, and derives finished from it', async () => {
+      const service = make()
+      track(service)
+      service.report('t1', { state: 'working' })
+      now = 2000
+      holderReports = new Map([['t1', { state: 'idle' }]])
+      await service.tick()
+      expect(stateOf(service)).toMatchObject({ state: 'finished', since: 2000 })
+      service.close()
+    })
+
+    it('does not apply a record it already saw, so a seen finish stays idle', async () => {
+      const service = make()
+      track(service)
+      service.report('t1', { state: 'done' })
+      service.markSeen('t1')
+      holderReports = new Map([['t1', { state: 'done' }]])
+      now = 3000
+      await service.tick()
+      expect(stateOf(service)).toMatchObject({ state: 'idle' })
+      service.close()
+    })
+
+    it('skips the reconcile when the holder call failed, and for a tab with no record', async () => {
+      const service = make()
+      track(service)
+      holderReports = new Map([['t1', { state: 'working' }]])
+      holderDown = true
+      await service.tick()
+      expect(stateOf(service)).toMatchObject({ state: 'unknown' })
+      holderDown = false
+      holderReports = new Map([['t1', null]])
+      await service.tick()
+      expect(stateOf(service)).toMatchObject({ state: 'unknown' })
+      service.close()
+    })
   })
 })

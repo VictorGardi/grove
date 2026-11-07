@@ -107,14 +107,21 @@ export async function startCoreDaemon(
       throw error
     }
   }
+  // The holder's last report per tab from the latest tabs.list, which the status tick reconciles against.
+  let holderReports = new Map<string, { state: string; kind?: string } | null>()
   const alive = (): Promise<Set<string>> =>
-    holderStatusCall(async (client) => aliveIds(await client.request(METHODS.tabsList, {})))
+    holderStatusCall(async (client) => {
+      const tabs = await client.request(METHODS.tabsList, {})
+      holderReports = new Map(tabs.map((tab) => [tab.id, tab.status]))
+      return aliveIds(tabs)
+    })
   status =
     options.status ??
     new StatusService({
       home,
       adapters,
       alive,
+      reports: () => holderReports,
       onSession: (tabId, sessionId) => spaces.setAgentSession(tabId, sessionId),
     })
   // A holder that cannot be reached at start leaves every saved agent tab unknown.
