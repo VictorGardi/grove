@@ -92,6 +92,14 @@ Exit codes: 0 ok (for `wait`, the agent went idle), 1 error (one line on stderr)
 
 Not in v1: worktrees and branches, parent and child tabs, workflow status and progress, and a model per tab.
 
+## Agent status
+
+A Claude, Copilot or OpenCode tab shows working, idle, finished or needs-you from one source: the status report the agent sends to its terminal (OSC 7501). Grove installs nothing for it. A tab whose agent sends no report shows `unknown`, and its tooltip names the version it needs.
+
+Minimum versions: Claude 2.1.309, Copilot 1.0.107, OpenCode 2.2.6. Older versions stay `unknown`; there is no fallback. OpenCode shows needs-you for permissions only with `permission` set to `ask` in the project's `opencode.json`.
+
+Status is not saved: after the core restarts it is read back from the holder, and a turn that finished while the core was down shows idle. For Claude only, Grove can add a SessionStart hook to `~/.claude/settings.json`, after asking, so a tab you typed by hand, or one after `/clear`, resumes its session (`grove-next integration install|uninstall claude`). See `docs/adr/0053-agent-status-from-osc-7501.md`.
+
 ## Config folder
 
 The settings live in `~/.grove-next/config` (or `$GROVE_NEXT_HOME/config`). Print the path with:
