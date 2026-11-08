@@ -28,9 +28,10 @@ function realFolder(folder: string): string {
   }
 }
 
-// The session a hand-started Copilot is running: the earliest session in `cwd` created at or after `since` (ms).
+// The session a hand-started Copilot is running: the one session in `cwd` created at or after `since` (ms).
 // Copilot writes <home>/session-state/<id>/workspace.yaml when a session starts, before any prompt, so this finds the
-// session with no hook. Undefined while none is found.
+// session with no hook. With no candidate it is undefined, and with more than one it is too: an ambiguous hand-started
+// tab is never adopted and never credited with another session's usage, rather than guessed.
 export function findCopilotSession(options: { copilotHome: string; cwd: string; since: number; exclude?: ReadonlySet<string> }): string | undefined {
   const root = path.join(options.copilotHome, 'session-state')
   let names: string[]
@@ -40,7 +41,7 @@ export function findCopilotSession(options: { copilotHome: string; cwd: string; 
     return undefined
   }
   const folder = realFolder(options.cwd)
-  let best: { id: string; created: number } | undefined
+  let found: string | undefined
   for (const id of names) {
     if (!SESSION.test(id) || options.exclude?.has(id)) continue
     const dir = path.join(root, id)
@@ -56,7 +57,9 @@ export function findCopilotSession(options: { copilotHome: string; cwd: string; 
     if (fields?.cwd === undefined || realFolder(fields.cwd) !== folder) continue
     const created = Date.parse(fields.created_at ?? '')
     if (!Number.isFinite(created) || created < options.since) continue
-    if (best === undefined || created < best.created) best = { id, created }
+    // A second eligible candidate makes the whole discovery ambiguous, taking a found one with it.
+    if (found !== undefined) return undefined
+    found = id
   }
-  return best?.id
+  return found
 }

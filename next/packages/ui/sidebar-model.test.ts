@@ -214,4 +214,26 @@ describe('formatContext', () => {
   it('keeps two sessions apart', () => {
     expect(formatContext(usage(10_000, 200_000))?.text).not.toBe(formatContext(usage(90_000, 200_000))?.text)
   })
+
+  it('labels a Copilot row a last request against the prompt budget, never a context window', () => {
+    // Epoch ms for a local 21:10, so the time in the title is the same whatever machine runs the test.
+    const at = new Date(2026, 10, 7, 21, 10).getTime()
+    const label = formatContext({ tokens: 101_079, window: 272_000, percent: null, model: 'gpt-6-luna', at }, 'copilot')
+    expect(label?.text).toBe('101.1k/272k')
+    expect(label?.title).toBe('Last request: 101,079 of 272,000 prompt tokens (37%), gpt-6-luna, 21:10')
+    expect(label?.title?.toLowerCase()).not.toContain('context window')
+  })
+
+  it('shows Copilot tokens alone when the record has no prompt budget', () => {
+    const at = new Date(2026, 10, 7, 21, 10).getTime()
+    const label = formatContext({ tokens: 101_079, window: null, percent: null, model: 'gpt-6-luna', at }, 'copilot')
+    expect(label?.text).toBe('101.1k')
+    expect(label?.title).toBe('Last request: 101,079 prompt tokens, gpt-6-luna, 21:10')
+  })
+
+  it('does not turn a Claude reading into a last request', () => {
+    const at = new Date(2026, 10, 7, 21, 10).getTime()
+    expect(formatContext(usage(50_000, 200_000), 'claude')?.title).toBe('Context: 50,000 of 200,000 tokens (25%)')
+    expect(formatContext({ ...usage(50_000, 200_000), at }, 'claude')?.title).not.toContain('21:10')
+  })
 })

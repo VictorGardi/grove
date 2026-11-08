@@ -116,14 +116,29 @@ function compact(n: number): string {
   return `${Number((n / 1_000_000).toFixed(1))}M`
 }
 
-// The sidebar label for an agent's context use. A missing or non-positive reading gives no label: never a 0.
-export function formatContext(context: ContextUsage | undefined): { text: string; title: string } | null {
+// A last request's time as the sidebar title shows it: local hours and minutes (epoch ms).
+function hhmm(at: number): string {
+  const time = new Date(at)
+  return `${String(time.getHours()).padStart(2, '0')}:${String(time.getMinutes()).padStart(2, '0')}`
+}
+
+// The sidebar label for an agent's context use. A missing or non-positive reading gives no label: never a 0. The kind
+// sets the wording: a Copilot reading is a timestamped last request measured against the CLI's prompt budget — never
+// a context window. A reading without a budget shows the tokens alone and no ratio.
+export function formatContext(context: ContextUsage | undefined, kind: AgentKind = 'claude'): { text: string; title: string } | null {
   if (!context || context.tokens === null || context.tokens <= 0) return null
   const { tokens, window, percent, model } = context
   const hasWindow = window !== null && window > 0
   const text = hasWindow ? `${compact(tokens)}/${compact(window)}` : compact(tokens)
   const pct = percent ?? (hasWindow ? Math.round((tokens / window) * 100) : null)
+  const ratio = pct === null ? '' : ` (${pct}%)`
+  const models = model ? `, ${model}` : ''
+  if (kind === 'copilot') {
+    const used = hasWindow
+      ? `${tokens.toLocaleString('en-US')} of ${window.toLocaleString('en-US')} prompt tokens`
+      : `${tokens.toLocaleString('en-US')} prompt tokens`
+    return { text, title: `Last request: ${used}${ratio}${models}, ${hhmm(context.at)}` }
+  }
   const used = hasWindow ? `${tokens.toLocaleString('en-US')} of ${window.toLocaleString('en-US')} tokens` : `${tokens.toLocaleString('en-US')} tokens`
-  const title = `Context: ${used}${pct === null ? '' : ` (${pct}%)`}${model ? `, ${model}` : ''}`
-  return { text, title }
+  return { text, title: `Context: ${used}${ratio}${models}` }
 }

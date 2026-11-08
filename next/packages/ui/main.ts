@@ -1037,7 +1037,7 @@ function agentRow(row: AgentRow): HTMLLIElement {
     grid.innerHTML = iconSvg('grid')
     tail.append(grid)
   }
-  const context = formatContext(agent.context)
+  const context = formatContext(agent.context, agent.agent)
   if (context) {
     const used = element('span', 'agent-context', context.text)
     used.title = context.title
