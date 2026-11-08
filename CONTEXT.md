@@ -53,11 +53,12 @@ specific meaning, so humans and agents stay consistent.
   hooks of a per-launch plugin (`--plugin-dir`, never the human's
   `~/.copilot/settings.json`) and tailed by the Copilot source: working and done,
   permission attention and file writes (ADR 0044).
-- **Session status**: `working`, `waiting`, `idle`, `gone` (agent sessions,
+- **Session status (legacy)**: `working`, `waiting`, `idle`, `gone` (agent sessions,
   from their agent source); `running`, `gone` (terminal, from tmux).
   **Waiting** means it's the human's move: a pending permission or question,
-  or a finished turn not yet seen. Live only; `lastStatus` stores tmux
-  liveness (ADR 0015).
+  or a finished turn not yet seen. This older label is broader than the v2
+  **needs-you** state; do not use it as a synonym for a current tab state.
+  Live only; `lastStatus` stores tmux liveness (ADR 0015).
 - **OSC 7501 status (v2)**: the status report an agent sends to its terminal
   (`state=working|idle|blocked|done|error`, fields split on `:`, `kind=` and `id=`).
   The holder parses it, answers the `?` query and keeps the last root record per tab;
@@ -68,7 +69,8 @@ specific meaning, so humans and agents stay consistent.
   for idle (or says `done`). **Unknown** means no report: the agent is too old, sends
   nothing, the PTY exited, or core restarted with no live holder entry. A live
   agent tab in unknown names the minimum version (Claude 2.1.309, Copilot 1.0.107,
-  OpenCode 2.2.6).
+  OpenCode 2.2.6). In appearance settings, **waiting** names needs-you only, and
+  **running** names working; neither is a v2 state value.
 - **Needs-you reason**: why a tab needs the human: `permission`, `question`,
   `auth` (the agent is not signed in or its key failed) or `error`.
 - **Seen mark**: `seenAt`, when the human last had a session on screen with the

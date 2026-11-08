@@ -5,7 +5,9 @@
   /* Overridable by the theme file */
   --accent: #8ab4ff;
   --state-needs-you: #f0b44c;
-  --state-working: #6ea0ff;
+  /* Violet, not finished's blue: colour distinguishes working's bars from the finished dot. Each theme reuses its
+     worktree hue; the same one rule sits in themes.css. */
+  --state-working: #a78bfa;
   --state-finished: #6ea0ff;
   --state-idle: #6c6c72;
   --state-unknown: #4a4a50;
@@ -94,9 +96,21 @@
   --radius-lg: 12px;
   --radius-pill: 999px;
   --ind-size: 8px;
+  --ind-container-width: 16px;
   --ind-stroke: 1.5px;
   --halo-size: 3px;
-  --spin-period: 1s;
+  --ind-thinking-dot-size: 4px;
+  --ind-thinking-period: 1.2s;
+  --ind-thinking-delay-first: -300ms;
+  --ind-thinking-delay-second: -150ms;
+  --ind-thinking-lift: 1px;
+  --ind-wave-width: 8px;
+  --ind-wave-bar-width: 2px;
+  --ind-wave-period: 1.2s;
+  --ind-wave-period-before: 1.35s;
+  --ind-wave-period-after: 1.05s;
+  --ind-wave-delay-before: -370ms;
+  --ind-wave-delay-after: -690ms;
   --sidebar-ease: 0.2s cubic-bezier(0.3, 0, 0, 1);
   --size-tile: 18px;
   --size-mark: 20px;

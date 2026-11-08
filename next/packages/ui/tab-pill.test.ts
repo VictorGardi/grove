@@ -67,6 +67,23 @@ describe('tab pill', () => {
     expect(pill.root.querySelector('.indicator')?.classList.contains('ind-needs-you')).toBe(true)
   })
 
+  it('shows three thinking dots only while the agent is working', () => {
+    pill.update({ name: 'Tab 1', title: 'Space: tab 1', state: 'working' })
+    expect(pill.root.querySelectorAll('.indicator .agent-thinking-dot')).toHaveLength(3)
+
+    pill.update({ name: 'Tab 1', title: 'Space: tab 1', state: 'idle' })
+    expect(pill.root.querySelector('.indicator .agent-thinking-dots')?.hasAttribute('hidden')).toBe(true)
+  })
+
+  it('marks a grid tab with a 2x2 dot matrix pill', () => {
+    pill.update({ name: 'Tab 1', title: 'Space: tab 1', state: 'idle', inGrid: true })
+    const marker = pill.root.querySelector<HTMLElement>('.tab-grid')!
+    expect(marker.hidden).toBe(false)
+    expect(marker.title).toBe('In the grid')
+    expect(marker.querySelectorAll('svg.icon-grid circle')).toHaveLength(4)
+    expect(marker.querySelectorAll('svg.icon-grid rect')).toHaveLength(0)
+  })
+
   it('shows a live unknown agent version hint as the indicator title and accessible label', () => {
     pill.update({
       name: 'Claude',

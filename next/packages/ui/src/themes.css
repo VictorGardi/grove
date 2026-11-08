@@ -6,7 +6,7 @@
 :root[data-theme='mocha'] {
   --accent: #89b4fa;
   --state-needs-you: #f9e2af;
-  --state-working: #89b4fa;
+  --state-working: #cba6f7;
   --state-finished: #89b4fa;
   --state-idle: #6c7086;
   --state-unknown: #6c7086;
@@ -49,7 +49,7 @@
 :root[data-theme='macchiato'] {
   --accent: #8aadf4;
   --state-needs-you: #eed49f;
-  --state-working: #8aadf4;
+  --state-working: #c6a0f6;
   --state-finished: #8aadf4;
   --state-idle: #6e738d;
   --state-unknown: #6e738d;
@@ -92,7 +92,7 @@
 :root[data-theme='tokyo-night'] {
   --accent: #7aa2f7;
   --state-needs-you: #e0af68;
-  --state-working: #7aa2f7;
+  --state-working: #bb9af7;
   --state-finished: #7aa2f7;
   --state-idle: #565f89;
   --state-unknown: #565f89;
@@ -135,7 +135,7 @@
 :root[data-theme='tokyo-night-storm'] {
   --accent: #7aa2f7;
   --state-needs-you: #e0af68;
-  --state-working: #7aa2f7;
+  --state-working: #bb9af7;
   --state-finished: #7aa2f7;
   --state-idle: #565f89;
   --state-unknown: #565f89;
@@ -178,7 +178,7 @@
 :root[data-theme='rose-pine'] {
   --accent: #c4a7e7;
   --state-needs-you: #f6c177;
-  --state-working: #9ccfd8;
+  --state-working: #c4a7e7;
   --state-finished: #9ccfd8;
   --state-idle: #6e6a86;
   --state-unknown: #6e6a86;
@@ -221,7 +221,7 @@
 :root[data-theme='gruvbox'] {
   --accent: #83a598;
   --state-needs-you: #fabd2f;
-  --state-working: #83a598;
+  --state-working: #d3869b;
   --state-finished: #83a598;
   --state-idle: #7c6f64;
   --state-unknown: #7c6f64;
@@ -264,7 +264,7 @@
 :root[data-theme='nord'] {
   --accent: #88c0d0;
   --state-needs-you: #ebcb8b;
-  --state-working: #81a1c1;
+  --state-working: #b48ead;
   --state-finished: #81a1c1;
   --state-idle: #6b7690;
   --state-unknown: #6b7690;
@@ -307,7 +307,7 @@
 :root[data-theme='dracula'] {
   --accent: #bd93f9;
   --state-needs-you: #f1fa8c;
-  --state-working: #8be9fd;
+  --state-working: #ff79c6;
   --state-finished: #8be9fd;
   --state-idle: #6272a4;
   --state-unknown: #6272a4;

@@ -3,6 +3,14 @@ import { getCurrentWindow } from '@tauri-apps/api/window'
 import { createBridge, fromBase64, toBase64 } from './bridge.ts'
 import { createSoundGate, noticeBody, soundFile } from './alerts.ts'
 import { readSound, writeSound } from './sound-pref.ts'
+import {
+  AGENT_APPEARANCE_SWATCHES,
+  applyAgentAppearance,
+  readAgentAppearance,
+  writeAgentAppearance,
+  type AgentAppearance,
+  type AgentAppearanceColor,
+} from './appearance-pref.ts'
 import { THEMES, applyThemeChoice, isThemeId, readTheme, writeTheme } from './theme-pref.ts'
 import { applyLayout, applySettings, applyTheme, findAction, formatBinding, launcherLine } from './config.ts'
 import { openTerminal, terminalFontSize, tokenValue, type TerminalView } from './terminal.ts'
@@ -25,6 +33,7 @@ import { createSpaceDialog } from './space-dialog.ts'
 import { createIntegrationPanel } from './integrations.ts'
 import { createKeysPanel } from './keys-panel.ts'
 import { indicatorClass, indicatorLabel } from './indicator.ts'
+import { createAgentWorkingMark } from './agent-thinking-dots.ts'
 import { agentIconSvg, iconSvg } from './icons.ts'
 import { rollupSpaces } from '../protocol/rollup.ts'
 import { ERROR_CODES } from '../protocol/messages.ts'
@@ -114,6 +123,8 @@ let soundOn = readSound(storage())
 // The chosen theme goes on the root before the first terminal opens, so every terminal starts with its colours.
 let themeId = readTheme(storage())
 applyThemeChoice(document.documentElement, themeId)
+let agentAppearance = readAgentAppearance(storage())
+applyAgentAppearance(document.documentElement, agentAppearance)
 
 const appEl = byId('app')
 const contextMenu = createContextMenu(document.body, { closed: focusActive })
@@ -133,6 +144,7 @@ const restartCoreButton = byId('restart-core') as HTMLButtonElement
 const coreIndicator = byId('core-indicator')
 const coreStatusText = byId('core-status-text')
 const themeSelect = byId('theme-select') as HTMLSelectElement
+const workingIndicatorSelect = byId('working-indicator-style') as HTMLSelectElement
 const settingsTabs = Array.from(document.querySelectorAll<HTMLButtonElement>('.settings-tab'))
 const settingsSections = Array.from(document.querySelectorAll<HTMLElement>('.settings-section'))
 const sidebar = byId('sidebar')
@@ -142,6 +154,7 @@ const launcherBar = byId('launchers')
 const emptyState = byId('empty-state')
 const emptyTitle = byId('empty-title')
 const emptyText = byId('empty-text')
+coreIndicator.append(createAgentWorkingMark())
 // The rename modal saves through tabs.rename and shows the tab's new name at once. Key bindings wait while it is open.
 const renameModal = createRenameModal(
   {
@@ -331,6 +344,7 @@ function stateOf(tab: Tab): AgentStateName {
 // The state indicator; a live agent tab with no report also names its minimum supported version.
 function indicatorEl(state: AgentStateName, agent?: AgentKind, live = false): HTMLElement {
   const node = element('span', indicatorClass(state))
+  if (state === 'working') node.append(createAgentWorkingMark())
   const label = indicatorLabel(state, agent, live)
   node.title = label
   node.setAttribute('aria-label', label)
@@ -1357,6 +1371,57 @@ for (const theme of THEMES) {
   themeSelect.append(option)
 }
 themeSelect.value = themeId
+const AGENT_APPEARANCE_STATES = [
+  { key: 'needsYou', id: 'appearance-needs-you', label: 'Waiting' },
+  { key: 'working', id: 'appearance-working', label: 'Running' },
+  { key: 'finished', id: 'appearance-finished', label: 'Finished' },
+] as const
+function syncAgentAppearanceControls(): void {
+  for (const { key, id } of AGENT_APPEARANCE_STATES) {
+    const group = byId(id)
+    for (const button of group.querySelectorAll<HTMLButtonElement>('.appearance-swatch')) {
+      button.setAttribute('aria-pressed', String(agentAppearance[key] === button.dataset.color))
+    }
+    group.querySelector<HTMLButtonElement>('.appearance-default')?.setAttribute(
+      'aria-pressed',
+      String(agentAppearance[key] === null),
+    )
+  }
+}
+function renderAgentAppearanceControls(): void {
+  for (const { key, id, label } of AGENT_APPEARANCE_STATES) {
+    const swatches = AGENT_APPEARANCE_SWATCHES.map(({ id: color, label: colorName }) => {
+      const button = document.createElement('button')
+      button.type = 'button'
+      button.className = 'appearance-swatch'
+      button.dataset.color = color
+      button.style.setProperty('--swatch-color', `var(--${color})`)
+      button.title = colorName
+      button.setAttribute('aria-label', `${label} color ${colorName}`)
+      button.addEventListener('click', () => updateAgentAppearance(key, color))
+      return button
+    })
+    const useTheme = document.createElement('button')
+    useTheme.type = 'button'
+    useTheme.className = 'appearance-default'
+    useTheme.textContent = 'Theme default'
+    useTheme.setAttribute('aria-label', `${label} color: Theme default`)
+    useTheme.addEventListener('click', () => updateAgentAppearance(key, null))
+    byId(id).replaceChildren(...swatches, useTheme)
+  }
+  workingIndicatorSelect.value = agentAppearance.workingIndicator
+  syncAgentAppearanceControls()
+}
+function updateAgentAppearance<K extends 'needsYou' | 'working' | 'finished'>(
+  key: K,
+  color: AgentAppearance[K],
+): void {
+  agentAppearance = { ...agentAppearance, [key]: color }
+  applyAgentAppearance(document.documentElement, agentAppearance)
+  writeAgentAppearance(storage(), agentAppearance)
+  syncAgentAppearanceControls()
+}
+renderAgentAppearanceControls()
 themeSelect.addEventListener('change', () => {
   if (!isThemeId(themeSelect.value)) return
   themeId = themeSelect.value
@@ -1364,6 +1429,12 @@ themeSelect.addEventListener('change', () => {
   writeTheme(storage(), themeId)
   // Open terminals read their colours when they open, so each one reads them again.
   for (const tab of tabs.values()) tab.view?.restyle()
+})
+workingIndicatorSelect.addEventListener('change', () => {
+  if (workingIndicatorSelect.value !== 'dots' && workingIndicatorSelect.value !== 'waveform') return
+  agentAppearance = { ...agentAppearance, workingIndicator: workingIndicatorSelect.value }
+  applyAgentAppearance(document.documentElement, agentAppearance)
+  writeAgentAppearance(storage(), agentAppearance)
 })
 soundToggle.setAttribute('aria-checked', String(soundOn))
 soundToggle.addEventListener('click', () => {

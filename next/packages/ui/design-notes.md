@@ -46,11 +46,15 @@ Fonts: Geist for the interface (`--font-ui`), Geist Mono for the terminal (`--fo
 ## Indicators
 
 One shape per agent state. The class is `indicator ind-<state>` (`indicator.ts`); the label is in `title` and `aria-label`.
+Working shows three staggered dots by default or a three-bar waveform when chosen in Agent appearance settings; the
+indicator slot keeps a fixed width across states. The other states are static. Reduced-motion mode keeps either shape static.
+Waiting, running and finished colours can each override the active theme with one of the eight space colours; Theme
+default restores the theme colour.
 
 | State | Label | Shape | Colour token | Motion |
 | --- | --- | --- | --- | --- |
 | needs-you | needs you | solid dot with a 3px halo | `--state-needs-you` | none |
-| working | working | ring with one coloured arc | `--state-working` | spins, period `--spin-period`; paused while the window is not focused; still under reduced motion |
+| working | working | three pulsing dots or a three-bar waveform | `--state-working` (or its selected space-colour override) | opacity and translation; static with reduced motion |
 | finished | finished | solid dot | `--state-finished` | none |
 | unknown | unknown | dashed ring | `--state-unknown` | none |
 | idle | idle | hollow ring | `--state-idle` | none |

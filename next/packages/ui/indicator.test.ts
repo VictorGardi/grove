@@ -35,8 +35,26 @@ describe('indicator', () => {
 
   it('has a styles.css rule for every state, coloured from its state token', () => {
     for (const state of INDICATOR_STATES as readonly IndicatorState[]) {
-      const rule = new RegExp(`\\.ind-${state}\\s*\\{[^}]*var\\(--state-${state}\\)`)
+      const rule = new RegExp(`\\.ind-${state}(?:::before)?\\s*\\{[^}]*var\\(--state-${state}\\)`)
       expect(css, `styles.css rule for .ind-${state}`).toMatch(rule)
     }
+  })
+
+  it('keeps a fixed-width indicator slot and pulses working dots without rotation', () => {
+    expect(css).toMatch(/\.indicator\s*\{[^}]*width:\s*var\(--ind-container-width\)/)
+    expect(css).toMatch(/\.agent-thinking-dot\s*\{[^}]*animation:\s*thinking-dot/)
+    expect(css).toMatch(/\.agent-thinking-dot\s*\{[^}]*will-change:\s*transform,\s*opacity/)
+    expect(css).toMatch(/\.agent-thinking-dot\s*\{[^}]*transform:\s*translateZ\(0\)/)
+    expect(css).toMatch(/@keyframes thinking-dot/)
+    expect(css).toMatch(/\.agent-wave-bar\s*\{[^}]*animation:\s*waveform-bar/)
+    expect(css).toMatch(/\.agent-waveform\s*\{[^}]*width:\s*var\(--ind-wave-width\)/)
+    expect(css).toMatch(/\.agent-wave-bar\s*\{[^}]*width:\s*var\(--ind-wave-bar-width\)/)
+    expect(css).toMatch(/\.agent-wave-bar:nth-child\(1\)\s*\{[^}]*animation-duration:\s*var\(--ind-wave-period-before\)/)
+    expect(css).toMatch(/\.agent-wave-bar:nth-child\(3\)\s*\{[^}]*animation-duration:\s*var\(--ind-wave-period-after\)/)
+    expect(css).toMatch(/@keyframes waveform-bar\s*\{[\s\S]*?scaleY\(0\.3\)[\s\S]*?scaleY\(1\)/)
+    const reducedMotionRules = [...css.matchAll(/@media \(prefers-reduced-motion: reduce\) \{([\s\S]*?)\n\s*\}/g)]
+      .map((match) => match[1] ?? '')
+    expect(reducedMotionRules.some((rule) => rule.includes('.agent-wave-bar') && /animation:\s*none/.test(rule))).toBe(true)
+    expect(css).not.toMatch(/working-wave|animation:\s*spin/)
   })
 })

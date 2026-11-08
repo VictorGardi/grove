@@ -73,6 +73,7 @@ vi.mock('./terminal.ts', () => ({
     write: () => {},
     reset: () => {},
     fit: () => {},
+    restyle: () => {},
     dispose: () => {},
   }),
 }))
@@ -156,6 +157,7 @@ describe('window status path', () => {
     expect(document.querySelector('#terminals')?.classList.contains('grid-panes')).toBe(true)
     expect(document.querySelectorAll('#terminals .pane:not([hidden])')).toHaveLength(2)
     expect(document.querySelector('#tabs > .active')?.textContent).toContain('copilot')
+    expect(document.querySelectorAll('#grid-toggle svg.icon-grid circle')).toHaveLength(4)
     expect(JSON.parse(localStorage.getItem(VIEW_STATE_KEY)!)).toEqual({
       gridOn: true, gridTabs: ['tab-claude', 'tab-copilot'], activeSpace: 's1', activeTab: 'tab-copilot',
     })
@@ -197,8 +199,65 @@ describe('window status path', () => {
         expect(shown.pane, `${label} pane header, ${state}`).toBe(`indicator ind-${state}`)
         expect(shown.agent, `${label} agents list, ${state}`).toBe(`indicator ind-${state}`)
       }
+      if (state === 'working') {
+        const workingIndicator = [...document.querySelectorAll('#tabs .indicator')].find((node) =>
+          node.closest('.tab')?.textContent?.includes('claude'),
+        )
+        expect(workingIndicator?.querySelectorAll('.agent-thinking-dot')).toHaveLength(3)
+      }
+      const sidebarGridMarker = [...document.querySelectorAll('#agents .agent-row')]
+        .find((row) => row.querySelector('.agent-label')?.textContent === 'claude')
+        ?.querySelector('.tab-grid svg.icon-grid')
+      expect(sidebarGridMarker?.querySelectorAll('circle')).toHaveLength(4)
       expect(spaceIndicator(), `space tile, ${state}`).toBe(`indicator ind-${state}`)
     }
+  })
+
+  it('applies agent appearance choices across the window and restores theme defaults', () => {
+    for (const { tabId, agent } of TYPED) notify('status.changed', change(tabId, agent, 'working'))
+
+    const appearanceTab = document.querySelector<HTMLButtonElement>('.settings-tab[data-section="appearance"]')!
+    appearanceTab.click()
+    expect(appearanceTab.textContent).toContain('Appearance')
+    expect(document.querySelector<HTMLElement>('.settings-section[data-section="appearance"]')?.hidden).toBe(false)
+    expect(document.querySelector<HTMLElement>('.settings-section[data-section="general"]')?.hidden).toBe(true)
+
+    const waitingSwatch = document.querySelector<HTMLButtonElement>('#appearance-needs-you [aria-label="Waiting color Teal"]')
+    const runningSwatch = document.querySelector<HTMLButtonElement>('#appearance-working [aria-label="Running color Violet"]')
+    const finishedSwatch = document.querySelector<HTMLButtonElement>('#appearance-finished [aria-label="Finished color Teal"]')
+    expect(waitingSwatch).not.toBeNull()
+    expect(runningSwatch).not.toBeNull()
+    expect(finishedSwatch).not.toBeNull()
+    waitingSwatch!.focus()
+    waitingSwatch!.click()
+    expect(document.activeElement).toBe(waitingSwatch)
+    expect(waitingSwatch!.getAttribute('aria-pressed')).toBe('true')
+    runningSwatch!.click()
+    finishedSwatch!.click()
+
+    const root = document.documentElement
+    expect(root.style.getPropertyValue('--agent-state-needs-you')).toBe('var(--tile-1)')
+    expect(root.style.getPropertyValue('--agent-state-working')).toBe('var(--tile-4)')
+    expect(root.style.getPropertyValue('--agent-state-finished')).toBe('var(--tile-1)')
+
+    const themeSelect = document.querySelector<HTMLSelectElement>('#theme-select')!
+    themeSelect.value = 'nord'
+    themeSelect.dispatchEvent(new Event('change', { bubbles: true }))
+    expect(root.dataset.theme).toBe('nord')
+    expect(root.style.getPropertyValue('--agent-state-working')).toBe('var(--tile-4)')
+
+    const styleSelect = document.querySelector<HTMLSelectElement>('#working-indicator-style')!
+    styleSelect.value = 'waveform'
+    styleSelect.dispatchEvent(new Event('change', { bubbles: true }))
+    expect(root.dataset.workingIndicator).toBe('waveform')
+    expect(JSON.parse(localStorage.getItem('grove-next.agent-appearance')!).workingIndicator).toBe('waveform')
+    for (const indicator of document.querySelectorAll('.indicator.ind-working')) {
+      expect(indicator.querySelectorAll('.agent-wave-bar')).toHaveLength(3)
+    }
+
+    document.querySelector<HTMLButtonElement>('#appearance-needs-you [aria-label="Waiting color: Theme default"]')!.click()
+    expect(root.style.getPropertyValue('--agent-state-needs-you')).toBe('')
+    expect(JSON.parse(localStorage.getItem('grove-next.agent-appearance')!).needsYou).toBeNull()
   })
 
   it('shows an unknown agent minimum-version hint only while its PTY is live', () => {

@@ -4,6 +4,7 @@ import type { AgentStateName } from '../protocol/messages.ts'
 import type { AgentKind } from '../core/status/adapter.ts'
 import { iconSvg } from './icons.ts'
 import { indicatorClass, indicatorLabel } from './indicator.ts'
+import { createAgentWorkingMark } from './agent-thinking-dots.ts'
 
 export interface TabPillHandlers {
   onActivate(): void
@@ -17,7 +18,7 @@ export interface TabPillView {
   state: AgentStateName
   agent?: AgentKind
   live?: boolean
-  // Whether the tab is one of the grid's panes: it shows a grid glyph.
+  // Whether the tab is one of the grid's panes: it shows a dot-matrix pill.
   inGrid?: boolean
 }
 
@@ -37,6 +38,11 @@ export function createTabPill(mark: HTMLElement, handlers: TabPillHandlers): Tab
   const label = document.createElement('span')
   label.className = 'tab-label'
   const indicator = document.createElement('span')
+  const workingMark = createAgentWorkingMark()
+  const thinkingDots = workingMark.querySelector<HTMLElement>('.agent-thinking-dots')!
+  const waveform = workingMark.querySelector<HTMLElement>('.agent-waveform')!
+  workingMark.hidden = true
+  indicator.append(workingMark)
   let shownState: string | null = null
   let shownIndicatorLabel: string | null = null
   const grid = document.createElement('span')
@@ -68,10 +74,13 @@ export function createTabPill(mark: HTMLElement, handlers: TabPillHandlers): Tab
     root,
     update({ name, title, state, agent, live = false, inGrid = false }) {
       grid.hidden = !inGrid
+      workingMark.hidden = state !== 'working'
+      thinkingDots.hidden = state !== 'working'
+      waveform.hidden = state !== 'working'
       root.classList.toggle('in-grid', inGrid)
       if (main.title !== title) main.title = title
       if (label.textContent !== name) label.textContent = name
-      // Written only on a change: rewriting the class of a spinning indicator can restart its animation.
+      // Written only on a change: rewriting the class of an indicator is churn for the browser to absorb on every paint.
       if (shownState !== state) {
         shownState = state
         indicator.className = indicatorClass(state)

@@ -554,11 +554,11 @@ p {
 }
 
 .urgent-banner.tone-needs-you {
-  --urgent-tone: var(--state-needs-you);
+  --urgent-tone: var(--agent-state-needs-you, var(--state-needs-you));
 }
 
 .urgent-banner.tone-finished {
-  --urgent-tone: var(--state-finished);
+  --urgent-tone: var(--agent-state-finished, var(--state-finished));
 }
 
 .urgent-count {
@@ -566,52 +566,181 @@ p {
   font-variant-numeric: tabular-nums;
 }
 
-/* Indicators: one shape per state. The spin never pauses: a paused animation on a long-lived indicator could stay stuck. */
+/* Working uses the selected dots or waveform; both are static with reduced motion. */
 
 .indicator {
+  position: relative;
   flex: none;
   display: inline-block;
-  width: var(--ind-size);
+  width: var(--ind-container-width);
   height: var(--ind-size);
-  border-radius: var(--radius-pill);
   box-sizing: border-box;
 }
 
-.ind-needs-you {
-  background: var(--state-needs-you);
-  box-shadow: 0 0 0 var(--halo-size) color-mix(in srgb, var(--state-needs-you) 15%, transparent);
+.indicator[hidden] {
+  display: none;
 }
 
-.ind-finished {
-  background: var(--state-finished);
+.agent-working-mark[hidden] {
+  display: none;
 }
 
-.ind-idle {
-  border: var(--ind-stroke) solid var(--state-idle);
+.agent-thinking-dots {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  width: 100%;
+  height: 100%;
 }
 
-.ind-unknown {
-  border: var(--ind-stroke) dashed var(--state-unknown);
+.agent-thinking-dots[hidden] {
+  display: none;
+}
+
+.agent-working-mark {
+  display: block;
+  width: 100%;
+  height: 100%;
+}
+
+.agent-waveform {
+  display: none;
+  align-items: center;
+  justify-content: space-between;
+  width: var(--ind-wave-width);
+  height: 100%;
+  margin-inline: auto;
+}
+
+.agent-waveform[hidden] {
+  display: none;
+}
+
+.agent-wave-bar {
+  flex: none;
+  width: var(--ind-wave-bar-width);
+  height: 100%;
+  border-radius: var(--radius-pill);
+  background: currentColor;
+  transform: scaleY(0.3);
+  transform-origin: center;
+  animation: waveform-bar var(--ind-wave-period) ease-in-out infinite;
+}
+
+.agent-wave-bar:nth-child(1) {
+  animation-duration: var(--ind-wave-period-before);
+  animation-delay: var(--ind-wave-delay-before);
+}
+
+.agent-wave-bar:nth-child(3) {
+  animation-duration: var(--ind-wave-period-after);
+  animation-delay: var(--ind-wave-delay-after);
+}
+
+:root[data-working-indicator='waveform'] .agent-thinking-dots {
+  display: none;
+}
+
+:root[data-working-indicator='waveform'] .agent-waveform {
+  display: flex;
+}
+
+:root[data-working-indicator='waveform'] .agent-waveform[hidden] {
+  display: none;
+}
+
+.agent-thinking-dot {
+  flex: none;
+  width: var(--ind-thinking-dot-size);
+  height: var(--ind-thinking-dot-size);
+  border-radius: var(--radius-pill);
+  background: currentColor;
+  opacity: 0.4;
+  animation: thinking-dot var(--ind-thinking-period) ease-in-out infinite;
+  will-change: transform, opacity;
+  transform: translateZ(0);
+}
+
+.agent-thinking-dot:nth-child(1) {
+  animation-delay: var(--ind-thinking-delay-first);
+}
+
+.agent-thinking-dot:nth-child(2) {
+  animation-delay: var(--ind-thinking-delay-second);
 }
 
 .ind-working {
-  border: var(--ind-stroke) solid color-mix(in srgb, var(--state-working) 20%, transparent);
-  border-top-color: var(--state-working);
-  animation: spin var(--spin-period) linear infinite;
-  /* Its own layer, so the spin runs on the compositor and a busy main thread (a tab switch) cannot stall it. */
-  will-change: transform;
+  color: var(--agent-state-working, var(--state-working));
 }
 
-@keyframes spin {
-  to {
-    transform: rotate(360deg);
+.indicator:not(.ind-working)::before {
+  content: '';
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  width: var(--ind-size);
+  height: var(--ind-size);
+  border-radius: var(--radius-pill);
+  transform: translate(-50%, -50%);
+}
+
+.ind-needs-you::before {
+  background: var(--agent-state-needs-you, var(--state-needs-you));
+  box-shadow: 0 0 0 var(--halo-size) color-mix(in srgb, var(--agent-state-needs-you, var(--state-needs-you)) 15%, transparent);
+}
+
+.ind-finished::before {
+  background: var(--agent-state-finished, var(--state-finished));
+}
+
+.ind-idle::before {
+  border: var(--ind-stroke) solid var(--state-idle);
+  box-sizing: border-box;
+}
+
+.ind-unknown::before {
+  border: var(--ind-stroke) dashed var(--state-unknown);
+  box-sizing: border-box;
+}
+
+@keyframes thinking-dot {
+  0%, 80%, 100% {
+    opacity: 0.4;
+    transform: translateY(0) translateZ(0);
+  }
+  40% {
+    opacity: 1;
+    transform: translateY(calc(-1 * var(--ind-thinking-lift))) translateZ(0);
+  }
+}
+
+@keyframes waveform-bar {
+  0%, 100% {
+    transform: scaleY(0.3);
+  }
+  50% {
+    transform: scaleY(1);
   }
 }
 
 @media (prefers-reduced-motion: reduce) {
-  .ind-working {
+  .agent-thinking-dot,
+  .agent-wave-bar {
     animation: none;
-    border-color: var(--state-working);
+    opacity: 1;
+    transform: none;
+  }
+
+  .agent-wave-bar:nth-child(1) {
+    transform: scaleY(0.35);
+  }
+
+  .agent-wave-bar:nth-child(2) {
+    transform: scaleY(0.65);
+  }
+
+  .agent-wave-bar:nth-child(3) {
+    transform: scaleY(0.9);
   }
 }
 
@@ -695,10 +824,15 @@ p {
 }
 
 .tab-grid {
-  display: grid;
-  place-items: center;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
   flex: none;
+  padding: 0 var(--space-1);
+  border: 1px solid color-mix(in srgb, var(--accent) 35%, transparent);
+  border-radius: var(--radius-pill);
   color: var(--accent);
+  background: color-mix(in srgb, var(--accent) 10%, transparent);
 }
 
 .tab-grid[hidden] {
@@ -1022,9 +1156,9 @@ p {
   background: var(--state-idle);
 }
 
-.agent-bar .seg-needs-you { background: var(--state-needs-you); }
-.agent-bar .seg-working { background: var(--state-working); }
-.agent-bar .seg-finished { background: var(--state-finished); opacity: 0.55; }
+.agent-bar .seg-needs-you { background: var(--agent-state-needs-you, var(--state-needs-you)); }
+.agent-bar .seg-working { background: var(--agent-state-working, var(--state-working)); }
+.agent-bar .seg-finished { background: var(--agent-state-finished, var(--state-finished)); opacity: 0.55; }
 .agent-bar .seg-unknown { background: var(--state-unknown); }
 
 .statusbar-count b {
@@ -1328,6 +1462,56 @@ p {
   font: inherit;
   font-size: var(--text-md);
   color: var(--color-ink);
+}
+
+.appearance-swatches {
+  display: flex;
+  flex: none;
+  align-items: center;
+  justify-content: flex-end;
+  gap: var(--space-2);
+  max-width: 100%;
+  flex-wrap: wrap;
+}
+
+.appearance-swatch {
+  flex: none;
+  width: var(--size-mark-tab);
+  height: var(--size-mark-tab);
+  padding: 0;
+  border: var(--ind-stroke) solid color-mix(in srgb, var(--color-ink) 35%, transparent);
+  border-radius: var(--radius-pill);
+  background: var(--swatch-color);
+  cursor: pointer;
+}
+
+.appearance-swatch[aria-pressed='true'] {
+  outline: var(--ind-stroke) solid var(--color-ink);
+  outline-offset: var(--space-xs);
+}
+
+.appearance-default {
+  flex: none;
+  min-height: var(--size-control);
+  padding: 0 var(--space-3);
+  border: 1px solid var(--color-line);
+  border-radius: var(--radius-sm);
+  background: var(--color-well);
+  font: inherit;
+  font-size: var(--text-sm);
+  color: var(--color-mute);
+  cursor: pointer;
+}
+
+.appearance-default[aria-pressed='true'] {
+  border-color: var(--accent);
+  color: var(--accent);
+}
+
+.appearance-swatch:focus-visible,
+.appearance-default:focus-visible {
+  outline: var(--ind-stroke) solid var(--accent);
+  outline-offset: var(--space-xs);
 }
 
 .settings-switch {
