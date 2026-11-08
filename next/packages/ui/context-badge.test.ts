@@ -121,6 +121,21 @@ describe('markWithContext', () => {
     expect(tip.hidden).toBe(true)
     stack.remove()
   })
+
+  it('omits the last-request timestamp from the tooltip and accessible label', () => {
+    const stack = markWithContext(document.createElement('span'), usage(101_079, 272_000), 'copilot')
+    document.body.append(stack)
+    const badge = stack.querySelector<HTMLElement>('.context-ring')!
+    expect(badge.getAttribute('aria-label')).not.toContain('last request')
+    expect(badge.getAttribute('aria-label')).not.toContain('prompt budget')
+    badge.dispatchEvent(new Event('pointerenter'))
+    const tip = document.querySelector<HTMLElement>('.context-tip')!
+    expect(tip.querySelector('.context-tip-head')?.textContent).toBe('37%')
+    expect(tip.textContent).not.toContain('last request')
+    expect(tip.textContent).not.toContain('prompt budget')
+    expect(tip.querySelector('.context-tip-detail')?.textContent).toBe('101.1k / 272k · opus')
+    stack.remove()
+  })
 })
 
 describe('contextReadout', () => {
@@ -142,8 +157,19 @@ describe('contextReadout', () => {
     const unknown = contextReadout(usage(101_079, null), 'copilot')!
     expect(unknown.querySelector('.context-bar i')).toBeNull()
     expect(unknown.classList.contains('unknown')).toBe(true)
+    expect(unknown.textContent).not.toContain('prompt budget')
+    expect(unknown.textContent).not.toContain('last request')
+    expect(unknown.querySelector('.context-readout-detail')?.textContent).toBe('opus')
     const warned = contextReadout(usage(174_000, 200_000), 'opencode')!
     expect(warned.classList.contains('warn')).toBe(true)
     expect(warned.classList.contains('last')).toBe(true)
+  })
+
+  it('omits the prompt-budget label from the Copilot footer readout', () => {
+    const readout = contextReadout(usage(101_079, 272_000), 'copilot')!
+    expect(readout.querySelector('.context-readout-head')?.textContent).toBe('37%')
+    expect(readout.querySelector('.context-readout-detail')?.textContent).toBe('101.1k / 272k · opus')
+    expect(readout.textContent).not.toContain('prompt budget')
+    expect(readout.textContent).not.toContain('last request')
   })
 })

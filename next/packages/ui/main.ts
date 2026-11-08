@@ -30,6 +30,7 @@ import { settled } from './diff-model.ts'
 import { createRenameModal } from './rename-modal.ts'
 import { createContextMenu } from './context-menu.ts'
 import { createSpaceDialog } from './space-dialog.ts'
+import { bindSpaceRename } from './space-rename.ts'
 import { createIntegrationPanel } from './integrations.ts'
 import { createKeysPanel } from './keys-panel.ts'
 import { indicatorClass, indicatorLabel } from './indicator.ts'
@@ -854,6 +855,7 @@ function spaceButton(space: SpaceInfo, state: AgentStateName): HTMLButtonElement
   const button = document.createElement('button')
   button.type = 'button'
   button.className = worktree ? 'space worktree' : 'space'
+  button.dataset.spaceId = space.id
   button.title = space.path
   const tile = element(
     'span',
@@ -1345,6 +1347,11 @@ paneDim.addEventListener('input', () => {
   writePaneDim(storage(), Number(paneDim.value))
 })
 byId('new-space').addEventListener('click', () => void newSpaceTab().catch(report))
+bindSpaceRename(spaceList, (spaceId) => {
+  const space = demoMode ? undefined : spaces.get(spaceId)
+  if (!space) return
+  void askRenameSpace(space).then(focusActive)
+})
 byId('settings-open').addEventListener('click', () => integrationPanel.open())
 urgentBanner.addEventListener('click', () => jumpToUrgent())
 bridge.on('integration.prompt', ({ agent }) => {
