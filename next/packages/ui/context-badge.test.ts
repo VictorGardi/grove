@@ -18,7 +18,17 @@ describe('contextView', () => {
     expect(contextView(usage(null, 200_000))).toBeNull()
     expect(contextView(usage(0, 200_000))).toBeNull()
     expect(contextView(usage(45_000, null))).toBeNull()
-    expect(contextView(usage(101_079, null), 'copilot')).toBeNull()
+  })
+
+  it('shows a Copilot reading without a prompt budget as tokens alone, unfilled and timed', () => {
+    const at = new Date(2026, 10, 8, 21, 10).getTime()
+    expect(contextView(usage(101_079, null, null, 'gpt-6-luna', at), 'copilot')).toEqual({
+      fraction: null,
+      full: false,
+      last: true,
+      headline: '101.1k prompt tokens · last request 21:10',
+      detail: 'no prompt budget · gpt-6-luna',
+    })
   })
 
   it('fills the pie by the used share of a Claude window', () => {

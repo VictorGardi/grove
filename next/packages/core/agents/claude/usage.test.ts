@@ -75,6 +75,22 @@ describe('statusline.mjs and the Claude usage path', () => {
     expect(readUsageFile(usage)?.tokens).toBe(60)
   })
 
+  it('chains the project status line over the user one, as Claude would', () => {
+    const config = path.join(dir, 'claude')
+    fs.mkdirSync(config)
+    fs.writeFileSync(path.join(config, 'settings.json'), JSON.stringify({ statusLine: { type: 'command', command: 'echo USER' } }))
+    const project = path.join(dir, 'project')
+    fs.mkdirSync(path.join(project, '.claude'), { recursive: true })
+    fs.writeFileSync(path.join(project, '.claude', 'settings.json'), JSON.stringify({ statusLine: { type: 'command', command: 'echo PROJECT' } }))
+    const usage = path.join(dir, 'p', 'tab.usage.json')
+    const result = runStatusLine(JSON.stringify({ ...input(50, 100), workspace: { project_dir: project } }), {
+      GROVE_NEXT_USAGE: usage,
+      CLAUDE_CONFIG_DIR: config,
+    })
+    expect(result.stdout).toContain('PROJECT')
+    expect(result.stdout).not.toContain('USER')
+  })
+
   it('writes the usage file from the tab env when no usage path is given', () => {
     const groveHome = path.join(dir, 'grove-home')
     const result = runStatusLine(JSON.stringify(input(50, 100)), {
@@ -116,6 +132,22 @@ describe('statusline.mjs and the Claude usage path', () => {
     vi.advanceTimersByTime(1000)
     source.close()
     expect(seen.map((c) => c.tokens)).toEqual([20, null])
+  })
+
+  it('does not deliver a refresh of the same reading again, whatever its write time', () => {
+    vi.useFakeTimers()
+    const usage = path.join(dir, 'refresh.usage.json')
+    const seen: ContextUsage[] = []
+    const write = (at: number) => fs.writeFileSync(usage, JSON.stringify({ at, payload: input(20, 200, { input_tokens: 20 }) }))
+    write(1)
+    const source = createClaudeUsageSource({ usageFile: usage, onContext: (c) => seen.push(c) })
+    source.drain()
+    write(2)
+    source.drain()
+    write(3)
+    source.drain()
+    source.close()
+    expect(seen).toHaveLength(1)
   })
 
   it('keeps two sessions apart through the service, each with its own window and null readings', () => {

@@ -127,8 +127,12 @@ describe('createOpenCodeAdapter', () => {
     })
     const watch = adapter.watch({ tabId: 't1', sessionId: 'ses_x', home: '/h', clock: () => 42, onEvent: () => {}, onContext })
     await vi.waitFor(() => expect(onContext).toHaveBeenCalledTimes(1))
-    // A newest message that cannot support a reading (in flight, or a model gone from the catalog) clears the row.
+    // A newer request still in flight keeps the last completed reading on screen: nothing is delivered for it.
     context = [{ id: 'msg_2', type: 'assistant', time: { created: 3_000 } }]
+    await new Promise((resolve) => setTimeout(resolve, 30))
+    expect(onContext).toHaveBeenCalledTimes(1)
+    // A newer completed request on a model the catalog does not list clears the row.
+    context = [{ id: 'msg_3', type: 'assistant', time: { created: 4_000, completed: 4_500 }, tokens: { input: 1, cache: { read: 0, write: 0 } }, model: { providerID: 'p', id: 'gone' } }]
     await vi.waitFor(() => expect(onContext).toHaveBeenCalledTimes(2))
     expect(onContext).toHaveBeenLastCalledWith({ tokens: null, window: null, percent: null, model: null, at: 42 })
     watch.close()

@@ -353,14 +353,13 @@ p {
 .context-badge {
   --context-fill: var(--accent);
   --context-track: var(--color-line);
-  --context-halo: var(--color-sidebar);
   position: absolute;
   right: var(--offset-context);
   bottom: var(--offset-context);
   width: var(--size-context);
   height: var(--size-context);
   border-radius: 50%;
-  box-shadow: 0 0 0 var(--size-context-halo) var(--context-halo);
+  box-shadow: 0 0 0 var(--size-context-halo) var(--context-halo, var(--color-sidebar));
 }
 
 .context-badge.full {
@@ -375,8 +374,11 @@ p {
   --context-halo: var(--color-selected);
 }
 
-.pane-head .context-badge {
+.pane-head {
   --context-halo: var(--color-ground);
+}
+
+.pane-head .context-badge {
   right: var(--offset-context-pane);
   bottom: var(--offset-context-pane);
   width: var(--size-context-pane);

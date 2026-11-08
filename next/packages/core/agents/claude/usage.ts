@@ -59,7 +59,8 @@ export function createClaudeUsageSource(options: ClaudeUsageOptions): ClaudeUsag
   const drain = (): void => {
     const context = readUsageFile(options.usageFile)
     if (context === null) return
-    const key = JSON.stringify(context)
+    // The write time is not part of the reading: statusline.mjs writes on every refresh, so it must not count as a change.
+    const key = JSON.stringify({ ...context, at: 0 })
     if (key === last) return
     last = key
     try {

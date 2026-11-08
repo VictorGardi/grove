@@ -58,15 +58,16 @@ function modelOf(entry: Record<string, unknown>): { providerID: string; id: stri
     : null
 }
 
-// The newest assistant message of a context response, completed or not. An in-flight one is the newest, so a
-// reading would go stale the moment it becomes old news: the caller refuses it until the request completes.
+// The newest completed assistant message of a context response. An in-flight one is skipped, so the reading stays the
+// last completed request's (with its own completion time) until the new request completes.
 function newestMessage(context: unknown): Record<string, unknown> | null {
   const entries = listOf(context)
   if (entries === null) return null
   let newest: { created: number; entry: Record<string, unknown> } | null = null
   for (const entry of entries) {
     const parsed = messageOf(entry)
-    if (parsed !== null && (newest === null || parsed.created > newest.created)) newest = parsed
+    if (parsed === null || num(obj(parsed.entry.time)?.completed) === null) continue
+    if (newest === null || parsed.created > newest.created) newest = parsed
   }
   return newest?.entry ?? null
 }

@@ -125,8 +125,8 @@ function compact(n: number): string {
 
 // What the context circle draws: the pie fills by `fraction`, and the tooltip reads `headline` over `detail`.
 export interface ContextView {
-  // The used share of the window, 0 to 1.
-  fraction: number
+  // The used share of the window, 0 to 1. Null when there is no window to measure against: the circle is then unfilled.
+  fraction: number | null
   // The window is used up.
   full: boolean
   // A last request, not the current occupancy: the circle is drawn faded.
@@ -142,7 +142,18 @@ export interface ContextView {
 export function contextView(context: ContextUsage | undefined, kind: AgentKind = 'claude'): ContextView | null {
   if (!context || context.tokens === null || context.tokens <= 0) return null
   const { tokens, window, percent, model } = context
-  if (window === null || window <= 0) return null
+  if (window === null || window <= 0) {
+    // Copilot's record may carry no prompt budget: the input tokens alone, timed as a last request, never a percentage.
+    if (kind !== 'copilot') return null
+    const counts = `${compact(tokens)} prompt tokens`
+    return {
+      fraction: null,
+      full: false,
+      last: true,
+      headline: `${counts} · last request ${hhmm(context.at)}`,
+      detail: model ? `no prompt budget · ${model}` : 'no prompt budget',
+    }
+  }
   const pct = Math.round(percent ?? (tokens / window) * 100)
   const full = pct >= 100
   const last = kind !== 'claude'

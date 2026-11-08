@@ -10,8 +10,8 @@ import { createOpencodeUsageSource, usageFromContext } from './usage.ts'
 //   an in-flight one carries neither `time.completed` nor usable tokens.
 // - `GET /api/model` returns the catalog array (same wrap); the window is the matched entry's `limit.context`
 //   (matched by `providerID` + model id), labeled a model limit.
-// The reading is the newest assistant message overall (in-flight ones included), so an incomplete newest message
-// refuses the reading. Polls are driven by explicit `drain()` calls: creating a source fetches nothing, and
+// The reading is the newest completed assistant message: an in-flight one is skipped, so the last completed request
+// stays the reading until the next one completes. Polls are driven by explicit `drain()` calls: creating a source fetches nothing, and
 // `close()` only stops the adapter's background timer. Like the Copilot sibling, `percent` stays null — the window
 // is the model limit and the UI computes the ratio — but unlike Copilot, `at` is OpenCode's own `time.completed`.
 
@@ -148,6 +148,12 @@ describe('usageFromContext', () => {
     ).toBe(4_000)
   })
 
+  it('keeps the last completed reading while a newer request is still in flight', () => {
+    const done = assistant('msg-done', 'anthropic', 'claude-sonnet-4-5', { created: AT_A - 120_000, completed: AT_A, tokens: tok(2, 0, 0) })
+    const inFlight = assistant('msg-live', 'anthropic', 'claude-sonnet-4-5', { created: AT_B, tokens: tok(9, 9, 9) })
+    expect(usageFromContext([done, inFlight], fullCatalog)).toMatchObject({ tokens: 2, at: AT_A })
+  })
+
   it('is null for an in-flight message: no or zero time.completed, or no tokens', () => {
     const tokens = tok(3, 2, 1)
     // No time.completed: OpenCode has not finished this model request.
@@ -273,15 +279,15 @@ describe('createOpencodeUsageSource', () => {
     api.close()
   })
 
-  it('delivers null through drain when an incomplete message becomes the newest', async () => {
+  it('keeps the last completed reading through drain while a newer message is in flight', async () => {
     let body: unknown = [MSG_A()]
     const api = startSource(SESSION_A, () => body, () => fullCatalog)
     await api.drain()
     expect(api.seen).toEqual([READING_A])
-    // A newer assistant message is in flight: no time.completed, no tokens. The shown reading would go stale.
+    // A newer assistant message is in flight: no time.completed, no tokens. The badge keeps the last completed request.
     body = [MSG_A(), assistant('msg-next', 'anthropic', 'claude-sonnet-4-5', { created: AT_A + 60_000 })]
     await api.drain()
-    expect(api.seen).toEqual([READING_A, null])
+    expect(api.seen).toEqual([READING_A])
     api.close()
   })
 

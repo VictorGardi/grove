@@ -55,12 +55,34 @@ function record(text) {
   }
 }
 
-// The user's configured command, from the Claude config folder's settings.json. Undefined when there is none.
-function userCommand() {
+function commandIn(file) {
   try {
-    const file = path.join(process.env.CLAUDE_CONFIG_DIR || path.join(os.homedir(), '.claude'), 'settings.json')
     const command = JSON.parse(fs.readFileSync(file, 'utf8'))?.statusLine?.command
     return typeof command === 'string' && command.trim() ? command : undefined
+  } catch {
+    return undefined
+  }
+}
+
+// The status-line command Claude would run without Grove's, in Claude's own order: the project's local settings, the
+// project's shared settings, then the user's. The first file that sets a command wins. Undefined when there is none.
+function chainedCommand(input) {
+  const project = input?.workspace?.project_dir ?? input?.cwd
+  const files = [
+    project && path.join(project, '.claude', 'settings.local.json'),
+    project && path.join(project, '.claude', 'settings.json'),
+    path.join(process.env.CLAUDE_CONFIG_DIR || path.join(os.homedir(), '.claude'), 'settings.json'),
+  ]
+  for (const file of files) {
+    const command = file && commandIn(file)
+    if (command) return command
+  }
+  return undefined
+}
+
+function parse(text) {
+  try {
+    return JSON.parse(text)
   } catch {
     return undefined
   }
@@ -88,7 +110,7 @@ async function main() {
     return
   }
   record(text)
-  const command = userCommand()
+  const command = chainedCommand(parse(text))
   if (command) await chain(command, text)
 }
 

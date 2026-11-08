@@ -14,6 +14,9 @@ export interface CopilotUsageOptions {
   onContext: (context: ContextUsage) => void
 }
 
+// The most a read from the start of the log takes. Only the newest usage record is wanted, and the log grows into many MB.
+const FIRST_READ_MAX = 1 << 20
+
 const num = (value: unknown): number | null => (typeof value === 'number' && Number.isFinite(value) ? value : null)
 const obj = (value: unknown): Record<string, unknown> | null =>
   value !== null && typeof value === 'object' ? (value as Record<string, unknown>) : null
@@ -79,11 +82,18 @@ export function createCopilotUsageSource(options: CopilotUsageOptions): CopilotU
         const expected = Buffer.alloc(guard.length)
         if (fs.readSync(fd, expected, 0, expected.length, start - expected.length) !== expected.length || !expected.equals(guard)) start = 0
       }
+      // A read from the start is capped at the last FIRST_READ_MAX bytes, so the cut lands mid-line and its first line is dropped.
+      const capped = start === 0 && size > FIRST_READ_MAX
+      if (capped) start = size - FIRST_READ_MAX
       read = Buffer.alloc(size - start)
       if (read.length > 0 && fs.readSync(fd, read, 0, read.length, start) !== read.length) return // short read: next poll
       if (read.length === 0) return
       const cut = read.lastIndexOf(10) // the newline byte, which never occurs inside a UTF-8 sequence
       if (cut === -1) return
+      const firstLine = read.indexOf(10)
+      if (capped && firstLine === -1) return
+      const from = capped ? firstLine + 1 : 0
+      if (from > cut) return
       // The events file was rewritten from the start: the bytes before the old position are vintage, not the guard's.
       const prior = start === 0 ? Buffer.alloc(0) : guard
       guard = Buffer.concat([prior, read.subarray(0, cut + 1)])
@@ -91,7 +101,7 @@ export function createCopilotUsageSource(options: CopilotUsageOptions): CopilotU
       offset = start + cut + 1
       // The newest valid record of the fresh lines is the reading: by its event time, and a later line breaks a tie.
       let newest: ContextUsage | null = null
-      for (const line of read.subarray(0, cut).toString('utf8').split('\n')) {
+      for (const line of read.subarray(from, cut).toString('utf8').split('\n')) {
         const context = usageFromLine(line)
         if (context !== null && (newest === null || context.at >= newest.at)) newest = context
       }

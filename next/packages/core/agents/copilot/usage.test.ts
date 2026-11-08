@@ -235,6 +235,23 @@ describe('createCopilotUsageSource', () => {
     ])
   })
 
+  it('reads a log bigger than the first-read cap from its last megabyte, and still replays the newest record', () => {
+    const file = path.join(dir, 'tab-big.jsonl')
+    // Megabytes of other events before the newest record: the start of the log is never read in full.
+    const filler = eventLine('session.start', { sessionId: 'x'.repeat(4096) }, '2026-11-07T19:00:00.000Z')
+    const lines = Array.from({ length: 600 }, () => filler)
+    write(file, record(9_000, 272_000, 'gpt-5-mini', '2026-11-07T19:30:00.000Z'), ...lines, record(18_106, 272_000, 'gpt-6-luna', '2026-11-07T20:30:28.702Z'))
+    expect(fs.statSync(file).size).toBeGreaterThan(1 << 20)
+    const readSync = vi.spyOn(fs, 'readSync')
+    const seen: ContextUsage[] = []
+    const source = createCopilotUsageSource({ file, onContext: (c) => seen.push(c) })
+    source.close()
+    const bytes = readSync.mock.results.reduce((sum, result) => sum + (typeof result.value === 'number' ? result.value : 0), 0)
+    readSync.mockRestore()
+    expect(bytes).toBeLessThanOrEqual(1 << 20)
+    expect(seen).toEqual([{ tokens: 18_106, window: 272_000, percent: null, model: 'gpt-6-luna', at: AT_A }])
+  })
+
   it('reads only the appended bytes of a long log, not the whole file on every poll', () => {
     const file = path.join(dir, 'tab-j.jsonl')
     // A long session's log: many lines before the usage record, so re-reading the whole file each poll would be real cost.

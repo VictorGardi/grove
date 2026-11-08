@@ -40,9 +40,13 @@ export function hideContextTip(): void {
 
 function badgeFor(view: ContextView): HTMLElement {
   const badge = document.createElement('span')
-  badge.className = ['context-badge', view.full && 'full', view.last && 'last'].filter(Boolean).join(' ')
-  const degrees = view.fraction * 360
-  badge.style.background = `conic-gradient(var(--context-fill) 0deg ${degrees}deg, var(--context-track) ${degrees}deg 360deg)`
+  badge.className = ['context-badge', view.full && 'full', view.last && 'last', view.fraction === null && 'unknown'].filter(Boolean).join(' ')
+  if (view.fraction === null) {
+    badge.style.background = 'var(--context-track)'
+  } else {
+    const degrees = view.fraction * 360
+    badge.style.background = `conic-gradient(var(--context-fill) 0deg ${degrees}deg, var(--context-track) ${degrees}deg 360deg)`
+  }
   badge.setAttribute('role', 'img')
   badge.setAttribute('aria-label', `${view.headline}. ${view.detail}`)
   badge.addEventListener('pointerenter', () => showTip(badge, view))
