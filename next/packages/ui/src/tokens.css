@@ -145,6 +145,14 @@
   --diff-add-bg: color-mix(in srgb, var(--ansi-green) 13%, transparent);
   --diff-del-bg: color-mix(in srgb, var(--ansi-red) 13%, transparent);
   --size-underline: 2px;
+
+  /* Context ring around the sidebar mark, the status bar's readout, and the tooltip's shadow */
+  --size-context-ring: 2px;
+  --size-context-gap: 2px;
+  --size-context-bar-w: 64px;
+  --size-context-bar-h: 4px;
+  --context-warn: #e59a6b;
+  --shadow-tip: 0 6px 18px rgb(0 0 0 / 0.45);
   --diff-add-gutter: color-mix(in srgb, var(--ansi-green) 20%, transparent);
   --diff-del-gutter: color-mix(in srgb, var(--ansi-red) 20%, transparent);
   --diff-add-word: color-mix(in srgb, var(--ansi-green) 38%, transparent);

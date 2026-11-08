@@ -76,8 +76,35 @@ describe('createCopilotAdapter', () => {
     expect(await adapter.discover?.({ cwd: home, since: now + 1000 })).toBeUndefined()
   })
 
-  it('watches nothing: status comes from the holder', () => {
-    const watch = bare().watch({ tabId: 't1', sessionId: SESSION, home, clock: () => 42, onEvent: () => {} })
-    expect(() => watch.close()).not.toThrow()
+  it('watches nothing without a session id or an onContext; status still comes from the holder', () => {
+    const seen: unknown[] = []
+    expect(() => bare().watch({ tabId: 't1', sessionId: '', home, clock: () => 42, onEvent: () => {}, onContext: (c) => seen.push(c) }).close()).not.toThrow()
+    expect(() => bare().watch({ tabId: 't1', sessionId: SESSION, home, clock: () => 42, onEvent: () => {} }).close()).not.toThrow()
+    expect(seen).toEqual([])
+  })
+
+  it('reports the session log\'s newest usage record as the tab\'s context reading', () => {
+    const copilotHome = path.join(home, 'copilot')
+    const dir = path.join(copilotHome, 'session-state', SESSION)
+    fs.mkdirSync(dir, { recursive: true })
+    const record = (inputTokens: number, timestamp: string) => JSON.stringify({
+      type: 'session.usage_record',
+      data: { usage: { model: 'gpt-6-luna', inputTokens, cacheReadTokens: 10_464, cacheWriteTokens: 7_639, maxPromptTokens: 272_000 } },
+      id: `evt-${inputTokens}`,
+      timestamp,
+      parentId: null,
+    })
+    fs.writeFileSync(path.join(dir, 'events.jsonl'), [record(12_000, '2026-11-07T20:28:00.000Z'), record(18_106, '2026-11-07T20:30:28.702Z')].join('\n') + '\n')
+    let context: unknown
+    const source = createCopilotAdapter({ copilotHome }).watch({
+      tabId: 't1',
+      sessionId: SESSION,
+      home,
+      clock: () => 42,
+      onEvent: () => {},
+      onContext: (c) => { context = c },
+    })
+    expect(context).toMatchObject({ tokens: 18_106, window: 272_000, model: 'gpt-6-luna' })
+    source.close()
   })
 })

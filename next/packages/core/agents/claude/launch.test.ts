@@ -58,10 +58,16 @@ describe('claudeLaunch', () => {
     const launch = claudeLaunch({ tabId: 'tab-9', cwd: '/work', home })
     expect(launch.spoolFile).toBe(path.join(home, 'agents', 'claude', 'tab-9.jsonl'))
     expect(launch.env).toEqual({})
+    expect(launch.usageFile).toBe(path.join(home, 'agents', 'claude', 'tab-9.usage.json'))
   })
 
-  it('omits the settings when the user settings already carry the hook', () => {
-    expect(claudeLaunch({ tabId: 'tab-1', cwd: '/work', home, perLaunchHooks: false }).args).not.toContain('--settings')
+  it('leaves out the per-launch hooks but keeps the status line when the user settings carry the hook', () => {
+    const launch = claudeLaunch({ tabId: 'tab-1', cwd: '/work', home, perLaunchHooks: false })
+    const at = launch.args.indexOf('--settings')
+    expect(at).toBeGreaterThan(0)
+    const settings = JSON.parse(launch.args[at + 1]) as { hooks?: unknown; statusLine?: { type: string } }
+    expect(settings.hooks).toBeUndefined()
+    expect(settings.statusLine?.type).toBe('command')
   })
 })
 

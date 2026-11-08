@@ -1,6 +1,6 @@
 import fs from 'node:fs'
 import path from 'node:path'
-import type { AgentInfo, AgentStateName, NeedsYouReason, StatusChange, TabInfo } from '../../protocol/messages.ts'
+import type { AgentInfo, AgentStateName, ContextUsage, NeedsYouReason, StatusChange, TabInfo } from '../../protocol/messages.ts'
 import type { TabRecord } from '../store/state.ts'
 import { agentOfProgram } from '../presence.ts'
 import type { AgentAdapter, AgentKind, AgentWatch } from './adapter.ts'
@@ -38,6 +38,8 @@ interface Watch {
   source: AgentWatch | undefined
   // True for an agent found by hand (adopt) rather than launched by the app: it is released when its program ends.
   adopted: boolean
+  // The latest context reading the adapter delivered; undefined until one arrives.
+  context: ContextUsage | undefined
   // The last report seen for this tab, pushed or read from the holder, as reportKey. A holder record equal to it is not applied again.
   lastReport: string | undefined
 }
@@ -51,6 +53,7 @@ const TICK_MS = 1000
 export class StatusService {
   private readonly watches = new Map<string, Watch>()
   private readonly listeners = new Set<(change: StatusChange) => void>()
+  private readonly contextListeners = new Set<(tabId: string, context: ContextUsage) => void>()
   private readonly clock: () => number
   private readonly tickMs: number
   private timer: ReturnType<typeof setInterval> | undefined
@@ -67,6 +70,12 @@ export class StatusService {
   subscribe(listener: (change: StatusChange) => void): () => void {
     this.listeners.add(listener)
     return () => this.listeners.delete(listener)
+  }
+
+  // Called with a tab's context reading each time it changes. Returns a function that stops the listener.
+  subscribeContext(listener: (tabId: string, context: ContextUsage) => void): () => void {
+    this.contextListeners.add(listener)
+    return () => this.contextListeners.delete(listener)
   }
 
   // Rebuilds each saved agent tab from the holder's last report when that agent is still in the foreground.
@@ -226,6 +235,7 @@ export class StatusService {
         since: status.since,
         source: watch.kind,
         resumable: !alive.has(watch.tabId) && watch.resumeId !== undefined,
+        ...(watch.context ? { context: watch.context } : {}),
       }
     })
   }
@@ -254,6 +264,7 @@ export class StatusService {
       clearInterval(this.timer)
       this.timer = undefined
       this.listeners.clear()
+      this.contextListeners.clear()
     }
   }
 
@@ -275,6 +286,7 @@ export class StatusService {
       status: input.status,
       source: undefined,
       adopted: input.adopted ?? false,
+      context: undefined,
       lastReport: input.lastReport,
     }
     this.watches.set(input.tabId, watch)
@@ -294,7 +306,15 @@ export class StatusService {
       home: this.options.home,
       clock: this.clock,
       onEvent: (event) => this.onEvent(watch, event),
+      onContext: (context) => this.onContext(watch, context),
     })
+  }
+
+  // A reading is not activity: it never changes the tab's status.
+  private onContext(watch: Watch, context: ContextUsage): void {
+    if (this.watches.get(watch.tabId) !== watch) return
+    watch.context = context
+    for (const listener of this.contextListeners) listener(watch.tabId, context)
   }
 
   private onEvent(watch: Watch, event: StatusEvent): void {

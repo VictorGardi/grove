@@ -6,7 +6,7 @@ import { afterEach, beforeEach, describe, expect, it } from 'vitest'
 import { fileURLToPath } from 'node:url'
 import { b64ToBytes, bytesToB64 } from '../protocol/framing.ts'
 import { coreSocketPath } from '../protocol/paths.ts'
-import { METHODS, type ConfigSnapshot, type SpaceInfo, type SpaceTabInfo, type StatusChange } from '../protocol/messages.ts'
+import { METHODS, type ConfigSnapshot, type ContextUsage, type SpaceInfo, type SpaceTabInfo, type StatusChange } from '../protocol/messages.ts'
 import { connectRpc, connectWhenReady, type RpcClient } from '../protocol/client.ts'
 import { holderSocketPath } from '../protocol/paths.ts'
 import { ensureHolder } from './holder-client.ts'
@@ -1018,6 +1018,11 @@ describe('agents typed by hand', () => {
       binaries.set(kind, binary)
     }
     const sessions = { copilot: 'copilot-session', opencode: 'opencode-session' }
+    // Each context.changed must carry the reading of exactly the session one tab has: different tokens per kind.
+    const usage: Record<'copilot' | 'opencode', ContextUsage> = {
+      copilot: { tokens: 11_111, window: 272_000, percent: null, model: 'gpt-6-luna', at: 1_000 },
+      opencode: { tokens: 22_222, window: 400_000, percent: null, model: 'gpt-5.2-codex', at: 2_000 },
+    }
     const adapters: Partial<Record<AgentKind, AgentAdapter>> = {}
     for (const kind of ['copilot', 'opencode'] as const) {
       adapters[kind] = {
@@ -1027,7 +1032,10 @@ describe('agents typed by hand', () => {
           throw new Error('not used: agents are typed into shell tabs')
         },
         discover: async () => sessions[kind],
-        watch: () => ({ close: () => {} }),
+        watch: (input) => {
+          input.onContext?.(usage[kind])
+          return { close: () => {} }
+        },
       }
     }
     const core = await startTypedCore(adapters)
@@ -1035,12 +1043,28 @@ describe('agents typed by hand', () => {
     const { id: spaceId } = await core.request(METHODS.spacesAdd, { path: space })
     const changed: StatusChange[] = []
     core.onNotification('status.changed', (change) => changed.push(change))
+    const contexts: Array<{ tabId: string; context: ContextUsage }> = []
+    core.onNotification('context.changed', (change) => contexts.push(change))
 
+    const adopted: Array<{ tabId: string; kind: 'copilot' | 'opencode' }> = []
     for (const kind of ['copilot', 'opencode'] as const) {
       const { id } = await core.request(METHODS.tabsOpen, { spaceId, cols: 80, rows: 24 })
+      adopted.push({ tabId: id, kind })
       await typeLine(core, id, `${binaries.get(kind)}\n`)
       await waitFor(() => agentState(core, id), (agent) => agent?.state === 'working', 15000)
       expect(changed.filter((change) => change.tabId === id).map((change) => change.state)).toEqual(['working'])
+    }
+
+    // The reading is routed per tab: each tab got exactly its own session's numbers, never the other tab's.
+    const seen = await waitFor(
+      async () => contexts,
+      (seen) => seen.length >= 2,
+      15000,
+    )
+    for (const { tabId, kind } of adopted) {
+      const own = seen.filter((change) => change.tabId === tabId)
+      expect(own.length).toBeGreaterThan(0)
+      expect(own.every((change) => change.context.tokens === usage[kind].tokens)).toBe(true)
     }
 
     const state = JSON.parse(fs.readFileSync(path.join(home, 'state.json'), 'utf8')) as {

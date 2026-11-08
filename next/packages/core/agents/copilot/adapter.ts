@@ -1,9 +1,10 @@
 import { randomUUID } from 'node:crypto'
 import os from 'node:os'
 import path from 'node:path'
-import type { AdapterLaunchInput, AgentAdapter, AgentLaunch } from '../../status/adapter.ts'
+import type { AdapterLaunchInput, AdapterWatchInput, AgentAdapter, AgentLaunch, AgentWatch } from '../../status/adapter.ts'
 import { commandOnPath } from '../commandOnPath.ts'
 import { findCopilotSession } from './discover.ts'
+import { createCopilotUsageSource } from './usage.ts'
 
 // Copilot's session ids are UUIDs. Anything else must never reach the command line as a flag.
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i
@@ -25,11 +26,24 @@ export function createCopilotAdapter(options: CopilotAdapterOptions = {}): Agent
   return {
     kind: 'copilot',
     launch,
-    // Status comes from OSC 7501 through the holder; nothing here reports it.
-    watch: () => ({ close: () => {} }),
+    // Status comes from OSC 7501 through the holder; the context reading comes from the session's own usage log.
+    watch,
     // A hand-started session is found from its folder and start time.
     discover: async ({ cwd, since, exclude }) => findCopilotSession({ copilotHome: copilotHome(), cwd, since, exclude }),
     available: () => commandOnPath('copilot', options.shell ?? process.env.SHELL ?? '/bin/zsh'),
+  }
+
+  // Watches one session's usage log for the tab. Without a session id (a hand-started tab before discovery, or an
+  // input without onContext) there is nothing to read yet; the service restarts this watch with the id once it is
+  // known, and the log's newest record is replayed at once.
+  function watch(input: AdapterWatchInput): AgentWatch {
+    const onContext = input.onContext
+    if (input.sessionId === '' || onContext === undefined) return { close: () => {} }
+    const usage = createCopilotUsageSource({
+      file: path.join(copilotHome(), 'session-state', input.sessionId, 'events.jsonl'),
+      onContext,
+    })
+    return { close: () => usage.close() }
   }
 }
 

@@ -12,6 +12,7 @@ import { PANE_DIM_RANGE, readPaneDim, writePaneDim } from './pane-dim.ts'
 import { readSidebarHidden, writeSidebarHidden, type KeyValueStore } from './sidebar-state.ts'
 import { readViewState, writeViewState } from './view-state.ts'
 import { groupAgents, jumpTargets, nextUrgent, shortFolder, sidebarSpaceOrder, spaceAt, tabStateOf, tileIndex, urgentTabs } from './sidebar-model.ts'
+import { contextReadout, hideContextTip, markWithContext } from './context-badge.ts'
 import { createTabPill, type TabPill } from './tab-pill.ts'
 import { createNotesEditor } from './notes-editor.ts'
 import { diffModule, notesModule } from './dock-modules.ts'
@@ -685,6 +686,9 @@ function paintStatusbar(): void {
   const count = element('span', 'statusbar-count')
   count.innerHTML = `<b>${running.length}</b> ${running.length === 1 ? 'agent' : 'agents'}`
   byId('statusbar-agents').replaceChildren(bar, count)
+  const focused = active ? agents.get(active.id) : undefined
+  const readout = contextReadout(focused?.context, focused?.agent)
+  byId('statusbar-context').replaceChildren(...(readout ? [readout] : []))
 }
 
 // Tabs of other spaces stay mounted and only hidden, so their shells keep running and their screens keep filling.
@@ -1040,7 +1044,7 @@ function agentRow(row: AgentRow): HTMLLIElement {
   tail.append(age)
   const agentKind = tab.kind === 'shell' ? undefined : tab.kind
   focus.append(
-    markEl(tab.kind),
+    markWithContext(markEl(tab.kind), agent.context, agent.agent),
     element('span', 'agent-label', tabName(tab)),
     tail,
     indicatorEl(stateOf(tab), agentKind, !tab.exited),
@@ -1068,6 +1072,7 @@ function agentRow(row: AgentRow): HTMLLIElement {
 // Rebuilds the sidebar list: one group per space, in the space order. Within a group, the most urgent row comes first.
 function renderAgents(): void {
   paintUrgent()
+  hideContextTip()
   const rows: AgentRow[] = []
   for (const agent of agents.values()) {
     const tab = tabs.get(agent.tabId)
@@ -1181,12 +1186,22 @@ bridge.on('status.changed', (change) => {
     since: change.since,
     source: change.source,
     resumable: previous?.resumable ?? false,
+    ...(previous?.context ? { context: previous.context } : {}),
   })
   syncKinds()
   renderStates()
   hostBus.emit('agentStateChanged', { tabId: change.tabId, settled: settled(previous?.state, change.state) })
   // resumable depends on the holder's liveness, which the change does not carry; the core's list settles it.
   refreshAgents().catch(report)
+})
+
+// A context reading belongs to one session's row; a tab with no entry yet waits for its status.
+bridge.on('context.changed', ({ tabId, context }) => {
+  const entry = agents.get(tabId)
+  if (!entry) return
+  agents.set(tabId, { ...entry, context })
+  renderAgents()
+  paintStatusbar()
 })
 
 bridge.on('attention.notify', (notice) => {
