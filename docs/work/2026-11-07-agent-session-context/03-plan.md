@@ -2,10 +2,10 @@
 feature: 2026-11-07-agent-session-context
 phase: plan
 status: draft
-version: 7
+version: 8
 created: 2026-11-07
 updated: 2026-11-08
-based_on: [01-outcome.md@3, 02-research.md@5]
+based_on: [01-outcome.md@4, 02-research.md@6]
 forced: []
 ---
 
@@ -26,7 +26,7 @@ forced: []
 
 **Human review:** Confirmed option A.
 
-**Outcome impact.** The feature does not display fabricated counts or capacity values. Claude and Copilot show current readings; OpenCode shows the exact last-request reading and when it was measured, as confirmed in D2.
+**Outcome impact.** The feature does not display fabricated counts or capacity values. Claude shows a current reading against the provider-reported window. Copilot and OpenCode show exact last-request readings against the capacity each exposes; D3 substitutes the Copilot CLI's prompt budget for the model window, and that value is never labeled a context window.
 
 ### D2. Decide whether OpenCode's last-request snapshot is acceptable
 
@@ -43,18 +43,22 @@ forced: []
 
 **Outcome impact.** OpenCode usage is useful without implying it is continuously current. The label and timestamp make the measurement's age and meaning clear.
 
-### D3. Obtain Copilot's structured context events
+### D3. Obtain Copilot's last-request usage from the interactive CLI
 
-**Context.** The official Copilot SDK provides `currentTokens` and `tokenLimit`; Grove currently launches the interactive Copilot CLI and does not use the SDK. The reviewed documentation does not describe attaching the SDK to an existing interactive CLI session.
+**Context.** The official Copilot SDK provides `currentTokens`/`tokenLimit`, but it cannot attach to Grove's already-running interactive `copilot` CLI. The follow-up research (2026-11-08, CLI 1.0.107) found only four routes: an SDK-owned session, the CLI's per-session `events.jsonl` usage records, an undefined custom status-line payload, or PTY scraping. The JSONL gives exact per-request `inputTokens` and a `maxPromptTokens` prompt budget, not current occupancy or the model window, and it is undocumented.
 
 **Options.**
-- A. Use the Copilot SDK to create/resume sessions and subscribe to `session.usage_info`; use `currentTokens`/`tokenLimit` as the metric pair. Persist each exact pair with its event time; after resume show the last saved pair with its time, or no reading until a new event arrives. Pros: documented values use the full model-window denominator and do not mix snapshot semantics. Cons: requires changing how Grove launches or owns Copilot sessions; events are ephemeral and not replayed on resume.
-- B. Read context fields from the Copilot CLI custom status line. Pros: could preserve the current CLI process. Cons: the public input schema does not define the context fields or reliable Grove session attribution.
-- C. Defer Copilot usage until the interactive CLI provides a documented machine-readable route. Pros: avoids changing launch behavior and avoids undocumented fields. Cons: leaves the all-agent outcome incomplete.
+- A. Replace the PTY with an SDK-owned session and subscribe to `session.usage_info` (`currentTokens`/`tokenLimit`). Pros: documented exact current/full-window pair. Cons: rewrites Copilot launch and interaction; the running CLI cannot be attached; events do not replay on resume.
+- B. Tail the exact session's `events.jsonl` and show the latest `session.usage_record`'s `inputTokens`/`maxPromptTokens` with its timestamp, labeled a last request and prompt budget. Pros: keeps the interactive CLI; cheap; exact provider numbers; log is durable across resume. Cons: weaker metric, undocumented format, private file, `maxPromptTokens` is not a context window.
+- C. Probe the documented custom `statusLine` stdin for stable context fields and a session id before choosing. Pros: could preserve the CLI with a supported hook. Cons: public docs specify neither the schema nor session identity; unknown payoff.
+- D. Scrape `/context` or the footer from the PTY. Pros: available in the current UI. Cons: brittle across versions, widths, themes, and user settings.
+- E. Defer Copilot usage until a supported live route exists. Pros: safest. Cons: leaves the all-agent outcome incomplete.
 
-**Pick:** A. Use the documented SDK route; do not depend on the undocumented status-line schema.
+**Pick:** B. Keep the interactive CLI; show the latest completed request's exact input tokens out of the CLI's prompt budget, labeled as a last request with the event time. When the budget is absent, show the tokens alone.
 
-**Outcome impact.** Copilot sessions use current values from the same documented full-window metric pair. After resume, any prior reading is clearly timestamped; without a prior reading, the UI waits for a new event rather than mixing in a different denominator.
+**Human review:** Confirmed option B on 2026-11-08: keeping the interactive CLI wins over the exact current/full-window metric. Do not carry the earlier D3 claim that the SDK can observe the running CLI.
+
+**Outcome impact.** Copilot's denominator is always called a prompt budget, never a context window. A reading is replayed on resume with its timestamp and kept until a newer record arrives. Claude remains the only current-occupancy reading; OpenCode keeps its last-request/model-limit metric.
 
 ## Slices
 
@@ -65,11 +69,15 @@ forced: []
 **Files.** `next/packages/core/agents/claude/launch.ts`, `next/packages/core/agents/claude/source.ts`, `next/packages/core/status/`, `next/packages/protocol/messages.ts`, `next/packages/core/daemon.ts`, `next/packages/ui/main.ts`, `next/packages/ui/sidebar-model.ts`, and focused tests. Reuse the legacy capture/normalization behavior in `src/core/claude/` where applicable, including chaining the user's existing status-line command.
 **Verification.** From `next/`, run `npm test -- packages/core/agents/claude packages/core/status packages/core/daemon.test.ts packages/protocol packages/ui/sidebar-model.test.ts` and `npm run typecheck`; verify two Claude sessions with distinct `total_input_tokens` and `context_window_size` values each display their own reading. Verify null readings before the first API call and after compaction are not shown as zero.
 
-### Slice 2. Show an end-to-end usage measurement for Copilot sessions
+### Slice 2. Show an end-to-end Copilot last-request measurement
 
-**Outcome.** Copilot agent sessions display the SDK's `currentTokens` out of `tokenLimit` in the shared per-session UI, paired with the event time, without changing the existing tab's prompt/response interaction.
-**Files.** `next/package.json`, `next/package-lock.json`, `next/packages/core/agents/copilot/`, shared status/protocol/UI files from slice 1 as needed, and focused tests.
-**Verification.** From `next/`, run `npm test -- packages/core/agents/copilot packages/core/status packages/core/daemon.test.ts packages/protocol packages/ui/sidebar-model.test.ts` and `npm run typecheck`; verify two Copilot sessions with distinct `session.usage_info` pairs keep their values and timestamps isolated. On resume, restore only the last saved exact pair with its timestamp and visibly label it “last measured,” not current; if no pair exists, show no reading until an event arrives. Do not mix `contextInfo.limit` or `promptTokenLimit` with `usage_info.currentTokens`. Verify the same persisted Copilot provider session ID remains associated with its Grove tab on resume and that the tab can still send prompts and display responses; halt and revise if the SDK route cannot preserve that interaction.
+**Outcome.** Copilot agent sessions display the exact input tokens of their latest completed request out of the CLI's prompt budget, labeled “Last request” with the event time, without changing the existing tab's prompt/response interaction. If a record has no budget, the row shows the tokens alone.
+**Thin end-to-end.** The adapter's `watch({ tabId, sessionId })` tails `$COPILOT_HOME/session-state/<sessionId>/events.jsonl` (default `~/.copilot`) and reads only `session.usage_record` events. From the newest record it takes `data.usage.inputTokens` (the cache read/write counts are breakdowns of this value, not additions), `data.usage.maxPromptTokens`, `data.usage.model`, and the event's own timestamp, then passes a `ContextUsage` through `onContext`: `tokens` = input tokens, `window` = prompt budget or null, `model` = usage model, `at` = event time. Never use `session.usage_checkpoint` totals (they accumulate across requests) and never use poll time as the measurement time. On restore, scan the existing file for the newest usage record and show it immediately; then follow appended complete lines.
+**Protocol and UI.** Reuse `ContextUsage`, `AgentInfo.context`, and `context.changed` unchanged; the core and daemon already route per-tab context. Pass the agent kind to `formatContext`; a Copilot row shows “Last request” with `input/prompt-budget` (for example `101k/272k`), and the title says “Last request: 101,079 of 272,000 prompt tokens (37%), gpt-6-luna, 21:10”. Do not call the denominator a context window; with no budget, show `101k` and omit the ratio. No transcript, prompt, or tool content is read or exposed.
+**Files.** Add `next/packages/core/agents/copilot/usage.ts` and `usage.test.ts` for the log source, usage-event parsing, append tailing, replay, and timestamped sample. Change `adapter.ts` to start/close the source from `watch()` using its `sessionId` and `onContext`; leave OSC 7501 status handling and the launch command alone. Change `discover.ts` and `discover.test.ts` so a hand-started tab with more than one eligible session resolves to none instead of guessing. Change `next/packages/ui/main.ts`, `sidebar-model.ts`, and `sidebar-model.test.ts` for the Copilot label and budget wording. `next/packages/protocol/messages.ts`, `next/packages/core/status/service.ts`, and `next/packages/core/daemon.ts` need no behavior or schema changes.
+**Failure/degradation.** Before the first usage record, show no reading. Ignore unknown event types, partial trailing lines, checkpoints, and records with a missing or invalid `inputTokens`. With no `maxPromptTokens`, show tokens only. If reading fails mid-run, keep the last valid sample and its original timestamp; do not refresh `at`. Re-read from the start after truncation or rotation. A tab without an exact, uniquely attributable session gets no reading; an ambiguous hand-started discovery suppresses both adoption and usage rather than crediting another session.
+**Verification.** From `next/`, run `npm test -- packages/core/agents/copilot packages/core/status packages/core/daemon.test.ts packages/protocol packages/ui/sidebar-model.test.ts` and `npm run typecheck`. In `usage.test.ts`, use two temp session logs with distinct `inputTokens`, `maxPromptTokens`, models, and times; assert each reading reaches only its tab, uses the event timestamp, does not add cache counts, ignores checkpoints and unknown events, replays the newest record on start, shows tokens when the budget is missing, and keeps the old time on a read failure. In `discover.test.ts`, assert two eligible sessions in one folder yield no session. In `sidebar-model.test.ts`, assert the Copilot row is labeled “Last request,” shows `input/budget`, never says context window, and renders tokens alone without a budget. Run a real Copilot session and confirm the row matches its newest `session.usage_record` and still sends prompts and displays responses.
+**Risks.** `events.jsonl` is an undocumented internal format that can change across CLI versions; parse defensively and degrade to no reading. The file also stores conversation and tool events, so only usage fields may leave the parser. `maxPromptTokens` varies (observed 128,000 and 272,000) and is a prompt budget, so it cannot be compared with Claude's window or OpenCode's model limit. Suppressing ambiguous discovery also delays status/resume adoption for hand-started tabs; that is accepted rather than attributing the wrong session.
 
 ### Slice 3. Show an end-to-end usage measurement for OpenCode sessions
 
@@ -100,21 +108,22 @@ forced: []
 - Human review: D3 confirmed option A (use the documented Copilot SDK route).
 - Human review: no veto; D2 and D3 retained.
 - Slice 3 revision (2026-11-08): after merging master `b0969be` (OSC 7501, ADR 0053) the planned `opencode/hub.ts` and `opencode/normalise.ts` no longer exist, so slice 3 was rewritten against the live shared OpenCode API. Status returned to draft; two questions now block re-approval, and D3 still needs the Copilot route decision from the follow-up research.
+- D3 revision (2026-11-08): follow-up research on the installed interactive CLI showed the SDK cannot attach to Grove's running Copilot process. The human chose B: keep the CLI and show a timestamped last-request `inputTokens/maxPromptTokens` snapshot labeled as a prompt budget. D3 and Slice 2 were rewritten, the outcome moved to v4, and no SDK dependency is added.
 
 ## Deviations from the brief the human should know
 
-OpenCode's value is a timestamped snapshot from the latest completed model request, not continuously current occupancy; this distinction is part of the confirmed brief.
+OpenCode's value is a timestamped snapshot from the latest completed model request, not continuously current occupancy; this distinction is part of the confirmed brief. Copilot's value is also a timestamped last-request snapshot, and its denominator is the CLI prompt budget rather than the model context window; the human confirmed this after the SDK route was ruled out.
 
 ## Risks and what is deliberately not done
 
-- `next/packages` currently ingests no provider context metrics. Claude has a usable status-line source, Copilot has a documented SDK route that may require changing the launch architecture, and OpenCode supplies only the latest completed request's input usage plus model capacity. These provider semantics are not identical.
-- Copilot SDK context events are ephemeral and not replayed after resume. Reuse a locally saved exact event pair with its timestamp, or show no reading until a new event arrives; do not substitute `contextInfo`'s different denominator.
+- `next/packages` currently ingests no provider context metrics. Claude has a usable status-line source, Copilot's only full-window route is an SDK-owned session that the human declined, and OpenCode supplies the latest completed request's input usage plus model capacity. These provider semantics are not identical.
+- Copilot's reading comes from an undocumented per-session JSONL and is a last-request prompt-budget snapshot, not current occupancy. It is shown with its timestamp and never labeled a context window.
 - OpenCode model metadata may contain fallback limits for unknown models. Do not present fallback capacity as verified provider capacity.
-- The last-request OpenCode snapshot or an estimated value can only be used if the human explicitly changes the outcome; neither may be silently substituted for current occupancy.
-- The plan does not add prompt/transcript views, other context metrics, or controls for managing a session's context.
+- The Copilot prompt budget and OpenCode's last-request snapshot can only be used because the human explicitly revised the outcome; neither may be silently relabeled as current occupancy or a full context window.
+- The plan does not add prompt/transcript views, other context metrics, SDK-owned Copilot sessions, or controls for managing a session's context.
 
 ## Open questions
 
 - `discover()` chooses the earliest unclaimed eligible session when more than one session matches a hand-started OpenCode tab's directory/time. Should an ambiguous match suppress usage until the session can be identified, or is the existing deterministic discovery rule acceptable for a metric that must not be attributed to the wrong tab?
 - Can the OpenCode API distinguish a provider/model-reported context limit from its fallback limit for unknown models? The live catalog exposes `limit.context` with no fallback flag. If it cannot, D1's no-fallback requirement blocks a verified OpenCode reading; the human must choose whether to revise D1 or leave the reading unavailable. Do not silently treat the fallback as provider capacity.
-- D3 (Copilot SDK) remains unresolved: the SDK cannot attach to Grove's running interactive `copilot` CLI. The follow-up research presents SDK-owned sessions, JSONL tailing, a status-line probe, PTY scraping, and deferral; the human must choose the route before slice 2 is re-planned.
+

@@ -1,18 +1,19 @@
 ---
 feature: 2026-11-07-agent-session-context
 phase: research
-status: approved
-version: 5
+status: draft
+version: 6
 created: 2026-11-07
-updated: 2026-11-07
-approved_at: 2026-11-07
+updated: 2026-11-08
 based_on: []
 forced: []
 repo_heads:
-  - ab7b547a4aaf64c3c0b71d1de6265e709d1a8e42
+  - ae458a11f8a620f22f74cd556e3243f8c69846ed
 ---
 
 # Research: Agent session context
+
+> Status architecture note (2026-11-08): master `b0969be` moved agent status to OSC 7501 (ADR 0053) and deleted the Claude hooks/fixtures and the OpenCode `hub.ts`/`normalise.ts` status sources. This revision updates the usage sources; the status-source descriptions below are historical where they conflict with ADR 0053.
 
 ## Current behavior
 
@@ -48,21 +49,32 @@ repo_heads:
 - Grove's current integration launches the interactive CLI and captures lifecycle/tool hooks. It does not use the Copilot SDK. The SDK supports creating/resuming sessions by session ID, but the reviewed sources do not document attaching an SDK client to an already-running interactive CLI process; switching to the SDK route changes Grove's current launch architecture.
 - Sources: [Copilot SDK usage and context window](https://docs.github.com/en/copilot/how-tos/copilot-sdk/features/usage-and-billing#context-window-utilization), [SDK context snapshot](https://docs.github.com/en/copilot/how-tos/copilot-sdk/features/usage-and-billing#on-demand-breakdown-with-sessionmetadatacontextinfo), [SDK context snapshot field definitions](https://github.com/github/copilot-sdk/blob/d1e6021a43b26e87acfcd43b37988eff09dd8aaf/nodejs/src/generated/rpc.ts#L5558-L5607), [Copilot SDK event types](https://github.com/github/copilot-sdk/blob/d1e6021a43b26e87acfcd43b37988eff09dd8aaf/nodejs/src/generated/session-events.ts#L4807-L4875), [Copilot CLI config reference](https://docs.github.com/en/copilot/reference/copilot-cli-reference/cli-config-dir-reference.md).
 
+**Follow-up: interactive CLI usage records (2026-11-08, CLI 1.0.107).**
+
+- The interactive CLI writes `~/.copilot/session-state/<session-UUID>/events.jsonl` and `workspace.yaml`. Usage arrives as `session.usage_record` events (57 in the inspected session) plus periodic `session.usage_checkpoint` aggregates.
+- A usage record wraps `data.usage` with `model`, `inputTokens`, `cacheReadTokens`, `cacheWriteTokens`, and `maxPromptTokens`. The cache counts are breakdowns of `inputTokens`, not extra tokens to add. The event carries its own id/parentId/timestamp, and `sourceSessionId` matches the session directory.
+- `maxPromptTokens` is the CLI's prompt budget, observed as 128,000 or 272,000 and selectable through the context tier. It is below the model's raw window and is not a context-window size. `inputTokens` is the exact prompt input of that completed request, not continuously current occupancy.
+- Records arrived per model call (median gap 14.4 s, min 1.5 s, max 272.7 s in the sample), so tailing the file yields post-call snapshots. Checkpoints aggregate several requests and must not be used as current usage.
+- The file is an undocumented, append-written internal log that also contains conversation and tool events; a reader should parse only usage event types, retain only usage fields, and expose no transcript content. It carries no process/PID mapping.
+- Grove-launched Copilot tabs have an exact session id (`--session-id`/`--resume`), which names the log directory. Hand-started tabs are discovered by cwd and creation time, so two concurrent sessions in one folder can be ambiguous.
+- `copilot --usage-output-file <file>` writes final usage statistics at exit, not a live feed. `/context` and `/usage` remain interactive displays. The custom status-line stdin schema and session identity are still unspecified publicly.
+- Sources: local CLI 1.0.107 (`copilot --help`, `copilot help config`) and the inspected `~/.copilot/session-state/14c6517b-0f7d-4415-85f0-bd96182ebce0/events.jsonl`; former event-log integration context in ADR 0044.
+
 #### OpenCode
 
 - OpenCode's server API provides `GET /api/session/{sessionID}/context`, returning active context messages after compaction. The latest assistant message may carry `tokens.input`, `tokens.cache.read`, and `tokens.cache.write`; their sum is the provider-reported prompt input for that completed model request. It is not a cumulative session total or a continuously current occupancy value. Values are optional and update at step completion.
 - `GET /api/model` exposes model metadata including `limit.context`; match the latest assistant message's `providerID` and model ID. Unknown models may use OpenCode's fallback limits, so a fallback is not proof of the provider's actual capacity.
 - The server's `session.step.ended` event carries request token data and can trigger a refresh. OpenCode's internal compaction estimator estimates active context beyond the last measured assistant step, but the reviewed session-context endpoint does not expose that computed estimate.
 - The assistant message has `time.created`, optional `time.streamed`, optional `time.completed`, and optional `tokens`. The `session.step.ended` event envelope has `created`, but its data has no separate measurement-time field. OpenCode's message projection sets `assistant.time.completed` and `assistant.tokens` from that event's `created` and `data.tokens`; use this OpenCode server-side completion time, not a local poll/receipt time or a provider-supplied timestamp.
-- Grove's OpenCode hub already connects to the registered service, knows the session ID, and listens to `/api/event`; it currently resynchronizes only status, permissions, and forms. A context endpoint and model lookup could provide a precise *last-request snapshot* with a freshness timestamp, but not an exact live count between completed requests.
+- Grove's OpenCode integration now gets status from OSC 7501 (ADR 0053); the former `hub.ts`/`normalise.ts` event subscriber was deleted. `discover.ts` still reads the shared service's registration file (`service.json`), authenticates with its password, and lists `/api/session` to resolve hand-started tabs. The same registration/auth can read `/api/session/{id}/context` and `/api/model`, giving a precise *last-request snapshot* with a freshness timestamp, but not an exact live count between completed requests.
 - Sources: [OpenCode session context route](https://github.com/anomalyco/opencode/blob/c33eaa170ed5093c08f1684862a695aae036dcda/packages/protocol/src/groups/session.ts#L502-L511), [assistant usage and time schema](https://github.com/anomalyco/opencode/blob/c33eaa170ed5093c08f1684862a695aae036dcda/packages/schema/src/session-message.ts#L220-L246), [step-ended event](https://github.com/anomalyco/opencode/blob/c33eaa170ed5093c08f1684862a695aae036dcda/packages/schema/src/session-event.ts#L360-L375), [event envelope timestamp](https://github.com/anomalyco/opencode/blob/c33eaa170ed5093c08f1684862a695aae036dcda/packages/schema/src/event.ts#L65-L74), [token/time projection](https://github.com/anomalyco/opencode/blob/c33eaa170ed5093c08f1684862a695aae036dcda/packages/core/src/session/message-updater.ts#L263-L276), [model limit metadata](https://github.com/anomalyco/opencode/blob/c33eaa170ed5093c08f1684862a695aae036dcda/packages/schema/src/model.ts#L106-L155), [internal context estimator](https://github.com/anomalyco/opencode/blob/c33eaa170ed5093c08f1684862a695aae036dcda/packages/core/src/session/compaction.ts#L1126-L1152).
 
 ## Research conclusion
 
 - **Claude Code:** Both occupancy and context-window capacity are available as structured status-line input. Grove already captures them in `src/core/claude`, but the `next/packages` path does not.
-- **Copilot:** The SDK provides current occupancy and full-window capacity via `session.usage_info`; its separate on-demand snapshot has a different denominator. Grove's current interactive CLI path does not consume the SDK, and its custom status-line input has no public field schema.
+- **Copilot:** The SDK provides current occupancy and full-window capacity via `session.usage_info`, but cannot attach to Grove's already-running interactive CLI. The interactive CLI's own session log provides exact last-request `inputTokens` and a prompt budget (`maxPromptTokens`), not current occupancy or a model window; the custom status-line input has no public field schema.
 - **OpenCode:** The server API provides exact prompt-token counts for the latest completed model request and a model context limit. It does not expose a continuously current occupancy field; values can be stale after the last model request.
-- These values are not interchangeable as a continuous live gauge. Claude and Copilot report current context snapshots, while OpenCode's confirmed API route reports the last completed request's input and capacity metadata.
+- These values are not interchangeable as a continuous live gauge. Claude reports a current context snapshot; Copilot and OpenCode report a last completed request's input against different capacity figures (prompt budget vs. model context limit).
 
 ### Protocol and CLI
 
