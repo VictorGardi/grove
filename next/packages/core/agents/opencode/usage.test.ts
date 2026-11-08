@@ -347,4 +347,50 @@ describe('createOpencodeUsageSource', () => {
     expect(api.count('/api/model')).toBe(2)
     api.close()
   })
+
+  it('serialises polls and delivers nothing after close', async () => {
+    // The context fetch stalls until the test lets it through, so the first drain is genuinely in flight.
+    let active = 0
+    let maxActive = 0
+    const gateBox: { release: ((value?: void) => void) | null } = { release: null }
+    let body: unknown = [MSG_A()]
+    const paths: string[] = []
+    const seen: Array<ContextUsage | null> = []
+    const source = createOpencodeUsageSource({
+      sessionId: SESSION_A,
+      fetchJson: async (path: string) => {
+        paths.push(path)
+        active += 1
+        maxActive = Math.max(maxActive, active)
+        try {
+          if (path === '/api/model') return fullCatalog
+          if (path === `/api/session/${SESSION_A}/context`) {
+            await new Promise<void>((resolve) => { gateBox.release = resolve })
+            return body
+          }
+          throw new Error(`unexpected api path ${path}`)
+        } finally {
+          active -= 1
+        }
+      },
+      onContext: (c) => seen.push(c),
+    })
+    // While the first drain waits on the network, further polls must not overlap it.
+    const first = source.drain()
+    await source.drain()
+    gateBox.release?.()
+    await first
+    expect(seen).toEqual([READING_A])
+    expect(maxActive).toBe(1)
+    expect(paths.filter((p) => p === `/api/session/${SESSION_A}/context`)).toHaveLength(1)
+    // After close(), a drain neither fetches nor delivers.
+    source.close()
+    body = [
+      assistant('msg-after-close', 'anthropic', 'claude-sonnet-4-5', { created: AT_B - 60_000, completed: AT_B, tokens: tok(1, 0, 0) }),
+    ]
+    gateBox.release = null
+    await source.drain()
+    expect(seen).toEqual([READING_A])
+    expect(paths.filter((p) => p === `/api/session/${SESSION_A}/context`)).toHaveLength(1)
+  })
 })

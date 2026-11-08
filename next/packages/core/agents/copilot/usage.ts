@@ -52,43 +52,62 @@ export function usageFromLine(line: string): ContextUsage | null {
 // then it follows appended complete lines each poll, so a torn final line waits for its newline. A truncation or a
 // rewritten file is noticed and read again from the start. While the file is unreadable the last valid sample is kept
 // as delivered — it is never dropped and never re-stamped — and a new record goes out when the file returns.
+// A poll reads only the bytes past the last consumed offset (the log grows into many MB over a session), so the cost
+// stays proportional to the new data rather than the whole file.
 export function createCopilotUsageSource(options: CopilotUsageOptions): CopilotUsageSource {
-  // Chars of the file already split into complete lines and read. A poll only grows it over whole lines, so a torn
+  // Bytes of the file already split into complete lines and consumed. A poll only grows it over whole lines, so a torn
   // trailing line waits for its newline instead of being read half.
-  let done = 0
-  // The tail of the file just before `done`. When it no longer matches, the file was truncated or replaced: re-read
-  // from the start, since slicing at `done` is then mid-line.
-  let guard = ''
+  let offset = 0
+  // The bytes just before the offset (the last 64 consumed, or fewer in a short file). When they no longer match on a
+  // poll, the file was truncated or rewritten in place: read again from the start, since an offset is then mid-line.
+  let guard = Buffer.alloc(0)
   let last = ''
+  let read: Buffer
   const drain = (): void => {
-    let text: string
+    let fd: number
     try {
-      text = fs.readFileSync(options.file, 'utf8')
+      fd = fs.openSync(options.file, 'r')
     } catch {
       return
     }
-    const shorten = done > 0 && text.slice(Math.max(0, done - guard.length), done) !== guard
-    if (text.length < done || shorten) done = 0
-    if (text.length === done) return
-    const rest = text.slice(done)
-    const cut = rest.lastIndexOf('\n')
-    if (cut === -1) return
-    done += cut + 1
-    guard = text.slice(Math.max(0, done - 64), done)
-    // The newest valid record of the fresh lines is the reading: by its event time, and a later line breaks a tie.
-    let newest: ContextUsage | null = null
-    for (const line of rest.slice(0, cut).split('\n')) {
-      const context = usageFromLine(line)
-      if (context !== null && (newest === null || context.at >= newest.at)) newest = context
-    }
-    if (newest === null) return
-    const key = JSON.stringify(newest)
-    if (key === last) return
-    last = key
     try {
-      options.onContext(newest)
-    } catch (error) {
-      console.error(`core: could not report the Copilot context: ${error instanceof Error ? error.message : String(error)}`)
+      const size = fs.fstatSync(fd).size
+      let start = offset
+      // A shorter file is a truncation, and the guard window needs the bytes before the offset.
+      if (size < start) start = 0
+      if (start > 0 && guard.length > 0) {
+        const expected = Buffer.alloc(guard.length)
+        if (fs.readSync(fd, expected, 0, expected.length, start - expected.length) !== expected.length || !expected.equals(guard)) start = 0
+      }
+      read = Buffer.alloc(size - start)
+      if (read.length > 0 && fs.readSync(fd, read, 0, read.length, start) !== read.length) return // short read: next poll
+      if (read.length === 0) return
+      const cut = read.lastIndexOf(10) // the newline byte, which never occurs inside a UTF-8 sequence
+      if (cut === -1) return
+      // The events file was rewritten from the start: the bytes before the old position are vintage, not the guard's.
+      const prior = start === 0 ? Buffer.alloc(0) : guard
+      guard = Buffer.concat([prior, read.subarray(0, cut + 1)])
+      guard = guard.length > 64 ? guard.subarray(guard.length - 64) : guard
+      offset = start + cut + 1
+      // The newest valid record of the fresh lines is the reading: by its event time, and a later line breaks a tie.
+      let newest: ContextUsage | null = null
+      for (const line of read.subarray(0, cut).toString('utf8').split('\n')) {
+        const context = usageFromLine(line)
+        if (context !== null && (newest === null || context.at >= newest.at)) newest = context
+      }
+      if (newest === null) return
+      const key = JSON.stringify(newest)
+      if (key === last) return
+      last = key
+      try {
+        options.onContext(newest)
+      } catch (error) {
+        console.error(`core: could not report the Copilot context: ${error instanceof Error ? error.message : String(error)}`)
+      }
+    } catch {
+      return
+    } finally {
+      fs.closeSync(fd)
     }
   }
   drain()

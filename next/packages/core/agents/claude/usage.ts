@@ -25,8 +25,11 @@ export function contextFromStatusLine(payload: unknown, at: number): ContextUsag
   const usage = typeof cw.current_usage === 'object' && cw.current_usage !== null ? (cw.current_usage as Record<string, unknown>) : null
   const parts = usage === null ? null : [usage.input_tokens, usage.cache_read_input_tokens, usage.cache_creation_input_tokens].map(num)
   const summed = parts !== null && parts.some((part) => part !== null) ? parts.reduce<number>((sum, part) => sum + (part ?? 0), 0) : null
+  // The window's current occupancy is the `current_usage` sum; `total_input_tokens` is cumulative across the session,
+  // so it can exceed the window and disagree with `used_percentage`. It is only a fallback when Claude reports no
+  // `current_usage` breakdown at all.
   const reported = num(cw.total_input_tokens)
-  const measured = usage === null ? null : (reported ?? summed)
+  const measured = usage === null ? null : (summed ?? reported)
   const tokens = measured !== null && measured > 0 ? measured : null
   const window = num(cw.context_window_size)
   return {

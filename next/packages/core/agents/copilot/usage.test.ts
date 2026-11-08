@@ -235,6 +235,27 @@ describe('createCopilotUsageSource', () => {
     ])
   })
 
+  it('reads only the appended bytes of a long log, not the whole file on every poll', () => {
+    const file = path.join(dir, 'tab-j.jsonl')
+    // A long session's log: many lines before the usage record, so re-reading the whole file each poll would be real cost.
+    const pad = Array.from({ length: 40 }, (_, i) => eventLine('session.start', { sessionId: `pad-${i}` }, '2026-11-07T19:00:00.000Z'))
+    write(file, ...pad, record(12_000, 272_000, 'gpt-5-mini', '2026-11-07T20:28:00.000Z'))
+    const readWhole = vi.spyOn(fs, 'readFileSync')
+    const seen: ContextUsage[] = []
+    const source = createCopilotUsageSource({ file, onContext: (c) => seen.push(c) })
+    readWhole.mockClear()
+    // An appended record is picked up without re-reading the file from the start.
+    fs.appendFileSync(file, record(9_900, 272_000, 'gpt-6-luna', '2026-11-07T20:35:00.000Z') + '\n')
+    source.drain()
+    source.close()
+    readWhole.mockRestore()
+    expect(readWhole).not.toHaveBeenCalled()
+    expect(seen).toEqual([
+      { tokens: 12_000, window: 272_000, percent: null, model: 'gpt-5-mini', at: Date.parse('2026-11-07T20:28:00.000Z') },
+      { tokens: 9_900, window: 272_000, percent: null, model: 'gpt-6-luna', at: Date.parse('2026-11-07T20:35:00.000Z') },
+    ])
+  })
+
   it('keeps the last reading while the file is unreadable, and neither re-delivers nor re-stamps it when the file returns', () => {
     vi.useFakeTimers()
     const file = path.join(dir, 'tab-i.jsonl')

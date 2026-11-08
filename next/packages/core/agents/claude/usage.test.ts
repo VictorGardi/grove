@@ -9,7 +9,7 @@ import { createClaudeAdapter } from './adapter.ts'
 import { CLAUDE_STATUSLINE_SCRIPT, claudeLaunch, claudeUsageFile } from './launch.ts'
 import { contextFromStatusLine, createClaudeUsageSource, readUsageFile } from './usage.ts'
 
-const input = (total: number | null, size: number, usage: Record<string, number> | null = { input_tokens: 1 }) => ({
+const input = (total: number | null, size: number, usage: Record<string, number> | null = { input_tokens: total ?? 0 }) => ({
   session_id: 's',
   model: 'claude-x',
   context_window: { total_input_tokens: total, context_window_size: size, used_percentage: 12, current_usage: usage },
@@ -18,6 +18,10 @@ const input = (total: number | null, size: number, usage: Record<string, number>
 describe('contextFromStatusLine', () => {
   it('reads the input-side tokens, the window and the percentage from the input', () => {
     expect(contextFromStatusLine(input(45000, 200000), 7)).toEqual({ tokens: 45000, window: 200000, percent: 12, model: 'claude-x', at: 7 })
+  })
+
+  it('uses the current_usage sum, not the cumulative total', () => {
+    expect(contextFromStatusLine(input(900000, 200000, { input_tokens: 10, cache_read_input_tokens: 20, cache_creation_input_tokens: 5 }), 1)?.tokens).toBe(35)
   })
 
   it('sums the current usage when no total is reported', () => {

@@ -109,13 +109,18 @@ export function usageFromContext(context: unknown, models: unknown): ContextUsag
 // delivers a reading only when it differs from the last one delivered, so an unchanged pair never re-stamps the UI;
 // a null reading is delivered once a real one stands, to clear it when the reading stops being supported. Nothing is
 // fetched at creation: until the first poll answers, nothing shows. A failed poll delivers nothing, leaving the last
-// valid pair — with its original completion time — as the standing reading.
+// valid pair — with its original completion time — as the standing reading. One poll runs at a time: a slow drain is
+// never overtaken by the next one, so readings never arrive out of order, the catalog is never refetched
+// concurrently, and a drain still running at close() delivers nothing.
 export function createOpencodeUsageSource(options: OpencodeUsageOptions): OpencodeUsageSource {
   // The model catalog, cached across polls: each matched model's limit, with 0 marking a model the catalog does not
   // list, so a refused model stays refused and a genuinely new model costs exactly one refetch.
   let catalog: Map<string, number> | undefined
   // The last delivered reading: JSON, undefined while nothing has been delivered.
   let last: string | undefined
+  // One drain at a time, and nothing delivered after close().
+  let busy = false
+  let closed = false
 
   const readCatalog = async (): Promise<Map<string, number>> => {
     const body = listOf(await options.fetchJson('/api/model'))
@@ -134,55 +139,62 @@ export function createOpencodeUsageSource(options: OpencodeUsageOptions): Openco
   }
 
   const drain = async (): Promise<void> => {
-    let body: unknown
+    if (busy || closed) return
+    busy = true
     try {
-      body = await options.fetchJson(`/api/session/${options.sessionId}/context`)
-    } catch (error) {
-      console.error(
-        `core: could not read the OpenCode context for ${options.sessionId}: ${error instanceof Error ? error.message : String(error)}`,
-      )
-      return
-    }
-    const message = newestMessage(body)
-    if (message === null) return
-    const completed = num(obj(message.time)?.completed)
-    const tokens = tokensOf(message)
-    const model = modelOf(message)
-    if (completed === null || completed <= 0 || tokens === null || model === null) {
-      if (last !== undefined && last !== 'null') {
-        last = 'null'
-        options.onContext(null)
-      }
-      return
-    }
-    // The catalog is fetched once, and refetched only when the session runs a model it does not name yet.
-    if (catalog === undefined || !catalog.has(windowKey(model.providerID, model.id))) {
+      let body: unknown
       try {
-        catalog = await readCatalog()
+        body = await options.fetchJson(`/api/session/${options.sessionId}/context`)
       } catch (error) {
         console.error(
-          `core: could not read the OpenCode model catalog for ${options.sessionId}: ${error instanceof Error ? error.message : String(error)}`,
+          `core: could not read the OpenCode context for ${options.sessionId}: ${error instanceof Error ? error.message : String(error)}`,
         )
         return
       }
-      if (!catalog.has(windowKey(model.providerID, model.id))) catalog.set(windowKey(model.providerID, model.id), 0)
-    }
-    const window = catalog.get(windowKey(model.providerID, model.id)) ?? 0
-    const reading: ContextUsage | null = window > 0 ? { tokens, window, percent: null, model: model.id, at: completed } : null
-    const key = JSON.stringify(reading)
-    // A null stands for "refused" here; it is delivered only when it replaces a shown reading.
-    if (reading === null && last === undefined) return
-    if (key === last) return
-    last = key
-    try {
-      options.onContext(reading)
-    } catch (error) {
-      console.error(`core: could not report the OpenCode context: ${error instanceof Error ? error.message : String(error)}`)
+      const message = newestMessage(body)
+      if (message === null) return
+      const completed = num(obj(message.time)?.completed)
+      const tokens = tokensOf(message)
+      const model = modelOf(message)
+      if (completed === null || completed <= 0 || tokens === null || model === null) {
+        if (last !== undefined && last !== 'null' && !closed) {
+          last = 'null'
+          options.onContext(null)
+        }
+        return
+      }
+      // The catalog is fetched once, and refetched only when the session runs a model it does not name yet.
+      if (catalog === undefined || !catalog.has(windowKey(model.providerID, model.id))) {
+        try {
+          catalog = await readCatalog()
+        } catch (error) {
+          console.error(
+            `core: could not read the OpenCode model catalog for ${options.sessionId}: ${error instanceof Error ? error.message : String(error)}`,
+          )
+          return
+        }
+        if (!catalog.has(windowKey(model.providerID, model.id))) catalog.set(windowKey(model.providerID, model.id), 0)
+      }
+      const window = catalog.get(windowKey(model.providerID, model.id)) ?? 0
+      const reading: ContextUsage | null = window > 0 ? { tokens, window, percent: null, model: model.id, at: completed } : null
+      const key = JSON.stringify(reading)
+      // A null stands for "refused" here; it is delivered only when it replaces a shown reading.
+      if (reading === null && last === undefined) return
+      if (key === last) return
+      last = key
+      if (closed) return
+      try {
+        options.onContext(reading)
+      } catch (error) {
+        console.error(`core: could not report the OpenCode context: ${error instanceof Error ? error.message : String(error)}`)
+      }
+    } finally {
+      busy = false
     }
   }
 
   const timer = setInterval(() => {
     void drain().catch(() => {}) // logged inside; the poll continues
   }, options.intervalMs ?? POLL_MS)
-  return { drain, close: () => clearInterval(timer) }
+  return { drain, close: () => { closed = true; clearInterval(timer) } }
 }
