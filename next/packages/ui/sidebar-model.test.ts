@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
-import type { AgentInfo, AgentStateName, ContextUsage } from '../protocol/messages.ts'
-import { formatContext, groupAgents, jumpTargets, nextUrgent, shortFolder, sidebarSpaceOrder, spaceAt, tabStateOf, tileIndex, urgentTabs } from './sidebar-model.ts'
+import type { AgentInfo, AgentStateName } from '../protocol/messages.ts'
+import { groupAgents, jumpTargets, nextUrgent, shortFolder, sidebarSpaceOrder, spaceAt, tabStateOf, tileIndex, urgentTabs } from './sidebar-model.ts'
 
 function agent(state: AgentStateName, since: number): AgentInfo {
   return { tabId: 't', agent: 'claude', state, since, source: 'hook', resumable: false }
@@ -179,68 +179,5 @@ describe('jumpTargets', () => {
 
   it('is empty when nothing is urgent or working', () => {
     expect(jumpTargets([tab('a', 'idle', 1), tab('b', 'unknown', 2)])).toEqual([])
-  })
-})
-
-describe('formatContext', () => {
-  const usage = (tokens: number | null, window: number | null, percent: number | null = null): ContextUsage => ({
-    tokens,
-    window,
-    percent,
-    model: null,
-    at: 0,
-  })
-
-  it('gives no label without a reading', () => {
-    expect(formatContext(undefined)).toBeNull()
-    expect(formatContext(usage(null, 200_000))).toBeNull()
-    expect(formatContext(usage(0, 200_000))).toBeNull()
-  })
-
-  it('spells out the exact numbers in the title', () => {
-    const label = formatContext({ ...usage(45_123, 200_000, 23), model: 'opus' })
-    expect(label?.title).toBe('Context: 45,123 of 200,000 tokens (23%), opus')
-    expect(formatContext(usage(50_000, 200_000))?.title).toBe('Context: 50,000 of 200,000 tokens (25%)')
-    expect(formatContext(usage(50_000, null))?.title).toBe('Context: 50,000 tokens')
-  })
-
-  it('keeps two sessions apart', () => {
-    expect(formatContext(usage(10_000, 200_000))?.title).not.toBe(formatContext(usage(90_000, 200_000))?.title)
-  })
-
-  it('labels a Copilot row a last request against the prompt budget, never a context window', () => {
-    // Epoch ms for a local 21:10, so the time in the title is the same whatever machine runs the test.
-    const at = new Date(2026, 10, 7, 21, 10).getTime()
-    const label = formatContext({ tokens: 101_079, window: 272_000, percent: null, model: 'gpt-6-luna', at }, 'copilot')
-    expect(label?.title).toBe('Last request: 101,079 of 272,000 prompt tokens (37%), gpt-6-luna, 21:10')
-    expect(label?.title?.toLowerCase()).not.toContain('context window')
-  })
-
-  it('shows Copilot tokens alone when the record has no prompt budget', () => {
-    const at = new Date(2026, 10, 7, 21, 10).getTime()
-    const label = formatContext({ tokens: 101_079, window: null, percent: null, model: 'gpt-6-luna', at }, 'copilot')
-    expect(label?.title).toBe('Last request: 101,079 prompt tokens, gpt-6-luna, 21:10')
-  })
-
-  it('labels an OpenCode row a last request against the model limit, with the completion time', () => {
-    const at = new Date(2026, 10, 7, 21, 15).getTime()
-    const label = formatContext({ tokens: 38_793, window: 400_000, percent: null, model: 'gpt-5.2-codex', at }, 'opencode')
-    expect(label?.title).toBe('Last request: 38,793 of 400,000 model-limit tokens (10%), gpt-5.2-codex, 21:15')
-    expect(label?.title).toContain('model-limit')
-    expect(label?.title?.toLowerCase()).not.toContain('context window')
-  })
-
-  it('does not render an OpenCode row without the complete token/window pair', () => {
-    const at = new Date(2026, 10, 7, 21, 15).getTime()
-    expect(formatContext({ tokens: 38_793, window: null, percent: null, model: 'gpt-5.2-codex', at }, 'opencode')).toBeNull()
-    expect(formatContext({ tokens: 38_793, window: 0, percent: null, model: 'gpt-5.2-codex', at }, 'opencode')).toBeNull()
-    expect(formatContext({ tokens: null, window: 400_000, percent: null, model: 'gpt-5.2-codex', at }, 'opencode')).toBeNull()
-    expect(formatContext(undefined, 'opencode')).toBeNull()
-  })
-
-  it('does not turn a Claude reading into a last request', () => {
-    const at = new Date(2026, 10, 7, 21, 10).getTime()
-    expect(formatContext(usage(50_000, 200_000), 'claude')?.title).toBe('Context: 50,000 of 200,000 tokens (25%)')
-    expect(formatContext({ ...usage(50_000, 200_000), at }, 'claude')?.title).not.toContain('21:10')
   })
 })

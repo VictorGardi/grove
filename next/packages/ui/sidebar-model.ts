@@ -110,36 +110,45 @@ export function nextUrgent<T extends UrgentInput>(urgent: T[], activeId: string 
   return urgent.length > 1 ? urgent[(at + 1) % urgent.length] : null
 }
 
-// A last request's time as the sidebar title shows it: local hours and minutes (epoch ms).
+// A last request's time as the tooltip shows it: local hours and minutes (epoch ms).
 function hhmm(at: number): string {
   const time = new Date(at)
   return `${String(time.getHours()).padStart(2, '0')}:${String(time.getMinutes()).padStart(2, '0')}`
 }
 
-// The tooltip text for an agent's context use. A missing or non-positive reading gives none: never a 0. The kind
-// sets the wording: a Copilot reading is a timestamped last request measured against the CLI's prompt budget — never
-// a context window — and shows tokens alone without a budget. An OpenCode reading is a timestamped last request
-// against the model catalog's limit, and is not rendered without the complete pair, since the source withholds what
-// it cannot match. A reading of any other kind is the current occupancy of a context window.
-export function formatContext(context: ContextUsage | undefined, kind: AgentKind = 'claude'): { title: string } | null {
+// Thousands and millions with one decimal at most: 124000 is 124k, 101079 is 101.1k.
+function compact(n: number): string {
+  if (n < 1000) return String(n)
+  if (n < 1_000_000) return `${Number((n / 1000).toFixed(1))}k`
+  return `${Number((n / 1_000_000).toFixed(1))}M`
+}
+
+// What the context circle draws: the pie fills by `fraction`, and the tooltip reads `headline` over `detail`.
+export interface ContextView {
+  // The used share of the window, 0 to 1.
+  fraction: number
+  // The window is used up.
+  full: boolean
+  // A last request, not the current occupancy: the circle is drawn faded.
+  last: boolean
+  headline: string
+  detail: string
+}
+
+// The circle's view of an agent's context reading, or null when there is nothing to draw: no tokens, or no window to
+// fill the pie against. Claude's reading is the current occupancy of its window. A Copilot reading is a timestamped last
+// request against the CLI's prompt budget, never a context window; an OpenCode reading is a timestamped last request
+// against the model catalog's limit. Both say so in the detail.
+export function contextView(context: ContextUsage | undefined, kind: AgentKind = 'claude'): ContextView | null {
   if (!context || context.tokens === null || context.tokens <= 0) return null
   const { tokens, window, percent, model } = context
-  const hasWindow = window !== null && window > 0
-  const pct = percent ?? (hasWindow ? Math.round((tokens / window) * 100) : null)
-  const ratio = pct === null ? '' : ` (${pct}%)`
-  const models = model ? `, ${model}` : ''
-  if (kind === 'copilot') {
-    const used = hasWindow
-      ? `${tokens.toLocaleString('en-US')} of ${window.toLocaleString('en-US')} prompt tokens`
-      : `${tokens.toLocaleString('en-US')} prompt tokens`
-    return { title: `Last request: ${used}${ratio}${models}, ${hhmm(context.at)}` }
-  }
-  if (kind === 'opencode') {
-    // No complete pair, no row: the source withholds a reading it cannot match, so the UI never shows one side only.
-    if (!hasWindow) return null
-    const used = `${tokens.toLocaleString('en-US')} of ${window.toLocaleString('en-US')} model-limit tokens`
-    return { title: `Last request: ${used}${ratio}${models}, ${hhmm(context.at)}` }
-  }
-  const used = hasWindow ? `${tokens.toLocaleString('en-US')} of ${window.toLocaleString('en-US')} tokens` : `${tokens.toLocaleString('en-US')} tokens`
-  return { title: `Context: ${used}${ratio}${models}` }
+  if (window === null || window <= 0) return null
+  const pct = Math.round(percent ?? (tokens / window) * 100)
+  const full = pct >= 100
+  const last = kind !== 'claude'
+  const headline = full ? `${pct}% · full` : last ? `${pct}% · last request ${hhmm(context.at)}` : `${pct}% used`
+  const source = kind === 'copilot' ? ' prompt budget' : kind === 'opencode' ? ' model limit' : ''
+  const counts = `${compact(tokens)} / ${compact(window)}${source}`
+  const detail = model ? `${counts} · ${model}` : counts
+  return { fraction: Math.min(Math.max(pct, 0), 100) / 100, full, last, headline, detail }
 }

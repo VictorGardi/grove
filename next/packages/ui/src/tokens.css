@@ -145,6 +145,14 @@
   --diff-add-bg: color-mix(in srgb, var(--ansi-green) 13%, transparent);
   --diff-del-bg: color-mix(in srgb, var(--ansi-red) 13%, transparent);
   --size-underline: 2px;
+
+  /* Context circle: the pie on an agent's mark, its halo, and the tooltip's shadow */
+  --size-context: 12px;
+  --size-context-pane: 9px;
+  --size-context-halo: 2px;
+  --offset-context: -5px;
+  --offset-context-pane: -4px;
+  --shadow-tip: 0 6px 18px rgb(0 0 0 / 0.45);
   --diff-add-gutter: color-mix(in srgb, var(--ansi-green) 20%, transparent);
   --diff-del-gutter: color-mix(in srgb, var(--ansi-red) 20%, transparent);
   --diff-add-word: color-mix(in srgb, var(--ansi-green) 38%, transparent);

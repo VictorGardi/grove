@@ -12,6 +12,7 @@ import { PANE_DIM_RANGE, readPaneDim, writePaneDim } from './pane-dim.ts'
 import { readSidebarHidden, writeSidebarHidden, type KeyValueStore } from './sidebar-state.ts'
 import { readViewState, writeViewState } from './view-state.ts'
 import { groupAgents, jumpTargets, nextUrgent, shortFolder, sidebarSpaceOrder, spaceAt, tabStateOf, tileIndex, urgentTabs } from './sidebar-model.ts'
+import { hideContextTip, markWithContext } from './context-badge.ts'
 import { createTabPill, type TabPill } from './tab-pill.ts'
 import { createNotesEditor } from './notes-editor.ts'
 import { diffModule, notesModule } from './dock-modules.ts'
@@ -635,8 +636,10 @@ function paintTab(tab: Tab): void {
   const name = tabName(tab)
   const agent = tab.kind === 'shell' ? undefined : tab.kind
   tab.pill.update({ name, title: tabLabel(tab), state, agent, live: !tab.exited, inGrid: tab.inGrid })
+  const entry = agents.get(tab.id)
+  hideContextTip()
   tab.head.replaceChildren(
-    markEl(tab.kind),
+    markWithContext(markEl(tab.kind), entry?.context, entry?.agent),
     element('span', 'pane-kind', name),
     element('span', 'pane-folder', shortFolder(tab.spacePath, homeDir)),
     indicatorEl(state, agent, !tab.exited),
@@ -1040,7 +1043,7 @@ function agentRow(row: AgentRow): HTMLLIElement {
   tail.append(age)
   const agentKind = tab.kind === 'shell' ? undefined : tab.kind
   focus.append(
-    markEl(tab.kind),
+    markWithContext(markEl(tab.kind), agent.context, agent.agent),
     element('span', 'agent-label', tabName(tab)),
     tail,
     indicatorEl(stateOf(tab), agentKind, !tab.exited),
@@ -1068,6 +1071,7 @@ function agentRow(row: AgentRow): HTMLLIElement {
 // Rebuilds the sidebar list: one group per space, in the space order. Within a group, the most urgent row comes first.
 function renderAgents(): void {
   paintUrgent()
+  hideContextTip()
   const rows: AgentRow[] = []
   for (const agent of agents.values()) {
     const tab = tabs.get(agent.tabId)
@@ -1196,6 +1200,8 @@ bridge.on('context.changed', ({ tabId, context }) => {
   if (!entry) return
   agents.set(tabId, { ...entry, context })
   renderAgents()
+  const tab = tabs.get(tabId)
+  if (tab) paintTab(tab)
 })
 
 bridge.on('attention.notify', (notice) => {

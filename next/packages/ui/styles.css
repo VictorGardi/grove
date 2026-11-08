@@ -343,6 +343,78 @@ p {
   color: var(--color-faint);
 }
 
+/* The context circle: a pie on the agent mark. The halo cuts it out of the row or header behind it. */
+.mark-stack {
+  position: relative;
+  display: inline-flex;
+  flex: none;
+}
+
+.context-badge {
+  --context-fill: var(--accent);
+  --context-track: var(--color-line);
+  --context-halo: var(--color-sidebar);
+  position: absolute;
+  right: var(--offset-context);
+  bottom: var(--offset-context);
+  width: var(--size-context);
+  height: var(--size-context);
+  border-radius: 50%;
+  box-shadow: 0 0 0 var(--size-context-halo) var(--context-halo);
+}
+
+.context-badge.full {
+  --context-fill: var(--color-error);
+}
+
+.context-badge.last {
+  opacity: 0.5;
+}
+
+.agent[aria-current='true'] {
+  --context-halo: var(--color-selected);
+}
+
+.pane-head .context-badge {
+  --context-halo: var(--color-ground);
+  right: var(--offset-context-pane);
+  bottom: var(--offset-context-pane);
+  width: var(--size-context-pane);
+  height: var(--size-context-pane);
+}
+
+.context-tip {
+  position: fixed;
+  z-index: 1000;
+  transform: translateY(-50%);
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-xs);
+  padding: var(--space-3) var(--space-4);
+  border: 1px solid var(--color-line);
+  border-radius: var(--radius-sm);
+  background: var(--color-raised);
+  box-shadow: var(--shadow-tip);
+  pointer-events: none;
+  white-space: nowrap;
+}
+
+.context-tip[hidden] {
+  display: none;
+}
+
+.context-tip-head {
+  font-size: var(--text-sm);
+  font-weight: 600;
+  color: var(--color-ink);
+}
+
+.context-tip-detail {
+  font-size: var(--text-meta);
+  color: var(--color-mute);
+  font-variant-numeric: tabular-nums;
+}
+
 .agent-row.gone .agent-label {
   text-decoration: line-through;
 }
