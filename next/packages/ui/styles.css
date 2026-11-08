@@ -343,46 +343,92 @@ p {
   color: var(--color-faint);
 }
 
-/* The context circle: a pie on the agent mark. The halo cuts it out of the row or header behind it. */
+/* The context ring: a thin ring around the agent mark, cut from a conic fill by a mask. */
 .mark-stack {
   position: relative;
   display: inline-flex;
   flex: none;
 }
 
-.context-badge {
+.context-ring,
+.context-readout {
   --context-fill: var(--accent);
   --context-track: var(--color-line);
-  position: absolute;
-  right: var(--offset-context);
-  bottom: var(--offset-context);
-  width: var(--size-context);
-  height: var(--size-context);
-  border-radius: 50%;
-  box-shadow: 0 0 0 var(--size-context-halo) var(--context-halo, var(--color-sidebar));
 }
 
-.context-badge.full {
+.context-ring.warn,
+.context-readout.warn {
+  --context-fill: var(--context-warn);
+}
+
+.context-ring.full,
+.context-readout.full {
   --context-fill: var(--color-error);
 }
 
-.context-badge.last {
-  opacity: 0.5;
+.context-ring {
+  position: absolute;
+  inset: calc(-1 * var(--size-context-gap));
+  border-radius: 50%;
+  mask: radial-gradient(farthest-side, transparent calc(100% - var(--size-context-ring)), black calc(100% - var(--size-context-ring) + 1px));
 }
 
-.agent[aria-current='true'] {
-  --context-halo: var(--color-selected);
+.context-ring.last {
+  opacity: 0.55;
 }
 
-.pane-head {
-  --context-halo: var(--color-ground);
+/* The focused agent's reading, at the right of the status bar. */
+.statusbar-context {
+  margin-left: auto;
+  min-width: 0;
 }
 
-.pane-head .context-badge {
-  right: var(--offset-context-pane);
-  bottom: var(--offset-context-pane);
-  width: var(--size-context-pane);
-  height: var(--size-context-pane);
+.context-readout {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+  font-size: var(--text-sm);
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+
+.context-bar {
+  flex: none;
+  width: var(--size-context-bar-w);
+  height: var(--size-context-bar-h);
+  border-radius: var(--radius-pill);
+  background: var(--context-track);
+  overflow: hidden;
+}
+
+.context-bar i {
+  display: block;
+  height: 100%;
+  background: var(--context-fill);
+}
+
+.context-readout.last .context-bar i {
+  opacity: 0.55;
+}
+
+.context-readout.unknown .context-bar {
+  background: none;
+  border: 1px dashed var(--context-track);
+}
+
+.context-readout-head {
+  font-weight: 500;
+  color: var(--context-fill);
+}
+
+.context-readout:not(.warn):not(.full) .context-readout-head {
+  color: var(--color-ink);
+}
+
+.context-readout-detail {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  color: var(--color-faint);
 }
 
 .context-tip {
