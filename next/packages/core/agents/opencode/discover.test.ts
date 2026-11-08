@@ -24,7 +24,7 @@ function fakeFetch(data: unknown[]) {
 describe('findOpenCodeSession', () => {
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'grove-oc-discover-'))
 
-  it('picks the earliest session in the folder created since the tab was found', async () => {
+  it('returns the single eligible session, with nothing from other folders or older sessions', async () => {
     const { fetch, calls } = fakeFetch([
       { id: 'ses_old', location: { directory: CWD }, time: { created: 100 } },
       { id: 'ses_other', location: { directory: '/elsewhere' }, time: { created: 900 } },
@@ -37,13 +37,16 @@ describe('findOpenCodeSession', () => {
     expect(calls[0].auth).toBe('Basic ' + Buffer.from('opencode:secret').toString('base64'))
   })
 
-  it('takes the earliest session, and skips ones another tab already has, so two tabs in one folder get their own', async () => {
+  it('returns undefined while more than one session in the folder is eligible, so the ambiguity is never guessed', async () => {
     const { fetch } = fakeFetch([
       { id: 'ses_a', location: { directory: CWD }, time: { created: 600 } },
       { id: 'ses_b', location: { directory: CWD }, time: { created: 700 } },
     ])
     const input = { serviceFile: serviceFile(dir), cwd: CWD, since: 500, fetch }
-    expect(await findOpenCodeSession(input)).toBe('ses_a')
+    // A hand-started tab in a folder with another unclaimed session gets nothing, not another session's usage.
+    expect(await findOpenCodeSession(input)).toBeUndefined()
+    // The ambiguity is only about the eligible count: once one is claimed, the other is found, so two tabs in one
+    // folder still each get their own.
     expect(await findOpenCodeSession({ ...input, exclude: new Set(['ses_a']) })).toBe('ses_b')
     expect(await findOpenCodeSession({ ...input, exclude: new Set(['ses_a', 'ses_b']) })).toBeUndefined()
   })

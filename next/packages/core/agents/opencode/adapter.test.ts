@@ -48,9 +48,90 @@ describe('createOpenCodeAdapter', () => {
     expect(() => adapter.launch({ tabId: 't1', cwd: '/w', home: '/h', resumeId: bad })).toThrow(/not an OpenCode session id/)
   })
 
-  it('watches nothing: status comes from the holder', () => {
-    const watch = createOpenCodeAdapter().watch({ tabId: 't1', sessionId: 'ses_a', home: '/h', clock: () => 42, onEvent: () => {} })
+  it('watches nothing when there is no onContext: status comes from the holder', () => {
+    const usageFetch = vi.fn<(path: string) => Promise<unknown>>()
+    const watch = createOpenCodeAdapter({ usageFetch }).watch({
+      tabId: 't1',
+      sessionId: 'ses_a',
+      home: '/h',
+      clock: () => 42,
+      onEvent: () => {},
+    })
     expect(() => watch.close()).not.toThrow()
+    expect(usageFetch).not.toHaveBeenCalled()
+  })
+
+  it('watches nothing while the tab has no session id yet', () => {
+    const usageFetch = vi.fn<(path: string) => Promise<unknown>>()
+    const onContext = vi.fn()
+    const watch = createOpenCodeAdapter({ usageFetch, usageIntervalMs: 5 }).watch({
+      tabId: 't1',
+      sessionId: '',
+      home: '/h',
+      clock: () => 42,
+      onEvent: () => {},
+      onContext,
+    })
+    expect(() => watch.close()).not.toThrow()
+    expect(usageFetch).not.toHaveBeenCalled()
+    expect(onContext).not.toHaveBeenCalled()
+  })
+
+  it('polls the exact session and delivers its last-request reading to the tab', async () => {
+    const onContext = vi.fn()
+    const paths: string[] = []
+    const context = [
+      {
+        id: 'msg_1',
+        type: 'assistant',
+        time: { created: 10, completed: 2_000 },
+        tokens: { input: 10, output: 99, cache: { read: 20, write: 0 } },
+        model: { providerID: 'p', id: 'm1' },
+      },
+    ]
+    const adapter = createOpenCodeAdapter({
+      usageIntervalMs: 5,
+      usageFetch: async (apiPath) => {
+        paths.push(apiPath)
+        if (apiPath === `/api/session/ses_x/context`) return context
+        if (apiPath === '/api/model') return [{ id: 'm1', modelID: 'm1', providerID: 'p', limit: { context: 100_000 } }]
+        throw new Error(`unexpected path ${apiPath}`)
+      },
+    })
+    const watch = adapter.watch({ tabId: 't1', sessionId: 'ses_x', home: '/h', clock: () => 42, onEvent: () => {}, onContext })
+    // Input and cache counts only; `output` is generated, never context; the window is the catalog's model limit.
+    await vi.waitFor(() => expect(onContext).toHaveBeenCalledWith({ tokens: 30, window: 100_000, percent: null, model: 'm1', at: 2_000 }))
+    watch.close()
+    expect(paths).toContain('/api/session/ses_x/context')
+    // Another tab's session never arrives through this fetch.
+    expect(paths).not.toContain('/api/session/ses_other/context')
+  })
+
+  it('clears a refused reading instead of leaving stale numbers', async () => {
+    const onContext = vi.fn()
+    let context: unknown = [
+      {
+        id: 'msg_1',
+        type: 'assistant',
+        time: { created: 10, completed: 2_000 },
+        tokens: { input: 10, cache: { read: 20, write: 0 } },
+        model: { providerID: 'p', id: 'm1' },
+      },
+    ]
+    const adapter = createOpenCodeAdapter({
+      usageIntervalMs: 5,
+      usageFetch: async (apiPath) => {
+        if (!apiPath.startsWith('/api/session/')) return [{ id: 'm1', providerID: 'p', limit: { context: 100_000 } }]
+        return context
+      },
+    })
+    const watch = adapter.watch({ tabId: 't1', sessionId: 'ses_x', home: '/h', clock: () => 42, onEvent: () => {}, onContext })
+    await vi.waitFor(() => expect(onContext).toHaveBeenCalledTimes(1))
+    // A newest message that cannot support a reading (in flight, or a model gone from the catalog) clears the row.
+    context = [{ id: 'msg_2', type: 'assistant', time: { created: 3_000 } }]
+    await vi.waitFor(() => expect(onContext).toHaveBeenCalledTimes(2))
+    expect(onContext).toHaveBeenLastCalledWith({ tokens: null, window: null, percent: null, model: null, at: 42 })
+    watch.close()
   })
 
   it('asks the login shell for opencode once a positive probe is kept', async () => {

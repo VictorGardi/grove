@@ -124,7 +124,9 @@ function hhmm(at: number): string {
 
 // The sidebar label for an agent's context use. A missing or non-positive reading gives no label: never a 0. The kind
 // sets the wording: a Copilot reading is a timestamped last request measured against the CLI's prompt budget — never
-// a context window. A reading without a budget shows the tokens alone and no ratio.
+// a context window — and shows tokens alone without a budget. An OpenCode reading is a timestamped last request
+// against the model catalog's limit, and is not rendered without the complete pair, since the source withholds what
+// it cannot match. A reading of any other kind is the current occupancy of a context window.
 export function formatContext(context: ContextUsage | undefined, kind: AgentKind = 'claude'): { text: string; title: string } | null {
   if (!context || context.tokens === null || context.tokens <= 0) return null
   const { tokens, window, percent, model } = context
@@ -137,6 +139,12 @@ export function formatContext(context: ContextUsage | undefined, kind: AgentKind
     const used = hasWindow
       ? `${tokens.toLocaleString('en-US')} of ${window.toLocaleString('en-US')} prompt tokens`
       : `${tokens.toLocaleString('en-US')} prompt tokens`
+    return { text, title: `Last request: ${used}${ratio}${models}, ${hhmm(context.at)}` }
+  }
+  if (kind === 'opencode') {
+    // No complete pair, no row: the source withholds a reading it cannot match, so the UI never shows one side only.
+    if (!hasWindow) return null
+    const used = `${tokens.toLocaleString('en-US')} of ${window.toLocaleString('en-US')} model-limit tokens`
     return { text, title: `Last request: ${used}${ratio}${models}, ${hhmm(context.at)}` }
   }
   const used = hasWindow ? `${tokens.toLocaleString('en-US')} of ${window.toLocaleString('en-US')} tokens` : `${tokens.toLocaleString('en-US')} tokens`

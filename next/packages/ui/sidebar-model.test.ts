@@ -231,6 +231,23 @@ describe('formatContext', () => {
     expect(label?.title).toBe('Last request: 101,079 prompt tokens, gpt-6-luna, 21:10')
   })
 
+  it('labels an OpenCode row a last request against the model limit, with the completion time', () => {
+    const at = new Date(2026, 10, 7, 21, 15).getTime()
+    const label = formatContext({ tokens: 38_793, window: 400_000, percent: null, model: 'gpt-5.2-codex', at }, 'opencode')
+    expect(label?.text).toBe('38.8k/400k')
+    expect(label?.title).toBe('Last request: 38,793 of 400,000 model-limit tokens (10%), gpt-5.2-codex, 21:15')
+    expect(label?.title).toContain('model-limit')
+    expect(label?.title?.toLowerCase()).not.toContain('context window')
+  })
+
+  it('does not render an OpenCode row without the complete token/window pair', () => {
+    const at = new Date(2026, 10, 7, 21, 15).getTime()
+    expect(formatContext({ tokens: 38_793, window: null, percent: null, model: 'gpt-5.2-codex', at }, 'opencode')).toBeNull()
+    expect(formatContext({ tokens: 38_793, window: 0, percent: null, model: 'gpt-5.2-codex', at }, 'opencode')).toBeNull()
+    expect(formatContext({ tokens: null, window: 400_000, percent: null, model: 'gpt-5.2-codex', at }, 'opencode')).toBeNull()
+    expect(formatContext(undefined, 'opencode')).toBeNull()
+  })
+
   it('does not turn a Claude reading into a last request', () => {
     const at = new Date(2026, 10, 7, 21, 10).getTime()
     expect(formatContext(usage(50_000, 200_000), 'claude')?.title).toBe('Context: 50,000 of 200,000 tokens (25%)')
