@@ -1,11 +1,10 @@
 ---
 feature: 2026-11-07-agent-session-context
 phase: plan
-status: approved
-version: 6
+status: draft
+version: 7
 created: 2026-11-07
-updated: 2026-11-07
-approved_at: 2026-11-07
+updated: 2026-11-08
 based_on: [01-outcome.md@3, 02-research.md@5]
 forced: []
 ---
@@ -75,8 +74,12 @@ forced: []
 ### Slice 3. Show an end-to-end usage measurement for OpenCode sessions
 
 **Outcome.** OpenCode agent sessions display the exact input tokens from their latest completed model request out of the model's known context limit, visibly labeled “last request” with the measurement time.
-**Files.** `next/packages/core/agents/opencode/hub.ts`, `next/packages/core/agents/opencode/normalise.ts`, shared status/protocol/UI files from slice 1 as needed, and focused tests.
-**Verification.** From `next/`, run `npm test -- packages/core/agents/opencode packages/core/status packages/core/daemon.test.ts packages/ui/sidebar-model.test.ts` and `npm run typecheck`; verify two sessions retain distinct latest-request values and timestamps paired with their own session, the UI labels the reading “last request,” the timestamp is the matching assistant message's OpenCode server-side `time.completed` (not poll/receipt time or a provider-supplied time), model limits match the session's actual assistant model, and unknown/fallback limits are not presented as verified capacity.
+**Thin end-to-end.** The OpenCode adapter's `watch({ tabId, sessionId })` reads that exact session from the authenticated shared OpenCode service: `GET /api/session/{sessionId}/context` supplies completed assistant messages and `GET /api/model` supplies the model context limit. Select the most recent completed assistant message, sum its reported `tokens.input`, `tokens.cache.read`, and `tokens.cache.write`, match its `model.providerID`/`model.id` to `/api/model`'s `providerID`/`modelID`, and pass a `ContextUsage` through the existing `onContext` path. Set `ContextUsage.at` from that message's OpenCode `time.completed`, never the local poll time. The launched/resumed session ID comes from `opencode -s <id>` and the saved tab record; hand-started tabs use the existing `discover()` result. Do not select by “latest session in this folder” once the tab has an ID.
+**Protocol and UI.** Reuse `ContextUsage`, `AgentInfo.context`, and `context.changed` unchanged; `StatusService` and the daemon already route per-tab context. Pass the agent kind to `formatContext`; OpenCode rows show “Last request” with the compact token/window pair, and the title includes exact counts, model, and the completion time. No transcript or prompt content is read or displayed.
+**Files.** Add `next/packages/core/agents/opencode/usage.ts` and `usage.test.ts` for the authenticated API source, response validation, per-session refresh, and timestamped sample. Change `adapter.ts` to start/close that source from `watch()` using its supplied `sessionId` and `onContext`; leave OSC 7501 status handling alone. Change `discover.ts` and `discover.test.ts` to factor the existing service registration/auth parsing for reuse without changing discovery behavior. Change `next/packages/ui/main.ts`, `sidebar-model.ts`, and `sidebar-model.test.ts` for the OpenCode label and timestamp. Add a focused notification assertion in `next/packages/core/daemon.test.ts` if needed to lock the existing `context.changed` route. `next/packages/protocol/messages.ts`, `next/packages/core/status/service.ts`, and `next/packages/core/daemon.ts` need no behavior or schema changes.
+**Failure/degradation.** Poll the exact session context once per second and refresh model metadata only for a newly seen model. Before any completed request, show no reading. If token components or an exact matching known context limit are missing, invalid, or marked as a fallback, withhold/clear the reading rather than show a partial or guessed ratio. During an API outage retain only the last valid pair with its original completion time (so it remains visibly a “Last request” snapshot); at startup show nothing until the source can re-read the session. A tab with no uniquely attributable session ID gets no usage.
+**Verification.** From `next/`, run `npm test -- packages/core/agents/opencode/adapter.test.ts packages/core/agents/opencode/discover.test.ts packages/core/agents/opencode/usage.test.ts packages/core/status/service.test.ts packages/core/daemon.test.ts packages/ui/sidebar-model.test.ts` and `npm run typecheck`. In `usage.test.ts`, use mocked API responses for two concurrent session IDs with distinct tokens/models/completion times; assert each reading reaches only its matching tab, uses `time.completed`, sums only the reported input/cache counts, and refuses missing or fallback limits and incomplete messages. Assert an API failure does not refresh the saved measurement time. In `sidebar-model.test.ts`, assert the OpenCode row is labeled “Last request,” includes its timestamp and does not render without a complete pair. Run a real two-session smoke test when OpenCode is available and confirm the numbers/time follow each tab's session rather than the newest session in its working directory.
+**Risks.** The installed OpenCode 2.2.6 shared API and on-disk session store were checked. A live read against the running service on 2026-11-08 showed completed assistant entries carry `time.completed` and `tokens.{input,cache.read,cache.write}`, while the in-flight message carries neither; `/api/session/{id}/context` also returns session-level `compaction` and `idle` entries that must be skipped. `/api/model` listed 11 models, all with a numeric `limit.context`, and exposes no explicit “fallback” flag, so a fallback limit cannot be distinguished from provider capacity by field. The SQLite store is not used directly. Session identity for launched/resumed tabs is exact, but hand-started discovery is based on directory, time, and already-claimed IDs.
 
 ## Reviewer round log
 
@@ -96,6 +99,7 @@ forced: []
 - CTO check (0 blocking). Confirmed the revised Copilot after-resume label, timestamped OpenCode snapshot, per-session isolation, and server-side completion timestamp match the brief.
 - Human review: D3 confirmed option A (use the documented Copilot SDK route).
 - Human review: no veto; D2 and D3 retained.
+- Slice 3 revision (2026-11-08): after merging master `b0969be` (OSC 7501, ADR 0053) the planned `opencode/hub.ts` and `opencode/normalise.ts` no longer exist, so slice 3 was rewritten against the live shared OpenCode API. Status returned to draft; two questions now block re-approval, and D3 still needs the Copilot route decision from the follow-up research.
 
 ## Deviations from the brief the human should know
 
@@ -110,3 +114,7 @@ OpenCode's value is a timestamped snapshot from the latest completed model reque
 - The plan does not add prompt/transcript views, other context metrics, or controls for managing a session's context.
 
 ## Open questions
+
+- `discover()` chooses the earliest unclaimed eligible session when more than one session matches a hand-started OpenCode tab's directory/time. Should an ambiguous match suppress usage until the session can be identified, or is the existing deterministic discovery rule acceptable for a metric that must not be attributed to the wrong tab?
+- Can the OpenCode API distinguish a provider/model-reported context limit from its fallback limit for unknown models? The live catalog exposes `limit.context` with no fallback flag. If it cannot, D1's no-fallback requirement blocks a verified OpenCode reading; the human must choose whether to revise D1 or leave the reading unavailable. Do not silently treat the fallback as provider capacity.
+- D3 (Copilot SDK) remains unresolved: the SDK cannot attach to Grove's running interactive `copilot` CLI. The follow-up research presents SDK-owned sessions, JSONL tailing, a status-line probe, PTY scraping, and deferral; the human must choose the route before slice 2 is re-planned.
