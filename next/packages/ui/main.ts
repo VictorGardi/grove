@@ -11,7 +11,7 @@ import { previousOf, stepFrom, visited } from './recent-tabs.ts'
 import { PANE_DIM_RANGE, readPaneDim, writePaneDim } from './pane-dim.ts'
 import { readSidebarHidden, writeSidebarHidden, type KeyValueStore } from './sidebar-state.ts'
 import { readViewState, writeViewState } from './view-state.ts'
-import { formatContext, groupAgents, jumpTargets, nextUrgent, shortFolder, sidebarSpaceOrder, spaceAt, tabStateOf, tileIndex, urgentTabs } from './sidebar-model.ts'
+import { groupAgents, jumpTargets, nextUrgent, shortFolder, sidebarSpaceOrder, spaceAt, tabStateOf, tileIndex, urgentTabs } from './sidebar-model.ts'
 import { createTabPill, type TabPill } from './tab-pill.ts'
 import { createNotesEditor } from './notes-editor.ts'
 import { diffModule, notesModule } from './dock-modules.ts'
@@ -1036,12 +1036,6 @@ function agentRow(row: AgentRow): HTMLLIElement {
     grid.title = 'In the grid'
     grid.innerHTML = iconSvg('grid')
     tail.append(grid)
-  }
-  const context = formatContext(agent.context, agent.agent)
-  if (context) {
-    const used = element('span', 'agent-context', context.text)
-    used.title = context.title
-    tail.append(used)
   }
   tail.append(age)
   const agentKind = tab.kind === 'shell' ? undefined : tab.kind

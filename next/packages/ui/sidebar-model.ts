@@ -110,28 +110,21 @@ export function nextUrgent<T extends UrgentInput>(urgent: T[], activeId: string 
   return urgent.length > 1 ? urgent[(at + 1) % urgent.length] : null
 }
 
-function compact(n: number): string {
-  if (n < 1000) return String(n)
-  if (n < 1_000_000) return `${Number((n / 1000).toFixed(1))}k`
-  return `${Number((n / 1_000_000).toFixed(1))}M`
-}
-
 // A last request's time as the sidebar title shows it: local hours and minutes (epoch ms).
 function hhmm(at: number): string {
   const time = new Date(at)
   return `${String(time.getHours()).padStart(2, '0')}:${String(time.getMinutes()).padStart(2, '0')}`
 }
 
-// The sidebar label for an agent's context use. A missing or non-positive reading gives no label: never a 0. The kind
+// The tooltip text for an agent's context use. A missing or non-positive reading gives none: never a 0. The kind
 // sets the wording: a Copilot reading is a timestamped last request measured against the CLI's prompt budget — never
 // a context window — and shows tokens alone without a budget. An OpenCode reading is a timestamped last request
 // against the model catalog's limit, and is not rendered without the complete pair, since the source withholds what
 // it cannot match. A reading of any other kind is the current occupancy of a context window.
-export function formatContext(context: ContextUsage | undefined, kind: AgentKind = 'claude'): { text: string; title: string } | null {
+export function formatContext(context: ContextUsage | undefined, kind: AgentKind = 'claude'): { title: string } | null {
   if (!context || context.tokens === null || context.tokens <= 0) return null
   const { tokens, window, percent, model } = context
   const hasWindow = window !== null && window > 0
-  const text = hasWindow ? `${compact(tokens)}/${compact(window)}` : compact(tokens)
   const pct = percent ?? (hasWindow ? Math.round((tokens / window) * 100) : null)
   const ratio = pct === null ? '' : ` (${pct}%)`
   const models = model ? `, ${model}` : ''
@@ -139,14 +132,14 @@ export function formatContext(context: ContextUsage | undefined, kind: AgentKind
     const used = hasWindow
       ? `${tokens.toLocaleString('en-US')} of ${window.toLocaleString('en-US')} prompt tokens`
       : `${tokens.toLocaleString('en-US')} prompt tokens`
-    return { text, title: `Last request: ${used}${ratio}${models}, ${hhmm(context.at)}` }
+    return { title: `Last request: ${used}${ratio}${models}, ${hhmm(context.at)}` }
   }
   if (kind === 'opencode') {
     // No complete pair, no row: the source withholds a reading it cannot match, so the UI never shows one side only.
     if (!hasWindow) return null
     const used = `${tokens.toLocaleString('en-US')} of ${window.toLocaleString('en-US')} model-limit tokens`
-    return { text, title: `Last request: ${used}${ratio}${models}, ${hhmm(context.at)}` }
+    return { title: `Last request: ${used}${ratio}${models}, ${hhmm(context.at)}` }
   }
   const used = hasWindow ? `${tokens.toLocaleString('en-US')} of ${window.toLocaleString('en-US')} tokens` : `${tokens.toLocaleString('en-US')} tokens`
-  return { text, title: `Context: ${used}${ratio}${models}` }
+  return { title: `Context: ${used}${ratio}${models}` }
 }

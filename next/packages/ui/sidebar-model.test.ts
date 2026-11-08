@@ -197,13 +197,6 @@ describe('formatContext', () => {
     expect(formatContext(usage(0, 200_000))).toBeNull()
   })
 
-  it('formats with and without a window', () => {
-    expect(formatContext(usage(45_123, 200_000, 23))?.text).toBe('45.1k/200k')
-    expect(formatContext(usage(45_000, null))?.text).toBe('45k')
-    expect(formatContext(usage(950, 1_000_000))?.text).toBe('950/1M')
-    expect(formatContext(usage(1_500_000, null))?.text).toBe('1.5M')
-  })
-
   it('spells out the exact numbers in the title', () => {
     const label = formatContext({ ...usage(45_123, 200_000, 23), model: 'opus' })
     expect(label?.title).toBe('Context: 45,123 of 200,000 tokens (23%), opus')
@@ -212,14 +205,13 @@ describe('formatContext', () => {
   })
 
   it('keeps two sessions apart', () => {
-    expect(formatContext(usage(10_000, 200_000))?.text).not.toBe(formatContext(usage(90_000, 200_000))?.text)
+    expect(formatContext(usage(10_000, 200_000))?.title).not.toBe(formatContext(usage(90_000, 200_000))?.title)
   })
 
   it('labels a Copilot row a last request against the prompt budget, never a context window', () => {
     // Epoch ms for a local 21:10, so the time in the title is the same whatever machine runs the test.
     const at = new Date(2026, 10, 7, 21, 10).getTime()
     const label = formatContext({ tokens: 101_079, window: 272_000, percent: null, model: 'gpt-6-luna', at }, 'copilot')
-    expect(label?.text).toBe('101.1k/272k')
     expect(label?.title).toBe('Last request: 101,079 of 272,000 prompt tokens (37%), gpt-6-luna, 21:10')
     expect(label?.title?.toLowerCase()).not.toContain('context window')
   })
@@ -227,14 +219,12 @@ describe('formatContext', () => {
   it('shows Copilot tokens alone when the record has no prompt budget', () => {
     const at = new Date(2026, 10, 7, 21, 10).getTime()
     const label = formatContext({ tokens: 101_079, window: null, percent: null, model: 'gpt-6-luna', at }, 'copilot')
-    expect(label?.text).toBe('101.1k')
     expect(label?.title).toBe('Last request: 101,079 prompt tokens, gpt-6-luna, 21:10')
   })
 
   it('labels an OpenCode row a last request against the model limit, with the completion time', () => {
     const at = new Date(2026, 10, 7, 21, 15).getTime()
     const label = formatContext({ tokens: 38_793, window: 400_000, percent: null, model: 'gpt-5.2-codex', at }, 'opencode')
-    expect(label?.text).toBe('38.8k/400k')
     expect(label?.title).toBe('Last request: 38,793 of 400,000 model-limit tokens (10%), gpt-5.2-codex, 21:15')
     expect(label?.title).toContain('model-limit')
     expect(label?.title?.toLowerCase()).not.toContain('context window')
