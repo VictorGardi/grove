@@ -3148,6 +3148,11 @@ li[aria-selected] > .slash-tile {
   font-size: var(--text-md);
 }
 
+/* The search box shows the focus ring, so the input inside it must not draw its own. */
+.goto-input:focus-visible {
+  outline: none;
+}
+
 .goto-input::placeholder {
   color: var(--color-faint);
 }
