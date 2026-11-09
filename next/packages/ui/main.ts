@@ -14,7 +14,9 @@ import {
 import { THEMES, applyThemeChoice, isThemeId, readTheme, writeTheme } from './theme-pref.ts'
 import { applyLayout, applySettings, applyTheme, findAction, formatBinding, launcherLine } from './config.ts'
 import { openTerminal, terminalFontSize, tokenValue, type TerminalView } from './terminal.ts'
-import { canJoinGrid, gridMembers, gridShape, neighborPane, paneSpans, type PaneDirection } from './grid/layout.ts'
+import { createArranger, clearPlacement, PANE_MIN } from './grid/arrange.ts'
+import { canJoinGrid, gridMembers, type PaneDirection } from './grid/layout.ts'
+import { addPane, autoTree, neighborByGeometry, nudge, removePane, repair, swapPanes, type Tree } from './grid/tree.ts'
 import { previousOf, stepFrom, visited } from './recent-tabs.ts'
 import { PANE_DIM_RANGE, readPaneDim, writePaneDim } from './pane-dim.ts'
 import { readSidebarHidden, writeSidebarHidden, type KeyValueStore } from './sidebar-state.ts'
@@ -117,6 +119,10 @@ let noteShown = ''
 const isMac = navigator.platform.startsWith('Mac')
 // Grid mode shows the tabs the human put in it, across spaces.
 let gridOn = false
+// The grid's custom layout, or null while it arranges itself; it becomes the human's once they drag or resize a pane.
+let gridLayout: Tree | null = null
+// The last grid pane that had the focus: the one a joining tab splits.
+let lastGridFocus: string | null = null
 let viewStateReady = false
 // The last attention.focus sent, as a key; an identical one is skipped until a reconnect clears it.
 let sentFocus: string | null = null
@@ -139,6 +145,7 @@ const statusLine = byId('status')
 const spaceList = byId('spaces')
 const gridToggle = byId('grid-toggle') as HTMLButtonElement
 const paneDim = byId('pane-dim') as HTMLInputElement
+const gridReset = byId('grid-reset') as HTMLButtonElement
 const agentList = byId('agents')
 const agentsEmpty = byId('agents-empty')
 const installCliButton = byId('install-cli') as HTMLButtonElement
@@ -332,6 +339,10 @@ const keyActions: Record<KeyAction, () => void> = {
     if (previous) activate(previous)
   },
   'grid-tab': () => toggleGridTab(),
+  'grid-reset-layout': () => {
+    gridLayout = null
+    paint()
+  },
   'next-urgent': () => jumpToUrgent(),
   palette: () => goTo.open(),
   'sidebar-toggle': () => sidebarToggle.click(),
@@ -411,6 +422,7 @@ function createTab(spaceId: string, spacePath: string, kind: TabKind, label: str
   pane.className = 'pane'
   const head = document.createElement('header')
   head.className = 'pane-head'
+  gridArranger.grab(head, () => tab.id)
   const host = document.createElement('div')
   host.className = 'term-host'
   pane.append(head, host)
@@ -667,25 +679,43 @@ function gridTabs(): Tab[] {
   return gridMembers(order)
 }
 
+// The tree the grid shows: the human's layout fitted to the panes, else the automatic one.
+function gridTree(members: Tab[]): Tree | null {
+  const ids = members.map((tab) => tab.id)
+  if (gridLayout) gridLayout = repair(gridLayout, ids)
+  return gridLayout ?? autoTree(ids)
+}
+
+function terminalsSize(): { w: number; h: number } {
+  const box = terminals.getBoundingClientRect()
+  return { w: box.width, h: box.height }
+}
+
+// The human changed the grid's layout: it is theirs from now on, so it is shown, kept, and the terminals refit to their new sizes.
+function arrangeGrid(tree: Tree): void {
+  gridLayout = tree
+  paintGrid(gridTabs())
+  saveViewState()
+  requestAnimationFrame(fitShown)
+}
+
+const gridArranger = createArranger({
+  container: terminals,
+  tree: () => gridTree(gridTabs()),
+  pane: (id) => tabs.get(id)?.pane,
+  change: arrangeGrid,
+})
+
 // Lays the panes out in grid mode, or clears the grid's classes and placement when it is off.
 function paintGrid(members: Tab[]): void {
   terminals.classList.toggle('grid-panes', gridOn)
-  if (gridOn) {
-    const shape = gridShape(members.length)
-    terminals.style.setProperty('--grid-cols', String(shape.cols))
-    terminals.style.setProperty('--grid-rows', String(shape.rows))
-  } else {
-    terminals.style.removeProperty('--grid-cols')
-    terminals.style.removeProperty('--grid-rows')
-  }
-  const spans = paneSpans(members.length)
+  gridArranger.paint(gridOn ? gridTree(members) : null)
+  // Reset only has something to do once the human has made the layout their own.
+  gridReset.hidden = !gridOn || gridLayout === null
   for (const tab of order) {
-    const index = members.indexOf(tab)
-    const span = gridOn && index >= 0 ? spans[index] : undefined
-    // The grid placement of a pane is the one style the window writes per element.
-    tab.pane.style.gridColumn = span ? `span ${span.cols}` : ''
-    tab.pane.style.gridRow = span ? `span ${span.rows}` : ''
-    tab.host.classList.toggle('pane-dim', span !== undefined && tab !== active)
+    const inGrid = gridOn && members.includes(tab)
+    if (!inGrid) clearPlacement(tab.pane)
+    tab.host.classList.toggle('pane-dim', inGrid && tab !== active)
   }
 }
 
@@ -755,6 +785,13 @@ function paintStatusbar(): void {
   byId('statusbar-context').replaceChildren(...(readout ? [readout] : []))
 }
 
+// Keeps what the window shows (the grid, its layout, the space and tab in focus) for the next start.
+function saveViewState(): void {
+  if (viewStateReady && !demoMode) {
+    writeViewState(storage(), { gridOn, gridTabs: gridTabs().map((tab) => tab.id), gridLayout, activeSpace, activeTab: active?.id ?? null })
+  }
+}
+
 // Tabs of other spaces stay mounted and only hidden, so their shells keep running and their screens keep filling.
 function paint(): void {
   // The grid gives way when it holds no tabs, or the focused tab is not one of its panes: a tab the grid does not show cannot be focused there.
@@ -785,11 +822,10 @@ function paint(): void {
   const idle = activeSpace === null || refused !== null
   gridToggle.setAttribute('aria-pressed', String(gridOn))
   paneDim.hidden = !gridOn
+  if (gridOn && active?.inGrid) lastGridFocus = active.id
   gridToggle.disabled = !gridOn && (idle || shown.length === 0)
   for (const button of launcherBar.querySelectorAll('button')) button.disabled = idle
-  if (viewStateReady && !demoMode) {
-    writeViewState(storage(), { gridOn, gridTabs: gridTabs().map((tab) => tab.id), activeSpace, activeTab: active?.id ?? null })
-  }
+  saveViewState()
   reportFocus()
 }
 
@@ -801,6 +837,7 @@ function shortcut(action: KeyAction): string {
 function paintShortcuts(): void {
   paintUrgent()
   rail.paintShortcuts(shortcut)
+  gridReset.title = `Put the grid back to its automatic layout (${shortcut('grid-reset-layout')}).`
   gridToggle.title = `Show the tabs put in the grid, from any space, (${shortcut('grid-toggle')}). ${shortcut('grid-tab')} puts the focused tab in it.`
   const hidden = appEl.classList.contains('sidebar-hidden')
   sidebarToggle.title = `${hidden ? 'Show' : 'Hide'} the sidebar (${shortcut('sidebar-toggle')})`
@@ -965,9 +1002,12 @@ function focusSpace(place: number): void {
 function toggleGridTab(): void {
   if (!active) return
   if (active.inGrid) {
+    if (gridLayout) gridLayout = removePane(gridLayout, active.id)
     active.inGrid = false
     gridOn = false
   } else if (canJoinGrid(gridTabs().length)) {
+    // With a layout of the human's own, the new pane splits the one they last had focus in.
+    if (gridLayout) gridLayout = addPane(gridLayout, lastGridFocus ?? '', active.id, terminalsSize())
     active.inGrid = true
     gridOn = true
   } else {
@@ -1205,6 +1245,7 @@ async function resync(): Promise<void> {
   if (!viewStateReady && state.refused === null) {
     const saved = readViewState(storage())
     for (const tab of order) tab.inGrid = saved.gridTabs.includes(tab.id)
+    gridLayout = saved.gridLayout
     gridOn = saved.gridOn && gridTabs().length > 0
     active = saved.activeTab ? tabs.get(saved.activeTab) ?? null : null
     if (gridOn && (!active || !active.inGrid)) active = gridTabs()[0]
@@ -1360,6 +1401,7 @@ bridge.onStatus((status) => {
 })
 
 new ResizeObserver(() => fitShown()).observe(terminals)
+gridReset.addEventListener('click', () => keyActions['grid-reset-layout']())
 gridToggle.addEventListener('click', () => {
   const shown = gridTabs()
   // Showing the grid focuses its first pane when the focused tab is not one of them.
@@ -1507,6 +1549,8 @@ settingsTabs.forEach((tab) =>
     settingsSections.forEach((section) => (section.hidden = section.dataset.section !== tab.dataset.section))
   }),
 )
+// How far a keyboard resize moves a divider, as a share of the area it divides.
+const GRID_NUDGE = 0.05
 const ARROW_DIRECTIONS: Record<string, PaneDirection | undefined> = { ArrowLeft: 'left', ArrowRight: 'right', ArrowUp: 'up', ArrowDown: 'down' }
 // Key bindings are read in the capture phase, so a matched key does not also reach the terminal. While the rename modal is open they wait.
 window.addEventListener(
@@ -1535,16 +1579,28 @@ window.addEventListener(
       }
     }
     if (action === null) {
-      // In grid mode Cmd+Option+arrow (Ctrl+Alt off the Mac) moves between the panes. Plain Cmd+arrow never reaches the page, and Ctrl+arrow is Mission Control.
+      // In grid mode Cmd+Option+arrow (Ctrl+Alt off the Mac) moves between the panes, with Shift it swaps the pane with its neighbour, and
+      // Cmd+Ctrl+Option+arrow moves the divider next to the pane. Plain Cmd+arrow never reaches the page, and Ctrl+arrow is Mission Control.
       const direction = gridOn ? ARROW_DIRECTIONS[event.key] : undefined
       const modifier = isMac ? event.metaKey && !event.ctrlKey : event.ctrlKey && !event.metaKey
-      if (!direction || !modifier || event.shiftKey || !event.altKey) return
+      const resizing = event.metaKey && event.ctrlKey && event.altKey && !event.shiftKey
+      if (!direction || !event.altKey || (!resizing && !modifier)) return
       event.preventDefault()
       event.stopPropagation()
       const members = gridTabs()
-      const at = active ? members.indexOf(active) : -1
-      const next = at >= 0 ? members[neighborPane(members.length, at, direction)] : undefined
-      if (next && next !== active) activate(next)
+      const tree = active && members.includes(active) ? gridTree(members) : null
+      if (!active || !tree) return
+      if (resizing) {
+        arrangeGrid(nudge(tree, active.id, direction, GRID_NUDGE, terminalsSize(), PANE_MIN))
+        return
+      }
+      const next = tabs.get(neighborByGeometry(tree, active.id, direction))
+      if (!next || next === active) return
+      if (event.shiftKey) {
+        arrangeGrid(swapPanes(tree, active.id, next.id))
+      } else {
+        activate(next)
+      }
       return
     }
     event.preventDefault()

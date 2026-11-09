@@ -29,6 +29,7 @@ describe('keys panel', () => {
     expect(Object.keys(KEY_LABELS).sort()).toEqual(Object.keys(DEFAULT_VALUES.keys).sort())
     expect(chip('next-urgent').textContent).toBe('Cmd+.')
     expect(chip('grid-tab').textContent).toBe('Cmd+Shift+G')
+    expect(chip('grid-reset-layout').textContent).toBe('Cmd+Shift+L')
   })
 
   it('saves the combination pressed after a click', async () => {

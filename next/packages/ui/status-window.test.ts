@@ -159,7 +159,7 @@ describe('window status path', () => {
     expect(document.querySelector('#tabs > .active')?.textContent).toContain('copilot')
     expect(document.querySelectorAll('#grid-toggle svg.icon-grid circle')).toHaveLength(4)
     expect(JSON.parse(localStorage.getItem(VIEW_STATE_KEY)!)).toEqual({
-      gridOn: true, gridTabs: ['tab-claude', 'tab-copilot'], activeSpace: 's1', activeTab: 'tab-copilot',
+      gridOn: true, gridTabs: ['tab-claude', 'tab-copilot'], gridLayout: null, activeSpace: 's1', activeTab: 'tab-copilot',
     })
   })
 

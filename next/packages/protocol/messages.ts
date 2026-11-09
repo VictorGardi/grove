@@ -174,6 +174,7 @@ export type KeyAction =
   | 'close-tab'
   | 'previous-tab'
   | 'grid-tab'
+  | 'grid-reset-layout'
   | 'next-urgent'
   | 'palette'
   | 'sidebar-toggle'

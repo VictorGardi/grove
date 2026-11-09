@@ -11,12 +11,6 @@ export function gridShape(n: number): { cols: number; rows: number } {
   return { cols, rows: Math.max(1, Math.ceil(n / cols)) }
 }
 
-// The spans of the panes in order: the last pane stretches across the rest of its row.
-export function paneSpans(n: number): { cols: number; rows: number }[] {
-  const shape = gridShape(n)
-  return Array.from({ length: n }, (_, i) => ({ cols: i === n - 1 ? shape.cols - (i % shape.cols) : 1, rows: 1 }))
-}
-
 // A tab as the grid sees it: whether the human put it in the grid.
 export interface GridTab {
   inGrid: boolean
@@ -33,15 +27,3 @@ export function canJoinGrid(count: number, max = GRID_MAX): boolean {
 }
 
 export type PaneDirection = 'left' | 'right' | 'up' | 'down'
-
-// The pane next to pane index in a direction, or index when there is none. The last pane stretches across the rest of its row, so a move down into the last row lands on it.
-export function neighborPane(n: number, index: number, direction: PaneDirection): number {
-  const { cols } = gridShape(n)
-  const row = Math.floor(index / cols)
-  const col = index % cols
-  if (direction === 'left') return col > 0 ? index - 1 : index
-  if (direction === 'right') return col < cols - 1 && index + 1 < n ? index + 1 : index
-  if (direction === 'up') return row > 0 ? index - cols : index
-  const below = (row + 1) * cols
-  return below >= n ? index : Math.min(below + col, n - 1)
-}

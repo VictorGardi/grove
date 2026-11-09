@@ -120,6 +120,10 @@ specific meaning, so humans and agents stay consistent.
   (up to 9, picked by hand from any project) as auto-tiled live terminals,
   each with its own attach. Shown when `ui.grid.open` and the focused session
   is a member; the focused pane is the only one marked seen (ADR 0031).
+- **Grid layout** (grove-next window): how the grid's panes tile the screen. **Automatic** by
+  default (columns follow pane count, tab order); once the human drags or resizes it becomes
+  **custom**, a **split tree** whose leaves are panes and whose splits each divide their space
+  by a ratio. One layout per window; **Reset layout** returns to automatic.
 - **Command palette** (v1): the Cmd+K overlay that fuzzy-matches sessions,
   features, projects and app commands, and jumps or runs on Enter.
 - **Space** (grove-next): a folder; its tabs are terminal sessions started in

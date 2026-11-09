@@ -1063,15 +1063,65 @@ p {
 }
 
 .terminals.grid-panes {
-  display: grid;
-  grid-template-columns: repeat(var(--grid-cols), minmax(0, 1fr));
-  grid-template-rows: repeat(var(--grid-rows), minmax(0, 1fr));
-  gap: var(--space-3);
+  --grid-half-gap: calc(var(--space-3) / 2);
+  position: relative;
+  display: block;
+  /* The panes keep their margin themselves: insets count from the padding edge. */
+  padding: 0;
 }
 
 .terminals.grid-panes .pane {
+  position: absolute;
   min-width: 0;
   min-height: 0;
+}
+
+/* A divider sits on the seam between two sides, as wide as the gap, so it is easy to grab. */
+.grid-divider {
+  position: absolute;
+  z-index: 2;
+  touch-action: none;
+}
+
+.grid-divider.row {
+  width: var(--space-3);
+  transform: translateX(-50%);
+  cursor: col-resize;
+}
+
+.grid-divider.col {
+  height: var(--space-3);
+  transform: translateY(-50%);
+  cursor: row-resize;
+}
+
+.grid-divider:hover,
+.grid-divider.dragging {
+  background: color-mix(in srgb, var(--color-pane-focus) 40%, transparent);
+}
+
+.grid-panes .pane-head {
+  cursor: grab;
+}
+
+.terminals.arranging,
+.terminals.arranging .pane-head {
+  cursor: grabbing;
+  user-select: none;
+}
+
+/* Where a dragged pane would land: half the target against an edge, all of it for a swap. */
+.grid-drop {
+  position: absolute;
+  z-index: 3;
+  border: 1px solid var(--color-pane-focus);
+  border-radius: var(--radius-lg);
+  background: color-mix(in srgb, var(--color-pane-focus) 18%, transparent);
+  pointer-events: none;
+}
+
+.grid-drop.swap {
+  border-style: dashed;
 }
 
 .empty-state {
@@ -1822,6 +1872,10 @@ p {
   color: var(--accent);
   border-color: color-mix(in srgb, var(--accent) 40%, transparent);
   background: color-mix(in srgb, var(--accent) 12%, transparent);
+}
+
+.icon-pill[hidden] {
+  display: none;
 }
 
 /* The dim control: a pill that wraps the slider, shown only while the grid is on. */
@@ -3063,6 +3117,8 @@ li[aria-selected] > .slash-tile {
 .dock-toggle:hover,
 #grid-toggle,
 #grid-toggle:hover,
+#grid-reset,
+#grid-reset:hover,
 .dim-pill {
   width: var(--size-control);
   height: var(--size-control);
