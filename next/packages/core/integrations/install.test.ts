@@ -4,7 +4,7 @@ import os from 'node:os'
 import path from 'node:path'
 import { afterEach, beforeEach, describe, expect, it } from 'vitest'
 import { CLAUDE_HOOK_EVENTS } from '../agents/claude/launch.ts'
-import { hasClaudeHooks, claudeHookCommand, installClaude, MARKER, readSettings, uninstallClaude, uninstallCopilot } from './install.ts'
+import { hasClaudeHooks, claudeHookCommand, installClaude, MARKER, mergeClaudeStatusLine, originalStatusLine, readSettings, removeClaudeStatusLine, uninstallClaude, uninstallCopilot } from './install.ts'
 
 describe('integration install', () => {
   let dir: string
@@ -138,5 +138,21 @@ describe('integration install', () => {
     const line = JSON.parse(fs.readFileSync(path.join(home, 'agents', 'claude', 'tab-7.jsonl'), 'utf8').trim())
     expect(line.event).toBe('SessionStart')
     expect(line.payload.session_id).toBe('11111111-2222-4333-8444-555555555555')
+  })
+})
+
+describe('Claude statusLine', () => {
+  it('chains the user command and restores it on uninstall', () => {
+    const before = { statusLine: { type: 'command', command: "echo it's me" } }
+    const once = mergeClaudeStatusLine(before, '/n')
+    const twice = mergeClaudeStatusLine(once, '/n')
+    expect(twice).toEqual(once)
+    expect(originalStatusLine((once.statusLine as { command: string }).command)).toBe("echo it's me")
+    expect(removeClaudeStatusLine(once)).toEqual(before)
+  })
+
+  it('adds and removes its own when the user had none', () => {
+    const once = mergeClaudeStatusLine({}, '/n')
+    expect(removeClaudeStatusLine(once)).toEqual({})
   })
 })

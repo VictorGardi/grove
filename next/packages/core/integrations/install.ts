@@ -1,7 +1,7 @@
 import fs from 'node:fs'
 import os from 'node:os'
 import path from 'node:path'
-import { CLAUDE_HOOK_EVENTS, CLAUDE_HOOK_SCRIPT } from '../agents/claude/launch.ts'
+import { CLAUDE_HOOK_EVENTS, CLAUDE_HOOK_SCRIPT, CLAUDE_STATUSLINE_SCRIPT } from '../agents/claude/launch.ts'
 
 // The Claude SessionStart hook that reports the resume id of tabs typed by hand and after /clear. Status itself is OSC 7501.
 // Each command does nothing unless the tab it runs in has GROVE_NEXT_TAB
@@ -16,6 +16,49 @@ const shQuote = (value: string): string => `'${value.replace(/'/g, `'\\''`)}'`
 // The Claude command for one event. `node` is the Node that runs the hook (the one running this install).
 export function claudeHookCommand(event: string, node: string, script: string = CLAUDE_HOOK_SCRIPT): string {
   return `if [ -n "$GROVE_NEXT_TAB" ]; then ${shQuote(node)} ${shQuote(script)} ${event}; fi ${MARKER}`
+}
+
+// The Claude statusLine command that records the tab's context reading. Outside a Grove tab it runs the user's own
+// command unchanged; inside one, statusline.mjs records the reading and then runs that command from GROVE_NEXT_CHAIN.
+export function claudeStatusLineCommand(original: string | undefined, node: string, script: string = CLAUDE_STATUSLINE_SCRIPT): string {
+  const chain = original === undefined ? '' : `GROVE_NEXT_CHAIN=${shQuote(original)} `
+  const outside = original === undefined ? ':' : `sh -c ${shQuote(original)}`
+  return `if [ -n "$GROVE_NEXT_TAB" ]; then ${chain}${shQuote(node)} ${shQuote(script)}; else ${outside}; fi ${MARKER}`
+}
+
+// The user's own command recorded inside one of our statusLine commands, or undefined when it had none.
+export function originalStatusLine(command: string): string | undefined {
+  const match = /GROVE_NEXT_CHAIN=('(?:[^']|'\\'')*') /.exec(command)
+  return match ? match[1]!.slice(1, -1).replace(/'\\''/g, "'") : undefined
+}
+
+function statusLineOf(settings: JsonObject): JsonObject | null {
+  const value = settings.statusLine
+  return value !== null && typeof value === 'object' && !Array.isArray(value) ? (value as JsonObject) : null
+}
+
+function statusLineIsOurs(settings: JsonObject): boolean {
+  const command = statusLineOf(settings)?.command
+  return typeof command === 'string' && command.includes(MARKER)
+}
+
+// Returns a copy of `settings` whose statusLine is ours, keeping the user's own command to chain to.
+export function mergeClaudeStatusLine(settings: JsonObject, node: string): JsonObject {
+  const current = statusLineOf(settings)
+  const command = typeof current?.command === 'string' ? current.command : undefined
+  const original = statusLineIsOurs(settings) ? originalStatusLine(command!) : command
+  return { ...settings, statusLine: { ...current, type: 'command', command: claudeStatusLineCommand(original, node) } }
+}
+
+// Puts the user's own statusLine back, or drops ours when they had none.
+export function removeClaudeStatusLine(settings: JsonObject): JsonObject {
+  if (!statusLineIsOurs(settings)) return settings
+  const current = statusLineOf(settings)!
+  const original = originalStatusLine(current.command as string)
+  const next: JsonObject = { ...settings }
+  if (original === undefined) delete next.statusLine
+  else next.statusLine = { ...current, command: original }
+  return next
 }
 
 interface HookEntry {
@@ -70,13 +113,13 @@ export function removeCopilotHooks(settings: JsonObject): JsonObject {
 export function hasClaudeHooks(settings: JsonObject): boolean {
   const hooks = objectOf(settings.hooks)
   const ours = (event: string) => (Array.isArray(hooks[event]) ? (hooks[event] as HookGroup[]) : []).some((group) => (group.hooks ?? []).some(isOurs))
-  return Object.keys(hooks).every((event) => ours(event) === (event === 'SessionStart')) && ours('SessionStart')
+  return Object.keys(hooks).every((event) => ours(event) === (event === 'SessionStart')) && ours('SessionStart') && statusLineIsOurs(settings)
 }
 
 // Whether `settings` holds any entry Grove wrote, for any event and whether or not every event has one (Claude's are
 // inside groups, Copilot's are direct).
 export function hasAnyGroveHooks(settings: JsonObject): boolean {
-  return Object.values(objectOf(settings.hooks)).some((value) =>
+  return statusLineIsOurs(settings) || Object.values(objectOf(settings.hooks)).some((value) =>
     Array.isArray(value) &&
     value.some((item) => {
       if (item === null || typeof item !== 'object') return false
@@ -169,14 +212,14 @@ export function writeSettings(file: string, next: JsonObject, previous: JsonObje
 export function installClaude(file: string, node: string = process.execPath): InstallResult {
   const existed = fs.existsSync(file)
   const previous = readSettings(file)
-  const next = mergeClaudeHooks(previous, (event) => claudeHookCommand(event, node))
+  const next = mergeClaudeStatusLine(mergeClaudeHooks(previous, (event) => claudeHookCommand(event, node)), node)
   return writeSettings(file, next, previous, existed)
 }
 
 export function uninstallClaude(file: string): InstallResult {
   if (!fs.existsSync(file)) return { file, backup: null, changed: false }
   const previous = readSettings(file)
-  return writeSettings(file, removeClaudeHooks(previous), previous, true)
+  return writeSettings(file, removeClaudeStatusLine(removeClaudeHooks(previous)), previous, true)
 }
 
 export function uninstallCopilot(file: string): InstallResult {

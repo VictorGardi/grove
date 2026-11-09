@@ -66,6 +66,12 @@ function commandIn(file) {
 
 // The status-line command Claude would run without Grove's, in Claude's own order: the project's local settings, the
 // project's shared settings, then the user's. The first file that sets a command wins. Undefined when there is none.
+// The user's command recorded inside Grove's installed one (see claudeStatusLineCommand).
+function recorded(command) {
+  const match = /GROVE_NEXT_CHAIN=('(?:[^']|'\\'')*') /.exec(command)
+  return match ? match[1].slice(1, -1).replace(/'\\''/g, "'") : undefined
+}
+
 function chainedCommand(input) {
   const project = input?.workspace?.project_dir ?? input?.cwd
   const files = [
@@ -75,6 +81,8 @@ function chainedCommand(input) {
   ]
   for (const file of files) {
     const command = file && commandIn(file)
+    // Grove's own installed command is not the user's: theirs is in GROVE_NEXT_CHAIN.
+    if (command && command.includes('# grove-next-hook')) return process.env.GROVE_NEXT_CHAIN || recorded(command)
     if (command) return command
   }
   return undefined
