@@ -13,6 +13,7 @@ export const KEY_LABELS: Record<KeyAction, string> = {
   'previous-tab': 'Previous tab',
   'grid-tab': 'Put the tab in the grid',
   'next-urgent': 'Next tab that needs you, or is working',
+  palette: 'Go to a tab',
   'sidebar-toggle': 'Show or hide the sidebar',
   notes: 'Notes',
   diff: 'Changes',

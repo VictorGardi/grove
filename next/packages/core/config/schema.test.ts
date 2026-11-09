@@ -50,6 +50,7 @@ describe('config schema', () => {
         'previous-tab': 'ctrl+tab',
         'grid-tab': 'mod+shift+g',
         'next-urgent': 'mod+.',
+        palette: 'mod+p',
         'sidebar-toggle': 'mod+b',
         notes: 'mod+shift+n',
         diff: 'mod+shift+d',

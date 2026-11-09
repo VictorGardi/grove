@@ -175,6 +175,7 @@ export type KeyAction =
   | 'previous-tab'
   | 'grid-tab'
   | 'next-urgent'
+  | 'palette'
   | 'sidebar-toggle'
   | 'notes'
   | 'diff'

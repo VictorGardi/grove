@@ -27,6 +27,7 @@ import { diffModule, notesModule } from './dock-modules.ts'
 import { createHostBus, mountModules } from './modules.ts'
 import { createDock } from './dock.ts'
 import { settled } from './diff-model.ts'
+import { createGoTo } from './goto.ts'
 import { createRenameModal } from './rename-modal.ts'
 import { createContextMenu } from './context-menu.ts'
 import { createSpaceDialog } from './space-dialog.ts'
@@ -99,6 +100,8 @@ const order: Tab[] = []
 const spaces = new Map<string, SpaceInfo>()
 // Each space's tabs, most recently visited first: the previous-tab key goes back through them, and a space shows its first.
 const recentBySpace = new Map<string, Tab[]>()
+// Every tab's id, most recently shown first: Go to lists tabs and spaces in this order.
+let recentTabIds: string[] = []
 const agents = new Map<string, AgentInfo>()
 let active: Tab | null = null
 // Whether the window is connected to the core: the changes panel says so instead of showing an empty diff.
@@ -176,6 +179,45 @@ const renameModal = createRenameModal(
     closed: focusActive,
   },
 )
+// Go to lists the tabs of every space, in the order of the sidebar, and jumps to the one chosen. Key bindings wait while it is open.
+const goTo = createGoTo(
+  { modal: byId('goto-modal'), input: byId('goto-input') as HTMLInputElement, list: byId('goto-list') },
+  {
+    source: () => ({
+      spaces: sidebarSpaceOrder([...spaces.values()]).flatMap((id) => {
+        const space = spaces.get(id)
+        return space ? [{ id, name: space.name, parent: space.parent, worktree: space.worktree, repoName: space.repoName }] : []
+      }),
+      // A tab the core has not named yet has no id and cannot be jumped to.
+      tabs: order
+        .filter((tab) => tab.id)
+        .map((tab) => ({
+          id: tab.id,
+          spaceId: tab.spaceId,
+          name: tabName(tab),
+          agent: agents.get(tab.id)?.agent ?? (tab.kind === 'shell' ? null : tab.kind),
+          state: stateOf(tab),
+        })),
+      recent: recentTabIds,
+      activeSpaceId: activeSpace,
+      activeTabId: active?.id ?? null,
+    }),
+    tile: (group) => {
+      const space = spaces.get(group.spaceId)
+      const worktree = group.worktreeOf !== null
+      const tile = element('span', worktree ? 'space-tile' : `space-tile tile-${tileIndex(group.name)}`, worktree ? '' : group.name.charAt(0).toUpperCase())
+      if (worktree || space?.worktree) tile.innerHTML = iconSvg('branch')
+      return tile
+    },
+    indicator: (state, agent) => indicatorEl(state, agent ?? undefined),
+    go: (tabId) => {
+      const tab = tabs.get(tabId)
+      if (tab) activate(tab)
+    },
+    closed: focusActive,
+  },
+)
+byId('search-button').addEventListener('click', () => goTo.open())
 // The dock is the right sidebar: one panel at a time, each with a key binding. The notes are the first panel; they are one markdown
 // file kept by the core. The dock is not modal, so key bindings keep working while a panel has focus.
 const dock = createDock(
@@ -286,6 +328,7 @@ const keyActions: Record<KeyAction, () => void> = {
   },
   'grid-tab': () => toggleGridTab(),
   'next-urgent': () => jumpToUrgent(),
+  palette: () => goTo.open(),
   'sidebar-toggle': () => sidebarToggle.click(),
   notes: () => rail.toggle('notes')?.(),
   diff: () => rail.toggle('diff')?.(),
@@ -428,6 +471,7 @@ function removeTab(tab: Tab): void {
   if (index !== -1) order.splice(index, 1)
   const recent = recentBySpace.get(tab.spaceId)
   if (recent) recentBySpace.set(tab.spaceId, recent.filter((other) => other !== tab))
+  recentTabIds = recentTabIds.filter((id) => id !== tab.id)
   if (active === tab) active = null
   if (active === null) selectSpace(activeSpace)
   else paint()
@@ -819,6 +863,7 @@ function selectSpace(spaceId: string | null, chosen?: Tab): void {
   // With the grid showing, a space that has a pane in it keeps the grid by focusing that pane.
   const gridPane = gridOn ? gridTabs().find((tab) => tab.spaceId === spaceId) : undefined
   active = chosen ?? gridPane ?? (remembered && order.includes(remembered) ? remembered : (order.find((tab) => tab.spaceId === spaceId) ?? null))
+  if (active?.id) recentTabIds = [active.id, ...recentTabIds.filter((id) => id !== active!.id)]
   paint()
 }
 
@@ -1462,6 +1507,15 @@ const ARROW_DIRECTIONS: Record<string, PaneDirection | undefined> = { ArrowLeft:
 window.addEventListener(
   'keydown',
   (event) => {
+    if (goTo.isOpen()) {
+      // The key that opened Go to closes it; every other key belongs to the overlay.
+      if (findAction(keys, event, isMac) === 'palette') {
+        event.preventDefault()
+        event.stopPropagation()
+        goTo.close()
+      }
+      return
+    }
     if (renameModal.isOpen() || integrationPanel.isOpen() || spaceDialog.isOpen() || contextMenu.isOpen()) return
     let action = findAction(keys, event, isMac)
     if (action === null && event.shiftKey) {

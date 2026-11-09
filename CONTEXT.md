@@ -120,8 +120,15 @@ specific meaning, so humans and agents stay consistent.
   (up to 9, picked by hand from any project) as auto-tiled live terminals,
   each with its own attach. Shown when `ui.grid.open` and the focused session
   is a member; the focused pane is the only one marked seen (ADR 0031).
-- **Command palette**: the Cmd+K overlay that fuzzy-matches sessions,
+- **Command palette** (v1): the Cmd+K overlay that fuzzy-matches sessions,
   features, projects and app commands, and jumps or runs on Enter.
+- **Space** (grove-next): a folder; its tabs are terminal sessions started in
+  that folder. A worktree space nests under its parent space (ADR 0037).
+- **Tab** (grove-next): one terminal session inside a space, optionally running
+  an agent, with a **Tab state**.
+- **Go to** (grove-next): the Cmd+P overlay that fuzzy-matches tabs, spaces and
+  agents, grouped by space, and jumps to the chosen tab on Enter. It only
+  navigates; it runs no commands. Not the v1 **Command palette**.
 - **Attach**: one node-pty `tmux attach` client showing a session in xterm.js.
   Closing an attach never ends the session.
 - **Token**: a named design value (colour, type, spacing, radius, size) as a
