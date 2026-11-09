@@ -2,6 +2,7 @@
 // that tab, Esc and a click on the backdrop close it. The rules for what is listed are in goto-model.ts.
 import type { AgentKind } from '../core/status/adapter.ts'
 import type { AgentStateName } from '../protocol/messages.ts'
+import { hideContextTip } from './context-badge.ts'
 import { goToView, type GoToGroup, type GoToInput, type GoToRow, type GoToView } from './goto-model.ts'
 
 export interface GoToElements {
@@ -15,8 +16,8 @@ export interface GoToDeps {
   source(): Pick<GoToInput, 'spaces' | 'tabs' | 'recent' | 'activeSpaceId' | 'activeTabId'>
   tile(group: GoToGroup): HTMLElement
   indicator(state: AgentStateName, agent: AgentKind | null): HTMLElement
-  // The agent's icon, as the tab strip draws it.
-  agentMark(agent: AgentKind): HTMLElement
+  // The row's agent icon with its context ring, as the agents list in the sidebar draws it.
+  agentMark(row: GoToRow & { agent: AgentKind; agentName: string }): HTMLElement
   go(tabId: string): void
   // Called after the overlay closes, to give the focus back.
   closed(): void
@@ -66,6 +67,8 @@ export function createGoTo(elements: GoToElements, deps: GoToDeps): GoTo {
       })
       nodes.push(toggle)
     }
+    // A ring replaced under the pointer never sends its leave, so its tooltip is put away first.
+    hideContextTip()
     list.replaceChildren(...nodes)
     list.querySelector('[aria-selected="true"]')?.scrollIntoView({ block: 'nearest' })
   }
@@ -78,13 +81,7 @@ export function createGoTo(elements: GoToElements, deps: GoToDeps): GoTo {
     node.setAttribute('aria-selected', String(row.tabId === highlight))
     node.append(deps.indicator(row.state, row.agent), element('span', 'goto-row-name', row.name))
     if (row.stateLabel) node.append(element('span', `goto-row-state goto-state-${row.state}`, row.stateLabel))
-    if (row.agent && row.agentName) {
-      const mark = deps.agentMark(row.agent)
-      mark.title = row.agentName
-      mark.setAttribute('aria-label', row.agentName)
-      mark.classList.add('goto-row-agent')
-      node.append(mark)
-    }
+    if (row.agent && row.agentName) node.append(deps.agentMark({ ...row, agent: row.agent, agentName: row.agentName }))
     node.addEventListener('click', () => choose(row.tabId))
     return node
   }
@@ -106,6 +103,7 @@ export function createGoTo(elements: GoToElements, deps: GoToDeps): GoTo {
     if (modal.hidden) return
     modal.hidden = true
     input.value = ''
+    hideContextTip()
     deps.closed()
   }
 

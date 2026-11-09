@@ -210,7 +210,11 @@ const goTo = createGoTo(
       return tile
     },
     indicator: (state, agent) => indicatorEl(state, agent ?? undefined),
-    agentMark: (agent) => markEl(agent),
+    agentMark: (row) => {
+      const mark = markEl(row.agent)
+      mark.title = row.agentName
+      return markWithContext(mark, agents.get(row.tabId)?.context, row.agent)
+    },
     go: (tabId) => {
       const tab = tabs.get(tabId)
       if (tab) activate(tab)

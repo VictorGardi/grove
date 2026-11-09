@@ -3212,10 +3212,6 @@ li[aria-selected] > .slash-tile {
   color: var(--color-mute);
 }
 
-.goto-row-agent {
-  flex: none;
-}
-
 .goto-state-needs-you { color: var(--state-needs-you); }
 .goto-state-working { color: var(--state-working); }
 .goto-state-finished { color: var(--state-finished); }
