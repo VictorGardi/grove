@@ -210,6 +210,7 @@ const goTo = createGoTo(
       return tile
     },
     indicator: (state, agent) => indicatorEl(state, agent ?? undefined),
+    agentMark: (agent) => markEl(agent),
     go: (tabId) => {
       const tab = tabs.get(tabId)
       if (tab) activate(tab)

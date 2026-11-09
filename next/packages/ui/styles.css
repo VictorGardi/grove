@@ -3206,11 +3206,14 @@ li[aria-selected] > .slash-tile {
   white-space: nowrap;
 }
 
-.goto-row-state,
-.goto-row-agent {
+.goto-row-state {
   flex: none;
   font-size: var(--text-sm);
   color: var(--color-mute);
+}
+
+.goto-row-agent {
+  flex: none;
 }
 
 .goto-state-needs-you { color: var(--state-needs-you); }

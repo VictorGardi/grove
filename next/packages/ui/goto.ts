@@ -15,6 +15,8 @@ export interface GoToDeps {
   source(): Pick<GoToInput, 'spaces' | 'tabs' | 'recent' | 'activeSpaceId' | 'activeTabId'>
   tile(group: GoToGroup): HTMLElement
   indicator(state: AgentStateName, agent: AgentKind | null): HTMLElement
+  // The agent's icon, as the tab strip draws it.
+  agentMark(agent: AgentKind): HTMLElement
   go(tabId: string): void
   // Called after the overlay closes, to give the focus back.
   closed(): void
@@ -76,7 +78,13 @@ export function createGoTo(elements: GoToElements, deps: GoToDeps): GoTo {
     node.setAttribute('aria-selected', String(row.tabId === highlight))
     node.append(deps.indicator(row.state, row.agent), element('span', 'goto-row-name', row.name))
     if (row.stateLabel) node.append(element('span', `goto-row-state goto-state-${row.state}`, row.stateLabel))
-    if (row.agentName) node.append(element('span', 'goto-row-agent', row.agentName))
+    if (row.agent && row.agentName) {
+      const mark = deps.agentMark(row.agent)
+      mark.title = row.agentName
+      mark.setAttribute('aria-label', row.agentName)
+      mark.classList.add('goto-row-agent')
+      node.append(mark)
+    }
     node.addEventListener('click', () => choose(row.tabId))
     return node
   }
