@@ -65,14 +65,21 @@ fn start_holder() -> Result<(), String> {
         .filter(|path| !path.is_empty())
         .unwrap_or_else(|| "node".to_string());
     let root = next_root();
+    // The holder and the core it supervises log here, so a core that dies leaves a trace.
+    let log_path = grove_home().join("holder.log");
+    let open_log = || fs::OpenOptions::new().create(true).append(true).open(&log_path);
+    let (out, err) = match (open_log(), open_log()) {
+        (Ok(out), Ok(err)) => (Stdio::from(out), Stdio::from(err)),
+        _ => (Stdio::null(), Stdio::null()),
+    };
     Command::new(&node)
         .arg("--import")
         .arg("tsx")
         .arg(root.join("packages/holder/bin.ts"))
         .current_dir(&root)
         .stdin(Stdio::null())
-        .stdout(Stdio::null())
-        .stderr(Stdio::null())
+        .stdout(out)
+        .stderr(err)
         .process_group(0)
         .spawn()
         .map(|_| ())
@@ -89,7 +96,8 @@ fn ensure_connected(shared: &Arc<Shared>) -> Result<(), String> {
     let stream = match UnixStream::connect(&core) {
         Ok(stream) => stream,
         Err(_) => {
-            if UnixStream::connect(home.join("h")).is_err() {
+            let holder_up = UnixStream::connect(home.join("h")).is_ok();
+            if !holder_up {
                 start_holder()?;
             }
             let deadline = Instant::now() + CONNECT_TIMEOUT;
@@ -98,7 +106,15 @@ fn ensure_connected(shared: &Arc<Shared>) -> Result<(), String> {
                 match UnixStream::connect(&core) {
                     Ok(stream) => break stream,
                     Err(error) if Instant::now() >= deadline => {
-                        return Err(format!("core socket {} not reachable: {error}", core.display()));
+                        let hint = if holder_up {
+                            format!(
+                                "; a holder is already running but its core is not. It is probably left over from an older build: stop it (pkill -f packages/holder/bin.ts) and relaunch. See {}",
+                                home.join("holder.log").display()
+                            )
+                        } else {
+                            format!("; see {}", home.join("holder.log").display())
+                        };
+                        return Err(format!("core socket {} not reachable: {error}{hint}", core.display()));
                     }
                     Err(_) => {
                         thread::sleep(delay);
