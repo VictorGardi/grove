@@ -159,33 +159,59 @@ function lsTabs(tabs: SpaceTabInfo[], agents: AgentInfo[]): LsTab[] {
 
 async function newTab(cmd: Extract<Command, { cmd: 'new' }>): Promise<number> {
   const base = process.env.GROVE_CALLER_CWD || process.cwd()
+  const callerTab = process.env.GROVE_TAB
   return withCore(async (core) => {
-    // --space names a space; otherwise a folder means its first space.
-    const { spaces } = await core.request(METHODS.spacesList, {})
+    const { spaces, tabs } = await core.request(METHODS.spacesList, {})
+    const caller = callerTab === undefined ? undefined : tabs.find((tab) => tab.id === callerTab)
+    // Inside a tab the target is that tab's own space unless --space or --cwd says otherwise; outside, the caller folder.
     let space: SpaceInfo | undefined
     if (cmd.space !== undefined) {
       const found = resolveSpaceRef(spaces, cmd.space)
       if (!found.ok) throw new Error(found.error === 'ambiguous' ? `more than one space matches ${cmd.space}` : `no such space: ${cmd.space}, see grove ls`)
       space = spaces.find((candidate) => candidate.id === found.id)
+    } else if (cmd.cwd === undefined && (cmd.here || caller !== undefined)) {
+      if (caller === undefined) throw new Error('--here needs a Grove tab: GROVE_TAB is not set or names no tab')
+      space = spaces.find((candidate) => candidate.id === caller.spaceId)
     } else {
       const folder = realpathOrSelf(path.resolve(base, cmd.cwd ?? ''))
       space = spaces.find((candidate) => candidate.path === folder)
       if (space === undefined) throw new Error(`not a space: ${folder}, add it with grove space add`)
     }
-    if (space === undefined) throw new Error(`no such space: ${cmd.space}`)
+    if (space === undefined) throw new Error(`no such space: ${cmd.space ?? 'of this tab'}`)
+    // No kind means the caller's own agent; a shell or a caller outside Grove has none to copy.
+    const kind = cmd.kind ?? (caller !== undefined && caller.kind !== 'terminal' ? caller.kind : undefined)
+    if (kind === undefined) throw new Error('name a kind: terminal, claude, opencode or copilot (this is not an agent tab)')
+    if (cmd.worktree !== undefined) space = await worktreeSpace(core, spaces, space, cmd.worktree, cmd.base)
     const dir = space.path
     const prompt = cmd.prompt === undefined ? undefined : readText(cmd.prompt)
     const id =
-      cmd.kind === 'terminal'
+      kind === 'terminal'
         ? (await core.request(METHODS.tabsOpen, { spaceId: space.id, cols: COLS, rows: ROWS, label: cmd.label })).id
-        : (await core.request(METHODS.tabsCreate, { command: cmd.kind, cwd: dir, spaceId: space.id, cols: COLS, rows: ROWS, label: cmd.label, agent: { kind: cmd.kind } })).id
-    console.log(formatNew({ id, kind: cmd.kind, spaceId: space.id, spacePath: dir, label: cmd.label ?? null }, cmd.json))
+        : (await core.request(METHODS.tabsCreate, { command: kind, cwd: dir, spaceId: space.id, cols: COLS, rows: ROWS, label: cmd.label, agent: { kind } })).id
+    console.log(formatNew({ id, kind, spaceId: space.id, spacePath: dir, label: cmd.label ?? null }, cmd.json))
     if (prompt !== undefined) {
       await settleAndPaste(core, id, prompt, true)
-      await afterPaste(core, { id, kind: cmd.kind }, true)
+      await afterPaste(core, { id, kind }, true)
     }
     return cmd.wait ? reportTurn(id, await waitTurn(waitDeps(core), id, { expectStart: true, timeoutMs: timeoutMs(cmd.timeoutS) })) : 0
   })
+}
+
+// The space of `branch` in the target's repo: one that is open already, else a new worktree space. A branch that exists has
+// nothing to start from, so --base with one is refused.
+export async function worktreeSpace(core: RpcClient, spaces: SpaceInfo[], target: SpaceInfo, branch: string, base: string | undefined): Promise<SpaceInfo> {
+  const root = target.parent ?? target.id
+  const open = spaces.find((candidate) => (candidate.id === root || candidate.parent === root) && candidate.branch === branch)
+  if (open !== undefined) {
+    if (base !== undefined) throw new Error(`branch ${branch} exists, --base only applies to a new branch`)
+    console.error(`reusing ${open.path}`)
+    return open
+  }
+  try {
+    return await core.request(METHODS.worktreesAdd, { spaceId: target.id, branch, base })
+  } catch (error) {
+    throw new Error((error instanceof Error ? error.message : String(error)).replace('base only', '--base only'))
+  }
 }
 
 async function send(cmd: Extract<Command, { cmd: 'send' }>): Promise<number> {
