@@ -735,9 +735,7 @@ function paintTab(tab: Tab): void {
   const space = spaces.get(tab.spaceId)
   const changes = changeCounts.get(tab.id)
   const parts: HTMLElement[] = [markEl(tab.kind)]
-  // An unnamed agent reads "Claude 2" rather than a bare number, so panes of different agents tell apart.
-  const title = tab.label || (agent ? `${AGENT_NAMES[agent]} ${tab.number}` : name)
-  parts.push(element('span', tab.label ? 'pane-kind' : 'pane-kind unnamed', title))
+  parts.push(element('span', tab.label ? 'pane-kind' : 'pane-kind unnamed', name))
   if (space?.branch) parts.push(branchButton(space.branch, space.worktree))
   parts.push(element('span', 'pane-folder', shortFolder(tab.spacePath, homeDir)))
   if (changes && changes.additions + changes.deletions > 0) parts.push(changesButton(changes))
@@ -745,8 +743,6 @@ function paintTab(tab: Tab): void {
   parts.push(indicatorEl(state, agent, !tab.exited))
   tab.head.replaceChildren(...parts)
 }
-
-const AGENT_NAMES: Record<AgentKind, string> = { claude: 'Claude', opencode: 'OpenCode', copilot: 'Copilot' }
 
 // The pane's branch: a click copies the name, which reads "copied" for a moment.
 function branchButton(name: string, worktree: boolean): HTMLElement {
