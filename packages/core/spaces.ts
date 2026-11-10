@@ -134,8 +134,9 @@ export class SpacesService {
     return all.slice(1).filter((entry) => !open.has(realOrSame(entry.path)))
   }
 
-  // Makes a checkout for `branch` under the worktrees folder and adds it as a space.
-  async addWorktreeSpace(spaceId: string, branch: string): Promise<SpaceInfo> {
+  // Makes a checkout for `branch` under the worktrees folder and adds it as a space. A new branch starts from `base` (any git
+  // ref), else the space's HEAD; `base` with a branch that exists is refused.
+  async addWorktreeSpace(spaceId: string, branch: string, base?: string): Promise<SpaceInfo> {
     this.assertNotRefused()
     const space = this.requireSpace(spaceId)
     const name = branch.trim()
@@ -146,7 +147,7 @@ export class SpacesService {
     if (fs.existsSync(dest)) throw new RpcError(ERROR_CODES.invalidParams, `${dest} already exists`)
     fs.mkdirSync(path.dirname(dest), { recursive: true })
     try {
-      await addWorktree(space.path, dest, name)
+      await addWorktree(space.path, dest, name, base)
     } catch (error) {
       throw new RpcError(ERROR_CODES.invalidParams, error instanceof Error ? error.message : String(error))
     }

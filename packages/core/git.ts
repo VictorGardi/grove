@@ -60,7 +60,7 @@ export async function listWorktrees(dir: string): Promise<WorktreeEntry[]> {
 }
 
 // Adds a worktree at `dest`. A branch that exists is checked out; a new one starts from `dir`'s HEAD.
-export async function addWorktree(dir: string, dest: string, branch: string): Promise<void> {
+export async function addWorktree(dir: string, dest: string, branch: string, base?: string): Promise<void> {
   await git(dir, ['check-ref-format', '--branch', branch]).catch(() => {
     throw new Error(`not a valid branch name: ${branch}`)
   })
@@ -68,7 +68,8 @@ export async function addWorktree(dir: string, dest: string, branch: string): Pr
     () => true,
     () => false,
   )
-  await git(dir, exists ? ['worktree', 'add', dest, branch] : ['worktree', 'add', '-b', branch, dest, 'HEAD'])
+  if (exists && base !== undefined) throw new Error(`branch ${branch} exists, base only applies to a new branch`)
+  await git(dir, exists ? ['worktree', 'add', dest, branch] : ['worktree', 'add', '-b', branch, dest, base ?? 'HEAD'])
 }
 
 // Removes the checkout. Git refuses a checkout with changes in it or a lock, unless `force`; the branch is kept. A locked
