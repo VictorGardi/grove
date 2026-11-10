@@ -1,179 +1,137 @@
-# Grove
+# Grove next
 
-**A desktop workspace for running many coding agents at once, and for steering each feature through a human-gated workflow.**
+The spaces-and-tabs rebuild. The window is a Tauri app with a web page (xterm.js); the terminals live in a holder and a core that run under Node, so they survive the window closing.
 
-Grove runs [OpenCode](https://opencode.ai), [Claude Code](https://claude.com/claude-code) and [GitHub Copilot CLI](https://github.com/features/copilot/cli) sessions side by side, tells you which one needs you, and keeps every feature's research, design and plan as reviewable files in your repo.
+## Prerequisites
 
-<p align="center">
-  <img src="docs/assets/screenshot.png" alt="Grove running: sessions in the sidebar, a live agent terminal and the project page" width="900">
-</p>
-
-## Features
-
-**Sessions**
-- Start OpenCode, Claude, Copilot or plain terminal sessions per project with `⌘T`, or `⌘⇧T` to set prompt and worktree.
-- Live status on every session: *working*, *waiting* (a permission, a question, or a finished turn you haven't seen), *idle* or *gone*.
-- Sessions live in tmux, so closing the app or a pane never kills an agent. Resume a gone session with its id, label and link intact.
-- Session grid (`⌘G`): up to nine live terminals tiled on one screen.
-- Drag to reorder, group by project, and jump anywhere with the command palette (`⌘K`).
-
-**Isolation**
-- **Git worktrees:** launch a session in a fresh worktree on a new branch, so parallel agents never share a working tree.
-
-Isolation beyond git worktrees is left to each agent provider's own features.
-
-**Review**
-- Session diff (`⌘⌥B`): `git diff HEAD` plus untracked files, in the app.
-- Inline comments on diff lines or on quoted text in markdown. Drafts collect in a review tray and go to the agent as one message when you press Send.
-- Built-in viewer for markdown, HTML artifacts and project files.
-
-**Feature workflow**
-- Features and their artifacts are found in the command palette (`⌘K`), with *Input required* highlighted when a linked session is waiting on you.
-- Stages, kinds and next actions come from a single `workflow.yaml`. The default is the `grove-*` workflow: questions → research → design → structure → plan → implement, with a human approving each gate.
-- Features are plain folders (`docs/work/<slug>/`) of markdown artifacts, so they live in git and review like code.
-
-**Dictation**
-- Hold `⌃⇧Space` in a session pane, speak, release: the words appear in that session's prompt, unsent. Local only (whisper.cpp), English only. See [Dictation](#dictation).
-
-**Grove CLI**
-- Drive the running app from any terminal, or let agents orchestrate other agents:
-
-```sh
-grove ls                                          # list sessions
-grove new claude --prompt "fix the flaky test" --worktree --branch fix-flaky
-grove send <session> "also update the docs"
-grove wait <session>                              # exit 0 done, 5 gone, 124 timeout
-grove read <session> --lines 50                   # last lines of its screen
-grove focus <session>   # show it in the app
-grove kill <session>    # end it
-```
+- Node (the version `npm install` builds node-pty for; this repo uses the one on your PATH)
+- git
+- Rust via rustup (`curl https://sh.rustup.rs -sSf | sh`), with `cargo` on PATH
+- Xcode command line tools (`xcode-select --install`), needed by node-pty and the Tauri build
 
 ## Install
 
-Grove is a macOS Electron app, run from source for now.
+```sh
+cd next
+npm install
+```
 
-**Requirements**
+npm 11 skips node-pty's install script; if `npm install` warns about it, run `npm approve-scripts node-pty` (or the equivalent for your npm) and reinstall. `~/.npm` can hold root-owned files from an earlier `sudo npm`; fix ownership if the install fails with EACCES.
 
-- macOS
-- Node.js and npm
-- [`tmux`](https://github.com/tmux/tmux) (`brew install tmux`)
-- At least one agent CLI on your `PATH`: [`opencode`](https://opencode.ai), [`claude`](https://claude.com/claude-code) and/or [`copilot`](https://github.com/features/copilot/cli)
-- `git`, for diffs and worktrees
+## Install on a fresh Mac
+
+Grove next is run from source. On a Mac with nothing installed, do these in order:
+
+- Xcode command line tools: `xcode-select --install` (node-pty and the Tauri build need them; `git` comes with them)
+- Node.js and npm, the version you want to build node-pty for (for example `brew install node`, or the installer from nodejs.org)
+- Rust via rustup: `curl https://sh.rustup.rs -sSf | sh`, then open a new terminal so `cargo` is on your PATH
+
+Check them with `git --version`, `node --version`, `npm --version` and `cargo --version`.
 
 ```sh
 git clone https://github.com/VictorGardi/grove.git
-cd grove
+cd grove/next
 npm install
-npm run dev        # development
-# or
-npm run build && npm start
+npm run dev
 ```
 
-To get the `grove` command in your terminal, choose **Grove → Install Command Line Tool…** in the app. It links `grove` into `~/.local/bin`. Make sure that directory is on your `PATH`.
+Then follow the Install notes above for the npm warning about node-pty. The first `npm run dev` builds the Rust bridge, so it takes a few minutes.
 
-## Dictation
-
-Dictation is optional and needs a one-time setup. Nothing is downloaded by the app.
-
-1. Install `whisper-cli` from [`ggml-org/whisper.cpp`](https://github.com/ggml-org/whisper.cpp), either with `brew install whisper-cpp` or by building it yourself. It must be on the `PATH` of your login shell. Do not use the unrelated `vatsalaggarwal/whisper-cli`: it sends audio to OpenAI's cloud and must not be used.
-2. Fetch the model: `node scripts/stt-fetch-model.mjs`. It downloads `ggml-base.en.bin` from the [whisper.cpp Hugging Face repository](https://huggingface.co/ggerganov/whisper.cpp), checks its sha256 and writes it to `~/Library/Application Support/grove/stt/ggml-base.en.bin`. If the machine cannot reach Hugging Face, copy the file there yourself (the app only checks its size, 147964211 bytes) or run `node scripts/stt-fetch-model.mjs --from <file>`, which verifies the sha256.
-3. Restart Grove. The first time you dictate, macOS asks for microphone access. When running from source (`npm run dev`), the prompt is attributed to the host app or terminal that launched Grove (Electron or your terminal), and that app is the one to allow in System Settings → Privacy & Security → Microphone.
-4. Check that it is ready: the dictation item in the **Session** menu shows the shortcut when setup is complete and "setup needed" otherwise. It is checked once at launch, so restart Grove after changing the setup.
-
-Use: hold `⌃⇧Space` while a Grove pane is focused, speak, release. The target pane is fixed when you press. The words are pasted into its prompt and never submitted. It works only while the Grove window is focused, records at most while the keys are held, and gives up after 30 seconds of transcription.
-
-**For a security review**
-
-- The dictation code has no network code. Audio never leaves the machine; whisper.cpp runs as a local child process.
-- The audio is written to a temporary WAV under `~/Library/Application Support/grove/stt/tmp` and deleted straight after transcription. Stale files are removed at the next start.
-- The model is an ordinary file, so it can be scanned and approved like any other.
-- The fetch script is the only step that touches the network. You run it yourself, outside the app, and it refuses a file whose sha256 does not match.
-- The `whisper-cli` binary (for example from Homebrew) is a supply-chain item your organisation may need to approve. A locally built binary from a reviewed tag works the same.
-- Packaged builds will need `NSMicrophoneUsageDescription` and the audio-input entitlement. No packaging exists yet, so this is documented, not built.
-
-## Getting started
-
-1. Open Grove and add a project: any folder, usually a git checkout.
-2. Press `⌘T` to start a session, or `⌘⇧T` for the launch dialog (agent, worktree, prompt).
-3. Watch the sidebar. Sessions that need you are marked *waiting*.
-4. Open a project's page from the sidebar: a header, a new-session button and a `⌘K` hint. Features and artifacts are one `⌘K` away.
-5. To use the feature workflow, run the setup skill in your repo (`grove-setup`). It creates `grove.config.json`, `docs/adr/`, `CONTEXT.md` and an `AGENTS.md` block. Then start a feature from `⌘K`.
-
-### Keyboard shortcuts
-
-| Shortcut | Action |
-| --- | --- |
-| `⌘T` / `⌘⇧T` | New session / with options |
-| `⌘J` | New terminal |
-| `⌘1`–`⌘9` | Jump to a session |
-| `⌃Tab` | Last session |
-| `⌘K` | Command palette |
-| `⌘B` | Toggle sidebar |
-| `⌘⌥B` | Session diff |
-| `⌘G` / `⌘⇧G` | Session grid / add session to grid |
-| `⌘W` | Remove session |
-| `⌃⇧Space` (hold) | Dictate into the focused pane |
-
-## The workflow
-
-Features move through phased, human-gated steps. Each phase is a `grove-*` skill that writes one artifact into `docs/work/<slug>/`:
-
-| Phase | Skill | Artifact |
-| --- | --- | --- |
-| Questions | `grove-questions` | `01-questions.md` |
-| Research | `grove-research` | `02-research.md` |
-| Design | `grove-design` | `03-design.md` |
-| Structure | `grove-structure` | `04-structure.md` |
-| Plan | `grove-plan` | `05-plan.md` |
-| Implement | `grove-implement` | `06-implementation.md` |
-
-Only a human can approve a phase. Later phases refuse to start on unapproved input, and an artifact with open questions or `TODO`s can't be approved. See [AGENTS.md](AGENTS.md) for the gates and [`resources/workflow.yaml`](resources/workflow.yaml) for the stage definitions.
-
-The `auto` flow is an alternative for features you want built unattended. `grove-auto` interviews the human about the outcome, then writes a research map and a decision-and-slice plan; one `grove-approve <slug> plan` unlocks `grove-run`, which builds each slice in its own child session on a `run/<slug>-<profile>` branch. After the final review, `grove-approve <slug> run` (from the run worktree) approves `04-run.md`; you then commit it and merge or open a PR. `resources/workflow.yaml` defines its stages: Outcome, Research, Plan, Run. Profiles in `grove.config.json` choose which agent and model plays each role, and `grove new --model <model>` (claude, opencode or copilot) sets the child session model.
-
-## Development
+## Run
 
 ```sh
-npm run dev         # run with hot reload
-npm test            # vitest
-npm run typecheck   # node + web
-npm run build
+npm run dev
 ```
 
-Architecture decisions are in [`docs/adr/`](docs/adr), and the domain vocabulary is in [`CONTEXT.md`](CONTEXT.md).
+This runs `tauri dev`. It starts the Vite dev server on port 1420, builds the Rust bridge and opens the Grove window. The window starts the holder (and the core it supervises) detached if it is not running, so closing the window leaves your tabs running. Reopening the window shows the same screens.
 
-### Discovery roots
+`GROVE_NEXT_NODE` is set to the `node` on your PATH by the script; the holder runs under it. `GROVE_NEXT_ROOT` overrides the repo folder the holder is started from (default: found from the Rust crate's location).
 
-A workflow's discovery root (the `default` or the `key` read from its `from_file`)
-must resolve inside the project, symlinks included. A root that points outside it
-(for example `../shared-notes`) is refused and the project shows no features.
+The core socket is `~/.grove-next/s` (or `$GROVE_NEXT_HOME/s`). macOS limits socket paths to about 104 bytes, so keep `GROVE_NEXT_HOME` short if you change it.
 
-### Dependency scan
+## Spaces
 
-CI runs the OSV scanner on pull requests, weekly (Mondays) and on demand
-("Run workflow" in GitHub Actions); it does not run on push to master. Pull
-requests also run tests, typecheck and build as separate checks. The scan fails
-on any advisory in the root `package-lock.json` unless it is listed in
-[`osv-scanner.toml`](osv-scanner.toml). The `spikes/electron` lockfile is
-scanned too, but its findings never fail the check.
+A space is a folder; its tabs are login shells started in that folder. Add one from the window (the field under the spaces list), or from a terminal:
 
-To accept a finding, add an entry with an id, an expiry and a reason:
-
-```toml
-[[IgnoredVulns]]
-id = "GHSA-xxxx-xxxx-xxxx"
-ignoreUntil = 2027-01-31
-reason = "No fixed version exists; not reachable from Grove"
+```sh
+./bin/grove-next space add [path]   # from the repo root, or put bin/ on PATH
+grove-next ls                       # the spaces, then their tabs
 ```
 
-Prefer upgrading to a fixed version; use an entry only when none exists or the
-risk is judged acceptable. Once `ignoreUntil` passes, the scan fails on that
-advisory again. `scripts/check-osv-ignores.mjs` (a CI step, with its own test) fails when an
-entry lacks `ignoreUntil` or `reason`. Failures of the weekly and manual runs
-arrive only as a failed Actions run and GitHub's email. The control socket's
-missing authentication is a recorded accepted risk, not an ignore entry; see
-[the note beside ADR 0027](docs/adr/0027-grove-cli-over-unix-socket-accepted-risk.md).
+`space add` defaults to the folder you run it from, and always adds a new space: two spaces may share a folder, and the CLI uses the first space of a folder (`new --cwd`, `ls` shows a second one as `<path>#2`).
 
-## Tech
+The state is `~/.grove-next/state.json` (or `$GROVE_NEXT_HOME/state.json`), a versioned file (`"version": 1`). A file that is not valid JSON is set aside as `state.json.corrupt-<ms>` and Grove starts empty. A file with another version is refused: it is left untouched, and adding spaces and opening tabs fail until it is moved away.
 
-Electron, React, Zustand, xterm.js, node-pty, tmux, CodeMirror.
+A reboot brings the spaces and their tabs back, but the shells are fresh: each tab is a new login shell in its space's folder (the home folder if that folder is gone). A core restart alone keeps the running shells.
+
+## Command line
+
+`grove-next` drives the app from a terminal, or from a tab's shell, so one agent can start and read another:
+
+```sh
+grove-next ls [--json]                          spaces, then their tabs
+grove-next space add [path] | space ls          add a space, or list them
+grove-next new <terminal|claude|opencode|copilot> [--cwd DIR | --space REF] [--label L] [--prompt TEXT|-] [--wait] [--timeout S] [--json]
+grove-next send <ref> <TEXT|-> [--no-enter] [--wait] [--timeout S]
+grove-next wait <ref> [--timeout S]
+grove-next focus <ref>                          show the tab in the app and raise its window
+grove-next kill <ref>                           end the tab and remove it
+grove-next read <ref> [--lines N]               the last N lines of the screen (default 100)
+grove-next config path                          print the config folder
+grove-next skill                                install the grove-next-config skill (see Config folder)
+```
+
+- `<ref>` is a tab's full id, an id prefix of at least four characters, or its label (exact). A ref that matches two tabs is an error.
+- `new` starts the tab in `--cwd` (default: the folder you run it from), which must be a space; a folder with two spaces means the first. `--space REF` picks one exactly: a space id, a unique id prefix (4+ characters), or the heading `ls` shows (`/path`, `/path#2`). It cannot be combined with `--cwd`. It prints the tab's id, or the object with `--json`. `--label` is a name you can use as a ref.
+- `--prompt` pastes the text once the agent has drawn its screen, and submits it. `-` reads standard input. `send` does the same for its text, and `--no-enter` pastes without submitting. A send to an agent tab that has exited resumes it with its saved session.
+- After a submitted paste, `new` and `send` wait up to 30 s for an agent to start working. That wait is not an error if the agent does not start.
+- `wait` blocks until the agent stops working. A permission prompt or a question keeps it waiting, since the human answers those. A shell tab has no agent state, so `wait` on one is an error.
+- `--timeout` is in seconds (default 600) for `wait`, and for `--wait` on `new` and `send`.
+
+Exit codes: 0 ok (for `wait`, the agent went idle), 1 error (one line on stderr), 2 usage, 3 the core cannot be reached, 5 the tab is gone, 124 timeout.
+
+Not in v1: worktrees and branches, parent and child tabs, workflow status and progress, and a model per tab.
+
+## Agent status
+
+A Claude, Copilot or OpenCode tab shows working, idle, finished or needs-you from one source: the status report the agent sends to its terminal (OSC 7501). Grove installs nothing for it. A tab whose agent sends no report shows `unknown`, and its tooltip names the version it needs.
+
+Minimum versions: Claude 2.1.309, Copilot 1.0.107, OpenCode 2.2.6. Older versions stay `unknown`; there is no fallback. OpenCode shows needs-you for permissions only with `permission` set to `ask` in the project's `opencode.json`.
+
+Status is not saved: after the core restarts it is read back from the holder, and a turn that finished while the core was down shows idle. For Claude only, Grove can add a SessionStart hook to `~/.claude/settings.json`, after asking, so a tab you typed by hand, or one after `/clear`, resumes its session (`grove-next integration install|uninstall claude`). See `docs/adr/0053-agent-status-from-osc-7501.md`.
+
+## Config folder
+
+The settings live in `~/.grove-next/config` (or `$GROVE_NEXT_HOME/config`). Print the path with:
+
+```sh
+grove-next config path
+```
+
+The folder holds five JSON files, each with `"version": 1`. A missing file means its defaults, and the app writes the defaults when it starts:
+
+- `settings.json`: `sidebarWidth`, in px (180 to 480, default 240).
+- `keys.json`: the shortcuts for `grid-toggle` (default `mod+g`, shows or hides the grid), `new-shell` (`mod+t`, a shell tab in the active space), `new-space` (`mod+n`, a space at the home folder, or selects it if it exists, with one new shell tab), `close-tab` (`mod+w`, closes the active tab), `previous-tab` (`ctrl+tab`, goes back to the tab you were in before, per space), `grid-tab` (`mod+shift+g`, puts the active tab into the grid, or takes it out full screen), `sidebar-toggle` (`mod+b`, shows or hides the sidebar), `notes` (`mod+shift+n`, opens or closes the notes) and `space-1` to `space-9` (`mod+1` to `mod+9`, the space at that place in the sidebar). `mod` is Cmd on macOS and Ctrl elsewhere; `ctrl` is the Control key everywhere. A key bound to two actions is invalid; an action left out of the file keeps its default. The Claude, OpenCode and Copilot shortcuts (`new-claude`, `new-opencode`, `new-copilot`) were removed in slice 9; a `keys.json` that still names them is rejected.
+- `launchers.json`: a list of buttons, each `{ id, label, command, args, env }`. A launcher opens a shell tab in the active space and types the command.
+- `theme.json`: `tokens`, the colours and sizes the window uses, by token name (`accent`, `state-working`, `font-ui` and so on). Removing a token reverts it to its default.
+- `layout.json`: `sidebarOrder`, `["spaces", "agents"]` or the reverse.
+
+The app watches the folder and applies a saved change while it runs, with no restart. A file that does not validate keeps its last good values, and the window's status line shows a note with the file name and the problem until the file is fixed. The folder also gets an `AGENTS.md` that lists every file and key.
+
+Every tab the app starts has `GROVE_NEXT_CONFIG` set to the config folder, so an agent in that tab can find the files. To let agents change the settings for you, install the skill:
+
+```sh
+grove-next skill
+```
+
+It writes `grove-next-config/SKILL.md` into the Claude, OpenCode and Copilot user skill folders, one line per folder (`✓ <path>` or `✗ <path>: <error>`). The skill is generated, so running it again refreshes it. A file in those folders that grove-next did not write is left alone and named in the error; remove it first.
+
+To put `grove-next` on your PATH, click "Install grove-next command" at the bottom of the sidebar. It writes `~/.local/bin/grove-next`, a small script that runs this checkout's `bin/grove-next`, so `~/.local/bin` must be on your PATH. Keep the checkout where it is: the script points at it.
+
+## Build the app bundle
+
+```sh
+npm run build:app
+```
+
+Notifications (slice 4) only show from a built bundle, so use this to test them. The bundle is local and unsigned; it is not a distributed package.

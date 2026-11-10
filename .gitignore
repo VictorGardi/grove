@@ -1,15 +1,6 @@
 node_modules/
-out/
 dist/
 build/
 .DS_Store
 *.log
 .worktrees/
-
-# Grove
-.grove/context/
-docs/work/**/*.html
-
-# Agent scratch: working notes and mockups, per feature. Committed by accident once (3192da7).
-reports/
-research_notes/
