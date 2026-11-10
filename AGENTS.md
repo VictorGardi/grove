@@ -1,5 +1,5 @@
-## Workflow
+## Working in this repo
 
-Work does not go through phased, human-gated steps. Do the task asked for directly; the `grove-*` phase skills and the `docs/work/` artifact flow are not required.
-
-- ADRs: `docs/adr/`. Domain glossary: `CONTEXT.md`
+- Domain glossary: `CONTEXT.md`. Use its terms.
+- Run `npm test` and `npm run typecheck` before committing.
+- ADRs go in `docs/adr/`; none are recorded yet, so write one only for a decision that needs it.

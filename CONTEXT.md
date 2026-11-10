@@ -5,196 +5,50 @@ specific meaning, so humans and agents stay consistent.
 
 ## Terms
 
-- **Project**: a folder registered in the app (`{id, name, path}` in app
-  config). One path ↔ one id: a project's path is always a working directory,
-  whether a checkout or a **worktree project**. Groups the sessions sidebar under a
-  **project folder**, shown even with no sessions. May host sessions without any features.
-- **Worktree project**: a project whose path is a `git worktree` root, carrying
-  `worktreeOf` for its parent. Files, diffs and viewer targets are per-checkout, so
-  a session in one resolves everything against that worktree (ADR 0037). Made by
-  `worktreeCreate` from the app and by `--worktree` from the CLI, both forking the
-  parent *checkout*; new checkouts go under `~/.grove/worktrees/<repo>/<branch>`,
-  outside the repo so an agent never shares the main working tree.
-- **Repo group**: the projects sharing one git common dir, derived at load by
-  `gitCommonDir` and never stored as authority, so it cannot dangle. Worktree
-  projects nest under their group's parent checkout.
-- **Workflow**: the single `workflow.yaml` that holds all stage, kind, action
-  and discovery rules. The app's code knows no workflow's phase names.
-- **Feature**: a folder found by the workflow's `discovery` rule, identified by
-  `projectId + slug`. Its **artifacts** are the files in that folder. Palette
-  results show **one entry per (repo group, slug)**: the parent checkout's copy is
-  canonical, and a worktree copy at a different stage gets a chip rather than a
-  second entry (ADR 0037).
-- **Stage**: a feature's current step, derived from artifact frontmatter by
-  workflow rules: the first incomplete stage, unless a later artifact exists.
-- **Flow**: a second manifest field (grove's `flow`) whose value, via the
-  workflow's `flows`, selects which stages a feature uses alongside its kind.
-- **Card state**: the generic per-feature state computed in code (`backlog`,
-  `running`, `waiting`, `needs-review`, `ready`, `done`).
-- **Session**: an app-started process in a tmux session on the `grove` socket;
-  an **OpenCode session**, a **Claude session** or a **Copilot session** (all
-  **agent sessions**, running the agent's TUI) or a **terminal session** (a shell). Started either
-  from ⌘T, which picks a checkout and a kind in one keystroke, or from the
-  **launch dialog** (⌘⇧T), which also configures prompt and worktree.
-- **Launch dialog**: the ⌘⇧T form: agent kind, where (a checkout, one of its
-  worktrees, or a new worktree on a branch), prompt, feature link and
-  label. It makes a worktree *before* the session, so a conflict is reported
-  against the form rather than failing a session that was never created.
-- **Agent session id**: `agentSessionId`, the agent's own id for a session
-  (`ses_…` for OpenCode, a UUID for Claude and for Copilot), minted by grove before
-  launch (Copilot: `--session-id`).
-- **Agent source**: the per-kind adapter that reports agent events (turn
-  start/end, pending permission or question, writes) to core; one per agent
-  kind, each with its own connect and re-sync state (ADR 0019).
-- **Hook spool**: the app-owned file `<userData>/agents/claude/<id>.jsonl` that
-  a Claude session's per-launch hooks append to, and the Claude source tails
-  (ADR 0016).
-- **Copilot hook spool**: `<userData>/agents/copilot/<id>.jsonl`, appended by the
-  hooks of a per-launch plugin (`--plugin-dir`, never the human's
-  `~/.copilot/settings.json`) and tailed by the Copilot source: working and done,
-  permission attention and file writes (ADR 0044).
-- **Session status (legacy)**: `working`, `waiting`, `idle`, `gone` (agent sessions,
-  from their agent source); `running`, `gone` (terminal, from tmux).
-  **Waiting** means it's the human's move: a pending permission or question,
-  or a finished turn not yet seen. This older label is broader than the v2
-  **needs-you** state; do not use it as a synonym for a current tab state.
-  Live only; `lastStatus` stores tmux liveness (ADR 0015).
-- **OSC 7501 status (v2)**: the status report an agent sends to its terminal
-  (`state=working|idle|blocked|done|error`, fields split on `:`, `kind=` and `id=`).
-  The holder parses it, answers the `?` query and keeps the last root record per tab;
-  only the root record decides a tab's status (ADR 0053). The old hook, spool,
-  event-log and service sources, the watchdog and the screen cross-check are gone.
-- **Tab state (v2)**: `working`, `needs-you`, `finished`, `idle` or `unknown`.
-  **Finished** is derived in core when the root report leaves working or needs-you
-  for idle (or says `done`). **Unknown** means no report: the agent is too old, sends
-  nothing, the PTY exited, or core restarted with no live holder entry. A live
-  agent tab in unknown names the minimum version (Claude 2.1.309, Copilot 1.0.107,
-  OpenCode 2.2.6). In appearance settings, **waiting** names needs-you only, and
-  **running** names working; neither is a v2 state value.
+- **Space**: a folder; its tabs are terminal sessions started in that folder.
+  A **worktree space** is a space on a linked `git worktree` checkout; it nests
+  under the space of its main checkout. New checkouts go under
+  `~/.grove/worktrees/<repo>/<branch>`, outside the repo so an agent never
+  shares the main working tree.
+- **Tab**: one terminal session inside a space, optionally running an agent
+  (Claude, OpenCode or Copilot), with a **Tab state**.
+- **Holder**: the detached Node process that owns the PTYs, so tabs survive the
+  window and the core restarting. It parses the agents' OSC 7501 reports.
+- **Core**: the Node process the holder supervises. It keeps spaces, tabs and
+  state, derives each tab's state, and serves the window and the CLI over a
+  Unix socket.
+- **OSC 7501 status**: the status report an agent sends to its terminal
+  (`state=working|idle|blocked|done|error`, fields split on `:`, `kind=` and
+  `id=`). The holder parses it, answers the `?` query and keeps the last root
+  record per tab; only the root record decides a tab's state.
+- **Tab state**: `working`, `needs-you`, `finished`, `idle` or `unknown`.
+  **Finished** is derived in core when the root report leaves working or
+  needs-you for idle (or says `done`). **Unknown** means no report: the agent
+  is too old, sends nothing, the PTY exited, or core restarted with no live
+  holder entry. A live agent tab in unknown names the minimum version (Claude
+  2.1.309, Copilot 1.0.107, OpenCode 2.2.6). In appearance settings,
+  **waiting** names needs-you only, and **running** names working; neither is
+  a state value.
 - **Needs-you reason**: why a tab needs the human: `permission`, `question`,
   `auth` (the agent is not signed in or its key failed) or `error`.
-- **Seen mark**: `seenAt`, when the human last had a session on screen with the
-  window focused; a finished turn after it makes the session waiting.
-- **Resume**: restarting a gone agent session in a new tmux session with
-  `opencode -s <id>` (the model, when launched with --model, comes back through `OPENCODE_CONFIG_CONTENT`) or
-  `claude --resume <id>` or `copilot --resume=<id>`, keeping its id, label and link.
-- **Remove**: ends a session if it is running and forgets it, with no confirmation
-  (⌘W, the card's ×, or right-click on a shift-click selection). Not resumable.
-  `grove kill` only ends it, leaving a gone session to resume.
-- **Session group**: a **parent** session and its **children**. A child's own link
-  (`link {id, kind}`) names the parent and has a kind: `group` (an ad-hoc member) or
-  `slice` (an auto-run slice session, set by `grove new --relation slice`). One level
-  deep: a parent never has a parent, and a session started by a child joins the child's
-  group. Children nest under the parent in the Sessions tab whatever project or worktree
-  they run in, unless promoted (`promoted`): a promoted child shows as its own sidebar
-  row and keeps its link. Set at creation by `grove new --parent REF | --child`, or from
-  the card menu; removing the parent makes its children top-level sessions (ADR 0042, 0047).
-  An agent's own subagents are never sessions: they are a third kind of "parent" that
-  exists only in status folding and is not stored. A worktree's **parent checkout**
-  (`Project.worktreeOf`) is a separate thing from a session's link, so "parent" no longer
-  covers both.
-- **Link**: a session's association with one feature. Set at start by a next
-  action, automatically from the session's latest write into a feature folder,
-  or manually; a manual link is **pinned** and stops auto-linking.
-- **Unlinked session**: a session with no link, shown directly under its project.
-- **Next action**: a workflow action offered for the current stage; clicking it
-  starts a linked session with a templated prompt.
-- **Comment draft**: a comment on session diff lines or on quoted text in a
-  markdown artifact, held in a session's review tray until the human explicitly
-  sends it (ADR 0025).
-- **Orphaned comment**: a draft whose anchored lines or quote can no longer be
-  found in the file; still listed and sendable, marked in the message.
-- **Review tray**: the per-session list of comment drafts plus one general
-  note; **Send** delivers them as one message to that session, then keeps
-  them in a collapsed Sent list (ADR 0024).
-- **Send path**: `sendToSession`, the one way core puts text into a session:
-  tmux bracketed paste then Enter, resuming a gone agent session first
-  (ADR 0023). Used by review comments and the Grove CLI.
-- **Grove CLI**: the `grove` command talking to the running app over
-  `<userData>/grove.sock`; sessions know themselves by `GROVE_SESSION_ID`
-  (ADR 0027).
-- **Slice**: one domain's whole state (`projects`, `sessions`, `ui`, later
-  `features`, `comments`), held in memory by core and pushed to the renderer as a
-  whole on every change (ADR 0011).
-- **Session grid**: the content view that shows the grid's member sessions
-  (up to 9, picked by hand from any project) as auto-tiled live terminals,
-  each with its own attach. Shown when `ui.grid.open` and the focused session
-  is a member; the focused pane is the only one marked seen (ADR 0031).
-- **Grid layout** (grove window): how the grid's panes tile the screen. **Automatic** by
-  default (columns follow pane count, tab order); once the human drags or resizes it becomes
-  **custom**, a **split tree** whose leaves are panes and whose splits each divide their space
-  by a ratio. One layout per window; **Reset layout** returns to automatic.
-- **Command palette** (v1): the Cmd+K overlay that fuzzy-matches sessions,
-  features, projects and app commands, and jumps or runs on Enter.
-- **Space** (grove): a folder; its tabs are terminal sessions started in
-  that folder. A worktree space nests under its parent space (ADR 0037).
-- **Tab** (grove): one terminal session inside a space, optionally running
-  an agent, with a **Tab state**.
-- **Go to** (grove): the Cmd+P overlay that fuzzy-matches tabs, spaces and
-  agents, grouped by space, and jumps to the chosen tab on Enter. It only
-  navigates; it runs no commands. Not the v1 **Command palette**.
-- **Attach**: one node-pty `tmux attach` client showing a session in xterm.js.
-  Closing an attach never ends the session.
+- **Grid layout**: how the grid's panes tile the screen. **Automatic** by
+  default (columns follow pane count, tab order); once the human drags or
+  resizes it becomes **custom**, a **split tree** whose leaves are panes and
+  whose splits each divide their space by a ratio. One layout per window;
+  **Reset layout** returns to automatic.
+- **Go to**: the Cmd+P overlay that fuzzy-matches tabs, spaces and agents,
+  grouped by space, and jumps to the chosen tab on Enter. It only navigates; it
+  runs no commands.
+- **Grove CLI**: the `grove` command, which drives the running app over the
+  core socket (`~/.grove/s`); a tab knows itself by `GROVE_TAB`.
 - **Token**: a named design value (colour, type, spacing, radius, size) as a
-  CSS custom property in `styles/tokens.css`; terminal and window colours live
-  in `src/shared/theme.ts` (ADR 0012).
-- **Session card**: a session's row in the sidebar (`SessionRow`), borderless on a grid shared
-  by every row: workflow status over the grid mark on the left, title and **time in status** on
-  line one, branch on line two (purple in a worktree), the live dot on the right edge. It can be **compacted** to one line.
-- **Time in status**: how long a session has shown its current status, from `statusAt`, which core
-  stamps on every sessions publish (never saved). Idle and finished agent sessions count from the
-  end of their last turn, so a relaunch keeps the time. The `status-age` sort orders by it, sessions
-  waiting on you first.
-- **Project folder**: a project's one-line header in the sessions sidebar: its name in the
-  project colour and a rule of the same colour; it can be **collapsed** to hide its sessions,
-  and then shows their count. Its menu adds a session, opens the project page or removes the project.
-- **Focus**: what the content area shows: exactly one of a session, a feature
-  page, a project page or an artifact page (`focusedSessionId`,
-  `focusedFeature`, `focusedProject`, `focusedArtifact`, mutually exclusive).
-  With none, the first project's page (ADR 0018).
-- **Project page**: the content area for one project, kept minimal: its header,
-  a new-session button and a ⌘K hint. Features and artifacts are not listed
-  there; they are found in the command palette (⌘K), which opens a feature page
-  or an artifact page.
-- **Breadcrumb**: the content header's trail (project › feature, or
-  project › linked feature › session); every segment but the last is an
-  up-link. There is no back history.
-- **Effective stages**: the stages a feature uses: those in both its kind's
-  and its flow's list, in workflow order. Other stages are absent from its
-  timeline.
-- **Unapproved pass**: a stage counted as passed because a later effective
-  stage's artifact exists, although its own `complete_when` is not met.
-- **Feature page**: the content area for one feature: stage timeline, card
-  state and flags, its artifacts listed, its
-  linked sessions.
-- **Artifact viewer**: the right-hand panel showing one viewer target (a
-  project file or a session diff), next to the main area or
-  expanded over it; HTML in an opaque sandboxed iframe
-  served by `grove-artifact://`, markdown rendered in main.
-- **Session diff**: `git diff HEAD` plus untracked files of the repo holding a
-  session's working directory, shown in the viewer (ADR 0021). Per working
-  directory, so sessions sharing a checkout share it.
-- **Diff line identity**: `(path, side, number)` of a diff line: `add` →
-  new-side number, `del` → old-side, context → new-side.
-- **Viewer target**: what the viewer shows: an `artifact`, a project `file`
-  (ADR 0022), or a session's `diff`. A file opened from a diff keeps
-  `fromDiff` for "← Diff".
-- **File target**: the viewer's one document shape: `{projectId, path}`, the
-  path relative to the project folder (POSIX), as in
-  `grove-artifact://<projectId>/<path>`. A feature's artifact is just a file
-  target inside its folder. Review comments on markdown anchor on it too.
-- **Dictation**: hold-to-talk speech input (`⌃⇧Space`, held in the Grove
-  window). The target session is locked at key press; on release the audio is
-  transcribed locally by `whisper-cli` (whisper.cpp, English `base.en` model)
-  and the words are pasted, unsent, into that session through the `dictate`
-  core command (no stability wait, no resume). Local-only: no network code,
-  the temporary WAV is deleted right after (ADR 0046).
-- **Module** (grove window): a feature that lives in the dock and is
-  declared as a `DockModule` in `next/packages/ui/modules.ts`: a panel, its rail
-  button, its key action, and the **host events** it follows. Built-in only; the
-  window builds buttons, key handlers and wiring from the registry. The **host**
-  (terminals, spaces, tabs, status, config, the dock itself) is not a module.
-  "Module" in the sense of a source file keeps its ordinary meaning (ADR 0051).
+  CSS custom property in `packages/ui/src/tokens.css`.
+- **Module**: a feature that lives in the dock and is declared as a
+  `DockModule` in `packages/ui/modules.ts`: a panel, its rail button, its key
+  action, and the **host events** it follows. Built-in only; the window builds
+  buttons, key handlers and wiring from the registry. The **host** (terminals,
+  spaces, tabs, status, config, the dock itself) is not a module. "Module" in
+  the sense of a source file keeps its ordinary meaning.
 - **Host event**: a notice the window sends to modules on its typed bus
   (`activeTabChanged`, `agentStateChanged`, `connectionChanged`), so a module
   never needs a named call from `main.ts`.

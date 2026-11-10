@@ -1,6 +1,6 @@
-# Grove next
+# Grove
 
-The spaces-and-tabs rebuild. The window is a Tauri app with a web page (xterm.js); the terminals live in a holder and a core that run under Node, so they survive the window closing.
+A desktop workspace for running terminals and coding agents side by side, organised as spaces and tabs. The window is a Tauri app with a web page (xterm.js); the terminals live in a holder and a core that run under Node, so they survive the window closing.
 
 ## Prerequisites
 
@@ -12,7 +12,6 @@ The spaces-and-tabs rebuild. The window is a Tauri app with a web page (xterm.js
 ## Install
 
 ```sh
-cd next
 npm install
 ```
 
@@ -20,7 +19,7 @@ npm 11 skips node-pty's install script; if `npm install` warns about it, run `np
 
 ## Install on a fresh Mac
 
-Grove next is run from source. On a Mac with nothing installed, do these in order:
+Grove is run from source. On a Mac with nothing installed, do these in order:
 
 - Xcode command line tools: `xcode-select --install` (node-pty and the Tauri build need them; `git` comes with them)
 - Node.js and npm, the version you want to build node-pty for (for example `brew install node`, or the installer from nodejs.org)
@@ -30,7 +29,7 @@ Check them with `git --version`, `node --version`, `npm --version` and `cargo --
 
 ```sh
 git clone https://github.com/VictorGardi/grove.git
-cd grove/next
+cd grove
 npm install
 npm run dev
 ```
