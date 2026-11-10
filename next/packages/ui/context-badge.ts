@@ -1,6 +1,5 @@
-// The context ring: a thin ring around an agent's mark in the sidebar, filled by how much of the window is used, so agents
+// The context ring: a thin ring around an agent's mark in the sidebar, the pane headers and Go to, filled by how much of the window is used, so agents
 // can be compared at a glance. Hovering it shows the reading's headline and detail in one tooltip shared by every ring.
-// The focused agent's full reading is the status bar's readout.
 import type { AgentKind } from '../core/status/adapter.ts'
 import type { ContextUsage } from '../protocol/messages.ts'
 import { contextView, type ContextView } from './sidebar-model.ts'
@@ -67,27 +66,6 @@ function ringFor(view: ContextView, kind: AgentKind): HTMLElement {
   ring.addEventListener('pointerenter', () => showTip(ring, view, kind))
   ring.addEventListener('pointerleave', hideContextTip)
   return ring
-}
-
-// The status bar's readout for the focused agent: a bar, the headline and the detail. Null when there is nothing to show.
-export function contextReadout(context: ContextUsage | undefined, kind: AgentKind | undefined): HTMLElement | null {
-  if (kind === undefined) return null
-  const view = contextView(context, kind)
-  if (!view) return null
-  const detail = displayDetail(view.detail, kind)
-  const headline = displayHeadline(view.headline)
-  const readout = document.createElement('span')
-  readout.className = ['context-readout', ...levelClasses(view)].join(' ')
-  readout.setAttribute('aria-label', detail ? `Context: ${headline}. ${detail}` : `Context: ${headline}`)
-  const bar = document.createElement('span')
-  bar.className = 'context-bar'
-  if (view.fraction !== null) {
-    const fill = document.createElement('i')
-    fill.style.width = `${view.fraction * 100}%`
-    bar.append(fill)
-  }
-  readout.append(bar, line('context-readout-head', headline), line('context-readout-detail', detail))
-  return readout
 }
 
 // The agent's mark with its context ring around it, or the mark alone when there is no ring to draw. The wrapper
