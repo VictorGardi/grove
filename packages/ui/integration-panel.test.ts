@@ -21,7 +21,7 @@ const info = (agent: IntegrationAgent, patch: Partial<IntegrationInfo> = {}): In
   agent,
   state: 'not-enabled',
   file: `/cfg/${agent}/settings.json`,
-  backup: `/cfg/${agent}/settings.json.grove-next.bak`,
+  backup: `/cfg/${agent}/settings.json.grove.bak`,
   pending: true,
   ...patch,
 })
@@ -65,7 +65,7 @@ describe('createIntegrationPanel', () => {
     await panel.ask()
     expect(el('integration-prompt').hidden).toBe(false)
     expect(el('integration-prompt-title').textContent).toBe('Enable session tracking for Claude?')
-    expect(el('integration-prompt-text').textContent).toContain('/cfg/claude/settings.json.grove-next.bak')
+    expect(el('integration-prompt-text').textContent).toContain('/cfg/claude/settings.json.grove.bak')
 
     el<HTMLButtonElement>('integration-not-now').click()
     await vi.waitFor(() => expect(deps.answer).toHaveBeenCalledWith('claude'))

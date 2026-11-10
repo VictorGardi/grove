@@ -58,7 +58,7 @@ describe('statusline.mjs and the Claude usage path', () => {
     return spawnSync(process.execPath, [CLAUDE_STATUSLINE_SCRIPT], {
       input: stdin,
       encoding: 'utf8',
-      env: { ...process.env, GROVE_NEXT_USAGE: '', ...env },
+      env: { ...process.env, GROVE_USAGE: '', ...env },
     })
   }
 
@@ -67,11 +67,11 @@ describe('statusline.mjs and the Claude usage path', () => {
     fs.mkdirSync(config)
     fs.writeFileSync(path.join(config, 'settings.json'), JSON.stringify({ statusLine: { type: 'command', command: 'cat | tr a-z A-Z' } }))
     const usage = path.join(dir, 'a', 'tab.usage.json')
-    const result = runStatusLine(JSON.stringify(input(50, 100)), { GROVE_NEXT_USAGE: usage, CLAUDE_CONFIG_DIR: config })
+    const result = runStatusLine(JSON.stringify(input(50, 100)), { GROVE_USAGE: usage, CLAUDE_CONFIG_DIR: config })
     expect(result.status).toBe(0)
     expect(result.stdout).toContain('SESSION_ID')
     expect(readUsageFile(usage)).toMatchObject({ tokens: 50, window: 100 })
-    runStatusLine(JSON.stringify(input(60, 100)), { GROVE_NEXT_USAGE: usage, CLAUDE_CONFIG_DIR: config })
+    runStatusLine(JSON.stringify(input(60, 100)), { GROVE_USAGE: usage, CLAUDE_CONFIG_DIR: config })
     expect(readUsageFile(usage)?.tokens).toBe(60)
   })
 
@@ -84,7 +84,7 @@ describe('statusline.mjs and the Claude usage path', () => {
     fs.writeFileSync(path.join(project, '.claude', 'settings.json'), JSON.stringify({ statusLine: { type: 'command', command: 'echo PROJECT' } }))
     const usage = path.join(dir, 'p', 'tab.usage.json')
     const result = runStatusLine(JSON.stringify({ ...input(50, 100), workspace: { project_dir: project } }), {
-      GROVE_NEXT_USAGE: usage,
+      GROVE_USAGE: usage,
       CLAUDE_CONFIG_DIR: config,
     })
     expect(result.stdout).toContain('PROJECT')
@@ -94,9 +94,9 @@ describe('statusline.mjs and the Claude usage path', () => {
   it('writes the usage file from the tab env when no usage path is given', () => {
     const groveHome = path.join(dir, 'grove-home')
     const result = runStatusLine(JSON.stringify(input(50, 100)), {
-      GROVE_NEXT_USAGE: '',
-      GROVE_NEXT_HOME: groveHome,
-      GROVE_NEXT_TAB: 'tab-7',
+      GROVE_USAGE: '',
+      GROVE_HOME: groveHome,
+      GROVE_TAB: 'tab-7',
       CLAUDE_CONFIG_DIR: dir,
     })
     expect(result.status).toBe(0)
@@ -105,7 +105,7 @@ describe('statusline.mjs and the Claude usage path', () => {
 
   it('exits 0 and prints nothing without a user command or on bad input', () => {
     const usage = path.join(dir, 'tab.usage.json')
-    const result = runStatusLine('not json', { GROVE_NEXT_USAGE: usage, CLAUDE_CONFIG_DIR: dir })
+    const result = runStatusLine('not json', { GROVE_USAGE: usage, CLAUDE_CONFIG_DIR: dir })
     expect(result.status).toBe(0)
     expect(result.stdout).toBe('')
     expect(fs.existsSync(usage)).toBe(false)

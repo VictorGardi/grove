@@ -11,18 +11,18 @@ import { connectWhenReady, stopHolder } from './test-helpers.ts'
 describe('ensureHolder', () => {
   let home: string
   let holder: ChildProcess | undefined
-  const savedHome = process.env.GROVE_NEXT_HOME
+  const savedHome = process.env.GROVE_HOME
 
   beforeEach(() => {
     home = fs.mkdtempSync(path.join(os.tmpdir(), 'gn-'))
-    process.env.GROVE_NEXT_HOME = home
+    process.env.GROVE_HOME = home
   })
 
   afterEach(async () => {
     await stopHolder(holder)
     holder = undefined
-    if (savedHome === undefined) delete process.env.GROVE_NEXT_HOME
-    else process.env.GROVE_NEXT_HOME = savedHome
+    if (savedHome === undefined) delete process.env.GROVE_HOME
+    else process.env.GROVE_HOME = savedHome
     fs.rmSync(home, { recursive: true, force: true })
   })
 

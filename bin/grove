@@ -1,4 +1,4 @@
 #!/bin/sh
 here=$(cd "$(dirname "$0")/.." && pwd)
-export GROVE_NEXT_CALLER_CWD="$PWD"
+export GROVE_CALLER_CWD="$PWD"
 cd "$here" && exec node --import tsx packages/cli/main.ts "$@"

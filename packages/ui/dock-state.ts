@@ -2,7 +2,7 @@
 // blocked site data); then the dock opens at its default width and a change is not kept.
 import type { KeyValueStore } from './sidebar-state.ts'
 
-export const DOCK_WIDTH_KEY = 'grove-next.dock-width'
+export const DOCK_WIDTH_KEY = 'grove.dock-width'
 export const DOCK_WIDTH_DEFAULT = 360
 export const DOCK_WIDTH_MIN = 280
 export const DOCK_WIDTH_MAX = 640

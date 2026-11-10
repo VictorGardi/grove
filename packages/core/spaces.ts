@@ -31,7 +31,7 @@ const TAB_LABEL_MAX = 80
 export class SpacesService {
   private state: StateV1
   private readonly refused: string | null
-  // The Grove home folder: the state file's folder. Every tab gets it in GROVE_NEXT_HOME, so an agent typed there
+  // The Grove home folder: the state file's folder. Every tab gets it in GROVE_HOME, so an agent typed there
   // finds its spool.
   private readonly home: string
 
@@ -437,7 +437,7 @@ export class SpacesService {
   // The environment of a tab: the caller's, plus the tab's own id and the home folder. An agent typed in the tab
   // reports through its tab-scoped spool, found from these two.
   private tabEnv(id: string, env: Record<string, string>): Record<string, string> {
-    return { ...env, GROVE_NEXT_TAB: id, GROVE_NEXT_HOME: this.home }
+    return { ...env, GROVE_TAB: id, GROVE_HOME: this.home }
   }
 
   // A random id not used by any space. Ids of spaces saved before ids existed are their paths, and are kept.

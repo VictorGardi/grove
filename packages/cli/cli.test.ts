@@ -7,20 +7,20 @@ import { ensureHolder } from '../core/holder-client.ts'
 import { stopHolder } from '../core/test-helpers.ts'
 import { main } from './main.ts'
 
-describe('grove-next cli', () => {
+describe('grove cli', () => {
   let home: string
   let folder: string
   let holder: ChildProcess | undefined
   let logs: string[]
   let errors: string[]
-  const savedHome = process.env.GROVE_NEXT_HOME
-  const savedCaller = process.env.GROVE_NEXT_CALLER_CWD
+  const savedHome = process.env.GROVE_HOME
+  const savedCaller = process.env.GROVE_CALLER_CWD
 
   beforeEach(() => {
     home = fs.mkdtempSync(path.join(os.tmpdir(), 'gn-cli-'))
     folder = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), 'gn-space-')))
-    process.env.GROVE_NEXT_HOME = home
-    delete process.env.GROVE_NEXT_CALLER_CWD
+    process.env.GROVE_HOME = home
+    delete process.env.GROVE_CALLER_CWD
     logs = []
     errors = []
     vi.spyOn(console, 'log').mockImplementation((...args: unknown[]) => {
@@ -35,10 +35,10 @@ describe('grove-next cli', () => {
     vi.restoreAllMocks()
     await stopHolder(holder)
     holder = undefined
-    if (savedHome === undefined) delete process.env.GROVE_NEXT_HOME
-    else process.env.GROVE_NEXT_HOME = savedHome
-    if (savedCaller === undefined) delete process.env.GROVE_NEXT_CALLER_CWD
-    else process.env.GROVE_NEXT_CALLER_CWD = savedCaller
+    if (savedHome === undefined) delete process.env.GROVE_HOME
+    else process.env.GROVE_HOME = savedHome
+    if (savedCaller === undefined) delete process.env.GROVE_CALLER_CWD
+    else process.env.GROVE_CALLER_CWD = savedCaller
     fs.rmSync(home, { recursive: true, force: true })
     fs.rmSync(folder, { recursive: true, force: true })
   })
@@ -63,7 +63,7 @@ describe('grove-next cli', () => {
 
   it('adds the caller folder when no path is given', async () => {
     holder = await ensureHolder()
-    process.env.GROVE_NEXT_CALLER_CWD = folder
+    process.env.GROVE_CALLER_CWD = folder
 
     expect(await main(['space', 'add'])).toBe(0)
     expect(logs).toEqual([`added ${folder}`])
@@ -123,7 +123,7 @@ describe('grove-next cli', () => {
   it('exits 1 for a new tab in a folder that is not a space', async () => {
     holder = await ensureHolder()
     expect(await main(['new', 'terminal', '--cwd', folder])).toBe(1)
-    expect(errors).toEqual([`error: not a space: ${folder}, add it with grove-next space add`])
+    expect(errors).toEqual([`error: not a space: ${folder}, add it with grove space add`])
     expect(logs).toEqual([])
   }, 20000)
 

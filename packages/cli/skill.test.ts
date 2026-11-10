@@ -7,9 +7,9 @@ import { agentSkillsDirs, installSkill, skillText, SKILL_MARKER } from './skill.
 describe('skillText', () => {
   it('is a skill with frontmatter, the marker, and the rule for the config folder', () => {
     const text = skillText()
-    expect(text.startsWith('---\nname: grove-next-config\n')).toBe(true)
+    expect(text.startsWith('---\nname: grove-config\n')).toBe(true)
     expect(text).toContain(`<!-- ${SKILL_MARKER} -->`)
-    expect(text).toContain('When `GROVE_NEXT_CONFIG` is set, read `$GROVE_NEXT_CONFIG/AGENTS.md` before changing grove-next.')
+    expect(text).toContain('When `GROVE_CONFIG` is set, read `$GROVE_CONFIG/AGENTS.md` before changing grove.')
   })
 })
 
@@ -38,7 +38,7 @@ describe('installSkill', () => {
     fs.rmSync(root, { recursive: true, force: true })
   })
 
-  const file = (dir: string) => path.join(dir, 'grove-next-config', 'SKILL.md')
+  const file = (dir: string) => path.join(dir, 'grove-config', 'SKILL.md')
 
   it('writes the skill into each folder, creating the folders', () => {
     const dirs = [path.join(root, 'a'), path.join(root, 'b', 'deep')]

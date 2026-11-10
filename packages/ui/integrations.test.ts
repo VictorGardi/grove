@@ -6,7 +6,7 @@ const info = (patch: Partial<IntegrationInfo> = {}): IntegrationInfo => ({
   agent: 'claude',
   state: 'not-enabled',
   file: '/home/me/.claude/settings.json',
-  backup: '/home/me/.claude/settings.json.grove-next.bak',
+  backup: '/home/me/.claude/settings.json.grove.bak',
   pending: false,
   ...patch,
 })
@@ -25,7 +25,7 @@ describe('rowView', () => {
       title: 'Claude',
       state: 'Settings unreadable',
       file: '/home/me/.claude/settings.json',
-      backup: '/home/me/.claude/settings.json.grove-next.bak',
+      backup: '/home/me/.claude/settings.json.grove.bak',
       error: 'settings.json is not a JSON object',
     })
   })
@@ -33,12 +33,12 @@ describe('rowView', () => {
 
 describe('promptView', () => {
   it('asks by name, and says what is written and where, the backup, and how to remove it', () => {
-    const view = promptView(info({ agent: 'claude', file: '/c/settings.json', backup: '/c/settings.json.grove-next.bak' }))
+    const view = promptView(info({ agent: 'claude', file: '/c/settings.json', backup: '/c/settings.json.grove.bak' }))
     const text = view.paragraphs.join('\n')
     expect(view.title).toBe('Enable session tracking for Claude?')
     expect(text).toContain("one hook command, for Claude's session start, to /c/settings.json")
-    expect(text).toContain('copied to /c/settings.json.grove-next.bak')
-    expect(text).toContain('grove-next integration uninstall claude')
+    expect(text).toContain('copied to /c/settings.json.grove.bak')
+    expect(text).toContain('grove integration uninstall claude')
     expect(text).toContain('Agent status')
   })
 })

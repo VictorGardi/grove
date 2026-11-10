@@ -39,11 +39,11 @@ describe('core daemon', () => {
   let home: string
   let holder: ChildProcess | undefined
   let clients: RpcClient[] = []
-  const savedHome = process.env.GROVE_NEXT_HOME
+  const savedHome = process.env.GROVE_HOME
 
   beforeEach(() => {
     home = fs.mkdtempSync(path.join(os.tmpdir(), 'gn-'))
-    process.env.GROVE_NEXT_HOME = home
+    process.env.GROVE_HOME = home
   })
 
   afterEach(async () => {
@@ -51,8 +51,8 @@ describe('core daemon', () => {
     clients = []
     await stopHolder(holder)
     holder = undefined
-    if (savedHome === undefined) delete process.env.GROVE_NEXT_HOME
-    else process.env.GROVE_NEXT_HOME = savedHome
+    if (savedHome === undefined) delete process.env.GROVE_HOME
+    else process.env.GROVE_HOME = savedHome
     fs.rmSync(home, { recursive: true, force: true })
   })
 
@@ -402,7 +402,7 @@ describe('core daemon', () => {
     expect(await first.request(METHODS.configGet, {})).toMatchObject({ values: { settings: { sidebarWidth: 300 } } })
   })
 
-  it('sets GROVE_NEXT_CONFIG in a shell tab', async () => {
+  it('sets GROVE_CONFIG in a shell tab', async () => {
     const stack = await startStack()
     holder = stack.holder
     const core = stack.core
@@ -411,7 +411,7 @@ describe('core daemon', () => {
     const { id: spaceId } = await core.request(METHODS.spacesAdd, { path: space })
     const { id } = await core.request(METHODS.tabsOpen, { spaceId, cols: 200, rows: 24 })
     const expected = `cfg=${path.join(home, 'config')}=end`
-    await core.request(METHODS.tabsWrite, { id, dataB64: bytesToB64(Buffer.from('echo "cfg=$GROVE_NEXT_CONFIG=end"\n')) })
+    await core.request(METHODS.tabsWrite, { id, dataB64: bytesToB64(Buffer.from('echo "cfg=$GROVE_CONFIG=end"\n')) })
     const screen = await waitFor(
       () => screenText(core, id),
       (text) => text.includes(expected),
@@ -424,7 +424,7 @@ describe('core daemon', () => {
 // for session-id events. No real `claude` is started.
 describe('core daemon agents', () => {
   const fakeCore = path.join(path.dirname(fileURLToPath(import.meta.url)), '..', 'holder', 'testdata', 'fake-core.mjs')
-  const savedHome = process.env.GROVE_NEXT_HOME
+  const savedHome = process.env.GROVE_HOME
   let home: string
   let space: string
   let stateFile: string
@@ -541,12 +541,12 @@ describe('core daemon agents', () => {
     space = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), 'gn-space-')))
     stateFile = path.join(home, 'state.json')
     fs.writeFileSync(stateFile, JSON.stringify({ version: 1, spaces: [{ path: space }], tabs: [] }))
-    process.env.GROVE_NEXT_HOME = home
+    process.env.GROVE_HOME = home
     launches = []
     delivered = []
     launchScript = quietScreen
     holder = await ensureHolder({
-      env: { ...process.env, GROVE_NEXT_HOME: home, GROVE_NEXT_CORE_CMD: `${process.execPath} ${fakeCore}` },
+      env: { ...process.env, GROVE_HOME: home, GROVE_CORE_CMD: `${process.execPath} ${fakeCore}` },
     })
   })
 
@@ -554,8 +554,8 @@ describe('core daemon agents', () => {
     await stopDaemons()
     await stopHolder(holder)
     holder = undefined
-    if (savedHome === undefined) delete process.env.GROVE_NEXT_HOME
-    else process.env.GROVE_NEXT_HOME = savedHome
+    if (savedHome === undefined) delete process.env.GROVE_HOME
+    else process.env.GROVE_HOME = savedHome
     fs.rmSync(home, { recursive: true, force: true })
     fs.rmSync(space, { recursive: true, force: true })
   })
@@ -582,8 +582,8 @@ describe('core daemon agents', () => {
     expect(opened[1]).toEqual(opened[0])
   })
 
-  it('sets GROVE_NEXT_CONFIG in a Claude tab', async () => {
-    launchScript = "printf 'cfg=%s\\n' \"$GROVE_NEXT_CONFIG\"; sleep 30"
+  it('sets GROVE_CONFIG in a Claude tab', async () => {
+    launchScript = "printf 'cfg=%s\\n' \"$GROVE_CONFIG\"; sleep 30"
     const { core } = await startDaemon()
     const { id } = await core.request(METHODS.tabsCreate, {
       command: 'claude',
@@ -921,7 +921,7 @@ describe('agents typed by hand', () => {
 
   beforeEach(() => {
     home = fs.mkdtempSync(path.join(os.tmpdir(), 'gn-hand-'))
-    process.env.GROVE_NEXT_HOME = home
+    process.env.GROVE_HOME = home
     // The core reads Claude's and Copilot's settings from these. Tests never let it reach the human's real config.
     process.env.CLAUDE_CONFIG_DIR = path.join(home, 'claude-config')
     process.env.COPILOT_HOME = path.join(home, 'copilot-home')
@@ -948,7 +948,7 @@ describe('agents typed by hand', () => {
   const startTypedCore = async (adapters: Partial<Record<AgentKind, AgentAdapter>>): Promise<RpcClient> => {
     const fakeCore = path.join(path.dirname(fileURLToPath(import.meta.url)), '..', 'holder', 'testdata', 'fake-core.mjs')
     holder = await ensureHolder({
-      env: { ...process.env, GROVE_NEXT_HOME: home, GROVE_NEXT_CORE_CMD: `${process.execPath} ${fakeCore}` },
+      env: { ...process.env, GROVE_HOME: home, GROVE_CORE_CMD: `${process.execPath} ${fakeCore}` },
     })
     const spaces = new SpacesService(path.join(home, 'state.json'))
     const alive = async () => {

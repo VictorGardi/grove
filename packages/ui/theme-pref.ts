@@ -3,7 +3,7 @@ import type { KeyValueStore } from './sidebar-state.ts'
 // The colour theme of the window, kept in the window's storage so a reload keeps it. The id is the `data-theme` on the root, and
 // src/themes.css has a block for each one. 'grove' is the plain tokens.css and sets no attribute.
 
-export const THEME_KEY = 'grove-next.theme'
+export const THEME_KEY = 'grove.theme'
 
 export const THEMES = [
   { id: 'grove', label: 'Grove' },

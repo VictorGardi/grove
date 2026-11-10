@@ -3,7 +3,7 @@ import type { KeyValueStore } from './sidebar-state.ts'
 // Whether alerts play a sound, kept in the window's storage so a reload keeps it. Off until the human turns it on; the system
 // notification shows either way.
 
-export const SOUND_KEY = 'grove-next.sound'
+export const SOUND_KEY = 'grove.sound'
 
 export function readSound(store: KeyValueStore | null): boolean {
   try {

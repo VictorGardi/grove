@@ -2,7 +2,7 @@ import { GRID_MAX } from './grid/layout.ts'
 import { readTree, type Tree } from './grid/tree.ts'
 import type { KeyValueStore } from './sidebar-state.ts'
 
-export const VIEW_STATE_KEY = 'grove-next.view-state'
+export const VIEW_STATE_KEY = 'grove.view-state'
 
 export interface ViewState {
   gridOn: boolean

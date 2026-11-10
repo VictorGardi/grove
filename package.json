@@ -1,5 +1,5 @@
 {
-  "name": "grove-next",
+  "name": "grove",
   "version": "0.1.0",
   "private": true,
   "type": "module",
@@ -7,7 +7,7 @@
   "scripts": {
     "test": "vitest run",
     "typecheck": "tsc --noEmit",
-    "dev": "GROVE_NEXT_NODE=$(command -v node) tauri dev",
+    "dev": "GROVE_NODE=$(command -v node) tauri dev",
     "build:app": "tauri build",
     "postinstall": "node scripts/fix-spawn-helper.mjs"
   },

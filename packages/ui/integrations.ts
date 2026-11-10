@@ -69,7 +69,7 @@ export function promptView(info: IntegrationInfo): PromptView {
     paragraphs: [
       `Grove adds one hook command, for ${label}'s session start, to ${info.file}. The command does nothing unless it runs in a tab Grove opened or found, so other terminals are unaffected.`,
       `Your own hooks stay. The file is first copied to ${info.backup}, so you can put it back by hand.`,
-      `Remove it any time under Agent status in the sidebar, or with grove-next integration uninstall ${info.agent}.`,
+      `Remove it any time under Agent status in the sidebar, or with grove integration uninstall ${info.agent}.`,
     ],
   }
 }

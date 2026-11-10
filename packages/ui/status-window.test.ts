@@ -250,14 +250,14 @@ describe('window status path', () => {
     styleSelect.value = 'waveform'
     styleSelect.dispatchEvent(new Event('change', { bubbles: true }))
     expect(root.dataset.workingIndicator).toBe('waveform')
-    expect(JSON.parse(localStorage.getItem('grove-next.agent-appearance')!).workingIndicator).toBe('waveform')
+    expect(JSON.parse(localStorage.getItem('grove.agent-appearance')!).workingIndicator).toBe('waveform')
     for (const indicator of document.querySelectorAll('.indicator.ind-working')) {
       expect(indicator.querySelectorAll('.agent-wave-bar')).toHaveLength(3)
     }
 
     document.querySelector<HTMLButtonElement>('#appearance-needs-you [aria-label="Waiting color: Theme default"]')!.click()
     expect(root.style.getPropertyValue('--agent-state-needs-you')).toBe('')
-    expect(JSON.parse(localStorage.getItem('grove-next.agent-appearance')!).needsYou).toBeNull()
+    expect(JSON.parse(localStorage.getItem('grove.agent-appearance')!).needsYou).toBeNull()
   })
 
   it('shows an unknown agent minimum-version hint only while its PTY is live', () => {

@@ -4,31 +4,34 @@ import path from 'node:path'
 import { CLAUDE_HOOK_EVENTS, CLAUDE_HOOK_SCRIPT, CLAUDE_STATUSLINE_SCRIPT } from '../agents/claude/launch.ts'
 
 // The Claude SessionStart hook that reports the resume id of tabs typed by hand and after /clear. Status itself is OSC 7501.
-// Each command does nothing unless the tab it runs in has GROVE_NEXT_TAB
+// Each command does nothing unless the tab it runs in has GROVE_TAB
 // (every tab the app starts sets it), so the same hook is harmless in every other terminal. Install merges these
 // entry into Claude's own user settings; uninstall removes exactly these entries and nothing else. Copilot's entries from
 // older installs can still be removed (uninstallCopilot), but are no longer written.
 // The marker is a shell comment at the end of each command, so it is found again without a second file.
-export const MARKER = '# grove-next-hook'
+export const MARKER = '# grove-hook'
+// Installs made while the app was called grove-next carry this marker; they are still found, replaced and removed.
+const LEGACY_MARKER = '# grove-next-hook'
+const hasMarker = (text: string): boolean => text.includes(MARKER) || text.includes(LEGACY_MARKER)
 
 const shQuote = (value: string): string => `'${value.replace(/'/g, `'\\''`)}'`
 
 // The Claude command for one event. `node` is the Node that runs the hook (the one running this install).
 export function claudeHookCommand(event: string, node: string, script: string = CLAUDE_HOOK_SCRIPT): string {
-  return `if [ -n "$GROVE_NEXT_TAB" ]; then ${shQuote(node)} ${shQuote(script)} ${event}; fi ${MARKER}`
+  return `if [ -n "$GROVE_TAB" ]; then ${shQuote(node)} ${shQuote(script)} ${event}; fi ${MARKER}`
 }
 
 // The Claude statusLine command that records the tab's context reading. Outside a Grove tab it runs the user's own
-// command unchanged; inside one, statusline.mjs records the reading and then runs that command from GROVE_NEXT_CHAIN.
+// command unchanged; inside one, statusline.mjs records the reading and then runs that command from GROVE_CHAIN.
 export function claudeStatusLineCommand(original: string | undefined, node: string, script: string = CLAUDE_STATUSLINE_SCRIPT): string {
-  const chain = original === undefined ? '' : `GROVE_NEXT_CHAIN=${shQuote(original)} `
+  const chain = original === undefined ? '' : `GROVE_CHAIN=${shQuote(original)} `
   const outside = original === undefined ? ':' : `sh -c ${shQuote(original)}`
-  return `if [ -n "$GROVE_NEXT_TAB" ]; then ${chain}${shQuote(node)} ${shQuote(script)}; else ${outside}; fi ${MARKER}`
+  return `if [ -n "$GROVE_TAB" ]; then ${chain}${shQuote(node)} ${shQuote(script)}; else ${outside}; fi ${MARKER}`
 }
 
 // The user's own command recorded inside one of our statusLine commands, or undefined when it had none.
 export function originalStatusLine(command: string): string | undefined {
-  const match = /GROVE_NEXT_CHAIN=('(?:[^']|'\\'')*') /.exec(command)
+  const match = /GROVE_(?:NEXT_)?CHAIN=('(?:[^']|'\\'')*') /.exec(command)
   return match ? match[1]!.slice(1, -1).replace(/'\\''/g, "'") : undefined
 }
 
@@ -39,7 +42,7 @@ function statusLineOf(settings: JsonObject): JsonObject | null {
 
 function statusLineIsOurs(settings: JsonObject): boolean {
   const command = statusLineOf(settings)?.command
-  return typeof command === 'string' && command.includes(MARKER)
+  return typeof command === 'string' && hasMarker(command)
 }
 
 // Returns a copy of `settings` whose statusLine is ours, keeping the user's own command to chain to.
@@ -76,7 +79,7 @@ type JsonObject = Record<string, unknown>
 
 // Whether an entry was written by install (its command or bash text carries the marker).
 export function isOurs(entry: HookEntry): boolean {
-  return [entry.command, entry.bash].some((text) => typeof text === 'string' && text.includes(MARKER))
+  return [entry.command, entry.bash].some((text) => typeof text === 'string' && hasMarker(text))
 }
 
 // Returns a copy of `settings` with our Claude hook set for SessionStart only (entries from older installs for other
@@ -196,11 +199,11 @@ export function writeSettings(file: string, next: JsonObject, previous: JsonObje
   if (same) return { file, backup: null, changed: false }
   let backup: string | null = null
   if (existed) {
-    backup = `${file}.grove-next.bak`
+    backup = `${file}.grove.bak`
     if (!fs.existsSync(backup)) fs.copyFileSync(file, backup)
   }
   fs.mkdirSync(path.dirname(file), { recursive: true })
-  const tmp = `${file}.grove-next.tmp`
+  const tmp = `${file}.grove.tmp`
   // The rewritten file keeps the permissions of the one it replaces: a settings file kept private stays private.
   const mode = existed ? fs.statSync(file).mode & 0o777 : undefined
   fs.writeFileSync(tmp, `${JSON.stringify(next, null, 2)}\n`, mode === undefined ? undefined : { mode })

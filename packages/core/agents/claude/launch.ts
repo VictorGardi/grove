@@ -18,7 +18,7 @@ export interface ClaudeLaunchOptions {
   cwd: string
   home: string
   resumeId?: string
-  // False when the user's own Claude settings already carry Grove's hook (grove-next integration install claude):
+  // False when the user's own Claude settings already carry Grove's hook (grove integration install claude):
   // the per-launch hook would report the session twice, so the launch leaves it out.
   perLaunchHooks?: boolean
 }

@@ -82,14 +82,14 @@ describe('hook.mjs', () => {
     fs.rmSync(dir, { recursive: true, force: true })
   })
 
-  // The spool is the tab's own file under GROVE_NEXT_HOME, as for every tab the app starts.
+  // The spool is the tab's own file under GROVE_HOME, as for every tab the app starts.
   const spoolOf = (home: string) => path.join(home, 'agents', 'claude', 'tab.jsonl')
   function runHook(event: string | undefined, input: string, home: string | undefined, tab: string | null = 'tab') {
     const env: NodeJS.ProcessEnv = { ...process.env }
-    delete env.GROVE_NEXT_HOME
-    delete env.GROVE_NEXT_TAB
-    if (home !== undefined) env.GROVE_NEXT_HOME = home
-    if (tab !== null) env.GROVE_NEXT_TAB = tab
+    delete env.GROVE_HOME
+    delete env.GROVE_TAB
+    if (home !== undefined) env.GROVE_HOME = home
+    if (tab !== null) env.GROVE_TAB = tab
     const args = event === undefined ? [CLAUDE_HOOK_SCRIPT] : [CLAUDE_HOOK_SCRIPT, event]
     return spawnSync(process.execPath, args, { input, env, encoding: 'utf8' })
   }

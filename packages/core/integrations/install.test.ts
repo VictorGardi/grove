@@ -38,8 +38,8 @@ describe('integration install', () => {
     const file = path.join(dir, 'settings.json')
     fs.writeFileSync(file, '{"model":"opus"}')
     const result = installClaude(file, '/usr/bin/node')
-    expect(result.backup).toBe(`${file}.grove-next.bak`)
-    expect(fs.readFileSync(`${file}.grove-next.bak`, 'utf8')).toBe('{"model":"opus"}')
+    expect(result.backup).toBe(`${file}.grove.bak`)
+    expect(fs.readFileSync(`${file}.grove.bak`, 'utf8')).toBe('{"model":"opus"}')
   })
 
   it('keeps the permissions of a private settings file', () => {
@@ -81,12 +81,12 @@ describe('integration install', () => {
     expect(fs.readFileSync(file, 'utf8')).toBe('[1,2]')
   })
 
-  it('writes the command so it does nothing unless the tab has GROVE_NEXT_TAB, and carries the marker', () => {
+  it('writes the command so it does nothing unless the tab has GROVE_TAB, and carries the marker', () => {
     const file = path.join(dir, 'settings.json')
     installClaude(file, '/usr/bin/node')
     const after = readSettings(file) as { hooks: Record<string, Array<{ hooks: Array<{ command: string }> }>> }
     const command = after.hooks.SessionStart[0].hooks[0].command
-    expect(command.startsWith('if [ -n "$GROVE_NEXT_TAB" ]; then ')).toBe(true)
+    expect(command.startsWith('if [ -n "$GROVE_TAB" ]; then ')).toBe(true)
     expect(command.endsWith(`; fi ${MARKER}`)).toBe(true)
   })
 
@@ -133,7 +133,7 @@ describe('integration install', () => {
     expect(outside.status).toBe(0)
     expect(fs.existsSync(home)).toBe(false)
 
-    const inside = runHook(command, { GROVE_NEXT_TAB: 'tab-7', GROVE_NEXT_HOME: home }, payload)
+    const inside = runHook(command, { GROVE_TAB: 'tab-7', GROVE_HOME: home }, payload)
     expect(inside.status).toBe(0)
     const line = JSON.parse(fs.readFileSync(path.join(home, 'agents', 'claude', 'tab-7.jsonl'), 'utf8').trim())
     expect(line.event).toBe('SessionStart')
@@ -154,5 +154,20 @@ describe('Claude statusLine', () => {
   it('adds and removes its own when the user had none', () => {
     const once = mergeClaudeStatusLine({}, '/n')
     expect(removeClaudeStatusLine(once)).toEqual({})
+  })
+
+  it('still finds, replaces and removes a statusLine installed under the grove-next name', () => {
+    const legacy = {
+      statusLine: {
+        type: 'command',
+        command: `if [ -n "$GROVE_NEXT_TAB" ]; then GROVE_NEXT_CHAIN='echo mine' node /s.mjs; else sh -c 'echo mine'; fi # grove-next-hook`,
+      },
+    }
+    expect(originalStatusLine(legacy.statusLine.command)).toBe('echo mine')
+    expect(removeClaudeStatusLine(legacy)).toEqual({ statusLine: { type: 'command', command: 'echo mine' } })
+    const replaced = mergeClaudeStatusLine(legacy, '/n').statusLine as { command: string }
+    expect(replaced.command).toContain(MARKER)
+    expect(replaced.command).not.toContain('grove-next')
+    expect(originalStatusLine(replaced.command)).toBe('echo mine')
   })
 })

@@ -25,11 +25,11 @@ describe('holder', () => {
   let home: string
   let holder: ChildProcess | undefined
   let client: RpcClient | undefined
-  const savedHome = process.env.GROVE_NEXT_HOME
+  const savedHome = process.env.GROVE_HOME
 
   beforeEach(() => {
     home = fs.mkdtempSync(path.join(os.tmpdir(), 'gn-'))
-    process.env.GROVE_NEXT_HOME = home
+    process.env.GROVE_HOME = home
   })
 
   afterEach(async () => {
@@ -40,14 +40,14 @@ describe('holder', () => {
       await new Promise((resolve) => holder!.once('exit', resolve))
     }
     holder = undefined
-    if (savedHome === undefined) delete process.env.GROVE_NEXT_HOME
-    else process.env.GROVE_NEXT_HOME = savedHome
+    if (savedHome === undefined) delete process.env.GROVE_HOME
+    else process.env.GROVE_HOME = savedHome
     fs.rmSync(home, { recursive: true, force: true })
   })
 
   it('keeps its PTYs and accepts clients while the core restarts', async () => {
     holder = spawn(process.execPath, ['--import', import.meta.resolve('tsx'), holderBin], {
-      env: { ...process.env, GROVE_NEXT_HOME: home, GROVE_NEXT_CORE_CMD: `${process.execPath} ${fakeCore}` },
+      env: { ...process.env, GROVE_HOME: home, GROVE_CORE_CMD: `${process.execPath} ${fakeCore}` },
       stdio: ['ignore', 'pipe', 'pipe'],
     })
     const socketPath = holderSocketPath()

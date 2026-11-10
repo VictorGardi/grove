@@ -28,7 +28,7 @@ describe('IntegrationService', () => {
   }
 
   it('reports a missing settings file as not enabled, and asks only for an agent that is running', () => {
-    expect(service().status('claude', true)).toMatchObject({ state: 'not-enabled', file: claude, backup: `${claude}.grove-next.bak`, pending: true })
+    expect(service().status('claude', true)).toMatchObject({ state: 'not-enabled', file: claude, backup: `${claude}.grove.bak`, pending: true })
     expect(service().status('claude', false)).toMatchObject({ state: 'not-enabled', pending: false })
     expect(fs.existsSync(claude)).toBe(false)
   })
@@ -52,8 +52,8 @@ describe('IntegrationService', () => {
     write(claude, { hooks: { SessionStart: [{ hooks: [{ type: 'command', command: 'echo mine' }] }] } })
     const original = fs.readFileSync(claude, 'utf8')
     const result = service().install('claude', false)
-    expect(result).toMatchObject({ state: 'enabled', written: `${claude}.grove-next.bak` })
-    expect(fs.readFileSync(`${claude}.grove-next.bak`, 'utf8')).toBe(original)
+    expect(result).toMatchObject({ state: 'enabled', written: `${claude}.grove.bak` })
+    expect(fs.readFileSync(`${claude}.grove.bak`, 'utf8')).toBe(original)
     const hooks = JSON.parse(fs.readFileSync(claude, 'utf8')).hooks
     expect(hooks.SessionStart.map((group: { hooks: Array<{ command: string }> }) => group.hooks[0].command)).toContain('echo mine')
   })

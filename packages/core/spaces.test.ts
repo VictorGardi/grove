@@ -62,12 +62,12 @@ describe('spaces and tabs', () => {
   let root: string
   let holder: ChildProcess | undefined
   let clients: RpcClient[] = []
-  const savedHome = process.env.GROVE_NEXT_HOME
+  const savedHome = process.env.GROVE_HOME
 
   beforeEach(() => {
     home = fs.mkdtempSync(path.join(os.tmpdir(), 'gn-'))
     root = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), 'gn-spaces-')))
-    process.env.GROVE_NEXT_HOME = home
+    process.env.GROVE_HOME = home
   })
 
   afterEach(async () => {
@@ -75,8 +75,8 @@ describe('spaces and tabs', () => {
     clients = []
     await stopHolder(holder)
     holder = undefined
-    if (savedHome === undefined) delete process.env.GROVE_NEXT_HOME
-    else process.env.GROVE_NEXT_HOME = savedHome
+    if (savedHome === undefined) delete process.env.GROVE_HOME
+    else process.env.GROVE_HOME = savedHome
     fs.rmSync(home, { recursive: true, force: true })
     fs.rmSync(root, { recursive: true, force: true })
   })

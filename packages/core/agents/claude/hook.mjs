@@ -4,11 +4,11 @@ import fs from 'node:fs'
 import path from 'node:path'
 
 const event = process.argv[2]
-// Every tab the app starts sets GROVE_NEXT_TAB and GROVE_NEXT_HOME; the spool is the tab's own file, the one the core
+// Every tab the app starts sets GROVE_TAB and GROVE_HOME; the spool is the tab's own file, the one the core
 // watches for it.
 const spool =
-  process.env.GROVE_NEXT_HOME && process.env.GROVE_NEXT_TAB
-    ? path.join(process.env.GROVE_NEXT_HOME, 'agents', 'claude', `${process.env.GROVE_NEXT_TAB}.jsonl`)
+  process.env.GROVE_HOME && process.env.GROVE_TAB
+    ? path.join(process.env.GROVE_HOME, 'agents', 'claude', `${process.env.GROVE_TAB}.jsonl`)
     : ''
 
 async function readStdin() {

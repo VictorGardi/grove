@@ -1,7 +1,7 @@
 {
   "productName": "Grove",
   "version": "0.1.0",
-  "identifier": "dev.grove-next.app",
+  "identifier": "dev.grove.app",
   "build": {
     "beforeDevCommand": { "script": "npx vite", "cwd": ".." },
     "devUrl": "http://localhost:1420",

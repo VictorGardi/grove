@@ -42,17 +42,32 @@ fn home_dir() -> PathBuf {
     PathBuf::from(std::env::var_os("HOME").unwrap_or_default())
 }
 
-// Same rule as the core and holder: GROVE_NEXT_HOME, else ~/.grove-next.
+// Same rule as the core and holder: GROVE_HOME, else ~/.grove. The app used to keep its state in ~/.grove-next; each
+// entry moves over unless it is already there, so ~/.grove's other files are left alone.
 fn grove_home() -> PathBuf {
-    match std::env::var_os("GROVE_NEXT_HOME") {
+    match std::env::var_os("GROVE_HOME") {
         Some(home) if !home.is_empty() => PathBuf::from(home),
-        _ => home_dir().join(".grove-next"),
+        _ => {
+            let home = home_dir().join(".grove");
+            let legacy = home_dir().join(".grove-next");
+            if let Ok(entries) = fs::read_dir(&legacy) {
+                let _ = fs::create_dir_all(&home);
+                for entry in entries.flatten() {
+                    let target = home.join(entry.file_name());
+                    if !target.exists() {
+                        let _ = fs::rename(entry.path(), target);
+                    }
+                }
+                let _ = fs::remove_dir(&legacy);
+            }
+            home
+        }
     }
 }
 
 // The next/ folder, which holds packages/ and node_modules/. Dev builds only.
-fn next_root() -> PathBuf {
-    match std::env::var_os("GROVE_NEXT_ROOT") {
+fn repo_root() -> PathBuf {
+    match std::env::var_os("GROVE_ROOT") {
         Some(root) if !root.is_empty() => PathBuf::from(root),
         _ => PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../.."),
     }
@@ -60,11 +75,11 @@ fn next_root() -> PathBuf {
 
 // Starts the holder detached: its own process group and no stdio, so it outlives this app.
 fn start_holder() -> Result<(), String> {
-    let node = std::env::var("GROVE_NEXT_NODE")
+    let node = std::env::var("GROVE_NODE")
         .ok()
         .filter(|path| !path.is_empty())
         .unwrap_or_else(|| "node".to_string());
-    let root = next_root();
+    let root = repo_root();
     // The holder and the core it supervises log here, so a core that dies leaves a trace.
     let log_path = grove_home().join("holder.log");
     let open_log = || fs::OpenOptions::new().create(true).append(true).open(&log_path);
@@ -225,19 +240,19 @@ fn raise_window(app: AppHandle) -> Result<(), String> {
 // The first line of every wrapper written by install_cli; a file that starts with it is ours and may be replaced.
 const WRAPPER_START: &str = "#!/bin/sh\nexec '";
 
-// Writes ~/.local/bin/grove-next as a wrapper script, not a symlink: the script finds its folder from $0.
+// Writes ~/.local/bin/grove as a wrapper script, not a symlink: the script finds its folder from $0.
 #[tauri::command]
 fn install_cli() -> Result<String, String> {
-    let script = fs::canonicalize(next_root().join("bin/grove-next"))
-        .map_err(|error| format!("grove-next not found under {}: {error}", next_root().display()))?;
+    let script = fs::canonicalize(repo_root().join("bin/grove"))
+        .map_err(|error| format!("grove not found under {}: {error}", repo_root().display()))?;
     let dir = home_dir().join(".local/bin");
-    let target = dir.join("grove-next");
+    let target = dir.join("grove");
     // A symlink is never followed here: it is not one of our wrappers, whatever it points at.
     if let Ok(metadata) = fs::symlink_metadata(&target) {
         let ours = !metadata.file_type().is_symlink()
             && fs::read_to_string(&target).map(|text| text.starts_with(WRAPPER_START)).unwrap_or(false);
         if !ours {
-            return Err(format!("{} exists and is not a grove-next command; remove it first", target.display()));
+            return Err(format!("{} exists and is not a grove command; remove it first", target.display()));
         }
     }
     fs::create_dir_all(&dir).map_err(|error| format!("could not create {}: {error}", dir.display()))?;
@@ -248,7 +263,7 @@ fn install_cli() -> Result<String, String> {
     }
     let quoted = path.replace('\'', r"'\''");
     // Written beside the target and renamed over it, so a failed write never leaves a half-written wrapper behind.
-    let staged = dir.join(format!(".grove-next.{}.tmp", std::process::id()));
+    let staged = dir.join(format!(".grove.{}.tmp", std::process::id()));
     fs::write(&staged, format!("{WRAPPER_START}{quoted}' \"$@\"\n"))
         .map_err(|error| format!("could not write {}: {error}", staged.display()))?;
     fs::set_permissions(&staged, fs::Permissions::from_mode(0o755))

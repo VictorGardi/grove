@@ -1,6 +1,6 @@
 import type { KeyValueStore } from './sidebar-state.ts'
 
-export const APPEARANCE_KEY = 'grove-next.agent-appearance'
+export const APPEARANCE_KEY = 'grove.agent-appearance'
 
 export const AGENT_APPEARANCE_SWATCHES = [
   { id: 'tile-1', label: 'Teal' },

@@ -4,7 +4,7 @@ import net from 'node:net'
 import path from 'node:path'
 import { connectRpc, type RpcClient } from '../protocol/client.ts'
 import { bytesToB64, createLineDecoder, encodeLine } from '../protocol/framing.ts'
-import { coreSocketPath, groveNextHome, holderSocketPath } from '../protocol/paths.ts'
+import { coreSocketPath, groveHome, holderSocketPath } from '../protocol/paths.ts'
 import { ERROR_CODES, METHODS, PROTOCOL_VERSION } from '../protocol/messages.ts'
 import type { IntegrationAgent, IntegrationInfo, KeyAction } from '../protocol/messages.ts'
 import { claudeSettingsFile } from './integrations/install.ts'
@@ -76,13 +76,13 @@ export async function startCoreDaemon(
 ): Promise<CoreServer> {
   const socketPath = options.socketPath ?? coreSocketPath()
   const holderSocket = options.holderSocket ?? holderSocketPath()
-  const home = options.home ?? groveNextHome()
+  const home = options.home ?? groveHome()
   const adapters = options.adapters ?? registry
   // An agent that reported its command available is not probed again for the life of this core.
   const available = new Set<AgentKind>()
   const spaces = options.spaces ?? new SpacesService(options.stateFile ?? path.join(home, 'state.json'))
   await removeStaleSocket(socketPath)
-  // Every tab gets the config folder in GROVE_NEXT_CONFIG. The core starts with the last good config and says so in AGENTS.md.
+  // Every tab gets the config folder in GROVE_CONFIG. The core starts with the last good config and says so in AGENTS.md.
   const configDir = configFolder(home)
   const config = new ConfigStore(configDir)
   config.load()
@@ -532,7 +532,7 @@ async function createAgentTab(
     id,
     command: launch.command,
     args: launch.args,
-    env: { ...launch.env, GROVE_NEXT_CONFIG: deps.configDir, GROVE_NEXT_TAB: id, GROVE_NEXT_HOME: deps.home },
+    env: { ...launch.env, GROVE_CONFIG: deps.configDir, GROVE_TAB: id, GROVE_HOME: deps.home },
     cwd: spacePath,
     cols: numberParam(p, 'cols'),
     rows: numberParam(p, 'rows'),
@@ -716,7 +716,7 @@ async function dispatchSpaces(method: string, rawParams: unknown, holder: RpcCli
     return info
   }
   const p = rawParams as MethodMap['tabs.open']['params']
-  const env = { GROVE_NEXT_CONFIG: deps.configDir }
+  const env = { GROVE_CONFIG: deps.configDir }
   const result = await spaces.openTab(stringParam(p, 'spaceId'), numberParam(p, 'cols'), numberParam(p, 'rows'), holder, optionalLabel(p), env)
   announceTab(result.id, deps)
   return result

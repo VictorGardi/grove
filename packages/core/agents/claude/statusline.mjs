@@ -7,9 +7,9 @@ import os from 'node:os'
 import path from 'node:path'
 
 const usage =
-  process.env.GROVE_NEXT_USAGE ||
-  (process.env.GROVE_NEXT_HOME && process.env.GROVE_NEXT_TAB
-    ? path.join(process.env.GROVE_NEXT_HOME, 'agents', 'claude', `${process.env.GROVE_NEXT_TAB}.usage.json`)
+  process.env.GROVE_USAGE ||
+  (process.env.GROVE_HOME && process.env.GROVE_TAB
+    ? path.join(process.env.GROVE_HOME, 'agents', 'claude', `${process.env.GROVE_TAB}.usage.json`)
     : '')
 
 async function readStdin() {
@@ -68,7 +68,7 @@ function commandIn(file) {
 // project's shared settings, then the user's. The first file that sets a command wins. Undefined when there is none.
 // The user's command recorded inside Grove's installed one (see claudeStatusLineCommand).
 function recorded(command) {
-  const match = /GROVE_NEXT_CHAIN=('(?:[^']|'\\'')*') /.exec(command)
+  const match = /GROVE_(?:NEXT_)?CHAIN=('(?:[^']|'\\'')*') /.exec(command)
   return match ? match[1].slice(1, -1).replace(/'\\''/g, "'") : undefined
 }
 
@@ -81,8 +81,8 @@ function chainedCommand(input) {
   ]
   for (const file of files) {
     const command = file && commandIn(file)
-    // Grove's own installed command is not the user's: theirs is in GROVE_NEXT_CHAIN.
-    if (command && command.includes('# grove-next-hook')) return process.env.GROVE_NEXT_CHAIN || recorded(command)
+    // Grove's own installed command is not the user's: theirs is in GROVE_CHAIN.
+    if (command && (command.includes('# grove-hook') || command.includes('# grove-next-hook'))) return process.env.GROVE_CHAIN || recorded(command)
     if (command) return command
   }
   return undefined

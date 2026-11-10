@@ -2,6 +2,6 @@
 import fs from 'node:fs'
 import path from 'node:path'
 
-const home = process.env.GROVE_NEXT_HOME
+const home = process.env.GROVE_HOME
 fs.appendFileSync(path.join(home, 'starts'), `${process.pid}\n`)
 setTimeout(() => process.exit(0), 300)

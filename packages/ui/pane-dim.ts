@@ -3,7 +3,7 @@ import type { KeyValueStore } from './sidebar-state.ts'
 // How dimmed the unfocused grid panes are, as their opacity, kept in the window's storage so a reload keeps it. Null when the human
 // has not chosen one: the theme's --pane-unfocused-opacity then stands.
 
-export const PANE_DIM_KEY = 'grove-next.pane-dim'
+export const PANE_DIM_KEY = 'grove.pane-dim'
 export const PANE_DIM_RANGE = { min: 0.1, max: 1, step: 0.05 }
 
 export function clampPaneDim(value: number): number {

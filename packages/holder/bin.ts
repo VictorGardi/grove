@@ -8,7 +8,7 @@ const MAX_RESTART_MS = 8000
 const STABLE_MS = 10000
 
 function coreCommand(): { command: string; args: string[] } {
-  const configured = process.env.GROVE_NEXT_CORE_CMD?.trim()
+  const configured = process.env.GROVE_CORE_CMD?.trim()
   if (configured) {
     const [command, ...args] = configured.split(/\s+/)
     return { command: command!, args }

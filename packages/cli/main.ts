@@ -107,7 +107,7 @@ async function withCore<T>(call: (core: RpcClient) => Promise<T>): Promise<T> {
     // A core that started before this build keeps its old code: it cannot see agents typed by hand, so say so.
     const { build } = await core.request(METHODS.corePing, {})
     if (build !== buildId()) {
-      throw new Error('the running core is from an older build; stop it (quit Grove, or end the grove-next core process) and run again')
+      throw new Error('the running core is from an older build; stop it (quit Grove, or end the grove core process) and run again')
     }
     return await call(core)
   } finally {
@@ -116,7 +116,7 @@ async function withCore<T>(call: (core: RpcClient) => Promise<T>): Promise<T> {
 }
 
 async function addSpace(arg: string | undefined): Promise<number> {
-  const base = process.env.GROVE_NEXT_CALLER_CWD || process.cwd()
+  const base = process.env.GROVE_CALLER_CWD || process.cwd()
   const target = path.resolve(base, arg ?? '')
   return withCore(async (core) => {
     // Always a new space, even when the folder is one already; it prints the new space's heading.
@@ -158,19 +158,19 @@ function lsTabs(tabs: SpaceTabInfo[], agents: AgentInfo[]): LsTab[] {
 }
 
 async function newTab(cmd: Extract<Command, { cmd: 'new' }>): Promise<number> {
-  const base = process.env.GROVE_NEXT_CALLER_CWD || process.cwd()
+  const base = process.env.GROVE_CALLER_CWD || process.cwd()
   return withCore(async (core) => {
     // --space names a space; otherwise a folder means its first space.
     const { spaces } = await core.request(METHODS.spacesList, {})
     let space: SpaceInfo | undefined
     if (cmd.space !== undefined) {
       const found = resolveSpaceRef(spaces, cmd.space)
-      if (!found.ok) throw new Error(found.error === 'ambiguous' ? `more than one space matches ${cmd.space}` : `no such space: ${cmd.space}, see grove-next ls`)
+      if (!found.ok) throw new Error(found.error === 'ambiguous' ? `more than one space matches ${cmd.space}` : `no such space: ${cmd.space}, see grove ls`)
       space = spaces.find((candidate) => candidate.id === found.id)
     } else {
       const folder = realpathOrSelf(path.resolve(base, cmd.cwd ?? ''))
       space = spaces.find((candidate) => candidate.path === folder)
-      if (space === undefined) throw new Error(`not a space: ${folder}, add it with grove-next space add`)
+      if (space === undefined) throw new Error(`not a space: ${folder}, add it with grove space add`)
     }
     if (space === undefined) throw new Error(`no such space: ${cmd.space}`)
     const dir = space.path
@@ -276,7 +276,7 @@ function realpathOrSelf(target: string): string {
   }
 }
 
-// Run directly (node --import tsx packages/cli/main.ts, or bin/grove-next), not when imported by a test.
+// Run directly (node --import tsx packages/cli/main.ts, or bin/grove), not when imported by a test.
 function isEntryPoint(): boolean {
   const entry = process.argv[1]
   if (!entry) return false

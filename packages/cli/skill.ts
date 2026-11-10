@@ -3,30 +3,30 @@ import path from 'node:path'
 import { atomicWrite } from '../core/config/store.ts'
 
 // Every skill file this writes carries the marker. A file with it is ours and is replaced; any other file is left alone.
-export const SKILL_MARKER = 'grove-next:skill'
+export const SKILL_MARKER = 'grove:skill'
 
-const SKILL_FOLDER = 'grove-next-config'
+const SKILL_FOLDER = 'grove-config'
 
-// The skill: it applies only when GROVE_NEXT_CONFIG is set (a tab started by grove-next), and sends the agent to the config
+// The skill: it applies only when GROVE_CONFIG is set (a tab started by grove), and sends the agent to the config
 // folder's own AGENTS.md before it changes anything.
 export function skillText(): string {
   return [
     '---',
-    'name: grove-next-config',
-    'description: Change grove-next settings: sidebar width, shortcuts, launchers, theme and layout. Use when the human asks to change how grove-next looks or behaves. Applies only when GROVE_NEXT_CONFIG is set.',
+    'name: grove-config',
+    'description: Change grove settings: sidebar width, shortcuts, launchers, theme and layout. Use when the human asks to change how grove looks or behaves. Applies only when GROVE_CONFIG is set.',
     '---',
     '',
     `<!-- ${SKILL_MARKER} -->`,
     '',
-    '# grove-next config',
+    '# grove config',
     '',
-    'When `GROVE_NEXT_CONFIG` is set, read `$GROVE_NEXT_CONFIG/AGENTS.md` before changing grove-next.',
+    'When `GROVE_CONFIG` is set, read `$GROVE_CONFIG/AGENTS.md` before changing grove.',
     '',
-    '- Sidebar width and other settings: edit `$GROVE_NEXT_CONFIG/settings.json`.',
-    '- Keyboard shortcuts: edit `$GROVE_NEXT_CONFIG/keys.json`.',
-    '- Launcher buttons: edit `$GROVE_NEXT_CONFIG/launchers.json`.',
-    '- Colours and sizes: edit `$GROVE_NEXT_CONFIG/theme.json`.',
-    '- Sidebar order: edit `$GROVE_NEXT_CONFIG/layout.json`.',
+    '- Sidebar width and other settings: edit `$GROVE_CONFIG/settings.json`.',
+    '- Keyboard shortcuts: edit `$GROVE_CONFIG/keys.json`.',
+    '- Launcher buttons: edit `$GROVE_CONFIG/launchers.json`.',
+    '- Colours and sizes: edit `$GROVE_CONFIG/theme.json`.',
+    '- Sidebar order: edit `$GROVE_CONFIG/layout.json`.',
     '',
     'Keep `"version": 1` in each file. The app applies a saved change while it runs; no restart is needed.',
     '',
@@ -62,7 +62,7 @@ export function installSkill(o: { dirs: string[] }): SkillResult[] {
       const existing = readText(target)
       // The marker sits in the header of a file we wrote; a file that only quotes it further down is not ours.
       if (existing !== undefined && !existing.split('\n').slice(0, 10).join('\n').includes(SKILL_MARKER)) {
-        return { target, ok: false, error: `${target} exists and was not written by grove-next; remove it first` }
+        return { target, ok: false, error: `${target} exists and was not written by grove; remove it first` }
       }
       atomicWrite(target, skillText())
       return { target, ok: true }

@@ -53,7 +53,7 @@ export class IntegrationService {
   // The state of an agent's hooks in its settings file as it is now.
   status(agent: IntegrationAgent, adopted: boolean): IntegrationInfo {
     const file = this.options.files[agent]
-    const backup = `${file}.grove-next.bak`
+    const backup = `${file}.grove.bak`
     let state: IntegrationState
     let error: string | undefined
     try {

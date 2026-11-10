@@ -104,10 +104,10 @@ describe('parseCommand', () => {
     }
   })
 
-  it('names grove-next in the usage', () => {
+  it('names grove in the usage', () => {
     const bad = parseCommand(['nope'])
     expect(bad).toBeInstanceOf(UsageError)
-    expect((bad as UsageError).message).toContain('usage: grove-next')
+    expect((bad as UsageError).message).toContain('usage: grove')
   })
 
   it('returns a UsageError for no command, an unknown command or flag, and extra arguments', () => {
