@@ -59,7 +59,17 @@ export async function listWorktrees(dir: string): Promise<WorktreeEntry[]> {
     })
 }
 
-// Adds a worktree at `dest`. A branch that exists is checked out; a new one starts from `dir`'s HEAD.
+// The commit `ref` names. Refuses a ref that starts with `-`, which git would read as an option.
+async function resolveCommit(dir: string, ref: string): Promise<string> {
+  const notValid = () => new Error(`not a valid base: ${ref}`)
+  if (ref.startsWith('-')) throw notValid()
+  const sha = await git(dir, ['rev-parse', '--verify', '--quiet', `${ref}^{commit}`]).catch(() => {
+    throw notValid()
+  })
+  return sha.trim()
+}
+
+// Adds a worktree at `dest`. A branch that exists is checked out; a new one starts from `base`, else `dir`'s HEAD.
 export async function addWorktree(dir: string, dest: string, branch: string, base?: string): Promise<void> {
   await git(dir, ['check-ref-format', '--branch', branch]).catch(() => {
     throw new Error(`not a valid branch name: ${branch}`)
@@ -69,7 +79,9 @@ export async function addWorktree(dir: string, dest: string, branch: string, bas
     () => false,
   )
   if (exists && base !== undefined) throw new Error(`branch ${branch} exists, base only applies to a new branch`)
-  await git(dir, exists ? ['worktree', 'add', dest, branch] : ['worktree', 'add', '-b', branch, dest, base ?? 'HEAD'])
+  // A base is resolved to a commit first, so a value git would read as an option or a bad ref fails with a clear message.
+  const start = base === undefined ? 'HEAD' : await resolveCommit(dir, base)
+  await git(dir, exists ? ['worktree', 'add', dest, branch] : ['worktree', 'add', '-b', branch, dest, start])
 }
 
 // Removes the checkout. Git refuses a checkout with changes in it or a lock, unless `force`; the branch is kept. A locked

@@ -172,12 +172,13 @@ async function newTab(cmd: Extract<Command, { cmd: 'new' }>): Promise<number> {
     } else if (cmd.cwd === undefined && (cmd.here || caller !== undefined)) {
       if (caller === undefined) throw new Error('--here needs a Grove tab: GROVE_TAB is not set or names no tab')
       space = spaces.find((candidate) => candidate.id === caller.spaceId)
+      if (space === undefined) throw new Error(`this tab's space ${caller.spaceId} is gone, see grove ls`)
     } else {
       const folder = realpathOrSelf(path.resolve(base, cmd.cwd ?? ''))
       space = spaces.find((candidate) => candidate.path === folder)
       if (space === undefined) throw new Error(`not a space: ${folder}, add it with grove space add`)
     }
-    if (space === undefined) throw new Error(`no such space: ${cmd.space ?? 'of this tab'}`)
+    if (space === undefined) throw new Error(`no such space: ${cmd.space}`)
     // No kind means the caller's own agent; a shell or a caller outside Grove has none to copy.
     const kind = cmd.kind ?? (caller !== undefined && caller.kind !== 'terminal' ? caller.kind : undefined)
     if (kind === undefined) throw new Error('name a kind: terminal, claude, opencode or copilot (this is not an agent tab)')
