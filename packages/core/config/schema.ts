@@ -33,6 +33,9 @@ export const KEY_ACTIONS = [
   'sidebar-toggle',
   'notes',
   'diff',
+  'zoom-in',
+  'zoom-out',
+  'zoom-reset',
   'space-1',
   'space-2',
   'space-3',
@@ -82,6 +85,9 @@ export const DEFAULT_VALUES: ConfigValues = {
     'sidebar-toggle': 'mod+b',
     notes: 'mod+shift+n',
     diff: 'mod+shift+d',
+    'zoom-in': 'mod+=',
+    'zoom-out': 'mod+-',
+    'zoom-reset': 'mod+0',
     'space-1': 'mod+1',
     'space-2': 'mod+2',
     'space-3': 'mod+3',
@@ -140,11 +146,11 @@ const MODIFIERS = ['mod', 'ctrl', 'alt', 'shift'] as const
 const NAMED_KEYS = ['tab'] as const
 
 // The canonical form of a key binding such as "mod+shift+1": one or more modifiers in a fixed order, then one
-// lowercase letter, digit, period or named key (tab). Returns null when the text is not a binding.
+// lowercase letter, digit, period, = or - sign, or named key (tab). Returns null when the text is not a binding.
 export function canonicalBinding(text: string): string | null {
   const parts = text.split('+')
   const key = parts.pop() ?? ''
-  if (!/^[a-z0-9.]$/.test(key) && !(NAMED_KEYS as readonly string[]).includes(key)) return null
+  if (!/^[a-z0-9.=-]$/.test(key) && !(NAMED_KEYS as readonly string[]).includes(key)) return null
   if (parts.length === 0) return null
   if (new Set(parts).size !== parts.length) return null
   if (!parts.every((part) => (MODIFIERS as readonly string[]).includes(part))) return null
@@ -164,6 +170,9 @@ const KEY_DESCRIPTIONS: Record<KeyAction, string> = {
   'sidebar-toggle': 'Shows or hides the sidebar. The button in the tab strip does the same.',
   notes: 'Opens or closes the notes: one markdown page that saves as you type.',
   diff: 'Opens or closes the changes of the active tab\'s folder: the files that differ and their diffs. Read only.',
+  'zoom-in': 'Makes the whole window bigger, up to 300%. Shift is ignored with "=", so Cmd+Plus works too.',
+  'zoom-out': 'Makes the whole window smaller, down to 50%.',
+  'zoom-reset': 'Puts the window back to 100%.',
   'space-1': 'Focuses the first space in the sidebar, with the tab it last showed.',
   'space-2': 'Focuses the second space in the sidebar, with the tab it last showed.',
   'space-3': 'Focuses the third space in the sidebar, with the tab it last showed.',

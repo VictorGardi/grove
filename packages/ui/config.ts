@@ -72,6 +72,10 @@ export function parseBinding(text: string): Binding | null {
 
 // The key pressed, by its physical code so Shift or Alt do not change it (Shift+1 is still "1").
 function keyOf(event: KeyEvent): string {
+  // = and - go by the character typed, not the key: they sit on different keys on other layouts (Swedish = is Shift+0). A binding
+  // cannot name +, so it is =.
+  if (event.key === '+' || event.key === '=') return '='
+  if (event.key === '-') return '-'
   if (/^Key[A-Z]$/.test(event.code)) return event.code.slice(3).toLowerCase()
   if (/^Digit[0-9]$/.test(event.code)) return event.code.slice(5)
   if (event.code === 'Period') return '.'
@@ -115,7 +119,8 @@ export function bindingMatches(binding: Binding, event: KeyEvent, isMac: boolean
     event.metaKey === meta &&
     event.ctrlKey === ctrl &&
     event.altKey === binding.alt &&
-    event.shiftKey === binding.shift &&
+    // Plus is Shift+= on most layouts, so a binding on = also takes Shift.
+    (event.shiftKey === binding.shift || (binding.key === '=' && !binding.shift)) &&
     keyOf(event) === binding.key
   )
 }

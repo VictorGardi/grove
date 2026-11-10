@@ -2,5 +2,5 @@
   "identifier": "default",
   "description": "The Grove window",
   "windows": ["main"],
-  "permissions": ["core:default", "core:window:allow-start-dragging"]
+  "permissions": ["core:default", "core:window:allow-start-dragging", "core:webview:allow-set-webview-zoom"]
 }

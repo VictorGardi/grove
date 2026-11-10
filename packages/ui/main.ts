@@ -1,4 +1,5 @@
 import { invoke } from '@tauri-apps/api/core'
+import { getCurrentWebview } from '@tauri-apps/api/webview'
 import { getCurrentWindow } from '@tauri-apps/api/window'
 import { createBridge, fromBase64, toBase64 } from './bridge.ts'
 import { createSoundGate, noticeBody, soundFile } from './alerts.ts'
@@ -12,6 +13,7 @@ import {
   type AgentAppearanceColor,
 } from './appearance-pref.ts'
 import { THEMES, applyThemeChoice, isThemeId, readTheme, writeTheme } from './theme-pref.ts'
+import { DEFAULT_ZOOM, readZoom, stepZoom, writeZoom, type ZoomStep } from './zoom-pref.ts'
 import { applyLayout, applySettings, applyTheme, findAction, formatBinding, launcherLine } from './config.ts'
 import { openTerminal, terminalFontSize, tokenValue, type TerminalView } from './terminal.ts'
 import { createArranger, clearPlacement, PANE_MIN } from './grid/arrange.ts'
@@ -133,6 +135,18 @@ let soundOn = readSound(storage())
 // The chosen theme goes on the root before the first terminal opens, so every terminal starts with its colours.
 let themeId = readTheme(storage())
 applyThemeChoice(document.documentElement, themeId)
+// The whole window is zoomed by the webview, so the terminals' ResizeObserver refits them. The saved level is applied
+// before the first terminal opens.
+let zoom = readZoom(storage())
+function applyZoom(): void {
+  void getCurrentWebview().setZoom(zoom).catch(report)
+}
+function setZoom(step: ZoomStep): void {
+  zoom = stepZoom(zoom, step)
+  writeZoom(storage(), zoom)
+  applyZoom()
+}
+if (zoom !== DEFAULT_ZOOM) applyZoom()
 let agentAppearance = readAgentAppearance(storage())
 applyAgentAppearance(document.documentElement, agentAppearance)
 
@@ -348,6 +362,9 @@ const keyActions: Record<KeyAction, () => void> = {
   'sidebar-toggle': () => sidebarToggle.click(),
   notes: () => rail.toggle('notes')?.(),
   diff: () => rail.toggle('diff')?.(),
+  'zoom-in': () => setZoom('in'),
+  'zoom-out': () => setZoom('out'),
+  'zoom-reset': () => setZoom('reset'),
   'space-1': () => focusSpace(1),
   'space-2': () => focusSpace(2),
   'space-3': () => focusSpace(3),

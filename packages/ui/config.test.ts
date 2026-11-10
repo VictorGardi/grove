@@ -203,6 +203,21 @@ describe('findAction', () => {
     expect(findAction(keys, keyEvent({ key: '7', code: 'Digit7', metaKey: true }), true)).toBe('space-7')
   })
 
+  it('zooms with Cmd+=, Cmd++ (Shift+=), Cmd+- and Cmd+0', () => {
+    expect(findAction(keys, keyEvent({ key: '=', code: 'Equal', metaKey: true }), true)).toBe('zoom-in')
+    expect(findAction(keys, keyEvent({ key: '+', code: 'Equal', metaKey: true, shiftKey: true }), true)).toBe('zoom-in')
+    expect(findAction(keys, keyEvent({ key: '-', code: 'Minus', metaKey: true }), true)).toBe('zoom-out')
+    expect(findAction(keys, keyEvent({ key: '0', code: 'Digit0', metaKey: true }), true)).toBe('zoom-reset')
+    expect(findAction(keys, keyEvent({ key: '=', code: 'Equal', ctrlKey: true }), false)).toBe('zoom-in')
+  })
+
+  it('zooms by the character typed, so a layout with + and - on other keys still works', () => {
+    // Swedish: + is on the physical Minus key, - on Slash, and = is Shift+0.
+    expect(findAction(keys, keyEvent({ key: '+', code: 'Minus', metaKey: true }), true)).toBe('zoom-in')
+    expect(findAction(keys, keyEvent({ key: '-', code: 'Slash', metaKey: true }), true)).toBe('zoom-out')
+    expect(findAction(keys, keyEvent({ key: '=', code: 'Digit0', metaKey: true, shiftKey: true }), true)).toBe('zoom-in')
+  })
+
   it('follows a rebound key and ignores the old one', () => {
     const rebound = { ...keys, 'grid-toggle': 'alt+v' }
     expect(findAction(rebound, keyEvent({ key: 'v', code: 'KeyV', altKey: true }), true)).toBe('grid-toggle')

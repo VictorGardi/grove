@@ -55,6 +55,9 @@ describe('config schema', () => {
         'sidebar-toggle': 'mod+b',
         notes: 'mod+shift+n',
         diff: 'mod+shift+d',
+        'zoom-in': 'mod+=',
+        'zoom-out': 'mod+-',
+        'zoom-reset': 'mod+0',
         'space-1': 'mod+1',
         'space-2': 'mod+2',
         'space-3': 'mod+3',
@@ -66,6 +69,11 @@ describe('config schema', () => {
         'space-9': 'mod+9',
       },
     })
+  })
+
+  it('accepts = and - as keys, so the zoom actions can be mod+= and mod+-', () => {
+    expect(canonicalBinding('shift+mod+=')).toBe('mod+shift+=')
+    expect(canonicalBinding('mod+-')).toBe('mod+-')
   })
 
   it('accepts a period as the key, so next-urgent can be mod+.', () => {
