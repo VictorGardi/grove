@@ -385,8 +385,9 @@ export interface MethodMap {
   'spaces.rename': { params: { id: string; name: string }; result: Empty }
   // The worktrees of the space's repo that are not spaces yet.
   'worktrees.list': { params: { spaceId: string }; result: { worktrees: { path: string; branch: string | null }[] } }
-  // A new space on a checkout under ~/.grove/worktrees/<repo>/. A branch that exists is checked out; a new one starts from the space's HEAD.
-  'worktrees.add': { params: { spaceId: string; branch: string }; result: SpaceInfo }
+  // A new space on a checkout under ~/.grove/worktrees/<repo>/. A branch that exists is checked out; a new one starts from `base`
+  // (any git ref), else the space's HEAD. `base` with a branch that exists is an error.
+  'worktrees.add': { params: { spaceId: string; branch: string; base?: string }; result: SpaceInfo }
   'tabs.open': { params: { spaceId: string; cols: number; rows: number; label?: string }; result: { id: string } }
   'tabs.screen': { params: { id: string }; result: { text: string } }
   'agents.list': { params: Empty; result: AgentInfo[] }

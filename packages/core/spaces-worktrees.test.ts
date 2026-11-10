@@ -42,6 +42,26 @@ describe('worktree spaces', () => {
     expect(created.branch).toBe('old')
   })
 
+  it('starts a new branch from base, else from the space HEAD', async () => {
+    git(main, ['branch', 'release'])
+    git(main, ['commit', '-q', '--allow-empty', '-m', 'second'])
+    const repo = await service.add(main)
+    const head = git(main, ['rev-parse', 'HEAD']).toString().trim()
+    const release = git(main, ['rev-parse', 'release']).toString().trim()
+    const fromBase = await service.addWorktreeSpace(repo.id, 'from-base', 'release')
+    expect(git(fromBase.path, ['rev-parse', 'HEAD']).toString().trim()).toBe(release)
+    const fromHead = await service.addWorktreeSpace(repo.id, 'from-head')
+    expect(git(fromHead.path, ['rev-parse', 'HEAD']).toString().trim()).toBe(head)
+  })
+
+  it('refuses a base that is not a ref, and a base with a branch that exists', async () => {
+    git(main, ['branch', 'old'])
+    const repo = await service.add(main)
+    await expect(service.addWorktreeSpace(repo.id, 'x', 'no-such-ref')).rejects.toThrow('not a valid base: no-such-ref')
+    await expect(service.addWorktreeSpace(repo.id, 'y', '--detach')).rejects.toThrow('not a valid base: --detach')
+    await expect(service.addWorktreeSpace(repo.id, 'old', 'HEAD')).rejects.toThrow('base only applies to a new branch')
+  })
+
   it('refuses a bad branch name, a folder that exists, and a space outside git', async () => {
     const repo = await service.add(main)
     await expect(service.addWorktreeSpace(repo.id, 'a b')).rejects.toThrow('not a valid branch name')

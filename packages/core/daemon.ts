@@ -711,7 +711,7 @@ async function dispatchSpaces(method: string, rawParams: unknown, holder: RpcCli
     return { worktrees: await spaces.unopenedWorktrees(stringParam(rawParams, 'spaceId')) } satisfies MethodMap['worktrees.list']['result']
   }
   if (method === METHODS.worktreesAdd) {
-    const info = await spaces.addWorktreeSpace(stringParam(rawParams, 'spaceId'), stringParam(rawParams, 'branch'))
+    const info = await spaces.addWorktreeSpace(stringParam(rawParams, 'spaceId'), stringParam(rawParams, 'branch'), optionalString(rawParams, 'base'))
     deps.broadcast(notification('spaces.changed', info))
     return info
   }
@@ -751,6 +751,14 @@ function readNotes(home: string): { text: string } {
 function stringParam(params: unknown, key: string): string {
   const value = (params as Record<string, unknown> | null)?.[key]
   if (typeof value !== 'string') throw new RpcError(ERROR_CODES.invalidParams, `${key} must be a string`)
+  return value
+}
+
+// An optional string param; when given it is a non-empty string.
+function optionalString(params: unknown, key: string): string | undefined {
+  const value = (params as Record<string, unknown> | null)?.[key]
+  if (value === undefined) return undefined
+  if (typeof value !== 'string' || value === '') throw new RpcError(ERROR_CODES.invalidParams, `${key} must be a non-empty string`)
   return value
 }
 

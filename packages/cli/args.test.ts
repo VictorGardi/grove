@@ -18,16 +18,17 @@ describe('parseCommand', () => {
 
   it('parses new with its flags', () => {
     expect(parseCommand(['new', 'claude', '--cwd', '/x', '--prompt', '-', '--label', 'h', '--json'])).toEqual({
-      cmd: 'new', kind: 'claude', cwd: '/x', prompt: '-', label: 'h', json: true, wait: false, timeoutS: undefined,
+      cmd: 'new', kind: 'claude', cwd: '/x', space: undefined, here: false, worktree: undefined, base: undefined, prompt: '-', label: 'h', json: true, wait: false, timeoutS: undefined,
     })
-    expect(parseCommand(['new', 'terminal'])).toEqual({ cmd: 'new', kind: 'terminal', cwd: undefined, prompt: undefined, label: undefined, json: false, wait: false, timeoutS: undefined })
+    expect(parseCommand(['new', 'terminal'])).toEqual({ cmd: 'new', kind: 'terminal', cwd: undefined, space: undefined, here: false, worktree: undefined, base: undefined, prompt: undefined, label: undefined, json: false, wait: false, timeoutS: undefined })
   })
 
   it('takes every kind and no others', () => {
     for (const kind of ['terminal', 'claude', 'opencode', 'copilot']) {
       expect(parseCommand(['new', kind])).toMatchObject({ cmd: 'new', kind })
     }
-    for (const argv of [['new'], ['new', 'vim'], ['new', 'claude', 'opencode'], ['new', 'status']]) {
+    expect(parseCommand(['new'])).toMatchObject({ cmd: 'new', kind: undefined })
+    for (const argv of [['new', 'vim'], ['new', 'claude', 'opencode'], ['new', 'status']]) {
       expect(parseCommand(argv)).toBeInstanceOf(UsageError)
     }
   })
@@ -36,12 +37,29 @@ describe('parseCommand', () => {
     for (const argv of [
       ['new', 'claude', '--model', 'm1'],
       ['new', 'claude', '--worktree', '--branch', 'fix-auth'],
+      ['new', 'claude', '--branch', 'fix-auth'],
       ['new', 'claude', '--parent', 'x'],
       ['new', 'claude', '--child'],
       ['new', 'claude', '--link', 'f-1'],
       ['new', 'claude', '--sandboxed'],
       ['ls', '--all'],
       ['read', 'abc', '--all'],
+    ]) {
+      expect(parseCommand(argv)).toBeInstanceOf(UsageError)
+    }
+  })
+
+  it('parses --here, --worktree and --base, and refuses the combinations that make no sense', () => {
+    expect(parseCommand(['new', '--here'])).toMatchObject({ cmd: 'new', kind: undefined, here: true })
+    expect(parseCommand(['new', '--worktree', 'fix-auth', '--base', 'origin/main'])).toMatchObject({ worktree: 'fix-auth', base: 'origin/main' })
+    expect(parseCommand(['new', 'claude', '--space', 'abcd', '--worktree', 'x'])).toMatchObject({ space: 'abcd', worktree: 'x' })
+    for (const argv of [
+      ['new', '--here', '--space', 'abcd'],
+      ['new', '--here', '--cwd', '/x'],
+      ['new', '--worktree', 'x', '--cwd', '/x'],
+      ['new', '--base', 'main'],
+      ['new', '--worktree', ''],
+      ['new', '--worktree', 'x', '--base', ''],
     ]) {
       expect(parseCommand(argv)).toBeInstanceOf(UsageError)
     }

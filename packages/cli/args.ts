@@ -6,7 +6,7 @@ export type Command =
   | { cmd: 'ls'; json: boolean }
   | { cmd: 'space-add'; path?: string }
   | { cmd: 'space-ls' }
-  | { cmd: 'new'; kind: TabKind; cwd?: string; space?: string; label?: string; prompt?: string; json: boolean; wait: boolean; timeoutS?: number }
+  | { cmd: 'new'; kind?: TabKind; cwd?: string; space?: string; here: boolean; worktree?: string; base?: string; label?: string; prompt?: string; json: boolean; wait: boolean; timeoutS?: number }
   | { cmd: 'send'; ref: string; text: string; submit: boolean; wait: boolean; timeoutS?: number }
   | { cmd: 'wait'; ref: string; timeoutS?: number }
   | { cmd: 'focus'; ref: string }
@@ -22,8 +22,12 @@ export const USAGE = `usage: grove <command>
   grove ls [--json]                         list spaces and their tabs
   grove space add [path]                    add a folder as a space (default: the caller folder)
   grove space ls                            list spaces and their tabs
-  grove new <terminal|claude|opencode|copilot> [--cwd DIR | --space REF] [--label L] [--prompt TEXT|-] [--wait] [--timeout S] [--json]
-                                                 start a tab in a space (default: the caller folder); prints its id
+  grove new [terminal|claude|opencode|copilot] [--here | --cwd DIR | --space REF] [--worktree BRANCH [--base REF]]
+            [--label L] [--prompt TEXT|-] [--wait] [--timeout S] [--json]
+                                                 start a tab; prints its id. Inside a tab the defaults are your own
+                                                 space (--here) and your own agent kind; outside, the caller folder.
+                                                 --worktree opens BRANCH as a worktree space of the target's repo
+                                                 (reused if it exists; a new branch starts from --base, else the target's HEAD)
   grove send <ref> <TEXT|-> [--no-enter] [--wait] [--timeout S]
                                                  paste text into a tab and submit it
   grove wait <ref> [--timeout S]            block until the agent stops working (exit 0 idle, 5 gone, 124 timeout)
@@ -68,19 +72,23 @@ export function parseCommand(argv: string[]): Command | UsageError {
     if (cmd === 'new') {
       const { values, positionals } = parseArgs({
         args: rest,
-        options: { cwd: { type: 'string' }, space: { type: 'string' }, prompt: { type: 'string' }, label: { type: 'string' }, json: { type: 'boolean' }, ...TIMEOUT },
+        options: { cwd: { type: 'string' }, space: { type: 'string' }, here: { type: 'boolean' }, worktree: { type: 'string' }, base: { type: 'string' }, prompt: { type: 'string' }, label: { type: 'string' }, json: { type: 'boolean' }, ...TIMEOUT },
         allowPositionals: true,
       })
       const [kind, ...extra] = positionals
-      if (!kind || !KINDS.includes(kind) || extra.length) return new UsageError(`new takes one of: ${KINDS.join(', ')}\n${USAGE}`)
+      if ((kind !== undefined && !KINDS.includes(kind)) || extra.length) return new UsageError(`new takes an optional kind, one of: ${KINDS.join(', ')}\n${USAGE}`)
       const timeoutS = timeout(values.timeout)
       if (timeoutS instanceof UsageError) return timeoutS
-      if (values.space !== undefined && values.cwd !== undefined) return new UsageError(`--space and --cwd cannot be used together\n${USAGE}`)
+      if ([values.space, values.cwd, values.here || undefined].filter((v) => v !== undefined).length > 1) return new UsageError(`--here, --space and --cwd cannot be combined\n${USAGE}`)
+      if (values.worktree !== undefined && values.cwd !== undefined) return new UsageError(`--worktree cannot be combined with --cwd, use --space or --here\n${USAGE}`)
+      if (values.worktree === '') return new UsageError(`--worktree takes a branch name\n${USAGE}`)
+      if (values.base !== undefined && values.worktree === undefined) return new UsageError(`--base needs --worktree\n${USAGE}`)
+      if (values.base === '') return new UsageError(`--base takes a git ref\n${USAGE}`)
       if (values.space !== undefined && values.space === '') return new UsageError(`--space takes a space id or heading\n${USAGE}`)
       if (values.label !== undefined && values.label === '') return new UsageError(`--label takes a non-empty label\n${USAGE}`)
       if (values.wait && kind === 'terminal') return new UsageError(`--wait needs an agent: a shell tab has no state to wait on\n${USAGE}`)
       return {
-        cmd: 'new', kind: kind as TabKind, cwd: values.cwd, space: values.space, prompt: values.prompt, label: values.label,
+        cmd: 'new', kind: kind as TabKind | undefined, cwd: values.cwd, space: values.space, here: !!values.here, worktree: values.worktree, base: values.base, prompt: values.prompt, label: values.label,
         json: !!values.json, wait: !!values.wait, timeoutS,
       }
     }

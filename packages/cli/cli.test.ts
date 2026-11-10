@@ -5,7 +5,7 @@ import type { ChildProcess } from 'node:child_process'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { ensureHolder } from '../core/holder-client.ts'
 import { stopHolder } from '../core/test-helpers.ts'
-import { main } from './main.ts'
+import { main, worktreeSpace } from './main.ts'
 
 describe('grove cli', () => {
   let home: string
@@ -127,6 +127,45 @@ describe('grove cli', () => {
     expect(logs).toEqual([])
   }, 20000)
 
+  describe('inside a tab', () => {
+    const savedTab = process.env.GROVE_TAB
+    afterEach(() => {
+      if (savedTab === undefined) delete process.env.GROVE_TAB
+      else process.env.GROVE_TAB = savedTab
+    })
+
+    // A shell tab stands in for the caller: it has a space, and no agent kind to copy.
+    async function callerTab(): Promise<string> {
+      holder = await ensureHolder()
+      expect(await main(['space', 'add', folder])).toBe(0)
+      logs.length = 0
+      expect(await main(['new', 'terminal', '--cwd', folder, '--label', 'me'])).toBe(0)
+      const id = logs[0]
+      logs.length = 0
+      process.env.GROVE_TAB = id
+      return id
+    }
+
+    it('opens in the caller\'s own space, even from another folder, and needs a kind from a shell', async () => {
+      await callerTab()
+      process.env.GROVE_CALLER_CWD = os.tmpdir()
+      expect(await main(['new', 'terminal', '--label', 'sibling'])).toBe(0)
+      expect(await main(['new', '--here', '--label', 'x'])).toBe(1)
+      expect(errors).toEqual(['error: name a kind: terminal, claude, opencode or copilot (this is not an agent tab)'])
+      logs.length = 0
+      expect(await main(['ls'])).toBe(0)
+      expect(logs.join('\n')).toMatch(/sibling/)
+      expect(logs).toContain(folder)
+    }, 30000)
+
+    it('refuses --here outside a Grove tab', async () => {
+      holder = await ensureHolder()
+      delete process.env.GROVE_TAB
+      expect(await main(['new', 'terminal', '--here'])).toBe(1)
+      expect(errors).toEqual(['error: --here needs a Grove tab: GROVE_TAB is not set or names no tab'])
+    }, 20000)
+  })
+
   it('exits 1 for a ref that matches no tab', async () => {
     holder = await ensureHolder()
     expect(await main(['read', 'nosuchtab'])).toBe(1)
@@ -146,5 +185,31 @@ describe('grove cli', () => {
     expect(errors).toHaveLength(2)
     expect(errors[0]).toContain('usage:')
     expect(logs).toEqual([])
+  })
+
+  describe('worktreeSpace', () => {
+    const space = (id: string, branch: string | null, parent: string | null = null) =>
+      ({ id, path: `/w/${id}`, name: id, label: null, repoName: 'r', parent, worktree: parent !== null, branch })
+    const repo = space('main', 'main')
+    const open = space('wt', 'feature', 'main')
+    const core = (calls: unknown[]) => ({ request: async (method: string, params: unknown) => (calls.push([method, params]), space('new', 'x', 'main')) }) as never
+
+    it('reuses an open space of the branch, from the repo or from one of its worktrees', async () => {
+      const calls: unknown[] = []
+      expect(await worktreeSpace(core(calls), [repo, open], repo, 'feature', undefined)).toBe(open)
+      expect(await worktreeSpace(core(calls), [repo, open], open, 'main', undefined)).toBe(repo)
+      expect(calls).toEqual([])
+      expect(errors).toEqual([`reusing ${open.path}`, `reusing ${repo.path}`])
+    })
+
+    it('asks the core for a new one, passing the base on', async () => {
+      const calls: unknown[] = []
+      await worktreeSpace(core(calls), [repo, open], open, 'fresh', 'origin/main')
+      expect(calls).toEqual([['worktrees.add', { spaceId: 'wt', branch: 'fresh', base: 'origin/main' }]])
+    })
+
+    it('refuses --base for a branch that is already a space', async () => {
+      await expect(worktreeSpace(core([]), [repo, open], repo, 'feature', 'main')).rejects.toThrow('branch feature exists, --base only applies to a new branch')
+    })
   })
 })

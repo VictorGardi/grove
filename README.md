@@ -70,7 +70,7 @@ A reboot brings the spaces and their tabs back, but the shells are fresh: each t
 ```sh
 grove ls [--json]                          spaces, then their tabs
 grove space add [path] | space ls          add a space, or list them
-grove new <terminal|claude|opencode|copilot> [--cwd DIR | --space REF] [--label L] [--prompt TEXT|-] [--wait] [--timeout S] [--json]
+grove new [terminal|claude|opencode|copilot] [--here | --cwd DIR | --space REF] [--worktree BRANCH [--base REF]] [--label L] [--prompt TEXT|-] [--wait] [--timeout S] [--json]
 grove send <ref> <TEXT|-> [--no-enter] [--wait] [--timeout S]
 grove wait <ref> [--timeout S]
 grove focus <ref>                          show the tab in the app and raise its window
@@ -81,7 +81,8 @@ grove skill                                install the grove-config skill (see C
 ```
 
 - `<ref>` is a tab's full id, an id prefix of at least four characters, or its label (exact). A ref that matches two tabs is an error.
-- `new` starts the tab in `--cwd` (default: the folder you run it from), which must be a space; a folder with two spaces means the first. `--space REF` picks one exactly: a space id, a unique id prefix (4+ characters), or the heading `ls` shows (`/path`, `/path#2`). It cannot be combined with `--cwd`. It prints the tab's id, or the object with `--json`. `--label` is a name you can use as a ref.
+- `new` starts the tab in a space. From inside a Grove tab (`GROVE_TAB` set) that is the tab's own space, and with no kind it is the same agent kind as the tab, so `grove new --prompt "..."` is "another session, same space, same agent". `--here` says that explicitly and fails outside a Grove tab. A shell tab or a caller outside Grove has no kind to copy, so name one. `--space REF` picks a space exactly: an id, a unique id prefix (4+ characters), or the heading `ls` shows (`/path`, `/path#2`). `--cwd DIR` picks the folder's first space, and outside a tab it defaults to the folder you run from; that folder must be a space. `--here`, `--space` and `--cwd` cannot be combined. It prints the tab's id, or the object with `--json`. `--label` is a name you can use as a ref.
+- `--worktree BRANCH` makes `BRANCH` a worktree space of the target's repo and starts the tab in it, under `~/.grove/worktrees/<repo>/<branch>`. A branch that already is a space of the repo is reused (`reusing <path>` on stderr); a branch that exists but is not a space is checked out. A new branch starts from `--base REF` (any git ref), else the target space's HEAD. `--base` with a branch that exists is an error. `--worktree` cannot be combined with `--cwd`. `kill` ends the tab only; the worktree space and checkout stay.
 - `--prompt` pastes the text once the agent has drawn its screen, and submits it. `-` reads standard input. `send` does the same for its text, and `--no-enter` pastes without submitting. A send to an agent tab that has exited resumes it with its saved session.
 - After a submitted paste, `new` and `send` wait up to 30 s for an agent to start working. That wait is not an error if the agent does not start.
 - `wait` blocks until the agent stops working. A permission prompt or a question keeps it waiting, since the human answers those. A shell tab has no agent state, so `wait` on one is an error.
