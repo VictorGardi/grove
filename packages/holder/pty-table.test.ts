@@ -168,7 +168,8 @@ describe('PtyTable', () => {
     expect(tab?.alive).toBe(true)
   })
 
-  it('names a foreground program by the name it was run under when its binary has another name', async () => {
+  // The foreground name of a link is its target's on macOS and the link's own path on Linux, so this runs locally only.
+  it.skipIf(process.env.CI)('names a foreground program by the name it was run under when its binary has another name', async () => {
     // A native Claude install: the binary is versions/<number>, and the command is a link named claude. The binary is
     // built with the C compiler: a copy of a system binary is killed by macOS, and a link reports its target's name.
     const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'grove-native-'))
