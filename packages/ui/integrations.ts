@@ -211,8 +211,10 @@ export function createIntegrationPanel(elements: PanelElements, deps: PanelDeps)
   panel.addEventListener('click', (event) => {
     if (event.target === panel) hidePanel()
   })
-  panel.addEventListener('keydown', (event) => {
-    if (event.key === 'Escape') hidePanel()
+  // On the document, so Esc closes the settings when the focus has dropped to the page (a click on text in the modal). A control inside
+  // that takes Esc itself, such as the key recorder, stops it before it gets here. The prompt, above the panel, takes Esc first.
+  document.addEventListener('keydown', (event) => {
+    if (event.key === 'Escape' && !panel.hidden && prompt.hidden) hidePanel()
   })
 
   return {

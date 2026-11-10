@@ -61,6 +61,20 @@ describe('createIntegrationPanel', () => {
     )
   })
 
+  it('closes the settings on Esc wherever the focus is, but not when something inside took the key', () => {
+    panel.open()
+    expect(el('integrations-modal').hidden).toBe(false)
+    // Focus on the body, as after a click on text in the modal.
+    document.body.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true }))
+    expect(el('integrations-modal').hidden).toBe(true)
+
+    panel.open()
+    const taken = el('integrations-list')
+    taken.addEventListener('keydown', (event) => event.stopPropagation())
+    taken.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true }))
+    expect(el('integrations-modal').hidden).toBe(false)
+  })
+
   it('asks once for a pending agent: the question names the file and the backup, and Not now is recorded', async () => {
     await panel.ask()
     expect(el('integration-prompt').hidden).toBe(false)
