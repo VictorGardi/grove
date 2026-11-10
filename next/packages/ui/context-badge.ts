@@ -5,6 +5,7 @@ import type { ContextUsage } from '../protocol/messages.ts'
 import { contextView, type ContextView } from './sidebar-model.ts'
 
 let tip: HTMLElement | undefined
+const TIP_GAP = 8
 
 function tooltip(): HTMLElement {
   if (tip === undefined) {
@@ -36,10 +37,14 @@ function displayDetail(detail: string, kind: AgentKind): string {
 function showTip(badge: HTMLElement, view: ContextView, kind: AgentKind): void {
   const el = tooltip()
   el.replaceChildren(line('context-tip-head', displayHeadline(view.headline)), line('context-tip-detail', displayDetail(view.detail, kind)))
-  const rect = badge.getBoundingClientRect()
-  el.style.left = `${rect.right + 8}px`
-  el.style.top = `${rect.top + rect.height / 2}px`
   el.hidden = false
+  const rect = badge.getBoundingClientRect()
+  const width = el.offsetWidth
+  // Beside the badge when there is room; a badge near the window's right edge (the pane header's meter) puts it below, ending at the badge's edge.
+  const beside = rect.right + TIP_GAP + width <= window.innerWidth - TIP_GAP
+  el.classList.toggle('below', !beside)
+  el.style.left = `${beside ? rect.right + TIP_GAP : Math.max(TIP_GAP, rect.right - width)}px`
+  el.style.top = `${beside ? rect.top + rect.height / 2 : rect.bottom + TIP_GAP}px`
 }
 
 // Hides the tooltip. Called before the rows or header are rebuilt, since a badge removed under the pointer never sends its leave.
@@ -77,4 +82,30 @@ export function markWithContext(mark: HTMLElement, context: ContextUsage | undef
   const view = kind === undefined ? null : contextView(context, kind)
   if (view && kind !== undefined) stack.append(ringFor(view, kind))
   return stack
+}
+
+// The pane header's reading: a bar and a percent that are always drawn, so an empty session shows 0% instead of nothing. A reading with
+// no percentage (Copilot without a prompt budget) draws the empty bar and a dash; hovering gives the same tooltip as the rings.
+export function contextMeter(context: ContextUsage | undefined, kind: AgentKind): HTMLElement {
+  const view = contextView(context, kind)
+  const meter = document.createElement('span')
+  meter.className = ['context-meter', ...(view ? levelClasses(view) : [])].join(' ')
+  const bar = document.createElement('span')
+  bar.className = 'context-meter-bar'
+  const fill = document.createElement('i')
+  fill.style.width = `${(view?.fraction ?? 0) * 100}%`
+  bar.append(fill)
+  const label = view === null ? '0%' : view.fraction === null ? '–' : `${Math.round(view.fraction * 100)}%`
+  meter.append(bar, line('context-meter-pct', label))
+  if (view === null) {
+    meter.setAttribute('role', 'img')
+    meter.setAttribute('aria-label', 'Context window: nothing used yet')
+    return meter
+  }
+  const detail = displayDetail(view.detail, kind)
+  meter.setAttribute('role', 'img')
+  meter.setAttribute('aria-label', detail ? `${displayHeadline(view.headline)}. ${detail}` : displayHeadline(view.headline))
+  meter.addEventListener('pointerenter', () => showTip(meter, view, kind))
+  meter.addEventListener('pointerleave', hideContextTip)
+  return meter
 }

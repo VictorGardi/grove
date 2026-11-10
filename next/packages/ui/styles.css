@@ -394,6 +394,10 @@ p {
   display: none;
 }
 
+.context-tip.below {
+  transform: none;
+}
+
 .context-tip-head {
   font-size: var(--text-sm);
   font-weight: 600;
@@ -946,13 +950,54 @@ p {
 }
 
 .pane-kind {
-  flex: none;
-  max-width: 40%;
+  flex: 0 1 auto;
+  min-width: 0;
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+  font-weight: 500;
   color: var(--color-ink);
 }
 
+.pane-kind.unnamed {
+  font-weight: 400;
+  color: var(--color-mute);
+}
+
+/* The branch is a button that copies its name; purple in a worktree. It keeps its room before the path does. */
+.pane-branch {
+  display: inline-flex;
+  flex: 0 1 auto;
+  align-items: center;
+  gap: var(--space-1);
+  min-width: 0;
+  padding: 0;
+  border: 0;
+  background: none;
+  color: var(--color-ink);
+  font: inherit;
+  cursor: pointer;
+}
+
+.pane-branch .icon {
+  flex: none;
+  width: var(--icon-size-sm);
+  height: var(--icon-size-sm);
+  color: var(--color-mute);
+}
+
+.pane-branch.worktree .icon {
+  color: var(--color-worktree);
+}
+
+.pane-branch span {
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+
 .pane-folder {
-  flex: 1 1 auto;
+  flex: 1 100 auto;
   min-width: 0;
   overflow: hidden;
   white-space: nowrap;
@@ -960,8 +1005,84 @@ p {
   color: var(--color-faint);
 }
 
-.pane-head .indicator {
+/* The pane's line changes, drawn only while there are some; a click opens the diff. */
+.pane-changes {
+  display: inline-flex;
+  flex: none;
+  gap: var(--space-2);
+  padding: 0;
+  border: 0;
+  background: none;
+  font: inherit;
+  font-family: var(--font-mono);
+  cursor: pointer;
+}
+
+.pane-changes b {
+  font-weight: 400;
+}
+
+.pane-changes .add {
+  color: var(--ansi-green);
+}
+
+.pane-changes .del {
+  color: var(--color-error);
+}
+
+/* The context reading: a bar that is always there, and its percent. */
+.context-meter {
+  --context-fill: var(--accent);
+  display: inline-flex;
+  flex: none;
+  align-items: center;
+  gap: var(--space-2);
   margin-left: auto;
+}
+
+.context-meter.warn {
+  --context-fill: var(--context-warn);
+}
+
+.context-meter.full {
+  --context-fill: var(--color-error);
+}
+
+.context-meter.last {
+  opacity: 0.7;
+}
+
+.context-meter-bar {
+  width: var(--size-context-bar-w);
+  height: var(--size-context-bar-h);
+  border-radius: var(--radius-pill);
+  background: var(--color-line);
+  overflow: hidden;
+}
+
+.context-meter-bar i {
+  display: block;
+  height: 100%;
+  background: var(--context-fill);
+}
+
+.context-meter-pct {
+  min-width: 3ch;
+  text-align: right;
+  font-family: var(--font-mono);
+  color: var(--color-mute);
+}
+
+.context-meter.warn .context-meter-pct {
+  color: var(--context-warn);
+}
+
+.context-meter.full .context-meter-pct {
+  color: var(--color-error);
+}
+
+.pane-head .indicator {
+  margin-left: var(--space-2);
 }
 
 .term-host {
@@ -1109,69 +1230,6 @@ p {
   font-size: var(--text-meta);
   color: var(--color-ink);
   overflow-wrap: anywhere;
-}
-
-/* A flat row at the window's foot, as tall as the sidebar's own foot so the two share one line. */
-.statusbar {
-  display: flex;
-  align-items: center;
-  flex: none;
-  height: var(--statusbar-h);
-  padding: 0 var(--space-6);
-  border-top: 1px solid var(--color-rule);
-}
-
-.statusbar-cap {
-  display: flex;
-  align-items: center;
-  gap: var(--space-5);
-  font-size: var(--text-sm);
-  color: var(--color-mute);
-}
-
-.statusbar-rule {
-  width: 1px;
-  height: var(--space-5);
-  background: var(--color-line);
-}
-
-.statusbar-branch[hidden] + .statusbar-rule {
-  display: none;
-}
-
-/* One segment per running agent, coloured by its state. */
-.agent-bar {
-  display: flex;
-  gap: var(--space-xs);
-  width: var(--size-bar-w);
-  height: var(--size-bar-h);
-}
-
-.agent-bar i {
-  flex: 1;
-  border-radius: var(--radius-pill);
-  background: var(--state-idle);
-}
-
-.agent-bar .seg-needs-you { background: var(--agent-state-needs-you, var(--state-needs-you)); }
-.agent-bar .seg-working { background: var(--agent-state-working, var(--state-working)); }
-.agent-bar .seg-finished { background: var(--agent-state-finished, var(--state-finished)); opacity: 0.55; }
-.agent-bar .seg-unknown { background: var(--state-unknown); }
-
-.statusbar-count b {
-  font-weight: 500;
-  color: var(--color-ink);
-}
-
-.statusbar-item {
-  display: flex;
-  align-items: center;
-  gap: var(--space-2);
-}
-
-.statusbar-item .icon {
-  width: var(--icon-size-sm);
-  height: var(--icon-size-sm);
 }
 
 .status:empty {
@@ -2108,24 +2166,6 @@ p {
 .dialog-choice-detail {
   font-size: var(--text-meta);
   color: var(--color-faint);
-}
-
-/* The footer's branch: a button that copies the name; purple in a worktree */
-
-.statusbar-branch {
-  padding: 0;
-  color: var(--color-ink);
-  color: inherit;
-  font: inherit;
-  cursor: pointer;
-}
-
-.statusbar-branch:hover {
-  color: var(--color-ink);
-}
-
-.statusbar-branch.worktree {
-  color: var(--color-worktree);
 }
 
 /* Slash menu: the context menu's surface, with a tile in front of each block that shows its shape */

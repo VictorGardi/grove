@@ -22,13 +22,13 @@ import { PANE_DIM_RANGE, readPaneDim, writePaneDim } from './pane-dim.ts'
 import { readSidebarHidden, writeSidebarHidden, type KeyValueStore } from './sidebar-state.ts'
 import { readViewState, writeViewState } from './view-state.ts'
 import { groupAgents, jumpTargets, nextUrgent, shortFolder, sidebarSpaceOrder, spaceAt, tabStateOf, tileIndex, urgentTabs } from './sidebar-model.ts'
-import { hideContextTip, markWithContext } from './context-badge.ts'
+import { contextMeter, hideContextTip, markWithContext } from './context-badge.ts'
 import { createTabPill, type TabPill } from './tab-pill.ts'
 import { createNotesEditor } from './notes-editor.ts'
 import { diffModule, notesModule } from './dock-modules.ts'
 import { createHostBus, mountModules } from './modules.ts'
 import { createDock } from './dock.ts'
-import { settled } from './diff-model.ts'
+import { settled, summarize } from './diff-model.ts'
 import { createGoTo } from './goto.ts'
 import { createRenameModal } from './rename-modal.ts'
 import { createContextMenu } from './context-menu.ts'
@@ -730,15 +730,85 @@ function paintTab(tab: Tab): void {
   const name = tabName(tab)
   const agent = tab.kind === 'shell' ? undefined : tab.kind
   tab.pill.update({ name, title: tabLabel(tab), state, agent, live: !tab.exited, inGrid: tab.inGrid })
-  // A ring replaced under the pointer never sends its leave, so its tooltip is put away first.
-  if (tab.head.querySelector('.context-ring')) hideContextTip()
-  tab.head.replaceChildren(
-    markWithContext(markEl(tab.kind), agents.get(tab.id)?.context, agent),
-    element('span', 'pane-kind', name),
-    element('span', 'pane-folder', shortFolder(tab.spacePath, homeDir)),
-    indicatorEl(state, agent, !tab.exited),
-  )
+  // A meter replaced under the pointer never sends its leave, so its tooltip is put away first.
+  if (tab.head.querySelector('.context-meter')) hideContextTip()
+  const space = spaces.get(tab.spaceId)
+  const changes = changeCounts.get(tab.id)
+  const parts: HTMLElement[] = [markEl(tab.kind)]
+  // An unnamed agent reads "Claude 2" rather than a bare number, so panes of different agents tell apart.
+  const title = tab.label || (agent ? `${AGENT_NAMES[agent]} ${tab.number}` : name)
+  parts.push(element('span', tab.label ? 'pane-kind' : 'pane-kind unnamed', title))
+  if (space?.branch) parts.push(branchButton(space.branch, space.worktree))
+  parts.push(element('span', 'pane-folder', shortFolder(tab.spacePath, homeDir)))
+  if (changes && changes.additions + changes.deletions > 0) parts.push(changesButton(changes))
+  if (agent) parts.push(contextMeter(agents.get(tab.id)?.context, agent))
+  parts.push(indicatorEl(state, agent, !tab.exited))
+  tab.head.replaceChildren(...parts)
 }
+
+const AGENT_NAMES: Record<AgentKind, string> = { claude: 'Claude', opencode: 'OpenCode', copilot: 'Copilot' }
+
+// The pane's branch: a click copies the name, which reads "copied" for a moment.
+function branchButton(name: string, worktree: boolean): HTMLElement {
+  const button = document.createElement('button')
+  button.type = 'button'
+  button.className = worktree ? 'pane-branch worktree' : 'pane-branch'
+  button.title = 'Copy the branch name'
+  button.innerHTML = `${iconSvg('branch')}<span></span>`
+  const label = button.querySelector('span')!
+  label.textContent = name
+  button.addEventListener('pointerdown', (event) => event.stopPropagation())
+  button.addEventListener('click', () => {
+    navigator.clipboard.writeText(name).then(() => {
+      label.textContent = 'copied'
+      setTimeout(() => (label.textContent = name), 1000)
+    }, report)
+  })
+  return button
+}
+
+// The pane's line changes, as the diff panel counts them; a click opens the diff.
+function changesButton(counts: { additions: number; deletions: number }): HTMLElement {
+  const button = document.createElement('button')
+  button.type = 'button'
+  button.className = 'pane-changes'
+  button.title = 'Show the changes'
+  button.append(element('b', 'add', `+${counts.additions}`), element('b', 'del', `−${counts.deletions}`))
+  button.addEventListener('pointerdown', (event) => event.stopPropagation())
+  button.addEventListener('click', () => {
+    const tab = [...tabs.values()].find((candidate) => candidate.head === button.parentElement)
+    if (tab && tab !== active) activate(tab)
+    rail.toggle('diff')?.()
+  })
+  return button
+}
+
+// Line changes per agent tab, read from the same diff the panel shows. Refreshed while the pane is on screen and when its agent settles.
+const changeCounts = new Map<string, { additions: number; deletions: number }>()
+const CHANGES_EVERY_MS = 15000
+const changesBusy = new Set<string>()
+
+async function refreshChanges(tab: Tab): Promise<void> {
+  if (demoMode || tab.kind === 'shell' || tab.exited || changesBusy.has(tab.id)) return
+  changesBusy.add(tab.id)
+  try {
+    const result = await bridge.rpc('diff.get', { tabId: tab.id, mode: 'branch' })
+    const total = result.state === 'ok' ? summarize(result.files) : { additions: 0, deletions: 0 }
+    const before = changeCounts.get(tab.id)
+    if (before?.additions !== total.additions || before?.deletions !== total.deletions) {
+      changeCounts.set(tab.id, { additions: total.additions, deletions: total.deletions })
+      paintTab(tab)
+    }
+  } catch {
+    // a folder that is gone or a core that is away: the last counts stay
+  } finally {
+    changesBusy.delete(tab.id)
+  }
+}
+
+setInterval(() => {
+  for (const tab of gridOn ? gridTabs() : active ? [active] : []) refreshChanges(tab).catch(report)
+}, CHANGES_EVERY_MS)
 
 // The empty state shows when there is no space, or the space has no tabs.
 function paintEmpty(): void {
@@ -749,39 +819,6 @@ function paintEmpty(): void {
   emptyText.textContent = none
     ? `Press ${shortcut('new-space')} to open a space at your home folder.`
     : `Press + in the tab strip (${shortcut('new-shell')}) to open a shell.`
-}
-
-// The bar under the panes: the active space's branch and how many agents are running in it.
-// A click on the footer's branch copies its name; the name reads "copied" for a moment.
-function copyBranch(): void {
-  const name = activeSpace ? spaces.get(activeSpace)?.branch : null
-  if (!name) return
-  navigator.clipboard.writeText(name).then(() => {
-    const label = byId('statusbar-branch').querySelector('span')
-    if (!label) return
-    label.textContent = 'copied'
-    setTimeout(paintStatusbar, 1000)
-  }, report)
-}
-byId('statusbar-branch').addEventListener('click', copyBranch)
-
-function paintStatusbar(): void {
-  const branch = byId('statusbar-branch')
-  const space = activeSpace ? spaces.get(activeSpace) : undefined
-  const name = space?.branch ?? null
-  branch.hidden = !name
-  branch.classList.toggle('worktree', space?.worktree === true)
-  branch.title = name ? 'Copy the branch name' : ''
-  branch.innerHTML = name ? `${iconSvg('branch')}<span></span>` : ''
-  if (name) branch.querySelector('span')!.textContent = name
-  const running = [...agents.values()]
-    .map((agent) => tabs.get(agent.tabId))
-    .filter((tab): tab is Tab => tab !== undefined && !tab.exited && tab.spaceId === activeSpace)
-  const bar = element('span', 'agent-bar')
-  for (const tab of running) bar.append(element('i', `seg-${stateOf(tab)}`))
-  const count = element('span', 'statusbar-count')
-  count.innerHTML = `<b>${running.length}</b> ${running.length === 1 ? 'agent' : 'agents'}`
-  byId('statusbar-agents').replaceChildren(bar, count)
 }
 
 // Keeps what the window shows (the grid, its layout, the space and tab in focus) for the next start.
@@ -815,7 +852,6 @@ function paint(): void {
   requestAnimationFrame(fitShown)
   renderSpaces()
   renderAgents()
-  paintStatusbar()
   paintEmpty()
   hostBus.emit('activeTabChanged', undefined)
   const idle = activeSpace === null || refused !== null
@@ -1184,7 +1220,6 @@ function renderAgents(): void {
     if (tab) rows.push({ spaceId: tab.spaceId, tabNumber: tab.number, agent, exited: tab.exited, tab })
   }
   agentsEmpty.hidden = rows.length > 0
-  paintStatusbar()
   agentList.replaceChildren(
     ...groupAgents([...spaces.keys()], rows).map((group) => {
       const section = document.createElement('li')
@@ -1296,6 +1331,8 @@ bridge.on('status.changed', (change) => {
   })
   syncKinds()
   renderStates()
+  const changed = tabs.get(change.tabId)
+  if (changed) refreshChanges(changed).catch(report)
   hostBus.emit('agentStateChanged', { tabId: change.tabId, settled: settled(previous?.state, change.state) })
   // resumable depends on the holder's liveness, which the change does not carry; the core's list settles it.
   refreshAgents().catch(report)
