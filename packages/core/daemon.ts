@@ -25,6 +25,7 @@ import { watchConfig } from './config/watch.ts'
 import { diffBases } from './diff/bases.ts'
 import { commentChangeParams, commentIdParam, commentIdsParam, newCommentParams } from './diff/comments.ts'
 import { diffAllModes } from './diff/compute.ts'
+import { readNewSide } from './diff/file.ts'
 
 const TAB_ID = /^[A-Za-z0-9_-]{1,64}$/
 // A holder call the status service makes must answer within this, or that call fails and its check is skipped.
@@ -609,6 +610,7 @@ const DIFF_MODES = new Set<string>(['branch', 'uncommitted', 'last-commit'])
 const DIFF_METHODS = new Set<string>([
   METHODS.diffGet,
   METHODS.diffBases,
+  METHODS.diffFile,
   METHODS.diffPrefsGet,
   METHODS.diffPrefsSet,
   METHODS.diffCommentsList,
@@ -670,6 +672,10 @@ async function dispatchDiff(method: string, rawParams: unknown, holder: RpcClien
     const base = diffBaseParam(p.base)
     if (p.showUntracked !== undefined && typeof p.showUntracked !== 'boolean') throw new RpcError(ERROR_CODES.invalidParams, 'showUntracked must be a boolean')
     return (await diffAllModes({ dir, mode: diffModeParam(p.mode), base, showUntracked: p.showUntracked })) satisfies MethodMap['diff.get']['result']
+  }
+  if (method === METHODS.diffFile) {
+    if (typeof p.file !== 'string' || p.file.length > 4096) throw new RpcError(ERROR_CODES.invalidParams, 'file must be a path')
+    return (await readNewSide({ dir, mode: diffModeParam(p.mode), file: p.file })) satisfies MethodMap['diff.file']['result']
   }
   if (method === METHODS.diffBases) {
     return { ...(await diffBases(dir)), recents: deps.spaces.diffPrefs(dir).recents } satisfies MethodMap['diff.bases']['result']

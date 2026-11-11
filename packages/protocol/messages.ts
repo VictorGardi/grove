@@ -33,6 +33,7 @@ export const METHODS = {
   notesWrite: 'notes.write',
   diffGet: 'diff.get',
   diffBases: 'diff.bases',
+  diffFile: 'diff.file',
   diffPrefsGet: 'diff.prefs.get',
   diffPrefsSet: 'diff.prefs.set',
   diffCommentsList: 'diff.comments.list',
@@ -309,6 +310,13 @@ export interface DiffResult {
   counts: Record<DiffMode, number>
 }
 
+// A file's new side as the diff shows it, for the preview. `missing`: gone, not in the revision, a link or outside the repo.
+// `too-large` (over the diff's size cap) and `binary` have no text.
+export interface DiffFileContent {
+  state: 'ok' | 'too-large' | 'binary' | 'missing'
+  text: string | null
+}
+
 // What the base picker lists: local branches, then remote-tracking ones as `origin/x`.
 export interface DiffBases {
   branches: string[]
@@ -414,6 +422,9 @@ export interface MethodMap {
   // `base` only counts in branch mode; null or unset: the default branch. Untracked files are listed unless `showUntracked` is false.
   'diff.get': { params: DiffTarget & { mode: DiffMode; base?: string | null; showUntracked?: boolean }; result: DiffResult }
   'diff.bases': { params: DiffTarget; result: DiffBases }
+  // One file of the diff as it reads after the change: the working tree, or HEAD in last-commit mode. `file` is the diff's path from the
+  // repo root. Read only; the window asks when a card is flipped to its preview.
+  'diff.file': { params: DiffTarget & { mode: DiffMode; file: string }; result: DiffFileContent }
   // The view last chosen for the folder. A folder never chosen for reads as branch mode against the default.
   'diff.prefs.get': { params: DiffTarget; result: DiffPrefs }
   // Sets the parts given. A non-null base is also put first in the folder's recent bases (five at most).

@@ -258,6 +258,12 @@ describe('core daemon', () => {
     expect(await core.request(METHODS.diffBases, { tabId })).toEqual({ branches: ['main', 'old'], current: 'main', default: 'main', recents: ['old'] })
     expect(JSON.parse(fs.readFileSync(path.join(home, 'state.json'), 'utf8')).diffPrefs[repo].recents).toEqual(['old'])
 
+    // One file's new side for the preview: the tab's folder, a path from its root, nothing outside it.
+    expect(await core.request(METHODS.diffFile, { tabId, mode: 'uncommitted', file: 'a.txt' })).toEqual({ state: 'ok', text: expect.any(String) })
+    expect(await core.request(METHODS.diffFile, { tabId, mode: 'uncommitted', file: '../a.txt' })).toEqual({ state: 'missing', text: null })
+    await expect(core.request(METHODS.diffFile, { tabId, mode: 'uncommitted', file: 3 } as never)).rejects.toThrow('file must be a path')
+    await expect(core.request(METHODS.diffFile, { tabId, mode: 'wide', file: 'a.txt' } as never)).rejects.toThrow('mode must be')
+
     // Review comments follow the same folder: a tab and its space see one list.
     const note = { path: 'a.txt', side: 'new' as const, line: 1, anchor: 'two', before: [], after: [], body: 'why two?' }
     expect(await core.request(METHODS.diffCommentsList, { tabId })).toEqual({ comments: [] })
