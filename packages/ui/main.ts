@@ -1455,6 +1455,11 @@ bridge.onStatus((status) => {
 })
 
 new ResizeObserver(() => fitShown()).observe(terminals)
+// The sidebar's column and the dock's width animate, so a terminal can be fit to a size from partway through. It refits once more
+// when the animation ends, whatever the observers last said.
+appEl.addEventListener('transitionend', (event) => {
+  if (event.propertyName === 'grid-template-columns' || event.propertyName === 'width') fitShown()
+})
 gridReset.addEventListener('click', () => keyActions['grid-reset-layout']())
 gridToggle.addEventListener('click', () => {
   const shown = gridTabs()
