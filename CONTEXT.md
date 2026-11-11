@@ -52,3 +52,9 @@ specific meaning, so humans and agents stay consistent.
 - **Host event**: a notice the window sends to modules on its typed bus
   (`activeTabChanged`, `agentStateChanged`, `connectionChanged`), so a module
   never needs a named call from `main.ts`.
+- **Expanded dock**: the dock at a large share of the window, switched on and
+  off without losing the width the human dragged it to. One flag for the whole
+  dock, whatever panel is showing.
+- **Preview**: a file card's second view in the diff panel, for markdown files:
+  the file as it reads after the change, rendered and read only, beside the
+  card's **Diff** view. Raw HTML in the file is shown as text, never run.

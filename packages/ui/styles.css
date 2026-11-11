@@ -130,6 +130,11 @@ p {
   color: var(--color-mute);
 }
 
+.icon-button[aria-pressed='true'] {
+  background: var(--color-raised);
+  color: var(--color-ink);
+}
+
 .icon-button:hover {
   background: var(--color-raised);
   color: var(--color-ink);

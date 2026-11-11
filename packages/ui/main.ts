@@ -256,6 +256,7 @@ const dock = createDock(
     error: byId('dock-error'),
     body: byId('dock-body'),
     close: byId('dock-close') as HTMLButtonElement,
+    expand: byId('dock-expand') as HTMLButtonElement,
     edge: byId('dock-edge'),
   },
   {
@@ -362,6 +363,7 @@ const keyActions: Record<KeyAction, () => void> = {
   'sidebar-toggle': () => sidebarToggle.click(),
   notes: () => rail.toggle('notes')?.(),
   diff: () => rail.toggle('diff')?.(),
+  'dock-expand': () => dock.toggleExpanded(),
   'zoom-in': () => setZoom('in'),
   'zoom-out': () => setZoom('out'),
   'zoom-reset': () => setZoom('reset'),
@@ -885,6 +887,7 @@ function shortcut(action: KeyAction): string {
 function paintShortcuts(): void {
   paintUrgent()
   rail.paintShortcuts(shortcut)
+  byId('dock-expand').title = `Expand the side panel (${shortcut('dock-expand')})`
   gridReset.title = `Put the grid back to its automatic layout (${shortcut('grid-reset-layout')}).`
   gridToggle.title = `Show the tabs put in the grid, from any space, (${shortcut('grid-toggle')}). ${shortcut('grid-tab')} puts the focused tab in it.`
   const hidden = appEl.classList.contains('sidebar-hidden')

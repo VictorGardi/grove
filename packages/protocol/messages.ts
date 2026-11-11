@@ -180,6 +180,7 @@ export type KeyAction =
   | 'sidebar-toggle'
   | 'notes'
   | 'diff'
+  | 'dock-expand'
   | 'zoom-in'
   | 'zoom-out'
   | 'zoom-reset'

@@ -1,8 +1,18 @@
 // The dock: the right sidebar, one panel at a time. A panel is a module with a title, a body it draws into, and a way to say how it is
 // doing (a status line, a side note, an error). The notes are the first panel; the diff and the comments will be panels too, so everything
-// they share lives here: the header, the close button, the shortcut chip, the resize edge, the width, and the focus hand-back.
+// they share lives here: the header, the close and expand buttons, the shortcut chip, the resize edge, the width, and the focus hand-back.
 // The dock is not modal: terminals refit beside it and the window's key bindings keep working while it has focus.
-import { clampDockWidth, DOCK_WIDTH_DEFAULT, DOCK_WIDTH_STEP, readDockWidth, writeDockWidth } from './dock-state.ts'
+import {
+  clampDockWidth,
+  dockCeiling,
+  DOCK_WIDTH_DEFAULT,
+  DOCK_WIDTH_STEP,
+  dockWidthFor,
+  readDockExpanded,
+  readDockWidth,
+  writeDockExpanded,
+  writeDockWidth,
+} from './dock-state.ts'
 import type { KeyValueStore } from './sidebar-state.ts'
 
 // What a panel uses to speak in the dock's header and under it.
@@ -35,11 +45,14 @@ export interface DockElements {
   error: HTMLElement
   body: HTMLElement
   close: HTMLButtonElement
+  expand: HTMLButtonElement
   edge: HTMLElement
 }
 
 export interface DockDeps {
   store: KeyValueStore | null
+  // How wide the window is; the dock never takes more than a share of it. Default: the window's inner width.
+  windowWidth?(): number
   // Sets the dock's width on the window, so the grid and the terminals follow it.
   applyWidth(width: number): void
   // The dock has closed: hand the keyboard back.
@@ -58,22 +71,50 @@ export interface Dock {
   toggle(id: string): Promise<void>
   close(): Promise<boolean>
   current(): string | null
+  // Expands the open dock to most of the window, or puts it back; does nothing while the dock is closed.
+  toggleExpanded(): void
 }
 
 export function createDock(elements: DockElements, deps: DockDeps): Dock {
-  const { app, dock, title, status, meta, error, body, close: closeButton, edge } = elements
+  const { app, dock, title, status, meta, error, body, close: closeButton, expand: expandButton, edge } = elements
   const panels = new Map<string, DockPanel>()
   let shown: { panel: DockPanel; instance: DockInstance } | null = null
+  // The width the human chose (dragged, stepped or reset to); expanded shows the ceiling instead and keeps it for the way back.
   let width = readDockWidth(deps.store)
+  let expanded = readDockExpanded(deps.store)
   let mounting: DockPanel | null = null
   let leaving: { instance: DockInstance; timer: ReturnType<typeof setTimeout> | null } | null = null
   let busy: Promise<unknown> = Promise.resolve()
 
+  const windowWidth = (): number => deps.windowWidth?.() ?? window.innerWidth
+  const shownWidth = (): number => dockWidthFor(width, expanded, windowWidth())
+
+  // Puts the shown width on the window, so the grid and the terminals follow it, and the edge and the button say what it is.
+  function apply(): void {
+    const shown = shownWidth()
+    deps.applyWidth(shown)
+    edge.setAttribute('aria-valuenow', String(shown))
+    edge.setAttribute('aria-valuemax', String(dockCeiling(windowWidth())))
+    expandButton.setAttribute('aria-pressed', String(expanded))
+    app.classList.toggle('dock-expanded', expanded)
+  }
+
+  // A width the human chose: it ends expanded, and is kept when `keep`.
   function setWidth(next: number, keep: boolean): void {
-    width = clampDockWidth(next)
-    deps.applyWidth(width)
-    edge.setAttribute('aria-valuenow', String(width))
-    if (keep) writeDockWidth(deps.store, width)
+    width = clampDockWidth(next, windowWidth())
+    expanded = false
+    apply()
+    if (keep) {
+      writeDockWidth(deps.store, width)
+      writeDockExpanded(deps.store, false)
+    }
+  }
+
+  function toggleExpanded(): void {
+    if (!shown && !mounting) return
+    expanded = !expanded
+    apply()
+    writeDockExpanded(deps.store, expanded)
   }
 
   function context(panel: DockPanel): DockContext {
@@ -129,7 +170,7 @@ export function createDock(elements: DockElements, deps: DockDeps): Dock {
     title.textContent = panel.title
     dock.dataset.panel = panel.id
     app.classList.add('dock-open')
-    deps.applyWidth(width)
+    apply()
     mounting = panel
     const instance = panel.mount(body, context(panel))
     mounting = null
@@ -162,6 +203,7 @@ export function createDock(elements: DockElements, deps: DockDeps): Dock {
       edge.removeEventListener('pointercancel', stop)
       app.classList.remove('dock-resizing')
       writeDockWidth(deps.store, width)
+      writeDockExpanded(deps.store, expanded)
     }
     edge.addEventListener('pointermove', move)
     edge.addEventListener('pointerup', stop)
@@ -171,11 +213,12 @@ export function createDock(elements: DockElements, deps: DockDeps): Dock {
     const grow = event.key === 'ArrowLeft' ? 1 : event.key === 'ArrowRight' ? -1 : 0
     if (grow === 0) return
     event.preventDefault()
-    setWidth(width + grow * DOCK_WIDTH_STEP, true)
+    setWidth(shownWidth() + grow * DOCK_WIDTH_STEP, true)
   })
   edge.addEventListener('dblclick', () => setWidth(DOCK_WIDTH_DEFAULT, true))
-  edge.setAttribute('aria-valuenow', String(width))
-  deps.applyWidth(width)
+  expandButton.addEventListener('click', toggleExpanded)
+  window.addEventListener('resize', apply)
+  apply()
 
   return {
     register: (panel) => void panels.set(panel.id, panel),
@@ -183,5 +226,6 @@ export function createDock(elements: DockElements, deps: DockDeps): Dock {
     toggle: (id) => queue(() => (shown?.panel.id === id ? closeNow().then(() => undefined) : openNow(id))),
     close: () => queue(() => closeNow()),
     current: () => shown?.panel.id ?? null,
+    toggleExpanded,
   }
 }
