@@ -4,11 +4,12 @@
 // shut and which are marked viewed is the window's own memory, per folder, until the window closes. Review comments are the core's: the
 // panel loads them with the diff and again after each change, draws the ones that still fit under their line, and lists the others as outdated.
 import { bracketedPaste } from '../protocol/paste.ts'
-import type { DiffBases, DiffComment, DiffFile, DiffHunk, DiffMode, DiffPrefs, DiffResult, MethodMap } from '../protocol/messages.ts'
+import type { DiffBases, DiffComment, DiffFile, DiffFileContent, DiffHunk, DiffMode, DiffPrefs, DiffResult, MethodMap } from '../protocol/messages.ts'
 import type { DockContext, DockInstance, DockPanel } from './dock.ts'
 import {
   baseChoices,
   branchNote,
+  canPreview,
   changeBar,
   COMMENT_STATE_LABEL,
   commentContext,
@@ -36,6 +37,7 @@ import {
   type WordSegment,
 } from './diff-model.ts'
 import { iconSvg } from './icons.ts'
+import { renderMarkdown } from './markdown-render.ts'
 import { reviewMessage } from './review-message.ts'
 
 export interface DiffDeps {
@@ -45,6 +47,8 @@ export interface DiffDeps {
   connected(): boolean
   get(tabId: string, mode: DiffMode, base: string | null, showUntracked: boolean): Promise<DiffResult>
   bases(tabId: string): Promise<DiffBases>
+  // One file as it reads after the change, for the preview of a markdown card.
+  file(tabId: string, mode: DiffMode, path: string): Promise<DiffFileContent>
   prefs(tabId: string): Promise<DiffPrefs>
   setPrefs(tabId: string, prefs: { mode?: DiffMode; base?: string | null }): Promise<DiffPrefs>
   // The review comments of the tab's folder.
@@ -79,6 +83,8 @@ export interface DiffController {
 interface Review {
   collapsed: Set<string>
   viewed: Set<string>
+  // The markdown files flipped to their preview.
+  previewed: Set<string>
 }
 
 export function createDiffPanel(deps: DiffDeps): DiffController {
@@ -203,7 +209,7 @@ function mountDiff(
   let prefs: DiffPrefs | null = null
   let result: DiffResult | null = null
   let selected: string | null = null // the path of the card the keys act on
-  let review: Review = { collapsed: new Set(), viewed: new Set() }
+  let review: Review = { collapsed: new Set(), viewed: new Set(), previewed: new Set() }
   let filter = ''
   let shown: DiffFile[] = [] // the files that match the filter
   const cards = new Map<string, Card>() // the drawn cards of the current result, by path
@@ -625,14 +631,60 @@ function mountDiff(
     const tick = el('span', 'diff-viewed-tick')
     tick.innerHTML = iconSvg('check')
     viewedLabel.append(viewedBox, tick, document.createTextNode('Viewed'))
+    // Markdown files flip between their diff and the file as it reads after the change.
+    const flip = canPreview(file) ? el('div', 'diff-view') : null
+    const diffButton = el('button', 'diff-view-button', 'Diff')
+    const previewButton = el('button', 'diff-view-button', 'Preview')
+    if (flip) {
+      flip.setAttribute('role', 'group')
+      flip.setAttribute('aria-label', `View of ${file.path}`)
+      for (const button of [diffButton, previewButton]) button.type = 'button'
+      flip.append(diffButton, previewButton)
+      head.append(flip)
+    }
     head.append(viewedLabel)
     const content = el('div', 'diff-card-body')
     card.append(head, content)
 
     let near = observer === null
     let drawn = false
+    // What the core said about the file's new side; asked once per card, so a diff read again asks again.
+    let preview: { content: DiffFileContent } | { error: string } | null = null
+    let asking = false
+    const askPreview = async (): Promise<void> => {
+      const mine = sequence
+      const tab = tabId
+      if (tab === null) return
+      asking = true
+      try {
+        const answer = await deps.file(tab, mode(), file.path)
+        if (mine !== sequence || destroyed) return
+        preview = { content: answer }
+      } catch (failure) {
+        if (mine !== sequence || destroyed) return
+        preview = { error: failure instanceof Error ? failure.message : String(failure) }
+      }
+      asking = false
+      if (drawn && review.previewed.has(file.path)) draw()
+    }
+    const drawPreview = (): void => {
+      if (preview === null) {
+        content.append(el('p', 'diff-cannot', 'Loading the preview…'))
+        if (!asking) void askPreview()
+      } else if ('error' in preview) content.append(el('p', 'diff-cannot', `Could not load the preview: ${preview.error}`))
+      else if (preview.content.state === 'too-large') content.append(el('p', 'diff-cannot', 'This file is too large to preview'))
+      else if (preview.content.state === 'binary') content.append(el('p', 'diff-cannot', 'This file is binary, so it cannot be previewed'))
+      else if (preview.content.state === 'missing') content.append(el('p', 'diff-cannot', 'The file is not there to preview'))
+      else if ((preview.content.text ?? '').trim() === '') content.append(el('p', 'diff-cannot', 'This file is empty'))
+      else content.append(renderMarkdown(preview.content.text ?? ''))
+    }
     const draw = (): void => {
       content.replaceChildren()
+      if (review.previewed.has(file.path)) {
+        drawPreview()
+        drawn = true
+        return
+      }
       const outdated = placed.outdated.get(file.path) ?? []
       if (outdated.length > 0) content.append(outdatedSection(outdated, file.path))
       if (file.binary || file.truncated || file.hunks.length === 0) content.append(el('p', 'diff-cannot', 'Cannot preview this file (binary, too large, or unreadable)'))
@@ -663,6 +715,9 @@ function mountDiff(
       chevron.setAttribute('aria-expanded', String(!shut))
       chevron.setAttribute('aria-label', `${shut ? 'Expand' : 'Collapse'} ${file.path}`)
       viewedBox.checked = done
+      const previewing = review.previewed.has(file.path)
+      diffButton.setAttribute('aria-pressed', String(!previewing))
+      previewButton.setAttribute('aria-pressed', String(previewing))
       const count = comments.filter((comment) => comment.path === file.path).length
       commentBadge.hidden = count === 0
       commentBadge.textContent = String(count)
@@ -683,6 +738,18 @@ function mountDiff(
       paint()
     }
     chevron.addEventListener('click', toggleShut)
+    const setView = (previewing: boolean): void => {
+      if (review.previewed.has(file.path) === previewing) return
+      if (previewing) review.previewed.add(file.path)
+      else review.previewed.delete(file.path)
+      redraw()
+    }
+    diffButton.addEventListener('click', () => setView(false))
+    previewButton.addEventListener('click', () => setView(true))
+    // The window must never follow a link in a file: the preview shows where it points, and that is all.
+    content.addEventListener('click', (event) => {
+      if (event.target instanceof Element && event.target.closest('a')) event.preventDefault()
+    })
     viewedBox.addEventListener('change', () => {
       // Marking a file viewed puts it away; unmarking opens it again.
       if (viewedBox.checked) {
@@ -875,7 +942,7 @@ function mountDiff(
       if (next.state === 'error') return blank(`Could not read the changes: ${next.error ?? 'git failed'}`)
       result = next
       cards.clear()
-      review = reviews.get(next.root ?? '') ?? { collapsed: new Set(), viewed: new Set() }
+      review = reviews.get(next.root ?? '') ?? { collapsed: new Set(), viewed: new Set(), previewed: new Set() }
       reviews.set(next.root ?? '', review)
       if (saved) comments = saved
       placed = placeComments(next.files, comments)

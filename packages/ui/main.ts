@@ -281,6 +281,7 @@ const rail = mountModules(
       connected: () => coreConnected,
       get: (tabId, mode, base, showUntracked) => bridge.rpc('diff.get', { tabId, mode, base, showUntracked }),
       bases: (tabId) => bridge.rpc('diff.bases', { tabId }),
+      file: (tabId, mode, file) => bridge.rpc('diff.file', { tabId, mode, file }),
       prefs: (tabId) => bridge.rpc('diff.prefs.get', { tabId }),
       setPrefs: (tabId, prefs) => bridge.rpc('diff.prefs.set', { tabId, ...prefs }),
       comments: {

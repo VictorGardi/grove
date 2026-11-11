@@ -8,6 +8,11 @@ export const MODE_LABEL: Record<DiffMode, string> = { branch: 'Branch', uncommit
 export const MODES: readonly DiffMode[] = ['branch', 'uncommitted', 'last-commit']
 export const MAX_RECENT_BASES = 5
 
+// Whether a card can flip to a rendered preview: a markdown file that is there, readable and within the size the diff shows.
+export function canPreview(file: DiffFile): boolean {
+  return /\.(md|markdown)$/i.test(file.path) && file.status !== 'deleted' && !file.binary && !file.truncated
+}
+
 // The files whose path contains `filter`, case-insensitively, in the order the core sent them.
 export function matchFiles(files: readonly DiffFile[], filter: string): DiffFile[] {
   const query = filter.trim().toLowerCase()

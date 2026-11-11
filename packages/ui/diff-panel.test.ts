@@ -1,6 +1,6 @@
 // @vitest-environment happy-dom
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
-import type { DiffBases, DiffComment, DiffFile, DiffPrefs, DiffResult } from '../protocol/messages.ts'
+import type { DiffBases, DiffComment, DiffFile, DiffFileContent, DiffPrefs, DiffResult } from '../protocol/messages.ts'
 import { createDiffPanel, type DiffDeps } from './diff-panel.ts'
 import type { DockContext } from './dock.ts'
 import type { SendTarget } from './diff-model.ts'
@@ -33,6 +33,7 @@ function setup(
   const state = { tab: 'tab1' as string | null, connected: true }
   const get = vi.fn(async (_tab: string, ..._rest: unknown[]) => result(files))
   const setPrefs = vi.fn(async (_tab: string, next: { mode?: DiffPrefs['mode']; base?: string | null }) => (prefs = { ...prefs, ...next }))
+  const fileText = vi.fn(async (_tab: string, _mode: string, _path: string): Promise<DiffFileContent> => ({ state: 'ok', text: '# Title\n\nHello **world**\n' }))
   // The core's list of comments, as the fake keeps it.
   const store = { list: [...saved], next: 1 }
   const comments = {
@@ -64,6 +65,7 @@ function setup(
     bases: async () => bases,
     prefs: async () => prefs,
     setPrefs,
+    file: fileText,
     comments,
     target: () => send.target,
     write,
@@ -74,7 +76,7 @@ function setup(
   const context: DockContext = { meta: (t) => void calls.meta.push(t), status: (t) => void calls.status.push(t), error: (m) => void calls.error.push(m), close: () => undefined }
   const controller = createDiffPanel(deps)
   const instance = controller.panel.mount(body, context)
-  return { body, controller, instance, state, get, setPrefs, calls, comments, store, send, write }
+  return { body, controller, instance, state, get, setPrefs, fileText, calls, comments, store, send, write }
 }
 // happy-dom's observer never fires: without one the panel draws every card at once, which is what most tests look at.
 beforeEach(() => void vi.stubGlobal('IntersectionObserver', undefined))
@@ -839,5 +841,144 @@ describe('diff panel: send to the agent', () => {
     input.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape' }))
     input.dispatchEvent(new Event('blur'))
     expect(input.hidden).toBe(true)
+  })
+})
+
+describe('diff panel: markdown preview', () => {
+  const doc = (over: Partial<DiffFile> = {}) => file('docs/guide.md', 'modified', over)
+  const view = (card: Element, label: 'Diff' | 'Preview'): HTMLButtonElement =>
+    [...card.querySelectorAll<HTMLButtonElement>('.diff-view button')].find((b) => b.textContent === label)!
+
+  it('gives a markdown card a Diff and Preview switch, and no other file, deleted, binary or cut one', async () => {
+    const t = setup({}, [
+      doc(),
+      file('README.MD', 'added'),
+      file('src/a.ts'),
+      doc({ status: 'deleted', path: 'gone.md' }),
+      doc({ binary: true, hunks: [], path: 'bin.md' }),
+      doc({ truncated: true, hunks: [], path: 'big.md' }),
+    ])
+    await flush()
+    const has = (path: string): boolean => t.body.querySelector(`[data-path="${path}"] .diff-view`) !== null
+    expect(['docs/guide.md', 'README.MD', 'src/a.ts', 'gone.md', 'bin.md', 'big.md'].map(has)).toEqual([true, true, false, false, false, false])
+    expect(view(q(t.body, '[data-path="docs/guide.md"]'), 'Diff').getAttribute('aria-pressed')).toBe('true')
+    expect(view(q(t.body, '[data-path="docs/guide.md"]'), 'Preview').getAttribute('aria-pressed')).toBe('false')
+    expect(t.fileText).not.toHaveBeenCalled()
+  })
+
+  it('flips to the file as it reads after the change, asked for once, and back without asking again', async () => {
+    const t = setup({}, [doc()])
+    await flush()
+    const card = q(t.body, '[data-path="docs/guide.md"]')
+    view(card, 'Preview').click()
+    expect(card.querySelector('.diff-card-body')?.textContent).toContain('Loading')
+    await flush()
+    expect(t.fileText).toHaveBeenCalledTimes(1)
+    expect(t.fileText).toHaveBeenCalledWith('tab1', 'branch', 'docs/guide.md')
+    expect(q(card, '.diff-card-body h1').textContent).toBe('Title')
+    expect(q(card, '.diff-card-body strong').textContent).toBe('world')
+    expect(card.querySelector('.diff-line')).toBeNull()
+    expect(view(card, 'Preview').getAttribute('aria-pressed')).toBe('true')
+    view(card, 'Diff').click()
+    expect(card.querySelector('.diff-line-add .diff-text')?.textContent).toBe('new')
+    expect(card.querySelector('h1')).toBeNull()
+    view(card, 'Preview').click()
+    await flush()
+    expect(q(card, 'h1').textContent).toBe('Title')
+    expect(t.fileText).toHaveBeenCalledTimes(1)
+  })
+
+  it('opens on the diff, and shows no comment controls in the preview', async () => {
+    const t = setup({}, [doc()])
+    await flush()
+    const card = q(t.body, '[data-path="docs/guide.md"]')
+    expect(card.querySelector('.diff-line')).not.toBeNull()
+    view(card, 'Preview').click()
+    await flush()
+    expect(card.querySelector('.diff-plus, .diff-thread, .diff-composer')).toBeNull()
+  })
+
+  it('does not let a link in the preview navigate the window', async () => {
+    const t = setup({ file: async () => ({ state: 'ok', text: '[site](https://example.com)' }) }, [doc()])
+    await flush()
+    const card = q(t.body, '[data-path="docs/guide.md"]')
+    view(card, 'Preview').click()
+    await flush()
+    const click = new MouseEvent('click', { bubbles: true, cancelable: true })
+    q(card, 'a').dispatchEvent(click)
+    expect(click.defaultPrevented).toBe(true)
+  })
+
+  it('keeps the choice across a refresh and a reopened panel, and asks again then, since the diff was read again', async () => {
+    const t = setup({}, [doc(), file('src/a.ts')])
+    await flush()
+    view(q(t.body, '[data-path="docs/guide.md"]'), 'Preview').click()
+    await flush()
+    q<HTMLButtonElement>(t.body, '.diff-refresh').click()
+    await flush()
+    expect(q(t.body, '[data-path="docs/guide.md"] h1').textContent).toBe('Title')
+    expect(t.fileText).toHaveBeenCalledTimes(2)
+    t.instance.destroy()
+    const body = document.body.appendChild(document.createElement('div'))
+    t.controller.panel.mount(body, { meta: () => undefined, status: () => undefined, error: () => undefined, close: () => undefined })
+    await flush()
+    expect(q(body, '[data-path="docs/guide.md"] h1').textContent).toBe('Title')
+  })
+
+  it('asks for the new mode after the mode changes', async () => {
+    const t = setup({}, [doc()])
+    await flush()
+    view(q(t.body, '[data-path="docs/guide.md"]'), 'Preview').click()
+    await flush()
+    ;[...t.body.querySelectorAll<HTMLButtonElement>('.diff-mode')][2].click()
+    await flush()
+    expect(t.fileText).toHaveBeenLastCalledWith('tab1', 'last-commit', 'docs/guide.md')
+  })
+
+  it('says why a file cannot be previewed, and how it failed, and lets the diff come back', async () => {
+    const answers: Record<string, () => Promise<DiffFileContent>> = {
+      'big.md': async () => ({ state: 'too-large', text: null }),
+      'gone.md': async () => ({ state: 'missing', text: null }),
+      'odd.md': async () => ({ state: 'binary', text: null }),
+      'down.md': async () => {
+        throw new Error('socket closed')
+      },
+    }
+    const t = setup({ file: (_tab, _mode, path) => answers[path]() }, Object.keys(answers).map((path) => file(path)))
+    await flush()
+    const said: Record<string, string> = {}
+    for (const path of Object.keys(answers)) {
+      view(q(t.body, `[data-path="${path}"]`), 'Preview').click()
+      await flush()
+      said[path] = q(t.body, `[data-path="${path}"] .diff-card-body`).textContent ?? ''
+    }
+    expect(said['big.md']).toContain('too large to preview')
+    expect(said['gone.md']).toContain('not there')
+    expect(said['odd.md']).toContain('binary')
+    expect(said['down.md']).toContain('Could not load the preview: socket closed')
+    const card = q(t.body, '[data-path="down.md"]')
+    view(card, 'Diff').click()
+    expect(card.querySelector('.diff-line')).not.toBeNull()
+  })
+
+  it('says an empty file is empty', async () => {
+    const t = setup({ file: async () => ({ state: 'ok', text: '' }) }, [doc()])
+    await flush()
+    const card = q(t.body, '[data-path="docs/guide.md"]')
+    view(card, 'Preview').click()
+    await flush()
+    expect(q(card, '.diff-card-body').textContent).toContain('This file is empty')
+  })
+
+  it('does not draw an answer that came after the diff was read again', async () => {
+    const releases: Array<(value: DiffFileContent) => void> = []
+    const t = setup({ file: () => new Promise<DiffFileContent>((resolve) => void releases.push(resolve)) }, [doc()])
+    await flush()
+    view(q(t.body, '[data-path="docs/guide.md"]'), 'Preview').click()
+    q<HTMLButtonElement>(t.body, '.diff-refresh').click()
+    await flush()
+    releases[0]({ state: 'ok', text: '# Late' }) // the first card's answer; the refresh made a new card, which asked again
+    await flush()
+    expect(t.body.textContent).not.toContain('Late')
   })
 })
