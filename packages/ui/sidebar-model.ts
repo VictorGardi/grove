@@ -1,6 +1,7 @@
 // The sidebar and tab strip's rules as plain functions, so they run in tests without a DOM.
 import type { AgentInfo, AgentStateName, ContextUsage } from '../protocol/messages.ts'
 import type { AgentKind } from '../core/status/adapter.ts'
+import { contextLevel } from '../protocol/context-level.ts'
 import { URGENCY } from '../protocol/rollup.ts'
 
 export interface TabStateInput {
@@ -123,17 +124,16 @@ function compact(n: number): string {
   return `${Number((n / 1_000_000).toFixed(1))}M`
 }
 
-// The share of the window from which a reading is a warning.
-const CONTEXT_WARN_PERCENT = 75
-
 // What the context circle draws: the pie fills by `fraction`, and the tooltip reads `headline` over `detail`.
 export interface ContextView {
   // The used share of the window, 0 to 1. Null when there is no window to measure against: the circle is then unfilled.
   fraction: number | null
   // The window is used up.
   full: boolean
-  // From three quarters of the window up, short of full: the circle and the readout turn to the warning colour.
+  // The reading's context level is warn: the circle and the readout turn to the warning colour.
   warn: boolean
+  // The level is handoff, short of full: they turn to the error colour, as full does.
+  handoff: boolean
   // A last request, not the current occupancy: the circle is drawn faded.
   last: boolean
   headline: string
@@ -147,6 +147,7 @@ export interface ContextView {
 export function contextView(context: ContextUsage | undefined, kind: AgentKind = 'claude'): ContextView | null {
   if (!context || context.tokens === null || context.tokens <= 0) return null
   const { tokens, window, percent, model } = context
+  const level = contextLevel(context)
   if (window === null || window <= 0) {
     // Copilot's record may carry no prompt budget: the input tokens alone, timed as a last request, never a percentage.
     if (kind !== 'copilot') return null
@@ -154,7 +155,8 @@ export function contextView(context: ContextUsage | undefined, kind: AgentKind =
     return {
       fraction: null,
       full: false,
-      warn: false,
+      warn: level === 'warn',
+      handoff: level === 'handoff',
       last: true,
       headline: `${counts} · last request ${hhmm(context.at)}`,
       detail: model ? `no prompt budget · ${model}` : 'no prompt budget',
@@ -162,11 +164,12 @@ export function contextView(context: ContextUsage | undefined, kind: AgentKind =
   }
   const pct = Math.round(percent ?? (tokens / window) * 100)
   const full = pct >= 100
-  const warn = !full && pct >= CONTEXT_WARN_PERCENT
+  const warn = !full && level === 'warn'
+  const handoff = !full && level === 'handoff'
   const last = kind !== 'claude'
   const headline = full ? `${pct}% · full` : last ? `${pct}% · last request ${hhmm(context.at)}` : `${pct}% used`
   const source = kind === 'copilot' ? ' prompt budget' : kind === 'opencode' ? ' model limit' : ''
   const counts = `${compact(tokens)} / ${compact(window)}${source}`
   const detail = model ? `${counts} · ${model}` : counts
-  return { fraction: Math.min(Math.max(pct, 0), 100) / 100, full, warn, last, headline, detail }
+  return { fraction: Math.min(Math.max(pct, 0), 100) / 100, full, warn, handoff, last, headline, detail }
 }

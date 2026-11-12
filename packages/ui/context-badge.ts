@@ -53,7 +53,7 @@ export function hideContextTip(): void {
 }
 
 function levelClasses(view: ContextView): string[] {
-  return [view.full && 'full', view.warn && 'warn', view.last && 'last', view.fraction === null && 'unknown'].filter((name): name is string => Boolean(name))
+  return [view.full && 'full', view.warn && 'warn', view.handoff && 'handoff', view.last && 'last', view.fraction === null && 'unknown'].filter((name): name is string => Boolean(name))
 }
 
 function ringFor(view: ContextView, kind: AgentKind): HTMLElement {

@@ -146,15 +146,20 @@ async function listTabs(json: boolean): Promise<number> {
 }
 
 function lsTabs(tabs: SpaceTabInfo[], agents: AgentInfo[]): LsTab[] {
-  return tabs.map((tab) => ({
-    id: tab.id,
-    spaceId: tab.spaceId,
-    spacePath: tab.spacePath,
-    kind: tab.kind,
-    state: tab.kind === 'terminal' ? null : (agents.find((agent) => agent.tabId === tab.id)?.state ?? null),
-    label: tab.label,
-    alive: tab.alive,
-  }))
+  return tabs.map((tab) => {
+    const agent = tab.kind === 'terminal' ? undefined : agents.find((candidate) => candidate.tabId === tab.id)
+    return {
+      id: tab.id,
+      spaceId: tab.spaceId,
+      spacePath: tab.spacePath,
+      kind: tab.kind,
+      state: agent?.state ?? null,
+      context: agent?.context ? { tokens: agent.context.tokens, window: agent.context.window, percent: agent.context.percent, at: agent.context.at } : null,
+      level: agent?.level ?? null,
+      label: tab.label,
+      alive: tab.alive,
+    }
+  })
 }
 
 async function newTab(cmd: Extract<Command, { cmd: 'new' }>): Promise<number> {

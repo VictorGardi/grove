@@ -31,6 +31,15 @@ specific meaning, so humans and agents stay consistent.
   a state value.
 - **Needs-you reason**: why a tab needs the human: `permission`, `question`,
   `auth` (the agent is not signed in or its key failed) or `error`.
+- **Context level**: how full an agent's context window is, as one of `ok`,
+  `warn` or `handoff`, taken from whichever of the agent's token count or its
+  share of the window crosses a line first. Warn is from 150k tokens or 50%;
+  handoff from 200k tokens or 70%. A tab with no usable reading has no level.
+  The ring, the CLI and agents all use the same level.
+- **Handoff**: an agent's work moving to a new tab because its context level is
+  `handoff`: the old tab stops after its current step, and a fresh tab carries
+  on from a brief. The old tab is left for the human, never killed. An
+  orchestrator hands off its own work, or a worker's next step.
 - **Grid layout**: how the grid's panes tile the screen. **Automatic** by
   default (columns follow pane count, tab order); once the human drags or
   resizes it becomes **custom**, a **split tree** whose leaves are panes and

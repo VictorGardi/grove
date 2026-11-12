@@ -364,6 +364,7 @@ p {
   --context-fill: var(--context-warn);
 }
 
+.context-ring.handoff,
 .context-ring.full {
   --context-fill: var(--color-error);
 }
@@ -1049,6 +1050,7 @@ p {
   --context-fill: var(--context-warn);
 }
 
+.context-meter.handoff,
 .context-meter.full {
   --context-fill: var(--color-error);
 }
@@ -1082,6 +1084,7 @@ p {
   color: var(--context-warn);
 }
 
+.context-meter.handoff .context-meter-pct,
 .context-meter.full .context-meter-pct {
   color: var(--color-error);
 }

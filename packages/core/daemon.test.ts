@@ -1071,6 +1071,8 @@ describe('agents typed by hand', () => {
       const own = seen.filter((change) => change.tabId === tabId)
       expect(own.length).toBeGreaterThan(0)
       expect(own.every((change) => change.context.tokens === usage[kind].tokens)).toBe(true)
+      // The agent list carries the reading with its level, which is what the CLI's ls shows.
+      expect(await agentState(core, tabId)).toMatchObject({ context: { tokens: usage[kind].tokens }, level: 'ok' })
     }
 
     const state = JSON.parse(fs.readFileSync(path.join(home, 'state.json'), 'utf8')) as {

@@ -94,7 +94,7 @@ describe('grove cli', () => {
     logs.length = 0
     expect(await main(['ls'])).toBe(0)
     expect(logs).toContain(folder)
-    expect(logs.join('\n')).toMatch(new RegExp(`${id}\\s+terminal\\s+-\\s+scratch\\s+alive`))
+    expect(logs.join('\n')).toMatch(new RegExp(`${id}\\s+terminal\\s+-\\s+-\\s+scratch\\s+alive`))
 
     logs.length = 0
     expect(await main(['send', 'scratch', 'echo grove-slice7-$((6*7))'])).toBe(0)

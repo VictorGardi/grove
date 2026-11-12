@@ -148,6 +148,9 @@ export interface ContextUsage {
   at: number
 }
 
+// How full a context window is: `warn` is no new big work in the tab, `handoff` is time to move the work to a new tab.
+export type ContextLevel = 'ok' | 'warn' | 'handoff'
+
 export interface AgentInfo {
   tabId: string
   agent: AgentKind
@@ -158,6 +161,8 @@ export interface AgentInfo {
   resumable: boolean
   // The latest context reading. Absent until the agent has reported one (and for agents that report none yet).
   context?: ContextUsage
+  // The level of that reading; absent with it, and while the reading has no tokens (see contextLevel).
+  level?: ContextLevel
 }
 
 // A tab that needs the human: entered needs-you (any reason) or finished, and is not on screen.

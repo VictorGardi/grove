@@ -1,8 +1,8 @@
 import { describe, expect, it } from 'vitest'
-import { formatError, formatLsJson, formatNew, formatRead, formatTree, spaceHeadings, turnExit, type LsTab } from './output.ts'
+import { formatContext, formatError, formatLsJson, formatNew, formatRead, formatTree, spaceHeadings, turnExit, type LsTab } from './output.ts'
 
 const t = (over: Partial<LsTab>): LsTab => ({
-  id: 'aaaaaaaa-1111', kind: 'claude', state: 'working', label: 'one', alive: true, spaceId: 'sp_a', spacePath: '/p', ...over,
+  id: 'aaaaaaaa-1111', kind: 'claude', state: 'working', context: null, level: null, label: 'one', alive: true, spaceId: 'sp_a', spacePath: '/p', ...over,
 })
 
 describe('spaceHeadings', () => {
@@ -28,9 +28,9 @@ describe('formatTree', () => {
     )
     expect(lines).toEqual([
       '/p',
-      '  1  aaaaaaaa-1111  claude    working   one  alive',
+      '  1  aaaaaaaa-1111  claude    working   -             one  alive',
       '/q',
-      '  1  bbbbbbbb-2222  terminal  -         -  exited',
+      '  1  bbbbbbbb-2222  terminal  -         -             -  exited',
     ])
   })
 
@@ -44,9 +44,9 @@ describe('formatTree', () => {
     )
     expect(lines).toEqual([
       '/p',
-      '  1  aaaaaaaa-1111  claude    working   one  alive',
+      '  1  aaaaaaaa-1111  claude    working   -             one  alive',
       '/p#2',
-      '  1  bbbbbbbb-2222  terminal  -         -  exited',
+      '  1  bbbbbbbb-2222  terminal  -         -             -  exited',
     ])
   })
 
@@ -95,5 +95,23 @@ describe('formatRead', () => {
     expect(formatRead('1\n2\n3\n4\n', 2)).toBe('3\n4')
     expect(formatRead('1\n2\n3  \n', 1)).toBe('3')
     expect(formatRead('prompt$ \n\n\n\n\n\n', 5)).toBe('prompt$')
+  })
+})
+
+describe('ls context', () => {
+  const ctx = (tokens: number | null, window: number | null, percent: number | null = null) => ({ tokens, window, percent, at: 0 })
+
+  it('shows the share and level, tokens when there is no window, and a dash when there is nothing to judge', () => {
+    expect(formatContext({ context: ctx(110_000, 200_000), level: 'warn' })).toBe('55% warn')
+    expect(formatContext({ context: ctx(60_000, 200_000, 75), level: 'handoff' })).toBe('75% handoff')
+    expect(formatContext({ context: ctx(120_000, null), level: 'warn' })).toBe('120k warn')
+    expect(formatContext({ context: ctx(null, 200_000), level: null })).toBe('-')
+    expect(formatContext({ context: null, level: null })).toBe('-')
+  })
+
+  it('prints the context in the tree and keeps it in the json', () => {
+    const tab = t({ context: ctx(110_000, 200_000), level: 'warn' })
+    expect(formatTree([{ id: 'sp_a', path: '/p' }], [tab])[1]).toContain('claude    working   55% warn')
+    expect(JSON.parse(formatLsJson([tab]))[0]).toMatchObject({ level: 'warn', context: { tokens: 110_000, window: 200_000, percent: null, at: 0 } })
   })
 })

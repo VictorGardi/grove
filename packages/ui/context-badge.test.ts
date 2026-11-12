@@ -26,6 +26,7 @@ describe('contextView', () => {
       fraction: null,
       full: false,
       warn: false,
+      handoff: false,
       last: true,
       headline: '101.1k prompt tokens · last request 21:10',
       detail: 'no prompt budget · gpt-6-luna',
@@ -36,7 +37,8 @@ describe('contextView', () => {
     expect(contextView(usage(124_000, 200_000))).toEqual({
       fraction: 0.62,
       full: false,
-      warn: false,
+      warn: true,
+      handoff: false,
       last: false,
       headline: '62% used',
       detail: '124k / 200k · opus',
@@ -53,6 +55,7 @@ describe('contextView', () => {
       fraction: 0.37,
       full: false,
       warn: false,
+      handoff: false,
       last: true,
       headline: '37% · last request 21:10',
       detail: '101.1k / 272k prompt budget · gpt-6-luna',
@@ -66,10 +69,11 @@ describe('contextView', () => {
     )
   })
 
-  it('warns from three quarters of the window up, and not once it is full', () => {
-    expect(contextView(usage(148_000, 200_000))?.warn).toBe(false)
-    expect(contextView(usage(150_000, 200_000))?.warn).toBe(true)
-    expect(contextView(usage(200_000, 200_000))).toMatchObject({ warn: false, full: true })
+  it('warns from the warn level and marks handoff from the handoff level, and neither once it is full', () => {
+    expect(contextView(usage(99_000, 200_000))).toMatchObject({ warn: false, handoff: false })
+    expect(contextView(usage(100_000, 200_000))).toMatchObject({ warn: true, handoff: false })
+    expect(contextView(usage(140_000, 200_000))).toMatchObject({ warn: false, handoff: true })
+    expect(contextView(usage(200_000, 200_000))).toMatchObject({ warn: false, handoff: false, full: true })
   })
 
   it('marks a window that is used up as full, and clamps the ring to a whole circle', () => {
@@ -99,8 +103,10 @@ describe('markWithContext', () => {
   it('marks a last request, a warning and a full window on the ring', () => {
     const last = markWithContext(document.createElement('span'), usage(101_079, 272_000), 'copilot')
     expect(last.querySelector('.context-ring')?.classList.contains('last')).toBe(true)
-    const warn = markWithContext(document.createElement('span'), usage(174_000, 200_000), 'claude')
+    const warn = markWithContext(document.createElement('span'), usage(110_000, 200_000), 'claude')
     expect(warn.querySelector('.context-ring')?.classList.contains('warn')).toBe(true)
+    const handoff = markWithContext(document.createElement('span'), usage(150_000, 200_000), 'claude')
+    expect(handoff.querySelector('.context-ring')?.classList.contains('handoff')).toBe(true)
     const full = markWithContext(document.createElement('span'), usage(200_000, 200_000), 'claude')
     expect(full.querySelector('.context-ring')?.classList.contains('full')).toBe(true)
   })

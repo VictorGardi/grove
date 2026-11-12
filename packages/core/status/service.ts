@@ -1,5 +1,6 @@
 import fs from 'node:fs'
 import path from 'node:path'
+import { contextLevel } from '../../protocol/context-level.ts'
 import type { AgentInfo, AgentStateName, ContextUsage, NeedsYouReason, StatusChange, TabInfo } from '../../protocol/messages.ts'
 import type { TabRecord } from '../store/state.ts'
 import { agentOfProgram } from '../presence.ts'
@@ -227,6 +228,7 @@ export class StatusService {
   list(alive: Set<string>): AgentInfo[] {
     return [...this.watches.values()].map((watch) => {
       const { status } = watch
+      const level = contextLevel(watch.context)
       return {
         tabId: watch.tabId,
         agent: watch.kind,
@@ -236,6 +238,7 @@ export class StatusService {
         source: watch.kind,
         resumable: !alive.has(watch.tabId) && watch.resumeId !== undefined,
         ...(watch.context ? { context: watch.context } : {}),
+        ...(level ? { level } : {}),
       }
     })
   }
