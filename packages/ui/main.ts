@@ -17,13 +17,14 @@ import { DEFAULT_ZOOM, readZoom, stepZoom, writeZoom, type ZoomStep } from './zo
 import { applyLayout, applySettings, applyTheme, findAction, formatBinding, launcherLine } from './config.ts'
 import { openTerminal, terminalFontSize, tokenValue, type TerminalView } from './terminal.ts'
 import { createArranger, clearPlacement, PANE_MIN } from './grid/arrange.ts'
-import { canJoinGrid, gridMembers, type PaneDirection } from './grid/layout.ts'
+import { canJoinGrid, type PaneDirection } from './grid/layout.ts'
 import { addPane, autoTree, neighborByGeometry, nudge, removePane, repair, swapPanes, type Tree } from './grid/tree.ts'
-import { previousOf, stepFrom, visited } from './recent-tabs.ts'
+import { previousOf, stepFrom } from './recent-tabs.ts'
 import { PANE_DIM_RANGE, readPaneDim, writePaneDim } from './pane-dim.ts'
 import { readSidebarHidden, writeSidebarHidden, type KeyValueStore } from './sidebar-state.ts'
 import { readViewState, writeViewState } from './view-state.ts'
-import { groupAgents, jumpTargets, nextUrgent, shortFolder, sidebarSpaceOrder, spaceAt, tabStateOf, tileIndex, urgentTabs } from './sidebar-model.ts'
+import { groupAgents, jumpTargets, nextUrgent, shortFolder, sidebarSpaceOrder, spaceAt, tileIndex } from './sidebar-model.ts'
+import { createWindowStore, type Tab, type TabKind } from './window-store.ts'
 import { contextMeter, hideContextTip, markWithContext } from './context-badge.ts'
 import { createTabPill, type TabPill } from './tab-pill.ts'
 import { createNotesEditor } from './notes-editor.ts'
@@ -60,24 +61,13 @@ interface EnvInfo {
   home: string
 }
 
-// What a tab runs: a shell, or one of the agents.
-type TabKind = 'shell' | AgentKind
-
-interface Tab {
+// A tab's DOM and terminal, by the tab's id. The store holds what the tab is; this holds what shows it.
+interface TabDom {
   id: string
-  // The space the tab belongs to, by its id; spacePath is the folder the pane header shows.
-  spaceId: string
-  spacePath: string
+  // The kind the strip button's agent mark shows, so a kind change swaps the mark.
   kind: TabKind
-  // The name the user gave the tab; null shows "Tab N".
-  label: string | null
-  // The tab's number in its space, counted in the order the tabs were opened.
-  number: number
-  // Whether the human put the tab in the grid, saved with the window's view state.
-  inGrid: boolean
   attached: boolean
   attaching: Promise<void> | null
-  exited: boolean
   queue: Uint8Array[] | null
   // The tab's pane in the terminals area, its terminal, and its button in the strip.
   pane: HTMLElement
@@ -99,19 +89,14 @@ interface AgentRow {
 
 const bridge = createBridge()
 const encoder = new TextEncoder()
-const tabs = new Map<string, Tab>()
-const order: Tab[] = []
-const spaces = new Map<string, SpaceInfo>()
-// Each space's tabs, most recently visited first: the previous-tab key goes back through them, and a space shows its first.
-const recentBySpace = new Map<string, Tab[]>()
-// Every tab's id, most recently shown first: Go to lists tabs and spaces in this order.
-let recentTabIds: string[] = []
-const agents = new Map<string, AgentInfo>()
-let active: Tab | null = null
+const store = createWindowStore({
+  changed: onStoreChanged,
+  // With the grid showing, a space that has a pane in it keeps the grid by focusing that pane.
+  gridPane: (spaceId) => (gridOn ? store.gridTabs().find((tab) => tab.spaceId === spaceId)?.id : undefined),
+})
+const doms = new Map<string, TabDom>()
 // Whether the window is connected to the core: the changes panel says so instead of showing an empty diff.
 let coreConnected = false
-let activeSpace: string | null = null
-let refused: string | null = null
 let homeDir = ''
 let windowFocused = false
 // The config in use: the key bindings, the theme tokens set on the root, and the note the status line shows for them.
@@ -191,12 +176,7 @@ const renameModal = createRenameModal(
   },
   {
     rename: (id, label) => bridge.rpc('tabs.rename', { id, label }),
-    renamed: (id, label) => {
-      const tab = tabs.get(id)
-      if (!tab) return
-      tab.label = label || null
-      paint()
-    },
+    renamed: (id, label) => store.renameTab(id, label),
     closed: focusActive,
   },
 )
@@ -205,26 +185,23 @@ const goTo = createGoTo(
   { modal: byId('goto-modal'), input: byId('goto-input') as HTMLInputElement, list: byId('goto-list') },
   {
     source: () => ({
-      spaces: sidebarSpaceOrder([...spaces.values()]).flatMap((id) => {
-        const space = spaces.get(id)
+      spaces: sidebarSpaceOrder(store.spaces()).flatMap((id) => {
+        const space = store.space(id)
         return space ? [{ id, name: space.name, parent: space.parent, worktree: space.worktree, repoName: space.repoName }] : []
       }),
-      // A tab the core has not named yet has no id and cannot be jumped to.
-      tabs: order
-        .filter((tab) => tab.id)
-        .map((tab) => ({
-          id: tab.id,
-          spaceId: tab.spaceId,
-          name: tabName(tab),
-          agent: agents.get(tab.id)?.agent ?? (tab.kind === 'shell' ? null : tab.kind),
-          state: stateOf(tab),
-        })),
-      recent: recentTabIds,
-      activeSpaceId: activeSpace,
-      activeTabId: active?.id ?? null,
+      tabs: store.tabs.map((tab) => ({
+        id: tab.id,
+        spaceId: tab.spaceId,
+        name: tabName(tab),
+        agent: store.agent(tab.id)?.agent ?? (tab.kind === 'shell' ? null : tab.kind),
+        state: stateOf(tab),
+      })),
+      recent: [...store.recentIds],
+      activeSpaceId: store.activeSpace,
+      activeTabId: store.activeTab?.id ?? null,
     }),
     tile: (group) => {
-      const space = spaces.get(group.spaceId)
+      const space = store.space(group.spaceId)
       const worktree = group.worktreeOf !== null
       const tile = element('span', worktree ? 'space-tile' : `space-tile tile-${tileIndex(group.name)}`, worktree ? '' : group.name.charAt(0).toUpperCase())
       if (worktree || space?.worktree) tile.innerHTML = iconSvg('branch')
@@ -234,12 +211,9 @@ const goTo = createGoTo(
     agentMark: (row) => {
       const mark = markEl(row.agent)
       mark.title = row.agentName
-      return markWithContext(mark, agents.get(row.tabId)?.context, row.agent)
+      return markWithContext(mark, store.agent(row.tabId)?.context, row.agent)
     },
-    go: (tabId) => {
-      const tab = tabs.get(tabId)
-      if (tab) activate(tab)
-    },
+    go: (tabId) => activate(tabId),
     closed: focusActive,
   },
 )
@@ -277,7 +251,7 @@ const rail = mountModules(
       createEditor: createNotesEditor,
     }),
     diffModule({
-      tab: () => active?.id ?? null,
+      tab: () => store.activeTab?.id ?? null,
       connected: () => coreConnected,
       get: (tabId, mode, base, showUntracked) => bridge.rpc('diff.get', { tabId, mode, base, showUntracked }),
       bases: (tabId) => bridge.rpc('diff.bases', { tabId }),
@@ -292,15 +266,13 @@ const rail = mountModules(
         markSent: async (tabId, ids) => (await bridge.rpc('diff.comments.markSent', { tabId, ids })).comments,
       },
       target: () => {
-        if (!active) return null
-        const info = agents.get(active.id)
-        return { name: tabName(active), kind: active.kind, state: stateOf(active), ...(info?.reason ? { reason: info.reason } : {}), exited: active.exited }
+        const tab = store.activeTab
+        if (!tab) return null
+        const info = store.agent(tab.id)
+        return { name: tabName(tab), kind: tab.kind, state: stateOf(tab), ...(info?.reason ? { reason: info.reason } : {}), exited: tab.exited }
       },
       write: async (tabId, data) => void (await bridge.rpc('tabs.write', { id: tabId, dataB64: toBase64(encoder.encode(data)) })),
-      focusTab: (tabId) => {
-        const tab = tabs.get(tabId)
-        if (tab) activate(tab)
-      },
+      focusTab: (tabId) => activate(tabId),
     }),
   ],
   byId('dock-toggles'),
@@ -342,16 +314,17 @@ const keyActions: Record<KeyAction, () => void> = {
   'grid-toggle': () => gridToggle.click(),
   // Like the tab-strip button this replaced, the key does nothing with no space open or a refused one.
   'new-shell': () => {
-    if (activeSpace !== null && refused === null) void newShellTab()
+    if (store.activeSpace !== null && store.refused === null) void newShellTab()
   },
   'new-space': () => void newSpaceTab().catch(report),
   'close-tab': () => {
-    if (active) void closeTab(active).catch(report)
+    if (store.activeTab) void closeTab(store.activeTab.id).catch(report)
   },
   'previous-tab': () => {
-    const recent = activeSpace === null ? [] : (recentBySpace.get(activeSpace) ?? [])
+    const recent = store.activeSpace === null ? [] : store.recent(store.activeSpace)
+    const current = store.activeTab?.id ?? null
     // A tab not visited yet is not in the recent list, so with no other visited tab the key steps along the strip instead of doing nothing.
-    const previous = previousOf(recent, active) ?? stepFrom(spaceTabs(), active, 1)
+    const previous = previousOf(recent, current) ?? stepFrom(spaceTabIds(), current, 1)
     if (previous) activate(previous)
   },
   'grid-tab': () => toggleGridTab(),
@@ -403,12 +376,12 @@ function element(tag: string, className: string, text = ''): HTMLElement {
 }
 
 function spaceName(spaceId: string): string {
-  return spaces.get(spaceId)?.name ?? spaceId
+  return store.space(spaceId)?.name ?? spaceId
 }
 
 // The tab's name: the one the user gave it, else "Tab N".
 function tabName(tab: Tab): string {
-  return tab.label || String(tab.number)
+  return store.tabName(tab.id)
 }
 
 // The tab's name with its space, for titles and notifications.
@@ -418,7 +391,7 @@ function tabLabel(tab: Tab): string {
 
 // The state a tab shows: its agent's status, or idle for a shell or a gone tab.
 function stateOf(tab: Tab): AgentStateName {
-  return tabStateOf({ exited: tab.exited, kind: tab.kind, state: agents.get(tab.id)?.state ?? null })
+  return store.stateOf(tab.id)
 }
 
 // The state indicator; a live agent tab with no report also names its minimum supported version.
@@ -437,38 +410,35 @@ function markEl(kind: TabKind): HTMLElement {
   return mark
 }
 
-function createTab(spaceId: string, spacePath: string, kind: TabKind, label: string | null): Tab {
+// The DOM of a tab the store holds: its pane, terminal and strip button. Built by the change loop, dropped with the tab.
+function createTabDom(tab: Tab): TabDom {
+  const id = tab.id
   const pane = document.createElement('section')
   pane.className = 'pane'
   const head = document.createElement('header')
   head.className = 'pane-head'
-  gridArranger.grab(head, () => tab.id)
+  gridArranger.grab(head, () => id)
   const host = document.createElement('div')
   host.className = 'term-host'
   pane.append(head, host)
   terminals.append(pane)
 
-  const pill = createTabPill(markEl(kind), {
-    onActivate: () => activate(tab),
+  const pill = createTabPill(markEl(tab.kind), {
+    onActivate: () => activate(id),
     onRename: () => {
-      if (tab.id) renameModal.open({ id: tab.id, label: tab.label, number: tab.number })
+      const current = store.tab(id)
+      if (current) renameModal.open({ id, label: current.label, number: current.number })
     },
-    onClose: () => closeTab(tab).catch(report),
+    onClose: () => closeTab(id).catch(report),
   })
   const tabEl = pill.root
   tabStrip.append(tabEl)
 
-  const tab: Tab = {
-    id: '',
-    spaceId,
-    spacePath,
-    kind,
-    label,
-    number: 0,
-    inGrid: false,
+  const dom: TabDom = {
+    id,
+    kind: tab.kind,
     attached: false,
     attaching: null,
-    exited: false,
     queue: null,
     pane,
     head,
@@ -477,53 +447,53 @@ function createTab(spaceId: string, spacePath: string, kind: TabKind, label: str
     pill,
     view: undefined as unknown as TerminalView,
   }
-  host.addEventListener('click', () => activate(tab))
-  tab.view = openTerminal(host, {
+  host.addEventListener('click', () => activate(id))
+  dom.view = openTerminal(host, {
     onInput: (text) => {
-      if (tab.attached) void bridge.rpc('tabs.write', { id: tab.id, dataB64: toBase64(encoder.encode(text)) }).catch(report)
+      if (dom.attached) void bridge.rpc('tabs.write', { id, dataB64: toBase64(encoder.encode(text)) }).catch(report)
     },
     onResize: (cols, rows) => {
-      if (tab.attached) void bridge.rpc('tabs.resize', { id: tab.id, cols, rows }).catch(report)
+      if (dom.attached) void bridge.rpc('tabs.resize', { id, cols, rows }).catch(report)
     },
-    onContextLoss: () => console.warn(`WebGL context lost in tab ${tab.id}; using the DOM renderer`),
+    onContextLoss: () => console.warn(`WebGL context lost in tab ${id}; using the DOM renderer`),
   })
   // The host's own size is what the terminal fits to, so it refits whenever that changes, shown or not.
-  new ResizeObserver(() => tab.view.fit()).observe(host)
-  return tab
+  new ResizeObserver(() => dom.view.fit()).observe(host)
+  return dom
 }
 
-function adopt(tab: Tab, id: string): void {
-  tab.id = id
-  tabs.set(id, tab)
-  order.push(tab)
+// Every store write ends here: tabs the store gained get their DOM, tabs it lost lose theirs, a tab whose kind changed swaps its
+// agent mark, then the window paints.
+function onStoreChanged(): void {
+  const held = new Set(store.tabs.map((tab) => tab.id))
+  for (const [id, dom] of doms) {
+    if (held.has(id)) continue
+    dom.pane.remove()
+    dom.tabEl.remove()
+    doms.delete(id)
+  }
+  for (const tab of store.tabs) {
+    const dom = doms.get(tab.id)
+    if (!dom) {
+      doms.set(tab.id, createTabDom(tab))
+    } else if (dom.kind !== tab.kind) {
+      dom.kind = tab.kind
+      dom.pill.root.querySelector('.agent-mark')?.replaceWith(markEl(tab.kind))
+    }
+  }
   paint()
 }
 
-// Takes a tab out of the window. When it was the one on screen, the space's next tab is shown.
-function removeTab(tab: Tab): void {
-  tab.pane.remove()
-  tab.tabEl.remove()
-  if (tab.id) tabs.delete(tab.id)
-  const index = order.indexOf(tab)
-  if (index !== -1) order.splice(index, 1)
-  const recent = recentBySpace.get(tab.spaceId)
-  if (recent) recentBySpace.set(tab.spaceId, recent.filter((other) => other !== tab))
-  recentTabIds = recentTabIds.filter((id) => id !== tab.id)
-  if (active === tab) active = null
-  if (active === null) selectSpace(activeSpace)
-  else paint()
-}
-
 // The × and Cmd+W: the core kills the tab and drops its record. The tab leaves the strip and the agents list at once.
-async function closeTab(tab: Tab): Promise<void> {
-  if (!tab.id) return
-  await bridge.rpc('tabs.close', { id: tab.id })
-  agents.delete(tab.id)
-  removeTab(tab)
+async function closeTab(id: string): Promise<void> {
+  const tab = store.tab(id)
+  if (!tab) return
+  await bridge.rpc('tabs.close', { id })
+  store.removeTab(id)
   focusActive()
   // The last tab of a space is a likely end of the space: ask, and leave the empty space alone when the answer is no.
-  const space = spaces.get(tab.spaceId)
-  if (space && !order.some((other) => other.spaceId === space.id)) void askRemoveSpace(space, true).then(focusActive)
+  const space = store.space(tab.spaceId)
+  if (space && store.tabsOfSpace(space.id).length === 0) void askRemoveSpace(space, true).then(focusActive)
 }
 
 function baseName(folder: string): string {
@@ -549,13 +519,13 @@ function askForceRemove(space: SpaceInfo, reason: string): Promise<boolean> {
     danger: true,
     submit: async () => {
       await bridge.rpc('spaces.remove', { id: space.id, removeWorktree: true, force: true })
-      dropSpace(space.id)
+      store.dropSpace(space.id)
     },
   })
 }
 
 function askRemoveSpaceOnce(space: SpaceInfo, lastTab: boolean, refused: (reason: string) => void): Promise<boolean> {
-  const count = order.filter((tab) => tab.spaceId === space.id).length
+  const count = store.tabsOfSpace(space.id).length
   const tabsLine = count === 0 ? '' : ` Its ${count === 1 ? 'tab closes' : `${count} tabs close`}.`
   const lead = lastTab ? 'That was the last tab. ' : ''
   return spaceDialog.open({
@@ -574,21 +544,9 @@ function askRemoveSpaceOnce(space: SpaceInfo, lastTab: boolean, refused: (reason
         if ((error as { code?: number }).code !== ERROR_CODES.gitRefused) throw error
         return refused(error instanceof Error ? error.message : String(error))
       }
-      dropSpace(space.id)
+      store.dropSpace(space.id)
     },
   })
-}
-
-// Takes a space and its tabs out of the window. The core has already closed them; a second call finds nothing to do.
-function dropSpace(spaceId: string): void {
-  for (const tab of order.filter((other) => other.spaceId === spaceId)) {
-    agents.delete(tab.id)
-    removeTab(tab)
-  }
-  recentBySpace.delete(spaceId)
-  spaces.delete(spaceId)
-  if (activeSpace === spaceId) selectSpace(sidebarSpaceOrder([...spaces.values()])[0] ?? null)
-  else paint()
 }
 
 function askRenameSpace(space: SpaceInfo): Promise<boolean> {
@@ -600,8 +558,7 @@ function askRenameSpace(space: SpaceInfo): Promise<boolean> {
     hint: 'save',
     submit: async (name) => {
       await bridge.rpc('spaces.rename', { id: space.id, name })
-      spaces.set(space.id, { ...space, name: name || baseName(space.path), label: name || null })
-      paint()
+      store.upsertSpace({ ...space, name: name || baseName(space.path), label: name || null })
     },
   })
 }
@@ -616,7 +573,7 @@ function askNewWorktree(space: SpaceInfo): Promise<boolean> {
     hint: 'create',
     submit: async (branch) => {
       const created = await bridge.rpc('worktrees.add', { spaceId: space.id, branch })
-      spaces.set(created.id, created)
+      store.upsertSpace(created)
       selectSpace(created.id)
       await newShellTab()
     },
@@ -632,7 +589,7 @@ async function askOpenWorktree(space: SpaceInfo): Promise<boolean> {
     empty: 'Every worktree of this repo is already a space.',
     submit: async (folder) => {
       const added = await bridge.rpc('spaces.add', { path: folder })
-      spaces.set(added.id, added)
+      store.upsertSpace(added)
       selectSpace(added.id)
       await newShellTab()
     },
@@ -654,53 +611,48 @@ function openSpaceMenu(space: SpaceInfo, event: MouseEvent): void {
   )
 }
 
-function deliver(tab: Tab, bytes: Uint8Array): void {
-  if (tab.queue) tab.queue.push(bytes)
-  else tab.view.write(bytes)
+function deliver(dom: TabDom, bytes: Uint8Array): void {
+  if (dom.queue) dom.queue.push(bytes)
+  else dom.view.write(bytes)
 }
 
-function markExited(tab: Tab, exitCode: number | null = null): void {
-  if (tab.exited) return
-  tab.exited = true
-  tab.attached = false
+function markExited(id: string, exitCode: number | null = null): void {
+  if (!store.markExited(id)) return
+  const dom = doms.get(id)
+  if (!dom) return
+  dom.attached = false
   const code = exitCode === null ? '' : ` with code ${exitCode}`
-  deliver(tab, encoder.encode(`\r\n\x1b[2m[process exited${code}]\x1b[0m\r\n`))
-  paint()
+  deliver(dom, encoder.encode(`\r\n\x1b[2m[process exited${code}]\x1b[0m\r\n`))
 }
 
 // Shows the core's saved screen first, then output that arrived while the attach was in flight.
-function attach(tab: Tab): Promise<void> {
-  if (tab.attaching) return tab.attaching
-  const pending = attachScreen(tab).finally(() => { tab.attaching = null })
-  tab.attaching = pending
+function attach(dom: TabDom): Promise<void> {
+  if (dom.attaching) return dom.attaching
+  const pending = attachScreen(dom).finally(() => { dom.attaching = null })
+  dom.attaching = pending
   return pending
 }
 
-async function attachScreen(tab: Tab): Promise<void> {
-  tab.queue = []
+async function attachScreen(dom: TabDom): Promise<void> {
+  dom.queue = []
   try {
-    const { screenB64 } = await bridge.rpc('tabs.attach', { id: tab.id })
-    tab.view.reset()
-    tab.view.write(fromBase64(screenB64))
-    const pending = tab.queue
-    tab.queue = null
-    for (const bytes of pending) tab.view.write(bytes)
+    const { screenB64 } = await bridge.rpc('tabs.attach', { id: dom.id })
+    dom.view.reset()
+    dom.view.write(fromBase64(screenB64))
+    const pending = dom.queue
+    dom.queue = null
+    for (const bytes of pending) dom.view.write(bytes)
   } finally {
-    tab.queue = null
+    dom.queue = null
   }
-  tab.attached = true
-  tab.exited = false
-  const { cols, rows } = tab.view.term
-  await bridge.rpc('tabs.resize', { id: tab.id, cols, rows })
-}
-
-// The tabs the human put in the grid, from any space, in tab order: the panes grid mode shows.
-function gridTabs(): Tab[] {
-  return gridMembers(order)
+  dom.attached = true
+  store.markAlive(dom.id)
+  const { cols, rows } = dom.view.term
+  await bridge.rpc('tabs.resize', { id: dom.id, cols, rows })
 }
 
 // The tree the grid shows: the human's layout fitted to the panes, else the automatic one.
-function gridTree(members: Tab[]): Tree | null {
+function gridTree(members: readonly Tab[]): Tree | null {
   const ids = members.map((tab) => tab.id)
   if (gridLayout) gridLayout = repair(gridLayout, ids)
   return gridLayout ?? autoTree(ids)
@@ -714,54 +666,58 @@ function terminalsSize(): { w: number; h: number } {
 // The human changed the grid's layout: it is theirs from now on, so it is shown, kept, and the terminals refit to their new sizes.
 function arrangeGrid(tree: Tree): void {
   gridLayout = tree
-  paintGrid(gridTabs())
+  paintGrid(store.gridTabs())
   saveViewState()
   requestAnimationFrame(fitShown)
 }
 
 const gridArranger = createArranger({
   container: terminals,
-  tree: () => gridTree(gridTabs()),
-  pane: (id) => tabs.get(id)?.pane,
+  tree: () => gridTree(store.gridTabs()),
+  pane: (id) => doms.get(id)?.pane,
   change: arrangeGrid,
 })
 
 // Lays the panes out in grid mode, or clears the grid's classes and placement when it is off.
-function paintGrid(members: Tab[]): void {
+function paintGrid(members: readonly Tab[]): void {
   terminals.classList.toggle('grid-panes', gridOn)
   gridArranger.paint(gridOn ? gridTree(members) : null)
   // Reset only has something to do once the human has made the layout their own.
   gridReset.hidden = !gridOn || gridLayout === null
-  for (const tab of order) {
+  for (const tab of store.tabs) {
+    const dom = doms.get(tab.id)
+    if (!dom) continue
     const inGrid = gridOn && members.includes(tab)
-    if (!inGrid) clearPlacement(tab.pane)
-    tab.host.classList.toggle('pane-dim', inGrid && tab !== active)
+    if (!inGrid) clearPlacement(dom.pane)
+    dom.host.classList.toggle('pane-dim', inGrid && tab !== store.activeTab)
   }
 }
 
 // Refits what is on screen: the grid's panes, else the active tab.
 function fitShown(): void {
-  for (const tab of gridOn ? gridTabs() : active ? [active] : []) tab.view.fit()
+  for (const tab of gridOn ? store.gridTabs() : store.activeTab ? [store.activeTab] : []) doms.get(tab.id)?.view.fit()
 }
 
 // The tab's strip button and its pane header, from its name and state.
 function paintTab(tab: Tab): void {
+  const dom = doms.get(tab.id)
+  if (!dom) return
   const state = stateOf(tab)
   const name = tabName(tab)
   const agent = tab.kind === 'shell' ? undefined : tab.kind
-  tab.pill.update({ name, title: tabLabel(tab), state, agent, live: !tab.exited, inGrid: tab.inGrid })
+  dom.pill.update({ name, title: tabLabel(tab), state, agent, live: !tab.exited, inGrid: tab.inGrid })
   // A meter replaced under the pointer never sends its leave, so its tooltip is put away first.
-  if (tab.head.querySelector('.context-meter')) hideContextTip()
-  const space = spaces.get(tab.spaceId)
+  if (dom.head.querySelector('.context-meter')) hideContextTip()
+  const space = store.space(tab.spaceId)
   const changes = changeCounts.get(tab.id)
   const parts: HTMLElement[] = [markEl(tab.kind)]
   parts.push(element('span', tab.label ? 'pane-kind' : 'pane-kind unnamed', name))
   if (space?.branch) parts.push(branchButton(space.branch, space.worktree))
   parts.push(element('span', 'pane-folder', shortFolder(tab.spacePath, homeDir)))
   if (changes && changes.additions + changes.deletions > 0) parts.push(changesButton(changes))
-  if (agent) parts.push(contextMeter(agents.get(tab.id)?.context, agent))
+  if (agent) parts.push(contextMeter(store.agent(tab.id)?.context, agent))
   parts.push(indicatorEl(state, agent, !tab.exited))
-  tab.head.replaceChildren(...parts)
+  dom.head.replaceChildren(...parts)
 }
 
 // The pane's branch: a click copies the name, which reads "copied" for a moment.
@@ -792,8 +748,8 @@ function changesButton(counts: { additions: number; deletions: number }): HTMLEl
   button.append(element('b', 'add', `+${counts.additions}`), element('b', 'del', `−${counts.deletions}`))
   button.addEventListener('pointerdown', (event) => event.stopPropagation())
   button.addEventListener('click', () => {
-    const tab = [...tabs.values()].find((candidate) => candidate.head === button.parentElement)
-    if (tab && tab !== active) activate(tab)
+    const dom = [...doms.values()].find((candidate) => candidate.head === button.parentElement)
+    if (dom && dom.id !== store.activeTab?.id) activate(dom.id)
     rail.toggle('diff')?.()
   })
   return button
@@ -823,13 +779,13 @@ async function refreshChanges(tab: Tab): Promise<void> {
 }
 
 setInterval(() => {
-  for (const tab of gridOn ? gridTabs() : active ? [active] : []) refreshChanges(tab).catch(report)
+  for (const tab of gridOn ? store.gridTabs() : store.activeTab ? [store.activeTab] : []) refreshChanges(tab).catch(report)
 }, CHANGES_EVERY_MS)
 
 // The empty state shows when there is no space, or the space has no tabs.
 function paintEmpty(): void {
-  const none = activeSpace === null
-  const bare = !order.some((tab) => tab.spaceId === activeSpace)
+  const none = store.activeSpace === null
+  const bare = store.tabsOfSpace(store.activeSpace).length === 0
   emptyState.hidden = !(none || bare)
   emptyTitle.textContent = none ? 'No space open' : 'No tabs in this space'
   emptyText.textContent = none
@@ -840,28 +796,28 @@ function paintEmpty(): void {
 // Keeps what the window shows (the grid, its layout, the space and tab in focus) for the next start.
 function saveViewState(): void {
   if (viewStateReady && !demoMode) {
-    writeViewState(storage(), { gridOn, gridTabs: gridTabs().map((tab) => tab.id), gridLayout, activeSpace, activeTab: active?.id ?? null })
+    writeViewState(storage(), { gridOn, gridTabs: store.gridTabs().map((tab) => tab.id), gridLayout, activeSpace: store.activeSpace, activeTab: store.activeTab?.id ?? null })
   }
 }
 
 // Tabs of other spaces stay mounted and only hidden, so their shells keep running and their screens keep filling.
 function paint(): void {
   // The grid gives way when it holds no tabs, or the focused tab is not one of its panes: a tab the grid does not show cannot be focused there.
-  const shown = gridTabs()
+  const shown = store.gridTabs()
+  const active = store.activeTab
+  const activeSpace = store.activeSpace
   if (gridOn && (shown.length === 0 || (active !== null && !shown.includes(active)))) gridOn = false
   const members = gridOn ? shown : []
-  const counts = new Map<string, number>()
-  for (const tab of order) {
+  for (const tab of store.tabs) {
+    const dom = doms.get(tab.id)
+    if (!dom) continue
     const on = tab === active
-    const number = (counts.get(tab.spaceId) ?? 0) + 1
-    counts.set(tab.spaceId, number)
-    tab.number = number
-    tab.tabEl.hidden = tab.spaceId !== activeSpace
-    tab.tabEl.classList.toggle('active', on)
-    tab.tabEl.classList.toggle('exited', tab.exited)
-    tab.tabEl.setAttribute('aria-selected', String(on))
-    tab.pane.hidden = gridOn ? !members.includes(tab) : !on
-    tab.pane.classList.toggle('focused', on)
+    dom.tabEl.hidden = tab.spaceId !== activeSpace
+    dom.tabEl.classList.toggle('active', on)
+    dom.tabEl.classList.toggle('exited', tab.exited)
+    dom.tabEl.setAttribute('aria-selected', String(on))
+    dom.pane.hidden = gridOn ? !members.includes(tab) : !on
+    dom.pane.classList.toggle('focused', on)
     paintTab(tab)
   }
   paintGrid(members)
@@ -870,7 +826,7 @@ function paint(): void {
   renderAgents()
   paintEmpty()
   hostBus.emit('activeTabChanged', undefined)
-  const idle = activeSpace === null || refused !== null
+  const idle = activeSpace === null || store.refused !== null
   gridToggle.setAttribute('aria-pressed', String(gridOn))
   paneDim.hidden = !gridOn
   if (gridOn && active?.inGrid) lastGridFocus = active.id
@@ -898,7 +854,7 @@ function paintShortcuts(): void {
 // The core needs the tab on screen and whether the window has focus, to decide what to notify and mark seen.
 function reportFocus(): void {
   if (demoMode) return
-  const params = { tabId: active?.id || null, windowFocused }
+  const params = { tabId: store.activeTab?.id ?? null, windowFocused }
   const key = JSON.stringify(params)
   if (key === sentFocus) return
   sentFocus = key
@@ -910,30 +866,27 @@ function reportFocus(): void {
 }
 
 function focusActive(): void {
-  if (active && !active.pane.hidden) {
-    active.view.fit()
-    active.view.term.focus()
+  const dom = store.activeTab ? doms.get(store.activeTab.id) : undefined
+  if (dom && !dom.pane.hidden) {
+    dom.view.fit()
+    dom.view.term.focus()
   }
 }
 
 // The tabs with something for the human, in any space (see urgentTabs). A gone tab shows idle, so it is not one.
-function tabItems(): Array<{ id: string; tab: Tab; state: AgentStateName; since: number }> {
-  return order.map((tab) => ({ id: tab.id, tab, state: stateOf(tab), since: agents.get(tab.id)?.since ?? 0 }))
-}
-
-function urgentItems(): ReturnType<typeof tabItems> {
-  return urgentTabs(tabItems())
+function tabItems(): Array<{ id: string; state: AgentStateName; since: number }> {
+  return store.tabs.map((tab) => ({ id: tab.id, state: stateOf(tab), since: store.agent(tab.id)?.since ?? 0 }))
 }
 
 // Cmd+. and the footer banner: goes to the next tab that needs you or has finished, in any space; with none, to the next working one.
 function jumpToUrgent(): void {
-  const next = nextUrgent(jumpTargets(tabItems()), active?.id ?? null)
-  if (next) activate(next.tab)
+  const next = nextUrgent(jumpTargets(tabItems()), store.activeTab?.id ?? null)
+  if (next) activate(next.id)
 }
 
 // The footer banner: how many tabs jumpToUrgent can reach, toned for the most urgent of them. Hidden when there are none.
 function paintUrgent(): void {
-  const urgent = urgentItems()
+  const urgent = store.urgent()
   urgentBanner.hidden = urgent.length === 0
   if (urgent.length === 0) return
   const tone = urgent[0].state
@@ -944,31 +897,24 @@ function paintUrgent(): void {
   urgentBanner.title = `Go to the next tab with something for you (${shortcut('next-urgent')})`
 }
 
-function activate(tab: Tab): void {
-  recentBySpace.set(tab.spaceId, visited(recentBySpace.get(tab.spaceId) ?? [], tab))
-  selectSpace(tab.spaceId, tab)
+function activate(id: string): void {
+  store.activateTab(id)
   focusActive()
 }
 
 // Shows the space's most recently visited tab, or its first tab, or nothing when the space has no tabs.
-function selectSpace(spaceId: string | null, chosen?: Tab): void {
-  activeSpace = spaceId
-  const remembered = spaceId ? recentBySpace.get(spaceId)?.[0] : undefined
-  // With the grid showing, a space that has a pane in it keeps the grid by focusing that pane.
-  const gridPane = gridOn ? gridTabs().find((tab) => tab.spaceId === spaceId) : undefined
-  active = chosen ?? gridPane ?? (remembered && order.includes(remembered) ? remembered : (order.find((tab) => tab.spaceId === spaceId) ?? null))
-  if (active?.id) recentTabIds = [active.id, ...recentTabIds.filter((id) => id !== active!.id)]
-  paint()
+function selectSpace(spaceId: string | null, chosenId?: string): void {
+  store.selectSpace(spaceId, chosenId)
 }
 
 function renderSpaces(): void {
-  const all = [...spaces.values()]
+  const all = store.spaces()
   // A space's indicator is the most urgent state among its own tabs; a worktree's tabs count only towards itself.
   const states = rollupSpaces(
     all.map((space) => space.id),
-    order.map((tab) => ({ spaceId: tab.spaceId, state: stateOf(tab) })),
+    store.tabs.map((tab) => ({ spaceId: tab.spaceId, state: stateOf(tab) })),
   )
-  const top = all.filter((space) => !space.parent || !spaces.has(space.parent))
+  const top = all.filter((space) => !space.parent || !store.space(space.parent))
   spaceList.replaceChildren(
     ...top.map((space) => {
       const item = document.createElement('li')
@@ -1004,7 +950,7 @@ function spaceButton(space: SpaceInfo, state: AgentStateName): HTMLButtonElement
   if (worktree) tile.innerHTML = iconSvg('branch')
   button.append(tile, element('span', 'space-name', space.name), element('span', 'space-branch', worktree ? '' : (space.branch ?? '')))
   button.append(indicatorEl(state))
-  if (space.id === activeSpace) button.setAttribute('aria-current', 'true')
+  if (space.id === store.activeSpace) button.setAttribute('aria-current', 'true')
   button.addEventListener('click', () => {
     selectSpace(space.id)
     focusActive()
@@ -1015,35 +961,37 @@ function spaceButton(space: SpaceInfo, state: AgentStateName): HTMLButtonElement
 
 // Opens a shell tab in the active space. A launcher passes the line it types once the tab's first output arrives.
 async function newShellTab(typed: string | null = null): Promise<void> {
-  const spaceId = activeSpace
-  const space = spaceId ? spaces.get(spaceId) : undefined
+  const spaceId = store.activeSpace
+  const space = spaceId ? store.space(spaceId) : undefined
   if (!spaceId || !space) return
-  let tab: Tab | undefined
+  const shown = store.activeTab ? doms.get(store.activeTab.id) : undefined
+  let opened: string | undefined
   try {
     const { id } = await bridge.rpc('tabs.open', {
       spaceId,
-      cols: active?.view.term.cols ?? 80,
-      rows: active?.view.term.rows ?? 24,
+      cols: shown?.view.term.cols ?? 80,
+      rows: shown?.view.term.rows ?? 24,
     })
+    opened = id
     // The opened notification can arrive before this call's reply.
-    tab = tabs.get(id) ?? createTab(spaceId, space.path, 'shell', null)
-    if (!tab.id) adopt(tab, id)
-    if (!tab.attached || tab.attaching) await attach(tab)
+    if (!store.tab(id)) store.addTab({ id, spaceId, spacePath: space.path, kind: 'terminal', label: null, alive: true, exitCode: null })
+    const dom = doms.get(id)!
+    if (!dom.attached || dom.attaching) await attach(dom)
     if (typed !== null) void bridge.rpc('tabs.write', { id, dataB64: toBase64(encoder.encode(`${typed}\r`)) }).catch(report)
-    activate(tab)
+    activate(id)
   } catch (error) {
-    if (tab) removeTab(tab)
+    if (opened) store.removeTab(opened)
     report(error)
   }
 }
 
 // Cmd+1 to Cmd+9: focuses the space at that place in the sidebar order, with the tab it last showed. A place past the last space does nothing.
-function spaceTabs(): Tab[] {
-  return order.filter((tab) => tab.spaceId === activeSpace)
+function spaceTabIds(): string[] {
+  return store.tabsOfSpace(store.activeSpace).map((tab) => tab.id)
 }
 
 function focusSpace(place: number): void {
-  const spaceId = spaceAt(sidebarSpaceOrder([...spaces.values()]), place)
+  const spaceId = spaceAt(sidebarSpaceOrder(store.spaces()), place)
   if (spaceId === null) return
   selectSpace(spaceId)
   focusActive()
@@ -1052,34 +1000,36 @@ function focusSpace(place: number): void {
 // Cmd+Shift+G: the active tab goes into the grid, and the grid shows. A tab already in the grid goes out of it and shows full screen.
 // A tenth tab is refused, with the reason in the status line.
 function toggleGridTab(): void {
+  const active = store.activeTab
   if (!active) return
+  // The grid's own state is settled first: the store write that follows repaints once.
   if (active.inGrid) {
     if (gridLayout) gridLayout = removePane(gridLayout, active.id)
-    active.inGrid = false
     gridOn = false
-  } else if (canJoinGrid(gridTabs().length)) {
+    store.setInGrid(active.id, false)
+  } else if (canJoinGrid(store.gridTabs().length)) {
     // With a layout of the human's own, the new pane splits the one they last had focus in.
     if (gridLayout) gridLayout = addPane(gridLayout, lastGridFocus ?? '', active.id, terminalsSize())
-    active.inGrid = true
     gridOn = true
+    store.setInGrid(active.id, true)
   } else {
     statusLine.textContent = 'The grid holds nine tabs. Take a tab out of it first.'
-    return
   }
-  paint()
 }
 
 // Cmd+N: adds a new space at the home folder (spaces.add always adds one), selects it, and opens one shell tab there.
 async function newSpaceTab(): Promise<void> {
   const space = await bridge.rpc('spaces.add', { path: homeDir })
-  spaces.set(space.id, space)
+  store.upsertSpace(space)
   selectSpace(space.id)
   await newShellTab()
 }
 
 // Starts a gone agent tab again under its own id; the core resumes the saved session.
 async function resumeAgent(tab: Tab, kind: AgentKind): Promise<void> {
-  const { cols, rows } = tab.view.term
+  const dom = doms.get(tab.id)
+  if (!dom) return
+  const { cols, rows } = dom.view.term
   await bridge.rpc('tabs.create', {
     id: tab.id,
     command: AGENT_COMMANDS[kind],
@@ -1088,8 +1038,8 @@ async function resumeAgent(tab: Tab, kind: AgentKind): Promise<void> {
     rows,
     agent: { kind },
   })
-  await attach(tab)
-  activate(tab)
+  await attach(dom)
+  activate(tab.id)
   await refreshAgents()
 }
 
@@ -1103,7 +1053,7 @@ function renderLaunchers(launchers: Launcher[]): void {
       button.className = 'new-tab'
       button.textContent = launcher.label
       button.title = line
-      button.disabled = activeSpace === null || refused !== null
+      button.disabled = store.activeSpace === null || store.refused !== null
       button.addEventListener('click', () => void newShellTab(line))
       return button
     }),
@@ -1138,36 +1088,7 @@ async function loadConfig(): Promise<void> {
 }
 
 async function refreshAgents(): Promise<void> {
-  const list = await bridge.rpc('agents.list', {})
-  agents.clear()
-  for (const agent of list) agents.set(agent.tabId, agent)
-  syncKinds()
-  renderStates()
-}
-
-// A tab's kind follows the agents list: an agent typed by hand into a shell tab turns the tab into an agent tab, and a tab whose
-// agent ended turns back into a shell. Only tabs this function changed are turned back; a launched agent tab keeps its kind.
-const detectedKinds = new Set<string>()
-function syncKinds(): void {
-  for (const tab of order) {
-    const agent = agents.get(tab.id)
-    if (agent && tab.kind === 'shell') {
-      tab.kind = agent.agent
-      detectedKinds.add(tab.id)
-      tab.pill.root.querySelector('.agent-mark')?.replaceWith(markEl(tab.kind))
-    } else if (!agent && detectedKinds.delete(tab.id)) {
-      tab.kind = 'shell'
-      tab.pill.root.querySelector('.agent-mark')?.replaceWith(markEl(tab.kind))
-    }
-  }
-}
-
-// Every place that shows a tab's state: the tab strip, the pane headers, the space tiles and the agents list. A state
-// change repaints all of them, not only the list; paint() does the same when the tabs themselves change.
-function renderStates(): void {
-  for (const tab of order) paintTab(tab)
-  renderSpaces()
-  renderAgents()
+  store.setAgents(await bridge.rpc('agents.list', {}))
 }
 
 function formatAge(ms: number): string {
@@ -1189,7 +1110,7 @@ function agentRow(row: AgentRow): HTMLLIElement {
   focus.type = 'button'
   focus.className = 'agent'
   focus.title = tabLabel(tab)
-  if (tab === active) focus.setAttribute('aria-current', 'true')
+  if (tab === store.activeTab) focus.setAttribute('aria-current', 'true')
   const age = element('span', 'agent-age', formatAge(Date.now() - agent.since))
   age.dataset.since = String(agent.since)
   const tail = element('span', 'agent-tail', '')
@@ -1207,7 +1128,7 @@ function agentRow(row: AgentRow): HTMLLIElement {
     tail,
     indicatorEl(stateOf(tab), agentKind, !tab.exited),
   )
-  focus.addEventListener('click', () => activate(tab))
+  focus.addEventListener('click', () => activate(tab.id))
   li.append(focus)
 
   if (agent.resumable) {
@@ -1232,13 +1153,13 @@ function renderAgents(): void {
   paintUrgent()
   hideContextTip()
   const rows: AgentRow[] = []
-  for (const agent of agents.values()) {
-    const tab = tabs.get(agent.tabId)
+  for (const agent of store.agents()) {
+    const tab = store.tab(agent.tabId)
     if (tab) rows.push({ spaceId: tab.spaceId, tabNumber: tab.number, agent, exited: tab.exited, tab })
   }
   agentsEmpty.hidden = rows.length > 0
   agentList.replaceChildren(
-    ...groupAgents([...spaces.keys()], rows).map((group) => {
+    ...groupAgents(store.spaces().map((space) => space.id), rows).map((group) => {
       const section = document.createElement('li')
       section.className = 'agent-group'
       const list = document.createElement('ul')
@@ -1261,94 +1182,62 @@ function refreshAges(): void {
 // Brings the page in line with the core: spaces and their tabs are listed, alive tabs are shown and reattached, gone ones are marked.
 async function resync(): Promise<void> {
   const state = await bridge.rpc('spaces.list', {})
-  spaces.clear()
-  for (const space of state.spaces) spaces.set(space.id, space)
-  refused = state.refused
-  if (refused) statusLine.textContent = `State file refused: ${refused}`
+  store.setSpaces(state.spaces)
+  store.setRefused(state.refused)
+  if (state.refused) statusLine.textContent = `State file refused: ${state.refused}`
 
   const alive = new Set(state.tabs.filter((info) => info.alive).map((info) => info.id))
   if (state.refused === null) {
-    for (const tab of order) if (!alive.has(tab.id)) markExited(tab)
+    for (const tab of [...store.tabs]) if (!alive.has(tab.id)) markExited(tab.id)
   }
   for (const info of state.tabs) {
-    const kind: TabKind = info.kind === 'terminal' ? 'shell' : info.kind
-    const existing = tabs.get(info.id)
-    if (existing) {
-      existing.label = info.label
-      existing.kind = kind
-    }
+    const known = store.tab(info.id) !== undefined
+    store.addTab(info)
     if (info.alive) {
       // One tab that fails to attach is reported and the others still attach, so a bad tab cannot leave every terminal blank.
-      if (existing) {
-        await attach(existing).catch(report)
-      } else {
-        const tab = createTab(info.spaceId, info.spacePath, kind, info.label)
-        adopt(tab, info.id)
-        await attach(tab).catch(report)
-      }
-    } else if (!existing) {
-      const tab = createTab(info.spaceId, info.spacePath, kind, info.label)
-      adopt(tab, info.id)
-      markExited(tab, info.exitCode)
+      await attach(doms.get(info.id)!).catch(report)
+    } else if (!known) {
+      markExited(info.id, info.exitCode)
     }
   }
 
   if (!viewStateReady && state.refused === null) {
     const saved = readViewState(storage())
-    for (const tab of order) tab.inGrid = saved.gridTabs.includes(tab.id)
+    store.setGridTabs(saved.gridTabs)
     gridLayout = saved.gridLayout
-    gridOn = saved.gridOn && gridTabs().length > 0
-    active = saved.activeTab ? tabs.get(saved.activeTab) ?? null : null
-    if (gridOn && (!active || !active.inGrid)) active = gridTabs()[0]
-    activeSpace = active?.spaceId ?? (saved.activeSpace && spaces.has(saved.activeSpace) ? saved.activeSpace : null)
-    if (active) recentBySpace.set(active.spaceId, visited(recentBySpace.get(active.spaceId) ?? [], active))
+    gridOn = saved.gridOn && store.gridTabs().length > 0
+    let active = saved.activeTab ? store.tab(saved.activeTab) ?? null : null
+    if (gridOn && (!active || !active.inGrid)) active = store.gridTabs()[0]
+    if (active) store.activateTab(active.id)
+    else if (saved.activeSpace && store.space(saved.activeSpace)) selectSpace(saved.activeSpace)
     viewStateReady = true
   }
-  if (!activeSpace || !spaces.has(activeSpace)) activeSpace = state.spaces[0]?.id ?? null
-  selectSpace(activeSpace, active?.spaceId === activeSpace ? active : undefined)
+  let spaceId = store.activeSpace
+  if (!spaceId || !store.space(spaceId)) spaceId = state.spaces[0]?.id ?? null
+  selectSpace(spaceId, store.activeTab?.spaceId === spaceId ? store.activeTab.id : undefined)
   await refreshAgents()
 }
 
 bridge.on('tabs.output', ({ id, dataB64 }) => {
-  const tab = tabs.get(id)
-  if (!tab) return
-  deliver(tab, fromBase64(dataB64))
+  const dom = doms.get(id)
+  if (!dom) return
+  deliver(dom, fromBase64(dataB64))
 })
 
 bridge.on('tabs.opened', (info) => {
-  let tab = tabs.get(info.id)
-  if (!tab) {
-    tab = createTab(info.spaceId, info.spacePath, info.kind === 'terminal' ? 'shell' : info.kind, info.label)
-    adopt(tab, info.id)
-  } else {
-    tab.label = info.label
-    tab.kind = info.kind === 'terminal' ? 'shell' : info.kind
-  }
-  attach(tab).then(paint).catch(report)
+  store.addTab(info)
+  attach(doms.get(info.id)!).then(paint).catch(report)
   refreshAgents().catch(report)
 })
 
 bridge.on('tabs.exit', ({ id, exitCode }) => {
-  const tab = tabs.get(id)
-  if (tab) markExited(tab, exitCode)
+  markExited(id, exitCode)
   refreshAgents().catch(report)
 })
 
 bridge.on('status.changed', (change) => {
-  const previous = agents.get(change.tabId)
-  agents.set(change.tabId, {
-    tabId: change.tabId,
-    agent: change.agent,
-    state: change.state,
-    ...(change.reason ? { reason: change.reason } : {}),
-    since: change.since,
-    source: change.source,
-    resumable: previous?.resumable ?? false,
-    ...(previous?.context ? { context: previous.context } : {}),
-  })
-  syncKinds()
-  renderStates()
-  const changed = tabs.get(change.tabId)
+  const { previous } = store.applyStatusChange(change)
+  const changed = store.tab(change.tabId)
   if (changed) refreshChanges(changed).catch(report)
   hostBus.emit('agentStateChanged', { tabId: change.tabId, settled: settled(previous?.state, change.state) })
   // resumable depends on the holder's liveness, which the change does not carry; the core's list settles it.
@@ -1356,17 +1245,10 @@ bridge.on('status.changed', (change) => {
 })
 
 // A context reading belongs to one session's row; a tab with no entry yet waits for its status.
-bridge.on('context.changed', ({ tabId, context }) => {
-  const entry = agents.get(tabId)
-  if (!entry) return
-  agents.set(tabId, { ...entry, context })
-  renderAgents()
-  const tab = tabs.get(tabId)
-  if (tab) paintTab(tab)
-})
+bridge.on('context.changed', ({ tabId, context }) => store.applyContext(tabId, context))
 
 bridge.on('attention.notify', (notice) => {
-  const tab = tabs.get(notice.tabId)
+  const tab = store.tab(notice.tabId)
   const title = tab ? tabLabel(tab) : notice.tabId
   invoke('notify', { title, body: noticeBody(notice), sound: soundOn ? playSound(notice) : null }).catch(report)
 })
@@ -1375,27 +1257,18 @@ bridge.on('config.changed', applyConfig)
 
 // The CLI asked for a tab: its space and tab are shown, then the window comes forward. An unknown tab only raises the window.
 bridge.on('tabs.focus', ({ id }) => {
-  const tab = tabs.get(id)
-  if (tab) activate(tab)
+  if (store.tab(id)) activate(id)
   invoke('raise_window').catch(report)
 })
 
 // The CLI closed the tab: it leaves the strip and the agents list at once, not at the next resync.
-bridge.on('tabs.closed', ({ id }) => {
-  const tab = tabs.get(id)
-  agents.delete(id)
-  if (tab) removeTab(tab)
-  else renderAgents()
-})
+bridge.on('tabs.closed', ({ id }) => store.removeTab(id))
 
 // Another window or the CLI removed a space: it leaves the sidebar at once.
-bridge.on('spaces.removed', ({ id }) => dropSpace(id))
+bridge.on('spaces.removed', ({ id }) => store.dropSpace(id))
 
 // A space was added or changed: the sidebar updates at once.
-bridge.on('spaces.changed', (info) => {
-  spaces.set(info.id, info)
-  paint()
-})
+bridge.on('spaces.changed', (info) => store.upsertSpace(info))
 
 // A restart the human asked for: from the press until the window is connected to the new core again.
 let coreRestart: { since: number; closed: boolean; timer: ReturnType<typeof setTimeout> } | null = null
@@ -1462,9 +1335,9 @@ appEl.addEventListener('transitionend', (event) => {
 })
 gridReset.addEventListener('click', () => keyActions['grid-reset-layout']())
 gridToggle.addEventListener('click', () => {
-  const shown = gridTabs()
+  const shown = store.gridTabs()
   // Showing the grid focuses its first pane when the focused tab is not one of them.
-  if (!gridOn && shown.length > 0 && (active === null || !shown.includes(active))) activate(shown[0])
+  if (!gridOn && shown.length > 0 && (store.activeTab === null || !shown.includes(store.activeTab))) activate(shown[0].id)
   gridOn = !gridOn
   gridToggle.setAttribute('aria-pressed', String(gridOn))
   paint()
@@ -1499,7 +1372,7 @@ paneDim.addEventListener('input', () => {
 })
 byId('new-space').addEventListener('click', () => void newSpaceTab().catch(report))
 bindSpaceRename(spaceList, (spaceId) => {
-  const space = demoMode ? undefined : spaces.get(spaceId)
+  const space = demoMode ? undefined : store.space(spaceId)
   if (!space) return
   void askRenameSpace(space).then(focusActive)
 })
@@ -1586,7 +1459,7 @@ themeSelect.addEventListener('change', () => {
   applyThemeChoice(document.documentElement, themeId)
   writeTheme(storage(), themeId)
   // Open terminals read their colours when they open, so each one reads them again.
-  for (const tab of tabs.values()) tab.view?.restyle()
+  for (const dom of doms.values()) dom.view?.restyle()
 })
 workingIndicatorSelect.addEventListener('change', () => {
   if (workingIndicatorSelect.value !== 'dots' && workingIndicatorSelect.value !== 'waveform') return
@@ -1632,7 +1505,7 @@ window.addEventListener(
       if (findAction(keys, plain, isMac) === 'previous-tab') {
         event.preventDefault()
         event.stopPropagation()
-        const back = stepFrom(spaceTabs(), active, -1)
+        const back = stepFrom(spaceTabIds(), store.activeTab?.id ?? null, -1)
         if (back) activate(back)
         return
       }
@@ -1646,19 +1519,20 @@ window.addEventListener(
       if (!direction || !event.altKey || (!resizing && !modifier)) return
       event.preventDefault()
       event.stopPropagation()
-      const members = gridTabs()
+      const active = store.activeTab
+      const members = store.gridTabs()
       const tree = active && members.includes(active) ? gridTree(members) : null
       if (!active || !tree) return
       if (resizing) {
         arrangeGrid(nudge(tree, active.id, direction, GRID_NUDGE, terminalsSize(), PANE_MIN))
         return
       }
-      const next = tabs.get(neighborByGeometry(tree, active.id, direction))
+      const next = store.tab(neighborByGeometry(tree, active.id, direction))
       if (!next || next === active) return
       if (event.shiftKey) {
         arrangeGrid(swapPanes(tree, active.id, next.id))
       } else {
-        activate(next)
+        activate(next.id)
       }
       return
     }
@@ -1671,7 +1545,7 @@ window.addEventListener(
 setInterval(refreshAges, AGE_REFRESH_MS)
 // A window that comes back (from the background, or a night of sleep) repaints its terminals: the GPU may have dropped their contexts meanwhile.
 function repaintTerminals(): void {
-  for (const tab of order) tab.view.repaint()
+  for (const dom of doms.values()) dom.view.repaint()
   requestAnimationFrame(fitShown)
 }
 document.addEventListener('visibilitychange', () => {
@@ -1689,12 +1563,19 @@ async function startDemo(rows: DemoRows): Promise<void> {
   demoMode = true
   windowFocused = true
   homeDir = rows.home
-  for (const space of rows.spaces) spaces.set(space.id, space)
-  for (const agent of rows.agents) agents.set(agent.tabId, agent)
+  for (const space of rows.spaces) store.upsertSpace(space)
+  store.setAgents(rows.agents)
   for (const item of rows.tabs) {
-    const tab = createTab(item.spaceId, spaces.get(item.spaceId)?.path ?? '', item.kind, item.label)
-    tab.exited = item.exited
-    adopt(tab, item.id)
+    store.addTab({
+      id: item.id,
+      spaceId: item.spaceId,
+      spacePath: store.space(item.spaceId)?.path ?? '',
+      kind: item.kind === 'shell' ? 'terminal' : item.kind,
+      label: item.label,
+      alive: !item.exited,
+      exitCode: null,
+    })
+    if (item.exited) store.markExited(item.id)
   }
   selectSpace(rows.spaces[0]?.id ?? null)
 }
