@@ -1154,15 +1154,41 @@ function refreshAges(): void {
   }
 }
 
+const ATTACH_RETRIES = 4
+const ATTACH_RETRY_MS = 300
+
 // Brings the page in line with the core: spaces and their tabs are listed, alive tabs are shown and reattached, gone ones are marked.
 async function resync(): Promise<void> {
   const state = await bridge.rpc('spaces.list', {})
   const effects = store.reconcile(state)
   if (state.refused) statusLine.textContent = `State file refused: ${state.refused}`
   for (const { id, exitCode } of effects.exited) writeExited(id, exitCode)
-  // One tab that fails to attach is reported and the others still attach, so a bad tab cannot leave every terminal blank.
-  for (const id of effects.attach) await attach(doms.get(id)!).catch(report)
+  // One tab that fails to attach does not stop the others, so a bad tab cannot leave every terminal blank. The failed ones are
+  // tried again after the agents list: a tab left unattached on this connection takes input but shows no output.
+  const failed: string[] = []
+  for (const id of effects.attach) {
+    const dom = doms.get(id)
+    if (dom) await attach(dom).catch(() => failed.push(id))
+  }
+  if (failed.length > 0) retryAttaches(failed).catch(report)
   await refreshAgents()
+}
+
+async function retryAttaches(ids: string[]): Promise<void> {
+  let failed = ids
+  for (let round = 1; failed.length > 0; round++) {
+    await new Promise((resolve) => setTimeout(resolve, ATTACH_RETRY_MS * round))
+    const next: string[] = []
+    for (const id of failed) {
+      const dom = doms.get(id)
+      if (!dom || !coreConnected || store.tab(id)?.exited !== false) continue
+      await attach(dom).catch((error: unknown) => {
+        if (round === ATTACH_RETRIES) report(error)
+        else next.push(id)
+      })
+    }
+    failed = next
+  }
 }
 
 bridge.on('tabs.output', ({ id, dataB64 }) => {
@@ -1259,6 +1285,8 @@ restartCoreButton.addEventListener('click', () => {
 bridge.onStatus((status) => {
   coreConnected = status === 'open'
   if (status === 'closed') {
+    // The core's attachments belonged to the connection that just closed, so no tab is attached until the next resync attaches it.
+    for (const dom of doms.values()) dom.attached = false
     hostBus.emit('connectionChanged', { open: false })
     if (coreRestart !== null) coreRestart.closed = true
     statusLine.textContent = coreRestart !== null ? 'Restarting the core...' : 'Reconnecting to the core...'
