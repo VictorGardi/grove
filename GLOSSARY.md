@@ -1,4 +1,4 @@
-# Context
+# Glossary
 
 Domain glossary for this repo. Each entry is a term this codebase uses with a
 specific meaning, so humans and agents stay consistent.
@@ -12,6 +12,19 @@ specific meaning, so humans and agents stay consistent.
   shares the main working tree.
 - **Tab**: one terminal session inside a space, optionally running an agent
   (Claude, OpenCode or Copilot), with a **Tab state**.
+- **Tab number**: a tab's position among its space's tabs, in the order they
+  were opened. It is not a stable id: when an earlier tab closes, the later
+  tabs renumber. A tab without a name shows as "Tab N".
+- **Exited tab**: a tab whose process ended. It stays listed, showing
+  `[process exited]`, until closed. An exited agent tab whose agent can pick its
+  saved session up again offers **Resume**, which starts the agent again in the
+  same tab.
+- **Active tab / Active space**: the tab on screen (in the grid, the focused
+  pane) and the space shown in the tab strip. The active tab always belongs to
+  the active space, unless the space has no tabs.
+- **Recent order**: tabs most recently shown first, kept per space and for the
+  whole window. The previous-tab key walks a space's order; Go to lists tabs
+  and spaces in the window's order.
 - **Holder**: the detached Node process that owns the PTYs, so tabs survive the
   window and the core restarting. It parses the agents' OSC 7501 reports.
 - **Core**: the Node process the holder supervises. It keeps spaces, tabs and
