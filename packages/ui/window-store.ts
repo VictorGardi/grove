@@ -251,10 +251,8 @@ export function createWindowStore(options: WindowStoreOptions): WindowStore {
     const recent = recentBySpace.get(tab.spaceId)
     if (recent) recentBySpace.set(tab.spaceId, recent.filter((other) => other !== id))
     recentIds = recentIds.filter((other) => other !== id)
-    if (active === tab) {
-      active = null
-      select(activeSpace)
-    }
+    if (active === tab) active = null
+    if (active === null) select(activeSpace)
   }
 
   return {
