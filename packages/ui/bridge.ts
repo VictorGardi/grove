@@ -24,11 +24,10 @@ export function createBridge(): Bridge {
   let reconnecting = false
   const handlers = new Map<string, Array<(params: never) => void>>()
   const statusHandlers: Array<(status: BridgeStatus) => void> = []
-  // Made on first use, not here: a channel needs the Tauri runtime, and the states page runs in a browser without it.
-  let events: Channel<string> | undefined
+  // A channel orders its messages by index, and the window's side of each connect call counts from 0 again, so every connect gets
+  // a channel of its own. Made on use, not at start: a channel needs the Tauri runtime, and the states page runs in a browser without it.
   const eventChannel = (): Channel<string> => {
-    if (events) return events
-    events = new Channel<string>()
+    const events = new Channel<string>()
     events.onmessage = (line) => {
       const message = JSON.parse(line) as { method?: string; params?: unknown }
       if (message.method === CLOSED) {
