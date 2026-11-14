@@ -1,5 +1,5 @@
 import type { ContextUsage } from '../../../protocol/messages.ts'
-import { POLL_MS } from '../../status/spool.ts'
+import { num, obj, poll, reporter } from '../usageSource.ts'
 
 export interface OpencodeUsageSource {
   // Reads the exact session once and delivers the newest reading that differs from the last one delivered.
@@ -12,14 +12,10 @@ export interface OpencodeUsageOptions {
   sessionId: string
   // Resolves the parsed JSON body of GET <path> (`/api/session/<sessionId>/context`, `/api/model`) and rejects on any outage.
   fetchJson: (path: string) => Promise<unknown>
-  onContext: (context: ContextUsage | null) => void
-  // Poll period. Default POLL_MS, about a second.
+  onContext: (context: ContextUsage) => void
+  // Poll period. Default about a second.
   intervalMs?: number
 }
-
-const num = (value: unknown): number | null => (typeof value === 'number' && Number.isFinite(value) ? value : null)
-const obj = (value: unknown): Record<string, unknown> | null =>
-  value !== null && typeof value === 'object' ? (value as Record<string, unknown>) : null
 
 // The list a body carries: `/api/model` and `/api/session/...` bodies arrive bare or wrapped in `{ data: [...] }`.
 function listOf(body: unknown): unknown[] | null {
@@ -107,18 +103,17 @@ export function usageFromContext(context: unknown, models: unknown): ContextUsag
 }
 
 // Watches one session's context over the authenticated shared service. On each poll it reads the exact session and
-// delivers a reading only when it differs from the last one delivered, so an unchanged pair never re-stamps the UI;
-// a null reading is delivered once a real one stands, to clear it when the reading stops being supported. Nothing is
-// fetched at creation: until the first poll answers, nothing shows. A failed poll delivers nothing, leaving the last
-// valid pair — with its original completion time — as the standing reading. One poll runs at a time: a slow drain is
-// never overtaken by the next one, so readings never arrive out of order, the catalog is never refetched
+// delivers a reading only when it differs from the last one delivered, so an unchanged pair never re-stamps the UI.
+// Nothing is fetched at creation: until the first poll answers, nothing shows. A poll that yields no usable reading
+// (a failed fetch, an unfinished or unreadable message, a model the catalog does not size) delivers nothing, leaving the
+// last valid pair — with its original completion time — as the standing reading. One poll runs at a time: a slow drain
+// is never overtaken by the next one, so readings never arrive out of order, the catalog is never refetched
 // concurrently, and a drain still running at close() delivers nothing.
 export function createOpencodeUsageSource(options: OpencodeUsageOptions): OpencodeUsageSource {
   // The model catalog, cached across polls: each matched model's limit, with 0 marking a model the catalog does not
   // list, so a refused model stays refused and a genuinely new model costs exactly one refetch.
   let catalog: Map<string, number> | undefined
-  // The last delivered reading: JSON, undefined while nothing has been delivered.
-  let last: string | undefined
+  const report = reporter('OpenCode', options.onContext)
   // One drain at a time, and nothing delivered after close().
   let busy = false
   let closed = false
@@ -157,13 +152,7 @@ export function createOpencodeUsageSource(options: OpencodeUsageOptions): Openco
       const completed = num(obj(message.time)?.completed)
       const tokens = tokensOf(message)
       const model = modelOf(message)
-      if (completed === null || completed <= 0 || tokens === null || model === null) {
-        if (last !== undefined && last !== 'null' && !closed) {
-          last = 'null'
-          options.onContext(null)
-        }
-        return
-      }
+      if (completed === null || completed <= 0 || tokens === null || model === null) return
       // The catalog is fetched once, and refetched only when the session runs a model it does not name yet.
       if (catalog === undefined || !catalog.has(windowKey(model.providerID, model.id))) {
         try {
@@ -177,25 +166,13 @@ export function createOpencodeUsageSource(options: OpencodeUsageOptions): Openco
         if (!catalog.has(windowKey(model.providerID, model.id))) catalog.set(windowKey(model.providerID, model.id), 0)
       }
       const window = catalog.get(windowKey(model.providerID, model.id)) ?? 0
-      const reading: ContextUsage | null = window > 0 ? { tokens, window, percent: null, model: model.id, at: completed } : null
-      const key = JSON.stringify(reading)
-      // A null stands for "refused" here; it is delivered only when it replaces a shown reading.
-      if (reading === null && last === undefined) return
-      if (key === last) return
-      last = key
-      if (closed) return
-      try {
-        options.onContext(reading)
-      } catch (error) {
-        console.error(`core: could not report the OpenCode context: ${error instanceof Error ? error.message : String(error)}`)
-      }
+      if (window <= 0 || closed) return
+      report({ tokens, window, percent: null, model: model.id, at: completed })
     } finally {
       busy = false
     }
   }
 
-  const timer = setInterval(() => {
-    void drain().catch(() => {}) // logged inside; the poll continues
-  }, options.intervalMs ?? POLL_MS)
-  return { drain, close: () => { closed = true; clearInterval(timer) } }
+  const timer = poll(drain, { intervalMs: options.intervalMs, immediate: false })
+  return { drain, close: () => { closed = true; timer.stop() } }
 }

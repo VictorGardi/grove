@@ -49,7 +49,10 @@ specific meaning, so humans and agents stay consistent.
   share of the window crosses a line first. Warn is from 150k tokens or 50%;
   handoff from 200k tokens or 70%. A tab with no usable reading has no level.
   The ring, the CLI and agents all use the same level. It always describes the
-  tab's root agent; a subagent's own context never shows and never moves it.
+  tab's root agent; a subagent's own context never shows and never moves it. When an agent's latest
+  reading can't be used (unknown model window, unreadable source), the tab keeps
+  its last good reading until a new valid one arrives, for every agent; only an
+  agent's own empty reading, such as after a compaction, clears the figure.
 - **Handoff**: an agent's work moving to a new tab because its context level is
   `handoff`: the old tab stops after its current step, and a fresh tab carries
   on from a brief. The old tab is left for the human, never killed. An

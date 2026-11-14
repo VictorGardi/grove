@@ -107,7 +107,7 @@ describe('createOpenCodeAdapter', () => {
     expect(paths).not.toContain('/api/session/ses_other/context')
   })
 
-  it('clears a refused reading instead of leaving stale numbers', async () => {
+  it('keeps the last reading when a newer request is refused', async () => {
     const onContext = vi.fn()
     let context: unknown = [
       {
@@ -131,10 +131,10 @@ describe('createOpenCodeAdapter', () => {
     context = [{ id: 'msg_2', type: 'assistant', time: { created: 3_000 } }]
     await new Promise((resolve) => setTimeout(resolve, 30))
     expect(onContext).toHaveBeenCalledTimes(1)
-    // A newer completed request on a model the catalog does not list clears the row.
+    // A newer completed request on a model the catalog does not list leaves the figure standing.
     context = [{ id: 'msg_3', type: 'assistant', time: { created: 4_000, completed: 4_500 }, tokens: { input: 1, cache: { read: 0, write: 0 } }, model: { providerID: 'p', id: 'gone' } }]
-    await vi.waitFor(() => expect(onContext).toHaveBeenCalledTimes(2))
-    expect(onContext).toHaveBeenLastCalledWith({ tokens: null, window: null, percent: null, model: null, at: 42 })
+    await new Promise((resolve) => setTimeout(resolve, 30))
+    expect(onContext).toHaveBeenCalledTimes(1)
     watch.close()
   })
 

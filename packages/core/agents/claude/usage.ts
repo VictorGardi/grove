@@ -1,6 +1,6 @@
 import fs from 'node:fs'
 import type { ContextUsage } from '../../../protocol/messages.ts'
-import { POLL_MS } from '../../status/spool.ts'
+import { num, poll, reporter } from '../usageSource.ts'
 
 export interface ClaudeUsageSource {
   // Reads the usage file and delivers a reading that differs from the last one delivered.
@@ -12,8 +12,6 @@ export interface ClaudeUsageOptions {
   usageFile: string
   onContext: (context: ContextUsage) => void
 }
-
-const num = (value: unknown): number | null => (typeof value === 'number' && Number.isFinite(value) ? value : null)
 
 // One statusLine record (as statusline.mjs writes it) as a context reading. `tokens` is Claude's input-side context
 // occupancy (cache reads and writes included). It is null, never 0, before the first API request and after a compaction,
@@ -55,21 +53,12 @@ export function readUsageFile(file: string): ContextUsage | null {
 // Watches one tab's usage file. A reading is delivered when it changes, so a repeated one does not wake the window; a null
 // reading is delivered too, so a compaction clears the old figure.
 export function createClaudeUsageSource(options: ClaudeUsageOptions): ClaudeUsageSource {
-  let last = ''
+  // The write time is not part of the reading: statusline.mjs writes on every refresh, so it must not count as a change.
+  const report = reporter('Claude', options.onContext, (context) => JSON.stringify({ ...context, at: 0 }))
   const drain = (): void => {
     const context = readUsageFile(options.usageFile)
-    if (context === null) return
-    // The write time is not part of the reading: statusline.mjs writes on every refresh, so it must not count as a change.
-    const key = JSON.stringify({ ...context, at: 0 })
-    if (key === last) return
-    last = key
-    try {
-      options.onContext(context)
-    } catch (error) {
-      console.error(`core: could not report the Claude context: ${error instanceof Error ? error.message : String(error)}`)
-    }
+    if (context !== null) report(context)
   }
-  drain()
-  const timer = setInterval(drain, POLL_MS)
-  return { drain, close: () => clearInterval(timer) }
+  const timer = poll(drain, { immediate: true })
+  return { drain, close: timer.stop }
 }

@@ -1,6 +1,6 @@
 import fs from 'node:fs'
 import type { ContextUsage } from '../../../protocol/messages.ts'
-import { POLL_MS } from '../../status/spool.ts'
+import { num, obj, poll, reporter } from '../usageSource.ts'
 
 export interface CopilotUsageSource {
   // Reads the events file and delivers the newest valid reading that differs from the last one delivered.
@@ -16,10 +16,6 @@ export interface CopilotUsageOptions {
 
 // The most a read from the start of the log takes. Only the newest usage record is wanted, and the log grows into many MB.
 const FIRST_READ_MAX = 1 << 20
-
-const num = (value: unknown): number | null => (typeof value === 'number' && Number.isFinite(value) ? value : null)
-const obj = (value: unknown): Record<string, unknown> | null =>
-  value !== null && typeof value === 'object' ? (value as Record<string, unknown>) : null
 
 // One events.jsonl line as a context reading, or null for any line with nothing to show: other event types,
 // `session.usage_checkpoint` (its totals accumulate across requests, so it never measures one), lines that are not
@@ -66,7 +62,7 @@ export function createCopilotUsageSource(options: CopilotUsageOptions): CopilotU
   // The bytes just before the offset (the last 64 consumed, or fewer in a short file). When they no longer match on a
   // poll, the file was truncated or rewritten in place: read again from the start, since an offset is then mid-line.
   let guard = Buffer.alloc(0)
-  let last = ''
+  const report = reporter('Copilot', options.onContext)
   let read: Buffer
   const drain = (): void => {
     let fd: number
@@ -108,21 +104,13 @@ export function createCopilotUsageSource(options: CopilotUsageOptions): CopilotU
         if (context !== null && (newest === null || context.at >= newest.at)) newest = context
       }
       if (newest === null) return
-      const key = JSON.stringify(newest)
-      if (key === last) return
-      last = key
-      try {
-        options.onContext(newest)
-      } catch (error) {
-        console.error(`core: could not report the Copilot context: ${error instanceof Error ? error.message : String(error)}`)
-      }
+      report(newest)
     } catch {
       return
     } finally {
       fs.closeSync(fd)
     }
   }
-  drain()
-  const timer = setInterval(drain, POLL_MS)
-  return { drain, close: () => clearInterval(timer) }
+  const timer = poll(drain, { immediate: true })
+  return { drain, close: timer.stop }
 }

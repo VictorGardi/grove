@@ -94,7 +94,7 @@ const startSource = (
   fail?: () => boolean,
 ) => {
   const paths: string[] = []
-  const seen: Array<ContextUsage | null> = []
+  const seen: ContextUsage[] = []
   const source = createOpencodeUsageSource({
     sessionId,
     fetchJson: async (path: string) => {
@@ -218,8 +218,8 @@ describe('createOpencodeUsageSource', () => {
       if (path === '/api/model') return fullCatalog
       throw new Error(`unexpected api path ${path}`)
     }
-    const seenA: Array<ContextUsage | null> = []
-    const seenB: Array<ContextUsage | null> = []
+    const seenA: ContextUsage[] = []
+    const seenB: ContextUsage[] = []
     const sourceA = createOpencodeUsageSource({ sessionId: SESSION_A, fetchJson, onContext: (c) => seenA.push(c) })
     const sourceB = createOpencodeUsageSource({ sessionId: SESSION_B, fetchJson, onContext: (c) => seenB.push(c) })
     await sourceA.drain()
@@ -262,20 +262,20 @@ describe('createOpencodeUsageSource', () => {
     api.close()
   })
 
-  it('delivers null when the delivered reading stops being supported: the model is missing from the catalog', async () => {
+  it('keeps the delivered reading when the model is missing from the catalog', async () => {
     let body: unknown = [MSG_A()]
     const api = startSource(SESSION_A, () => body, () => fullCatalog)
     await api.drain()
     expect(api.seen).toEqual([READING_A])
     // The session moves to a model the freshly fetched catalog does not list. The poll refetches the catalog
-    // (the model is not the one already matched), finds nothing for it, and clears the stale numbers.
+    // (the model is not the one already matched), finds nothing for it, and delivers nothing: the figure stays.
     body = [assistant('msg-gone', 'zap', 'gone-9', { created: AT_A + 60_000, completed: AT_A + 60_000, tokens: tok(300, 40, 5) })]
     await api.drain()
-    expect(api.seen).toEqual([READING_A, null])
+    expect(api.seen).toEqual([READING_A])
     // The original model is still in the catalog cache, so bringing its message back delivers the reading again.
     body = [MSG_A()]
     await api.drain()
-    expect(api.seen).toEqual([READING_A, null, READING_A])
+    expect(api.seen).toEqual([READING_A])
     api.close()
   })
 
@@ -361,7 +361,7 @@ describe('createOpencodeUsageSource', () => {
     const gateBox: { release: ((value?: void) => void) | null } = { release: null }
     let body: unknown = [MSG_A()]
     const paths: string[] = []
-    const seen: Array<ContextUsage | null> = []
+    const seen: ContextUsage[] = []
     const source = createOpencodeUsageSource({
       sessionId: SESSION_A,
       fetchJson: async (path: string) => {

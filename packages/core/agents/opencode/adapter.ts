@@ -78,8 +78,7 @@ export function createOpenCodeAdapter(options: OpenCodeAdapterOptions = {}): Age
         sessionId: input.sessionId,
         fetchJson: options.usageFetch ?? defaultUsageFetch,
         intervalMs: options.usageIntervalMs,
-        // A refused reading clears the tab's figure rather than leaving stale numbers: the source delivers null.
-        onContext: (context) => onContext(context ?? { tokens: null, window: null, percent: null, model: null, at: input.clock() }),
+        onContext,
       })
       return { close: () => usage.close() }
     },
