@@ -7,7 +7,7 @@ import { DIFF_COMMENT_LIMITS, ERROR_CODES, METHODS, type DiffComment, type DiffM
 import { RpcError } from '../protocol/errors.ts'
 import { pushRecentBase } from './diff/bases.ts'
 import { makeComment, readComments, type CommentChange } from './diff/comments.ts'
-import { addWorktree, listWorktrees, readSpaceGit, removeWorktree, spaceGitInfo, type SpaceGitInfo } from './git.ts'
+import { addWorktree, listWorktrees, readSpaceGit, removeWorktree, type SpaceGitInfo } from './git.ts'
 import { GitError, runGit, type GitRun } from './gitrun.ts'
 import type { AgentKind } from './status/adapter.ts'
 import {
@@ -149,14 +149,17 @@ export class SpacesService {
     const space = this.requireSpace(spaceId)
     const name = branch.trim()
     if (name === '') throw new RpcError(ERROR_CODES.invalidParams, 'branch name is empty')
-    const git = await spaceGitInfo(space.path)
+    const git = await this.readGitForWrite(space.path)
     if (git.mainPath === null) throw new RpcError(ERROR_CODES.invalidParams, `not a git repository: ${space.path}`)
     const dest = path.join(this.worktreesRoot, path.basename(git.mainPath), name.replace(/\//g, '-'))
     if (fs.existsSync(dest)) throw new RpcError(ERROR_CODES.invalidParams, `${dest} already exists`)
     fs.mkdirSync(path.dirname(dest), { recursive: true })
     try {
-      await addWorktree(space.path, dest, name, base)
+      await addWorktree(space.path, dest, name, base, this.git)
     } catch (error) {
+      if (error instanceof GitError && error.timedOut) {
+        throw new RpcError(ERROR_CODES.gitTimedOut, `creating the worktree for ${name} timed out`)
+      }
       throw new RpcError(ERROR_CODES.invalidParams, error instanceof Error ? error.message : String(error))
     }
     return this.add(dest)
@@ -167,7 +170,7 @@ export class SpacesService {
   // be asked whether to force.
   async removeWorktreeFolder(spaceId: string, force = false): Promise<void> {
     const space = this.requireSpace(spaceId)
-    const git = await spaceGitInfo(space.path)
+    const git = await this.readGitForWrite(space.path)
     if (git.mainPath === null || git.mainPath === space.path) {
       throw new RpcError(ERROR_CODES.invalidParams, `${space.path} is not a worktree`)
     }
@@ -175,9 +178,23 @@ export class SpacesService {
       throw new RpcError(ERROR_CODES.invalidParams, `another space uses ${space.path}`)
     }
     try {
-      await removeWorktree(git.mainPath, space.path, force)
+      await removeWorktree(git.mainPath, space.path, force, this.git)
     } catch (error) {
+      if (error instanceof GitError && error.timedOut) {
+        throw new RpcError(ERROR_CODES.gitTimedOut, `removing ${space.path} timed out; git left it as it was, check it before trying again`)
+      }
       throw new RpcError(ERROR_CODES.gitRefused, error instanceof Error ? error.message : String(error))
+    }
+  }
+
+  // The git facts a create or remove decides on. A folder outside git gives nulls (the caller says so); a read that failed any
+  // other way is not an answer, so it is not reported as "not a git repository".
+  private async readGitForWrite(dir: string): Promise<SpaceGitInfo> {
+    try {
+      return await readSpaceGit(dir, this.git)
+    } catch (error) {
+      if (!fs.existsSync(dir) || (error instanceof GitError && error.notRepo)) return { repoName: null, mainPath: null, branch: null }
+      throw new RpcError(ERROR_CODES.invalidParams, "couldn't read git state, try again")
     }
   }
 

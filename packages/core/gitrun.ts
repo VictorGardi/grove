@@ -1,4 +1,4 @@
-import { execFile } from 'node:child_process'
+import { execFile, spawn } from 'node:child_process'
 
 // How one git call runs. A read never runs a repo's hooks (a cloned repo's config must not run code in the background); a write
 // keeps them, since a post-checkout install is expected. Both are English, prompt-free and without a file-watch command.
@@ -35,10 +35,44 @@ export function gitEnv(env: NodeJS.ProcessEnv, kind: 'read' | 'write' = 'read'):
   return kind === 'read' ? { ...base, GIT_OPTIONAL_LOCKS: '0' } : base
 }
 
-// Runs the system git with execFile and an args array, never through a shell, in `cwd`.
+const failureOf = (stderr: string, message: string) => new GitError(stderr.trim() || message, /not a git repository/i.test(stderr))
+
+// A write: its own process group, and a timeout kills the whole group, so a hook's children stop with git.
+function runGitWrite(args: string[], cwd: string, timeout: number): Promise<string> {
+  return new Promise((resolve, reject) => {
+    const child = spawn('git', gitArgv(args, 'write'), { cwd, env: gitEnv(process.env, 'write'), detached: true, stdio: ['ignore', 'pipe', 'pipe'] })
+    const out: Buffer[] = []
+    const err: Buffer[] = []
+    let expired = false
+    child.stdout.on('data', (chunk: Buffer) => out.push(chunk))
+    child.stderr.on('data', (chunk: Buffer) => err.push(chunk))
+    const timer = setTimeout(() => {
+      expired = true
+      try {
+        process.kill(-child.pid!, 'SIGKILL')
+      } catch {
+        child.kill('SIGKILL')
+      }
+    }, timeout)
+    child.on('error', (error) => {
+      clearTimeout(timer)
+      reject(failureOf('', error.message))
+    })
+    // 'close' waits for the pipes, which hook children hold open until the group is gone.
+    child.on('close', (code) => {
+      clearTimeout(timer)
+      if (expired) return reject(new GitError('timed out', false, true))
+      if (code === 0) return resolve(Buffer.concat(out).toString('utf8'))
+      reject(failureOf(Buffer.concat(err).toString('utf8'), `git exited with ${code}`))
+    })
+  })
+}
+
+// Runs the system git with an args array, never through a shell, in `cwd`.
 export const runGit: GitRun = (args, cwd, options = {}) => {
   const kind = options.kind ?? 'read'
   const timeout = options.timeoutMs ?? (kind === 'read' ? READ_TIMEOUT_MS : WRITE_TIMEOUT_MS)
+  if (kind === 'write') return runGitWrite(args, cwd, timeout)
   return new Promise((resolve, reject) => {
     execFile(
       'git',
@@ -49,7 +83,7 @@ export const runGit: GitRun = (args, cwd, options = {}) => {
         const failure = error as NodeJS.ErrnoException & { killed?: boolean }
         if (failure.killed) return reject(new GitError('timed out', false, true))
         if (failure.code === 'ERR_CHILD_PROCESS_STDIO_MAXBUFFER') return reject(new GitError('diff too large', false))
-        reject(new GitError(stderr.trim() || failure.message, /not a git repository/i.test(stderr)))
+        reject(failureOf(stderr, failure.message))
       },
     )
   })

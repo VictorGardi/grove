@@ -58,6 +58,8 @@ export const ERROR_CODES = {
   stateRefused: -32003,
   agentMissing: -32004,
   gitRefused: -32005,
+  // A create or remove that hit its time limit. Never gitRefused: the UI must not offer "Force remove?" for it.
+  gitTimedOut: -32006,
 } as const
 
 export type JsonRpcId = number | string
