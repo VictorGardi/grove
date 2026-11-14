@@ -28,7 +28,8 @@ export interface Tab {
 }
 
 // The one place a core tab record's kind becomes the window's: the core's `terminal` is the window's `shell`.
-export function kindOf(info: { kind: 'terminal' | AgentKind }): TabKind {
+// A window kind passes through, so rows that already speak the window's kind (the states demo) need no mapping of their own.
+function kindOf(info: { kind: 'terminal' | TabKind }): TabKind {
   return info.kind === 'terminal' ? 'shell' : info.kind
 }
 
@@ -40,7 +41,7 @@ export interface WindowStoreOptions {
 }
 
 // What toggling the Active tab in the grid did: it joined, it left, the grid was full, or there was no Active tab.
-export type GridToggle = 'joined' | 'left' | 'refused' | 'none'
+type GridToggle = 'joined' | 'left' | 'refused' | 'none'
 
 // The core's answer to spaces.list.
 export interface ListedState {
@@ -54,6 +55,9 @@ export interface ReconcileEffects {
   attach: string[]
   exited: { id: string; exitCode: number | null }[]
 }
+
+// A tab to add: the core's record, or the same with the window's own kind.
+export type NewTab = Omit<SpaceTabInfo, 'kind'> & { kind: 'terminal' | TabKind }
 
 type Mutable<T> = { -readonly [K in keyof T]: T[K] }
 
@@ -86,7 +90,7 @@ export interface WindowStore {
   // The tabs with something for the human, in any space (see urgentTabs).
   urgent(): Array<{ id: string; state: AgentStateName; since: number }>
 
-  addTab(info: SpaceTabInfo): Tab
+  addTab(info: NewTab): Tab
   renameTab(id: string, label: string | null): void
   // True when the tab was not an Exited tab before.
   markExited(id: string): boolean
@@ -190,7 +194,7 @@ export function createWindowStore(options: WindowStoreOptions): WindowStore {
   }
 
   // Adds a tab the core listed, or takes the kind and label of one already held.
-  function upsertTab(info: SpaceTabInfo): Mutable<Tab> {
+  function upsertTab(info: NewTab): Mutable<Tab> {
     const existing = byId.get(info.id)
     if (existing) {
       existing.label = info.label

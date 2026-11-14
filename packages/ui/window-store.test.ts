@@ -1,7 +1,8 @@
 import { describe, expect, it, vi } from 'vitest'
 import type { AgentInfo, SpaceInfo, SpaceTabInfo, StatusChange } from '../protocol/messages.ts'
-import { memoryViewState } from './view-state.ts'
-import { createWindowStore, kindOf } from './window-store.ts'
+import { seedDemo, type DemoRows } from './demo/states.ts'
+import { memoryViewState, noViewState } from './view-state.ts'
+import { createWindowStore } from './window-store.ts'
 
 function space(id: string, parent: string | null = null): SpaceInfo {
   return { id, path: `/work/${id}`, name: id, label: null, repoName: null, parent, worktree: parent !== null, branch: null }
@@ -32,11 +33,18 @@ function window(saved?: Parameters<typeof memoryViewState>[0]) {
   return { store, changed, port }
 }
 
-describe('the kind of a core tab record', () => {
+describe('the kind of an added tab', () => {
   it('maps the core terminal kind to shell and keeps an agent kind', () => {
-    expect(kindOf({ kind: 'terminal' })).toBe('shell')
-    expect(kindOf({ kind: 'claude' })).toBe('claude')
-    expect(kindOf({ kind: 'copilot' })).toBe('copilot')
+    const { store } = window()
+    expect(store.addTab(wire('k1', 'a', { kind: 'terminal' })).kind).toBe('shell')
+    expect(store.addTab(wire('k2', 'a', { kind: 'claude' })).kind).toBe('claude')
+    expect(store.addTab(wire('k3', 'a', { kind: 'copilot' })).kind).toBe('copilot')
+  })
+
+  it('takes the window\'s own kind as it is, so the states demo needs no mapping', () => {
+    const { store } = window()
+    expect(store.addTab({ ...wire('k1', 'a'), kind: 'shell' }).kind).toBe('shell')
+    expect(store.addTab({ ...wire('k2', 'a'), kind: 'claude' }).kind).toBe('claude')
   })
 })
 
@@ -829,5 +837,48 @@ describe('notifying', () => {
     store.activateTab('b1')
     expect(changed).toHaveBeenCalledTimes(1)
     expect(seen).toBe('b1')
+  })
+})
+
+describe('the states demo setup', () => {
+  function demo() {
+    const store = createWindowStore({ changed: vi.fn(), viewState: noViewState })
+    const rows: DemoRows = {
+      home: '/home',
+      spaces: [space('s1'), space('s2')],
+      tabs: [
+        { id: 't1', spaceId: 's1', kind: 'shell', label: null, exited: false },
+        { id: 't2', spaceId: 's1', kind: 'claude', label: 'review', exited: true },
+        { id: 't3', spaceId: 's2', kind: 'copilot', label: null, exited: false },
+      ],
+      agents: [entry('t3', 'copilot', { state: 'working' })],
+    }
+    seedDemo(store, rows)
+    return store
+  }
+
+  it('selects the first space and shows its first tab', () => {
+    const store = demo()
+    expect(store.activeSpace).toBe('s1')
+    expect(store.activeTab?.id).toBe('t1')
+  })
+
+  it('keeps kinds, labels and numbers, and marks only the exited tab exited', () => {
+    const store = demo()
+    expect(store.tabs.map((tab) => [tab.id, tab.kind, tab.exited])).toEqual([
+      ['t1', 'shell', false],
+      ['t2', 'claude', true],
+      ['t3', 'copilot', false],
+    ])
+    expect(store.tabName('t2')).toBe('review')
+    expect(store.tabName('t1')).toBe('1')
+    expect(store.stateOf('t2')).toBe('idle')
+    expect(store.stateOf('t3')).toBe('working')
+  })
+
+  it('saves nothing, and reads an empty view state', () => {
+    const store = demo()
+    expect(store.viewStateReady).toBe(false)
+    expect(noViewState.read().activeTab).toBeNull()
   })
 })

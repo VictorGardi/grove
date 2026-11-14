@@ -23,7 +23,7 @@ import { previousOf, stepFrom } from './recent-tabs.ts'
 import { PANE_DIM_RANGE, readPaneDim, writePaneDim } from './pane-dim.ts'
 import { readSidebarHidden, writeSidebarHidden, type KeyValueStore } from './sidebar-state.ts'
 import { createFocusSignal } from './focus-signal.ts'
-import { storageViewState } from './view-state.ts'
+import { noViewState, storageViewState } from './view-state.ts'
 import { groupAgents, jumpTargets, nextUrgent, shortFolder, sidebarSpaceOrder, spaceAt, tileIndex } from './sidebar-model.ts'
 import { createWindowStore, type Tab, type TabKind } from './window-store.ts'
 import { contextMeter, hideContextTip, markWithContext } from './context-badge.ts'
@@ -90,7 +90,14 @@ interface AgentRow {
 
 const bridge = createBridge()
 const encoder = new TextEncoder()
-const store = createWindowStore({ changed: onStoreChanged, viewState: storageViewState(storage) })
+// The states demo keeps the window's view state to itself: it saves nothing and restores nothing. Demo mode is only known
+// once start() runs, so the port is chosen on each call.
+const storedViewState = storageViewState(storage)
+const viewStatePort = () => (demoMode ? noViewState : storedViewState)
+const store = createWindowStore({
+  changed: onStoreChanged,
+  viewState: { read: () => viewStatePort().read(), write: (state) => viewStatePort().write(state) },
+})
 const doms = new Map<string, TabDom>()
 // Whether the window is connected to the core: the changes panel says so instead of showing an empty diff.
 let coreConnected = false
@@ -1494,25 +1501,11 @@ async function loadFonts(): Promise<void> {
 }
 
 // The states page: the fabricated rows, through the same rendering, with no core and no Tauri call.
-async function startDemo(rows: DemoRows): Promise<void> {
+async function startDemo(demo: typeof import('./demo/states.ts'), rows: DemoRows): Promise<void> {
   demoMode = true
   windowFocused = true
   homeDir = rows.home
-  for (const space of rows.spaces) store.upsertSpace(space)
-  store.setAgents(rows.agents)
-  for (const item of rows.tabs) {
-    store.addTab({
-      id: item.id,
-      spaceId: item.spaceId,
-      spacePath: store.space(item.spaceId)?.path ?? '',
-      kind: item.kind === 'shell' ? 'terminal' : item.kind,
-      label: item.label,
-      alive: !item.exited,
-      exitCode: null,
-    })
-    if (item.exited) store.markExited(item.id)
-  }
-  selectSpace(rows.spaces[0]?.id ?? null)
+  demo.seedDemo(store, rows)
 }
 
 async function start(): Promise<void> {
@@ -1520,7 +1513,7 @@ async function start(): Promise<void> {
     const demo = await import('./demo/states.ts')
     if (demo.isDemoStates(window.location, import.meta.env.DEV)) {
       await loadFonts()
-      await startDemo(demo.demoRows())
+      await startDemo(demo, demo.demoRows())
       return
     }
   }

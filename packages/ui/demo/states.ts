@@ -2,6 +2,7 @@
 // checked without a core. main.ts loads this module only under import.meta.env.DEV, so a production build leaves it out.
 import type { AgentInfo, SpaceInfo } from '../../protocol/messages.ts'
 import type { AgentKind } from '../../core/status/adapter.ts'
+import type { WindowStore } from '../window-store.ts'
 
 export interface DemoTab {
   id: string
@@ -53,4 +54,23 @@ export function demoRows(now: number = Date.now()): DemoRows {
     { tabId: 'demo-6', agent: 'claude', state: 'idle', since: now - 7_200_000, source: 'demo', resumable: true },
   ]
   return { home, spaces, tabs, agents }
+}
+
+// Builds the window's spaces, agents and tabs from the rows through the store's own writes, then shows the first space.
+export function seedDemo(store: WindowStore, rows: DemoRows): void {
+  for (const space of rows.spaces) store.upsertSpace(space)
+  store.setAgents(rows.agents)
+  for (const item of rows.tabs) {
+    store.addTab({
+      id: item.id,
+      spaceId: item.spaceId,
+      spacePath: store.space(item.spaceId)?.path ?? '',
+      kind: item.kind,
+      label: item.label,
+      alive: !item.exited,
+      exitCode: null,
+    })
+    if (item.exited) store.markExited(item.id)
+  }
+  store.selectSpace(rows.spaces[0]?.id ?? null)
 }
