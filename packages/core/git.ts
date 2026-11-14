@@ -1,5 +1,5 @@
 import path from 'node:path'
-import { runGit, type GitRun } from './gitrun.ts'
+import { GitError, runGit, type GitRun } from './gitrun.ts'
 
 export interface SpaceGitInfo {
   repoName: string | null
@@ -10,23 +10,28 @@ export interface SpaceGitInfo {
 const WRITE = { kind: 'write' } as const
 const NONE: SpaceGitInfo = { repoName: null, mainPath: null, branch: null }
 
-// Asks git which worktree is the main one for `dir`, and which branch is checked out there. Reads only.
-// Never throws: a folder outside git, or a missing git, gives nulls. An unborn branch shows its name, a detached HEAD gives null.
-export async function spaceGitInfo(dir: string, git: GitRun = runGit): Promise<SpaceGitInfo> {
-  let list: string
-  try {
-    list = await git(['worktree', 'list', '--porcelain'], dir)
-  } catch {
-    return NONE
-  }
+// Asks git which worktree is the main one for `dir`, and which branch is checked out there. Reads only. Rejects with the GitError
+// when git cannot answer (check `notRepo` to tell a folder outside git from a timeout or other failure). An unborn branch shows its
+// name, a detached HEAD gives null.
+export async function readSpaceGit(dir: string, git: GitRun = runGit): Promise<SpaceGitInfo> {
+  const list = await git(['worktree', 'list', '--porcelain'], dir)
   const line = list.split('\n').find((candidate) => candidate.startsWith('worktree '))
   if (!line) return NONE
   const mainPath = line.slice('worktree '.length).trim()
+  // symbolic-ref -q exits 1 for a detached HEAD, which is a null branch; a timeout or a lost repo is not an answer.
   const branch = await git(['symbolic-ref', '--short', '-q', 'HEAD'], dir).then(
     (out) => out.trim() || null,
-    () => null,
+    (error: unknown) => {
+      if (error instanceof GitError && (error.timedOut || error.notRepo)) throw error
+      return null
+    },
   )
   return { repoName: path.basename(mainPath), mainPath, branch }
+}
+
+// Never throws: a folder outside git, or a missing git, gives nulls.
+export async function spaceGitInfo(dir: string, git: GitRun = runGit): Promise<SpaceGitInfo> {
+  return readSpaceGit(dir, git).catch(() => NONE)
 }
 
 export interface WorktreeEntry {

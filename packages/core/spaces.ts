@@ -7,7 +7,8 @@ import { DIFF_COMMENT_LIMITS, ERROR_CODES, METHODS, type DiffComment, type DiffM
 import { RpcError } from '../protocol/errors.ts'
 import { pushRecentBase } from './diff/bases.ts'
 import { makeComment, readComments, type CommentChange } from './diff/comments.ts'
-import { addWorktree, listWorktrees, removeWorktree, spaceGitInfo } from './git.ts'
+import { addWorktree, listWorktrees, readSpaceGit, removeWorktree, spaceGitInfo, type SpaceGitInfo } from './git.ts'
+import { GitError, runGit, type GitRun } from './gitrun.ts'
 import type { AgentKind } from './status/adapter.ts'
 import {
   emptyState,
@@ -34,11 +35,14 @@ export class SpacesService {
   // The Grove home folder: the state file's folder. Every tab gets it in GROVE_HOME, so an agent typed there
   // finds its spool.
   private readonly home: string
+  // Each space's last good git answer. Only "not a git repository" or a gone folder drops it; a timeout or other failure keeps it.
+  private readonly lastGit = new Map<string, SpaceGitInfo>()
 
   constructor(
     private readonly file: string,
     // Where new worktrees go: <root>/<repo>/<branch>.
     private readonly worktreesRoot: string = path.join(os.homedir(), '.grove', 'worktrees'),
+    private readonly git: GitRun = runGit,
   ) {
     this.home = path.dirname(file)
     const loaded = loadState(file)
@@ -67,6 +71,10 @@ export class SpacesService {
       }
     })
     return { spaces, tabs, refused: this.refused }
+  }
+
+  ids(): string[] {
+    return this.state.spaces.map((space) => recordSpaceId(space))
   }
 
   // Every space's sidebar view, read fresh from git.
@@ -456,8 +464,29 @@ export class SpacesService {
     return space === undefined ? undefined : this.describe(space, this.state.spaces)
   }
 
+  // The space's git facts. A first read that fails gives nulls and is not remembered, so the next tick tries again.
+  private async readGit(space: SpaceRecord): Promise<SpaceGitInfo> {
+    const key = recordSpaceId(space)
+    const none: SpaceGitInfo = { repoName: null, mainPath: null, branch: null }
+    if (!fs.statSync(space.path, { throwIfNoEntry: false })?.isDirectory()) {
+      this.lastGit.delete(key)
+      return none
+    }
+    try {
+      const info = await readSpaceGit(space.path, this.git)
+      this.lastGit.set(key, info)
+      return info
+    } catch (error) {
+      if (error instanceof GitError && error.notRepo) {
+        this.lastGit.delete(key)
+        return none
+      }
+      return this.lastGit.get(key) ?? none
+    }
+  }
+
   private async describe(space: SpaceRecord, spaces: SpaceRecord[]): Promise<SpaceInfo> {
-    const git = await spaceGitInfo(space.path)
+    const git = await this.readGit(space)
     // The worktree's parent is the first space at the main repo's path.
     const main = git.mainPath !== null && git.mainPath !== space.path ? spaces.find((candidate) => candidate.path === git.mainPath) : undefined
     return {
