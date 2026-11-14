@@ -88,18 +88,7 @@ describe('dock state', () => {
     expect(readDockExpanded(store)).toBe(true)
     writeDockExpanded(store, false)
     expect(readDockExpanded(store)).toBe(false)
-    expect(readDockExpanded(null)).toBe(false)
     expect(readDockExpanded(memoryStore({ [DOCK_EXPANDED_KEY]: 'maybe' }))).toBe(false)
-    const broken = {
-      getItem: () => {
-        throw new Error('blocked')
-      },
-      setItem: () => {
-        throw new Error('blocked')
-      },
-    }
-    expect(readDockExpanded(broken)).toBe(false)
-    expect(() => writeDockExpanded(broken, true)).not.toThrow()
   })
 })
 

@@ -13,7 +13,7 @@ import {
   writeDockExpanded,
   writeDockWidth,
 } from './dock-state.ts'
-import type { KeyValueStore } from './sidebar-state.ts'
+import type { KeyValueStore } from './persisted-pref.ts'
 
 // What a panel uses to speak in the dock's header and under it.
 export interface DockContext {

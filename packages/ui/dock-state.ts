@@ -1,6 +1,5 @@
-// The right dock's width and whether it is expanded, kept in the window's storage so a reload keeps it. The storage may be missing or throw (a private window,
-// blocked site data); then the dock opens at its default width and a change is not kept.
-import type { KeyValueStore } from './sidebar-state.ts'
+// The right dock's width and whether it is expanded, kept in the window's storage so a reload keeps it.
+import { flagPref, persistedPref, type KeyValueStore } from './persisted-pref.ts'
 
 export const DOCK_WIDTH_KEY = 'grove.dock-width'
 export const DOCK_WIDTH_DEFAULT = 360
@@ -26,36 +25,18 @@ export function dockWidthFor(saved: number, expanded: boolean, windowWidth: numb
 }
 
 // The saved width is not held to the window here: the window may differ next time, so it is clamped when it is shown.
-export function readDockWidth(store: KeyValueStore | null): number {
-  try {
-    const saved = store?.getItem(DOCK_WIDTH_KEY)
-    const width = saved == null ? DOCK_WIDTH_DEFAULT : Number(saved)
-    return Number.isFinite(width) ? Math.max(DOCK_WIDTH_MIN, Math.round(width)) : DOCK_WIDTH_DEFAULT
-  } catch {
-    return DOCK_WIDTH_DEFAULT
-  }
-}
+const dockWidth = persistedPref<number>({
+  key: DOCK_WIDTH_KEY,
+  fallback: () => DOCK_WIDTH_DEFAULT,
+  decode: (text) => {
+    const width = Number(text)
+    return Number.isFinite(width) ? Math.max(DOCK_WIDTH_MIN, Math.round(width)) : undefined
+  },
+  encode: (width) => String(Math.max(DOCK_WIDTH_MIN, Math.round(width))),
+})
+const dockExpanded = flagPref(DOCK_EXPANDED_KEY, '1', '0')
 
-export function writeDockWidth(store: KeyValueStore | null, width: number): void {
-  try {
-    store?.setItem(DOCK_WIDTH_KEY, String(Math.max(DOCK_WIDTH_MIN, Math.round(width))))
-  } catch {
-    // not kept: the dock still changes for this run
-  }
-}
-
-export function readDockExpanded(store: KeyValueStore | null): boolean {
-  try {
-    return store?.getItem(DOCK_EXPANDED_KEY) === '1'
-  } catch {
-    return false
-  }
-}
-
-export function writeDockExpanded(store: KeyValueStore | null, expanded: boolean): void {
-  try {
-    store?.setItem(DOCK_EXPANDED_KEY, expanded ? '1' : '0')
-  } catch {
-    // not kept: the dock still changes for this run
-  }
-}
+export const readDockWidth = (store: KeyValueStore | null): number => dockWidth.read(store)
+export const writeDockWidth = (store: KeyValueStore | null, width: number): void => dockWidth.write(store, width)
+export const readDockExpanded = (store: KeyValueStore | null): boolean => dockExpanded.read(store)
+export const writeDockExpanded = (store: KeyValueStore | null, expanded: boolean): void => dockExpanded.write(store, expanded)

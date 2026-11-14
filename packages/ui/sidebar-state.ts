@@ -1,25 +1,10 @@
-// Whether the sidebar is hidden, kept in the window's storage so a reload keeps it. The storage may be missing or throw (a private
-// window, blocked site data); then the sidebar opens shown and a change is not kept.
+import { flagPref, type KeyValueStore } from './persisted-pref.ts'
+
+// Whether the sidebar is hidden, kept in the window's storage so a reload keeps it. Shown when nothing is kept.
 
 export const SIDEBAR_HIDDEN_KEY = 'grove.sidebar-hidden'
 
-export interface KeyValueStore {
-  getItem(key: string): string | null
-  setItem(key: string, value: string): void
-}
+const sidebarHidden = flagPref(SIDEBAR_HIDDEN_KEY, '1', '0')
 
-export function readSidebarHidden(store: KeyValueStore | null): boolean {
-  try {
-    return store?.getItem(SIDEBAR_HIDDEN_KEY) === '1'
-  } catch {
-    return false
-  }
-}
-
-export function writeSidebarHidden(store: KeyValueStore | null, hidden: boolean): void {
-  try {
-    store?.setItem(SIDEBAR_HIDDEN_KEY, hidden ? '1' : '0')
-  } catch {
-    // not kept: the sidebar still changes for this run
-  }
-}
+export const readSidebarHidden = (store: KeyValueStore | null): boolean => sidebarHidden.read(store)
+export const writeSidebarHidden = (store: KeyValueStore | null, hidden: boolean): void => sidebarHidden.write(store, hidden)

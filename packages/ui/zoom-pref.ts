@@ -1,4 +1,4 @@
-import type { KeyValueStore } from './sidebar-state.ts'
+import { persistedPref, type KeyValueStore } from './persisted-pref.ts'
 
 // How big the whole window is drawn, kept in the window's storage so a restart keeps it. 1 is the size the window is designed at.
 
@@ -16,22 +16,18 @@ function isZoom(value: number): boolean {
   return Number.isFinite(value) && value >= ZOOM_MIN && value <= ZOOM_MAX
 }
 
-export function readZoom(store: KeyValueStore | null): number {
-  try {
-    const value = Number(store?.getItem(ZOOM_KEY))
-    return isZoom(value) ? value : DEFAULT_ZOOM
-  } catch {
-    return DEFAULT_ZOOM
-  }
-}
+const zoomPref = persistedPref<number>({
+  key: ZOOM_KEY,
+  fallback: () => DEFAULT_ZOOM,
+  decode: (text) => {
+    const value = Number(text)
+    return isZoom(value) ? value : undefined
+  },
+  encode: String,
+})
 
-export function writeZoom(store: KeyValueStore | null, zoom: number): void {
-  try {
-    store?.setItem(ZOOM_KEY, String(zoom))
-  } catch {
-    // not kept: the zoom still holds for this run
-  }
-}
+export const readZoom = (store: KeyValueStore | null): number => zoomPref.read(store)
+export const writeZoom = (store: KeyValueStore | null, zoom: number): void => zoomPref.write(store, zoom)
 
 // The level after a zoom key, held between 50% and 300%.
 export function stepZoom(zoom: number, step: ZoomStep): number {

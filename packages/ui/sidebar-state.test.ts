@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest'
-import { readSidebarHidden, SIDEBAR_HIDDEN_KEY, writeSidebarHidden, type KeyValueStore } from './sidebar-state.ts'
+import { readSidebarHidden, SIDEBAR_HIDDEN_KEY, writeSidebarHidden } from './sidebar-state.ts'
+import type { KeyValueStore } from './persisted-pref.ts'
 
 function memory(): KeyValueStore & { values: Map<string, string> } {
   const values = new Map<string, string>()
@@ -22,20 +23,5 @@ describe('sidebar state', () => {
     expect(readSidebarHidden(store)).toBe(true)
     writeSidebarHidden(store, false)
     expect(readSidebarHidden(store)).toBe(false)
-  })
-
-  it('shows the sidebar and keeps nothing when storage is missing or throws', () => {
-    const broken: KeyValueStore = {
-      getItem: () => {
-        throw new Error('SecurityError')
-      },
-      setItem: () => {
-        throw new Error('QuotaExceededError')
-      },
-    }
-    expect(readSidebarHidden(null)).toBe(false)
-    expect(readSidebarHidden(broken)).toBe(false)
-    expect(() => writeSidebarHidden(broken, true)).not.toThrow()
-    expect(() => writeSidebarHidden(null, true)).not.toThrow()
   })
 })

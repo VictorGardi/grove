@@ -1,4 +1,4 @@
-import type { KeyValueStore } from './sidebar-state.ts'
+import { persistedPref, type KeyValueStore } from './persisted-pref.ts'
 
 export const APPEARANCE_KEY = 'grove.agent-appearance'
 
@@ -58,23 +58,15 @@ function parseAppearance(value: unknown): AgentAppearance | null {
   return { needsYou, working, finished, workingIndicator }
 }
 
-export function readAgentAppearance(store: KeyValueStore | null): AgentAppearance {
-  try {
-    const stored = store?.getItem(APPEARANCE_KEY)
-    if (stored === null || stored === undefined) return { ...DEFAULT_AGENT_APPEARANCE }
-    return parseAppearance(JSON.parse(stored)) ?? { ...DEFAULT_AGENT_APPEARANCE }
-  } catch {
-    return { ...DEFAULT_AGENT_APPEARANCE }
-  }
-}
+const appearance = persistedPref<AgentAppearance>({
+  key: APPEARANCE_KEY,
+  fallback: () => ({ ...DEFAULT_AGENT_APPEARANCE }),
+  decode: (text) => parseAppearance(JSON.parse(text)) ?? undefined,
+  encode: JSON.stringify,
+})
 
-export function writeAgentAppearance(store: KeyValueStore | null, appearance: AgentAppearance): void {
-  try {
-    store?.setItem(APPEARANCE_KEY, JSON.stringify(appearance))
-  } catch {
-    // The preference still applies for this run when storage is unavailable.
-  }
-}
+export const readAgentAppearance = (store: KeyValueStore | null): AgentAppearance => appearance.read(store)
+export const writeAgentAppearance = (store: KeyValueStore | null, value: AgentAppearance): void => appearance.write(store, value)
 
 export function applyAgentAppearance(
   root: {
