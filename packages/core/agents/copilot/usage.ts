@@ -23,7 +23,7 @@ const obj = (value: unknown): Record<string, unknown> | null =>
 
 // One events.jsonl line as a context reading, or null for any line with nothing to show: other event types,
 // `session.usage_checkpoint` (its totals accumulate across requests, so it never measures one), lines that are not
-// JSON, and usage records with a missing or invalid `inputTokens`. `tokens` is the record's `inputTokens` alone —
+// JSON, usage records a subagent made, and usage records with a missing or invalid `inputTokens`. `tokens` is the record's `inputTokens` alone —
 // the cache read/write counts are breakdowns of that value, never additions. `window` is the CLI's prompt budget,
 // not a context window, and is absent when the record carries none. `at` is the event's own timestamp: the moment
 // the request finished, never a poll time.
@@ -38,6 +38,8 @@ export function usageFromLine(line: string): ContextUsage | null {
   if (parsed === null || parsed.type !== 'session.usage_record') return null
   const data = obj(parsed.data)
   const usage = data === null ? null : obj(data.usage)
+  // A subagent's request measures the subagent's own window, never the tab's. Any one marker is enough to skip it.
+  if (parsed.agentId !== undefined || usage?.initiator === 'sub-agent' || usage?.interactionType === 'conversation-subagent') return null
   const tokens = usage === null ? null : num(usage.inputTokens)
   const at = Date.parse(typeof parsed.timestamp === 'string' ? parsed.timestamp : '')
   if (tokens === null || tokens <= 0 || !Number.isFinite(at)) return null

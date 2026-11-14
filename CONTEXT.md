@@ -35,7 +35,8 @@ specific meaning, so humans and agents stay consistent.
   `warn` or `handoff`, taken from whichever of the agent's token count or its
   share of the window crosses a line first. Warn is from 150k tokens or 50%;
   handoff from 200k tokens or 70%. A tab with no usable reading has no level.
-  The ring, the CLI and agents all use the same level.
+  The ring, the CLI and agents all use the same level. It always describes the
+  tab's root agent; a subagent's own context never shows and never moves it.
 - **Handoff**: an agent's work moving to a new tab because its context level is
   `handoff`: the old tab stops after its current step, and a fresh tab carries
   on from a brief. The old tab is left for the human, never killed. An

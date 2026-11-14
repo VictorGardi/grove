@@ -70,6 +70,34 @@ describe('usageFromLine', () => {
     })
   })
 
+  it('is null for a subagent record, whichever marker it carries', () => {
+    const usage = { model: 'gpt-6-luna', inputTokens: 14_448, maxPromptTokens: 272_000 }
+    const at = '2026-11-07T20:30:28.702Z'
+    const line = (top: object, extra: object) =>
+      JSON.stringify({ type: 'session.usage_record', data: { usage: { ...usage, ...extra } }, timestamp: at, ...top })
+    expect(usageFromLine(line({ agentId: 'a1' }, {}))).toBeNull()
+    expect(usageFromLine(line({}, { initiator: 'sub-agent' }))).toBeNull()
+    expect(usageFromLine(line({}, { interactionType: 'conversation-subagent' }))).toBeNull()
+    expect(usageFromLine(line({}, { initiator: 'agent', interactionType: 'conversation-agent' }))?.tokens).toBe(14_448)
+  })
+
+  it('keeps the root reading while subagent records are the newest lines', () => {
+    const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'grove-copilot-sub-'))
+    const file = path.join(dir, 'events.jsonl')
+    const sub = JSON.stringify({
+      type: 'session.usage_record',
+      agentId: 'a1',
+      data: { usage: { model: 'gpt-6-luna', inputTokens: 5_000, maxPromptTokens: 272_000, initiator: 'sub-agent' } },
+      timestamp: '2026-11-07T21:00:00.000Z',
+    })
+    fs.writeFileSync(file, `${record(120_000, 272_000, 'gpt-6-luna', '2026-11-07T20:30:28.702Z')}\n${sub}\n`)
+    const seen: ContextUsage[] = []
+    const source = createCopilotUsageSource({ file, onContext: (context) => seen.push(context) })
+    source.close()
+    expect(seen.map((context) => context.tokens)).toEqual([120_000])
+    fs.rmSync(dir, { recursive: true })
+  })
+
   it('is null for checkpoints, other events, and lines that are not usage records', () => {
     expect(usageFromLine(checkpoint('2026-11-07T20:30:28.702Z'))).toBeNull()
     expect(usageFromLine(start('2026-11-07T20:30:28.702Z'))).toBeNull()
