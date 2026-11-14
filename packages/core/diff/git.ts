@@ -1,46 +1,6 @@
-import { execFile } from 'node:child_process'
+import { GitError, type GitRun } from '../gitrun.ts'
 
-export type GitRun = (args: string[], cwd: string) => Promise<string>
-
-export class GitError extends Error {
-  constructor(
-    message: string,
-    readonly notRepo: boolean,
-  ) {
-    super(message)
-  }
-}
-
-export const GIT_TIMEOUT_MS = 10_000
-
-// Everything the diff panel asks git is a read, and a cloned repo's config must not run code through it: no fsmonitor, no hooks, no pager.
-// They go before the subcommand, so callers pass the subcommand first. `diff` calls add --no-ext-diff and --no-textconv themselves.
-const HARDENING = ['-c', 'core.fsmonitor=false', '-c', 'core.hooksPath=/dev/null', '-c', 'core.pager=cat', '-c', 'core.quotePath=false']
-
-export const gitArgv = (args: string[]): string[] => [...HARDENING, ...args]
-
-// GIT_OPTIONAL_LOCKS=0: never take the index lock from under an agent. A GIT_EXTERNAL_DIFF in the core's own environment is dropped too.
-export function gitEnv(env: NodeJS.ProcessEnv): NodeJS.ProcessEnv {
-  const { GIT_EXTERNAL_DIFF: _external, ...rest } = env
-  return { ...rest, GIT_TERMINAL_PROMPT: '0', GIT_OPTIONAL_LOCKS: '0', LC_ALL: 'C', GIT_PAGER: 'cat' }
-}
-
-// Runs the system git with execFile and an args array, never through a shell, in `cwd`.
-export const runGit: GitRun = (args, cwd) =>
-  new Promise((resolve, reject) => {
-    execFile(
-      'git',
-      gitArgv(args),
-      { cwd, env: gitEnv(process.env), timeout: GIT_TIMEOUT_MS, maxBuffer: 64 * 1024 * 1024, encoding: 'utf8' },
-      (error, stdout, stderr) => {
-        if (!error) return resolve(stdout)
-        const failure = error as NodeJS.ErrnoException & { killed?: boolean }
-        if (failure.killed) return reject(new GitError('timed out', false))
-        if (failure.code === 'ERR_CHILD_PROCESS_STDIO_MAXBUFFER') return reject(new GitError('diff too large', false))
-        reject(new GitError(stderr.trim() || failure.message, /not a git repository/i.test(stderr)))
-      },
-    )
-  })
+export { gitArgv, gitEnv, GitError, runGit, type GitRun } from '../gitrun.ts'
 
 // Every branch a diff could be taken since: local ones, then remote-tracking ones as `origin/x`, whatever is already fetched.
 // A remote's HEAD is an alias for its default branch, not a branch.

@@ -189,27 +189,29 @@ export async function startCoreDaemon(
   }, PRESENCE_MS)
 
   // A branch switched outside Grove (git checkout in any terminal) shows in the sidebar and footer within a poll.
+  // Each space is read on its own, so one slow space never delays the others; a read still running is not started twice.
   const lastInfo = new Map<string, string>()
-  let gitBusy = false
+  const gitBusy = new Set<string>()
   const gitTimer = setInterval(() => {
-    if (gitBusy) return
-    gitBusy = true
-    spaces
-      .allInfo()
-      .then((infos) => {
-        const ids = new Set(infos.map((info) => info.id))
-        for (const id of lastInfo.keys()) if (!ids.has(id)) lastInfo.delete(id)
-        for (const info of infos) {
+    const ids = spaces.ids()
+    for (const id of lastInfo.keys()) if (!ids.includes(id)) lastInfo.delete(id)
+    for (const id of ids) {
+      if (gitBusy.has(id)) continue
+      gitBusy.add(id)
+      spaces
+        .spaceInfo(id)
+        .then((info) => {
+          if (info === undefined) return
           const key = JSON.stringify(info)
-          const before = lastInfo.get(info.id)
-          lastInfo.set(info.id, key)
+          const before = lastInfo.get(id)
+          lastInfo.set(id, key)
           if (before !== undefined && before !== key) broadcast(notification('spaces.changed', info))
-        }
-      })
-      .catch((error: unknown) => console.error(`core: git poll failed: ${error instanceof Error ? error.message : String(error)}`))
-      .finally(() => {
-        gitBusy = false
-      })
+        })
+        .catch((error: unknown) => console.error(`core: git poll failed: ${error instanceof Error ? error.message : String(error)}`))
+        .finally(() => {
+          gitBusy.delete(id)
+        })
+    }
   }, GIT_POLL_MS)
 
   const sockets = new Set<net.Socket>()
