@@ -2,7 +2,7 @@
 
 - Domain glossary: `GLOSSARY.md`. Use its terms.
 - Run `npm test` and `npm run typecheck` before committing.
-- ADRs go in `docs/adr/`; none are recorded yet, so write one only for a decision that needs it.
+- ADRs go in `docs/adr/` (see the existing ones first); write one only for a decision that needs it.
 
 ## Agent skills
 
