@@ -1,3 +1,4 @@
+import fs from 'node:fs'
 import path from 'node:path'
 import { GitError, runGit, type GitRun } from './gitrun.ts'
 
@@ -66,19 +67,59 @@ async function resolveCommit(git: GitRun, dir: string, ref: string): Promise<str
   return sha.trim()
 }
 
-// Adds a worktree at `dest`. A branch that exists is checked out; a new one starts from `base`, else `dir`'s HEAD.
+const CLEANUP_TIMEOUT_MS = 30_000
+const CANNOT_READ = "couldn't read git state, try again"
+
+// Whether refs/heads/<branch> exists. Rejects when git cannot answer, so a failed read never passes for "missing".
+async function branchExists(git: GitRun, dir: string, branch: string): Promise<boolean> {
+  const ref = `refs/heads/${branch}`
+  const out = await git(['for-each-ref', '--format=%(refname)', ref], dir)
+  return out.split('\n').some((line) => line.trim() === ref)
+}
+
+// After a create timed out (git and its hooks are already killed): a checkout that is whole is kept, since only a hook was slow;
+// anything else is removed, and so is the branch, but only a branch and a folder this create made. Returns what to tell the human.
+async function cleanUpTimedOutCreate(git: GitRun, dir: string, dest: string, branch: string, made: { path: boolean; branch: boolean }): Promise<string> {
+  const complete = await git(['status', '--porcelain'], dest).then(
+    async (status) => status.trim() === '' && (await git(['symbolic-ref', '-q', 'HEAD'], dest).then((head) => head.trim() === `refs/heads/${branch}`, () => false)),
+    () => false,
+  )
+  if (complete) return `the checkout is complete and was kept at ${dest}; only a hook was slow`
+  const cleanup = { kind: 'write', timeoutMs: CLEANUP_TIMEOUT_MS } as const
+  if (made.path) {
+    await git(['worktree', 'remove', '-f', '-f', dest], dir, cleanup).catch(() => undefined)
+    fs.rmSync(dest, { recursive: true, force: true })
+  }
+  await git(['worktree', 'prune'], dir, cleanup).catch(() => undefined)
+  if (made.branch) await git(['branch', '-D', branch], dir, cleanup).catch(() => undefined)
+  const left: string[] = []
+  if (made.path && fs.existsSync(dest)) left.push(`the folder ${dest}`)
+  if (made.branch && (await branchExists(git, dir, branch).catch(() => true))) left.push(`the branch ${branch}`)
+  if (made.path && (await git(['worktree', 'list', '--porcelain'], dir).then((list) => list.split('\n').includes(`worktree ${dest}`), () => true))) left.push(`the worktree entry for ${dest}`)
+  return left.length === 0 ? 'the half-made checkout was removed' : `cleanup failed, left behind: ${left.join(', ')}`
+}
+
+// Adds a worktree at `dest`. A branch that exists is checked out; a new one starts from `base`, else `dir`'s HEAD. A timeout
+// rejects with a GitError (timedOut) whose message says what became of the half-made checkout. When git cannot say whether the
+// branch exists, nothing is created, so a later cleanup never has to guess what was there before.
 export async function addWorktree(dir: string, dest: string, branch: string, base?: string, git: GitRun = runGit): Promise<void> {
   await git(['check-ref-format', '--branch', branch], dir).catch(() => {
     throw new Error(`not a valid branch name: ${branch}`)
   })
-  const exists = await git(['show-ref', '--verify', '--quiet', `refs/heads/${branch}`], dir).then(
-    () => true,
-    () => false,
-  )
+  const exists = await branchExists(git, dir, branch).catch(() => {
+    throw new Error(CANNOT_READ)
+  })
   if (exists && base !== undefined) throw new Error(`branch ${branch} exists, base only applies to a new branch`)
   // A base is resolved to a commit first, so a value git would read as an option or a bad ref fails with a clear message.
   const start = base === undefined ? 'HEAD' : await resolveCommit(git, dir, base)
-  await git(exists ? ['worktree', 'add', dest, branch] : ['worktree', 'add', '-b', branch, dest, start], dir, WRITE)
+  const pathExisted = fs.existsSync(dest)
+  try {
+    await git(exists ? ['worktree', 'add', dest, branch] : ['worktree', 'add', '-b', branch, dest, start], dir, WRITE)
+  } catch (error) {
+    if (!(error instanceof GitError && error.timedOut)) throw error
+    const outcome = await cleanUpTimedOutCreate(git, dir, dest, branch, { path: !pathExisted, branch: !exists }).catch(() => `cleanup could not run, check ${dest} and branch ${branch}`)
+    throw new GitError(outcome, false, true)
+  }
 }
 
 // Removes the checkout. Git refuses a checkout with changes in it or a lock, unless `force`; the branch is kept. A locked

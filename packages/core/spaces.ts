@@ -158,7 +158,7 @@ export class SpacesService {
       await addWorktree(space.path, dest, name, base, this.git)
     } catch (error) {
       if (error instanceof GitError && error.timedOut) {
-        throw new RpcError(ERROR_CODES.gitTimedOut, `creating the worktree for ${name} timed out`)
+        throw new RpcError(ERROR_CODES.gitTimedOut, `creating the worktree for ${name} timed out: ${error.message}`)
       }
       throw new RpcError(ERROR_CODES.invalidParams, error instanceof Error ? error.message : String(error))
     }
