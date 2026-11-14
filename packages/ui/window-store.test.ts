@@ -1,5 +1,6 @@
 import { describe, expect, it, vi } from 'vitest'
 import type { AgentInfo, SpaceInfo, SpaceTabInfo, StatusChange } from '../protocol/messages.ts'
+import { memoryViewState } from './view-state.ts'
 import { createWindowStore, kindOf } from './window-store.ts'
 
 function space(id: string, parent: string | null = null): SpaceInfo {
@@ -19,15 +20,16 @@ function entry(tabId: string, agent: AgentInfo['agent'], overrides: Partial<Agen
 }
 
 // A store with spaces a and b; a holds tabs a1 a2 a3, b holds b1.
-function window() {
+function window(saved?: Parameters<typeof memoryViewState>[0]) {
   const changed = vi.fn()
-  const store = createWindowStore({ changed })
+  const port = memoryViewState(saved)
+  const store = createWindowStore({ changed, viewState: port })
   store.upsertSpace(space('a'))
   store.upsertSpace(space('b'))
   for (const id of ['a1', 'a2', 'a3']) store.addTab(wire(id, 'a'))
   store.addTab(wire('b1', 'b'))
   changed.mockClear()
-  return { store, changed }
+  return { store, changed, port }
 }
 
 describe('the kind of a core tab record', () => {
@@ -417,43 +419,284 @@ describe('the refused state', () => {
   })
 })
 
-describe('the grid membership of a tab', () => {
-  it('is set per tab and listed in tab order', () => {
+// Puts the tabs in the grid one by one, each as the Active tab.
+function grid(store: ReturnType<typeof window>['store'], ...ids: string[]): void {
+  for (const id of ids) {
+    store.activateTab(id)
+    store.toggleGridTab()
+  }
+}
+
+describe('toggling the Active tab in the grid', () => {
+  it('puts the Active tab in the grid and shows the grid', () => {
     const { store } = window()
-    store.setInGrid('a3', true)
-    store.setInGrid('a1', true)
-    expect(store.gridTabs().map((tab) => tab.id)).toEqual(['a1', 'a3'])
-    store.setInGrid('a1', false)
-    expect(store.gridTabs().map((tab) => tab.id)).toEqual(['a3'])
+    store.activateTab('a2')
+    expect(store.toggleGridTab()).toBe('joined')
+    expect(store.gridOn).toBe(true)
+    expect(store.gridTabs().map((tab) => tab.id)).toEqual(['a2'])
   })
 
-  it('can be set for a whole list at once, dropping ids the store does not hold', () => {
+  it('lists the grid tabs in tab order, across spaces', () => {
     const { store } = window()
-    store.setGridTabs(['b1', 'ghost', 'a2'])
-    expect(store.gridTabs().map((tab) => tab.id)).toEqual(['a2', 'b1'])
+    grid(store, 'b1', 'a3', 'a1')
+    expect(store.gridTabs().map((tab) => tab.id)).toEqual(['a1', 'a3', 'b1'])
+  })
+
+  it('takes a tab already in the grid out of it and shows the grid off', () => {
+    const { store } = window()
+    grid(store, 'a1', 'a2')
+    expect(store.toggleGridTab()).toBe('left')
+    expect(store.gridOn).toBe(false)
+    expect(store.gridTabs().map((tab) => tab.id)).toEqual(['a1'])
+  })
+
+  it('refuses a tenth tab and changes nothing', () => {
+    const { store, changed } = window()
+    for (let n = 4; n <= 10; n++) store.addTab(wire(`a${n}`, 'a'))
+    grid(store, 'a1', 'a2', 'a3', 'a4', 'a5', 'a6', 'a7', 'a8', 'a9')
+    store.activateTab('a10')
+    changed.mockClear()
+    expect(store.toggleGridTab()).toBe('refused')
+    expect(store.tab('a10')?.inGrid).toBe(false)
+    expect(store.gridTabs()).toHaveLength(9)
+    expect(changed).not.toHaveBeenCalled()
+  })
+
+  it('does nothing without an Active tab', () => {
+    const { store } = window()
+    store.upsertSpace(space('empty'))
+    store.selectSpace('empty')
+    expect(store.toggleGridTab()).toBe('none')
+    expect(store.gridOn).toBe(false)
+  })
+
+  it('splits the pane that last had the focus in a custom layout', () => {
+    const { store } = window()
+    grid(store, 'a1', 'a2')
+    store.setGridLayout({ dir: 'row', ratio: 0.3, a: 'a1', b: 'a2' })
+    store.activateTab('a2')
+    expect(store.lastGridFocus).toBe('a2')
+    store.activateTab('a3')
+    store.toggleGridTab({ w: 100, h: 100 })
+    expect(store.gridLayout).toMatchObject({ dir: 'row', ratio: 0.3, a: 'a1' })
+    expect(JSON.stringify(store.gridLayout)).toContain('a3')
+  })
+
+  it('drops the leaving pane from a custom layout', () => {
+    const { store } = window()
+    grid(store, 'a1', 'a2')
+    store.setGridLayout({ dir: 'row', ratio: 0.3, a: 'a1', b: 'a2' })
+    store.toggleGridTab()
+    expect(store.gridLayout).toBe('a1')
+  })
+})
+
+describe('the grid turning itself off', () => {
+  it('turns off when it holds no tabs', () => {
+    const { store } = window()
+    store.setGrid(true)
+    expect(store.gridOn).toBe(false)
+  })
+
+  it('turns off when the last grid tab closes', () => {
+    const { store } = window()
+    grid(store, 'a2')
+    store.removeTab('a2')
+    expect(store.gridOn).toBe(false)
+    expect(store.activeTab?.id).toBe('a1')
+  })
+
+  it('turns off when the Active tab is not one of its panes', () => {
+    const { store } = window()
+    grid(store, 'a1', 'a2')
+    store.activateTab('a3')
+    expect(store.gridOn).toBe(false)
+    expect(store.gridTabs().map((tab) => tab.id)).toEqual(['a1', 'a2'])
+  })
+
+  it('stays on while the Active tab moves between its panes, across spaces', () => {
+    const { store } = window()
+    grid(store, 'a1', 'b1')
+    store.activateTab('a1')
+    expect(store.gridOn).toBe(true)
+  })
+
+  it('shows again with the first pane focused when the human turns it on', () => {
+    const { store } = window()
+    grid(store, 'a2', 'b1')
+    store.activateTab('a3')
+    store.setGrid(true)
+    expect(store.gridOn).toBe(true)
+    expect(store.activeTab?.id).toBe('a2')
+  })
+
+  it('keeps the Active tab when it is already a pane', () => {
+    const { store } = window()
+    grid(store, 'a2', 'b1')
+    store.setGrid(false)
+    store.setGrid(true)
+    expect(store.activeTab?.id).toBe('b1')
   })
 })
 
 describe('selecting while the grid shows', () => {
-  it('prefers a grid pane of the space, also when the Active tab closes', () => {
-    const changed = vi.fn()
-    let gridOn = false
-    const store = createWindowStore({
-      changed,
-      gridPane: (spaceId) => (gridOn ? store.gridTabs().find((tab) => tab.spaceId === spaceId)?.id : undefined),
-    })
-    store.upsertSpace(space('a'))
-    for (const id of ['a1', 'a2', 'a3']) store.addTab(wire(id, 'a'))
-    store.setInGrid('a3', true)
-    gridOn = true
-    store.activateTab('a1')
+  it('prefers a grid pane of the space over its recent tab', () => {
+    const { store } = window()
+    grid(store, 'a3', 'b1')
+    store.activateTab('b1')
     store.selectSpace('a')
     expect(store.activeTab?.id).toBe('a3')
-    store.setInGrid('a3', false)
-    store.setInGrid('a2', true)
-    store.activateTab('a2')
+  })
+
+  it('shows the space’s recent tab when its last grid pane closes and the grid goes off', () => {
+    const { store } = window()
+    store.activateTab('a1')
+    grid(store, 'a2')
     store.removeTab('a2')
+    expect(store.gridOn).toBe(false)
     expect(store.activeTab?.id).toBe('a1')
+  })
+})
+
+describe('the grid layout', () => {
+  it('is automatic until the human sets one, and null returns it to automatic', () => {
+    const { store } = window()
+    expect(store.gridLayout).toBeNull()
+    grid(store, 'a1', 'a2')
+    store.setGridLayout({ dir: 'col', ratio: 0.4, a: 'a1', b: 'a2' })
+    expect(store.gridLayout).toEqual({ dir: 'col', ratio: 0.4, a: 'a1', b: 'a2' })
+    store.setGridLayout(null)
+    expect(store.gridLayout).toBeNull()
+  })
+
+  it('is fitted to the grid tabs while the grid shows', () => {
+    const { store } = window()
+    grid(store, 'a1', 'a2')
+    store.setGridLayout({ dir: 'col', ratio: 0.4, a: 'a1', b: 'a2' })
+    store.activateTab('b1')
+    store.toggleGridTab()
+    expect(JSON.stringify(store.gridLayout)).toContain('b1')
+    store.removeTab('a2')
+    expect(JSON.stringify(store.gridLayout)).not.toContain('a2')
+  })
+
+  it('notifies once', () => {
+    const { store, changed } = window()
+    store.setGridLayout('a1')
+    expect(changed).toHaveBeenCalledTimes(1)
+  })
+})
+
+describe('the Active tab within the Active space', () => {
+  it('follows the Active tab into its space', () => {
+    const { store } = window()
+    store.activateTab('b1')
+    expect(store.activeSpace).toBe('b')
+    expect(store.activeTab?.spaceId).toBe('b')
+  })
+
+  it('is reselected when the Active space has tabs and the Active tab is in another', () => {
+    const { store } = window({ activeSpace: 'a', activeTab: 'b1' })
+    store.restoreViewState()
+    expect(store.activeTab?.spaceId).toBe(store.activeSpace)
+    expect(store.activeTab?.id).toBe('b1')
+  })
+
+  it('is left alone when the Active space has no tabs', () => {
+    const { store } = window()
+    store.upsertSpace(space('empty'))
+    store.selectSpace('empty')
+    store.activateTab('a1')
+    store.selectSpace('empty')
+    expect(store.activeSpace).toBe('empty')
+    expect(store.activeTab).toBeNull()
+  })
+})
+
+describe('the view state', () => {
+  it('is not saved before it has been restored', () => {
+    const { store, port } = window()
+    store.activateTab('a2')
+    grid(store, 'a1')
+    store.setGridLayout('a1')
+    expect(store.viewStateReady).toBe(false)
+    expect(port.writes).toEqual([])
+  })
+
+  it('is saved through the port after every write once restored', () => {
+    const { store, port } = window()
+    store.restoreViewState()
+    port.writes.length = 0
+    store.activateTab('a2')
+    expect(port.writes).toHaveLength(1)
+    store.toggleGridTab()
+    expect(port.writes).toHaveLength(2)
+    expect(port.saved).toEqual({ gridOn: true, gridTabs: ['a2'], gridLayout: null, activeSpace: 'a', activeTab: 'a2' })
+  })
+
+  it('saves the layout after the human sets one', () => {
+    const { store, port } = window()
+    store.restoreViewState()
+    grid(store, 'a1', 'a2')
+    store.setGridLayout({ dir: 'row', ratio: 0.3, a: 'a1', b: 'a2' })
+    expect(port.saved.gridLayout).toEqual({ dir: 'row', ratio: 0.3, a: 'a1', b: 'a2' })
+  })
+
+  it('is saved after the invariants, so a grid that turned itself off is saved off', () => {
+    const { store, port } = window()
+    store.restoreViewState()
+    grid(store, 'a1')
+    store.removeTab('a1')
+    expect(port.saved.gridOn).toBe(false)
+    expect(port.saved.gridTabs).toEqual([])
+  })
+
+  it('restores the Active tab, its space, the grid and its layout', () => {
+    const layout = { dir: 'row' as const, ratio: 0.3, a: 'a1', b: 'b1' }
+    const { store } = window({ gridOn: true, gridTabs: ['a1', 'b1'], gridLayout: layout, activeSpace: 'b', activeTab: 'b1' })
+    store.restoreViewState()
+    expect(store.viewStateReady).toBe(true)
+    expect(store.activeTab?.id).toBe('b1')
+    expect(store.activeSpace).toBe('b')
+    expect(store.gridOn).toBe(true)
+    expect(store.gridLayout).toEqual(layout)
+    expect(store.gridTabs().map((tab) => tab.id)).toEqual(['a1', 'b1'])
+  })
+
+  it('drops a saved grid tab that no longer exists, silently', () => {
+    const { store } = window({ gridOn: true, gridTabs: ['ghost', 'a2'], activeTab: 'a2', activeSpace: 'a' })
+    store.restoreViewState()
+    expect(store.gridTabs().map((tab) => tab.id)).toEqual(['a2'])
+    expect(store.gridOn).toBe(true)
+  })
+
+  it('leaves the grid off when none of its saved tabs exist', () => {
+    const { store } = window({ gridOn: true, gridTabs: ['ghost'], activeTab: 'a2', activeSpace: 'a' })
+    store.restoreViewState()
+    expect(store.gridOn).toBe(false)
+    expect(store.activeTab?.id).toBe('a2')
+  })
+
+  it('focuses the first pane when the saved Active tab is not one of the grid’s', () => {
+    const { store } = window({ gridOn: true, gridTabs: ['a2', 'b1'], activeTab: 'a1', activeSpace: 'a' })
+    store.restoreViewState()
+    expect(store.activeTab?.id).toBe('a2')
+  })
+
+  it('falls back to the saved space when the saved Active tab is gone', () => {
+    const { store } = window({ activeTab: 'ghost', activeSpace: 'b' })
+    store.restoreViewState()
+    expect(store.activeSpace).toBe('b')
+    expect(store.activeTab?.id).toBe('b1')
+  })
+
+  it('restores only once', () => {
+    const { store, port } = window({ activeTab: 'a2', activeSpace: 'a' })
+    store.restoreViewState()
+    store.activateTab('a3')
+    port.saved = { ...port.saved, activeTab: 'a1' }
+    store.restoreViewState()
+    expect(store.activeTab?.id).toBe('a3')
   })
 })
 

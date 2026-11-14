@@ -2,9 +2,11 @@
 // events here as plain calls and repaints from the single change notification; it keeps the DOM of each tab, keyed by id.
 import type { AgentInfo, AgentStateName, ContextUsage, SpaceInfo, SpaceTabInfo, StatusChange } from '../protocol/messages.ts'
 import type { AgentKind } from '../core/status/adapter.ts'
-import { gridMembers } from './grid/layout.ts'
+import { canJoinGrid, gridMembers } from './grid/layout.ts'
+import { addPane, removePane, repair, type Size, type Tree } from './grid/tree.ts'
 import { visited } from './recent-tabs.ts'
 import { sidebarSpaceOrder, tabStateOf, urgentTabs } from './sidebar-model.ts'
+import type { ViewStatePort } from './view-state.ts'
 
 // What a tab runs: a shell, or one of the agents.
 export type TabKind = 'shell' | AgentKind
@@ -33,9 +35,12 @@ export function kindOf(info: { kind: 'terminal' | AgentKind }): TabKind {
 export interface WindowStoreOptions {
   // Called once, synchronously, at the end of every write that changed something, after the invariants hold.
   changed: () => void
-  // The id of a tab the grid shows in the space, which a selection prefers over the space's recent tab while the grid is on.
-  gridPane?: (spaceId: string | null) => string | undefined
+  // Where the view state is saved to and restored from; saving starts once restoreViewState has run.
+  viewState: ViewStatePort
 }
+
+// What toggling the Active tab in the grid did: it joined, it left, the grid was full, or there was no Active tab.
+export type GridToggle = 'joined' | 'left' | 'refused' | 'none'
 
 type Mutable<T> = { -readonly [K in keyof T]: T[K] }
 
@@ -44,6 +49,14 @@ export interface WindowStore {
   readonly activeTab: Tab | null
   readonly activeSpace: string | null
   readonly refused: string | null
+  // Grid mode shows the tabs the human put in it, across spaces.
+  readonly gridOn: boolean
+  // The grid's custom layout, or null while it arranges itself; kept fitted to the grid's tabs while the grid shows.
+  readonly gridLayout: Tree | null
+  // The last grid pane that had the focus: the one a joining tab splits.
+  readonly lastGridFocus: string | null
+  // Whether the saved view state has been restored, which is when saving it starts.
+  readonly viewStateReady: boolean
   // Every tab's id, most recently shown first: Go to lists tabs and spaces in this order.
   readonly recentIds: readonly string[]
   tab(id: string): Tab | undefined
@@ -69,8 +82,15 @@ export interface WindowStore {
   removeTab(id: string): void
   activateTab(id: string): void
   selectSpace(spaceId: string | null, chosenId?: string): void
-  setInGrid(id: string, inGrid: boolean): void
-  setGridTabs(ids: string[]): void
+  // Puts the Active tab in the grid and shows it, or takes it out and shows it full screen; a grid of nine refuses.
+  // `size` is the grid's area, for splitting a custom layout.
+  toggleGridTab(size?: Size): GridToggle
+  // Shows or hides the grid; showing it focuses its first pane when the Active tab is not one.
+  setGrid(on: boolean): void
+  // The human arranged the grid: the layout is theirs, or null returns it to automatic.
+  setGridLayout(layout: Tree | null): void
+  // Restores the saved Active tab, Active space, grid and layout, once; saving starts here.
+  restoreViewState(): void
   setRefused(reason: string | null): void
   setSpaces(list: SpaceInfo[]): void
   upsertSpace(info: SpaceInfo): void
@@ -90,6 +110,10 @@ export function createWindowStore(options: WindowStoreOptions): WindowStore {
   let active: Mutable<Tab> | null = null
   let activeSpace: string | null = null
   let refused: string | null = null
+  let gridOn = false
+  let gridLayout: Tree | null = null
+  let lastGridFocus: string | null = null
+  let viewStateReady = false
   // The tabs whose kind came from their agent, so only those turn back into a shell when the agent ends.
   const detectedKinds = new Set<string>()
 
@@ -105,6 +129,22 @@ export function createWindowStore(options: WindowStoreOptions): WindowStore {
       const number = (counts.get(tab.spaceId) ?? 0) + 1
       counts.set(tab.spaceId, number)
       tab.number = number
+    }
+    // The Active tab belongs to the Active space, unless that space has no tabs.
+    if (active && active.spaceId !== activeSpace && order.some((tab) => tab.spaceId === activeSpace)) select(activeSpace)
+    // The grid gives way when it holds no tabs, or the Active tab is not one of its panes: a tab the grid does not show cannot be focused there.
+    const panes = gridMembers(order)
+    if (gridOn && (panes.length === 0 || (active !== null && !panes.includes(active)))) gridOn = false
+    if (gridOn) gridLayout &&= repair(gridLayout, panes.map((tab) => tab.id))
+    if (gridOn && active?.inGrid) lastGridFocus = active.id
+    if (viewStateReady) {
+      options.viewState.write({
+        gridOn,
+        gridTabs: panes.map((tab) => tab.id),
+        gridLayout,
+        activeSpace,
+        activeTab: active?.id ?? null,
+      })
     }
     options.changed()
   }
@@ -128,13 +168,18 @@ export function createWindowStore(options: WindowStoreOptions): WindowStore {
     activeSpace = spaceId
     const chosen = chosenId === undefined ? undefined : byId.get(chosenId)
     const remembered = spaceId ? byId.get(recentBySpace.get(spaceId)?.[0] ?? '') : undefined
-    const gridId = options.gridPane?.(spaceId)
-    const gridPane = gridId === undefined ? undefined : byId.get(gridId)
+    const gridPane = gridOn ? gridMembers(order).find((tab) => tab.spaceId === spaceId) : undefined
     active = chosen ?? gridPane ?? remembered ?? order.find((tab) => tab.spaceId === spaceId) ?? null
     if (active) {
       const id = active.id
       recentIds = [id, ...recentIds.filter((other) => other !== id)]
     }
+  }
+
+  // Shows the tab, and its space with it, and counts it as the most recently visited.
+  function activate(tab: Tab): void {
+    recentBySpace.set(tab.spaceId, visited(recentBySpace.get(tab.spaceId) ?? [], tab.id))
+    select(tab.spaceId, tab.id)
   }
 
   function remove(id: string): void {
@@ -165,6 +210,18 @@ export function createWindowStore(options: WindowStoreOptions): WindowStore {
     },
     get refused() {
       return refused
+    },
+    get gridOn() {
+      return gridOn
+    },
+    get gridLayout() {
+      return gridLayout
+    },
+    get lastGridFocus() {
+      return lastGridFocus
+    },
+    get viewStateReady() {
+      return viewStateReady
     },
     get recentIds() {
       return recentIds
@@ -249,22 +306,54 @@ export function createWindowStore(options: WindowStoreOptions): WindowStore {
     activateTab(id) {
       const tab = byId.get(id)
       if (!tab) return
-      recentBySpace.set(tab.spaceId, visited(recentBySpace.get(tab.spaceId) ?? [], id))
-      select(tab.spaceId, id)
+      activate(tab)
       commit()
     },
     selectSpace(spaceId, chosenId) {
       select(spaceId, chosenId)
       commit()
     },
-    setInGrid(id, inGrid) {
-      const tab = byId.get(id)
-      if (!tab) return
-      tab.inGrid = inGrid
+    toggleGridTab(size) {
+      const tab = active
+      if (!tab) return 'none'
+      if (tab.inGrid) {
+        if (gridLayout) gridLayout = removePane(gridLayout, tab.id)
+        gridOn = false
+        tab.inGrid = false
+        commit()
+        return 'left'
+      }
+      if (!canJoinGrid(gridMembers(order).length)) return 'refused'
+      // With a layout of the human's own, the new pane splits the one they last had focus in.
+      if (gridLayout) gridLayout = addPane(gridLayout, lastGridFocus ?? '', tab.id, size)
+      gridOn = true
+      tab.inGrid = true
+      commit()
+      return 'joined'
+    },
+    setGrid(on) {
+      const panes = gridMembers(order)
+      if (on && panes.length > 0 && (active === null || !panes.includes(active))) activate(panes[0])
+      gridOn = on
       commit()
     },
-    setGridTabs(ids) {
-      for (const tab of order) tab.inGrid = ids.includes(tab.id)
+    setGridLayout(layout) {
+      gridLayout = layout
+      commit()
+    },
+    restoreViewState() {
+      if (viewStateReady) return
+      const saved = options.viewState.read()
+      // A saved grid tab that is gone is dropped silently.
+      for (const tab of order) tab.inGrid = saved.gridTabs.includes(tab.id)
+      gridLayout = saved.gridLayout
+      const panes = gridMembers(order)
+      gridOn = saved.gridOn && panes.length > 0
+      let tab = saved.activeTab ? byId.get(saved.activeTab) ?? null : null
+      if (gridOn && (!tab || !tab.inGrid)) tab = panes[0]
+      if (tab) activate(tab)
+      else if (saved.activeSpace && spaces.has(saved.activeSpace)) select(saved.activeSpace)
+      viewStateReady = true
       commit()
     },
     setRefused(reason) {

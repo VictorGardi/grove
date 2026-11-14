@@ -17,12 +17,13 @@ import { DEFAULT_ZOOM, readZoom, stepZoom, writeZoom, type ZoomStep } from './zo
 import { applyLayout, applySettings, applyTheme, findAction, formatBinding, launcherLine } from './config.ts'
 import { openTerminal, terminalFontSize, tokenValue, type TerminalView } from './terminal.ts'
 import { createArranger, clearPlacement, PANE_MIN } from './grid/arrange.ts'
-import { canJoinGrid, type PaneDirection } from './grid/layout.ts'
-import { addPane, autoTree, neighborByGeometry, nudge, removePane, repair, swapPanes, type Tree } from './grid/tree.ts'
+import type { PaneDirection } from './grid/layout.ts'
+import { autoTree, neighborByGeometry, nudge, swapPanes, type Tree } from './grid/tree.ts'
 import { previousOf, stepFrom } from './recent-tabs.ts'
 import { PANE_DIM_RANGE, readPaneDim, writePaneDim } from './pane-dim.ts'
 import { readSidebarHidden, writeSidebarHidden, type KeyValueStore } from './sidebar-state.ts'
-import { readViewState, writeViewState } from './view-state.ts'
+import { createFocusSignal } from './focus-signal.ts'
+import { storageViewState } from './view-state.ts'
 import { groupAgents, jumpTargets, nextUrgent, shortFolder, sidebarSpaceOrder, spaceAt, tileIndex } from './sidebar-model.ts'
 import { createWindowStore, type Tab, type TabKind } from './window-store.ts'
 import { contextMeter, hideContextTip, markWithContext } from './context-badge.ts'
@@ -89,11 +90,7 @@ interface AgentRow {
 
 const bridge = createBridge()
 const encoder = new TextEncoder()
-const store = createWindowStore({
-  changed: onStoreChanged,
-  // With the grid showing, a space that has a pane in it keeps the grid by focusing that pane.
-  gridPane: (spaceId) => (gridOn ? store.gridTabs().find((tab) => tab.spaceId === spaceId)?.id : undefined),
-})
+const store = createWindowStore({ changed: onStoreChanged, viewState: storageViewState(storage) })
 const doms = new Map<string, TabDom>()
 // Whether the window is connected to the core: the changes panel says so instead of showing an empty diff.
 let coreConnected = false
@@ -104,13 +101,6 @@ let keys: Record<KeyAction, string> = DEFAULT_VALUES.keys
 let themeTokens: string[] = []
 let noteShown = ''
 const isMac = navigator.platform.startsWith('Mac')
-// Grid mode shows the tabs the human put in it, across spaces.
-let gridOn = false
-// The grid's custom layout, or null while it arranges itself; it becomes the human's once they drag or resize a pane.
-let gridLayout: Tree | null = null
-// The last grid pane that had the focus: the one a joining tab splits.
-let lastGridFocus: string | null = null
-let viewStateReady = false
 // The last attention.focus sent, as a key; an identical one is skipped until a reconnect clears it.
 let sentFocus: string | null = null
 // The states page (?demo=states) runs without a core: nothing is sent to it.
@@ -329,8 +319,7 @@ const keyActions: Record<KeyAction, () => void> = {
   },
   'grid-tab': () => toggleGridTab(),
   'grid-reset-layout': () => {
-    gridLayout = null
-    paint()
+    store.setGridLayout(null)
   },
   'next-urgent': () => jumpToUrgent(),
   palette: () => goTo.open(),
@@ -653,9 +642,7 @@ async function attachScreen(dom: TabDom): Promise<void> {
 
 // The tree the grid shows: the human's layout fitted to the panes, else the automatic one.
 function gridTree(members: readonly Tab[]): Tree | null {
-  const ids = members.map((tab) => tab.id)
-  if (gridLayout) gridLayout = repair(gridLayout, ids)
-  return gridLayout ?? autoTree(ids)
+  return store.gridLayout ?? autoTree(members.map((tab) => tab.id))
 }
 
 function terminalsSize(): { w: number; h: number } {
@@ -665,9 +652,7 @@ function terminalsSize(): { w: number; h: number } {
 
 // The human changed the grid's layout: it is theirs from now on, so it is shown, kept, and the terminals refit to their new sizes.
 function arrangeGrid(tree: Tree): void {
-  gridLayout = tree
-  paintGrid(store.gridTabs())
-  saveViewState()
+  store.setGridLayout(tree)
   requestAnimationFrame(fitShown)
 }
 
@@ -680,10 +665,11 @@ const gridArranger = createArranger({
 
 // Lays the panes out in grid mode, or clears the grid's classes and placement when it is off.
 function paintGrid(members: readonly Tab[]): void {
+  const gridOn = store.gridOn
   terminals.classList.toggle('grid-panes', gridOn)
   gridArranger.paint(gridOn ? gridTree(members) : null)
   // Reset only has something to do once the human has made the layout their own.
-  gridReset.hidden = !gridOn || gridLayout === null
+  gridReset.hidden = !gridOn || store.gridLayout === null
   for (const tab of store.tabs) {
     const dom = doms.get(tab.id)
     if (!dom) continue
@@ -695,7 +681,7 @@ function paintGrid(members: readonly Tab[]): void {
 
 // Refits what is on screen: the grid's panes, else the active tab.
 function fitShown(): void {
-  for (const tab of gridOn ? store.gridTabs() : store.activeTab ? [store.activeTab] : []) doms.get(tab.id)?.view.fit()
+  for (const tab of store.gridOn ? store.gridTabs() : store.activeTab ? [store.activeTab] : []) doms.get(tab.id)?.view.fit()
 }
 
 // The tab's strip button and its pane header, from its name and state.
@@ -779,7 +765,7 @@ async function refreshChanges(tab: Tab): Promise<void> {
 }
 
 setInterval(() => {
-  for (const tab of gridOn ? store.gridTabs() : store.activeTab ? [store.activeTab] : []) refreshChanges(tab).catch(report)
+  for (const tab of store.gridOn ? store.gridTabs() : store.activeTab ? [store.activeTab] : []) refreshChanges(tab).catch(report)
 }, CHANGES_EVERY_MS)
 
 // The empty state shows when there is no space, or the space has no tabs.
@@ -793,20 +779,14 @@ function paintEmpty(): void {
     : `Press + in the tab strip (${shortcut('new-shell')}) to open a shell.`
 }
 
-// Keeps what the window shows (the grid, its layout, the space and tab in focus) for the next start.
-function saveViewState(): void {
-  if (viewStateReady && !demoMode) {
-    writeViewState(storage(), { gridOn, gridTabs: store.gridTabs().map((tab) => tab.id), gridLayout, activeSpace: store.activeSpace, activeTab: store.activeTab?.id ?? null })
-  }
-}
+const signalActiveTab = createFocusSignal(() => hostBus.emit('activeTabChanged', undefined))
 
 // Tabs of other spaces stay mounted and only hidden, so their shells keep running and their screens keep filling.
 function paint(): void {
-  // The grid gives way when it holds no tabs, or the focused tab is not one of its panes: a tab the grid does not show cannot be focused there.
   const shown = store.gridTabs()
   const active = store.activeTab
   const activeSpace = store.activeSpace
-  if (gridOn && (shown.length === 0 || (active !== null && !shown.includes(active)))) gridOn = false
+  const gridOn = store.gridOn
   const members = gridOn ? shown : []
   for (const tab of store.tabs) {
     const dom = doms.get(tab.id)
@@ -825,14 +805,12 @@ function paint(): void {
   renderSpaces()
   renderAgents()
   paintEmpty()
-  hostBus.emit('activeTabChanged', undefined)
+  signalActiveTab(activeSpace, active?.id ?? null)
   const idle = activeSpace === null || store.refused !== null
   gridToggle.setAttribute('aria-pressed', String(gridOn))
   paneDim.hidden = !gridOn
-  if (gridOn && active?.inGrid) lastGridFocus = active.id
   gridToggle.disabled = !gridOn && (idle || shown.length === 0)
   for (const button of launcherBar.querySelectorAll('button')) button.disabled = idle
-  saveViewState()
   reportFocus()
 }
 
@@ -1000,21 +978,7 @@ function focusSpace(place: number): void {
 // Cmd+Shift+G: the active tab goes into the grid, and the grid shows. A tab already in the grid goes out of it and shows full screen.
 // A tenth tab is refused, with the reason in the status line.
 function toggleGridTab(): void {
-  const active = store.activeTab
-  if (!active) return
-  // The grid's own state is settled first: the store write that follows repaints once.
-  if (active.inGrid) {
-    if (gridLayout) gridLayout = removePane(gridLayout, active.id)
-    gridOn = false
-    store.setInGrid(active.id, false)
-  } else if (canJoinGrid(store.gridTabs().length)) {
-    // With a layout of the human's own, the new pane splits the one they last had focus in.
-    if (gridLayout) gridLayout = addPane(gridLayout, lastGridFocus ?? '', active.id, terminalsSize())
-    gridOn = true
-    store.setInGrid(active.id, true)
-  } else {
-    statusLine.textContent = 'The grid holds nine tabs. Take a tab out of it first.'
-  }
+  if (store.toggleGridTab(terminalsSize()) === 'refused') statusLine.textContent = 'The grid holds nine tabs. Take a tab out of it first.'
 }
 
 // Cmd+N: adds a new space at the home folder (spaces.add always adds one), selects it, and opens one shell tab there.
@@ -1201,17 +1165,7 @@ async function resync(): Promise<void> {
     }
   }
 
-  if (!viewStateReady && state.refused === null) {
-    const saved = readViewState(storage())
-    store.setGridTabs(saved.gridTabs)
-    gridLayout = saved.gridLayout
-    gridOn = saved.gridOn && store.gridTabs().length > 0
-    let active = saved.activeTab ? store.tab(saved.activeTab) ?? null : null
-    if (gridOn && (!active || !active.inGrid)) active = store.gridTabs()[0]
-    if (active) store.activateTab(active.id)
-    else if (saved.activeSpace && store.space(saved.activeSpace)) selectSpace(saved.activeSpace)
-    viewStateReady = true
-  }
+  if (!store.viewStateReady && state.refused === null) store.restoreViewState()
   let spaceId = store.activeSpace
   if (!spaceId || !store.space(spaceId)) spaceId = state.spaces[0]?.id ?? null
   selectSpace(spaceId, store.activeTab?.spaceId === spaceId ? store.activeTab.id : undefined)
@@ -1335,12 +1289,7 @@ appEl.addEventListener('transitionend', (event) => {
 })
 gridReset.addEventListener('click', () => keyActions['grid-reset-layout']())
 gridToggle.addEventListener('click', () => {
-  const shown = store.gridTabs()
-  // Showing the grid focuses its first pane when the focused tab is not one of them.
-  if (!gridOn && shown.length > 0 && (store.activeTab === null || !shown.includes(store.activeTab))) activate(shown[0].id)
-  gridOn = !gridOn
-  gridToggle.setAttribute('aria-pressed', String(gridOn))
-  paint()
+  store.setGrid(!store.gridOn)
 })
 // The button and Cmd+B both come here, so they show the same state. The state is kept in the window's storage across a reload.
 function storage(): KeyValueStore | null {
@@ -1513,7 +1462,7 @@ window.addEventListener(
     if (action === null) {
       // In grid mode Cmd+Option+arrow (Ctrl+Alt off the Mac) moves between the panes, with Shift it swaps the pane with its neighbour, and
       // Cmd+Ctrl+Option+arrow moves the divider next to the pane. Plain Cmd+arrow never reaches the page, and Ctrl+arrow is Mission Control.
-      const direction = gridOn ? ARROW_DIRECTIONS[event.key] : undefined
+      const direction = store.gridOn ? ARROW_DIRECTIONS[event.key] : undefined
       const modifier = isMac ? event.metaKey && !event.ctrlKey : event.ctrlKey && !event.metaKey
       const resizing = event.metaKey && event.ctrlKey && event.altKey && !event.shiftKey
       if (!direction || !event.altKey || (!resizing && !modifier)) return

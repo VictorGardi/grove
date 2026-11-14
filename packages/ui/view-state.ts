@@ -40,3 +40,29 @@ export function writeViewState(store: KeyValueStore | null, state: ViewState): v
     console.warn('Could not save window view state', error)
   }
 }
+
+// Where the window keeps its view state: browser storage in production, memory in tests, nothing in the states demo.
+export interface ViewStatePort {
+  read(): ViewState
+  write(state: ViewState): void
+}
+
+export function storageViewState(store: () => KeyValueStore | null): ViewStatePort {
+  return { read: () => readViewState(store()), write: (state) => writeViewState(store(), state) }
+}
+
+export const noViewState: ViewStatePort = { read: empty, write: () => {} }
+
+// Keeps what was written, starting from `saved`; `writes` lists every write in order.
+export function memoryViewState(saved: Partial<ViewState> = {}): ViewStatePort & { saved: ViewState; writes: ViewState[] } {
+  const port = {
+    saved: { ...empty(), ...saved },
+    writes: [] as ViewState[],
+    read: () => structuredClone(port.saved),
+    write(state: ViewState) {
+      port.saved = structuredClone(state)
+      port.writes.push(port.saved)
+    },
+  }
+  return port
+}
