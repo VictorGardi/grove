@@ -42,6 +42,19 @@ export interface WindowStoreOptions {
 // What toggling the Active tab in the grid did: it joined, it left, the grid was full, or there was no Active tab.
 export type GridToggle = 'joined' | 'left' | 'refused' | 'none'
 
+// The core's answer to spaces.list.
+export interface ListedState {
+  spaces: SpaceInfo[]
+  tabs: SpaceTabInfo[]
+  refused: string | null
+}
+
+// What reconciling asks of the caller: the alive tabs to attach, in tab order, and the tabs just marked exited with their exit codes.
+export interface ReconcileEffects {
+  attach: string[]
+  exited: { id: string; exitCode: number | null }[]
+}
+
 type Mutable<T> = { -readonly [K in keyof T]: T[K] }
 
 export interface WindowStore {
@@ -91,8 +104,8 @@ export interface WindowStore {
   setGridLayout(layout: Tree | null): void
   // Restores the saved Active tab, Active space, grid and layout, once; saving starts here.
   restoreViewState(): void
-  setRefused(reason: string | null): void
-  setSpaces(list: SpaceInfo[]): void
+  // Brings the window in line with the core's spaces-and-tabs list: the effects are the work left for the caller, so the store never awaits.
+  reconcile(state: ListedState): ReconcileEffects
   upsertSpace(info: SpaceInfo): void
   dropSpace(id: string): void
   setAgents(list: AgentInfo[]): void
@@ -176,6 +189,52 @@ export function createWindowStore(options: WindowStoreOptions): WindowStore {
     }
   }
 
+  // Adds a tab the core listed, or takes the kind and label of one already held.
+  function upsertTab(info: SpaceTabInfo): Mutable<Tab> {
+    const existing = byId.get(info.id)
+    if (existing) {
+      existing.label = info.label
+      // The core knows a tab by what it started, so a kind this store detected from the agent is kept.
+      const kind = kindOf(info)
+      if (!(kind === 'shell' && detectedKinds.has(info.id))) existing.kind = kind
+      return existing
+    }
+    const tab: Mutable<Tab> = {
+      id: info.id,
+      spaceId: info.spaceId,
+      spacePath: info.spacePath,
+      kind: kindOf(info),
+      label: info.label,
+      number: 0,
+      inGrid: false,
+      exited: false,
+    }
+    byId.set(tab.id, tab)
+    order.push(tab)
+    return tab
+  }
+
+  function exit(id: string): boolean {
+    const tab = byId.get(id)
+    if (!tab || tab.exited) return false
+    tab.exited = true
+    return true
+  }
+
+  function restore(): void {
+    const saved = options.viewState.read()
+    // A saved grid tab that is gone is dropped silently.
+    for (const tab of order) tab.inGrid = saved.gridTabs.includes(tab.id)
+    gridLayout = saved.gridLayout
+    const panes = gridMembers(order)
+    gridOn = saved.gridOn && panes.length > 0
+    let tab = saved.activeTab ? byId.get(saved.activeTab) ?? null : null
+    if (gridOn && (!tab || !tab.inGrid)) tab = panes[0]
+    if (tab) activate(tab)
+    else if (saved.activeSpace && spaces.has(saved.activeSpace)) select(saved.activeSpace)
+    viewStateReady = true
+  }
+
   // Shows the tab, and its space with it, and counts it as the most recently visited.
   function activate(tab: Tab): void {
     recentBySpace.set(tab.spaceId, visited(recentBySpace.get(tab.spaceId) ?? [], tab.id))
@@ -253,27 +312,7 @@ export function createWindowStore(options: WindowStoreOptions): WindowStore {
     },
 
     addTab(info) {
-      const existing = byId.get(info.id)
-      if (existing) {
-        existing.label = info.label
-        // The core knows a tab by what it started, so a kind this store detected from the agent is kept.
-        const kind = kindOf(info)
-        if (!(kind === 'shell' && detectedKinds.has(info.id))) existing.kind = kind
-        commit()
-        return existing
-      }
-      const tab: Mutable<Tab> = {
-        id: info.id,
-        spaceId: info.spaceId,
-        spacePath: info.spacePath,
-        kind: kindOf(info),
-        label: info.label,
-        number: 0,
-        inGrid: false,
-        exited: false,
-      }
-      byId.set(tab.id, tab)
-      order.push(tab)
+      const tab = upsertTab(info)
       commit()
       return tab
     },
@@ -284,9 +323,7 @@ export function createWindowStore(options: WindowStoreOptions): WindowStore {
       commit()
     },
     markExited(id) {
-      const tab = byId.get(id)
-      if (!tab || tab.exited) return false
-      tab.exited = true
+      if (!exit(id)) return false
       commit()
       return true
     },
@@ -343,27 +380,30 @@ export function createWindowStore(options: WindowStoreOptions): WindowStore {
     },
     restoreViewState() {
       if (viewStateReady) return
-      const saved = options.viewState.read()
-      // A saved grid tab that is gone is dropped silently.
-      for (const tab of order) tab.inGrid = saved.gridTabs.includes(tab.id)
-      gridLayout = saved.gridLayout
-      const panes = gridMembers(order)
-      gridOn = saved.gridOn && panes.length > 0
-      let tab = saved.activeTab ? byId.get(saved.activeTab) ?? null : null
-      if (gridOn && (!tab || !tab.inGrid)) tab = panes[0]
-      if (tab) activate(tab)
-      else if (saved.activeSpace && spaces.has(saved.activeSpace)) select(saved.activeSpace)
-      viewStateReady = true
+      restore()
       commit()
     },
-    setRefused(reason) {
-      refused = reason
-      commit()
-    },
-    setSpaces(list) {
+    reconcile(state) {
       spaces.clear()
-      for (const space of list) spaces.set(space.id, space)
+      for (const space of state.spaces) spaces.set(space.id, space)
+      refused = state.refused
+      const effects: ReconcileEffects = { attach: [], exited: [] }
+      const alive = new Set(state.tabs.filter((info) => info.alive).map((info) => info.id))
+      // A refused state file says nothing about which tabs are alive, so no tab is marked exited for it.
+      if (refused === null) {
+        for (const tab of order) if (!alive.has(tab.id) && exit(tab.id)) effects.exited.push({ id: tab.id, exitCode: null })
+      }
+      for (const info of state.tabs) {
+        const known = byId.has(info.id)
+        upsertTab(info)
+        if (info.alive) effects.attach.push(info.id)
+        else if (!known && exit(info.id)) effects.exited.push({ id: info.id, exitCode: info.exitCode })
+      }
+      if (!viewStateReady && refused === null) restore()
+      const spaceId = activeSpace && spaces.has(activeSpace) ? activeSpace : (state.spaces[0]?.id ?? null)
+      select(spaceId, active?.spaceId === spaceId ? active.id : undefined)
       commit()
+      return effects
     },
     upsertSpace(info) {
       spaces.set(info.id, info)

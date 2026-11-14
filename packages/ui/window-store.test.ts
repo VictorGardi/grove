@@ -409,16 +409,6 @@ describe('urgent tabs', () => {
   })
 })
 
-describe('the refused state', () => {
-  it('holds the reason the core refused its state file', () => {
-    const { store, changed } = window()
-    expect(store.refused).toBeNull()
-    store.setRefused('bad json')
-    expect(store.refused).toBe('bad json')
-    expect(changed).toHaveBeenCalledTimes(1)
-  })
-})
-
 // Puts the tabs in the grid one by one, each as the Active tab.
 function grid(store: ReturnType<typeof window>['store'], ...ids: string[]): void {
   for (const id of ids) {
@@ -697,6 +687,135 @@ describe('the view state', () => {
     port.saved = { ...port.saved, activeTab: 'a1' }
     store.restoreViewState()
     expect(store.activeTab?.id).toBe('a3')
+  })
+})
+
+// What the core lists: spaces a and b, the tabs given.
+function listing(tabs: SpaceTabInfo[], overrides: Partial<{ spaces: SpaceInfo[]; refused: string | null }> = {}) {
+  return { spaces: [space('a'), space('b')], tabs, refused: null, ...overrides }
+}
+
+function fresh(saved?: Parameters<typeof memoryViewState>[0]) {
+  const changed = vi.fn()
+  const port = memoryViewState(saved)
+  const store = createWindowStore({ changed, viewState: port })
+  return { store, changed, port }
+}
+
+describe('reconciling with the core', () => {
+  it('creates the spaces and tabs, and returns the alive tabs to attach in tab order', () => {
+    const { store } = fresh()
+    const effects = store.reconcile(listing([wire('a1', 'a'), wire('a2', 'a', { alive: false, exitCode: 3 }), wire('b1', 'b')]))
+    expect(store.spaces().map((s) => s.id)).toEqual(['a', 'b'])
+    expect(store.tabs.map((tab) => tab.id)).toEqual(['a1', 'a2', 'b1'])
+    expect(effects.attach).toEqual(['a1', 'b1'])
+    expect(effects.exited).toEqual([{ id: 'a2', exitCode: 3 }])
+    expect(store.tab('a2')?.exited).toBe(true)
+  })
+
+  it('is idempotent: a second listing adds no tab twice', () => {
+    const { store } = fresh()
+    const tabs = [wire('a1', 'a'), wire('a2', 'a')]
+    store.reconcile(listing(tabs))
+    const again = store.reconcile(listing(tabs))
+    expect(store.tabs).toHaveLength(2)
+    expect(again.exited).toEqual([])
+  })
+
+  it('marks a tab the core no longer has alive as exited, with no exit code', () => {
+    const { store } = fresh()
+    store.reconcile(listing([wire('a1', 'a'), wire('a2', 'a')]))
+    const effects = store.reconcile(listing([wire('a1', 'a')]))
+    expect(effects.exited).toEqual([{ id: 'a2', exitCode: null }])
+    expect(store.tab('a2')?.exited).toBe(true)
+    expect(effects.attach).toEqual(['a1'])
+  })
+
+  it('does not report a tab that was already an Exited tab', () => {
+    const { store } = fresh()
+    store.reconcile(listing([wire('a1', 'a', { alive: false })]))
+    expect(store.reconcile(listing([wire('a1', 'a', { alive: false })])).exited).toEqual([])
+  })
+
+  it('marks nothing exited and exposes the reason when the core refused its state', () => {
+    const { store } = fresh()
+    store.reconcile(listing([wire('a1', 'a'), wire('a2', 'a')]))
+    const effects = store.reconcile(listing([], { refused: 'bad json' }))
+    expect(effects.exited).toEqual([])
+    expect(store.tabs.every((tab) => !tab.exited)).toBe(true)
+    expect(store.refused).toBe('bad json')
+  })
+
+  it('clears the refused reason when the core loads its state again', () => {
+    const { store } = fresh()
+    store.reconcile(listing([], { refused: 'bad json' }))
+    store.reconcile(listing([]))
+    expect(store.refused).toBeNull()
+  })
+
+  it('keeps a kind detected from the agent and takes the core’s label', () => {
+    const { store } = fresh()
+    store.reconcile(listing([wire('a1', 'a')]))
+    store.setAgents([entry('a1', 'claude')])
+    expect(store.tab('a1')?.kind).toBe('claude')
+    store.reconcile(listing([wire('a1', 'a', { label: 'main' })]))
+    expect(store.tab('a1')).toMatchObject({ kind: 'claude', label: 'main' })
+  })
+
+  it('sets the kind of an existing tab from the core when none was detected', () => {
+    const { store } = fresh()
+    store.reconcile(listing([wire('a1', 'a')]))
+    store.reconcile(listing([wire('a1', 'a', { kind: 'copilot' })]))
+    expect(store.tab('a1')?.kind).toBe('copilot')
+  })
+
+  it('brings back the Active tab, grid and Recent order on first run', () => {
+    const layout = { dir: 'row' as const, ratio: 0.3, a: 'a1', b: 'b1' }
+    const { store } = fresh({ gridOn: true, gridTabs: ['a1', 'b1'], gridLayout: layout, activeSpace: 'b', activeTab: 'b1' })
+    store.reconcile(listing([wire('a1', 'a'), wire('a2', 'a'), wire('b1', 'b')]))
+    expect(store.viewStateReady).toBe(true)
+    expect(store.activeTab?.id).toBe('b1')
+    expect(store.activeSpace).toBe('b')
+    expect(store.gridOn).toBe(true)
+    expect(store.gridLayout).toEqual(layout)
+    expect(store.recent('b')).toEqual(['b1'])
+    expect(store.recentIds[0]).toBe('b1')
+  })
+
+  it('does not restore the view state while the core’s state is refused', () => {
+    const { store } = fresh({ activeSpace: 'b', activeTab: 'b1' })
+    store.reconcile(listing([wire('b1', 'b')], { refused: 'bad json' }))
+    expect(store.viewStateReady).toBe(false)
+  })
+
+  it('restores only on the first run', () => {
+    const { store } = fresh({ activeSpace: 'a', activeTab: 'a1' })
+    const tabs = [wire('a1', 'a'), wire('a2', 'a')]
+    store.reconcile(listing(tabs))
+    store.activateTab('a2')
+    store.reconcile(listing(tabs))
+    expect(store.activeTab?.id).toBe('a2')
+  })
+
+  it('falls back to the first space when the Active space is gone', () => {
+    const { store } = fresh({ activeSpace: 'gone', activeTab: 'ghost' })
+    store.reconcile(listing([wire('a1', 'a'), wire('b1', 'b')]))
+    expect(store.activeSpace).toBe('a')
+    expect(store.activeTab?.id).toBe('a1')
+  })
+
+  it('moves off a space the core dropped', () => {
+    const { store } = fresh()
+    store.reconcile(listing([wire('a1', 'a'), wire('b1', 'b')]))
+    store.selectSpace('b')
+    store.reconcile(listing([wire('a1', 'a')], { spaces: [space('a')] }))
+    expect(store.activeSpace).toBe('a')
+  })
+
+  it('notifies once', () => {
+    const { store, changed } = fresh()
+    store.reconcile(listing([wire('a1', 'a'), wire('a2', 'a', { alive: false })]))
+    expect(changed).toHaveBeenCalledTimes(1)
   })
 })
 

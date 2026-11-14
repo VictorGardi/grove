@@ -606,7 +606,11 @@ function deliver(dom: TabDom, bytes: Uint8Array): void {
 }
 
 function markExited(id: string, exitCode: number | null = null): void {
-  if (!store.markExited(id)) return
+  if (store.markExited(id)) writeExited(id, exitCode)
+}
+
+// The tab's process is gone: it stops counting as attached and its screen says so.
+function writeExited(id: string, exitCode: number | null): void {
   const dom = doms.get(id)
   if (!dom) return
   dom.attached = false
@@ -1146,29 +1150,11 @@ function refreshAges(): void {
 // Brings the page in line with the core: spaces and their tabs are listed, alive tabs are shown and reattached, gone ones are marked.
 async function resync(): Promise<void> {
   const state = await bridge.rpc('spaces.list', {})
-  store.setSpaces(state.spaces)
-  store.setRefused(state.refused)
+  const effects = store.reconcile(state)
   if (state.refused) statusLine.textContent = `State file refused: ${state.refused}`
-
-  const alive = new Set(state.tabs.filter((info) => info.alive).map((info) => info.id))
-  if (state.refused === null) {
-    for (const tab of [...store.tabs]) if (!alive.has(tab.id)) markExited(tab.id)
-  }
-  for (const info of state.tabs) {
-    const known = store.tab(info.id) !== undefined
-    store.addTab(info)
-    if (info.alive) {
-      // One tab that fails to attach is reported and the others still attach, so a bad tab cannot leave every terminal blank.
-      await attach(doms.get(info.id)!).catch(report)
-    } else if (!known) {
-      markExited(info.id, info.exitCode)
-    }
-  }
-
-  if (!store.viewStateReady && state.refused === null) store.restoreViewState()
-  let spaceId = store.activeSpace
-  if (!spaceId || !store.space(spaceId)) spaceId = state.spaces[0]?.id ?? null
-  selectSpace(spaceId, store.activeTab?.spaceId === spaceId ? store.activeTab.id : undefined)
+  for (const { id, exitCode } of effects.exited) writeExited(id, exitCode)
+  // One tab that fails to attach is reported and the others still attach, so a bad tab cannot leave every terminal blank.
+  for (const id of effects.attach) await attach(doms.get(id)!).catch(report)
   await refreshAgents()
 }
 
