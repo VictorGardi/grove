@@ -1,5 +1,5 @@
 // The Go to overlay: a filter box over the tabs of every space, grouped by space. Up and Down move the highlight, Enter goes to
-// that tab, Esc and a click on the backdrop close it. The rules for what is listed are in goto-model.ts.
+// that tab (Cmd+Enter opens it in the grid), Esc and a click on the backdrop close it. The rules for what is listed are in goto-model.ts.
 import type { AgentKind } from '../core/status/adapter.ts'
 import type { AgentStateName } from '../protocol/messages.ts'
 import { hideContextTip } from './context-badge.ts'
@@ -20,7 +20,8 @@ export interface GoToDeps {
   indicator(state: AgentStateName, agent: AgentKind | null): HTMLElement
   // The row's agent icon with its context ring, as the agents list in the sidebar draws it.
   agentMark(row: GoToRow & { agent: AgentKind; agentName: string }): HTMLElement
-  go(tabId: string): void
+  // `inGrid` is set when the human asked to open it in the grid (Cmd+Enter) instead of just going there.
+  go(tabId: string, inGrid: boolean): void
   // Called after the overlay closes, to give the focus back.
   closed(): void
 }
@@ -98,9 +99,9 @@ export function createGoTo(elements: GoToElements, deps: GoToDeps): GoTo {
     render()
   }
 
-  function choose(tabId: string): void {
+  function choose(tabId: string, inGrid = false): void {
     close()
-    deps.go(tabId)
+    deps.go(tabId, inGrid)
   }
 
   function close(): void {
@@ -133,7 +134,7 @@ export function createGoTo(elements: GoToElements, deps: GoToDeps): GoTo {
       move(event.key === 'ArrowDown' ? 1 : -1)
     } else if (event.key === 'Enter' && !event.isComposing && highlight !== null) {
       event.preventDefault()
-      choose(highlight)
+      choose(highlight, event.metaKey || event.ctrlKey)
     }
   })
   modal.addEventListener('pointerdown', (event) => {

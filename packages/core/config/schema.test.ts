@@ -51,6 +51,7 @@ describe('config schema', () => {
         'grid-tab': 'mod+shift+g',
         'grid-reset-layout': 'mod+shift+l',
         'next-urgent': 'mod+.',
+        'newest-tab': 'mod+shift+j',
         palette: 'mod+p',
         'sidebar-toggle': 'mod+b',
         notes: 'mod+shift+n',

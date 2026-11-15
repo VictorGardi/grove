@@ -212,7 +212,10 @@ const goTo = createGoTo(
       mark.title = row.agentName
       return markWithContext(mark, store.agent(row.tabId)?.context, row.agent)
     },
-    go: (tabId) => activate(tabId),
+    go: (tabId, inGrid) => {
+      activate(tabId)
+      if (inGrid) showInGrid()
+    },
     closed: focusActive,
   },
 )
@@ -331,6 +334,11 @@ const keyActions: Record<KeyAction, () => void> = {
     store.setGridLayout(null)
   },
   'next-urgent': () => jumpToUrgent(),
+  // The store lists tabs in the order they were opened, so the last one is the newest, in any space.
+  'newest-tab': () => {
+    const newest = store.tabs.at(-1)
+    if (newest) activate(newest.id)
+  },
   palette: () => goTo.open(),
   'sidebar-toggle': () => sidebarToggle.click(),
   notes: () => rail.toggle('notes')?.(),
@@ -996,6 +1004,12 @@ function focusSpace(place: number): void {
   if (spaceId === null) return
   selectSpace(spaceId)
   focusActive()
+}
+
+// Puts the active tab in the grid and shows the grid, whether or not the tab was already a member.
+function showInGrid(): void {
+  if (store.activeTab?.inGrid) store.setGrid(true)
+  else toggleGridTab()
 }
 
 // Cmd+Shift+G: the active tab goes into the grid, and the grid shows. A tab already in the grid goes out of it and shows full screen.

@@ -30,15 +30,16 @@ describe('keys panel', () => {
     expect(chip('next-urgent').textContent).toBe('Cmd+.')
     expect(chip('grid-tab').textContent).toBe('Cmd+Shift+G')
     expect(chip('grid-reset-layout').textContent).toBe('Cmd+Shift+L')
+    expect(chip('newest-tab').textContent).toBe('Cmd+Shift+J')
   })
 
   it('saves the combination pressed after a click', async () => {
     chip('next-urgent').click()
     expect(chip('next-urgent').textContent).toBe('Press keys…')
-    const event = press(chip('next-urgent'), { key: 'j', code: 'KeyJ', metaKey: true, shiftKey: true })
+    const event = press(chip('next-urgent'), { key: 'k', code: 'KeyK', metaKey: true, shiftKey: true })
     expect(event.defaultPrevented).toBe(true)
     await flush()
-    expect(save).toHaveBeenCalledWith('next-urgent', 'mod+shift+j')
+    expect(save).toHaveBeenCalledWith('next-urgent', 'mod+shift+k')
   })
 
   it('waits past a modifier alone, and says what a bare key lacks', () => {

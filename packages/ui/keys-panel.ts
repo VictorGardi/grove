@@ -14,6 +14,7 @@ export const KEY_LABELS: Record<KeyAction, string> = {
   'grid-tab': 'Put the tab in the grid',
   'grid-reset-layout': 'Reset the grid layout',
   'next-urgent': 'Next tab that needs you, or is working',
+  'newest-tab': 'Newest tab, in any space',
   palette: 'Go to a tab',
   'sidebar-toggle': 'Show or hide the sidebar',
   notes: 'Notes',

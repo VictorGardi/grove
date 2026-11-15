@@ -188,6 +188,7 @@ export type KeyAction =
   | 'grid-tab'
   | 'grid-reset-layout'
   | 'next-urgent'
+  | 'newest-tab'
   | 'palette'
   | 'sidebar-toggle'
   | 'notes'
