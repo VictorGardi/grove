@@ -79,7 +79,10 @@ export interface WindowStore {
   tab(id: string): Tab | undefined
   tabsOfSpace(spaceId: string | null): Tab[]
   gridTabs(): Tab[]
+  // The tab's name: its own label if the human set one, else the session name its agent keeps, else its number.
   tabName(id: string): string
+  // Whether the tab has a name of either kind, so its number is only a stand-in.
+  hasName(id: string): boolean
   stateOf(id: string): AgentStateName
   // A space's tabs by id, most recently visited first.
   recent(spaceId: string): readonly string[]
@@ -115,6 +118,7 @@ export interface WindowStore {
   setAgents(list: AgentInfo[]): void
   applyStatusChange(change: StatusChange): { previous: AgentInfo | undefined }
   applyContext(tabId: string, context: ContextUsage): void
+  applyName(tabId: string, name: string): void
 }
 
 export function createWindowStore(options: WindowStoreOptions): WindowStore {
@@ -292,7 +296,11 @@ export function createWindowStore(options: WindowStoreOptions): WindowStore {
     gridTabs: () => gridMembers(order),
     tabName(id) {
       const tab = byId.get(id)
-      return tab ? tab.label || String(tab.number) : id
+      return tab ? tab.label || agents.get(id)?.name || String(tab.number) : id
+    },
+    hasName(id) {
+      const tab = byId.get(id)
+      return tab ? Boolean(tab.label || agents.get(id)?.name) : false
     },
     stateOf(id) {
       const tab = byId.get(id)
@@ -435,6 +443,8 @@ export function createWindowStore(options: WindowStoreOptions): WindowStore {
         source: change.source,
         resumable: previous?.resumable ?? false,
         ...(previous?.context ? { context: previous.context } : {}),
+        ...(previous?.name ? { name: previous.name } : {}),
+        ...(previous?.sessionId ? { sessionId: previous.sessionId } : {}),
       })
       syncKinds()
       commit()
@@ -444,6 +454,12 @@ export function createWindowStore(options: WindowStoreOptions): WindowStore {
       const entry = agents.get(tabId)
       if (!entry) return
       agents.set(tabId, { ...entry, context })
+      commit()
+    },
+    applyName(tabId, name) {
+      const entry = agents.get(tabId)
+      if (!entry || entry.name === name) return
+      agents.set(tabId, { ...entry, name })
       commit()
     },
   }

@@ -28,6 +28,8 @@ export interface AdapterWatchInput {
   // Optional: an agent that reports its context window delivers each new reading here. A reading with `tokens` null is
   // real (before the first request, after a compaction) and clears the last figure.
   onContext?: (context: ContextUsage) => void
+  // Optional: an agent that keeps a name for its session delivers it here each time it changes, already cleaned (see cleanName).
+  onName?: (name: string) => void
 }
 
 export interface AgentWatch {

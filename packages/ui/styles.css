@@ -307,10 +307,62 @@ p {
 }
 
 .agent-group-name {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+  min-width: 0;
   padding: var(--space-2) var(--space-4) var(--space-1);
   font-size: var(--text-sm);
   font-weight: 400;
   color: var(--color-mute);
+}
+
+.agent-group-name .space-tile {
+  flex: none;
+}
+
+/* A worktree has no coloured tile, in the sidebar's spaces list and in Go to and the agents list alike: the branch mark, in the worktree purple. */
+.goto-space .space-tile:not([class*='tile-']),
+.agent-group-name .space-tile:not([class*='tile-']) {
+  background: none;
+  color: var(--color-worktree);
+}
+
+/* The name, and for a worktree its repo just under it, so a long repo name never takes the name's room. */
+.agent-group-text {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+}
+
+.agent-group-title,
+.agent-group-note {
+  min-width: 0;
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+
+.agent-group-title {
+  color: var(--color-ink);
+}
+
+.agent-group-note {
+  font-size: var(--text-xs);
+  color: var(--color-faint);
+}
+
+.agent-quiet {
+  width: 100%;
+  padding: var(--space-3) var(--space-4);
+  border-top: 1px solid var(--color-rule);
+  text-align: left;
+  font-size: var(--text-sm);
+  color: var(--color-faint);
+}
+
+.agent-quiet:hover {
+  color: var(--color-ink);
 }
 
 .agent-row {
@@ -3368,6 +3420,39 @@ li[aria-selected] > .slash-tile {
 
 .goto-input::placeholder {
   color: var(--color-faint);
+}
+
+.goto-chips {
+  display: flex;
+  gap: var(--space-3);
+}
+
+.goto-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-2);
+  padding: var(--space-1) var(--space-4);
+  border: 1px solid var(--color-line);
+  border-radius: var(--radius-pill);
+  background: var(--color-well);
+  color: var(--color-mute);
+  font-size: var(--text-sm);
+}
+
+.goto-chip kbd {
+  font-family: var(--font-mono);
+  font-size: var(--text-xs);
+  color: var(--color-faint);
+}
+
+.goto-chip:hover,
+.goto-chip[aria-pressed='true'] {
+  color: var(--color-ink);
+}
+
+.goto-chip[aria-pressed='true'] {
+  border-color: var(--accent);
+  background: var(--color-selected);
 }
 
 .goto-list {

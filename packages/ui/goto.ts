@@ -3,11 +3,13 @@
 import type { AgentKind } from '../core/status/adapter.ts'
 import type { AgentStateName } from '../protocol/messages.ts'
 import { hideContextTip } from './context-badge.ts'
-import { goToView, type GoToGroup, type GoToInput, type GoToRow, type GoToView } from './goto-model.ts'
+import { goToView, marksOf, toggleMark, type GoToGroup, type GoToInput, type GoToRow, type GoToView } from './goto-model.ts'
 
 export interface GoToElements {
   modal: HTMLElement
   input: HTMLInputElement
+  // The state filter buttons, each marked with `data-mark` ("!" or "~"); a click switches that mark in the query.
+  chips: HTMLButtonElement[]
   list: HTMLElement
 }
 
@@ -37,7 +39,7 @@ function element(tag: string, className: string, text = ''): HTMLElement {
 }
 
 export function createGoTo(elements: GoToElements, deps: GoToDeps): GoTo {
-  const { modal, input, list } = elements
+  const { modal, input, list, chips } = elements
   let expandQuiet = false
   let highlight: string | null = null
   let view: GoToView = { groups: [], highlight: null, quiet: null }
@@ -46,6 +48,8 @@ export function createGoTo(elements: GoToElements, deps: GoToDeps): GoTo {
 
   function render(): void {
     view = goToView({ ...deps.source(), query: input.value, expandQuiet })
+    const marks = marksOf(input.value)
+    for (const chip of chips) chip.setAttribute('aria-pressed', String(marks.has(chip.dataset.mark ?? '')))
     if (!rows().some((row) => row.tabId === highlight)) highlight = view.highlight
     const nodes: HTMLElement[] = view.groups.map((group) => {
       const section = element('section', 'goto-group')
@@ -56,8 +60,8 @@ export function createGoTo(elements: GoToElements, deps: GoToDeps): GoTo {
       return section
     })
     if (view.quiet) {
-      const { count, expanded } = view.quiet
-      const toggle = element('button', 'goto-quiet', `earlier: ${count} quiet ${count === 1 ? 'space' : 'spaces'} ${expanded ? '▴' : '▾'}`) as HTMLButtonElement
+      const { count, expanded, last } = view.quiet
+      const toggle = element('button', 'goto-quiet', `earlier: ${count} quiet ${count === 1 ? 'space' : 'spaces'}${last ? ` · last: ${last}` : ''} ${expanded ? '▴' : '▾'}`) as HTMLButtonElement
       toggle.type = 'button'
       toggle.setAttribute('aria-expanded', String(expanded))
       toggle.addEventListener('click', () => {
@@ -112,6 +116,14 @@ export function createGoTo(elements: GoToElements, deps: GoToDeps): GoTo {
     highlight = null
     render()
   })
+  for (const chip of chips) {
+    chip.addEventListener('click', () => {
+      input.value = toggleMark(input.value, chip.dataset.mark ?? '')
+      highlight = null
+      render()
+      input.focus()
+    })
+  }
   modal.addEventListener('keydown', (event) => {
     if (event.key === 'Escape') {
       event.preventDefault()

@@ -109,6 +109,10 @@
           <svg class="icon icon-search" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="11" cy="11" r="8" /><path d="m21 21-4.3-4.3" /></svg>
           <input id="goto-input" class="goto-input" type="text" spellcheck="false" autocomplete="off" placeholder="Go to a tab, space or agent…" aria-label="Go to a tab, space or agent" />
         </label>
+        <div class="goto-chips">
+          <button id="goto-chip-needs" class="goto-chip" type="button" data-mark="!" aria-pressed="false"><kbd>!</kbd> needs you</button>
+          <button id="goto-chip-working" class="goto-chip" type="button" data-mark="~" aria-pressed="false"><kbd>~</kbd> working</button>
+        </div>
         <div id="goto-list" class="goto-list" role="listbox"></div>
       </div>
     </div>

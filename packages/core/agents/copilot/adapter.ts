@@ -4,6 +4,7 @@ import path from 'node:path'
 import type { AdapterLaunchInput, AdapterWatchInput, AgentAdapter, AgentLaunch, AgentWatch } from '../../status/adapter.ts'
 import { commandOnPath } from '../commandOnPath.ts'
 import { findCopilotSession } from './discover.ts'
+import { createCopilotNameSource } from './name.ts'
 import { createCopilotUsageSource } from './usage.ts'
 
 // Copilot's session ids are UUIDs. Anything else must never reach the command line as a flag.
@@ -38,12 +39,21 @@ export function createCopilotAdapter(options: CopilotAdapterOptions = {}): Agent
   // known, and the log's newest record is replayed at once.
   function watch(input: AdapterWatchInput): AgentWatch {
     const onContext = input.onContext
-    if (input.sessionId === '' || onContext === undefined) return { close: () => {} }
-    const usage = createCopilotUsageSource({
-      file: path.join(copilotHome(), 'session-state', input.sessionId, 'events.jsonl'),
-      onContext,
-    })
-    return { close: () => usage.close() }
+    if (input.sessionId === '') return { close: () => {} }
+    const usage =
+      onContext &&
+      createCopilotUsageSource({
+        file: path.join(copilotHome(), 'session-state', input.sessionId, 'events.jsonl'),
+        onContext,
+      })
+    const onName = input.onName
+    const name = onName && createCopilotNameSource({ copilotHome: copilotHome(), sessionId: input.sessionId, onName })
+    return {
+      close: () => {
+        name?.close()
+        usage?.close()
+      },
+    }
   }
 }
 

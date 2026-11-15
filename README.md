@@ -100,6 +100,10 @@ Minimum versions: Claude 2.1.309, Copilot 1.0.107, OpenCode 2.2.6. Older version
 
 Status is not saved: after the core restarts it is read back from the holder, and a turn that finished while the core was down shows idle. For Claude only, Grove can add a SessionStart hook to `~/.claude/settings.json`, after asking, so a tab you typed by hand, or one after `/clear`, resumes its session (`grove integration install|uninstall claude`). See `docs/adr/0053-agent-status-from-osc-7501.md`.
 
+## Tab names
+
+A tab is named by the first of: the name you gave it (double-click, or `grove new --label`), the name its agent keeps for the session, or its number. Claude's is the `/rename` or `--name` name, else its generated title, else the session's first prompt; OpenCode and Copilot always have one. An agent's name never replaces yours, and clearing yours brings it back. See `docs/adr/0002-session-names-on-tabs.md`.
+
 ## Config folder
 
 The settings live in `~/.grove/config` (or `$GROVE_HOME/config`). Print the path with:

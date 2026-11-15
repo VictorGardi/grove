@@ -165,6 +165,10 @@ export interface AgentInfo {
   context?: ContextUsage
   // The level of that reading; absent with it, and while the reading has no tokens (see contextLevel).
   level?: ContextLevel
+  // The session name the agent keeps for this tab's session. Absent until the agent has one. Never a tab's own label.
+  name?: string
+  // The agent's id for the session the tab runs now (it changes on /clear). Absent until it is known.
+  sessionId?: string
 }
 
 // A tab that needs the human: entered needs-you (any reason) or finished, and is not on screen.
@@ -463,6 +467,8 @@ export interface NotificationMap {
   'tabs.status': { id: string; state: string; kind?: string }
   'status.changed': StatusChange
   'context.changed': { tabId: string; context: ContextUsage }
+  // The agent named, or renamed, the session a tab runs.
+  'agent.named': { tabId: string; name: string }
   'attention.notify': AttentionNotice
   'tabs.focus': { id: string }
   // A tab was closed on purpose: every window drops it.

@@ -3,6 +3,7 @@ import os from 'node:os'
 import type { AgentAdapter } from '../../status/adapter.ts'
 import { commandOnPath } from '../commandOnPath.ts'
 import { findOpenCodeSession, openCodeAuth, readOpenCodeService, serviceFilePath } from './discover.ts'
+import { createOpencodeNameSource } from './name.ts'
 import { createOpencodeUsageSource } from './usage.ts'
 
 // Port of src/core/opencodeId.ts: OpenCode's descending id format, where newer ids sort first
@@ -73,14 +74,17 @@ export function createOpenCodeAdapter(options: OpenCodeAdapterOptions = {}): Age
     // discovery only names an id for a hand-started tab that has none yet.
     watch(input) {
       const onContext = input.onContext
-      if (input.sessionId === '' || onContext === undefined) return { close: () => {} }
-      const usage = createOpencodeUsageSource({
-        sessionId: input.sessionId,
-        fetchJson: options.usageFetch ?? defaultUsageFetch,
-        intervalMs: options.usageIntervalMs,
-        onContext,
-      })
-      return { close: () => usage.close() }
+      if (input.sessionId === '') return { close: () => {} }
+      const fetchJson = options.usageFetch ?? defaultUsageFetch
+      const usage = onContext && createOpencodeUsageSource({ sessionId: input.sessionId, fetchJson, intervalMs: options.usageIntervalMs, onContext })
+      const onName = input.onName
+      const name = onName && createOpencodeNameSource({ sessionId: input.sessionId, fetchJson, intervalMs: options.usageIntervalMs, onName })
+      return {
+        close: () => {
+          name?.close()
+          usage?.close()
+        },
+      }
     },
     available: async () => {
       if (!found) found = await onPath()

@@ -47,6 +47,17 @@ export function groupAgents<T extends AgentRowInput>(
   return groups
 }
 
+export interface WorktreeInput extends SpaceOrderInput {
+  worktree: boolean
+  repoName: string | null
+}
+
+// The name of the repo a worktree space belongs to: its parent space's name, else the repo folder's. Null for any other space.
+export function worktreeOf(space: WorktreeInput, spaces: Array<SpaceOrderInput & { name: string }>): string | null {
+  if (!space.worktree && space.parent === null) return null
+  return spaces.find((other) => other.id === space.parent)?.name ?? space.repoName
+}
+
 // A stable colour for a space: 1 to 8, from a hash of its name (the tile-1 to tile-8 classes).
 export function tileIndex(name: string): number {
   let hash = 0

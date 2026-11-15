@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { goToView, type GoToInput, type GoToSpace, type GoToTab } from './goto-model.ts'
+import { goToView, marksOf, RECENT_SPACES, toggleMark, type GoToInput, type GoToSpace, type GoToTab } from './goto-model.ts'
 
 function space(id: string, name = id, extra: Partial<GoToSpace> = {}): GoToSpace {
   return { id, name, parent: null, worktree: false, repoName: null, ...extra }
@@ -35,30 +35,133 @@ describe('goToView', () => {
   })
 
   describe('quiet spaces', () => {
-    // b is current, a has a tab with something for the human, c and d are idle and not current.
+    // b is current, a has a tab with something for the human, c and d are idle and never visited.
     const base = {
       spaces: [space('a'), space('b'), space('c'), space('d')],
       tabs: [tab('a1', 'a', '1', { state: 'finished' }), tab('b1', 'b', '1'), tab('c1', 'c', '1'), tab('d1', 'd', '1', { state: 'unknown' })],
-      recent: ['b1', 'a1', 'c1', 'd1'],
+      recent: ['b1', 'a1'],
       activeSpaceId: 'b',
       activeTabId: 'b1',
     }
 
     it('collapses the idle spaces that are not current behind a count', () => {
       const view = goToView(input(base))
-      expect(view.groups.map((group) => group.spaceId)).toEqual(['b', 'a'])
-      expect(view.quiet).toEqual({ count: 2, expanded: false })
+      expect(view.groups.map((group) => group.spaceId)).toEqual(['a', 'b'])
+      expect(view.quiet).toEqual({ count: 2, expanded: false, last: null })
     })
 
     it('lists them after the others when expanded', () => {
       const view = goToView(input({ ...base, expandQuiet: true }))
-      expect(view.groups.map((group) => group.spaceId)).toEqual(['b', 'a', 'c', 'd'])
-      expect(view.quiet).toEqual({ count: 2, expanded: true })
+      expect(view.groups.map((group) => group.spaceId)).toEqual(['a', 'b', 'c', 'd'])
+      expect(view.quiet).toEqual({ count: 2, expanded: true, last: null })
     })
 
     it('has no quiet part when every space is current or busy', () => {
       const view = goToView(input({ ...base, spaces: [space('a'), space('b')], tabs: base.tabs.slice(0, 2) }))
       expect(view.quiet).toBeNull()
+    })
+
+    describe('by recent use', () => {
+      // An idle space per name, the current one first in `recent`, then the others from the most recently visited.
+      const names = ['cur', ...Array.from({ length: RECENT_SPACES + 2 }, (_, i) => `s${i}`)]
+      const spaces = names.map((name) => space(name))
+      const tabs = names.map((name) => tab(`${name}-1`, name, '1'))
+      const recent = names.map((name) => `${name}-1`)
+      const view = goToView(input({ spaces, tabs, recent, activeSpaceId: 'cur', activeTabId: 'cur-1' }))
+
+      it('keeps an idle space listed while it is among the most recently visited', () => {
+        expect(view.groups.map((group) => group.spaceId)).toEqual(['cur', ...names.slice(1, 1 + RECENT_SPACES)])
+      })
+
+      it('collapses the older ones, and names the most recent of them', () => {
+        expect(view.quiet).toEqual({ count: 2, expanded: false, last: `s${RECENT_SPACES}` })
+      })
+
+      it('does not count the current space among the recent ones', () => {
+        const without = goToView(input({ spaces, tabs, recent: recent.slice(1), activeSpaceId: 'cur', activeTabId: null }))
+        expect(without.groups.map((group) => group.spaceId)).toContain(`s${RECENT_SPACES - 1}`)
+        expect(without.groups.map((group) => group.spaceId)).not.toContain(`s${RECENT_SPACES}`)
+      })
+    })
+  })
+
+  describe('urgency', () => {
+    const base = {
+      spaces: [space('a', 'a'), space('b', 'b'), space('c', 'c'), space('d', 'd'), space('e', 'e')],
+      tabs: [
+        tab('a1', 'a', '1'),
+        tab('b1', 'b', '1', { state: 'working' }),
+        tab('c1', 'c', '1', { state: 'finished' }),
+        tab('d1', 'd', '1', { state: 'needs-you', reason: 'permission' }),
+        tab('e1', 'e', '1'),
+      ],
+      recent: ['a1', 'b1', 'c1', 'd1', 'e1'],
+      activeSpaceId: 'a',
+      activeTabId: 'a1',
+    }
+
+    it('puts spaces that need you first, then finished, then the current one, then working, then the rest', () => {
+      expect(goToView(input(base)).groups.map((group) => group.spaceId)).toEqual(['d', 'c', 'a', 'b', 'e'])
+    })
+
+    it('puts the tabs that need you first within a space', () => {
+      const view = goToView(
+        input({
+          spaces: [space('a')],
+          tabs: [tab('t1', 'a', '1'), tab('t2', 'a', '2', { state: 'working' }), tab('t3', 'a', '3', { state: 'needs-you' }), tab('t4', 'a', '4', { state: 'finished' })],
+          recent: ['t1', 't2', 't3', 't4'],
+          activeSpaceId: 'a',
+        }),
+      )
+      expect(view.groups[0].rows.map((row) => row.tabId)).toEqual(['t3', 't4', 't2', 't1'])
+    })
+
+    it('adds the reason to a needs-you row', () => {
+      const rows = goToView(input(base)).groups.flatMap((group) => group.rows)
+      expect(rows.find((row) => row.tabId === 'd1')?.stateLabel).toBe('needs you · permission')
+    })
+
+    it('says only that it needs you when the agent gave no reason', () => {
+      const view = goToView(input({ spaces: [space('a')], tabs: [tab('t1', 'a', '1', { state: 'needs-you' })], activeSpaceId: 'a' }))
+      expect(view.groups[0].rows[0].stateLabel).toBe('needs you')
+    })
+  })
+
+  describe('state filters', () => {
+    const base = {
+      spaces: [space('a', 'grove'), space('b', 'notes')],
+      tabs: [
+        tab('a1', 'a', 'build', { state: 'needs-you' }),
+        tab('a2', 'a', 'review', { state: 'working' }),
+        tab('b1', 'b', 'build', { state: 'working' }),
+        tab('b2', 'b', 'todo'),
+      ],
+      recent: ['a1', 'a2', 'b1', 'b2'],
+      activeSpaceId: 'a',
+    }
+    const matched = (query: string) => goToView(input({ ...base, query })).groups.map((group) => [group.spaceId, group.rows.map((row) => row.tabId)])
+
+    it('keeps the tabs that need you with !', () => {
+      expect(matched('!')).toEqual([['a', ['a1']]])
+    })
+
+    it('keeps the tabs that are working with ~, in quiet spaces too', () => {
+      expect(matched('~')).toEqual([
+        ['a', ['a2']],
+        ['b', ['b1']],
+      ])
+    })
+
+    it('combines with words, in the same word or apart', () => {
+      expect(matched('~build')).toEqual([['b', ['b1']]])
+      expect(matched('~ notes')).toEqual([['b', ['b1']]])
+    })
+
+    it('keeps both states when both marks are given', () => {
+      expect(matched('!~')).toEqual([
+        ['a', ['a1', 'a2']],
+        ['b', ['b1']],
+      ])
     })
   })
 
@@ -95,6 +198,18 @@ describe('goToView', () => {
       const view = goToView(input({ ...base, query: 'todo' }))
       expect(view.groups.map((group) => group.spaceId)).toEqual(['c'])
       expect(view.quiet).toBeNull()
+    })
+
+    it('finds the worktrees of a repo by the repo name, with the repo itself', () => {
+      const view = goToView(
+        input({
+          spaces: [space('a', 'platform'), space('b', 'feature-x', { parent: 'a', worktree: true }), space('c', 'orphan', { worktree: true, repoName: 'platform' }), space('d', 'notes')],
+          tabs: [tab('a1', 'a', '1'), tab('b1', 'b', '1'), tab('c1', 'c', '1'), tab('d1', 'd', '1')],
+          activeSpaceId: 'd',
+          query: 'platform',
+        }),
+      )
+      expect(view.groups.map((group) => group.spaceId).sort()).toEqual(['a', 'b', 'c'])
     })
 
     it('shows nothing when nothing matches', () => {
@@ -197,9 +312,28 @@ describe('goToView', () => {
 
     it('starts on the first row when the current tab is hidden among quiet spaces', () => {
       const view = goToView(
-        input({ spaces: [space('a'), space('b')], tabs: [tab('a1', 'a', '1'), tab('b1', 'b', '1')], recent: ['a1', 'b1'], activeSpaceId: 'a', activeTabId: 'b1' }),
+        input({ spaces: [space('a'), space('b')], tabs: [tab('a1', 'a', '1'), tab('b1', 'b', '1')], recent: ['a1'], activeSpaceId: 'a', activeTabId: 'b1' }),
       )
       expect(view.highlight).toBe('a1')
     })
+  })
+})
+
+describe('filter marks', () => {
+  it('finds the marks at the start of any word', () => {
+    expect([...marksOf('')]).toEqual([])
+    expect([...marksOf('!')]).toEqual(['!'])
+    expect([...marksOf('grove ~build')]).toEqual(['~'])
+    expect([...marksOf('!~x')].sort()).toEqual(['!', '~'])
+    expect([...marksOf('a!b')]).toEqual([])
+  })
+
+  it('puts a mark in front of the query, or takes it off every word that has it', () => {
+    expect(toggleMark('', '!')).toBe('!')
+    expect(toggleMark('grove', '~')).toBe('~grove')
+    expect(toggleMark('!', '!')).toBe('')
+    expect(toggleMark('!grove build', '!')).toBe('grove build ')
+    expect(toggleMark('!~x', '!')).toBe('~x ')
+    expect(toggleMark('~ notes', '~')).toBe('notes ')
   })
 })

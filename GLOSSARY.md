@@ -15,6 +15,16 @@ specific meaning, so humans and agents stay consistent.
 - **Tab number**: a tab's position among its space's tabs, in the order they
   were opened. It is not a stable id: when an earlier tab closes, the later
   tabs renumber. A tab without a name shows as "Tab N".
+- **Tab name**: what a tab is called, from the first of: its **label** (set by
+  the human by renaming, or by `--label`), its **session name**, its tab number.
+  A label is never replaced by a session name; clearing the label brings the
+  session name back.
+- **Session name**: the name an agent keeps for the session a tab runs: Claude's
+  `/rename` or `--name` name (else its own generated title, else the session's
+  first prompt as a stand-in), OpenCode's session title, Copilot's session
+  `name`. Read from the agent's own records, shown on the tab, never saved by
+  Grove, and replaced when the agent changes it. A tab whose agent has no name
+  yet shows its tab number.
 - **Exited tab**: a tab whose process ended. It stays listed, showing
   `[process exited]`, until closed. An exited agent tab whose agent can pick its
   saved session up again offers **Resume**, which starts the agent again in the
@@ -62,6 +72,13 @@ specific meaning, so humans and agents stay consistent.
   resizes it becomes **custom**, a **split tree** whose leaves are panes and
   whose splits each divide their space by a ratio. One layout per window;
   **Reset layout** returns to automatic.
+- **Quiet space**: a space that is not the active space or a worktree of it,
+  has no tab that is working, needs you or is finished, and is not among the 5
+  most recently visited spaces (each space counts once, by its latest visit;
+  the active space and its worktrees take no place). Go to (with an empty query) and the agents list in the
+  sidebar fold the quiet spaces behind one line, "earlier: N quiet spaces ·
+  last: X", which opens them. A query in Go to searches them too. The sidebar
+  folds them without reordering: spaces keep the sidebar order.
 - **Go to**: the Cmd+P overlay that fuzzy-matches tabs, spaces and agents,
   grouped by space, and jumps to the chosen tab on Enter. It only navigates; it
   runs no commands.

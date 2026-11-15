@@ -41,6 +41,8 @@ interface Watch {
   adopted: boolean
   // The latest context reading the adapter delivered; undefined until one arrives.
   context: ContextUsage | undefined
+  // The latest session name the adapter delivered; undefined until one arrives. Kept across a source restart.
+  name: string | undefined
   // The last report seen for this tab, pushed or read from the holder, as reportKey. A holder record equal to it is not applied again.
   lastReport: string | undefined
 }
@@ -55,6 +57,7 @@ export class StatusService {
   private readonly watches = new Map<string, Watch>()
   private readonly listeners = new Set<(change: StatusChange) => void>()
   private readonly contextListeners = new Set<(tabId: string, context: ContextUsage) => void>()
+  private readonly nameListeners = new Set<(tabId: string, name: string) => void>()
   private readonly clock: () => number
   private readonly tickMs: number
   private timer: ReturnType<typeof setInterval> | undefined
@@ -71,6 +74,12 @@ export class StatusService {
   subscribe(listener: (change: StatusChange) => void): () => void {
     this.listeners.add(listener)
     return () => this.listeners.delete(listener)
+  }
+
+  // Called with a tab's session name each time it changes. Returns a function that stops the listener.
+  subscribeName(listener: (tabId: string, name: string) => void): () => void {
+    this.nameListeners.add(listener)
+    return () => this.nameListeners.delete(listener)
   }
 
   // Called with a tab's context reading each time it changes. Returns a function that stops the listener.
@@ -239,6 +248,8 @@ export class StatusService {
         resumable: !alive.has(watch.tabId) && watch.resumeId !== undefined,
         ...(watch.context ? { context: watch.context } : {}),
         ...(level ? { level } : {}),
+        ...(watch.name !== undefined ? { name: watch.name } : {}),
+        ...(watch.resumeId !== undefined ? { sessionId: watch.resumeId } : {}),
       }
     })
   }
@@ -268,6 +279,7 @@ export class StatusService {
       this.timer = undefined
       this.listeners.clear()
       this.contextListeners.clear()
+      this.nameListeners.clear()
     }
   }
 
@@ -290,6 +302,7 @@ export class StatusService {
       source: undefined,
       adopted: input.adopted ?? false,
       context: undefined,
+      name: undefined,
       lastReport: input.lastReport,
     }
     this.watches.set(input.tabId, watch)
@@ -310,6 +323,7 @@ export class StatusService {
       clock: this.clock,
       onEvent: (event) => this.onEvent(watch, event),
       onContext: (context) => this.onContext(watch, context),
+      onName: (name) => this.onName(watch, name),
     })
   }
 
@@ -318,6 +332,13 @@ export class StatusService {
     if (this.watches.get(watch.tabId) !== watch) return
     watch.context = context
     for (const listener of this.contextListeners) listener(watch.tabId, context)
+  }
+
+  // A name is not activity either. The same name again is not news.
+  private onName(watch: Watch, name: string): void {
+    if (this.watches.get(watch.tabId) !== watch || watch.name === name) return
+    watch.name = name
+    for (const listener of this.nameListeners) listener(watch.tabId, name)
   }
 
   private onEvent(watch: Watch, event: StatusEvent): void {

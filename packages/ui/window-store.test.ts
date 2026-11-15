@@ -378,6 +378,60 @@ describe('applying a status change', () => {
   })
 })
 
+describe('a session name on a tab', () => {
+  it('names an unnamed tab, with the tab number only as the stand-in', () => {
+    const { store } = window()
+    store.applyStatusChange(change('a2', 'claude', 'idle'))
+    expect(store.tabName('a2')).toBe('2')
+    expect(store.hasName('a2')).toBe(false)
+    store.applyName('a2', 'fix the importer')
+    expect(store.tabName('a2')).toBe('fix the importer')
+    expect(store.hasName('a2')).toBe(true)
+  })
+
+  it('never takes the place of a name the human gave, and comes back when that name is cleared', () => {
+    const { store } = window()
+    store.applyStatusChange(change('a2', 'claude', 'idle'))
+    store.renameTab('a2', 'mine')
+    store.applyName('a2', 'fix the importer')
+    expect(store.tabName('a2')).toBe('mine')
+    store.renameTab('a2', null)
+    expect(store.tabName('a2')).toBe('fix the importer')
+  })
+
+  it('survives a status change, which rebuilds the agent entry', () => {
+    const { store } = window()
+    store.applyStatusChange(change('a2', 'claude', 'idle'))
+    store.applyName('a2', 'fix the importer')
+    store.applyStatusChange(change('a2', 'claude', 'working'))
+    expect(store.tabName('a2')).toBe('fix the importer')
+  })
+
+  it('keeps the session id through a status change as well', () => {
+    const { store } = window()
+    store.setAgents([entry('a1', 'claude', { sessionId: 's-1' })])
+    store.applyStatusChange(change('a1', 'claude', 'working'))
+    expect(store.agent('a1')?.sessionId).toBe('s-1')
+  })
+
+  it('arrives with the agent list too', () => {
+    const { store } = window()
+    store.setAgents([entry('a1', 'opencode', { name: 'T-013 review' })])
+    expect(store.tabName('a1')).toBe('T-013 review')
+  })
+
+  it('is ignored for a tab with no agent entry, and repeated names do not repaint', () => {
+    const { store, changed } = window()
+    store.applyName('a1', 'x')
+    expect(changed).not.toHaveBeenCalled()
+    store.applyStatusChange(change('a1', 'claude', 'idle'))
+    store.applyName('a1', 'x')
+    changed.mockClear()
+    store.applyName('a1', 'x')
+    expect(changed).not.toHaveBeenCalled()
+  })
+})
+
 describe('applying a context reading', () => {
   const context = { tokens: 10, window: 100, percent: 10, model: null, at: 1 }
 

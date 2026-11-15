@@ -25,7 +25,8 @@ import type { KeyValueStore } from './persisted-pref.ts'
 import { readSidebarHidden, writeSidebarHidden } from './sidebar-state.ts'
 import { createFocusSignal } from './focus-signal.ts'
 import { noViewState, storageViewState } from './view-state.ts'
-import { groupAgents, jumpTargets, nextUrgent, shortFolder, sidebarSpaceOrder, spaceAt, tileIndex } from './sidebar-model.ts'
+import { groupAgents, jumpTargets, nextUrgent, shortFolder, sidebarSpaceOrder, spaceAt, tileIndex, worktreeOf } from './sidebar-model.ts'
+import { quietSpaces } from './quiet-spaces.ts'
 import { createWindowStore, type Tab, type TabKind } from './window-store.ts'
 import { contextMeter, hideContextTip, markWithContext } from './context-badge.ts'
 import { createTabPill, type TabPill } from './tab-pill.ts'
@@ -180,7 +181,12 @@ const renameModal = createRenameModal(
 )
 // Go to lists the tabs of every space, in the order of the sidebar, and jumps to the one chosen. Key bindings wait while it is open.
 const goTo = createGoTo(
-  { modal: byId('goto-modal'), input: byId('goto-input') as HTMLInputElement, list: byId('goto-list') },
+  {
+    modal: byId('goto-modal'),
+    input: byId('goto-input') as HTMLInputElement,
+    chips: [byId('goto-chip-needs') as HTMLButtonElement, byId('goto-chip-working') as HTMLButtonElement],
+    list: byId('goto-list'),
+  },
   {
     source: () => ({
       spaces: sidebarSpaceOrder(store.spaces()).flatMap((id) => {
@@ -193,18 +199,13 @@ const goTo = createGoTo(
         name: tabName(tab),
         agent: store.agent(tab.id)?.agent ?? (tab.kind === 'shell' ? null : tab.kind),
         state: stateOf(tab),
+        reason: store.agent(tab.id)?.reason,
       })),
       recent: [...store.recentIds],
       activeSpaceId: store.activeSpace,
       activeTabId: store.activeTab?.id ?? null,
     }),
-    tile: (group) => {
-      const space = store.space(group.spaceId)
-      const worktree = group.worktreeOf !== null
-      const tile = element('span', worktree ? 'space-tile' : `space-tile tile-${tileIndex(group.name)}`, worktree ? '' : group.name.charAt(0).toUpperCase())
-      if (worktree || space?.worktree) tile.innerHTML = iconSvg('branch')
-      return tile
-    },
+    tile: (group) => spaceTile(group.spaceId),
     indicator: (state, agent) => indicatorEl(state, agent ?? undefined),
     agentMark: (row) => {
       const mark = markEl(row.agent)
@@ -374,6 +375,16 @@ function element(tag: string, className: string, text = ''): HTMLElement {
 
 function spaceName(spaceId: string): string {
   return store.space(spaceId)?.name ?? spaceId
+}
+
+// The space's tile, as Go to and the agents list draw it: its colour and first letter, or the branch icon for a worktree.
+function spaceTile(spaceId: string): HTMLElement {
+  const space = store.space(spaceId)
+  const name = spaceName(spaceId)
+  const worktree = space !== undefined && worktreeOf(space, store.spaces()) !== null
+  const tile = element('span', worktree ? 'space-tile' : `space-tile tile-${tileIndex(name)}`, worktree ? '' : name.charAt(0).toUpperCase())
+  if (worktree || space?.worktree) tile.innerHTML = iconSvg('branch')
+  return tile
 }
 
 // The tab's name: the one the user gave it, else "Tab N".
@@ -709,7 +720,7 @@ function paintTab(tab: Tab): void {
   const space = store.space(tab.spaceId)
   const changes = changeCounts.get(tab.id)
   const parts: HTMLElement[] = [markEl(tab.kind)]
-  parts.push(element('span', tab.label ? 'pane-kind' : 'pane-kind unnamed', name))
+  parts.push(element('span', store.hasName(tab.id) ? 'pane-kind' : 'pane-kind unnamed', name))
   if (space?.branch) parts.push(branchButton(space.branch, space.worktree))
   parts.push(element('span', 'pane-folder', shortFolder(tab.spacePath, homeDir)))
   if (changes && changes.additions + changes.deletions > 0) parts.push(changesButton(changes))
@@ -1124,7 +1135,12 @@ function agentRow(row: AgentRow): HTMLLIElement {
   return li
 }
 
-// Rebuilds the sidebar list: one group per space, in the space order. Within a group, the most urgent row comes first.
+// Whether the agents list shows its quiet spaces. Kept for the window's life, like Go to's, and opened afresh by neither.
+let agentsQuietExpanded = false
+
+// Rebuilds the sidebar list: one group per space, in the sidebar's space order, which never changes with use. Within a group,
+// the most urgent row comes first. Quiet spaces, the same ones Go to folds, fold behind one line; a space with anything
+// busy in it, and the current one, never do.
 function renderAgents(): void {
   paintUrgent()
   hideContextTip()
@@ -1134,17 +1150,50 @@ function renderAgents(): void {
     if (tab) rows.push({ spaceId: tab.spaceId, tabNumber: tab.number, agent, exited: tab.exited, tab })
   }
   agentsEmpty.hidden = rows.length > 0
-  agentList.replaceChildren(
-    ...groupAgents(store.spaces().map((space) => space.id), rows).map((group) => {
+  const order = sidebarSpaceOrder(store.spaces())
+  const quiet = quietSpaces({
+    spaces: order.flatMap((id) => {
+      const space = store.space(id)
+      return space ? [{ id, parent: space.parent }] : []
+    }),
+    tabs: store.tabs.map((tab) => ({ id: tab.id, spaceId: tab.spaceId, state: stateOf(tab) })),
+    recent: [...store.recentIds],
+    activeSpaceId: store.activeSpace,
+  })
+  const groups = groupAgents(order, rows)
+  const folded = groups.filter((group) => quiet.ids.has(group.spaceId))
+  const items = groups
+    .filter((group) => agentsQuietExpanded || !quiet.ids.has(group.spaceId))
+    .map((group) => {
       const section = document.createElement('li')
       section.className = 'agent-group'
       const list = document.createElement('ul')
       list.className = 'agent-rows'
       list.append(...group.rows.map(agentRow))
-      section.append(element('h3', 'agent-group-name', spaceName(group.spaceId)), list)
+      const space = store.space(group.spaceId)
+      const parent = space ? worktreeOf(space, store.spaces()) : null
+      const head = element('h3', 'agent-group-name', '')
+      const text = element('span', 'agent-group-text', '')
+      text.append(element('span', 'agent-group-title', spaceName(group.spaceId)))
+      if (parent) text.append(element('span', 'agent-group-note', `worktree of ${parent}`))
+      head.append(spaceTile(group.spaceId), text)
+      section.append(head, list)
       return section
-    }),
-  )
+    })
+  if (folded.length > 0) {
+    const last = quiet.last !== null && folded.some((group) => group.spaceId === quiet.last) ? ` · last: ${spaceName(quiet.last)}` : ''
+    const toggle = element('button', 'agent-quiet', `earlier: ${folded.length} quiet ${folded.length === 1 ? 'space' : 'spaces'}${last} ${agentsQuietExpanded ? '▴' : '▾'}`) as HTMLButtonElement
+    toggle.type = 'button'
+    toggle.setAttribute('aria-expanded', String(agentsQuietExpanded))
+    toggle.addEventListener('click', () => {
+      agentsQuietExpanded = !agentsQuietExpanded
+      renderAgents()
+    })
+    const item = document.createElement('li')
+    item.append(toggle)
+    items.push(item)
+  }
+  agentList.replaceChildren(...items)
 }
 
 // Only the ages are rewritten on the timer, so a click on a row is never lost to a rebuild.
@@ -1194,6 +1243,9 @@ bridge.on('status.changed', (change) => {
 
 // A context reading belongs to one session's row; a tab with no entry yet waits for its status.
 bridge.on('context.changed', ({ tabId, context }) => store.applyContext(tabId, context))
+
+// The agent's own name for a session shows on its tab unless the human named the tab.
+bridge.on('agent.named', ({ tabId, name }) => store.applyName(tabId, name))
 
 bridge.on('attention.notify', (notice) => {
   const tab = store.tab(notice.tabId)
