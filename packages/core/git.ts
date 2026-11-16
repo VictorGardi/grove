@@ -6,10 +6,12 @@ export interface SpaceGitInfo {
   repoName: string | null
   mainPath: string | null
   branch: string | null
+  // Whether `dir` is the root of a linked worktree. A subfolder of a repo is not one, nor is a main checkout.
+  linked: boolean
 }
 
 const WRITE = { kind: 'write' } as const
-const NONE: SpaceGitInfo = { repoName: null, mainPath: null, branch: null }
+const NONE: SpaceGitInfo = { repoName: null, mainPath: null, branch: null, linked: false }
 
 // Asks git which worktree is the main one for `dir`, and which branch is checked out there. Reads only. Rejects with the GitError
 // when git cannot answer (check `notRepo` to tell a folder outside git from a timeout or other failure). An unborn branch shows its
@@ -19,6 +21,12 @@ export async function readSpaceGit(dir: string, git: GitRun = runGit): Promise<S
   const line = list.split('\n').find((candidate) => candidate.startsWith('worktree '))
   if (!line) return NONE
   const mainPath = line.slice('worktree '.length).trim()
+  const here = realOrSame(dir)
+  const linked = list
+    .split('\n')
+    .filter((candidate) => candidate.startsWith('worktree '))
+    .slice(1)
+    .some((candidate) => realOrSame(candidate.slice('worktree '.length).trim()) === here)
   // symbolic-ref -q exits 1 for a detached HEAD, which is a null branch; a timeout or a lost repo is not an answer.
   const branch = await git(['symbolic-ref', '--short', '-q', 'HEAD'], dir).then(
     (out) => out.trim() || null,
@@ -27,12 +35,20 @@ export async function readSpaceGit(dir: string, git: GitRun = runGit): Promise<S
       return null
     },
   )
-  return { repoName: path.basename(mainPath), mainPath, branch }
+  return { repoName: path.basename(mainPath), mainPath, branch, linked }
 }
 
 // Never throws: a folder outside git, or a missing git, gives nulls.
 export async function spaceGitInfo(dir: string, git: GitRun = runGit): Promise<SpaceGitInfo> {
   return readSpaceGit(dir, git).catch(() => NONE)
+}
+
+function realOrSame(folder: string): string {
+  try {
+    return fs.realpathSync(folder)
+  } catch {
+    return folder
+  }
 }
 
 export interface WorktreeEntry {

@@ -171,7 +171,7 @@ export class SpacesService {
   async removeWorktreeFolder(spaceId: string, force = false): Promise<void> {
     const space = this.requireSpace(spaceId)
     const git = await this.readGitForWrite(space.path)
-    if (git.mainPath === null || git.mainPath === space.path) {
+    if (git.mainPath === null || !git.linked) {
       throw new RpcError(ERROR_CODES.invalidParams, `${space.path} is not a worktree`)
     }
     if (this.state.spaces.some((other) => other !== space && other.path === space.path)) {
@@ -193,7 +193,7 @@ export class SpacesService {
     try {
       return await readSpaceGit(dir, this.git)
     } catch (error) {
-      if (!fs.existsSync(dir) || (error instanceof GitError && error.notRepo)) return { repoName: null, mainPath: null, branch: null }
+      if (!fs.existsSync(dir) || (error instanceof GitError && error.notRepo)) return { repoName: null, mainPath: null, branch: null, linked: false }
       throw new RpcError(ERROR_CODES.invalidParams, "couldn't read git state, try again")
     }
   }
@@ -484,7 +484,7 @@ export class SpacesService {
   // The space's git facts. A first read that fails gives nulls and is not remembered, so the next tick tries again.
   private async readGit(space: SpaceRecord): Promise<SpaceGitInfo> {
     const key = recordSpaceId(space)
-    const none: SpaceGitInfo = { repoName: null, mainPath: null, branch: null }
+    const none: SpaceGitInfo = { repoName: null, mainPath: null, branch: null, linked: false }
     if (!fs.statSync(space.path, { throwIfNoEntry: false })?.isDirectory()) {
       this.lastGit.delete(key)
       return none
@@ -505,7 +505,7 @@ export class SpacesService {
   private async describe(space: SpaceRecord, spaces: SpaceRecord[]): Promise<SpaceInfo> {
     const git = await this.readGit(space)
     // The worktree's parent is the first space at the main repo's path.
-    const main = git.mainPath !== null && git.mainPath !== space.path ? spaces.find((candidate) => candidate.path === git.mainPath) : undefined
+    const main = git.linked ? spaces.find((candidate) => candidate.path === git.mainPath) : undefined
     return {
       id: recordSpaceId(space),
       path: space.path,
@@ -513,7 +513,7 @@ export class SpacesService {
       label: space.name ?? null,
       repoName: git.repoName,
       parent: main === undefined ? null : recordSpaceId(main),
-      worktree: git.mainPath !== null && git.mainPath !== space.path,
+      worktree: git.linked,
       branch: git.branch,
     }
   }

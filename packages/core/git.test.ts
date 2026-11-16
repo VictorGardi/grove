@@ -23,6 +23,19 @@ describe('spaceGitInfo', () => {
     fs.rmSync(root, { recursive: true, force: true })
   })
 
+  it('does not call a subfolder of a repo a linked worktree, in a main checkout or in a worktree', async () => {
+    const main = path.join(root, 'widgets')
+    const worktree = path.join(root, 'widgets-feature')
+    fs.mkdirSync(path.join(main, 'skills'), { recursive: true })
+    git(main, ['init', '-q', '-b', 'main'])
+    fs.writeFileSync(path.join(main, 'skills', 'a.txt'), 'a')
+    git(main, ['add', '.'])
+    git(main, ['commit', '-q', '-m', 'init'])
+    git(main, ['worktree', 'add', '-q', '-b', 'feature', worktree])
+    await expect(spaceGitInfo(path.join(main, 'skills'))).resolves.toMatchObject({ mainPath: main, linked: false })
+    await expect(spaceGitInfo(path.join(worktree, 'skills'))).resolves.toMatchObject({ mainPath: main, linked: false })
+  })
+
   it('names the main repo for a linked worktree, and the branch of each', async () => {
     const main = path.join(root, 'widgets')
     const worktree = path.join(root, 'widgets-feature')
@@ -31,8 +44,8 @@ describe('spaceGitInfo', () => {
     git(main, ['commit', '-q', '--allow-empty', '-m', 'init'])
     git(main, ['worktree', 'add', '-q', '-b', 'feature', worktree])
 
-    await expect(spaceGitInfo(worktree)).resolves.toEqual({ repoName: 'widgets', mainPath: main, branch: 'feature' })
-    await expect(spaceGitInfo(main)).resolves.toEqual({ repoName: 'widgets', mainPath: main, branch: 'main' })
+    await expect(spaceGitInfo(worktree)).resolves.toEqual({ repoName: 'widgets', mainPath: main, branch: 'feature', linked: true })
+    await expect(spaceGitInfo(main)).resolves.toEqual({ repoName: 'widgets', mainPath: main, branch: 'main', linked: false })
   })
 
   it('gives a null branch for a detached HEAD', async () => {
@@ -42,7 +55,7 @@ describe('spaceGitInfo', () => {
     git(main, ['commit', '-q', '--allow-empty', '-m', 'init'])
     git(main, ['checkout', '-q', '--detach'])
 
-    await expect(spaceGitInfo(main)).resolves.toEqual({ repoName: 'widgets', mainPath: main, branch: null })
+    await expect(spaceGitInfo(main)).resolves.toEqual({ repoName: 'widgets', mainPath: main, branch: null, linked: false })
   })
 
   it('shows the name of an unborn branch', async () => {
@@ -50,13 +63,13 @@ describe('spaceGitInfo', () => {
     fs.mkdirSync(main)
     git(main, ['init', '-q', '-b', 'fresh'])
 
-    await expect(spaceGitInfo(main)).resolves.toEqual({ repoName: 'widgets', mainPath: main, branch: 'fresh' })
+    await expect(spaceGitInfo(main)).resolves.toEqual({ repoName: 'widgets', mainPath: main, branch: 'fresh', linked: false })
   })
 
   it('gives nulls outside a git repo', async () => {
     const plain = path.join(root, 'plain')
     fs.mkdirSync(plain)
-    expect(await spaceGitInfo(plain)).toEqual({ repoName: null, mainPath: null, branch: null })
+    expect(await spaceGitInfo(plain)).toEqual({ repoName: null, mainPath: null, branch: null, linked: false })
   })
 })
 
@@ -77,13 +90,13 @@ describe('reads through an injected GitRun', () => {
 
   it('spaceGitInfo asks for the worktree list and the branch, in the folder, as reads', async () => {
     const fake = fakeGit((args) => (args[0] === 'worktree' ? listing : 'main\n'))
-    await expect(spaceGitInfo('/r/other', fake.run)).resolves.toEqual({ repoName: 'widgets', mainPath: '/r/widgets', branch: 'main' })
+    await expect(spaceGitInfo('/r/other', fake.run)).resolves.toEqual({ repoName: 'widgets', mainPath: '/r/widgets', branch: 'main', linked: true })
     expect(fake.calls.map((c) => c.args)).toEqual([['worktree', 'list', '--porcelain'], ['symbolic-ref', '--short', '-q', 'HEAD']])
     expect(fake.calls.every((c) => c.cwd === '/r/other' && (c.options?.kind ?? 'read') === 'read')).toBe(true)
   })
 
   it('spaceGitInfo gives nulls on any error, and a null branch when symbolic-ref fails', async () => {
-    await expect(spaceGitInfo('/x', fakeGit(() => new GitError('timed out', false, true)).run)).resolves.toEqual({ repoName: null, mainPath: null, branch: null })
+    await expect(spaceGitInfo('/x', fakeGit(() => new GitError('timed out', false, true)).run)).resolves.toEqual({ repoName: null, mainPath: null, branch: null, linked: false })
     const detached = fakeGit((args) => (args[0] === 'worktree' ? listing : new GitError('', false)))
     await expect(spaceGitInfo('/r/widgets', detached.run)).resolves.toMatchObject({ repoName: 'widgets', branch: null })
   })
