@@ -84,8 +84,8 @@ specific meaning, so humans and agents stay consistent.
   has no tab that is working, needs you or is finished, and is not among the 5
   most recently visited spaces (each space counts once, by its latest visit;
   the active space and the spaces under its heading take no place). Go to (with an empty query) and the spaces list in the
-  sidebar fold the quiet spaces behind one line, "earlier: N quiet spaces ·
-  last: X", which opens them. A query in Go to searches them too. The sidebar
+  sidebar fold the quiet spaces behind one line, "N quiet spaces ▾" while
+  closed and "Hide quiet spaces ▴" while open, which opens and closes them. A query in Go to searches them too. The sidebar
   folds them without reordering: spaces keep the sidebar order. A heading
   leaves the list only when all its spaces are quiet. This is separate from
   folding a heading, which the human does and which is remembered per repo.

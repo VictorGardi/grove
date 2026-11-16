@@ -139,25 +139,11 @@ export function mostUrgent(states: AgentStateName[]): AgentStateName | null {
 }
 
 // The sidebar's list with its quiet spaces folded away: a plain space leaves it when quiet, a heading only when all its rows
-// are. `count` counts the spaces that left. `last` is the folded space visited most recently, named as its row names it, with
-// its repo (or branch, for a plain row) added where another row has the same name; null when none, or when it stayed listed.
-export function foldQuiet<T extends SidebarSpace>(items: Array<SidebarItem<T>>, quiet: { ids: Set<string>; last: string | null }): { items: Array<SidebarItem<T>>; count: number; last: string | null } {
+// are. `count` counts the spaces that left.
+export function foldQuiet<T extends SidebarSpace>(items: Array<SidebarItem<T>>, quiet: { ids: Set<string> }): { items: Array<SidebarItem<T>>; count: number } {
   const kept = items.filter((item) => (item.kind === 'plain' ? !quiet.ids.has(item.row.space.id) : item.rows.some((row) => !quiet.ids.has(row.space.id))))
   const gone = items.filter((item) => !kept.includes(item))
-  const rows = items.flatMap((item): Array<{ row: SidebarRow<T>; repo: string | null }> => (item.kind === 'heading' ? item.rows.map((row) => ({ row, repo: item.repo })) : [{ row: item.row, repo: null }]))
-  const lastRow = gone.length === 0 ? undefined : rows.find(({ row }) => row.space.id === quiet.last && gone.some((item) => (item.kind === 'plain' ? item.row === row : item.rows.includes(row))))
-  let last: string | null = null
-  if (lastRow) {
-    const name = rowName(lastRow.row)
-    const twin = rows.some(({ row }) => row !== lastRow.row && rowName(row) === name)
-    const where = lastRow.repo ?? lastRow.row.space.branch
-    last = twin && where ? `${name} · ${where}` : name
-  }
-  return {
-    items: kept,
-    count: gone.reduce((sum, item) => sum + (item.kind === 'plain' ? 1 : item.rows.length), 0),
-    last,
-  }
+  return { items: kept, count: gone.reduce((sum, item) => sum + (item.kind === 'plain' ? 1 : item.rows.length), 0) }
 }
 
 // The space ids in the order the sidebar lists them, hidden rows included.
@@ -267,9 +253,8 @@ export function contextView(context: ContextUsage | undefined, kind: AgentKind =
 
 export interface SummaryTab {
   id: string
-  name: string
-  // An agent tab, whether launched as one or typed into a shell tab and watched.
-  agent: boolean
+  // The agent the tab runs, whether launched as one or typed into a shell tab and watched; null for a plain shell.
+  agent: AgentKind | null
   exited: boolean
   // The state as the tab shows it (see tabStateOf).
   state: AgentStateName
@@ -277,14 +262,15 @@ export interface SummaryTab {
   since: number | null
 }
 
-// What a row shows of its space's tabs. With no live tab it is empty: `state` is idle, and there is nothing to name.
+// What a row shows of its space's tabs. With no live tab it is empty: `state` is idle, and there is nothing to count.
 export interface RowSummary {
   empty: boolean
   state: AgentStateName
   // The deciding tab: the most urgent live one, ties to the most recently visited.
   tabId: string | null
-  tabName: string | null
   agents: number
+  // The agent the first live agent tab runs, for the agent icon beside the count; null with no live agent.
+  agentKind: AgentKind | null
   terminals: number
   // When the deciding tab's state began; null when it has no such time.
   since: number | null
@@ -294,21 +280,14 @@ export interface RowSummary {
 export function rowSummary(tabs: SummaryTab[], recent: string[]): RowSummary {
   const live = tabs.filter((tab) => !tab.exited)
   const [top] = [...live].sort((a, b) => URGENCY.indexOf(a.state) - URGENCY.indexOf(b.state) || visitRank(recent, a.id) - visitRank(recent, b.id))
-  const agents = live.filter((tab) => tab.agent).length
+  const agentTabs = live.filter((tab) => tab.agent !== null)
   return {
     empty: top === undefined,
     state: top?.state ?? 'idle',
     tabId: top?.id ?? null,
-    tabName: top?.name ?? null,
-    agents,
-    terminals: live.length - agents,
+    agents: agentTabs.length,
+    agentKind: agentTabs[0]?.agent ?? null,
+    terminals: live.length - agentTabs.length,
     since: top?.since ?? null,
   }
-}
-
-// "4 agents, 1 terminal"; "No tabs open" for none.
-export function openCounts(summary: Pick<RowSummary, 'agents' | 'terminals'>): string {
-  const part = (n: number, word: string) => (n === 0 ? [] : [`${n} ${word}${n === 1 ? '' : 's'}`])
-  const parts = [...part(summary.agents, 'agent'), ...part(summary.terminals, 'terminal')]
-  return parts.length === 0 ? 'No tabs open' : parts.join(', ')
 }

@@ -14,7 +14,7 @@ The sidebar tells me which folders I have, but not where my work is. A coloured 
 The sidebar draws each repo with worktrees as a trunk with its worktrees branching off it. A **heading** names the repo, and its spaces (the main checkout and each worktree space) are rows on branches off it. A space with no worktrees stays one plain row until it has tabs. Each row has a node showing its state, and two lines:
 
 - Line 1: the name, and on the right the time since the shown state began. The line is blue while something is working.
-- Line 2: the **tab name** of the most relevant tab, plus what is open, counted by type, for example "4 agents, 1 terminal".
+- Line 2: what is open, right-aligned, as the agent icon with the number of live agents and then the terminal icon (`>_`) with the number of live terminals, each only when its count is above zero. No tab name is shown.
 
 The node reuses the status looks Grove already has, with the same colours and the same Waiting and Running colour and indicator settings: hollow for idle, dashed for no tabs open (and for no status), a halo for needs-you, solid for finished, and the chosen waveform or three dots for working. A row shows its **most urgent state**. The list of per-agent rows is gone, so the agent type of each tab shows only in the tab bar.
 
@@ -29,24 +29,24 @@ The node reuses the status looks Grove already has, with the same colours and th
 7. As a person who stepped away, I want a row with a finished agent to show the finished look, so that I know there is something to review.
 8. As a person who opens the finished tab, I want the row to return to idle, so that finished means "not yet looked at".
 9. As a person, I want a row with no tabs to show a dashed node and "No tabs open", so that I can tell an empty worktree from a resting one.
-10. As a person with an agent that reports no status, I want the dashed node with the agent's tab title on line 2, so that I can tell it from an empty worktree.
+10. As a person with an agent that reports no status, I want the dashed node with the agent counted on line 2, so that I can tell it from an empty worktree.
 11. As a person, I want a row with only idle tabs to show a hollow node, so that resting work looks resting.
 12. As a person with several tabs in one worktree in different states, I want the row to show the most urgent state in the order needs-you, finished, working, unknown, idle, so that nothing that needs me is hidden by something that does not.
-13. As a person, I want line 2 to show the title of the tab that decided the row's state, so that I read one story per row.
-14. As a person with two tabs tied on state, I want the most recently active one to be the one named, so that the title is the tab I most likely mean.
+13. As a person, I want line 2 to show no tab name, only what is open, so that the row stays short and the node and time carry the story.
+14. As a person with two tabs tied on state, I want the most recently active one to decide the row's time and what a click opens, so that it is the tab I most likely mean.
 15. As a person, I want line 1 to be blue while anything in that row is working, so that activity stands out beside the node.
 16. As a person, I want line 1's time to say how long the shown state has lasted (or, when idle, how long it has been idle), so that I know how stale a finished or idle worktree is.
 17. As a person, I want no "Ready" word on a finished row, so that the node alone says finished and the row stays calm.
 18. As a person, I want the time to keep counting without me touching anything, so that I do not read a stale age.
 19. As a person with a worktree that has only terminals, I want the row to show no time rather than a made-up one, so that the sidebar never guesses.
-20. As a person, I want line 2 to count open tabs by type, such as "4 agents and 1 terminal", so that I know what is open without opening the worktree.
+20. As a person, I want line 2 to count open tabs by type as icons with numbers (the agent icon and 4, then `>_` and 1), so that I know what is open without opening the worktree.
 21. As a person, I want tabs whose process has exited left out of those counts, so that the counts say what is alive.
 22. As a person, I want the agent type (Claude, Copilot, OpenCode) to show in the tab bar and not in the sidebar, so that the sidebar answers where and the tab bar answers what.
 23. As a person, I want the main checkout's row named by my rename if I gave one, else by its branch, else by its folder when the checkout is detached, so that the row says which checkout it is.
 24. As a person, I want a worktree row named by its space name (my rename, or its folder), so that renaming keeps working.
 25. As a person, I want a plain space with no tabs to show its name and branch on one line, so that I still see which branch a folder is on.
 26. As a person who opens the first tab in a plain space, I want that row to become the same two-line row as a worktree, with the time replacing the branch, so that every space with work in it reads the same way.
-27. As a person, I want clicking a row to select that space and open the tab named on line 2 when it needs me or has finished, so that I land on what the row told me about.
+27. As a person, I want clicking a row to select that space and open the deciding tab when it needs me or has finished, so that I land on what the row told me about.
 28. As a person, I want clicking a row whose tabs are only working or idle to open the tab I visited last in that space, so that I return to where I was.
 29. As a person, I want clicking a heading to only fold or unfold it, so that I never switch spaces by accident.
 30. As a person with a crowded sidebar, I want to fold a heading, so that I can tidy a repo I am not working in.
@@ -61,7 +61,7 @@ The node reuses the status looks Grove already has, with the same colours and th
 39. As a person who later adds that main checkout as a space, I want its row to appear in that same heading, with my fold kept, so that nothing jumps or resets.
 40. As a person who removes the main checkout space, I want its worktrees to stay under the repo's heading, so that they do not scatter.
 41. As a person with two spaces on one folder, I want the second to stay a separate row, so that nothing is merged behind my back.
-42. As a person, I want the Quiet-spaces fold ("earlier: N quiet spaces · last: X") to apply to the sidebar's spaces, so that the many spaces I am not using stay out of the way.
+42. As a person, I want the Quiet-spaces fold ("N quiet spaces ▾", "Hide quiet spaces ▴" while open) to apply to the sidebar's spaces, so that the many spaces I am not using stay out of the way.
 43. As a person, I want a heading to leave the list only when all its spaces are quiet, and never while its space is active, so that the group around my work stays whole.
 44. As a person, I want the quiet count to count spaces and not headings, so that "N quiet spaces" says what it says.
 45. As a person who opens the quiet fold, I want spaces in their usual sidebar order, so that nothing is reordered.
@@ -86,11 +86,11 @@ The node reuses the status looks Grove already has, with the same colours and th
 - The sidebar's spaces list and agents list become one list of rows. Per-agent rows, their group headers and the letter tiles are removed. The sidebar keeps its two-section layout setting only as far as the remaining section needs.
 - **Grouping.** A heading is derived from each space's repo and its existing parent link (ADR 0005). A repo gets a heading when it has a worktree space; its main checkout space, when it is a space, is a row like the worktree rows. The heading is keyed by repo, not by the main checkout's space. Spaces with no worktrees have no heading. Grouping is one level, as today. The data the core sends about spaces already carries everything needed (parent, worktree flag, repo name, branch); no new core data is required.
 - **Most urgent state.** The shared urgency order becomes needs-you, finished, working, unknown, idle. The only places it was inverted are the sidebar's own roll-up and the agent-row sort (which goes away); Go to, the urgent banner and the jump-to-urgent key already use this order. A row's state is the most urgent state over its live tabs. A folded heading's state is the most urgent over its rows; an unfolded heading shows none.
-- **Row summary** is a pure rule computed from a space's tabs: the deciding tab (most urgent, ties to the most recently active), its tab name for line 2, counts of live agent tabs and live terminal tabs (exited tabs not counted), the time, and whether the space has no tabs. Time is the start of the deciding tab's state; a space whose tabs carry no such time shows none.
+- **Row summary** is a pure rule computed from a space's tabs: the deciding tab (most urgent, ties to the most recently active), its agent kind for the icon, counts of live agent tabs and live terminal tabs (exited tabs not counted), the time, and whether the space has no tabs. Time is the start of the deciding tab's state; a space whose tabs carry no such time shows none.
 - **Node** reuses the existing indicator for each state, including the working mark with the user's waveform or three-dots choice, the Waiting, Running and finished colours, and the reduced-motion behaviour. The same dashed look serves "no tabs" and "no status". The sidebar now shows idle and unknown nodes on rows, which it hid before. Graph geometry (trunk, branches, node placement) is new design tokens; the literals test applies.
 - **Time** shows seconds, minutes, hours and days as today, and refreshes on its existing timer for the new rows. A finished row shows its time like any row; there is no "Ready" label.
 - **Row naming.** A main checkout row shows the space's rename, else its branch, else its folder name (detached or unknown branch). A worktree row shows the space name. A plain space with no tabs shows its name and branch on one line; once it has tabs it becomes the two-line row with the time in place of the branch.
-- **Click behaviour.** Clicking a row selects its space and opens the tab shown on line 2 when that tab needs the human or has finished; otherwise it opens the most recently visited tab of that space (today's behaviour). Clicking a heading only folds or unfolds.
+- **Click behaviour.** Clicking a row selects its space and opens the deciding tab when it needs the human or has finished; otherwise it opens the most recently visited tab of that space (today's behaviour). Clicking a heading only folds or unfolds.
 - **Fold.** The heading fold is a new saved preference, one choice per repo, default open, using the same persisted-preference approach as the other sidebar settings, with unknown or invalid data ignored and repos that no longer exist dropped. The active space's heading is forced open while it is active without changing the saved choice. Going to a tab in a folded heading opens it. Cmd+digit numbering and Go to's order keep counting hidden rows.
 - **Quiet-spaces fold** now applies to the sidebar's spaces list (it applied only to the agents list). Quietness is still judged per space with the existing definition, widened as in the glossary: the active space and the spaces under its heading are never quiet. A heading leaves the list only when all its spaces are quiet. The count counts spaces. Its open/closed state stays in memory. Go to is unchanged.
 - **Heading menu.** The heading has its own context menu with create and open worktree. A row keeps its existing space actions.

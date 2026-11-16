@@ -318,6 +318,26 @@ p {
   color: var(--color-mute);
 }
 
+/* Line 2 with tabs open: the counts, right-aligned. */
+.space-detail.counts {
+  display: flex;
+  justify-content: flex-end;
+  gap: var(--space-3);
+}
+
+/* One open count: the agent or terminal icon, then the number. */
+.space-count {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-1);
+  flex: none;
+}
+
+.space-count .icon {
+  width: var(--icon-size-sm);
+  height: var(--icon-size-sm);
+}
+
 .space-branch {
   min-width: 0;
   text-align: right;

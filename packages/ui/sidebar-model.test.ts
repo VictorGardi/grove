@@ -7,7 +7,6 @@ import {
   jumpTargets,
   mostUrgent,
   nextUrgent,
-  openCounts,
   rowName,
   rowSummary,
   shortFolder,
@@ -48,8 +47,7 @@ describe('tabStateOf', () => {
 describe('rowSummary', () => {
   const tab = (id: string, state: AgentStateName, extra: Partial<SummaryTab> = {}): SummaryTab => ({
     id,
-    name: `Tab ${id}`,
-    agent: true,
+    agent: 'claude',
     exited: false,
     state,
     since: 1_000,
@@ -59,7 +57,7 @@ describe('rowSummary', () => {
   it('is empty for a space with no tabs, and for one with only gone tabs', () => {
     expect(rowSummary([], []).empty).toBe(true)
     const gone = rowSummary([tab('a', 'needs-you', { exited: true })], [])
-    expect(gone).toMatchObject({ empty: true, state: 'idle', tabId: null, tabName: null, agents: 0, terminals: 0, since: null })
+    expect(gone).toMatchObject({ empty: true, state: 'idle', tabId: null, agents: 0, agentKind: null, terminals: 0, since: null })
   })
 
   it('decides by needs-you, finished, working, unknown, idle', () => {
@@ -70,7 +68,7 @@ describe('rowSummary', () => {
     }
   })
 
-  it('names the deciding tab, and gives a tie to the most recently visited one', () => {
+  it('picks the deciding tab, and gives a tie to the most recently visited one', () => {
     const tabs = [tab('a', 'working'), tab('b', 'working'), tab('c', 'idle')]
     expect(rowSummary(tabs, ['c', 'b', 'a']).tabId).toBe('b')
     expect(rowSummary(tabs, ['a']).tabId).toBe('a')
@@ -78,24 +76,19 @@ describe('rowSummary', () => {
   })
 
   it('counts live agent and terminal tabs, and leaves gone tabs out', () => {
-    const tabs = [tab('a', 'idle'), tab('b', 'idle'), tab('c', 'idle', { agent: false }), tab('d', 'idle', { exited: true }), tab('e', 'idle', { agent: false, exited: true })]
+    const tabs = [tab('a', 'idle'), tab('b', 'idle'), tab('c', 'idle', { agent: null }), tab('d', 'idle', { exited: true }), tab('e', 'idle', { agent: null, exited: true })]
     expect(rowSummary(tabs, [])).toMatchObject({ agents: 2, terminals: 1 })
+  })
+
+  it('names the kind of the first live agent for the icon, and none for shells only', () => {
+    const tabs = [tab('a', 'idle', { agent: null }), tab('b', 'idle', { agent: 'copilot', exited: true }), tab('c', 'idle', { agent: 'opencode' }), tab('d', 'idle')]
+    expect(rowSummary(tabs, []).agentKind).toBe('opencode')
+    expect(rowSummary([tab('a', 'idle', { agent: null })], []).agentKind).toBeNull()
   })
 
   it('shows the start of the deciding tab\'s state, and no time when it has none', () => {
     expect(rowSummary([tab('a', 'working', { since: 5 }), tab('b', 'idle', { since: 9 })], []).since).toBe(5)
-    expect(rowSummary([tab('a', 'idle', { agent: false, since: null })], []).since).toBeNull()
-  })
-})
-
-describe('openCounts', () => {
-  it('counts by type, in singular and plural, and leaves out a zero', () => {
-    expect(openCounts({ agents: 4, terminals: 1 })).toBe('4 agents, 1 terminal')
-    expect(openCounts({ agents: 1, terminals: 0 })).toBe('1 agent')
-    expect(openCounts({ agents: 0, terminals: 2 })).toBe('2 terminals')
-  })
-  it('says no tabs are open for none', () => {
-    expect(openCounts({ agents: 0, terminals: 0 })).toBe('No tabs open')
+    expect(rowSummary([tab('a', 'idle', { agent: null, since: null })], []).since).toBeNull()
   })
 })
 
@@ -334,23 +327,12 @@ describe('foldQuiet', () => {
   const ids = (list: ReturnType<typeof foldQuiet>['items']) => list.map((item) => (item.kind === 'heading' ? item.repo : item.row.space.id))
 
   it('drops a plain quiet space, and a heading only when all its rows are quiet', () => {
-    const folded = foldQuiet(items, { ids: new Set(['proj-wt', 'old', 'old-wt', 'lone']), last: null })
+    const folded = foldQuiet(items, { ids: new Set(['proj-wt', 'old', 'old-wt', 'lone']) })
     expect(ids(folded.items)).toEqual(['proj', 'lone2'])
   })
 
   it('counts spaces, not headings, and counts none of a heading that stays', () => {
-    expect(foldQuiet(items, { ids: new Set(['proj-wt', 'old', 'old-wt', 'lone']), last: null }).count).toBe(3)
-    expect(foldQuiet(items, { ids: new Set(), last: null }).count).toBe(0)
-  })
-
-  it('names the last space as its row does, adding the repo or branch only where the name is ambiguous', () => {
-    expect(foldQuiet(items, { ids: new Set(['old', 'old-wt']), last: 'old' }).last).toBe('master · old')
-    expect(foldQuiet(items, { ids: new Set(['old', 'old-wt']), last: 'old-wt' }).last).toBe('old-wt')
-    expect(foldQuiet(items, { ids: new Set(['lone']), last: 'lone' }).last).toBe('lone')
-    expect(foldQuiet(items, { ids: new Set(['lone2']), last: 'lone2' }).last).toBe('lone2')
-  })
-
-  it('names no last space when it stays listed', () => {
-    expect(foldQuiet(items, { ids: new Set(['proj-wt', 'lone']), last: 'proj-wt' }).last).toBeNull()
+    expect(foldQuiet(items, { ids: new Set(['proj-wt', 'old', 'old-wt', 'lone']) }).count).toBe(3)
+    expect(foldQuiet(items, { ids: new Set() }).count).toBe(0)
   })
 })

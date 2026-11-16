@@ -41,7 +41,7 @@ describe('demoRows', () => {
   it('gives each state to a different space, so the sidebar shows them all', () => {
     const shown = rows.spaces.map((space) => {
       const tabs = rows.tabs.flatMap((tab, index) =>
-        tab.spaceId === space.id ? [{ id: tab.id, name: tab.id, agent: tab.kind !== 'shell', exited: tab.exited, state: states[index]!, since: null }] : [],
+        tab.spaceId === space.id ? [{ id: tab.id, agent: tab.kind === 'shell' ? null : tab.kind, exited: tab.exited, state: states[index]!, since: null }] : [],
       )
       return rowSummary(tabs, []).state
     })

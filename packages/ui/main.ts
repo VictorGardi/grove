@@ -25,8 +25,8 @@ import type { KeyValueStore } from './persisted-pref.ts'
 import { readSidebarFolds, readSidebarHidden, writeSidebarFolds, writeSidebarHidden } from './sidebar-state.ts'
 import { createFocusSignal } from './focus-signal.ts'
 import { noViewState, storageViewState } from './view-state.ts'
-import { quietSpaces } from './quiet-spaces.ts'
-import { foldQuiet, headingOf, headingOpen, jumpTargets, mostUrgent, nextUrgent, openCounts, rowName, rowSummary, shortFolder, sidebarItems, sidebarSpaceOrder, spaceAt, tileIndex, worktreeOf, type SidebarItem, type SidebarRow, type SummaryTab } from './sidebar-model.ts'
+import { quietLabel, quietSpaces } from './quiet-spaces.ts'
+import { foldQuiet, headingOf, headingOpen, jumpTargets, mostUrgent, nextUrgent, rowName, rowSummary, shortFolder, sidebarItems, sidebarSpaceOrder, spaceAt, tileIndex, worktreeOf, type SidebarItem, type RowSummary, type SidebarRow, type SummaryTab } from './sidebar-model.ts'
 import { createWindowStore, type Tab, type TabKind } from './window-store.ts'
 import { contextMeter, hideContextTip, markWithContext } from './context-badge.ts'
 import { createTabPill, type TabPill } from './tab-pill.ts'
@@ -994,13 +994,13 @@ function renderSidebar(): void {
       li.append(headingEl(item, open), rows)
       return li
     }),
-    ...(folding.count === 0 ? [] : [quietToggle(folding.count, folding.last)]),
+    ...(folding.count === 0 ? [] : [quietToggle(folding.count)]),
   )
 }
 
 // The line that folds the quiet spaces away or brings them back, in the sidebar's order.
-function quietToggle(count: number, last: string | null): HTMLElement {
-  const toggle = element('button', 'spaces-quiet', `earlier: ${count} quiet ${count === 1 ? 'space' : 'spaces'}${last ? ` · last: ${last}` : ''} ${quietOpen ? '▴' : '▾'}`) as HTMLButtonElement
+function quietToggle(count: number): HTMLElement {
+  const toggle = element('button', 'spaces-quiet', quietLabel(count, quietOpen)) as HTMLButtonElement
   toggle.type = 'button'
   toggle.addEventListener('click', () => {
     quietOpen = !quietOpen
@@ -1043,11 +1043,27 @@ function headingEl(item: Extract<SidebarItem<SpaceInfo>, { kind: 'heading' }>, o
 function summaryTabs(spaceId: string): SummaryTab[] {
   return store.tabsOfSpace(spaceId).map((tab) => {
     const info = store.agent(tab.id)
-    return { id: tab.id, name: tabName(tab), agent: tab.kind !== 'shell' || info !== undefined, exited: tab.exited, state: stateOf(tab), since: info?.since ?? null }
+    return { id: tab.id, agent: info?.agent ?? (tab.kind === 'shell' ? null : tab.kind), exited: tab.exited, state: stateOf(tab), since: info?.since ?? null }
   })
 }
 
-// One space's row: its node, then two lines (the name and the time; the deciding tab's name and what is open), or for a plain
+// Line 2 of a row: what is open, as the agent and terminal icons with their counts (each only above zero), or "No tabs open".
+function openLine(summary: RowSummary): HTMLElement {
+  const line = element('span', summary.empty ? 'space-detail' : 'space-detail counts', summary.empty ? 'No tabs open' : '')
+  const count = (n: number, noun: string, icon: string): void => {
+    if (n === 0) return
+    const part = element('span', 'space-count', String(n))
+    part.title = `${n} ${noun}${n === 1 ? '' : 's'}`
+    part.setAttribute('aria-label', part.title)
+    part.insertAdjacentHTML('afterbegin', icon)
+    line.append(part)
+  }
+  count(summary.agents, 'agent', summary.agentKind ? agentIconSvg(summary.agentKind) : '')
+  count(summary.terminals, 'terminal', iconSvg('terminal'))
+  return line
+}
+
+// One space's row: its node, then two lines (the name and the time; what is open), or for a plain
 // space with no tabs one line, the name and the branch.
 function spaceRow(row: SidebarRow<SpaceInfo>): HTMLButtonElement {
   const { space } = row
@@ -1076,7 +1092,7 @@ function spaceRow(row: SidebarRow<SpaceInfo>): HTMLButtonElement {
       line.append(age)
     }
     const text = element('span', 'space-text', '')
-    text.append(line, element('span', 'space-detail', summary.empty ? openCounts(summary) : `${summary.tabName} · ${openCounts(summary)}`))
+    text.append(line, openLine(summary))
     button.append(node, text)
   }
   if (space.id === store.activeSpace) button.setAttribute('aria-current', 'true')

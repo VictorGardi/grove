@@ -128,7 +128,11 @@ function row(spaceId: string): HTMLElement | null {
 const lines = (spaceId: string) => ({
   name: row(spaceId)?.querySelector('.space-name')?.textContent ?? null,
   time: row(spaceId)?.querySelector('.space-time')?.textContent ?? null,
-  detail: row(spaceId)?.querySelector('.space-detail')?.textContent ?? null,
+  // Line 2: what is open as "agents 3, terminals 1" read off the counts' labels, or its text ("No tabs open").
+  detail: (() => {
+    const counts = [...(row(spaceId)?.querySelectorAll('.space-count') ?? [])].map((el) => `${el.textContent} ${el.getAttribute('aria-label')?.replace(/^\d+ /, '')}`)
+    return counts.length > 0 ? counts.join(', ') : (row(spaceId)?.querySelector('.space-detail')?.textContent ?? null)
+  })(),
   node: row(spaceId)?.querySelector('.indicator')?.className ?? null,
 })
 
@@ -274,19 +278,30 @@ describe('window status path', () => {
     expect(JSON.parse(localStorage.getItem('grove.agent-appearance')!).needsYou).toBeNull()
   })
 
-  it('shows a space as two lines: its name and time, then the deciding tab and what is open', () => {
+  it('shows a space as two lines: its name and time, then what is open as icons with counts', () => {
     const since = Date.now() - 90_000
     notify('status.changed', change('tab-claude', 'claude', 'needs-you', since))
     notify('status.changed', change('tab-copilot', 'copilot', 'working'))
     notify('status.changed', change('tab-opencode', 'opencode', 'idle'))
-    expect(lines('s1')).toMatchObject({ name: 'proj', time: '1m', detail: 'claude · 3 agents', node: 'indicator ind-needs-you' })
+    expect(lines('s1')).toMatchObject({ name: 'proj', time: '1m', detail: '3 agents', node: 'indicator ind-needs-you' })
     expect(row('s1')?.classList.contains('working')).toBe(false)
     notify('status.changed', change('tab-claude', 'claude', 'idle'))
     expect(row('s1')?.classList.contains('working')).toBe(true)
-    expect(lines('s1').detail).toBe('copilot · 3 agents')
+    expect(lines('s1').detail).toBe('3 agents')
     notify('status.changed', change('tab-claude', 'claude', 'finished', since))
-    expect(lines('s1')).toMatchObject({ time: '1m', detail: 'claude · 3 agents', node: 'indicator ind-finished' })
+    expect(lines('s1')).toMatchObject({ time: '1m', detail: '3 agents', node: 'indicator ind-finished' })
     expect(row('s1')?.textContent).not.toContain('Ready')
+    // No tab name on line 2, whichever tab decides.
+    expect(row('s1')?.textContent).not.toMatch(/claude|copilot|opencode/)
+  })
+
+  it('shows agents then terminals as icons with counts, each only above zero', () => {
+    for (const [id, agent] of [['tab-claude', 'claude'], ['tab-copilot', 'copilot'], ['tab-opencode', 'opencode']] as const) notify('status.changed', change(id, agent, 'idle'))
+    notify('tabs.opened', { ...TABS[0], id: 'shell-b', spaceId: 's1', spacePath: '/Users/test/proj', label: 'sh' })
+    expect(lines('s1').detail).toBe('3 agents, 1 terminal')
+    expect(row('s1')?.querySelectorAll('.space-detail .space-count svg')).toHaveLength(2)
+    notify('tabs.closed', { id: 'shell-b' })
+    expect(row('s1')?.querySelectorAll('.space-detail .space-count')).toHaveLength(1)
   })
 
   it('opens the tab a row names when it needs you or has finished, else the one last visited', () => {
@@ -324,7 +339,7 @@ describe('window status path', () => {
   it('counts a terminal with no time; a plain space is two lines while it has a live tab', () => {
     notify('spaces.changed', space('shells', { branch: 'dev' }))
     notify('tabs.opened', { ...TABS[0], id: 'shell-a', spaceId: 'shells', spacePath: '/Users/test/shells', label: 'sh' })
-    expect(lines('shells')).toMatchObject({ name: 'shells', time: null, detail: 'sh · 1 terminal', node: 'indicator ind-idle' })
+    expect(lines('shells')).toMatchObject({ name: 'shells', time: null, detail: '1 terminal', node: 'indicator ind-idle' })
     notify('tabs.exit', { id: 'shell-a', exitCode: 0 })
     expect(lines('shells')).toMatchObject({ detail: null, node: 'indicator ind-unknown' })
     notify('tabs.closed', { id: 'shell-a' })
@@ -398,17 +413,17 @@ describe('window status path', () => {
     quietFold(false)
     // The active space and its heading stay; the quiet plain space and the all-quiet heading are folded.
     expect(listed()).toEqual(['main', 'proj-wt'])
-    expect(fold()?.textContent).toBe('earlier: 3 quiet spaces ▾')
+    expect(fold()?.textContent).toBe('3 quiet spaces ▾')
     fold()!.click()
     expect(listed()).toEqual(['main', 'proj-wt', 'master', 'old-wt', 'lone'])
-    expect(fold()?.textContent).toBe('earlier: 3 quiet spaces ▴')
+    expect(fold()?.textContent).toBe('Hide quiet spaces ▴')
     fold()!.click()
     expect(listed()).toEqual(['main', 'proj-wt'])
     // Something that needs you in a folded space brings its heading back.
     notify('tabs.opened', { ...TABS[0], id: 'old-tab', spaceId: 'old-wt', spacePath: '/Users/test/old-wt', label: 'old' })
     notify('status.changed', change('old-tab', 'claude', 'needs-you'))
     expect(listed()).toEqual(['main', 'proj-wt', 'master', 'old-wt'])
-    expect(fold()?.textContent).toBe('earlier: 1 quiet space ▾')
+    expect(fold()?.textContent).toBe('1 quiet space ▾')
     notify('tabs.closed', { id: 'old-tab' })
     for (const id of ['proj-wt', 'old', 'old-wt', 'lone']) notify('spaces.removed', { id })
     notify('spaces.changed', space('s1', { path: '/Users/test/proj', name: 'proj' }))

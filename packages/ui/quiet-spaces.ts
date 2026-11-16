@@ -52,3 +52,8 @@ export function quietSpaces(input: QuietInput): { ids: Set<string>; last: string
   const last = quiet.reduce<(typeof quiet)[number] | null>((top, space) => (space.latest < input.recent.length && (!top || space.latest < top.latest) ? space : top), null)
   return { ids: new Set(quiet.map((space) => space.id)), last: last?.id ?? null }
 }
+
+// The line that folds the quiet spaces away or brings them back: the count while closed, "Hide quiet spaces" while open.
+export function quietLabel(count: number, open: boolean): string {
+  return open ? 'Hide quiet spaces ▴' : `${count} quiet ${count === 1 ? 'space' : 'spaces'} ▾`
+}
