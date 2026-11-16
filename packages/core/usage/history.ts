@@ -36,28 +36,44 @@ export const OPENCODE_SOURCE = 'opencode'
 // The usage history (GLOSSARY): one keyed entry per request, held in memory only and rebuilt from the agents' files at every core
 // start (ADR 0004). Nothing is written to disk.
 export class UsageHistory {
-  private rows = new Map<string, UsageRequest>()
+  // Per agent, keyed by the request's own key: the row and its map key are then the same string, not two copies of a long id.
+  private rows = new Map<UsageAgent, Map<string, UsageRequest>>()
+  private count = 0
+  // One shared instance per distinct folder, model and source: hundreds of thousands of rows name a few hundred of each.
+  private strings = new Map<string, string>()
   // Counts changes, so a summary can be reused while nothing changed.
   revision = 0
   // Told of every request the history gains or changes: what it held under the key until now (undefined for a new one), and what it holds.
   observer: ((before: UsageRequest | undefined, after: UsageRequest) => void) | undefined
 
   get size(): number {
-    return this.rows.size
+    return this.count
   }
 
-  requests(): IterableIterator<UsageRequest> {
-    return this.rows.values()
+  *requests(): IterableIterator<UsageRequest> {
+    for (const rows of this.rows.values()) yield* rows.values()
+  }
+
+  private intern(value: string): string {
+    const shared = this.strings.get(value)
+    if (shared !== undefined) return shared
+    this.strings.set(value, value)
+    return value
   }
 
   // Records a request, or merges it into the one already kept under its key. Merging keeps the first occurrence (the earliest
   // time, and its folder: a resumed session copies old history under the old time) and the largest output count with the
   // token counts of that line (a streamed response writes the same request again with a growing count). True when it changed.
   add(request: UsageRequest): boolean {
-    const storedKey = `${request.agent}:${request.key}`
-    const kept = this.rows.get(storedKey)
+    request.source = this.intern(request.source)
+    request.model = this.intern(request.model)
+    request.folder = this.intern(request.folder)
+    let rows = this.rows.get(request.agent)
+    if (rows === undefined) this.rows.set(request.agent, (rows = new Map()))
+    const kept = rows.get(request.key)
     if (kept === undefined) {
-      this.rows.set(storedKey, request)
+      rows.set(request.key, request)
+      this.count++
       this.revision++
       this.observer?.(undefined, request)
       return true
@@ -79,7 +95,7 @@ export class UsageHistory {
       cacheWrite: counted.cacheWrite,
       nanoAiu: counted.nanoAiu ?? first.nanoAiu,
     }
-    this.rows.set(storedKey, merged)
+    rows.set(request.key, merged)
     this.revision++
     this.observer?.(kept, merged)
     return true

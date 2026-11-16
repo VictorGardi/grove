@@ -61,6 +61,11 @@ function bump<K>(map: Map<K, UsageTotals>, key: K, request: UsageRequest, sign: 
 // the local days of the clock's time zone when the request was applied.
 export class UsageIndex {
   private readonly agents = new Map<UsageAgent, Map<string, DayBucket>>()
+  // The earliest and latest local day any agent has a request on, kept as days come and go. A day that was one of them and
+  // emptied makes them stale, and they are found again from the days (a few hundred at most) the next time they are asked for.
+  private first: string | undefined
+  private last: string | undefined
+  private stale = false
 
   // `before` is what the history held under the request's key until now, if anything.
   apply(before: UsageRequest | undefined, after: UsageRequest): void {
@@ -73,6 +78,17 @@ export class UsageIndex {
     return this.agents.get(agent)
   }
 
+  // The first and last local day with a request over all agents, null when there is none. Local days sort as text.
+  span(): { from: string; to: string } | null {
+    if (this.stale) {
+      this.first = this.last = undefined
+      for (const days of this.agents.values())
+        for (const day of days.keys()) this.note(day)
+      this.stale = false
+    }
+    return this.first === undefined || this.last === undefined ? null : { from: this.first, to: this.last }
+  }
+
   agentsSeen(): UsageAgent[] {
     return [...this.agents.keys()]
   }
@@ -82,14 +98,25 @@ export class UsageIndex {
     if (days === undefined) this.agents.set(request.agent, (days = new Map()))
     const day = dayKey(request.at)
     let bucket = days.get(day)
-    if (bucket === undefined) days.set(day, (bucket = newBucket()))
+    if (bucket === undefined) {
+      days.set(day, (bucket = newBucket()))
+      this.note(day)
+    }
     count(bucket.totals, request, sign)
     if (request.helper) bucket.helper += sign
     bucket.hours[new Date(request.at).getHours()] += sign
     bump(bucket.models, request.model, request, sign)
     bump(bucket.folders, request.folder, request, sign)
     bump(bucket.sources, splitOf(request), request, sign)
-    if (bucket.totals.requests === 0) days.delete(day)
+    if (bucket.totals.requests === 0) {
+      days.delete(day)
+      if (day === this.first || day === this.last) this.stale = true
+    }
     if (days.size === 0) this.agents.delete(request.agent)
+  }
+
+  private note(day: string): void {
+    if (this.first === undefined || day < this.first) this.first = day
+    if (this.last === undefined || day > this.last) this.last = day
   }
 }

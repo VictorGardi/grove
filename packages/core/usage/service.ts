@@ -178,16 +178,10 @@ export class UsageService {
     const spaces = (this.options.spaces?.() ?? []).join('\n')
     const key = `${this.history.revision}|${days}|${range}|${today}|${this.building}|${this.progressKey()}|${this.repositories.version}|${spaces}|${this.options.grove?.trackedSince('claude')}`
     if (this.cached?.key === key) return this.cached.summary
-    let first = Infinity
-    let last = -Infinity
-    for (const request of this.history.requests()) {
-      if (request.at < first) first = request.at
-      if (request.at > last) last = request.at
-    }
     const summary: UsageSummary = {
       today,
       building: this.building,
-      ready: Number.isFinite(first) ? { from: dayKey(first), to: dayKey(last) } : null,
+      ready: this.index.span(),
       progress: this.progress(),
       agents: summarizeAgents(this.index, this.repositories.snapshot(), now, days, range, (agent) => this.options.grove?.trackedSince(agent)),
     }
