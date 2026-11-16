@@ -56,7 +56,8 @@ const SPLIT_LABELS: Record<UsageAgent, Record<UsageSplit, string>> = {
 // lightness and not only in hue. Mixing toward the ink only ever raises the contrast with the ground, so the agent colour's 3:1
 // carries to every split; "can't tell" is not the agent's colour but a neutral, the ink over the ground (SPLIT_UNKNOWN_MIX), drawn
 // hatched like the other marks that are not a plain count; the requests made through OpenCode are drawn hatched in the agent's colour
-// (as in the stacked bars) and are the darkest step, which Copilot has no Claude Desktop to share with. Four steps between an agent's colour and the ink cannot all be told apart
+// (as in the stacked bars) and are the darkest step, which Copilot has no Claude Desktop to share with. Four steps between an agent's
+// colour and the ink cannot all be told apart
 // by lightness alone in every theme, so the places also carry their label, a gap between them and, for "can't tell", the hatch.
 // usage-model.test.ts checks the contrast in every theme.
 export const SPLIT_INK_MIX: Record<'grove' | 'other' | 'desktop' | 'opencode', number> = { grove: 0, other: 40, desktop: 80, opencode: 90 }

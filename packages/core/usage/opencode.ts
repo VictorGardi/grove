@@ -21,7 +21,7 @@ export interface OpencodeReaderOptions {
 const COPILOT_PROVIDER = 'github-copilot'
 const RANGE_ROWS = 500
 // A request that has not completed after this long is given up on: its row failed or was left behind.
-const PENDING_MS = 3 * 24 * 60 * 60 * 1000
+const PENDING_MS = 7 * 24 * 60 * 60 * 1000
 const PENDING_MAX = 1000
 const PENDING_CHUNK = 100
 // Bumped when the reader learns to put more in a request, so the database is read once more and the old entries gain it.
@@ -198,7 +198,7 @@ export function createOpencodeReader(options: OpencodeReaderOptions): UsageReade
 
   return {
     agent: 'copilot',
-    id: 'opencode',
+    id: OPENCODE_SOURCE,
     async step() {
       queue ??= await begin()
       const item = queue[0]

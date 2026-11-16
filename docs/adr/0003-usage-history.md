@@ -7,3 +7,5 @@ One entry per request, not day sums, because agents rewrite their own records: C
 Considered and rejected: recomputing from the agents' files every time. It always matches what exists, but loses days as agents delete them, and a full Claude scan takes 6 to 14 s anyway.
 
 Consequences: days an agent deleted before the first read are gone, so the panel shows "history from <date>". The record names folders and projects, so it is readable by its owner only and can be wiped; wiping resets the start date. Timestamps are stored and the day is derived in local time. A search across past conversations still needs its own decision (ADR 0002).
+
+Addendum: requests OpenCode made on Copilot's models are kept in the same history (agent Copilot, source `opencode`, no credit figure, no Grove flag), read from OpenCode's own database read-only with only the figures selected, never its conversation columns.

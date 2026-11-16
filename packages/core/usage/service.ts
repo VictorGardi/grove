@@ -36,6 +36,8 @@ export interface UsageServiceOptions {
 
 export const usageHistoryFile = (home: string): string => path.join(home, 'usage-history.json')
 
+// What a reader's place is saved under in the history, and how its failures are named.
+const readerKey = (reader: UsageReader): string => reader.id ?? reader.agent
 const yieldToLoop = (): Promise<void> => new Promise((resolve) => setImmediate(resolve))
 const message = (error: unknown): string => (error instanceof Error ? error.message : String(error))
 
@@ -64,7 +66,7 @@ export class UsageService {
     for (const request of this.history.requests()) this.index.apply(undefined, request)
     this.history.observer = (before, after) => this.index.apply(before, after)
     this.repositories = new RepositoryResolver({ git: options.git, spaces: options.spaces ?? (() => []), places: options.places, clock: this.clock, onChange: () => this.changed() })
-    for (const reader of options.readers) reader.restore(this.history.readers[reader.id ?? reader.agent])
+    for (const reader of options.readers) reader.restore(this.history.readers[readerKey(reader)])
     options.grove?.restore(this.history.readers[GROVE_STATE])
     this.building = !this.history.built
   }
@@ -117,7 +119,7 @@ export class UsageService {
       } catch (error) {
         // A failing source gives nothing and does not stop the others.
         clean = false
-        console.error(`core: usage read of ${reader.id ?? reader.agent} failed: ${message(error)}`)
+        console.error(`core: usage read of ${readerKey(reader)} failed: ${message(error)}`)
       }
     }
     if (generation !== this.generation) return
@@ -149,7 +151,7 @@ export class UsageService {
     this.saveTimer = undefined
     // An empty, never-wiped history has nothing to keep: it starts again, from the same day, when the core does.
     if (this.history.size === 0 && this.history.floor === null) return
-    for (const reader of this.options.readers) this.history.readers[reader.id ?? reader.agent] = reader.state()
+    for (const reader of this.options.readers) this.history.readers[readerKey(reader)] = reader.state()
     if (this.options.grove) this.history.readers[GROVE_STATE] = this.options.grove.state()
     try {
       this.history.save()
@@ -200,7 +202,7 @@ export class UsageService {
     this.index.clear()
     await Promise.all(
       this.options.readers.map((reader) =>
-        reader.skipToEnd().catch((error: unknown) => console.error(`core: usage skip of ${reader.id ?? reader.agent} failed: ${message(error)}`)),
+        reader.skipToEnd().catch((error: unknown) => console.error(`core: usage skip of ${readerKey(reader)} failed: ${message(error)}`)),
       ),
     )
     this.history.built = true
