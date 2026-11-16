@@ -209,6 +209,25 @@ describe('usage history from Claude files, to the summary', () => {
     expect(claude(s, 100)?.days.map((d) => d.day)).toEqual(['2026-09-01', '2026-11-16'])
   })
 
+  it('reads a transcript again from the start when it shrank, and when it was rewritten and grew past what was read', async () => {
+    const file = write('p/a.jsonl', [line({ id: 'm1', ts: at(15) }), line({ id: 'm2', ts: at(15) })])
+    const s = make()
+    await s.drain()
+    expect(claude(s)?.last7.requests).toBe(2)
+    write('p/a.jsonl', [line({ id: 'm3', ts: at(15) })])
+    await s.drain()
+    expect(claude(s)?.last7.requests).toBe(3)
+    const before = fs.statSync(file).size
+    write('p/a.jsonl', ['4', '5', '6', '7'].map((id) => line({ id: `m${id}`, ts: at(15) })))
+    expect(fs.statSync(file).size).toBeGreaterThan(before)
+    await s.drain()
+    expect(claude(s)?.last7.requests).toBe(7)
+    // Appending is still only a tail: nothing is counted twice.
+    write('p/a.jsonl', [line({ id: 'm8', ts: at(15) })], true)
+    await s.drain()
+    expect(claude(s)?.last7.requests).toBe(8)
+  })
+
   it('reports no ready range when the agents’ files hold nothing, and is not building once they were read', async () => {
     const s = make()
     await s.drain()
@@ -224,9 +243,8 @@ describe('usage history from Claude files, to the summary', () => {
     const s = make()
     await s.drain()
     fs.chmodSync(locked, 0o600)
-    const count = claude(s)?.last7.requests
-    // The locked file gives nothing when this process cannot be denied it (root); either way the good one counts.
-    expect([1, 2]).toContain(count)
+    // The locked file gives nothing, except when this process cannot be denied it (root).
+    expect(claude(s)?.last7.requests).toBe(process.getuid?.() === 0 ? 2 : 1)
     expect(errors.mock.calls.flat().join(' ')).not.toContain(SECRET)
   })
 

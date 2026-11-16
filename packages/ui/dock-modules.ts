@@ -28,7 +28,7 @@ export function diffModule(deps: DiffDeps): DockModule {
   }
 }
 
-// The usage panel shows the core's saved usage history. It asks again when the core says the numbers changed (`changed`, wired to the
+// The usage panel shows the usage history the core builds in memory from the agents' own files at every start. It asks again when the core says the numbers changed (`changed`, wired to the
 // usage.changed notification), when the connection comes back, and when an agent stops working.
 export function usageModule(deps: UsageDeps): DockModule & { changed(): void } {
   const usage = createUsagePanel(deps)

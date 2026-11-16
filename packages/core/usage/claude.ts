@@ -1,6 +1,6 @@
 import fs from 'node:fs'
 import path from 'node:path'
-import { sliceLines } from './fileSlice.ts'
+import { headOf, sameHead, sliceLines } from './fileSlice.ts'
 import type { GroveSessions } from './groveSessions.ts'
 import { CLAUDE_CODE, CLAUDE_DESKTOP, type UsageRequest } from './history.ts'
 import type { UsageReader } from './reader.ts'
@@ -113,6 +113,8 @@ async function listTranscripts(projectsDir: string): Promise<Listed[]> {
 export function createClaudeReader(options: ClaudeReaderOptions): UsageReader {
   const chunkBytes = options.chunkBytes ?? CHUNK_BYTES
   const offsets = new Map<string, number>()
+  // The first bytes each file had when it was last read: a file that no longer starts with them was rewritten, and is read from the start.
+  const heads = new Map<string, string>()
   let queue: Listed[] | undefined
   const failed = new Set<string>()
   // Bytes of every transcript the last pass listed, and how many of them are read: what `progress` is made of. undefined before a pass has looked.
@@ -129,13 +131,14 @@ export function createClaudeReader(options: ClaudeReaderOptions): UsageReader {
   // Reads the next slice of one file. False when the file has nothing complete left.
   async function slice(item: Listed, out: UsageRequest[]): Promise<boolean> {
     let offset = offsets.get(item.file) ?? 0
-    if (item.size < offset) offset = 0
+    if (offset > 0 && (item.size < offset || !(await sameHead(item.file, heads.get(item.file) ?? '')))) offset = 0
     const { lines, next, more } = await sliceLines(item.file, offset, item.size, chunkBytes)
     for (const line of lines) {
       const request = requestOf(line, item.helper, item.session, options.grove)
       if (request) out.push(request)
     }
     offsets.set(item.file, next)
+    heads.set(item.file, await headOf(item.file, next))
     done += next - offset
     return more
   }

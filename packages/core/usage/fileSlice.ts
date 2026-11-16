@@ -26,3 +26,23 @@ export async function sliceLines(file: string, offset: number, size: number, chu
     await handle.close()
   }
 }
+
+// How many leading bytes tell a file apart from a rewritten one.
+const HEAD_BYTES = 256
+
+// The first bytes of a file (at most `length`, as hex), to notice that a file was replaced and not appended to.
+export async function headOf(file: string, length = HEAD_BYTES): Promise<string> {
+  const handle = await fs.promises.open(file, 'r')
+  try {
+    const buffer = Buffer.alloc(Math.min(length, HEAD_BYTES))
+    const { bytesRead } = await handle.read(buffer, 0, buffer.length, 0)
+    return buffer.subarray(0, bytesRead).toString('hex')
+  } finally {
+    await handle.close()
+  }
+}
+
+// True when a file still starts with the bytes it started with when it was last read up to `offset`: it was appended to, not rewritten.
+export async function sameHead(file: string, head: string): Promise<boolean> {
+  return (await headOf(file, head.length / 2)) === head
+}

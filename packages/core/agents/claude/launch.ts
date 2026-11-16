@@ -33,12 +33,12 @@ export interface ClaudeLaunch {
   usageFile: string
 }
 
-// The latest context reading of a tab, written by statusline.mjs.
 // Claude's projects folder, where the session transcripts live: $CLAUDE_CONFIG_DIR/projects or ~/.claude/projects.
 export function claudeProjectsDir(): string {
   return path.join(process.env.CLAUDE_CONFIG_DIR || path.join(os.homedir(), '.claude'), 'projects')
 }
 
+// The latest context reading of a tab, written by statusline.mjs.
 export function claudeUsageFile(home: string, tabId: string): string {
   return path.join(home, 'agents', 'claude', `${tabId}.usage.json`)
 }

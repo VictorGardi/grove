@@ -8,8 +8,8 @@ export const MAX_DAYS = 400
 // An agent shows only if it made a request within this many days, today included.
 const QUALIFYING_DAYS = 30
 
-// GitHub AI Credits are what Copilot's records count in nano AIU: 1 credit = 1,000,000,000 nano AIU = $0.01. Confirmed against
-// GitHub's pricing page (GPT-6 Luna, $0.10 per million input tokens) and the `costPerBatch` of 10,000,000,000 in Copilot's own records.
+// GitHub AI Credits are what Copilot's records count in nano AIU: 1 credit = 1,000,000,000 nano AIU. Confirmed against
+// GitHub's pricing page and the `costPerBatch` of 10,000,000,000 in Copilot's own records. The panel shows credits only.
 export const NANO_AIU_PER_CREDIT = 1e9
 
 // Totals are summed in nano AIU, so the sums are exact, and turned into credits once, when the summary is done.

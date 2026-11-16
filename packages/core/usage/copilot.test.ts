@@ -269,6 +269,24 @@ describe('usage history from Copilot session files, to the summary', () => {
     expect(copilot(s)?.last7.requests).toBe(2)
   })
 
+  it('reads a session again from the start when it shrank, and when it was rewritten and grew past what was read', async () => {
+    const file = session('a', [start('/work/app'), usage({ id: '1', ts: iso(15) }), usage({ id: '2', ts: iso(15) })])
+    const s = make()
+    await s.drain()
+    expect(copilot(s)?.last7.requests).toBe(2)
+    session('a', [start('/work/app', iso(2, 9, 9)), usage({ id: '3', ts: iso(15) })])
+    await s.drain()
+    expect(copilot(s)?.last7.requests).toBe(3)
+    const before = fs.statSync(file).size
+    session('a', [start('/work/app', iso(3, 9, 9)), ...['4', '5', '6', '7'].map((id) => usage({ id, ts: iso(15) }))])
+    expect(fs.statSync(file).size).toBeGreaterThan(before)
+    await s.drain()
+    expect(copilot(s)?.last7.requests).toBe(7)
+    session('a', [usage({ id: '8', ts: iso(15) })], true)
+    await s.drain()
+    expect(copilot(s)?.last7.requests).toBe(8)
+  })
+
   it('gives no value for corrupt, odd or unreadable lines and files, and does not break Claude', async () => {
     const errors = vi.spyOn(console, 'error').mockImplementation(() => undefined)
     fs.mkdirSync(path.join(projects, 'p'), { recursive: true })
@@ -289,9 +307,9 @@ describe('usage history from Copilot session files, to the summary', () => {
     await s.drain()
     fs.chmodSync(locked, 0o600)
     expect(s.summary().agents.find((a) => a.agent === 'claude')?.last7.requests).toBe(1)
-    // The one record of an unknown format counts as a request with no figures; the locked file gives nothing when this process
-    // cannot be denied it (root).
-    expect([2, 3]).toContain(copilot(s)?.last7.requests)
+    // The record of an unknown format (a usage id and a time, tokens that are not a number) is a request with unknown figures: it counts
+    // as one request and adds nothing to the tokens. The locked file gives nothing, except when this process cannot be denied it (root).
+    expect(copilot(s)?.last7.requests).toBe(process.getuid?.() === 0 ? 3 : 2)
     expect(errors.mock.calls.flat().join(' ')).not.toContain(SECRET)
   })
 
