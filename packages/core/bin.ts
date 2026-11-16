@@ -9,16 +9,23 @@ import { ensureHolder } from './holder-client.ts'
 import { SpacesService } from './spaces.ts'
 import { createClaudeReader } from './usage/claude.ts'
 import { createCopilotReader } from './usage/copilot.ts'
+import { GroveSessions } from './usage/groveSessions.ts'
 import { UsageService } from './usage/service.ts'
 
 async function main(): Promise<void> {
   await ensureHolder()
   const spaces = new SpacesService(path.join(groveHome(), 'state.json'))
   await restoreTabs(spaces)
+  // Grove's own per-tab records tell which sessions Grove ran; the tabs open now are added from the saved state.
+  const grove = new GroveSessions({
+    home: groveHome(),
+    live: () => spaces.agentTabs().flatMap((tab) => ((tab.agent === 'claude' || tab.agent === 'copilot') && tab.agentSessionId !== undefined ? [{ agent: tab.agent, sessionId: tab.agentSessionId }] : [])),
+  })
   const usage = new UsageService({
     home: groveHome(),
+    grove,
     spaces: () => spaces.ids().flatMap((id) => spaces.spaceById(id)?.path ?? []),
-    readers: [createClaudeReader({ projectsDir: claudeProjectsDir() }), createCopilotReader({ copilotHome: copilotHomeDir() })],
+    readers: [createClaudeReader({ projectsDir: claudeProjectsDir(), grove }), createCopilotReader({ copilotHome: copilotHomeDir(), grove })],
   })
   const core = await startCoreDaemon({ spaces, usage })
   console.log(`core: listening on ${core.socketPath}`)

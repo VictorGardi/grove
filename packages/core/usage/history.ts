@@ -9,7 +9,8 @@ export interface UsageRequest {
   // Unique within its agent: what makes two lines of an agent's records the same request.
   key: string
   agent: UsageAgent
-  // Where it ran, within the agent (the Claude reader tags everything 'claude' for now).
+  // Where it ran, within the agent: Claude's is CLAUDE_CODE or CLAUDE_DESKTOP from the record's entrypoint (UNTAGGED in a history
+  // written before the tag existed), Copilot's is 'copilot'.
   source: string
   model: string
   // The working folder of the request, '' when the record named none.
@@ -25,7 +26,15 @@ export interface UsageRequest {
   // What the request cost in Copilot's own unit, nano AIU (1,000,000,000 per GitHub AI Credit), kept raw so sums stay exact.
   // null when the record carried no credit figure, and always null for an agent without credits (Claude).
   nanoAiu: number | null
+  // Whether Grove ran the session the request belongs to, decided when the request was recorded: true it did, false it did not
+  // (Not tracked by Grove), null Grove cannot tell. Claude Desktop is never run in Grove, so it is always false.
+  inGrove: boolean | null
 }
+
+// Claude's sources. A history written before the tag existed holds UNTAGGED: a re-read replaces it with the real one.
+export const CLAUDE_UNTAGGED = 'claude'
+export const CLAUDE_CODE = 'claude-code'
+export const CLAUDE_DESKTOP = 'claude-desktop'
 
 const AGENTS: readonly string[] = ['claude', 'copilot'] satisfies UsageAgent[]
 const VERSION = 1
@@ -36,7 +45,8 @@ export interface HistoryFile {
   floor: number | null
   built: boolean
   readers: Record<string, unknown>
-  // One row per request, keyed `<agent>:<key>`: [at, source, model, folder, input, output, cacheRead, cacheWrite, helper, nanoAiu]. A row of 9 (no credit figure) is read too.
+  // One row per request, keyed `<agent>:<key>`: [at, source, model, folder, input, output, cacheRead, cacheWrite, helper, nanoAiu, inGrove].
+  // A row of 9 (no credit figure) or 10 (no Grove flag: Grove could not tell) is read too.
   requests: Record<string, unknown[]>
 }
 
@@ -45,8 +55,8 @@ const isCount = (value: unknown): value is number => typeof value === 'number' &
 function decode(storedKey: string, row: unknown): UsageRequest | undefined {
   const split = storedKey.indexOf(':')
   const agent = storedKey.slice(0, split)
-  if (split < 1 || !AGENTS.includes(agent) || !Array.isArray(row) || (row.length !== 9 && row.length !== 10)) return undefined
-  const [at, source, model, folder, input, output, cacheRead, cacheWrite, helper, nanoAiu] = row as unknown[]
+  if (split < 1 || !AGENTS.includes(agent) || !Array.isArray(row) || (row.length < 9 || row.length > 11)) return undefined
+  const [at, source, model, folder, input, output, cacheRead, cacheWrite, helper, nanoAiu, inGrove] = row as unknown[]
   if (typeof at !== 'number' || !Number.isFinite(at) || typeof source !== 'string' || typeof model !== 'string' || typeof folder !== 'string') return undefined
   if (![input, output, cacheRead, cacheWrite].every(isCount) || (nanoAiu !== undefined && nanoAiu !== null && !isCount(nanoAiu))) return undefined
   return {
@@ -62,10 +72,11 @@ function decode(storedKey: string, row: unknown): UsageRequest | undefined {
     cacheWrite: cacheWrite as number,
     helper: helper === 1,
     nanoAiu: typeof nanoAiu === 'number' ? nanoAiu : null,
+    inGrove: inGrove === 1 ? true : inGrove === 0 ? false : null,
   }
 }
 
-const encode = (r: UsageRequest): unknown[] => [r.at, r.source, r.model, r.folder, r.input, r.output, r.cacheRead, r.cacheWrite, r.helper ? 1 : 0, r.nanoAiu]
+const encode = (r: UsageRequest): unknown[] => [r.at, r.source, r.model, r.folder, r.input, r.output, r.cacheRead, r.cacheWrite, r.helper ? 1 : 0, r.nanoAiu, r.inGrove === null ? null : r.inGrove ? 1 : 0]
 
 // Grove's own saved record of usage (ADR 0003): one keyed entry per request, per machine, in the Grove home. A file Grove cannot
 // read is set aside and a new history starts; the agents' files are never touched.
@@ -149,10 +160,17 @@ export class UsageHistory {
       return true
     }
     const first = request.at < kept.at ? request : kept
+    const other = first === kept ? request : kept
     const counted = request.output > kept.output ? request : kept
-    if (first === kept && counted === kept) return false
+    // A re-read can tell more than what was saved: a real source for the untagged one, a known Grove flag for an unknown one. What
+    // is already specific or known stays, so a re-read never flips an answer, and the counts still come from one line, never both.
+    const source = first.source === CLAUDE_UNTAGGED ? other.source : first.source
+    const inGrove = first.inGrove ?? other.inGrove
+    if (first === kept && counted === kept && source === kept.source && inGrove === kept.inGrove) return false
     const merged: UsageRequest = {
       ...first,
+      source,
+      inGrove,
       input: counted.input,
       output: counted.output,
       cacheRead: counted.cacheRead,

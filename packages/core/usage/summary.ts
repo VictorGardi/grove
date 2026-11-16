@@ -1,6 +1,6 @@
 import { dayKey, shiftDay, weekdayOf } from '../../protocol/days.ts'
-import type { UsageAgentSummary, UsageDay, UsageModelTotals, UsageRepositoryTotals, UsageTotals } from '../../protocol/messages.ts'
-import { CREDIT_AGENTS, emptyTotals, plusTotals, type UsageIndex } from './index.ts'
+import type { UsageAgent, UsageAgentSummary, UsageDay, UsageModelTotals, UsageRepositoryTotals, UsageSplit, UsageSplitTotals, UsageTotals } from '../../protocol/messages.ts'
+import { CREDIT_AGENTS, emptyTotals, plusTotals, SPLITS, type UsageIndex } from './index.ts'
 import type { RepositoryRef } from './repositories.ts'
 
 export const DEFAULT_DAYS = 30
@@ -28,10 +28,17 @@ function merged<K extends string>(into: Map<K, UsageTotals>, key: K, totals: Usa
 const modelsOf = (models: Map<string, UsageTotals>): UsageModelTotals[] =>
   [...models].map(([model, totals]) => ({ model, ...inCredits(totals) })).sort((a, b) => byRequests(a, b) || (a.model < b.model ? -1 : 1))
 
+const sourcesOf = (sources: Map<UsageSplit, UsageTotals>): UsageSplitTotals[] =>
+  SPLITS.flatMap((split) => {
+    const totals = sources.get(split)
+    return totals === undefined ? [] : [{ split, ...inCredits(totals) }]
+  })
+
 // What the usage panel shows per agent, from the index of the history: per-day detail for the last `days` days, the Today / 7 days /
 // 30 days totals, and the hour, repository and model breakdowns over the last `range` days. Days are the human's local days. An agent
-// with no request in the last 30 days is left out. `repositoryOf` says which repository a working folder belongs to.
-export function summarizeAgents(index: UsageIndex, repositoryOf: (folder: string) => RepositoryRef, now: number, days: number, range: number): UsageAgentSummary[] {
+// with no request in the last 30 days is left out. `repositoryOf` says which repository a working folder belongs to, and `trackedSince`
+// when Grove began recording an agent's sessions (undefined: it has no record).
+export function summarizeAgents(index: UsageIndex, repositoryOf: (folder: string) => RepositoryRef, now: number, days: number, range: number, trackedSince: (agent: UsageAgent) => number | undefined = () => undefined): UsageAgentSummary[] {
   const today = dayKey(now)
   const detailStart = shiftDay(today, -(days - 1))
   const rangeStart = shiftDay(today, -(range - 1))
@@ -46,17 +53,19 @@ export function summarizeAgents(index: UsageIndex, repositoryOf: (folder: string
     const hours = new Array<number>(168).fill(0)
     const models = new Map<string, UsageTotals>()
     const repositories = new Map<string, UsageRepositoryTotals>()
+    const sources = new Map<UsageSplit, UsageTotals>()
     for (const [day, bucket] of index.days(agent) ?? []) {
       // A request stamped after today (a clock that moved back) belongs to no window yet.
       if (day > today) continue
       if (day >= month) plusTotals(last30, bucket.totals)
       if (day >= week) plusTotals(last7, bucket.totals)
       if (day === today) plusTotals(todays, bucket.totals)
-      if (day >= detailStart) perDay.push({ day, ...inCredits(bucket.totals), helperRequests: bucket.helper, models: modelsOf(bucket.models) })
+      if (day >= detailStart) perDay.push({ day, ...inCredits(bucket.totals), helperRequests: bucket.helper, models: modelsOf(bucket.models), sources: sourcesOf(bucket.sources) })
       if (day >= rangeStart) {
         const row = weekdayOf(day) * 24
         for (let hour = 0; hour < 24; hour++) hours[row + hour] += bucket.hours[hour]
         for (const [model, totals] of bucket.models) merged(models, model, totals)
+        for (const [split, totals] of bucket.sources) merged(sources, split, totals)
         for (const [folder, totals] of bucket.folders) {
           const repository = repositoryOf(folder)
           let sum = repositories.get(repository.id)
@@ -66,6 +75,7 @@ export function summarizeAgents(index: UsageIndex, repositoryOf: (folder: string
       }
     }
     if (last30.requests === 0) continue
+    const since = agent === 'claude' ? trackedSince(agent) : undefined
     found.push({
       agent,
       hasCredits: CREDIT_AGENTS.includes(agent),
@@ -76,6 +86,8 @@ export function summarizeAgents(index: UsageIndex, repositoryOf: (folder: string
       hours,
       repositories: [...repositories.values()].map(inCredits).sort((a, b) => byRequests(a, b) || ((a.name ?? '') < (b.name ?? '') ? -1 : 1)),
       models: modelsOf(models),
+      sources: sourcesOf(sources),
+      trackedSince: since === undefined ? null : dayKey(since),
     })
   }
   return found.sort((a, b) => (a.agent < b.agent ? -1 : 1))

@@ -21,6 +21,7 @@ import {
   type HoursView,
   type MatrixCell,
   type RangeId,
+  type SourcesView,
 } from './usage-model.ts'
 
 export interface UsageDeps {
@@ -83,6 +84,38 @@ function cellButton(agent: UsageAgent, cell: MatrixCell, choose: (agent: UsageAg
   return button
 }
 
+// Where some requests ran: a labelled share bar (the places side by side, a gap between them), a line each with its count and share,
+// and the one line that says why some cannot be told, when it applies.
+function sourcesBlock(sources: SourcesView, title?: string): HTMLElement {
+  const block = el('div', 'usage-sources')
+  if (title !== undefined) block.append(el('div', 'usage-sources-title', title))
+  const bar = el('div', 'usage-sources-bar')
+  for (const part of sources.segments) {
+    const segment = el('span', 'usage-sources-segment')
+    segment.dataset.split = part.split
+    segment.dataset.hatched = String(part.hatched)
+    segment.style.width = `${part.percent}%`
+    segment.style.setProperty('--agent', part.colour)
+    segment.title = part.title
+    bar.append(segment)
+  }
+  block.append(bar)
+  const list = el('ul', 'usage-sources-list')
+  for (const part of sources.segments) {
+    const item = el('li', 'usage-sources-item')
+    item.dataset.split = part.split
+    const swatch = el('span', 'usage-swatch')
+    swatch.dataset.hatched = String(part.hatched)
+    swatch.style.setProperty('--agent', part.colour)
+    item.append(swatch, el('span', 'usage-sources-label', part.label), el('span', 'usage-sources-requests', part.requests), el('span', 'usage-sources-share', part.share))
+    if (part.credits !== null) item.append(el('span', 'usage-sources-credits', part.credits))
+    list.append(item)
+  }
+  block.append(list)
+  if (sources.note !== null) block.append(el('p', 'usage-sources-note', sources.note))
+  return block
+}
+
 function agentSection(view: AgentView, choose: (agent: UsageAgent, day: string) => void): HTMLElement {
   const section = el('section', 'usage-agent')
   section.dataset.agent = view.agent
@@ -102,6 +135,7 @@ function agentSection(view: AgentView, choose: (agent: UsageAgent, day: string) 
     totals.append(item)
   }
   section.append(totals)
+  if (view.sources !== null) section.append(sourcesBlock(view.sources, view.sourcesTitle))
   if (view.detail !== null) {
     const detail = el('div', 'usage-detail')
     detail.append(el('div', 'usage-detail-title', view.detail.title), el('div', 'usage-detail-requests', view.detail.requests))
@@ -111,6 +145,7 @@ function agentSection(view: AgentView, choose: (agent: UsageAgent, day: string) 
       helper.append(el('span', 'usage-token-label', 'of which helper agents'), el('span', 'usage-token-value', view.detail.helper))
       detail.append(helper)
     }
+    if (view.detail.sources !== null) detail.append(sourcesBlock(view.detail.sources))
     if (view.detail.tokens.length > 0) {
       const tokens = el('dl', 'usage-detail-tokens')
       for (const token of view.detail.tokens) {

@@ -16,10 +16,14 @@ export interface RepositoryPlaces {
   scratch: string[]
 }
 
+// Claude Desktop's scratch workspaces live under its own application folder, one folder per chat, and are often repositories: they
+// are scratch, so they group under "Other" (one group) and not as a repository each, named after a random scratch folder.
+export const desktopScratch = (home: string): string[] => [path.join(home, 'Library', 'Application Support', 'Claude'), path.join(home, '.config', 'Claude')]
+
 export const defaultPlaces = (): RepositoryPlaces => ({
   home: os.homedir(),
   worktreesRoot: path.join(os.homedir(), '.grove', 'worktrees'),
-  scratch: [...new Set([os.tmpdir(), '/tmp', '/private/tmp', '/var/folders', '/private/var/folders'])],
+  scratch: [...new Set([os.tmpdir(), '/tmp', '/private/tmp', '/var/folders', '/private/var/folders', ...desktopScratch(os.homedir())])],
 })
 
 export interface RepositoryRef {

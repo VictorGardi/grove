@@ -6,7 +6,7 @@ import type { UsageAgent } from '../../protocol/messages.ts'
 import { GitError, type GitRun } from '../gitrun.ts'
 import type { UsageRequest } from './history.ts'
 import type { UsageReader } from './reader.ts'
-import type { RepositoryPlaces } from './repositories.ts'
+import { desktopScratch, type RepositoryPlaces } from './repositories.ts'
 import { UsageService } from './service.ts'
 
 // The usage panel's breakdowns, from the requests the readers found to the summary: helper share and model split per day, the weekday by
@@ -29,6 +29,7 @@ const request = (over: Partial<UsageRequest> & { at: number }): UsageRequest => 
   cacheWrite: 4,
   helper: false,
   nanoAiu: null,
+  inGrove: null,
   ...over,
 })
 
@@ -278,6 +279,18 @@ describe('usage breakdowns, from requests to the summary', () => {
       expect(found).toHaveLength(2)
       expect(found).toContainEqual([null, false, 1])
       expect(found).toContainEqual(['mine', true, 1])
+    })
+
+    it('puts Claude Desktop’s scratch workspaces under Other even when they are repositories', async () => {
+      const home = path.join(dir, 'home')
+      const mac = folder('home', 'Library', 'Application Support', 'Claude', 'scratch-workspaces', 'a-1', 'scratch-2026-09-28-dff86c')
+      const linux = folder('home', '.config', 'Claude', 'scratch-workspaces', 'a-1', 'scratch-2026-10-30-bc6d9d')
+      const git = gitOf({ [mac]: mac, [linux]: linux })
+      const s = make([request({ at: at(15), folder: mac }), request({ at: at(15), folder: linux })], {
+        places: { home, worktreesRoot: path.join(dir, 'worktrees'), scratch: desktopScratch(home) },
+        git,
+      })
+      expect(rows(await placed(s))).toEqual([[null, false, 2]])
     })
 
     it('rolls a deleted agent worktree inside a Space’s repository up into it', async () => {

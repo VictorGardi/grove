@@ -2,6 +2,7 @@ import crypto from 'node:crypto'
 import fs from 'node:fs'
 import path from 'node:path'
 import { sliceLines } from './fileSlice.ts'
+import type { GroveSessions } from './groveSessions.ts'
 import type { UsageRequest } from './history.ts'
 import type { UsageReader } from './reader.ts'
 
@@ -10,9 +11,13 @@ export interface CopilotReaderOptions {
   copilotHome: string
   // How much of a file one step reads. Default 1 MiB.
   chunkBytes?: number
+  // Grove's own records of the sessions it ran, to tell which requests were Grove's. Without it none are.
+  grove?: GroveSessions
 }
 
 const CHUNK_BYTES = 1 << 20
+// Bumped when the reader learns to put more in a request, so the history is read once more and the old entries gain it. 2: the Grove flag.
+const SCHEMA = 2
 
 interface Listed {
   file: string
@@ -50,7 +55,7 @@ function parse(line: string): Record<string, unknown> | undefined {
 // across all records, shortened by a hash (the id is a long base64 string). Fresh input is the input count without what the cache
 // read and wrote. A record is a helper's when Copilot says it came from a subagent, by its initiator, its interaction type or an
 // agent id on the line. No conversation text is read: only the usage figures, the model, the time and the ids.
-export function requestOf(line: string, folder: string): UsageRequest | undefined {
+export function requestOf(line: string, folder: string, sessionId = '', grove?: GroveSessions): UsageRequest | undefined {
   if (!line.includes('"session.usage_record"')) return undefined
   const parsed = parse(line)
   if (parsed === undefined || parsed.type !== 'session.usage_record') return undefined
@@ -76,6 +81,7 @@ export function requestOf(line: string, folder: string): UsageRequest | undefine
     cacheWrite,
     helper: usage.initiator === 'sub-agent' || usage.interactionType === 'conversation-subagent' || text(parsed.agentId) !== undefined || text(usage.agentId) !== undefined,
     nanoAiu: credited ? nano : null,
+    inGrove: grove?.ranInGrove('copilot', sessionId, at) ?? false,
   }
 }
 
@@ -135,7 +141,7 @@ export function createCopilotReader(options: CopilotReaderOptions): UsageReader 
         fallback = true
         cwd = await workspaceCwd(path.dirname(item.file))
       }
-      const request = requestOf(line, cwd)
+      const request = requestOf(line, cwd, path.basename(path.dirname(item.file)), options.grove)
       if (request) out.push(request)
     }
     places.set(item.file, { offset: next, cwd })
@@ -145,6 +151,7 @@ export function createCopilotReader(options: CopilotReaderOptions): UsageReader 
   return {
     agent: 'copilot',
     async step() {
+      if (queue === undefined) await options.grove?.refresh()
       queue ??= await pending()
       const item = queue[0]
       if (item === undefined) {
@@ -165,9 +172,11 @@ export function createCopilotReader(options: CopilotReaderOptions): UsageReader 
       if (queue.length === 0) queue = undefined
       return { requests, done: queue === undefined }
     },
-    state: () => ({ files: Object.fromEntries(places) }),
+    state: () => ({ schema: SCHEMA, files: Object.fromEntries(places) }),
     restore(state) {
-      const files = (state as { files?: unknown } | null)?.files
+      const saved = state as { schema?: unknown; files?: unknown } | null
+      // A position saved by an older reader is dropped: the sessions are read once more, so the entries gain what it did not read.
+      const files = saved?.schema === SCHEMA ? saved.files : undefined
       places = new Map()
       if (files !== null && typeof files === 'object') {
         for (const [file, place] of Object.entries(files)) {

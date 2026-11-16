@@ -1,9 +1,16 @@
 import { dayKey } from '../../protocol/days.ts'
-import type { UsageAgent, UsageTotals } from '../../protocol/messages.ts'
-import type { UsageRequest } from './history.ts'
+import type { UsageAgent, UsageSplit, UsageTotals } from '../../protocol/messages.ts'
+import { CLAUDE_DESKTOP, type UsageRequest } from './history.ts'
 
 // The agents whose requests carry a credit figure; for the others no request is "without credits", there are none to count.
 export const CREDIT_AGENTS: readonly UsageAgent[] = ['copilot']
+
+// The order the splits are listed in.
+export const SPLITS: readonly UsageSplit[] = ['desktop', 'grove', 'other', 'unknown']
+
+// Where a request ran, as the panel splits it: Claude Desktop apart, the rest by whether Grove ran the session.
+export const splitOf = (request: UsageRequest): UsageSplit =>
+  request.source === CLAUDE_DESKTOP ? 'desktop' : request.inGrove === true ? 'grove' : request.inGrove === false ? 'other' : 'unknown'
 
 export const emptyTotals = (): UsageTotals => ({ requests: 0, input: 0, output: 0, cacheRead: 0, cacheWrite: 0, credits: 0, withoutCredits: 0 })
 
@@ -36,11 +43,12 @@ export interface DayBucket {
   hours: number[]
   models: Map<string, UsageTotals>
   folders: Map<string, UsageTotals>
+  sources: Map<UsageSplit, UsageTotals>
 }
 
-const newBucket = (): DayBucket => ({ totals: emptyTotals(), helper: 0, hours: new Array<number>(24).fill(0), models: new Map(), folders: new Map() })
+const newBucket = (): DayBucket => ({ totals: emptyTotals(), helper: 0, hours: new Array<number>(24).fill(0), models: new Map(), folders: new Map(), sources: new Map() })
 
-function bump(map: Map<string, UsageTotals>, key: string, request: UsageRequest, sign: 1 | -1): void {
+function bump<K>(map: Map<K, UsageTotals>, key: K, request: UsageRequest, sign: 1 | -1): void {
   let totals = map.get(key)
   if (totals === undefined) map.set(key, (totals = emptyTotals()))
   count(totals, request, sign)
@@ -83,6 +91,7 @@ export class UsageIndex {
     bucket.hours[new Date(request.at).getHours()] += sign
     bump(bucket.models, request.model, request, sign)
     bump(bucket.folders, request.folder, request, sign)
+    bump(bucket.sources, splitOf(request), request, sign)
     if (bucket.totals.requests === 0) days.delete(day)
     if (days.size === 0) this.agents.delete(request.agent)
   }

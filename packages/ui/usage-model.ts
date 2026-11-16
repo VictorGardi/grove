@@ -1,7 +1,7 @@
 // What the usage panel draws, from the core's summary: the day matrix per agent (darker = more requests, in quartiles of the
 // agent's own days), the Today / 7 days / 30 days totals, the labels and a day's detail. Pure: no DOM, no clock, no RPC.
 import { shiftDay, weekdayOf, weekStart } from '../protocol/days.ts'
-import type { UsageAgent, UsageAgentSummary, UsageDay, UsageSummary, UsageTotals } from '../protocol/messages.ts'
+import type { UsageAgent, UsageAgentSummary, UsageDay, UsageSplit, UsageSplitTotals, UsageSummary, UsageTotals } from '../protocol/messages.ts'
 
 export const EMPTY_MESSAGE = 'No usage in the last 30 days'
 export const SCOPE_NOTE = 'This machine only'
@@ -42,6 +42,28 @@ const rangeLabel = (range: RangeId): string => RANGES.find((r) => r.id === range
 
 // How many days of per-day detail the panel asks the core for: the matrix and the stacked bars both need theirs.
 export const detailDays = (today: string, expanded: boolean, range: RangeId): number => Math.max(matrixSpan(today, expanded), rangeDays(effectiveRange(range, expanded)))
+
+// Where requests ran (GLOSSARY: Not tracked by Grove). Claude Desktop is its own slice, never run in Grove. Claude Code is run in Grove
+// or not tracked by Grove, and "can't tell" before Grove began recording its sessions. Copilot is run in Grove or not tracked.
+const SPLIT_LABELS: Record<UsageAgent, Record<UsageSplit, string>> = {
+  claude: { desktop: 'Claude Desktop', grove: 'Claude Code run in Grove', other: 'Claude Code not tracked by Grove', unknown: 'Claude Code, can’t tell' },
+  copilot: { desktop: 'Copilot CLI', grove: 'Copilot CLI run in Grove', other: 'Copilot CLI not tracked by Grove', unknown: 'Copilot CLI, can’t tell' },
+}
+
+// How much of the ink each split's colour holds over the agent's own colour (the rest is the agent's colour), so the splits differ in
+// lightness and not only in hue. Mixing toward the ink only ever raises the contrast with the ground, so the agent colour's 3:1
+// carries to every split; "can't tell" is not the agent's colour but a neutral, the ink over the ground (SPLIT_UNKNOWN_MIX), drawn
+// hatched like the other marks that are not a plain count. Four steps between an agent's colour and the ink cannot all be told apart
+// by lightness alone in every theme, so the places also carry their label, a gap between them and, for "can't tell", the hatch.
+// usage-model.test.ts checks the contrast in every theme.
+export const SPLIT_INK_MIX: Record<'grove' | 'other' | 'desktop', number> = { grove: 0, other: 40, desktop: 80 }
+export const SPLIT_UNKNOWN_MIX = 50
+export const splitColour = (agent: UsageAgent, split: UsageSplit): string =>
+  split === 'unknown'
+    ? `color-mix(in srgb, var(--color-ink) ${SPLIT_UNKNOWN_MIX}%, var(--color-ground))`
+    : SPLIT_INK_MIX[split] === 0
+      ? agentColour(agent)
+      : `color-mix(in srgb, var(--color-ink) ${SPLIT_INK_MIX[split]}%, ${agentColour(agent)})`
 
 export const matrixWeeks = (expanded: boolean): number => (expanded ? MATRIX_WEEKS_EXPANDED : MATRIX_WEEKS)
 
@@ -112,6 +134,29 @@ export interface MatrixCell {
   selected: boolean
 }
 
+export interface SourceSegment {
+  split: UsageSplit
+  label: string
+  requests: string
+  // Of the requests shown, as a whole percent, and how much of the bar it fills (a share too small for a percent still shows).
+  share: string
+  percent: number
+  colour: string
+  // Drawn hatched: "can't tell", which is no count of anything known.
+  hatched: boolean
+  // Copilot's credits for these requests with the "plus N requests without credits" note; null for an agent without credits.
+  credits: string | null
+  // What the segment says when hovered or read out.
+  title: string
+}
+
+// Where some requests ran, as a labelled share bar. Only the places with a request are in it.
+export interface SourcesView {
+  segments: SourceSegment[]
+  // One line, when some requests cannot be told: why.
+  note: string | null
+}
+
 export interface DayDetail {
   title: string
   requests: string
@@ -122,6 +167,8 @@ export interface DayDetail {
   tokens: Array<{ label: string; value: string }>
   // The day's requests and tokens per model, most requests first.
   models: Array<{ model: string; requests: string; tokens: string }>
+  // Where the day's requests ran; null for a day without requests.
+  sources: SourcesView | null
 }
 
 export interface AgentView {
@@ -131,6 +178,9 @@ export interface AgentView {
   weeks: Array<Array<MatrixCell | null>>
   // Each total is its request count, with the credits as a secondary line for an agent that has them.
   totals: Array<{ label: string; value: string; credits: string | null }>
+  // Where the requests of the selected range ran; null when none of them did.
+  sources: SourcesView | null
+  sourcesTitle: string
   detail: DayDetail | null
 }
 
@@ -232,13 +282,46 @@ export const percentLabel = (part: number, whole: number): string => {
 // Cutting the date off a model's name: claude-haiku-4-5-20251001 is the model claude-haiku-4-5.
 export const modelLabel = (model: string): string => (model === '' ? 'Unknown model' : model.replace(/-\d{8}$/, ''))
 
+// The one line that says why some requests cannot be told from Grove's, when any of them is shown.
+function cantTellNote(trackedSince: string | null): string {
+  return trackedSince === null
+    ? 'Grove has no record of your Claude sessions, so earlier Claude Code requests can’t be split.'
+    : `Grove began recording Claude sessions on ${formatDay(trackedSince)}; Claude Code requests before it can’t be split.`
+}
+
+export function sourcesOf(agent: UsageAgentSummary, sources: readonly UsageSplitTotals[]): SourcesView | null {
+  const shown = sources.filter((source) => source.requests > 0)
+  const total = shown.reduce((sum, source) => sum + source.requests, 0)
+  if (total === 0) return null
+  return {
+    segments: shown.map((source) => {
+      const label = SPLIT_LABELS[agent.agent][source.split]
+      const share = percentLabel(source.requests, total)
+      const credits = creditsOf(source, agent.hasCredits)
+      return {
+        split: source.split,
+        label,
+        requests: requestsLabel(source.requests),
+        share,
+        percent: (source.requests / total) * 100,
+        colour: splitColour(agent.agent, source.split),
+        hatched: source.split === 'unknown',
+        credits,
+        title: [`${label}: ${requestsLabel(source.requests)}, ${share}`, ...(credits === null ? [] : [credits])].join('. '),
+      }
+    }),
+    note: shown.some((source) => source.split === 'unknown') ? cantTellNote(agent.trackedSince) : null,
+  }
+}
+
 function detailOf(summary: UsageSummary, agent: UsageAgentSummary, day: string): DayDetail {
-  if (day < summary.historyFrom) return { title: formatDay(day), requests: 'Before the history starts', credits: null, helper: null, tokens: [], models: [] }
+  if (day < summary.historyFrom) return { title: formatDay(day), requests: 'Before the history starts', credits: null, helper: null, tokens: [], models: [], sources: null }
   const found: UsageDay | undefined = agent.days.find((d) => d.day === day)
   return {
     title: formatDay(day),
     requests: requestsLabel(found?.requests ?? 0),
     credits: creditsOf(found ?? { requests: 0, input: 0, output: 0, cacheRead: 0, cacheWrite: 0, credits: 0, withoutCredits: 0 }, agent.hasCredits),
+    sources: found === undefined ? null : sourcesOf(agent, found.sources),
     helper: found === undefined || found.requests === 0 ? null : `${percentLabel(found.helperRequests, found.requests)} (${group(found.helperRequests)})`,
     models: (found?.models ?? []).map((m) => ({
       model: modelLabel(m.model),
@@ -254,7 +337,7 @@ function detailOf(summary: UsageSummary, agent: UsageAgentSummary, day: string):
   }
 }
 
-function agentView(summary: UsageSummary, agent: UsageAgentSummary, expanded: boolean, selected: string | null): AgentView {
+function agentView(summary: UsageSummary, agent: UsageAgentSummary, expanded: boolean, selected: string | null, range: RangeId): AgentView {
   const perDay = new Map(agent.days.map((d) => [d.day, d.requests]))
   const ranked = rankedDays(agent.days.map((d) => d.requests))
   const first = shiftDay(weekStart(summary.today), -(matrixWeeks(expanded) - 1) * 7)
@@ -281,6 +364,8 @@ function agentView(summary: UsageSummary, agent: UsageAgentSummary, expanded: bo
       { label: '7 days', value: requestsLabel(agent.last7.requests), credits: creditsOf(agent.last7, agent.hasCredits) },
       { label: '30 days', value: requestsLabel(agent.last30.requests), credits: creditsOf(agent.last30, agent.hasCredits) },
     ],
+    sources: sourcesOf(agent, agent.sources),
+    sourcesTitle: `Where it ran, ${rangeLabel(range)}`,
     detail: selected === null ? null : detailOf(summary, agent, selected),
   }
 }
@@ -460,7 +545,7 @@ export function usageView(summary: UsageSummary, options: { expanded: boolean; s
         : summary.ready === null
           ? 'Still building the history'
           : `Still building the history: ready from ${shortDay(summary.ready.from)} to ${shortDay(summary.ready.to)}`,
-    agents: summary.agents.map((agent) => agentView(summary, agent, options.expanded, selected?.agent === agent.agent ? selected.day : null)),
+    agents: summary.agents.map((agent) => agentView(summary, agent, options.expanded, selected?.agent === agent.agent ? selected.day : null, range)),
     charts:
       summary.agents.length === 0
         ? null

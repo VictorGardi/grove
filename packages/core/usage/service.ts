@@ -3,6 +3,7 @@ import { dayKey } from '../../protocol/days.ts'
 import type { UsageSummary } from '../../protocol/messages.ts'
 import { poll } from '../agents/usageSource.ts'
 import type { GitRun } from '../gitrun.ts'
+import type { GroveSessions } from './groveSessions.ts'
 import { UsageHistory } from './history.ts'
 import { UsageIndex } from './index.ts'
 import type { UsageReader } from './reader.ts'
@@ -10,12 +11,17 @@ import { RepositoryResolver, type RepositoryPlaces } from './repositories.ts'
 import { clampDays, summarizeAgents } from './summary.ts'
 
 export const USAGE_POLL_MS = 5000
+// Where the history keeps what Grove's own records taught it, beside the readers' places.
+const GROVE_STATE = 'grove'
 const SAVE_MS = 5000
 const NOTIFY_MS = 1000
 
 export interface UsageServiceOptions {
   home: string
   readers: UsageReader[]
+  // Grove's own records of the sessions it ran: the readers use them to tell Grove's requests from the others, and what they
+  // learnt (when Grove began recording Claude sessions) is saved with the history and shown in the summary.
+  grove?: GroveSessions
   clock?: () => number
   pollMs?: number
   // How long after a change the history is saved, and the window told. Both coalesce: many changes inside it are one.
@@ -59,6 +65,7 @@ export class UsageService {
     this.history.observer = (before, after) => this.index.apply(before, after)
     this.repositories = new RepositoryResolver({ git: options.git, spaces: options.spaces ?? (() => []), places: options.places, clock: this.clock, onChange: () => this.changed() })
     for (const reader of options.readers) reader.restore(this.history.readers[reader.agent])
+    options.grove?.restore(this.history.readers[GROVE_STATE])
     this.building = !this.history.built
   }
 
@@ -143,6 +150,7 @@ export class UsageService {
     // An empty, never-wiped history has nothing to keep: it starts again, from the same day, when the core does.
     if (this.history.size === 0 && this.history.floor === null) return
     for (const reader of this.options.readers) this.history.readers[reader.agent] = reader.state()
+    if (this.options.grove) this.history.readers[GROVE_STATE] = this.options.grove.state()
     try {
       this.history.save()
     } catch (error) {
@@ -165,7 +173,7 @@ export class UsageService {
     const now = this.clock()
     const today = dayKey(now)
     const spaces = (this.options.spaces?.() ?? []).join('\n')
-    const key = `${this.history.revision}|${days}|${range}|${today}|${this.building}|${this.repositories.version}|${spaces}`
+    const key = `${this.history.revision}|${days}|${range}|${today}|${this.building}|${this.repositories.version}|${spaces}|${this.options.grove?.trackedSince('claude')}`
     if (this.cached?.key === key) return this.cached.summary
     let first = Infinity
     let last = -Infinity
@@ -178,7 +186,7 @@ export class UsageService {
       historyFrom: dayKey(this.history.floor ?? (Number.isFinite(first) ? first : this.history.since)),
       building: this.building,
       ready: Number.isFinite(first) ? { from: dayKey(first), to: dayKey(last) } : null,
-      agents: summarizeAgents(this.index, this.repositories.snapshot(), now, days, range),
+      agents: summarizeAgents(this.index, this.repositories.snapshot(), now, days, range, (agent) => this.options.grove?.trackedSince(agent)),
     }
     this.cached = { key, summary }
     return summary

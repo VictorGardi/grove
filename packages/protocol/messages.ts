@@ -131,12 +131,23 @@ export interface UsageRepositoryTotals extends UsageTotals {
   space: boolean
 }
 
+// Where requests ran, as the panel splits them. Claude: 'desktop' (Claude Desktop, never run in Grove), 'grove' (Claude Code run in
+// Grove), 'other' (Claude Code not tracked by Grove) and 'unknown' (Claude Code from before Grove recorded its sessions: it cannot
+// tell). Copilot: 'grove' and 'other'.
+export type UsageSplit = 'desktop' | 'grove' | 'other' | 'unknown'
+
+export interface UsageSplitTotals extends UsageTotals {
+  split: UsageSplit
+}
+
 export interface UsageDay extends UsageTotals {
   day: string
   // How many of the day's requests helper agents made.
   helperRequests: number
   // The day's requests per model, most requests first.
   models: UsageModelTotals[]
+  // The day's requests by where they ran, in the order of UsageSplit; only the splits with a request.
+  sources: UsageSplitTotals[]
 }
 
 export interface UsageAgentSummary {
@@ -155,6 +166,11 @@ export interface UsageAgentSummary {
   // Where the requests went, most requests first. Rows of one repository are one row.
   repositories: UsageRepositoryTotals[]
   models: UsageModelTotals[]
+  // The requests of the last `range` days by where they ran, in the order of UsageSplit; only the splits with a request.
+  sources: UsageSplitTotals[]
+  // The day Grove began recording this agent's sessions (the earliest record of its own on this machine), or null when it has
+  // none. Only Claude Code's split depends on it: before it Grove cannot tell, so 'unknown'. Always null for Copilot.
+  trackedSince: string | null
 }
 
 export interface UsageSummary {

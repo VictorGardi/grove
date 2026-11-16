@@ -21,8 +21,8 @@ function summary(over: Partial<UsageSummary> = {}): UsageSummary {
         agent: 'claude',
         hasCredits: false,
         days: [
-          { day: '2026-11-10', requests: 2, input: 40, output: 1200, cacheRead: 3_000_000, cacheWrite: 800, credits: 0, withoutCredits: 0, helperRequests: 0, models: [] },
-          { day: '2026-11-11', requests: 9, input: 1, output: 2, cacheRead: 3, cacheWrite: 4, credits: 0, withoutCredits: 0, helperRequests: 0, models: [] },
+          { day: '2026-11-10', requests: 2, input: 40, output: 1200, cacheRead: 3_000_000, cacheWrite: 800, credits: 0, withoutCredits: 0, helperRequests: 0, models: [], sources: [] },
+          { day: '2026-11-11', requests: 9, input: 1, output: 2, cacheRead: 3, cacheWrite: 4, credits: 0, withoutCredits: 0, helperRequests: 0, models: [], sources: [] },
         ],
         today: sum(0),
         last7: sum(11),
@@ -30,6 +30,8 @@ function summary(over: Partial<UsageSummary> = {}): UsageSummary {
         hours: new Array<number>(168).fill(0),
         repositories: [],
         models: [],
+        sources: [],
+        trackedSince: null,
       },
     ],
     ...over,
@@ -101,6 +103,34 @@ describe('usage panel', () => {
     expect(t.body.querySelector('.usage-scope')?.textContent).toBe('This machine only')
   })
 
+  it('draws where the range ran as a labelled share bar with the note, and the same in a clicked day', async () => {
+    const base = summary()
+    const part = (split: 'desktop' | 'grove' | 'other' | 'unknown', requests: number) => ({ split, requests, input: 0, output: 0, cacheRead: 0, cacheWrite: 0, credits: 0, withoutCredits: 0 })
+    const claude = base.agents[0]
+    const t = setup({
+      ...base,
+      agents: [
+        {
+          ...claude,
+          trackedSince: '2026-11-05',
+          sources: [part('desktop', 6), part('grove', 3), part('unknown', 1)],
+          days: claude.days.map((d) => (d.day === '2026-11-11' ? { ...d, sources: [part('desktop', 9)] } : d)),
+        },
+      ],
+    })
+    await flush()
+    const block = t.body.querySelector('.usage-agent > .usage-sources')!
+    expect(block.querySelector('.usage-sources-title')?.textContent).toBe('Where it ran, 30 days')
+    expect([...block.querySelectorAll('.usage-sources-segment')].map((n) => (n as HTMLElement).style.width)).toEqual(['60%', '30%', '10%'])
+    expect([...block.querySelectorAll('.usage-sources-segment')].map((n) => (n as HTMLElement).dataset.hatched)).toEqual(['false', 'false', 'true'])
+    expect([...block.querySelectorAll('.usage-sources-item')].map((n) => n.querySelector('.usage-sources-label')?.textContent)).toEqual(['Claude Desktop', 'Claude Code run in Grove', 'Claude Code, can’t tell'])
+    expect(block.querySelector('.usage-sources-note')?.textContent).toContain('Grove began recording Claude sessions on Thu 5 Nov 2026')
+    cell(t.body, '2026-11-11').click()
+    const detail = t.body.querySelector('.usage-detail .usage-sources')!
+    expect([...detail.querySelectorAll('.usage-sources-label')].map((n) => n.textContent)).toEqual(['Claude Desktop'])
+    expect(detail.querySelector('.usage-sources-note')).toBeNull()
+  })
+
   it('draws Copilot beside Claude with its credits as a quieter number, no dollar sign', async () => {
     const base = summary()
     const t = setup({
@@ -110,13 +140,15 @@ describe('usage panel', () => {
         {
           agent: 'copilot',
           hasCredits: true,
-          days: [{ day: '2026-11-11', requests: 3, input: 5, output: 6, cacheRead: 7, cacheWrite: 8, credits: 2.5, withoutCredits: 1, helperRequests: 0, models: [] }],
+          days: [{ day: '2026-11-11', requests: 3, input: 5, output: 6, cacheRead: 7, cacheWrite: 8, credits: 2.5, withoutCredits: 1, helperRequests: 0, models: [], sources: [] }],
           today: { ...sum(0) },
           last7: { ...sum(3), credits: 2.5, withoutCredits: 1 },
           last30: { ...sum(3), credits: 2.5, withoutCredits: 1 },
           hours: new Array<number>(168).fill(0),
           repositories: [],
           models: [],
+          sources: [],
+          trackedSince: null,
         },
       ],
     })
@@ -185,7 +217,7 @@ describe('usage panel', () => {
     const t = setup()
     await flush()
     cell(t.body, '2026-11-10').click()
-    t.state.summary = summary({ agents: [{ ...summary().agents[0], days: [{ day: '2026-11-10', requests: 7, input: 0, output: 0, cacheRead: 0, cacheWrite: 0, credits: 0, withoutCredits: 0, helperRequests: 0, models: [] }] }] })
+    t.state.summary = summary({ agents: [{ ...summary().agents[0], days: [{ day: '2026-11-10', requests: 7, input: 0, output: 0, cacheRead: 0, cacheWrite: 0, credits: 0, withoutCredits: 0, helperRequests: 0, models: [], sources: [] }] }] })
     t.module.changed()
     await flush()
     expect(t.body.querySelector('.usage-detail-requests')?.textContent).toBe('7 requests')

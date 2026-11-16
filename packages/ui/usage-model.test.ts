@@ -1,7 +1,7 @@
 import { readFileSync } from 'node:fs'
 import { fileURLToPath } from 'node:url'
 import { describe, expect, it } from 'vitest'
-import type { UsageAgentSummary, UsageDay, UsageModelTotals, UsageRepositoryTotals, UsageSummary, UsageTotals } from '../protocol/messages.ts'
+import type { UsageAgent, UsageAgentSummary, UsageDay, UsageModelTotals, UsageRepositoryTotals, UsageSplit, UsageSplitTotals, UsageSummary, UsageTotals } from '../protocol/messages.ts'
 import {
   EMPTY_MESSAGE,
   creditsLabel,
@@ -24,11 +24,14 @@ import {
   usageView,
   type RangeId,
   COPILOT_MIX,
+  SPLIT_INK_MIX,
+  SPLIT_UNKNOWN_MIX,
   agentColour,
+  splitColour,
 } from './usage-model.ts'
 
 // 2026-11-16 is a Monday.
-const day = (d: string, requests: number, more: Partial<UsageDay> = {}): UsageDay => ({ day: d, requests, input: 0, output: 0, cacheRead: 0, cacheWrite: 0, credits: 0, withoutCredits: 0, helperRequests: 0, models: [], ...more })
+const day = (d: string, requests: number, more: Partial<UsageDay> = {}): UsageDay => ({ day: d, requests, input: 0, output: 0, cacheRead: 0, cacheWrite: 0, credits: 0, withoutCredits: 0, helperRequests: 0, models: [], sources: [], ...more })
 
 function summary(days: UsageDay[], more: Partial<UsageSummary> = {}, totals: Partial<UsageAgentSummary> = {}): UsageSummary {
   const sum = (n: number) => ({ requests: n, input: 0, output: 0, cacheRead: 0, cacheWrite: 0, credits: 0, withoutCredits: 0 })
@@ -37,7 +40,7 @@ function summary(days: UsageDay[], more: Partial<UsageSummary> = {}, totals: Par
     historyFrom: '2026-05-01',
     building: false,
     ready: { from: '2026-05-01', to: '2026-11-16' },
-    agents: [{ agent: 'claude', hasCredits: false, days, today: sum(0), last7: sum(0), last30: sum(days.length), hours: new Array<number>(168).fill(0), repositories: [], models: [], ...totals }],
+    agents: [{ agent: 'claude', hasCredits: false, days, today: sum(0), last7: sum(0), last30: sum(days.length), hours: new Array<number>(168).fill(0), repositories: [], models: [], sources: [], trackedSince: null, ...totals }],
     ...more,
   }
 }
@@ -223,8 +226,8 @@ function copilotAgent(over: Partial<UsageAgentSummary> = {}): UsageAgentSummary 
     agent: 'copilot',
     hasCredits: true,
     days: [
-      { day: '2026-11-10', helperRequests: 0, models: [], ...totalsOf(4, 12.34) },
-      { day: '2026-11-11', helperRequests: 0, models: [], ...totalsOf(9, 0.5, 2) },
+      { day: '2026-11-10', helperRequests: 0, models: [], sources: [], ...totalsOf(4, 12.34) },
+      { day: '2026-11-11', helperRequests: 0, models: [], sources: [], ...totalsOf(9, 0.5, 2) },
     ],
     today: totalsOf(0, 0),
     last7: totalsOf(13, 12.84, 2),
@@ -232,6 +235,8 @@ function copilotAgent(over: Partial<UsageAgentSummary> = {}): UsageAgentSummary 
     hours: new Array<number>(168).fill(0),
     repositories: [],
     models: [],
+    sources: [],
+    trackedSince: null,
     ...over,
   }
 }
@@ -313,7 +318,7 @@ describe('the Copilot section', () => {
 const zeros = () => new Array<number>(168).fill(0)
 const t = (requests: number, more: Partial<UsageTotals> = {}): UsageTotals => ({ requests, input: 0, output: 0, cacheRead: 0, cacheWrite: 0, credits: 0, withoutCredits: 0, ...more })
 function agent(name: 'claude' | 'copilot', over: Partial<UsageAgentSummary> = {}): UsageAgentSummary {
-  return { agent: name, hasCredits: name === 'copilot', days: [], today: t(0), last7: t(0), last30: t(1), hours: zeros(), repositories: [], models: [], ...over }
+  return { agent: name, hasCredits: name === 'copilot', days: [], today: t(0), last7: t(0), last30: t(1), hours: zeros(), repositories: [], models: [], sources: [], trackedSince: null, ...over }
 }
 const two = (claude: Partial<UsageAgentSummary>, copilot: Partial<UsageAgentSummary> = {}): UsageSummary => ({ ...summary([]), agents: [agent('claude', claude), agent('copilot', copilot)] })
 const charts = (s: UsageSummary, options: { expanded?: boolean; range?: RangeId } = {}) => usageView(s, { expanded: options.expanded ?? false, range: options.range }).charts!
@@ -582,5 +587,152 @@ describe('the agent colours contrast', () => {
 
   it.each(themes)('%s: the two differ in lightness, not only in hue', (_name, _ground, ink) => {
     expect(contrast(claude(), copilot(ink))).toBeGreaterThanOrEqual(1.4)
+  })
+})
+
+// Where requests ran: the share bar per agent for the range and in a day's detail, its labels and its colours.
+describe('where requests ran', () => {
+  const split = (kind: UsageSplit, requests: number, more: Partial<UsageTotals> = {}): UsageSplitTotals => ({ split: kind, ...t(requests, more) })
+  const claude = (sources: UsageSplitTotals[], over: Partial<UsageAgentSummary> = {}) => agent('claude', { sources, trackedSince: '2026-11-05', ...over })
+  const bar = (view: ReturnType<typeof usageView>, name: UsageAgent = 'claude') => view.agents.find((a) => a.agent === name)!.sources
+
+  it('splits Claude into Claude Desktop, Claude Code run in Grove and Claude Code not tracked by Grove, with their shares', () => {
+    const view = usageView(two({ sources: [split('desktop', 50), split('grove', 30), split('other', 20)], trackedSince: '2026-11-05' }), { expanded: false })
+    expect(bar(view)?.segments.map((s) => [s.label, s.requests, s.share, s.percent])).toEqual([
+      ['Claude Desktop', '50 requests', '50%', 50],
+      ['Claude Code run in Grove', '30 requests', '30%', 30],
+      ['Claude Code not tracked by Grove', '20 requests', '20%', 20],
+    ])
+    expect(bar(view)?.note).toBeNull()
+    expect(view.agents[0].sourcesTitle).toBe('Where it ran, 30 days')
+  })
+
+  it('labels Copilot’s two places, and keeps the agent labelled Copilot CLI', () => {
+    const view = usageView(two({}, { sources: [split('grove', 3), split('other', 1)] }), { expanded: false })
+    expect(view.agents[1].title).toBe('Copilot CLI')
+    expect(bar(view, 'copilot')?.segments.map((s) => [s.label, s.share])).toEqual([
+      ['Copilot CLI run in Grove', '75%'],
+      ['Copilot CLI not tracked by Grove', '25%'],
+    ])
+  })
+
+  it('draws only what cannot be told hatched', () => {
+    const view = usageView(two({ sources: [split('desktop', 1), split('grove', 1), split('other', 1), split('unknown', 1)] }), { expanded: false })
+    expect(bar(view)?.segments.map((s) => [s.split, s.hatched])).toEqual([
+      ['desktop', false],
+      ['grove', false],
+      ['other', false],
+      ['unknown', true],
+    ])
+  })
+
+  it('hides a place with no requests, and has no bar at all when none ran', () => {
+    const view = usageView(two({ sources: [split('desktop', 0), split('grove', 4), split('other', 0)] }, { sources: [] }), { expanded: false })
+    expect(bar(view)?.segments.map((s) => s.label)).toEqual(['Claude Code run in Grove'])
+    expect(bar(view, 'copilot')).toBeNull()
+  })
+
+  it('says in one line when Claude Code cannot be told, with the day Grove began recording', () => {
+    const view = usageView(two({ sources: [split('unknown', 40), split('grove', 10)], trackedSince: '2026-11-05' }), { expanded: false })
+    expect(bar(view)?.segments.map((s) => s.label)).toEqual(['Claude Code, can’t tell', 'Claude Code run in Grove'])
+    expect(bar(view)?.note).toBe('Grove began recording Claude sessions on Thu 5 Nov 2026; Claude Code requests before it can’t be split.')
+    expect(bar(view)?.note).not.toContain('\n')
+  })
+
+  it('says so when Grove has no record of Claude sessions at all', () => {
+    const view = usageView(two({ sources: [split('unknown', 5)], trackedSince: null }), { expanded: false })
+    expect(bar(view)?.note).toBe('Grove has no record of your Claude sessions, so earlier Claude Code requests can’t be split.')
+  })
+
+  it('gives no note when nothing is unknown, and shows a share too small for a percent as under 1%', () => {
+    const view = usageView(two({ sources: [split('desktop', 1000), split('grove', 1)] }), { expanded: false })
+    expect(bar(view)?.note).toBeNull()
+    expect(bar(view)?.segments.map((s) => s.share)).toEqual(['100%', '<1%'])
+  })
+
+  it('carries Copilot’s credits per place, partial totals included, and none for Claude', () => {
+    const view = usageView(two({ sources: [split('desktop', 2)] }, { sources: [split('grove', 3, { credits: 2.5, withoutCredits: 1 }), split('other', 1, { credits: 0.5 })] }), { expanded: false })
+    expect(bar(view, 'copilot')?.segments.map((s) => s.credits)).toEqual(['2.50 credits plus 1 request without credits', '0.50 credits'])
+    expect(bar(view, 'copilot')?.segments[0].title).toBe('Copilot CLI run in Grove: 3 requests, 75%. 2.50 credits plus 1 request without credits')
+    expect(bar(view)?.segments[0].credits).toBeNull()
+    expect(JSON.stringify(view)).not.toContain('$')
+  })
+
+  it('is in the day’s detail too, with the note where it applies, and not for a day without requests or before the history', () => {
+    const days = [day('2026-11-10', 5, { sources: [split('unknown', 5)] }), day('2026-11-11', 4, { sources: [split('desktop', 3), split('grove', 1)] }), day('2026-11-12', 0)]
+    const s = { ...summary([]), agents: [claude([], { days })] }
+    const detailOf = (d: string) => usageView(s, { expanded: false, selected: { agent: 'claude', day: d } }).agents[0].detail
+    expect(detailOf('2026-11-10')?.sources?.segments.map((x) => x.label)).toEqual(['Claude Code, can’t tell'])
+    expect(detailOf('2026-11-10')?.sources?.note).toContain('5 Nov 2026')
+    expect(detailOf('2026-11-11')?.sources?.segments.map((x) => [x.label, x.share])).toEqual([
+      ['Claude Desktop', '75%'],
+      ['Claude Code run in Grove', '25%'],
+    ])
+    expect(detailOf('2026-11-11')?.sources?.note).toBeNull()
+    expect(detailOf('2026-11-12')?.sources).toBeNull()
+    expect(detailOf('2026-11-09')?.sources).toBeNull()
+    expect(detailOf('2026-04-30')?.sources).toBeNull()
+  })
+
+  it('follows the range the bars cover in its title', () => {
+    const view = usageView(two({ sources: [split('grove', 1)] }), { expanded: true, range: '1y' })
+    expect(view.agents[0].sourcesTitle).toBe('Where it ran, 1 year')
+  })
+
+  it('keeps the machine-only note', () => {
+    expect(usageView(two({ sources: [split('grove', 1)] }), { expanded: false }).scope).toBe('This machine only')
+  })
+})
+
+// The colours of the places, against the surface they are drawn on, in every theme.
+describe('the colours of where requests ran', () => {
+  const UI = fileURLToPath(new URL('.', import.meta.url))
+  const tokens = readFileSync(`${UI}src/tokens.css`, 'utf8')
+  const themesCss = readFileSync(`${UI}src/themes.css`, 'utf8')
+  const token = (name: string) => tokens.match(new RegExp(`--${name}:\\s*(#[0-9a-f]{6})`, 'i'))![1]
+  const themes: Array<[string, string, string]> = []
+  for (const block of (tokens + '\n' + themesCss).matchAll(/:root(?:\[data-theme='([\w-]+)'\])?\s*\{([^}]*)\}/g)) {
+    const ground = block[2].match(/--color-ground:\s*(#[0-9a-f]{6})/i)?.[1]
+    if (ground) themes.push([block[1] ?? 'default', ground, block[2].match(/--color-ink:\s*(#[0-9a-f]{6})/i)?.[1] ?? token('color-ink')])
+  }
+  const rgb = (hex: string) => [1, 3, 5].map((i) => parseInt(hex.slice(i, i + 2), 16))
+  const luminance = (c: number[]) => {
+    const [r, g, b] = c.map((v) => (v / 255 <= 0.03928 ? v / 255 / 12.92 : ((v / 255 + 0.055) / 1.055) ** 2.4))
+    return 0.2126 * r + 0.7152 * g + 0.0722 * b
+  }
+  const contrast = (a: number[], b: number[]) => {
+    const [hi, lo] = [luminance(a), luminance(b)].sort((x, y) => y - x)
+    return (hi + 0.05) / (lo + 0.05)
+  }
+  const mix = (a: number[], b: number[], percent: number) => a.map((c, i) => c * (percent / 100) + b[i] * (1 - percent / 100))
+  // The colours as the CSS makes them, for one agent: its own colour mixed toward the ink, "can't tell" the ink over the ground.
+  const colours = (agent: UsageAgent, ground: string, ink: string): Record<UsageSplit, number[]> => {
+    const base = agent === 'copilot' ? mix(rgb(token('agent-copilot')), rgb(ink), COPILOT_MIX) : rgb(token('agent-claude'))
+    return {
+      grove: base,
+      other: mix(rgb(ink), base, SPLIT_INK_MIX.other),
+      desktop: mix(rgb(ink), base, SPLIT_INK_MIX.desktop),
+      unknown: mix(rgb(ink), rgb(ground), SPLIT_UNKNOWN_MIX),
+    }
+  }
+
+  it('are the agent’s colour, mixed toward the ink, and the ink over the ground for what cannot be told', () => {
+    expect(splitColour('claude', 'grove')).toBe('var(--agent-claude)')
+    expect(splitColour('claude', 'desktop')).toBe(`color-mix(in srgb, var(--color-ink) ${SPLIT_INK_MIX.desktop}%, var(--agent-claude))`)
+    expect(splitColour('copilot', 'other')).toBe(`color-mix(in srgb, var(--color-ink) ${SPLIT_INK_MIX.other}%, ${agentColour('copilot')})`)
+    expect(splitColour('claude', 'unknown')).toBe(`color-mix(in srgb, var(--color-ink) ${SPLIT_UNKNOWN_MIX}%, var(--color-ground))`)
+    expect(themes.length).toBeGreaterThan(5)
+  })
+
+  it.each(themes)('%s: every place stands out from the surface by 3:1', (_name, ground, ink) => {
+    for (const agent of ['claude', 'copilot'] as const) for (const colour of Object.values(colours(agent, ground, ink))) expect(contrast(colour, rgb(ground))).toBeGreaterThanOrEqual(3)
+  })
+
+  // The three places that are the agent's colour step apart in lightness; the fourth is hatched, so it needs no step of its own.
+  it.each(themes)('%s: the places of an agent differ from each other in lightness, not only in hue', (_name, ground, ink) => {
+    for (const agent of ['claude', 'copilot'] as const) {
+      const { grove, other, desktop } = colours(agent, ground, ink)
+      for (const [a, b] of [[grove, other], [other, desktop], [grove, desktop]]) expect(contrast(a, b)).toBeGreaterThanOrEqual(1.1)
+    }
   })
 })
