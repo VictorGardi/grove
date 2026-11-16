@@ -122,6 +122,22 @@ export function rowName(row: SidebarRow): string {
   return row.main ? (space.label ?? space.branch ?? space.name) : space.name
 }
 
+// Whether a heading draws its rows: the human's saved fold, except that the active space's heading stays open while it is active.
+export function headingOpen(repo: string, folded: string[], activeRepo: string | null): boolean {
+  return repo === activeRepo || !folded.includes(repo)
+}
+
+// The repo whose heading holds the space; null for a plain row or no space.
+export function headingOf(items: SidebarItem[], spaceId: string | null): string | null {
+  for (const item of items) if (item.kind === 'heading' && item.rows.some((row) => row.space.id === spaceId)) return item.repo
+  return null
+}
+
+// The most urgent of the states, null for none.
+export function mostUrgent(states: AgentStateName[]): AgentStateName | null {
+  return states.reduce<AgentStateName | null>((top, state) => (top === null || URGENCY.indexOf(state) < URGENCY.indexOf(top) ? state : top), null)
+}
+
 // The space ids in the order the sidebar lists them, hidden rows included.
 export function sidebarSpaceOrder(spaces: SidebarSpace[]): string[] {
   return sidebarItems(spaces).flatMap((item) => (item.kind === 'heading' ? item.rows : [item.row]).map((row) => row.space.id))

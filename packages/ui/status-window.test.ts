@@ -320,7 +320,7 @@ describe('window status path', () => {
     notify('spaces.removed', { id: 'shells' })
   })
 
-  it('draws a repo with worktrees under a heading, and clicking the heading changes nothing', () => {
+  it('draws a repo with worktrees under a heading, and clicking the heading switches no space', () => {
     notify('spaces.changed', space('s1', { path: '/Users/test/proj', name: 'proj', repoName: 'proj', branch: 'main' }))
     notify('spaces.changed', space('proj-wt', { name: 'proj-wt', worktree: true, repoName: 'proj', parent: 's1', branch: 'feat' }))
     notify('spaces.changed', space('lone-wt', { name: 'lone-wt', worktree: true, repoName: 'lone', branch: 'x' }))
@@ -334,10 +334,45 @@ describe('window status path', () => {
     expect(row('s1')?.getAttribute('aria-current')).toBe('true')
     expect(document.querySelector('#tabs > .active')?.textContent).toBe(active)
     expect(lines('s1').name).toBe('main')
+    headings[0].querySelector<HTMLElement>('.heading-name')!.click()
     notify('spaces.removed', { id: 'proj-wt' })
     notify('spaces.removed', { id: 'lone-wt' })
     notify('spaces.changed', space('s1', { path: '/Users/test/proj', name: 'proj' }))
     expect(document.querySelector('#spaces .heading')).toBeNull()
+  })
+
+  it('folds a heading, rolls its rows\' state up while folded, and keeps it across a reload', () => {
+    const headingOf = (repo: string) => [...document.querySelectorAll<HTMLElement>('#spaces .heading')].find((el) => el.querySelector('.heading-label')?.textContent === repo)!
+    notify('spaces.changed', space('s1', { path: '/Users/test/proj', name: 'proj', repoName: 'proj', branch: 'main' }))
+    notify('spaces.changed', space('proj-wt', { name: 'proj-wt', worktree: true, repoName: 'proj', parent: 's1' }))
+    notify('spaces.changed', space('lone-wt', { name: 'lone-wt', worktree: true, repoName: 'lone' }))
+    notify('tabs.opened', { ...TABS[0], id: 'lone-tab', spaceId: 'lone-wt', spacePath: '/Users/test/lone-wt', label: 'lone' })
+    notify('status.changed', change('lone-tab', 'claude', 'working'))
+    const lone = (): HTMLElement => headingOf('lone')
+    expect(lone().querySelector('.heading-name .indicator')).toBeNull()
+    lone().querySelector<HTMLElement>('.heading-name')!.click()
+    expect(lone().querySelector<HTMLElement>('.graph')!.hidden).toBe(true)
+    expect(lone().querySelector('.heading-name .indicator')?.className).toBe('indicator ind-working')
+    notify('status.changed', change('lone-tab', 'claude', 'needs-you'))
+    expect(lone().querySelector('.heading-name .indicator')?.className).toBe('indicator ind-needs-you')
+    expect(JSON.parse(localStorage.getItem('grove.sidebar-folds')!)).toEqual(['lone'])
+    // The active space's heading stays open while it is active, and the saved choice still changes.
+    headingOf('proj').querySelector<HTMLElement>('.heading-name')!.click()
+    expect(headingOf('proj').querySelector<HTMLElement>('.graph')!.hidden).toBe(false)
+    expect(JSON.parse(localStorage.getItem('grove.sidebar-folds')!)).toEqual(['lone', 'proj'])
+    // Going to a tab in the folded heading opens it, and leaving brings the saved fold back.
+    document.dispatchEvent(new KeyboardEvent('keydown', { key: '.', ctrlKey: true, bubbles: true }))
+    expect(lone().querySelector<HTMLElement>('.graph')!.hidden).toBe(false)
+    expect(lone().querySelector('.heading-name .indicator')).toBeNull()
+    expect(headingOf('proj').querySelector<HTMLElement>('.graph')!.hidden).toBe(true)
+    headingOf('proj').querySelector<HTMLElement>('.heading-name')!.click()
+    lone().querySelector<HTMLElement>('.heading-name')!.click()
+    expect(JSON.parse(localStorage.getItem('grove.sidebar-folds')!)).toEqual([])
+    notify('tabs.closed', { id: 'lone-tab' })
+    notify('spaces.removed', { id: 'proj-wt' })
+    notify('spaces.removed', { id: 'lone-wt' })
+    notify('spaces.changed', space('s1', { path: '/Users/test/proj', name: 'proj' }))
+    row('s1')!.click()
   })
 
   it('names no agent type anywhere in the sidebar, and draws no mark or tile', () => {

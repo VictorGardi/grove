@@ -22,10 +22,10 @@ import { autoTree, neighborByGeometry, nudge, swapPanes, type Tree } from './gri
 import { previousOf, stepFrom } from './recent-tabs.ts'
 import { PANE_DIM_RANGE, readPaneDim, writePaneDim } from './pane-dim.ts'
 import type { KeyValueStore } from './persisted-pref.ts'
-import { readSidebarHidden, writeSidebarHidden } from './sidebar-state.ts'
+import { readSidebarFolds, readSidebarHidden, writeSidebarFolds, writeSidebarHidden } from './sidebar-state.ts'
 import { createFocusSignal } from './focus-signal.ts'
 import { noViewState, storageViewState } from './view-state.ts'
-import { jumpTargets, nextUrgent, openCounts, rowName, rowSummary, shortFolder, sidebarItems, sidebarSpaceOrder, spaceAt, tileIndex, worktreeOf, type SidebarRow } from './sidebar-model.ts'
+import { headingOf, headingOpen, jumpTargets, mostUrgent, nextUrgent, openCounts, rowName, rowSummary, shortFolder, sidebarItems, sidebarSpaceOrder, spaceAt, tileIndex, worktreeOf, type SidebarItem, type SidebarRow, type SummaryTab } from './sidebar-model.ts'
 import { createWindowStore, type Tab, type TabKind } from './window-store.ts'
 import { contextMeter, hideContextTip, markWithContext } from './context-badge.ts'
 import { createTabPill, type TabPill } from './tab-pill.ts'
@@ -108,6 +108,8 @@ let sentFocus: string | null = null
 let demoMode = false
 const playSound = createSoundGate()
 let soundOn = readSound(storage())
+// The repos whose heading the human folded; kept across a reload.
+let folded = readSidebarFolds(storage())
 // The chosen theme goes on the root before the first terminal opens, so every terminal starts with its colours.
 let themeId = readTheme(storage())
 applyThemeChoice(document.documentElement, themeId)
@@ -626,15 +628,16 @@ async function askOpenWorktree(space: SpaceInfo): Promise<boolean> {
   })
 }
 
-function openSpaceMenu(space: SpaceInfo, event: MouseEvent): void {
+// A heading's menu has only the repo's worktree actions: `space` is any space of the repo, which is all they need.
+function openSpaceMenu(space: SpaceInfo, event: MouseEvent, heading = false): void {
   event.preventDefault()
   const done = (): void => focusActive()
   contextMenu.open(
     [
-      { label: 'Rename', icon: iconSvg('edit'), run: () => void askRenameSpace(space).then(done) },
+      ...(heading ? [] : [{ label: 'Rename', icon: iconSvg('edit'), run: () => void askRenameSpace(space).then(done) }]),
       { label: 'New worktree', icon: iconSvg('branch'), run: () => void askNewWorktree(space).then(done) },
       { label: 'Open worktree', icon: iconSvg('branch'), run: () => void askOpenWorktree(space).then(done).catch(report) },
-      { label: 'Close', icon: iconSvg('x'), separated: true, run: () => void askRemoveSpace(space).then(done) },
+      ...(heading ? [] : [{ label: 'Close', icon: iconSvg('x'), separated: true, run: () => void askRemoveSpace(space).then(done) }]),
     ],
     event.clientX,
     event.clientY,
@@ -960,6 +963,7 @@ function renderSidebar(): void {
   paintUrgent()
   hideContextTip()
   const items = sidebarItems(store.spaces())
+  const activeRepo = headingOf(items, store.activeSpace)
   spaceList.replaceChildren(
     ...items.map((item) => {
       const li = document.createElement('li')
@@ -974,24 +978,56 @@ function renderSidebar(): void {
         branch.append(spaceRow(row))
         rows.append(branch)
       }
+      const open = headingOpen(item.repo, folded, activeRepo)
+      rows.hidden = !open
       li.className = 'heading'
-      li.append(element('h3', 'heading-name', item.repo), rows)
+      li.append(headingEl(item, open), rows)
       return li
     }),
   )
+}
+
+function toggleFold(repo: string): void {
+  folded = folded.includes(repo) ? folded.filter((name) => name !== repo) : [...folded, repo]
+  writeSidebarFolds(storage(), folded, sidebarItems(store.spaces()).flatMap((item) => (item.kind === 'heading' ? [item.repo] : [])))
+  renderSidebar()
+}
+
+// A repo's heading: its name, and while folded the most urgent state among its rows. Clicking folds or unfolds it.
+function headingEl(item: Extract<SidebarItem<SpaceInfo>, { kind: 'heading' }>, open: boolean): HTMLElement {
+  const heading = element('h3', 'heading-name', '')
+  heading.tabIndex = 0
+  heading.setAttribute('role', 'button')
+  heading.setAttribute('aria-expanded', String(open))
+  heading.append(element('span', 'heading-label', item.repo))
+  if (!open) {
+    const summaries = item.rows.map((row) => rowSummary(summaryTabs(row.space.id), [...store.recentIds]))
+    const state = mostUrgent(summaries.filter((summary) => !summary.empty).map((summary) => summary.state))
+    if (state !== null) heading.append(indicatorEl(state, undefined, true))
+  }
+  heading.addEventListener('click', () => toggleFold(item.repo))
+  heading.addEventListener('keydown', (event) => {
+    if (event.key !== 'Enter' && event.key !== ' ') return
+    event.preventDefault()
+    toggleFold(item.repo)
+  })
+  if (!demoMode) heading.addEventListener('contextmenu', (event) => openSpaceMenu(item.rows[0].space, event, true))
+  return heading
+}
+
+// The tabs of a space as a row sums them up.
+function summaryTabs(spaceId: string): SummaryTab[] {
+  return store.tabsOfSpace(spaceId).map((tab) => {
+    const info = store.agent(tab.id)
+    return { id: tab.id, name: tabName(tab), agent: tab.kind !== 'shell' || info !== undefined, exited: tab.exited, state: stateOf(tab), since: info?.since ?? null }
+  })
 }
 
 // One space's row: its node, then two lines (the name and the time; the deciding tab's name and what is open), or for a plain
 // space with no tabs one line, the name and the branch.
 function spaceRow(row: SidebarRow<SpaceInfo>): HTMLButtonElement {
   const { space } = row
-  const summary = rowSummary(
-    store.tabsOfSpace(space.id).map((tab) => {
-      const info = store.agent(tab.id)
-      return { id: tab.id, name: tabName(tab), agent: tab.kind !== 'shell' || info !== undefined, exited: tab.exited, state: stateOf(tab), since: info?.since ?? null }
-    }),
-    [...store.recentIds],
-  )
+  const summary = rowSummary(summaryTabs(space.id), [...store.recentIds])
   const grouped = row.main || space.worktree || space.parent !== null
   const button = document.createElement('button')
   button.type = 'button'

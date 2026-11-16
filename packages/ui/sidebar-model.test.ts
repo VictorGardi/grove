@@ -1,7 +1,10 @@
 import { describe, expect, it } from 'vitest'
 import type { AgentStateName } from '../protocol/messages.ts'
 import {
+  headingOf,
+  headingOpen,
   jumpTargets,
+  mostUrgent,
   nextUrgent,
   openCounts,
   rowName,
@@ -270,5 +273,49 @@ describe('jumpTargets', () => {
 
   it('is empty when nothing is urgent or working', () => {
     expect(jumpTargets([tab('a', 'idle', 1), tab('b', 'unknown', 2)])).toEqual([])
+  })
+})
+
+describe('headingOpen', () => {
+  it('opens every heading by default, and folds the ones the human folded', () => {
+    expect(headingOpen('app', [], null)).toBe(true)
+    expect(headingOpen('app', ['app'], null)).toBe(false)
+    expect(headingOpen('lib', ['app'], null)).toBe(true)
+  })
+  it('keeps the active space\'s heading open without touching the saved folds', () => {
+    const folded = ['app']
+    expect(headingOpen('app', folded, 'app')).toBe(true)
+    expect(headingOpen('app', folded, 'lib')).toBe(false)
+    expect(folded).toEqual(['app'])
+  })
+})
+
+describe('headingOf', () => {
+  const items = sidebarItems([space('a', { repoName: 'app' }), space('a-wt', { parent: 'a', worktree: true, repoName: 'app' }), space('p')])
+  it('names the repo whose heading holds the space, and none for a plain row or no space', () => {
+    expect(headingOf(items, 'a-wt')).toBe('app')
+    expect(headingOf(items, 'p')).toBeNull()
+    expect(headingOf(items, null)).toBeNull()
+  })
+})
+
+describe('mostUrgent', () => {
+  it('picks needs-you, finished, working, unknown, idle in that order', () => {
+    expect(mostUrgent(['idle', 'unknown', 'working', 'finished', 'needs-you'])).toBe('needs-you')
+    expect(mostUrgent(['idle', 'working', 'finished'])).toBe('finished')
+    expect(mostUrgent(['idle', 'unknown', 'working'])).toBe('working')
+    expect(mostUrgent(['idle', 'unknown'])).toBe('unknown')
+    expect(mostUrgent(['idle'])).toBe('idle')
+  })
+  it('is null for no states', () => {
+    expect(mostUrgent([])).toBeNull()
+  })
+})
+
+describe('Cmd+digit over folded headings', () => {
+  it('numbers every row, so a shortcut means the same space whether or not its heading is folded', () => {
+    const order = sidebarSpaceOrder([space('a', { repoName: 'app' }), space('a-wt', { parent: 'a', worktree: true, repoName: 'app' }), space('p')])
+    expect(spaceAt(order, 2)).toBe('a-wt')
+    expect(spaceAt(order, 3)).toBe('p')
   })
 })
