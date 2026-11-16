@@ -62,12 +62,17 @@ export class GroveSessions {
     return began !== undefined && at >= began ? false : null
   }
 
+  // A record with a time sets when the session was first seen. A record without one (a status file, a tab open now) says only that the
+  // session is Grove's, from its start; it counts only while no record has a time, so it never widens a resumed session's Grove part.
   private see(agent: UsageAgent, sessionId: string, at: number | undefined): void {
     const key = keyOf(agent, sessionId)
-    const value = at ?? -Infinity
     const before = this.first.get(key)
-    if (before === undefined || value < before) this.first.set(key, value)
-    if (at !== undefined) this.began.set(agent, Math.min(this.began.get(agent) ?? at, at))
+    if (at === undefined) {
+      if (before === undefined) this.first.set(key, -Infinity)
+      return
+    }
+    if (before === undefined || before === -Infinity || at < before) this.first.set(key, at)
+    this.began.set(agent, Math.min(this.began.get(agent) ?? at, at))
   }
 
   // Reads what the per-tab files gained since the last time. A missing folder, an unreadable file or a line that is not what Grove

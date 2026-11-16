@@ -301,6 +301,20 @@ describe('where requests ran: Claude Desktop and the Grove split', () => {
     })
   })
 
+  it('keeps the split of a resumed session when the tab’s status file and an open tab also name it', async () => {
+    transcript('p/a.jsonl', [claudeLine({ id: 'by-hand', ts: iso(10), session: 'resumed' }), claudeLine({ id: 'in-grove', ts: iso(12), session: 'resumed' })])
+    copilotSession('resumed', [copilotStart('/work/app'), copilotLine({ id: 'a', ts: iso(10) }), copilotLine({ id: 'b', ts: iso(12) })])
+    claudeHook('tab', 'resumed', ms(11, 9))
+    claudeHook('early', 'earlier', BEGAN)
+    copilotHook('tab', 'resumed', ms(11, 9))
+    groveFile('claude', 'tab.status.json', JSON.stringify({ resumeId: 'resumed' }))
+    groveFile('copilot', 'tab.status.json', JSON.stringify({ resumeId: 'resumed' }))
+    live = [{ agent: 'claude', sessionId: 'resumed' }, { agent: 'copilot', sessionId: 'resumed' }]
+    const s = await read()
+    expect(split(agentOf(s, 'claude'))).toEqual({ other: 1, grove: 1 })
+    expect(split(agentOf(s, 'copilot'))).toEqual({ other: 1, grove: 1 })
+  })
+
   describe('before Grove recorded Claude sessions', () => {
     it('says it cannot tell for Claude Code, from the earliest Grove record on this machine and not a fixed date', async () => {
       transcript('p/a.jsonl', [
