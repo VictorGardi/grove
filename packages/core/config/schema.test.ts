@@ -57,6 +57,7 @@ describe('config schema', () => {
         'sidebar-toggle': 'mod+b',
         notes: 'mod+shift+n',
         diff: 'mod+shift+d',
+        usage: 'mod+shift+u',
         'dock-expand': 'mod+shift+e',
         'zoom-in': 'mod+=',
         'zoom-out': 'mod+-',

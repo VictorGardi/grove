@@ -2,7 +2,7 @@
 // The size and the stroke width are not set here: the .icon class in styles.css takes them from --icon-size and
 // --icon-stroke, so every icon in the window follows the tokens.
 
-export const ICON_NAMES = ['search', 'sidebar', 'plus', 'grid', 'x', 'terminal', 'worktree', 'branch', 'edit', 'notes', 'diff', 'check', 'chevron', 'send', 'expand'] as const
+export const ICON_NAMES = ['search', 'sidebar', 'plus', 'grid', 'x', 'terminal', 'worktree', 'branch', 'edit', 'notes', 'diff', 'usage', 'check', 'chevron', 'send', 'expand'] as const
 
 export type IconName = (typeof ICON_NAMES)[number]
 
@@ -17,6 +17,7 @@ const SHAPES: Record<IconName, string> = {
   edit: '<path d="M12 3H5a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7" /><path d="M18.4 2.6a2.1 2.1 0 0 1 3 3L12 15l-4 1 1-4Z" />',
   notes: '<path d="M12 20h9" /><path d="M16.5 3.5a2.1 2.1 0 0 1 3 3L7 19l-4 1 1-4Z" />',
   diff: '<circle cx="6" cy="6" r="2.5" /><circle cx="18" cy="18" r="2.5" /><path d="M6 8.5v4a4 4 0 0 0 4 4h5.5" /><path d="M13 13.5 15.5 16 13 18.5" />',
+  usage: '<path d="M3 3v18h18" /><path d="M7 15v3" /><path d="M12 9v9" /><path d="M17 5v13" />',
   check: '<path d="m5 12 5 5L20 7" />',
   chevron: '<path d="m6 9 6 6 6-6" />',
   expand: '<path d="M15 3h6v6" /><path d="m21 3-7 7" /><path d="m3 21 7-7" /><path d="M9 21H3v-6" />',

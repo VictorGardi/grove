@@ -2,15 +2,24 @@ import path from 'node:path'
 import { connectRpc } from '../protocol/client.ts'
 import { groveHome, holderSocketPath } from '../protocol/paths.ts'
 import { startCoreDaemon } from './daemon.ts'
+import { claudeProjectsDir } from './agents/claude/launch.ts'
+import { copilotHomeDir } from './agents/copilot/adapter.ts'
 import { configFolder } from './config/store.ts'
 import { ensureHolder } from './holder-client.ts'
 import { SpacesService } from './spaces.ts'
+import { createClaudeReader } from './usage/claude.ts'
+import { createCopilotReader } from './usage/copilot.ts'
+import { UsageService } from './usage/service.ts'
 
 async function main(): Promise<void> {
   await ensureHolder()
   const spaces = new SpacesService(path.join(groveHome(), 'state.json'))
   await restoreTabs(spaces)
-  const core = await startCoreDaemon({ spaces })
+  const usage = new UsageService({
+    home: groveHome(),
+    readers: [createClaudeReader({ projectsDir: claudeProjectsDir() }), createCopilotReader({ copilotHome: copilotHomeDir() })],
+  })
+  const core = await startCoreDaemon({ spaces, usage })
   console.log(`core: listening on ${core.socketPath}`)
 
   let shuttingDown = false

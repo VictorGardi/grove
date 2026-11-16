@@ -17,9 +17,12 @@ export interface CopilotAdapterOptions {
   shell?: string
 }
 
-// Copilot's own dir: the option, else $COPILOT_HOME, else ~/.copilot.
+// Copilot's own dir: $COPILOT_HOME, else ~/.copilot.
+export const copilotHomeDir = (): string => process.env.COPILOT_HOME || path.join(os.homedir(), '.copilot')
+
+// Copilot's own dir: the option, else copilotHomeDir().
 function copilotHomeOf(options: CopilotAdapterOptions): string {
-  return options.copilotHome ?? process.env.COPILOT_HOME ?? path.join(os.homedir(), '.copilot')
+  return options.copilotHome ?? copilotHomeDir()
 }
 
 export function createCopilotAdapter(options: CopilotAdapterOptions = {}): AgentAdapter {

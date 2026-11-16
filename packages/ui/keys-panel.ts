@@ -20,6 +20,7 @@ export const KEY_LABELS: Record<KeyAction, string> = {
   'sidebar-toggle': 'Show or hide the sidebar',
   notes: 'Notes',
   diff: 'Changes',
+  usage: 'Usage',
   'dock-expand': 'Expand the side panel',
   'zoom-in': 'Zoom in',
   'zoom-out': 'Zoom out',

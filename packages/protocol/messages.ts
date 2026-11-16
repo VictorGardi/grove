@@ -48,6 +48,8 @@ export const METHODS = {
   skillsStatus: 'skills.status',
   skillsInstall: 'skills.install',
   skillsUninstall: 'skills.uninstall',
+  usageSummary: 'usage.summary',
+  usageWipe: 'usage.wipe',
 } as const
 
 export const ERROR_CODES = {
@@ -95,6 +97,53 @@ export interface JsonRpcFailure {
 export type JsonRpcResponse = JsonRpcSuccess | JsonRpcFailure
 
 export type Empty = Record<string, never>
+
+// The usage panel (see GLOSSARY: Request, Usage panel, Usage history). Days are the human's local days, `YYYY-MM-DD`.
+export type UsageAgent = 'claude' | 'copilot'
+
+export interface UsageTokens {
+  input: number
+  output: number
+  cacheRead: number
+  cacheWrite: number
+}
+
+export interface UsageTotals extends UsageTokens {
+  requests: number
+  // Copilot's credits for these requests (GitHub AI Credits: 1 credit = 1,000,000,000 nano AIU). Never a dollar figure, never added
+  // to anything but other credits; always 0 for an agent without credits.
+  credits: number
+  // How many of these requests carried no credit figure, so `credits` is partial. Only counted for an agent that has credits.
+  withoutCredits: number
+}
+
+export interface UsageDay extends UsageTotals {
+  day: string
+}
+
+export interface UsageAgentSummary {
+  agent: UsageAgent
+  // True for an agent that reports credits (Copilot): the credit figures and `withoutCredits` mean something for it.
+  hasCredits: boolean
+  // Only the days with a request, oldest first, within the days asked for.
+  days: UsageDay[]
+  // Today, the last 7 days and the last 30 days, today included.
+  today: UsageTotals
+  last7: UsageTotals
+  last30: UsageTotals
+}
+
+export interface UsageSummary {
+  today: string
+  // The first day the saved history can speak for: the earliest request it holds, or the day it was started or wiped.
+  historyFrom: string
+  // True while the first read of the agents' files is still running; the numbers are what is ready so far.
+  building: boolean
+  // The days the history holds requests for so far, or null when it holds none.
+  ready: { from: string; to: string } | null
+  // Agents with a request in the last 30 days. None: nothing to show.
+  agents: UsageAgentSummary[]
+}
 
 export interface TabInfo {
   id: string
@@ -197,6 +246,7 @@ export type KeyAction =
   | 'sidebar-toggle'
   | 'notes'
   | 'diff'
+  | 'usage'
   | 'dock-expand'
   | 'zoom-in'
   | 'zoom-out'
@@ -484,6 +534,10 @@ export interface MethodMap {
   'skills.install': { params: { agent: SkillAgent }; result: SkillAgentInfo }
   // Removes only the skill files Grove wrote.
   'skills.uninstall': { params: { agent: SkillAgent }; result: SkillAgentInfo }
+  // The usage panel's numbers. `days` is how many local days of per-day detail to return (default 30).
+  'usage.summary': { params: { days?: number }; result: UsageSummary }
+  // Wipes the saved usage history; its start date becomes now.
+  'usage.wipe': { params: Empty; result: Empty }
 }
 
 export interface NotificationMap {
@@ -508,6 +562,8 @@ export interface NotificationMap {
   'config.changed': ConfigSnapshot
   // An agent the app did not start is running and has no hook entry yet: ask the human once.
   'integration.prompt': { agent: IntegrationAgent }
+  // The usage numbers changed: ask usage.summary again. Coalesced, never one per request.
+  'usage.changed': Empty
 }
 
 export type MethodName = keyof MethodMap

@@ -141,6 +141,22 @@ describe('dock', () => {
     expect(t.store.data.get(DOCK_EXPANDED_KEY)).toBe('0')
   })
 
+  it('tells a panel whether the dock is expanded, and when that changes', async () => {
+    const t = setup()
+    t.dock.register(t.panel('usage'))
+    await t.dock.open('usage')
+    const context = t.contexts.get('usage')!
+    const changed = vi.fn()
+    const stop = context.onExpanded?.(() => changed(context.expanded?.()))
+    expect(context.expanded?.()).toBe(false)
+    t.elements.expand.click()
+    t.elements.expand.click()
+    expect(changed.mock.calls).toEqual([[true], [false]])
+    stop?.()
+    t.elements.expand.click()
+    expect(changed).toHaveBeenCalledTimes(2)
+  })
+
   it('opens expanded when it was left expanded', async () => {
     const t = setup(memoryStore({ [DOCK_EXPANDED_KEY]: '1' }))
     t.dock.register(t.panel('notes'))

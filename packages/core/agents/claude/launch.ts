@@ -1,4 +1,5 @@
 import crypto from 'node:crypto'
+import os from 'node:os'
 import path from 'node:path'
 import { fileURLToPath } from 'node:url'
 
@@ -33,6 +34,11 @@ export interface ClaudeLaunch {
 }
 
 // The latest context reading of a tab, written by statusline.mjs.
+// Claude's projects folder, where the session transcripts live: $CLAUDE_CONFIG_DIR/projects or ~/.claude/projects.
+export function claudeProjectsDir(): string {
+  return path.join(process.env.CLAUDE_CONFIG_DIR || path.join(os.homedir(), '.claude'), 'projects')
+}
+
 export function claudeUsageFile(home: string, tabId: string): string {
   return path.join(home, 'agents', 'claude', `${tabId}.usage.json`)
 }

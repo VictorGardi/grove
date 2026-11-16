@@ -101,3 +101,26 @@ specific meaning, so humans and agents stay consistent.
 - **Preview**: a file card's second view in the diff panel, for markdown files:
   the file as it reads after the change, rendered and read only, beside the
   card's **Diff** view. Raw HTML in the file is shown as text, never run.
+
+- **Request**: one model call an agent makes, counting the calls of its helper
+  agents. It is the unit the usage panel's matrix and bars count; tokens and,
+  for Copilot, credits are detail. Not Copilot's "premium request", and not
+  part of **Context level**.
+- **Credits**: Copilot's own unit of cost, GitHub AI Credits (1 credit =
+  1,000,000,000 nano AIU), carried per request. Shown as "credits", never with a
+  dollar sign, never added to anything but other credits. A total that includes
+  requests without a credit figure reads "plus N requests without credits".
+- **Usage panel**: the dock **Module** that shows each agent's requests per
+  day, week and month: a day matrix, stacked bars, when you work (weekday by
+  hour) and where it went (by repository, worktrees rolled up into their main
+  checkout, folders without a space under "Other"). An agent appears only if it
+  made a request in the last 30 days. Claude's figures include Claude Desktop as
+  a separate slice. Copilot also shows credits; Claude shows no cost. Nothing
+  here is a plan limit, and nothing is added across agents or machines.
+- **Usage history**: Grove's own saved record behind the usage panel: one entry
+  per request, with its time, agent, model, folder and token counts, and no
+  conversation text. It is per machine, starts when Grove first reads the
+  agents' files, and outlives an agent deleting its own sessions.
+- **Not tracked by Grove**: requests from sessions Grove did not run or cannot
+  tell it ran. The usage panel shows this share only from the date Grove began
+  recording its own sessions; before that it says it cannot tell.

@@ -28,6 +28,7 @@ import { diffBases } from './diff/bases.ts'
 import { commentChangeParams, commentIdParam, commentIdsParam, newCommentParams } from './diff/comments.ts'
 import { diffAllModes } from './diff/compute.ts'
 import { readNewSide } from './diff/file.ts'
+import { UsageService } from './usage/service.ts'
 
 const TAB_ID = /^[A-Za-z0-9_-]{1,64}$/
 // A holder call the status service makes must answer within this, or that call fails and its check is skipped.
@@ -76,6 +77,8 @@ export async function startCoreDaemon(
     status?: StatusService
     integrations?: IntegrationService
     skillDirs?: Record<SkillAgent, string>
+    // The usage statistics. Without one the core has no agent files to read and the summary is empty.
+    usage?: UsageService
   } = {},
 ): Promise<CoreServer> {
   const socketPath = options.socketPath ?? coreSocketPath()
@@ -217,6 +220,7 @@ export async function startCoreDaemon(
     }
   }, GIT_POLL_MS)
 
+  const usage = options.usage ?? new UsageService({ home, readers: [] })
   const sockets = new Set<net.Socket>()
   const broadcast = (message: unknown) => {
     for (const socket of sockets) if (!socket.destroyed) socket.write(encodeLine(message))
@@ -237,12 +241,14 @@ export async function startCoreDaemon(
     broadcast(notification('context.changed', { tabId, context })),
   )
   const unsubscribeName = status.subscribeName((tabId, name) => broadcast(notification('agent.named', { tabId, name })))
+  const unsubscribeUsage = usage.subscribe(() => broadcast(notification('usage.changed', {})))
   const unwatch = watchConfig(config, (snapshot) => broadcast(notification('config.changed', snapshot)))
   // Agent tabs are rebuilt before the core listens, so the first client already sees their state.
   status.restore(spaces.agentTabs(), tabsAtStart)
   status.start()
+  usage.start()
   const skillDirsOf = options.skillDirs ?? skillDirs(os.homedir(), process.env)
-  const deps: Deps = { skillDirs: skillDirsOf, spaces, status, attention, home, configDir, config, adapters, available, broadcast, integrations }
+  const deps: Deps = { skillDirs: skillDirsOf, spaces, status, attention, home, configDir, config, adapters, available, broadcast, integrations, usage }
 
   const server = net.createServer((socket) => {
     sockets.add(socket)
@@ -315,6 +321,8 @@ export async function startCoreDaemon(
         unsubscribe()
         unsubscribeContext()
         unsubscribeName()
+        unsubscribeUsage()
+        usage.close()
         unwatch()
         clearInterval(presenceTimer)
         clearInterval(gitTimer)
@@ -377,6 +385,7 @@ interface Deps {
   broadcast: (message: unknown) => void
   integrations: IntegrationService
   skillDirs: Record<SkillAgent, string>
+  usage: UsageService
 }
 
 function skillAgentParam(params: unknown): SkillAgent {
@@ -470,6 +479,15 @@ async function dispatch(method: string, rawParams: unknown, holder: Promise<RpcC
     const failed = results.find((result) => !result.ok)
     if (failed) throw new RpcError(ERROR_CODES.invalidParams, failed.error ?? `could not change ${failed.target}`)
     return skillInfo(agent, dir) satisfies MethodMap['skills.install']['result']
+  }
+  if (method === METHODS.usageSummary) {
+    const days = (rawParams as { days?: unknown } | null | undefined)?.days
+    if (days !== undefined && (typeof days !== 'number' || !Number.isInteger(days) || days < 1)) throw new RpcError(ERROR_CODES.invalidParams, 'days must be a positive whole number')
+    return deps.usage.summary(days) satisfies MethodMap['usage.summary']['result']
+  }
+  if (method === METHODS.usageWipe) {
+    await deps.usage.wipe()
+    return {} satisfies MethodMap['usage.wipe']['result']
   }
   if (method === METHODS.corePing) {
     const result: MethodMap['core.ping']['result'] = { protocolVersion: PROTOCOL_VERSION, build: buildId() }

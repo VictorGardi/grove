@@ -3527,3 +3527,153 @@ li[aria-selected] > .slash-tile {
 .goto-quiet:hover {
   color: var(--color-ink);
 }
+
+/* Usage: the dock's usage panel. A matrix per agent, one cell a day; darker = more requests. The ramp is the accent mixed over the dock's
+   ground colour (--mix is set per cell from usage-model.ts, which checks its contrast in every theme). */
+
+.usage {
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  gap: var(--space-6);
+  min-height: 0;
+  padding: var(--space-5) var(--space-6);
+  overflow-y: auto;
+  color: var(--color-ink);
+  font-size: var(--text-sm);
+}
+
+.usage-empty {
+  margin: 0;
+  color: var(--color-mute);
+}
+
+.usage-agent {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-4);
+}
+
+.usage-agent-title {
+  margin: 0;
+  font-size: var(--text-md);
+  font-weight: 600;
+}
+
+.usage-matrix {
+  display: flex;
+  gap: var(--space-xs);
+  padding-bottom: var(--space-1);
+  overflow-x: auto;
+}
+
+.usage-week {
+  display: flex;
+  flex: none;
+  flex-direction: column;
+  gap: var(--space-xs);
+}
+
+.usage-cell {
+  flex: none;
+  box-sizing: border-box;
+  width: var(--size-usage-cell);
+  height: var(--size-usage-cell);
+  padding: 0;
+  border: 1px solid transparent;
+  border-radius: var(--radius-xs);
+  background: color-mix(in srgb, var(--accent) var(--mix), var(--color-ground));
+}
+
+button.usage-cell {
+  cursor: pointer;
+}
+
+.usage-cell[data-shade='0'] {
+  background: var(--color-line);
+}
+
+/* A day before the history starts: not "no activity", so not a filled cell. */
+.usage-cell[data-shade='none'] {
+  border: 1px dashed var(--color-line);
+  background: transparent;
+}
+
+.usage-cell-blank {
+  visibility: hidden;
+}
+
+button.usage-cell:hover,
+.usage-cell[aria-pressed='true'] {
+  border-color: var(--color-ink);
+}
+
+.usage-totals {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-3) var(--space-6);
+  margin: 0;
+}
+
+.usage-total-label,
+.usage-token-label,
+.usage-scope,
+.usage-from {
+  color: var(--color-mute);
+}
+
+.usage-total-label,
+.usage-total-value,
+.usage-token-label,
+.usage-token-value {
+  margin: 0;
+}
+
+.usage-total-value {
+  font-size: var(--text-md);
+}
+
+/* Copilot's credits: a number of their own, quieter than the requests, never a dollar figure. */
+.usage-total-credits,
+.usage-detail-credits {
+  margin: 0;
+  color: var(--color-mute);
+}
+
+.usage-detail {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+  padding: var(--space-4) var(--space-5);
+  border: 1px solid var(--color-line);
+  border-radius: var(--radius-md);
+  background: var(--color-raised);
+}
+
+.usage-detail-title {
+  color: var(--color-mute);
+}
+
+.usage-detail-requests {
+  font-size: var(--text-md);
+}
+
+.usage-detail-tokens {
+  display: grid;
+  grid-template-columns: repeat(2, 1fr);
+  gap: var(--space-2) var(--space-6);
+  margin: 0;
+}
+
+.usage-token {
+  display: flex;
+  justify-content: space-between;
+  gap: var(--space-3);
+}
+
+.usage-foot {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-2) var(--space-5);
+  margin-top: auto;
+}

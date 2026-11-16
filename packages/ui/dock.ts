@@ -21,6 +21,9 @@ export interface DockContext {
   meta(text: string): void
   error(message: string | null): void
   close(): void
+  // Whether the dock is expanded, and a call when that changes, for a panel whose content depends on its room.
+  expanded?(): boolean
+  onExpanded?(listener: () => void): () => void
 }
 
 export interface DockInstance {
@@ -82,6 +85,8 @@ export function createDock(elements: DockElements, deps: DockDeps): Dock {
   // The width the human chose (dragged, stepped or reset to); expanded shows the ceiling instead and keeps it for the way back.
   let width = readDockWidth(deps.store)
   let expanded = readDockExpanded(deps.store)
+  const expandedListeners = new Set<() => void>()
+  let announced = expanded
   let mounting: DockPanel | null = null
   let leaving: { instance: DockInstance; timer: ReturnType<typeof setTimeout> | null } | null = null
   let busy: Promise<unknown> = Promise.resolve()
@@ -97,6 +102,10 @@ export function createDock(elements: DockElements, deps: DockDeps): Dock {
     edge.setAttribute('aria-valuemax', String(dockCeiling(windowWidth())))
     expandButton.setAttribute('aria-pressed', String(expanded))
     app.classList.toggle('dock-expanded', expanded)
+    if (expanded !== announced) {
+      announced = expanded
+      for (const listener of [...expandedListeners]) listener()
+    }
   }
 
   // A width the human chose: it ends expanded, and is kept when `keep`.
@@ -129,6 +138,11 @@ export function createDock(elements: DockElements, deps: DockDeps): Dock {
         error.textContent = message ?? ''
       },
       close: () => void queue(() => closeNow()),
+      expanded: () => expanded,
+      onExpanded: (listener) => {
+        expandedListeners.add(listener)
+        return () => void expandedListeners.delete(listener)
+      },
     }
   }
 

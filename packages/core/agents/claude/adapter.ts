@@ -1,8 +1,7 @@
-import os from 'node:os'
 import path from 'node:path'
 import type { AgentAdapter } from '../../status/adapter.ts'
 import { hasClaudeHooks, claudeSettingsFile, readSettings } from '../../integrations/install.ts'
-import { claudeLaunch, claudeSpoolFile, claudeUsageFile, SESSION_ID } from './launch.ts'
+import { claudeLaunch, claudeProjectsDir, claudeSpoolFile, claudeUsageFile, SESSION_ID } from './launch.ts'
 import { createClaudeSource } from './source.ts'
 import { createClaudeNameSource } from './name.ts'
 import { createClaudeUsageSource } from './usage.ts'
@@ -48,7 +47,7 @@ export function createClaudeAdapter(options: ClaudeAdapterOptions = {}): AgentAd
         onName &&
         createClaudeNameSource({
           usageFile: claudeUsageFile(input.home, input.tabId),
-          projectsDir: options.projectsDir ?? path.join(process.env.CLAUDE_CONFIG_DIR || path.join(os.homedir(), '.claude'), 'projects'),
+          projectsDir: options.projectsDir ?? claudeProjectsDir(),
           sessionId: input.sessionId,
           onName,
         })

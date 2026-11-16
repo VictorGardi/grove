@@ -31,7 +31,7 @@ import { createWindowStore, type Tab, type TabKind } from './window-store.ts'
 import { contextMeter, hideContextTip, markWithContext } from './context-badge.ts'
 import { createTabPill, type TabPill } from './tab-pill.ts'
 import { createNotesEditor } from './notes-editor.ts'
-import { diffModule, notesModule } from './dock-modules.ts'
+import { diffModule, notesModule, usageModule } from './dock-modules.ts'
 import { createHostBus, mountModules } from './modules.ts'
 import { createDock } from './dock.ts'
 import { settled, summarize } from './diff-model.ts'
@@ -246,6 +246,11 @@ const dock = createDock(
 // The modules in the dock (src modules.ts): each brings its panel, rail button and key action, and follows the host events the window
 // emits below (tab switch, an agent that stopped working, a connection that opened or closed).
 const hostBus = createHostBus((error) => report(error))
+const usage = usageModule({
+  summary: (days) => bridge.rpc('usage.summary', { days }),
+  connected: () => coreConnected,
+  now: Date.now,
+})
 const rail = mountModules(
   [
     notesModule({
@@ -277,6 +282,7 @@ const rail = mountModules(
       write: async (tabId, data) => void (await bridge.rpc('tabs.write', { id: tabId, dataB64: toBase64(encoder.encode(data)) })),
       focusTab: (tabId) => activate(tabId),
     }),
+    usage,
   ],
   byId('dock-toggles'),
   dock,
@@ -356,6 +362,7 @@ const keyActions: Record<KeyAction, () => void> = {
   'sidebar-toggle': () => sidebarToggle.click(),
   notes: () => rail.toggle('notes')?.(),
   diff: () => rail.toggle('diff')?.(),
+  usage: () => rail.toggle('usage')?.(),
   'dock-expand': () => dock.toggleExpanded(),
   'zoom-in': () => setZoom('in'),
   'zoom-out': () => setZoom('out'),
@@ -1283,6 +1290,7 @@ bridge.on('attention.notify', (notice) => {
 })
 
 bridge.on('config.changed', applyConfig)
+bridge.on('usage.changed', () => usage.changed())
 
 // The CLI asked for a tab: its space and tab are shown, then the window comes forward. An unknown tab only raises the window.
 bridge.on('tabs.focus', ({ id }) => {
