@@ -396,4 +396,72 @@ describe('usage panel', () => {
       expect(second.body.querySelector('.usage-tabs [data-tab="models"]')?.getAttribute('aria-pressed')).toBe('true')
     })
   })
+  describe('pointing at a day', () => {
+    const over = (node: Element) => node.dispatchEvent(new Event('pointerover', { bubbles: true }))
+
+    it('links the day’s cells, its bar and its weekday’s hours, and says what the day held in one tooltip', async () => {
+      const t = setup()
+      await flush()
+      over(cell(t.body, '2026-11-11'))
+      expect(t.body.querySelector('.usage')?.hasAttribute('data-linking')).toBe(true)
+      expect([...t.body.querySelectorAll('.is-linked')].filter((n) => n.matches('.usage-cell')).map((n) => (n as HTMLElement).dataset.day)).toEqual(['2026-11-11'])
+      expect(t.body.querySelector('.usage-bar.is-linked')?.getAttribute('data-day')).toBe('2026-11-11')
+      // 2026-11-11 is a Wednesday: weekday 2.
+      expect(t.body.querySelectorAll('.usage-hour.is-linked')).toHaveLength(24)
+      expect([...t.body.querySelectorAll('.usage-hour.is-linked')].every((n) => (n as HTMLElement).dataset.weekday === '2')).toBe(true)
+      const tip = t.body.querySelector('.usage-tip') as HTMLElement
+      expect(tip.dataset.show).toBe('true')
+      expect(tip.textContent).toContain('Wed 11 Nov 2026')
+      expect(tip.textContent).toContain('9 requests')
+    })
+
+    it('lets go when the pointer leaves, and keeps no highlight across a redraw it was not on', async () => {
+      const t = setup()
+      await flush()
+      over(cell(t.body, '2026-11-11'))
+      t.body.querySelector('.usage')!.dispatchEvent(new Event('pointerleave'))
+      expect(t.body.querySelector('.usage')?.hasAttribute('data-linking')).toBe(false)
+      expect(t.body.querySelector('.is-linked')).toBeNull()
+      expect((t.body.querySelector('.usage-tip') as HTMLElement).dataset.show).toBeUndefined()
+    })
+
+    it('puts the highlight back on the new elements when the numbers change under the pointer', async () => {
+      const t = setup()
+      await flush()
+      over(cell(t.body, '2026-11-11'))
+      t.module.changed()
+      await flush()
+      expect(cell(t.body, '2026-11-11').classList.contains('is-linked')).toBe(true)
+    })
+
+    it('links a weekday’s days from an hour, and says what the hour held', async () => {
+      const t = setup()
+      await flush()
+      over(t.body.querySelector('.usage-hour[data-weekday="2"]')!)
+      expect(cell(t.body, '2026-11-11').classList.contains('is-linked')).toBe(true)
+      expect(cell(t.body, '2026-11-10').classList.contains('is-linked')).toBe(false)
+    })
+
+    it('moves between the days with the arrow keys, one stop for Tab per matrix', async () => {
+      const t = setup()
+      await flush()
+      const stops = [...t.body.querySelectorAll<HTMLButtonElement>('.usage-cell[tabindex="0"]')]
+      expect(stops).toHaveLength(1)
+      expect(stops[0].dataset.day).toBe('2026-11-16')
+      const key = (node: Element, name: string) => node.dispatchEvent(new KeyboardEvent('keydown', { key: name, bubbles: true, cancelable: true }))
+      key(cell(t.body, '2026-11-16'), 'ArrowLeft')
+      expect(document.activeElement).toBe(cell(t.body, '2026-11-09'))
+      key(cell(t.body, '2026-11-09'), 'ArrowDown')
+      expect(document.activeElement).toBe(cell(t.body, '2026-11-10'))
+      expect(cell(t.body, '2026-11-10').tabIndex).toBe(0)
+      expect(cell(t.body, '2026-11-16').tabIndex).toBe(-1)
+    })
+
+    it('says how a total compares with the period before it', async () => {
+      const t = setup()
+      await flush()
+      over(t.body.querySelector('.usage-total[data-total="7 days"]')!)
+      expect((t.body.querySelector('.usage-tip') as HTMLElement).textContent).toContain('the 7 days before')
+    })
+  })
 })

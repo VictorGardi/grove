@@ -124,6 +124,11 @@
   --size-usage-hatch: 2px;
   --size-usage-axis: 36px;
   --size-usage-weekday: 28px;
+  --size-usage-tip: 260px;
+  --size-usage-outline: 2px;
+  --usage-reveal: 180ms;
+  --usage-stagger: 4ms;
+  --usage-progress: 400ms;
   --size-cap: 28px;
   --statusbar-h: 30px;
   --icon-size-pill: 13px;

@@ -3549,11 +3549,28 @@ li[aria-selected] > .slash-tile {
 }
 
 .usage-building {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
   margin: 0;
   padding: var(--space-3) var(--space-4);
   border: 1px solid var(--color-rule);
   border-radius: var(--radius-sm);
   color: var(--color-mute);
+}
+
+.usage-building-track {
+  height: var(--space-xs);
+  overflow: hidden;
+  border-radius: var(--radius-xs);
+  background: var(--color-line);
+}
+
+.usage-building-fill {
+  display: block;
+  height: 100%;
+  background: var(--accent);
+  transition: width var(--usage-progress) cubic-bezier(0.3, 0, 0, 1);
 }
 
 .usage-agent {
@@ -3571,7 +3588,7 @@ li[aria-selected] > .slash-tile {
 .usage-matrix {
   display: flex;
   gap: var(--space-xs);
-  padding-bottom: var(--space-1);
+  padding: var(--space-xs) var(--space-xs) var(--space-1);
   overflow-x: auto;
 }
 
@@ -3614,6 +3631,130 @@ button.usage-cell {
 button.usage-cell:hover,
 .usage-cell[aria-pressed='true'] {
   border-color: var(--color-ink);
+}
+
+/* Pointing at a day: the day's own cells and bar stay as they are, the rest steps back; a weekday links its row the same way. Only opacity and
+   transform change, so nothing moves. */
+.usage-cell,
+.usage-bar,
+.usage-hour {
+  transition:
+    opacity var(--fade),
+    transform var(--fade),
+    border-color var(--fade);
+}
+
+.usage[data-linking] .usage-cell:not(.is-linked, .usage-cell-blank),
+.usage[data-linking] .usage-bar:not(.is-linked),
+.usage[data-linking] .usage-hour:not(.is-linked) {
+  opacity: 0.3;
+}
+
+button.usage-cell:hover,
+button.usage-cell:focus-visible,
+.usage-hour:hover {
+  position: relative;
+  z-index: 1;
+  transform: scale(1.35);
+}
+
+button.usage-cell:focus-visible {
+  outline: var(--size-usage-outline) solid var(--accent);
+  outline-offset: 1px;
+}
+
+.usage-total:focus-visible {
+  outline: 1px solid var(--accent);
+  outline-offset: var(--size-usage-outline);
+}
+
+.usage-total {
+  cursor: default;
+}
+
+/* The one tooltip of the panel: placed by usage-panel.ts with a transform, never in the flow. */
+.usage-tip {
+  position: fixed;
+  top: 0;
+  left: 0;
+  z-index: 10;
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-xs);
+  max-width: var(--size-usage-tip);
+  padding: var(--space-2) var(--space-3);
+  border: 1px solid var(--color-line);
+  border-radius: var(--radius-sm);
+  background: var(--color-raised);
+  box-shadow: var(--shadow-tip);
+  color: var(--color-ink);
+  font-size: var(--text-sm);
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity var(--fade);
+  visibility: hidden;
+}
+
+.usage-tip[data-show] {
+  opacity: 1;
+  visibility: visible;
+}
+
+.usage-tip-title {
+  font-weight: 600;
+}
+
+.usage-tip-quiet {
+  color: var(--color-mute);
+}
+
+/* The first drawing reveals itself once: cells fade in a week at a time, bars grow from the axis. Later drawings carry no data-enter. */
+.usage[data-enter] .usage-cell:not(.usage-cell-blank) {
+  animation: usage-fade var(--usage-reveal) ease-out backwards;
+  animation-delay: calc(min(var(--week, 0), 30) * var(--usage-stagger));
+}
+
+.usage[data-enter] .usage-segment {
+  animation: usage-grow var(--usage-reveal) ease-out backwards;
+  animation-delay: calc(min(var(--bar, 0), 30) * var(--usage-stagger));
+  transform-origin: bottom;
+}
+
+.usage[data-enter] .usage-row-fill {
+  animation: usage-spread var(--usage-reveal) ease-out backwards;
+  transform-origin: left;
+}
+
+@keyframes usage-fade {
+  from {
+    opacity: 0;
+  }
+}
+
+@keyframes usage-grow {
+  from {
+    transform: scaleY(0);
+  }
+}
+
+@keyframes usage-spread {
+  from {
+    transform: scaleX(0);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .usage *,
+  .usage-tip {
+    animation: none !important;
+    transition: none !important;
+  }
+
+  button.usage-cell:hover,
+  button.usage-cell:focus-visible,
+  .usage-hour:hover {
+    transform: none;
+  }
 }
 
 .usage-totals {
@@ -3999,6 +4140,14 @@ button.usage-cell:hover,
 .usage-row-fill {
   flex: none;
   background: var(--agent);
+}
+
+.usage-row {
+  transition: opacity var(--fade);
+}
+
+.usage-rows:hover .usage-row:not(:hover) {
+  opacity: 0.45;
 }
 
 .usage-row-requests,
