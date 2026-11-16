@@ -18,7 +18,7 @@ export interface GoToDeps {
   source(): Pick<GoToInput, 'spaces' | 'tabs' | 'recent' | 'activeSpaceId' | 'activeTabId'>
   tile(group: GoToGroup): HTMLElement
   indicator(state: AgentStateName, agent: AgentKind | null): HTMLElement
-  // The row's agent icon with its context ring, as the agents list in the sidebar draws it.
+  // The row's agent icon with its context ring, as Go to draws it.
   agentMark(row: GoToRow & { agent: AgentKind; agentName: string }): HTMLElement
   // `inGrid` is set when the human asked to open it in the grid (Cmd+Enter) instead of just going there.
   go(tabId: string, inGrid: boolean): void

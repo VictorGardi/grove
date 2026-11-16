@@ -6,10 +6,18 @@ specific meaning, so humans and agents stay consistent.
 ## Terms
 
 - **Space**: a folder; its tabs are terminal sessions started in that folder.
-  A **worktree space** is a space on a linked `git worktree` checkout; it nests
-  under the space of its main checkout. New checkouts go under
-  `~/.grove/worktrees/<repo>/<branch>`, outside the repo so an agent never
-  shares the main working tree.
+  A **worktree space** is a space on a linked `git worktree` checkout; it
+  belongs to the repo of its main checkout, which is a space like any other.
+  New checkouts go under `~/.grove/worktrees/<repo>/<branch>`, outside the
+  repo so an agent never shares the main working tree.
+- **Heading**: a repo's group in the sidebar, drawn as a trunk with its spaces
+  (the main checkout and its worktree spaces) branching off it. It is a
+  grouping, not a space: it has no tabs and clicking it only folds or unfolds
+  the group. A space with no worktrees has no heading. A worktree space whose
+  main checkout is not a space still sits under a heading named after the repo.
+- **Most urgent state**: the one state a space shows when its tabs differ, and
+  a folded heading shows for the spaces under it. Order: `needs-you`,
+  `finished`, `working`, `unknown`, `idle`. An unfolded heading shows none.
 - **Tab**: one terminal session inside a space, optionally running an agent
   (Claude, OpenCode or Copilot), with a **Tab state**.
 - **Tab number**: a tab's position among its space's tabs, in the order they
@@ -72,13 +80,15 @@ specific meaning, so humans and agents stay consistent.
   resizes it becomes **custom**, a **split tree** whose leaves are panes and
   whose splits each divide their space by a ratio. One layout per window;
   **Reset layout** returns to automatic.
-- **Quiet space**: a space that is not the active space or a worktree of it,
+- **Quiet space**: a space that is not the active space or under its heading,
   has no tab that is working, needs you or is finished, and is not among the 5
   most recently visited spaces (each space counts once, by its latest visit;
-  the active space and its worktrees take no place). Go to (with an empty query) and the agents list in the
+  the active space and the spaces under its heading take no place). Go to (with an empty query) and the spaces list in the
   sidebar fold the quiet spaces behind one line, "earlier: N quiet spaces ·
   last: X", which opens them. A query in Go to searches them too. The sidebar
-  folds them without reordering: spaces keep the sidebar order.
+  folds them without reordering: spaces keep the sidebar order. A heading
+  leaves the list only when all its spaces are quiet. This is separate from
+  folding a heading, which the human does and which is remembered per repo.
 - **Go to**: the Cmd+P overlay that fuzzy-matches tabs, spaces and agents,
   grouped by space, and jumps to the chosen tab on Enter. It only navigates; it
   runs no commands.

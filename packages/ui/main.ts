@@ -400,7 +400,7 @@ function spaceName(spaceId: string): string {
   return store.space(spaceId)?.name ?? spaceId
 }
 
-// The space's tile, as Go to and the agents list draw it: its colour and first letter, or the branch icon for a worktree.
+// The space's tile, as Go to draws it: its colour and first letter, or the branch icon for a worktree.
 function spaceTile(spaceId: string): HTMLElement {
   const space = store.space(spaceId)
   const name = spaceName(spaceId)
@@ -519,7 +519,7 @@ function onStoreChanged(): void {
   paint()
 }
 
-// The × and Cmd+W: the core kills the tab and drops its record. The tab leaves the strip and the agents list at once.
+// The × and Cmd+W: the core kills the tab and drops its record. The tab leaves the strip and the sidebar at once.
 async function closeTab(id: string): Promise<void> {
   const tab = store.tab(id)
   if (!tab) return
@@ -1292,7 +1292,7 @@ bridge.on('tabs.focus', ({ id }) => {
   invoke('raise_window').catch(report)
 })
 
-// The CLI closed the tab: it leaves the strip and the agents list at once, not at the next resync.
+// The CLI closed the tab: it leaves the strip and the sidebar at once, not at the next resync.
 bridge.on('tabs.closed', ({ id }) => store.removeTab(id))
 
 // Another window or the CLI removed a space: it leaves the sidebar at once.

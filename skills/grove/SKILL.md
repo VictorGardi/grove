@@ -14,8 +14,8 @@ run, otherwise run `bin/grove` from the Grove repo. `GROVE_TAB` names your own
 tab. If the app's core is not reachable, a command exits 3.
 
 Vocabulary: a **space** is a folder; a **tab** is one terminal session in a
-space, optionally running an agent. A worktree space nests under its main
-checkout's space.
+space, optionally running an agent. A worktree space belongs to the repo of its main
+checkout.
 
 A `<ref>` names a tab: its full id, a unique id prefix of at least 4
 characters, or its exact label. An unknown or ambiguous ref is an error

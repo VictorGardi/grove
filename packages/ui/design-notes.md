@@ -1,16 +1,16 @@
 # Window design notes
 
-The window follows the Herdr reference (`docs/work/2026-11-04-grove-v2-spaces-tabs/reference/herdr-look.html`): one dark theme, a sidebar with spaces and the agents grouped under them, a tab strip, and panes with their own header. Every colour and length is a token in `src/tokens.css`; `literals.test.ts` fails on any other literal in the ui sources.
+The window follows the Herdr reference (`docs/work/2026-11-04-grove-v2-spaces-tabs/reference/herdr-look.html`): one dark theme, a sidebar drawn as a branch graph (a repo's heading with its spaces branching off a trunk, two-line rows with a state node), a tab strip, and panes with their own header. Every colour and length is a token in `src/tokens.css`; `literals.test.ts` fails on any other literal in the ui sources.
 
 ## Type scale
 
 | Token | Size | Used for |
 | --- | --- | --- |
 | `--text-xs` | 11px | agent and shell mark letters, brand letter |
-| `--text-sm` | 12px | tile letters, resume button, the new-tab labels |
+| `--text-sm` | 12px | Go to tile letters, resume button, the new-tab labels |
 | `--text-meta` | 12.5px | branch, folder, age, empty and status text |
 | `--text-md` | 13.5px | section labels, tabs, pane kind |
-| `--text-lg` | 14.5px | space and agent names, empty-state heading |
+| `--text-lg` | 14.5px | space and heading names, empty-state heading |
 | `--text-brand` | 15px | the wordmark |
 | `--text-terminal` | 12.5px | terminal text (read by `terminal.ts`) |
 
@@ -35,13 +35,13 @@ Fonts: Geist for the interface (`--font-ui`), Geist Mono for the terminal (`--fo
 | Token | Value | Used for |
 | --- | --- | --- |
 | `--radius-sm` | 6px | tiles, marks, icon buttons, inputs, tab close |
-| `--radius-md` | 9px | space and agent rows, tabs |
+| `--radius-md` | 9px | sidebar rows, tabs |
 | `--radius-lg` | 12px | panes |
 | `--radius-pill` | 999px | indicators |
 
 ## Sizes
 
-`--header-h` 50px (sidebar header and tab strip), `--pane-head-h` 40px, `--sidebar-width` 240px (overwritten by the saved setting), tiles 22px, marks 20px (18px in tabs and pane heads), icon buttons 24px, icons 15px (12px in tiles and close buttons), icon stroke 1.6px.
+`--header-h` 50px (sidebar header and tab strip), `--pane-head-h` 40px, `--sidebar-width` 240px (overwritten by the saved setting), Go to tiles 18px (`--size-tile`), marks 20px (18px in tabs and pane heads), icon buttons 24px, icons 15px (12px in Go to tiles and close buttons), icon stroke 1.6px.
 
 ## Indicators
 
@@ -61,9 +61,13 @@ default restores the theme colour.
 
 Indicator box: `--ind-size` 8px, ring stroke `--ind-stroke` 1.5px, halo `--halo-size` 3px.
 
+## Sidebar graph
+
+A repo with worktrees is a heading (a trunk) with its spaces as two-line rows branching off it (ADR 0005); a space with none is a plain row. Each row has a state node, the same indicator as in Indicators, and shows its most urgent state; a folded heading shows the most urgent state of its rows, an unfolded one none. The geometry is tokens: `--graph-indent` (trunk inset), `--graph-branch` (branch length), `--graph-line` (first-line height) and `--graph-branch-y` (branch height, from the row's top to the middle of its first line). Per-agent rows and letter tiles are gone from the sidebar; Resume is a button in the pane of an exited agent tab. Quiet spaces fold behind one line. Which headings are folded is saved per repo (`grove.sidebar-folds`, `sidebar-state.ts`).
+
 ## Surfaces
 
-Dark only. Ground `--color-ground` for the main area and terminals, sidebar `--color-sidebar`, page `--color-page` behind the window, raised `--color-raised` for hovered rows and the active tab, selected `--color-selected` for the current space or agent. Rules are `--color-rule` (quiet dividers) and `--color-line` (control borders).
+Dark only. Ground `--color-ground` for the main area and terminals, sidebar `--color-sidebar`, page `--color-page` behind the window, raised `--color-raised` for hovered rows and the active tab, selected `--color-selected` for the current space's row. Rules are `--color-rule` (quiet dividers) and `--color-line` (control borders).
 
 ## Grid layout
 
