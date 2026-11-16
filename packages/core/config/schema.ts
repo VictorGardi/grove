@@ -87,7 +87,7 @@ export const DEFAULT_VALUES: ConfigValues = {
     'grid-reset-layout': 'mod+shift+l',
     'next-urgent': 'mod+.',
     'newest-tab': 'mod+shift+j',
-    palette: 'mod+p',
+    palette: 'mod+k',
     'sidebar-toggle': 'mod+b',
     notes: 'mod+shift+n',
     diff: 'mod+shift+d',

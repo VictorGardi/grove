@@ -357,7 +357,7 @@ p {
   flex: none;
 }
 
-.space-count .icon {
+.space-count .agent-mark {
   width: var(--icon-size-sm);
   height: var(--icon-size-sm);
 }

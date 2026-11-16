@@ -474,8 +474,9 @@ describe('window status path', () => {
     notify('spaces.changed', space('s1', { path: '/Users/test/proj', name: 'proj' }))
   })
 
-  it('names no agent type anywhere in the sidebar, and draws no mark or tile', () => {
-    expect(document.querySelector('#spaces .agent-mark, #spaces .space-tile, #agents')).toBeNull()
+  it('names no agent type anywhere in the sidebar, and draws no tile or agent list; its counts use the marks Go to uses', () => {
+    expect(document.querySelector('#spaces .space-tile, #agents')).toBeNull()
+    expect(document.querySelector('#spaces .space-count .agent-mark')).not.toBeNull()
     expect(document.querySelector('#spaces')?.textContent).not.toMatch(/Claude|Copilot|OpenCode/)
   })
 
