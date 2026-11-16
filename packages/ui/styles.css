@@ -3492,6 +3492,18 @@ li[aria-selected] > .slash-tile {
 .goto-state-working { color: var(--state-working); }
 .goto-state-finished { color: var(--state-finished); }
 
+.spaces-quiet {
+  padding: var(--space-2) var(--space-3);
+  width: 100%;
+  text-align: left;
+  font-size: var(--text-sm);
+  color: var(--color-faint);
+}
+
+.spaces-quiet:hover {
+  color: var(--color-ink);
+}
+
 .goto-quiet {
   align-self: flex-start;
   padding: var(--space-3) var(--space-4);

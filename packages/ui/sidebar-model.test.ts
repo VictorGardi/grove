@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest'
 import type { AgentStateName } from '../protocol/messages.ts'
 import {
+  foldQuiet,
   headingOf,
   headingOpen,
   jumpTargets,
@@ -317,5 +318,39 @@ describe('Cmd+digit over folded headings', () => {
     const order = sidebarSpaceOrder([space('a', { repoName: 'app' }), space('a-wt', { parent: 'a', worktree: true, repoName: 'app' }), space('p')])
     expect(spaceAt(order, 2)).toBe('a-wt')
     expect(spaceAt(order, 3)).toBe('p')
+  })
+})
+
+describe('foldQuiet', () => {
+  const sp = (id: string, extra: Partial<SidebarSpace> = {}): SidebarSpace => ({ id, name: id, label: null, parent: null, worktree: false, repoName: null, branch: null, ...extra })
+  const items = sidebarItems([
+    sp('proj', { repoName: 'proj', branch: 'master' }),
+    sp('proj-wt', { worktree: true, parent: 'proj', repoName: 'proj' }),
+    sp('old', { repoName: 'old', branch: 'master' }),
+    sp('old-wt', { worktree: true, parent: 'old', repoName: 'old' }),
+    sp('lone'),
+    sp('lone2', { branch: 'master' }),
+  ])
+  const ids = (list: ReturnType<typeof foldQuiet>['items']) => list.map((item) => (item.kind === 'heading' ? item.repo : item.row.space.id))
+
+  it('drops a plain quiet space, and a heading only when all its rows are quiet', () => {
+    const folded = foldQuiet(items, { ids: new Set(['proj-wt', 'old', 'old-wt', 'lone']), last: null })
+    expect(ids(folded.items)).toEqual(['proj', 'lone2'])
+  })
+
+  it('counts spaces, not headings, and counts none of a heading that stays', () => {
+    expect(foldQuiet(items, { ids: new Set(['proj-wt', 'old', 'old-wt', 'lone']), last: null }).count).toBe(3)
+    expect(foldQuiet(items, { ids: new Set(), last: null }).count).toBe(0)
+  })
+
+  it('names the last space as its row does, adding the repo or branch only where the name is ambiguous', () => {
+    expect(foldQuiet(items, { ids: new Set(['old', 'old-wt']), last: 'old' }).last).toBe('master · old')
+    expect(foldQuiet(items, { ids: new Set(['old', 'old-wt']), last: 'old-wt' }).last).toBe('old-wt')
+    expect(foldQuiet(items, { ids: new Set(['lone']), last: 'lone' }).last).toBe('lone')
+    expect(foldQuiet(items, { ids: new Set(['lone2']), last: 'lone2' }).last).toBe('lone2')
+  })
+
+  it('names no last space when it stays listed', () => {
+    expect(foldQuiet(items, { ids: new Set(['proj-wt', 'lone']), last: 'proj-wt' }).last).toBeNull()
   })
 })

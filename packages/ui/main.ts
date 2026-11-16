@@ -25,7 +25,8 @@ import type { KeyValueStore } from './persisted-pref.ts'
 import { readSidebarFolds, readSidebarHidden, writeSidebarFolds, writeSidebarHidden } from './sidebar-state.ts'
 import { createFocusSignal } from './focus-signal.ts'
 import { noViewState, storageViewState } from './view-state.ts'
-import { headingOf, headingOpen, jumpTargets, mostUrgent, nextUrgent, openCounts, rowName, rowSummary, shortFolder, sidebarItems, sidebarSpaceOrder, spaceAt, tileIndex, worktreeOf, type SidebarItem, type SidebarRow, type SummaryTab } from './sidebar-model.ts'
+import { quietSpaces } from './quiet-spaces.ts'
+import { foldQuiet, headingOf, headingOpen, jumpTargets, mostUrgent, nextUrgent, openCounts, rowName, rowSummary, shortFolder, sidebarItems, sidebarSpaceOrder, spaceAt, tileIndex, worktreeOf, type SidebarItem, type SidebarRow, type SummaryTab } from './sidebar-model.ts'
 import { createWindowStore, type Tab, type TabKind } from './window-store.ts'
 import { contextMeter, hideContextTip, markWithContext } from './context-badge.ts'
 import { createTabPill, type TabPill } from './tab-pill.ts'
@@ -110,6 +111,8 @@ const playSound = createSoundGate()
 let soundOn = readSound(storage())
 // The repos whose heading the human folded; kept across a reload.
 let folded = readSidebarFolds(storage())
+// Whether the sidebar's fold of quiet spaces is open; in memory only.
+let quietOpen = false
 // The chosen theme goes on the root before the first terminal opens, so every terminal starts with its colours.
 let themeId = readTheme(storage())
 applyThemeChoice(document.documentElement, themeId)
@@ -964,8 +967,15 @@ function renderSidebar(): void {
   hideContextTip()
   const items = sidebarItems(store.spaces())
   const activeRepo = headingOf(items, store.activeSpace)
+  const quiet = quietSpaces({
+    spaces: items.flatMap((item) => (item.kind === 'heading' ? item.rows.map((row) => ({ ...row.space, heading: item.repo })) : [item.row.space])),
+    tabs: store.tabs.map((tab) => ({ id: tab.id, spaceId: tab.spaceId, state: stateOf(tab) })),
+    recent: [...store.recentIds],
+    activeSpaceId: store.activeSpace,
+  })
+  const folding = foldQuiet(items, quiet)
   spaceList.replaceChildren(
-    ...items.map((item) => {
+    ...(quietOpen ? items : folding.items).map((item) => {
       const li = document.createElement('li')
       if (item.kind === 'plain') {
         li.append(spaceRow(item.row))
@@ -984,7 +994,21 @@ function renderSidebar(): void {
       li.append(headingEl(item, open), rows)
       return li
     }),
+    ...(folding.count === 0 ? [] : [quietToggle(folding.count, folding.last)]),
   )
+}
+
+// The line that folds the quiet spaces away or brings them back, in the sidebar's order.
+function quietToggle(count: number, last: string | null): HTMLElement {
+  const toggle = element('button', 'spaces-quiet', `earlier: ${count} quiet ${count === 1 ? 'space' : 'spaces'}${last ? ` · last: ${last}` : ''} ${quietOpen ? '▴' : '▾'}`) as HTMLButtonElement
+  toggle.type = 'button'
+  toggle.addEventListener('click', () => {
+    quietOpen = !quietOpen
+    renderSidebar()
+  })
+  const li = document.createElement('li')
+  li.append(toggle)
+  return li
 }
 
 function toggleFold(repo: string): void {

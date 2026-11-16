@@ -74,5 +74,31 @@ describe('quietSpaces', () => {
       const { ids } = quietSpaces({ spaces: [{ id: 'repo', parent: null }, { id: 'wt', parent: 'repo' }], tabs: [tab('r1', 'repo'), tab('w1', 'wt')], recent: [], activeSpaceId: 'wt' })
       expect(ids.has('repo')).toBe(true)
     })
+
+  describe('spaces under the current heading', () => {
+    const spaces = [
+      { id: 'main', parent: null, heading: 'repo' },
+      { id: 'wt-a', parent: 'main', heading: 'repo' },
+      { id: 'wt-b', parent: 'main', heading: 'repo' },
+      { id: 'far', parent: null, heading: 'other' },
+    ]
+    const tabs = spaces.map((entry) => tab(`${entry.id}-1`, entry.id))
+
+    it('are never quiet, a sibling worktree included, idle and never visited', () => {
+      const { ids } = quietSpaces({ spaces, tabs, recent: [], activeSpaceId: 'wt-a' })
+      expect([...ids]).toEqual(['far'])
+    })
+
+    it('take no place among the recent ones', () => {
+      const { ids } = quietSpaces({ spaces, tabs, recent: ['wt-b-1', 'far-1'], activeSpaceId: 'wt-a' })
+      expect(ids.has('far')).toBe(false)
+    })
+
+    it('leave every space quiet-able when the list draws no headings, as in Go to', () => {
+      const flatSpaces = spaces.map(({ id, parent }) => ({ id, parent }))
+      const { ids } = quietSpaces({ spaces: flatSpaces, tabs, recent: [], activeSpaceId: 'wt-a' })
+      expect([...ids]).toEqual(['main', 'wt-b', 'far'])
+    })
+  })
   })
 })

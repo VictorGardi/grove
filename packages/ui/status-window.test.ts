@@ -132,6 +132,13 @@ const lines = (spaceId: string) => ({
   node: row(spaceId)?.querySelector('.indicator')?.className ?? null,
 })
 
+// Opens (or closes) the sidebar's fold of quiet spaces, when there is one: a space with no tab visited is quiet, and these tests
+// look at rows of spaces no one has visited.
+function quietFold(open: boolean): void {
+  const toggle = document.querySelector<HTMLElement>('#spaces .spaces-quiet')
+  if (toggle && toggle.textContent?.endsWith(open ? '▾' : '▴')) toggle.click()
+}
+
 const space = (id: string, extra: Record<string, unknown> = {}) => ({
   id, path: `/Users/test/${id}`, name: id, label: null, repoName: null, parent: null, worktree: false, branch: null, ...extra,
 })
@@ -185,6 +192,7 @@ describe('window status path', () => {
 
   it('adds a CLI-created space to the sidebar immediately', () => {
     notify('spaces.changed', { id: 'cli-space', path: '/cli', name: 'CLI space', label: null, repoName: null, parent: null, worktree: false, branch: null })
+    quietFold(true)
     expect(document.querySelector('#spaces')?.textContent).toContain('CLI space')
     notify('spaces.removed', { id: 'cli-space' })
   })
@@ -291,6 +299,7 @@ describe('window status path', () => {
     const visited = document.querySelector('#tabs > .active')?.textContent
     notify('spaces.changed', space('other'))
     notify('tabs.opened', { ...TABS[0], id: 'other-tab', spaceId: 'other', spacePath: '/Users/test/other', label: 'other' })
+    quietFold(true)
     row('other')!.click()
     row('s1')!.click()
     expect(document.querySelector('#tabs > .active')?.textContent).toBe(visited)
@@ -300,9 +309,11 @@ describe('window status path', () => {
 
   it('shows a plain space with no tabs on one line, and no tabs open on a worktree', () => {
     notify('spaces.changed', space('empty', { branch: 'dev' }))
+    quietFold(true)
     expect(lines('empty')).toMatchObject({ name: 'empty', time: null, detail: null, node: 'indicator ind-unknown' })
     expect(row('empty')?.textContent).toContain('dev')
     notify('spaces.changed', space('empty-wt', { worktree: true, repoName: 'empty', parent: 'empty' }))
+    quietFold(true)
     expect(lines('empty-wt')).toMatchObject({ detail: 'No tabs open', time: null, node: 'indicator ind-unknown' })
     expect(row('empty-wt')?.getAttribute('title')).toBe('/Users/test/empty-wt')
     expect(row('empty-wt')?.querySelector('.indicator')?.getAttribute('aria-label')).toBe('no tabs open')
@@ -324,6 +335,7 @@ describe('window status path', () => {
     notify('spaces.changed', space('s1', { path: '/Users/test/proj', name: 'proj', repoName: 'proj', branch: 'main' }))
     notify('spaces.changed', space('proj-wt', { name: 'proj-wt', worktree: true, repoName: 'proj', parent: 's1', branch: 'feat' }))
     notify('spaces.changed', space('lone-wt', { name: 'lone-wt', worktree: true, repoName: 'lone', branch: 'x' }))
+    quietFold(true)
     const headings = [...document.querySelectorAll('#spaces .heading')]
     expect(headings.map((el) => el.querySelector('.heading-name')?.textContent)).toEqual(['proj', 'lone'])
     expect([...headings[0].querySelectorAll('.space-name')].map((el) => el.textContent)).toEqual(['main', 'proj-wt'])
@@ -373,6 +385,34 @@ describe('window status path', () => {
     notify('spaces.removed', { id: 'lone-wt' })
     notify('spaces.changed', space('s1', { path: '/Users/test/proj', name: 'proj' }))
     row('s1')!.click()
+  })
+
+  it('folds the quiet spaces behind one line that counts spaces, and opens them in the sidebar order', () => {
+    const listed = () => [...document.querySelectorAll('#spaces .space-name')].map((el) => el.textContent)
+    const fold = () => document.querySelector<HTMLElement>('#spaces .spaces-quiet')
+    notify('spaces.changed', space('s1', { path: '/Users/test/proj', name: 'proj', repoName: 'proj', branch: 'main' }))
+    notify('spaces.changed', space('proj-wt', { name: 'proj-wt', worktree: true, repoName: 'proj', parent: 's1' }))
+    notify('spaces.changed', space('old', { repoName: 'old', branch: 'master' }))
+    notify('spaces.changed', space('old-wt', { name: 'old-wt', worktree: true, repoName: 'old', parent: 'old' }))
+    notify('spaces.changed', space('lone', { branch: 'master' }))
+    quietFold(false)
+    // The active space and its heading stay; the quiet plain space and the all-quiet heading are folded.
+    expect(listed()).toEqual(['main', 'proj-wt'])
+    expect(fold()?.textContent).toBe('earlier: 3 quiet spaces ▾')
+    fold()!.click()
+    expect(listed()).toEqual(['main', 'proj-wt', 'master', 'old-wt', 'lone'])
+    expect(fold()?.textContent).toBe('earlier: 3 quiet spaces ▴')
+    fold()!.click()
+    expect(listed()).toEqual(['main', 'proj-wt'])
+    // Something that needs you in a folded space brings its heading back.
+    notify('tabs.opened', { ...TABS[0], id: 'old-tab', spaceId: 'old-wt', spacePath: '/Users/test/old-wt', label: 'old' })
+    notify('status.changed', change('old-tab', 'claude', 'needs-you'))
+    expect(listed()).toEqual(['main', 'proj-wt', 'master', 'old-wt'])
+    expect(fold()?.textContent).toBe('earlier: 1 quiet space ▾')
+    notify('tabs.closed', { id: 'old-tab' })
+    for (const id of ['proj-wt', 'old', 'old-wt', 'lone']) notify('spaces.removed', { id })
+    notify('spaces.changed', space('s1', { path: '/Users/test/proj', name: 'proj' }))
+    expect(fold()).toBeNull()
   })
 
   it('names no agent type anywhere in the sidebar, and draws no mark or tile', () => {

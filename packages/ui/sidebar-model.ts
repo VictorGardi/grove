@@ -138,6 +138,28 @@ export function mostUrgent(states: AgentStateName[]): AgentStateName | null {
   return states.reduce<AgentStateName | null>((top, state) => (top === null || URGENCY.indexOf(state) < URGENCY.indexOf(top) ? state : top), null)
 }
 
+// The sidebar's list with its quiet spaces folded away: a plain space leaves it when quiet, a heading only when all its rows
+// are. `count` counts the spaces that left. `last` is the folded space visited most recently, named as its row names it, with
+// its repo (or branch, for a plain row) added where another row has the same name; null when none, or when it stayed listed.
+export function foldQuiet<T extends SidebarSpace>(items: Array<SidebarItem<T>>, quiet: { ids: Set<string>; last: string | null }): { items: Array<SidebarItem<T>>; count: number; last: string | null } {
+  const kept = items.filter((item) => (item.kind === 'plain' ? !quiet.ids.has(item.row.space.id) : item.rows.some((row) => !quiet.ids.has(row.space.id))))
+  const gone = items.filter((item) => !kept.includes(item))
+  const rows = items.flatMap((item): Array<{ row: SidebarRow<T>; repo: string | null }> => (item.kind === 'heading' ? item.rows.map((row) => ({ row, repo: item.repo })) : [{ row: item.row, repo: null }]))
+  const lastRow = gone.length === 0 ? undefined : rows.find(({ row }) => row.space.id === quiet.last && gone.some((item) => (item.kind === 'plain' ? item.row === row : item.rows.includes(row))))
+  let last: string | null = null
+  if (lastRow) {
+    const name = rowName(lastRow.row)
+    const twin = rows.some(({ row }) => row !== lastRow.row && rowName(row) === name)
+    const where = lastRow.repo ?? lastRow.row.space.branch
+    last = twin && where ? `${name} · ${where}` : name
+  }
+  return {
+    items: kept,
+    count: gone.reduce((sum, item) => sum + (item.kind === 'plain' ? 1 : item.rows.length), 0),
+    last,
+  }
+}
+
 // The space ids in the order the sidebar lists them, hidden rows included.
 export function sidebarSpaceOrder(spaces: SidebarSpace[]): string[] {
   return sidebarItems(spaces).flatMap((item) => (item.kind === 'heading' ? item.rows : [item.row]).map((row) => row.space.id))
