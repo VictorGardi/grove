@@ -116,7 +116,7 @@ describe('where requests ran: Claude Desktop and the Grove split', () => {
     groveFile('copilot', `${tab}.jsonl`, `${JSON.stringify({ t: new Date(timestamp).toISOString(), e: { hook_event_name: 'sessionStart', sessionId: session, timestamp, initialPrompt: SECRET } })}\n`)
 
   const make = (): UsageService => {
-    const grove = new GroveSessions({ home, live: () => live })
+    const grove = new GroveSessions({ home, live: () => live, now: () => now })
     return (service = new UsageService({
       home,
       grove,
@@ -323,6 +323,47 @@ describe('where requests ran: Claude Desktop and the Grove split', () => {
       claudeHook('early', 'earlier', BEGAN)
       const claude = agentOf(await read(), 'claude')
       expect(split(claude)).toEqual({ unknown: 1, other: 1, grove: 1 })
+    })
+  })
+
+  describe('a session Grove’s records had not caught up with', () => {
+    // The clock sits where the requests are: they were made after the pass began, so the pass could not know their session.
+    const LATE = NOW + 1000
+
+    it('corrects Claude Code requests first tagged not Grove’s once the hook record is in, and not those made before the pass', async () => {
+      claudeHook('early', 'earlier', BEGAN)
+      transcript('p/a.jsonl', [claudeLine({ id: 'late', ts: new Date(LATE).toISOString(), session: 'late' }), claudeLine({ id: 'old', ts: iso(15), session: 'by-hand' })])
+      const s = await read()
+      expect(split(agentOf(s, 'claude'))).toEqual({ other: 2 })
+      claudeHook('tab', 'late', LATE - 500)
+      now = LATE + 1000
+      await s.drain()
+      expect(split(agentOf(s, 'claude'))).toEqual({ grove: 1, other: 1 })
+    })
+
+    it('does the same for Copilot, and for a request that was unknown', async () => {
+      copilotSession('late', [copilotStart('/work/app'), copilotLine({ id: 'a', ts: new Date(LATE).toISOString() })])
+      transcript('p/a.jsonl', [claudeLine({ id: 'unknown', ts: new Date(LATE).toISOString(), session: 'late' })])
+      const s = await read()
+      expect(split(agentOf(s, 'copilot'))).toEqual({ other: 1 })
+      expect(split(agentOf(s, 'claude'))).toEqual({ unknown: 1 })
+      copilotHook('tab', 'late', LATE - 500)
+      claudeHook('tab', 'late', LATE - 500)
+      now = LATE + 1000
+      await s.drain()
+      expect(split(agentOf(s, 'copilot'))).toEqual({ grove: 1 })
+      expect(split(agentOf(s, 'claude'))).toEqual({ grove: 1 })
+    })
+
+    it('still keeps a time-less record from widening a resumed session’s Grove part', async () => {
+      claudeHook('early', 'earlier', BEGAN)
+      transcript('p/a.jsonl', [claudeLine({ id: 'by-hand', ts: new Date(LATE).toISOString(), session: 'resumed' })])
+      const s = await read()
+      claudeHook('tab', 'resumed', LATE + 5000)
+      groveFile('claude', 'tab.status.json', JSON.stringify({ resumeId: 'resumed' }))
+      now = LATE + 1000
+      await s.drain()
+      expect(split(agentOf(s, 'claude'))).toEqual({ other: 1 })
     })
   })
 

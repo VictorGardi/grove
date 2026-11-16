@@ -68,7 +68,7 @@ export function requestOf(line: string, folder: string, sessionId = '', grove?: 
   // A credit figure counts only when Copilot says it is complete (or says nothing about it).
   const nano = record(usage.copilotUsage)?.totalNanoAiu
   const credited = typeof nano === 'number' && Number.isFinite(nano) && nano >= 0 && (usage.aiCreditsStatus === undefined || usage.aiCreditsStatus === 'complete')
-  return {
+  const request: UsageRequest = {
     key: crypto.createHash('sha256').update(usageId).digest('base64url').slice(0, 22),
     agent: 'copilot',
     source: 'copilot',
@@ -83,6 +83,8 @@ export function requestOf(line: string, folder: string, sessionId = '', grove?: 
     nanoAiu: credited ? nano : null,
     inGrove: grove?.ranInGrove('copilot', sessionId, at) ?? false,
   }
+  if (request.inGrove !== true) grove?.doubt(request, sessionId)
+  return request
 }
 
 // The `cwd:` of a session's workspace file, the fallback for a session whose events name no folder. Nothing else in it is read.
@@ -160,14 +162,18 @@ export function createCopilotReader(options: CopilotReaderOptions): UsageReader 
   return {
     agent: 'copilot',
     async step() {
-      if (queue === undefined) await options.grove?.refresh()
+      let corrected: UsageRequest[] = []
+      if (queue === undefined) {
+        await options.grove?.refresh()
+        corrected = options.grove?.corrections('copilot') ?? []
+      }
       queue ??= await pending()
       const item = queue[0]
       if (item === undefined) {
         queue = undefined
-        return { requests: [], done: true }
+        return { requests: corrected, done: true }
       }
-      const requests: UsageRequest[] = []
+      const requests: UsageRequest[] = corrected
       try {
         if (!(await slice(item, requests))) queue.shift()
       } catch (error) {

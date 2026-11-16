@@ -210,6 +210,25 @@ describe('usage history from Claude files, to the summary', () => {
     expect(s.summary().historyFrom).toBe('2026-11-20')
   })
 
+  it('wipes the copies of an unreadable history it set aside, and any temp file of the history, along with the history', async () => {
+    vi.spyOn(console, 'error').mockImplementation(() => undefined)
+    fs.writeFileSync(usageHistoryFile(home), '{ not json')
+    write('p/a.jsonl', [line({ id: 'm1', ts: at(15) })])
+    const s = make()
+    await s.drain()
+    const file = usageHistoryFile(home)
+    fs.writeFileSync(`${file}.corrupt-1`, '{"/work/secret": 1')
+    fs.writeFileSync(`${file}.abc123.tmp`, '{}')
+    fs.writeFileSync(path.join(home, 'other.json'), '{}')
+    expect(fs.readdirSync(home).filter((name) => name.startsWith('usage-history.json.corrupt-')).length).toBeGreaterThan(1)
+    await s.wipe()
+    s.close()
+    const names = fs.readdirSync(home)
+    expect(names.filter((name) => name.startsWith('usage-history.json.'))).toEqual([])
+    expect(names).toContain('other.json')
+    expect(fs.readFileSync(file, 'utf8')).not.toContain('/work/')
+  })
+
   it('gives no value for a corrupt or unreadable file without breaking the others', async () => {
     const errors = vi.spyOn(console, 'error').mockImplementation(() => undefined)
     write('p/good.jsonl', [line({ id: 'm1', ts: at(15) })])

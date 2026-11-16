@@ -57,7 +57,7 @@ export function requestOf(line: string, inHelperFile: boolean, fileSession = '',
   const desktop = fields.entrypoint === 'claude-desktop'
   const sessionId = typeof fields.sessionId === 'string' && fields.sessionId !== '' ? fields.sessionId : fileSession
   const requestId = typeof fields.requestId === 'string' && fields.requestId !== '' ? fields.requestId : undefined
-  return {
+  const request: UsageRequest = {
     key: requestId === undefined ? id : `${id}|${requestId}`,
     agent: 'claude',
     source: desktop ? CLAUDE_DESKTOP : CLAUDE_CODE,
@@ -72,6 +72,8 @@ export function requestOf(line: string, inHelperFile: boolean, fileSession = '',
     nanoAiu: null,
     inGrove: desktop ? false : (grove?.ranInGrove('claude', sessionId, at) ?? null),
   }
+  if (!desktop && request.inGrove !== true) grove?.doubt(request, sessionId)
+  return request
 }
 
 async function listDir(dir: string): Promise<fs.Dirent[]> {
@@ -144,14 +146,18 @@ export function createClaudeReader(options: ClaudeReaderOptions): UsageReader {
   return {
     agent: 'claude',
     async step() {
-      if (queue === undefined) await options.grove?.refresh()
+      let corrected: UsageRequest[] = []
+      if (queue === undefined) {
+        await options.grove?.refresh()
+        corrected = options.grove?.corrections('claude') ?? []
+      }
       queue ??= await pending()
       const item = queue[0]
       if (item === undefined) {
         queue = undefined
-        return { requests: [], done: true }
+        return { requests: corrected, done: true }
       }
-      const requests: UsageRequest[] = []
+      const requests: UsageRequest[] = corrected
       try {
         if (!(await slice(item, requests))) queue.shift()
       } catch (error) {

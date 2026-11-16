@@ -141,10 +141,12 @@ export class UsageHistory {
   }
 
   // A write that was killed leaves its temp file behind. Nothing else writes next to the history, so every one found is stale.
-  private sweep(): void {
+  private sweep(copies = false): void {
     const base = path.basename(this.file)
     try {
-      for (const name of fs.readdirSync(path.dirname(this.file))) if (name.startsWith(`${base}.`) && name.endsWith('.tmp')) fs.rmSync(path.join(path.dirname(this.file), name), { force: true })
+      for (const name of fs.readdirSync(path.dirname(this.file))) {
+        if (name.startsWith(`${base}.`) && (name.endsWith('.tmp') || (copies && name.startsWith(`${base}.corrupt-`)))) fs.rmSync(path.join(path.dirname(this.file), name), { force: true })
+      }
     } catch {}
   }
 
@@ -179,10 +181,11 @@ export class UsageHistory {
     const first = request.at < kept.at ? request : kept
     const other = first === kept ? request : kept
     const counted = request.output > kept.output ? request : kept
-    // A re-read can tell more than what was saved: a real source for the untagged one, a known Grove flag for an unknown one. What
-    // is already specific or known stays, so a re-read never flips an answer, and the counts still come from one line, never both.
+    // A re-read can tell more than what was saved: a real source for the untagged one, a known Grove flag for an unknown one, and
+    // "in Grove" for one tagged not Grove's before Grove's record of its session was in (a missing record proves nothing, a record
+    // does). What is already specific stays otherwise, and the counts still come from one line, never both.
     const source = first.source === CLAUDE_UNTAGGED ? other.source : first.source
-    const inGrove = first.inGrove ?? other.inGrove
+    const inGrove = first.inGrove === true || other.inGrove === true ? true : (first.inGrove ?? other.inGrove)
     if (first === kept && counted === kept && source === kept.source && inGrove === kept.inGrove) return false
     const merged: UsageRequest = {
       ...first,
@@ -200,8 +203,10 @@ export class UsageHistory {
     return true
   }
 
-  // Forgets every request and starts again from `now`: nothing made before it is recorded again.
+  // Forgets every request and starts again from `now`: nothing made before it is recorded again. The copies of an unreadable
+  // history set aside (they name folders too) and any temp file of a write go with it; the file itself is rewritten by the next save.
   wipe(now: number): void {
+    this.sweep(true)
     this.rows.clear()
     this.since = now
     this.floor = now

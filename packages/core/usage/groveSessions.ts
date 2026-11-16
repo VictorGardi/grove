@@ -2,6 +2,7 @@ import fs from 'node:fs'
 import path from 'node:path'
 import type { UsageAgent } from '../../protocol/messages.ts'
 import { sliceLines } from './fileSlice.ts'
+import type { UsageRequest } from './history.ts'
 
 // Which sessions Grove ran, from Grove's own per-tab records: the files Grove keeps under <home>/agents/<agent>/ for every tab.
 //  - <tab>.jsonl is the tab's hook stream (Claude: SessionStart and more, `{event, at, payload: {session_id}}`; Copilot:
@@ -14,12 +15,17 @@ import { sliceLines } from './fileSlice.ts'
 const AGENTS: readonly UsageAgent[] = ['claude', 'copilot']
 const SCHEMA = 1
 const CHUNK_BYTES = 1 << 20
+// A hook record is written before the requests of its session and a refresh reads every file, so a request made before a refresh
+// began is settled by it. The margin covers the agent's clock and Grove's disagreeing a little.
+const FRESH_MARGIN_MS = 60_000
 
 export interface GroveSessionsOptions {
   home: string
   // The sessions of the tabs open now, from Grove's saved state.
   live?: () => Array<{ agent: UsageAgent; sessionId: string }>
   chunkBytes?: number
+  // The clock the freshness of Grove's records is measured by. Default Date.now.
+  now?: () => number
 }
 
 const record = (value: unknown): Record<string, unknown> | undefined => (value !== null && typeof value === 'object' && !Array.isArray(value) ? (value as Record<string, unknown>) : undefined)
@@ -36,6 +42,10 @@ export class GroveSessions {
   private began = new Map<UsageAgent, number>()
   // The small files already read, by size and time, so a pass reads only what changed.
   private stamps = new Map<string, string>()
+  // Requests made after the last refresh began were tagged without that refresh being able to know their session, so a tag other than
+  // "in Grove" on them is a guess. `provenTo` is the time the last refresh settled; `doubts` are the guesses made after it.
+  private provenTo: number | undefined
+  private doubts: Array<{ sessionId: string; request: UsageRequest }> = []
 
   constructor(private readonly options: GroveSessionsOptions) {}
 
@@ -62,6 +72,26 @@ export class GroveSessions {
     return began !== undefined && at >= began ? false : null
   }
 
+  // Notes a request tagged as not Grove's (or unknown) when Grove's records may not have caught up with its session yet.
+  doubt(request: UsageRequest, sessionId: string): void {
+    if (this.provenTo !== undefined && request.at > this.provenTo) this.doubts.push({ sessionId, request })
+  }
+
+  // The doubted requests of `agent` that Grove's records now prove were its own, to be recorded again as Grove's. The ones a refresh
+  // has since settled are let go.
+  corrections(agent: UsageAgent): UsageRequest[] {
+    const proven: UsageRequest[] = []
+    this.doubts = this.doubts.filter((doubt) => {
+      if (doubt.request.agent !== agent) return true
+      if (this.ranInGrove(agent, doubt.sessionId, doubt.request.at) === true) {
+        proven.push({ ...doubt.request, inGrove: true })
+        return false
+      }
+      return this.provenTo === undefined || doubt.request.at > this.provenTo
+    })
+    return proven
+  }
+
   // A record with a time sets when the session was first seen. A record without one (a status file, a tab open now) says only that the
   // session is Grove's, from its start; it counts only while no record has a time, so it never widens a resumed session's Grove part.
   private see(agent: UsageAgent, sessionId: string, at: number | undefined): void {
@@ -78,6 +108,7 @@ export class GroveSessions {
   // Reads what the per-tab files gained since the last time. A missing folder, an unreadable file or a line that is not what Grove
   // writes gives nothing and never stops the rest.
   async refresh(): Promise<void> {
+    const started = (this.options.now ?? Date.now)()
     for (const agent of AGENTS) {
       let names: string[]
       try {
@@ -94,6 +125,7 @@ export class GroveSessions {
       }
     }
     for (const live of this.options.live?.() ?? []) if (live.sessionId !== '') this.see(live.agent, live.sessionId, undefined)
+    this.provenTo = started - FRESH_MARGIN_MS
   }
 
   private async stream(agent: UsageAgent, name: string, file: string): Promise<void> {
