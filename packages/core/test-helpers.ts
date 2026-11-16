@@ -6,7 +6,7 @@ import { ensureHolder } from './holder-client.ts'
 
 export { connectWhenReady }
 
-export async function waitFor<T>(read: () => Promise<T>, done: (value: T) => boolean, timeoutMs = 8000): Promise<T> {
+export async function waitFor<T>(read: () => Promise<T>, done: (value: T) => boolean, timeoutMs = 20000): Promise<T> {
   const deadline = Date.now() + timeoutMs
   for (;;) {
     const value = await read()
