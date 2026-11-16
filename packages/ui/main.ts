@@ -77,6 +77,8 @@ interface TabDom {
   pane: HTMLElement
   head: HTMLElement
   host: HTMLDivElement
+  // The Resume offer under the terminal of an exited tab whose agent can pick its session up again.
+  resume: HTMLDivElement
   tabEl: HTMLDivElement
   pill: TabPill
   view: TerminalView
@@ -457,7 +459,10 @@ function createTabDom(tab: Tab): TabDom {
   gridArranger.grab(head, () => id)
   const host = document.createElement('div')
   host.className = 'term-host'
-  pane.append(head, host)
+  const resume = document.createElement('div')
+  resume.className = 'pane-resume'
+  resume.hidden = true
+  pane.append(head, host, resume)
   terminals.append(pane)
 
   const pill = createTabPill(markEl(tab.kind), {
@@ -480,6 +485,7 @@ function createTabDom(tab: Tab): TabDom {
     pane,
     head,
     host,
+    resume,
     tabEl,
     pill,
     view: undefined as unknown as TerminalView,
@@ -756,6 +762,31 @@ function paintTab(tab: Tab): void {
   if (agent) parts.push(contextMeter(store.agent(tab.id)?.context, agent))
   parts.push(indicatorEl(state, agent, !tab.exited))
   dom.head.replaceChildren(...parts)
+  paintResume(tab, dom)
+}
+
+// The pane of an exited tab offers Resume when its agent can pick the saved session up again.
+function paintResume(tab: Tab, dom: TabDom): void {
+  const info = store.agent(tab.id)
+  const offer = tab.exited && info?.resumable === true ? info : null
+  dom.resume.hidden = offer === null
+  if (!offer) {
+    dom.resume.replaceChildren()
+    return
+  }
+  if (dom.resume.firstElementChild) return
+  const button = document.createElement('button')
+  button.type = 'button'
+  button.className = 'agent-resume'
+  button.textContent = 'Resume'
+  button.addEventListener('click', () => {
+    button.disabled = true
+    resumeAgent(tab, offer.agent).catch((error: unknown) => {
+      button.disabled = false
+      report(error)
+    })
+  })
+  dom.resume.append(button)
 }
 
 // The pane's branch: a click copies the name, which reads "copied" for a moment.

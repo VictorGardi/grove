@@ -486,6 +486,16 @@ p {
   background: var(--color-raised);
 }
 
+.pane-resume {
+  flex: none;
+  display: flex;
+  padding: var(--space-2) var(--space-3);
+}
+
+.pane-resume[hidden] {
+  display: none;
+}
+
 .agent-mark {
   display: grid;
   place-items: center;

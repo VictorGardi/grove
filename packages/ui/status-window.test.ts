@@ -15,6 +15,7 @@ const fake = vi.hoisted(() => ({
   agents: [] as unknown[],
   opening: null as SpaceTabInfo | null,
   attaches: [] as string[],
+  creates: [] as unknown[],
 }))
 
 vi.mock('@tauri-apps/api/core', () => {
@@ -38,6 +39,9 @@ vi.mock('@tauri-apps/api/core', () => {
         return { path: '', values: DEFAULT_VALUES, notes: {} }
       case 'integration.status':
         return { agents: [] }
+      case 'tabs.create':
+        fake.creates.push(params)
+        return {}
       case 'tabs.attach':
         fake.attaches.push(params.id!)
         return { screenB64: '', cols: 80, rows: 24 }
@@ -276,5 +280,22 @@ describe('window status path', () => {
       expect(indicator?.getAttribute(attribute)).not.toContain('no status report yet')
       expect(indicator?.getAttribute(attribute)).not.toContain('1.0.107')
     }
+  })
+
+  it('offers Resume in the pane of an exited tab whose agent can resume, and only there', async () => {
+    const paneOf = (label: string) =>
+      [...document.querySelectorAll('#terminals .pane')].find((el) => el.querySelector('.pane-kind')?.textContent === label)!
+    const resumeIn = (label: string) => [...paneOf(label).querySelectorAll('button')].find((b) => b.textContent === 'Resume')
+    const info = (tabId: string, agent: AgentInfo['agent'], resumable: boolean) =>
+      ({ tabId, agent, state: 'idle', since: 1_000, source: agent, resumable }) as AgentInfo
+    notify('tabs.exit', { id: 'tab-claude', exitCode: 0 })
+    notify('tabs.exit', { id: 'tab-opencode', exitCode: 0 })
+    fake.agents = [info('tab-claude', 'claude', true), info('tab-copilot', 'copilot', true), info('tab-opencode', 'opencode', false)]
+    notify('status.changed', change('tab-claude', 'claude', 'idle'))
+    await vi.waitFor(() => expect(resumeIn('claude')).toBeDefined())
+    expect(resumeIn('opencode')).toBeUndefined()
+    resumeIn('claude')!.click()
+    await vi.waitFor(() => expect(fake.creates).toContainEqual(expect.objectContaining({ id: 'tab-claude', agent: { kind: 'claude' } })))
+    await vi.waitFor(() => expect(fake.attaches.filter((id) => id === 'tab-claude').length).toBeGreaterThan(1))
   })
 })
