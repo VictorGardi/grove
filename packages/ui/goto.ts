@@ -166,7 +166,8 @@ export function createGoTo(elements: GoToElements, deps: GoToDeps): GoTo {
 
   function kindOf(row: GoToRow): HTMLElement {
     const kind = element('span', 'goto-kind')
-    kind.append(deps.mark(row.agent), element('span', 'goto-kind-name', row.agent ?? 'terminal'))
+    kind.title = row.agentName ?? 'Terminal'
+    kind.append(deps.mark(row.agent))
     return kind
   }
 
