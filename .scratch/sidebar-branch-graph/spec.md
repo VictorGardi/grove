@@ -97,7 +97,7 @@ The node reuses the status looks Grove already has, with the same colours and th
 - **Quiet-spaces fold** now applies to the sidebar's spaces list (it applied only to the agents list). Quietness is still judged per space with the existing definition, widened as in the glossary: the active space and the spaces under its heading are never quiet. A heading leaves the list only when all its spaces are quiet. The count counts spaces. Its open/closed state stays in memory. Go to is unchanged.
 - **Heading menu.** The heading has its own context menu with create and open worktree. A row keeps its existing space actions.
 - **Resume** moves into the pane of an exited tab whose agent can be resumed, in place of the bare "[process exited]" line for that case. Panes of exited tabs that cannot resume are unchanged.
-- **Out of the sidebar by decision:** per-tab age, the context ring on rows, and any agent name (the open counts carry the agent and terminal marks), the grid icon, and one-click jump to a specific tab. The context ring remains in the pane header and in Go to; the tab bar keeps the agent marks.
+- **Out of the sidebar by decision:** per-tab age, the agent mark and context ring on rows, the grid icon, and one-click jump to a specific tab. The context ring remains in the pane header and in Go to; the tab bar keeps the agent marks.
 - **Glossary and docs.** `GLOSSARY.md` already carries Heading, Most urgent state and the reworded Space and Quiet space. The design notes need rewriting where they describe tiles, agent rows and the sidebar as "spaces and the agents grouped under them"; the window-store spec's mentions of agent rows need a note that they are superseded.
 
 ## Testing Decisions

@@ -355,11 +355,19 @@ p {
   align-items: center;
   gap: var(--space-1);
   flex: none;
+  line-height: 1;
 }
 
-.space-count .agent-mark {
+.space-count .icon {
+  display: block;
   width: var(--icon-size-sm);
   height: var(--icon-size-sm);
+}
+
+/* The solid agent glyph fills its box to the edges and sits low beside the digits: lift it, and give it the room the
+   terminal glyph has in its own box. */
+.space-count .icon-agent {
+  margin: 0 var(--space-xs) var(--space-xs) 0;
 }
 
 .space-branch {

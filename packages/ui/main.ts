@@ -1074,16 +1074,16 @@ function spaceNode(state: AgentStateName, empty: boolean): HTMLElement {
 // What is open, as the agent and terminal icons with their live counts (each only above zero), or "No tabs open".
 function openLine(summary: RowSummary): HTMLElement {
   const line = element('span', summary.empty ? 'space-detail' : 'space-detail counts', summary.empty ? 'No tabs open' : '')
-  const count = (n: number, noun: string, mark: HTMLElement): void => {
+  const count = (n: number, noun: string, icon: string): void => {
     if (n === 0) return
     const part = element('span', 'space-count', String(n))
     part.title = `${n} ${noun}${n === 1 ? '' : 's'}`
     part.setAttribute('aria-label', part.title)
-    part.prepend(mark)
+    part.insertAdjacentHTML('afterbegin', icon)
     line.append(part)
   }
-  count(summary.agents, 'agent', markEl(summary.agentKind ?? 'claude'))
-  count(summary.terminals, 'terminal', markEl('shell'))
+  count(summary.agents, 'agent', summary.agentKind ? agentIconSvg(summary.agentKind) : '')
+  count(summary.terminals, 'terminal', iconSvg('terminal'))
   return line
 }
 
