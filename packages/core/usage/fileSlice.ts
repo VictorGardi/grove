@@ -42,6 +42,33 @@ export async function headOf(file: string, length = HEAD_BYTES): Promise<string>
   }
 }
 
+// What one stat of a file says that tells a rewrite from an append.
+export interface FileStat {
+  size: number
+  ino: number
+  mtimeMs: number
+}
+
+// Where a reader stands in a file: how far it has read, the first bytes then, and the stat of the file when it was listed for that read.
+export interface FilePlace {
+  offset: number
+  head: string
+  ino: number
+  mtimeMs: number
+}
+
+export const statOf = (stat: fs.Stats): FileStat => ({ size: stat.size, ino: stat.ino, mtimeMs: stat.mtimeMs })
+
+// True when the stat alone says the file is not the one that was read up to the place: it is shorter than what was read, it is a
+// different file (an atomic replace gives a new inode, where the inode is known), or its time went backwards. A file whose inode is the
+// same, which is longer and whose time moved forward is a normal append; the first bytes (`sameHead`) are still compared when it is read,
+// since an overwrite in place that grows looks the same by stat. Costs nothing: the stat is the one the listing made.
+export const replaced = (place: FilePlace, now: FileStat): boolean =>
+  place.offset > 0 && (now.size < place.offset || (now.ino !== 0 && place.ino !== 0 && now.ino !== place.ino) || now.mtimeMs < place.mtimeMs)
+
+// True when a listed file has to be looked at: it holds bytes not read yet, or it was replaced (which a same-sized rewrite shows only by stat).
+export const changed = (place: FilePlace | undefined, now: FileStat): boolean => (place === undefined ? now.size > 0 : now.size !== place.offset || replaced(place, now))
+
 // True when a file still starts with the bytes it started with when it was last read up to `offset`: it was appended to, not rewritten.
 export async function sameHead(file: string, head: string): Promise<boolean> {
   return (await headOf(file, head.length / 2)) === head

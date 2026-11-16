@@ -1,6 +1,6 @@
 import fs from 'node:fs'
 import path from 'node:path'
-import { headOf, sameHead, sliceLines } from './fileSlice.ts'
+import { changed, headOf, replaced, sameHead, sliceLines, statOf, type FilePlace, type FileStat } from './fileSlice.ts'
 import type { GroveSessions } from './groveSessions.ts'
 import { CLAUDE_CODE, CLAUDE_DESKTOP, type UsageRequest } from './history.ts'
 import type { UsageReader } from './reader.ts'
@@ -16,9 +16,8 @@ export interface ClaudeReaderOptions {
 
 const CHUNK_BYTES = 1 << 20
 
-interface Listed {
+interface Listed extends FileStat {
   file: string
-  size: number
   born: number
   helper: boolean
   // The session the file belongs to: its own name, or the folder a helper file sits in.
@@ -84,7 +83,7 @@ async function listDir(dir: string): Promise<fs.Dirent[]> {
 async function listed(file: string, helper: boolean, session: string): Promise<Listed | undefined> {
   try {
     const stat = await fs.promises.stat(file)
-    return stat.isFile() ? { file, size: stat.size, born: stat.birthtimeMs, helper, session } : undefined
+    return stat.isFile() ? { file, ...statOf(stat), born: stat.birthtimeMs, helper, session } : undefined
   } catch {
     return undefined
   }
@@ -112,9 +111,9 @@ async function listTranscripts(projectsDir: string): Promise<Listed[]> {
 // Files are read oldest first, so a resumed session that copied old history is met after the session it copied from.
 export function createClaudeReader(options: ClaudeReaderOptions): UsageReader {
   const chunkBytes = options.chunkBytes ?? CHUNK_BYTES
-  const offsets = new Map<string, number>()
-  // The first bytes each file had when it was last read: a file that no longer starts with them was rewritten, and is read from the start.
-  const heads = new Map<string, string>()
+  // Per file: the byte offset, the first bytes and the stat it had when last read. A file that was replaced (see `replaced`) or no longer
+  // starts with those bytes was rewritten, and is read from the start.
+  const places = new Map<string, FilePlace>()
   let queue: Listed[] | undefined
   const failed = new Set<string>()
   // Bytes of every transcript the last pass listed, and how many of them are read: what `progress` is made of. undefined before a pass has looked.
@@ -125,28 +124,28 @@ export function createClaudeReader(options: ClaudeReaderOptions): UsageReader {
     const all = await listTranscripts(options.projectsDir)
     total = all.reduce((sum, item) => sum + item.size, 0)
     forget(all.map((item) => item.file))
-    done = all.reduce((sum, item) => sum + Math.min(offsets.get(item.file) ?? 0, item.size), 0)
-    return all.filter((item) => item.size !== (offsets.get(item.file) ?? 0)).sort((a, b) => a.born - b.born || (a.file < b.file ? -1 : 1))
+    done = all.reduce((sum, item) => sum + Math.min(places.get(item.file)?.offset ?? 0, item.size), 0)
+    return all.filter((item) => changed(places.get(item.file), item)).sort((a, b) => a.born - b.born || (a.file < b.file ? -1 : 1))
   }
 
-  // What the listing no longer holds is gone: its place, its head and its failure are dropped, from the listing already made (no stat of its own).
+  // What the listing no longer holds is gone: its place and its failure are dropped, from the listing already made (no stat of its own).
   const forget = (files: string[]): void => {
     const present = new Set(files)
-    for (const map of [offsets, heads]) for (const file of map.keys()) if (!present.has(file)) map.delete(file)
+    for (const file of places.keys()) if (!present.has(file)) places.delete(file)
     for (const file of failed) if (!present.has(file)) failed.delete(file)
   }
 
   // Reads the next slice of one file. False when the file has nothing complete left.
   async function slice(item: Listed, out: UsageRequest[]): Promise<boolean> {
-    let offset = offsets.get(item.file) ?? 0
-    if (offset > 0 && (item.size < offset || !(await sameHead(item.file, heads.get(item.file) ?? '')))) offset = 0
+    const place = places.get(item.file)
+    let offset = place?.offset ?? 0
+    if (place !== undefined && offset > 0 && (replaced(place, item) || !(await sameHead(item.file, place.head)))) offset = 0
     const { lines, next, more } = await sliceLines(item.file, offset, item.size, chunkBytes)
     for (const line of lines) {
       const request = requestOf(line, item.helper, item.session, options.grove)
       if (request) out.push(request)
     }
-    offsets.set(item.file, next)
-    heads.set(item.file, await headOf(item.file, next))
+    places.set(item.file, { offset: next, head: await headOf(item.file, next), ino: item.ino, mtimeMs: item.mtimeMs })
     done += next - offset
     return more
   }
@@ -180,7 +179,7 @@ export function createClaudeReader(options: ClaudeReaderOptions): UsageReader {
       if (queue === undefined) done = total ?? 0
       return { requests, done: queue === undefined }
     },
-    tracked: () => offsets.size,
+    tracked: () => places.size,
     progress: () => (total === undefined ? undefined : total === 0 ? 1 : Math.min(1, done / total)),
   }
 }

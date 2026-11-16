@@ -1,7 +1,7 @@
 import crypto from 'node:crypto'
 import fs from 'node:fs'
 import path from 'node:path'
-import { headOf, sameHead, sliceLines } from './fileSlice.ts'
+import { changed, headOf, replaced, sameHead, sliceLines, statOf, type FilePlace, type FileStat } from './fileSlice.ts'
 import type { GroveSessions } from './groveSessions.ts'
 import type { UsageRequest } from './history.ts'
 import type { UsageReader } from './reader.ts'
@@ -17,17 +17,13 @@ export interface CopilotReaderOptions {
 
 const CHUNK_BYTES = 1 << 20
 
-interface Listed {
+interface Listed extends FileStat {
   file: string
-  size: number
 }
 
-interface Place {
-  offset: number
+interface Place extends FilePlace {
   // The session's working folder, as last seen on a start or resume line, kept so a later pass reading only new lines knows it.
   cwd: string
-  // The first bytes the file had when last read, to notice a rewrite.
-  head: string
 }
 
 const count = (value: unknown): number => (typeof value === 'number' && Number.isFinite(value) && value >= 0 ? value : 0)
@@ -112,7 +108,7 @@ async function listEvents(copilotHome: string): Promise<Listed[]> {
         const file = path.join(root, entry.name, 'events.jsonl')
         try {
           const stat = await fs.promises.stat(file)
-          return stat.isFile() ? { file, size: stat.size } : undefined
+          return stat.isFile() ? { file, ...statOf(stat) } : undefined
         } catch {
           return undefined
         }
@@ -139,12 +135,13 @@ export function createCopilotReader(options: CopilotReaderOptions): UsageReader 
     for (const file of places.keys()) if (!present.has(file)) places.delete(file)
     for (const file of failed) if (!present.has(file)) failed.delete(file)
     done = all.reduce((sum, item) => sum + Math.min(places.get(item.file)?.offset ?? 0, item.size), 0)
-    return all.filter((item) => item.size !== (places.get(item.file)?.offset ?? 0))
+    return all.filter((item) => changed(places.get(item.file), item))
   }
 
   async function slice(item: Listed, out: UsageRequest[]): Promise<boolean> {
-    let place = places.get(item.file) ?? { offset: 0, cwd: '', head: '' }
-    if (place.offset > 0 && (item.size < place.offset || !(await sameHead(item.file, place.head)))) place = { offset: 0, cwd: '', head: '' }
+    const known = places.get(item.file)
+    let place: Place = known ?? { offset: 0, cwd: '', head: '', ino: item.ino, mtimeMs: item.mtimeMs }
+    if (known !== undefined && place.offset > 0 && (replaced(known, item) || !(await sameHead(item.file, place.head)))) place = { offset: 0, cwd: '', head: '', ino: item.ino, mtimeMs: item.mtimeMs }
     const { lines, next, more } = await sliceLines(item.file, place.offset, item.size, chunkBytes)
     let cwd = place.cwd
     let fallback = false
@@ -158,7 +155,7 @@ export function createCopilotReader(options: CopilotReaderOptions): UsageReader 
       const request = requestOf(line, cwd, path.basename(path.dirname(item.file)), options.grove)
       if (request) out.push(request)
     }
-    places.set(item.file, { offset: next, cwd, head: await headOf(item.file, next) })
+    places.set(item.file, { offset: next, cwd, head: await headOf(item.file, next), ino: item.ino, mtimeMs: item.mtimeMs })
     done += next - place.offset
     return more
   }
