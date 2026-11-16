@@ -278,20 +278,27 @@ describe('window status path', () => {
     expect(JSON.parse(localStorage.getItem('grove.agent-appearance')!).needsYou).toBeNull()
   })
 
-  it('shows a space as two lines: its name and time, then what is open as icons with counts', () => {
+  it('shows a space on one line: node, name, what is open as icons with counts, and the time', () => {
     const since = Date.now() - 90_000
     notify('status.changed', change('tab-claude', 'claude', 'needs-you', since))
     notify('status.changed', change('tab-copilot', 'copilot', 'working'))
     notify('status.changed', change('tab-opencode', 'opencode', 'idle'))
     expect(lines('s1')).toMatchObject({ name: 'proj', time: '1m', detail: '3 agents', node: 'indicator ind-needs-you' })
-    expect(row('s1')?.classList.contains('working')).toBe(false)
+    expect(row('s1')?.classList.contains('state-working')).toBe(false)
     notify('status.changed', change('tab-claude', 'claude', 'idle'))
-    expect(row('s1')?.classList.contains('working')).toBe(true)
+    expect(row('s1')?.classList.contains('state-working')).toBe(true)
     expect(lines('s1').detail).toBe('3 agents')
     notify('status.changed', change('tab-claude', 'claude', 'finished', since))
     expect(lines('s1')).toMatchObject({ time: '1m', detail: '3 agents', node: 'indicator ind-finished' })
     expect(row('s1')?.textContent).not.toContain('Ready')
-    // No tab name on line 2, whichever tab decides.
+    // Something that needs you reads heavier and carries its colour on the time; an idle row has no time at all.
+    notify('status.changed', change('tab-claude', 'claude', 'needs-you', since))
+    expect(row('s1')?.classList.contains('state-needs-you')).toBe(true)
+    notify('status.changed', change('tab-claude', 'claude', 'idle'))
+    notify('status.changed', change('tab-copilot', 'copilot', 'idle'))
+    expect(lines('s1')).toMatchObject({ time: null, node: 'indicator ind-idle' })
+    notify('status.changed', change('tab-claude', 'claude', 'finished', since))
+    // No tab name on the row, whichever tab decides.
     expect(row('s1')?.textContent).not.toMatch(/claude|copilot|opencode/)
   })
 

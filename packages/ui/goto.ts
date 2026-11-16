@@ -60,7 +60,7 @@ export function createGoTo(elements: GoToElements, deps: GoToDeps): GoTo {
     let branches: HTMLElement | null = null
     for (const group of view.groups) {
       const section = element('section', 'goto-group')
-      const head = element('header', 'goto-space')
+      const head = element('header', `goto-space state-${group.empty ? 'none' : group.state}`)
       head.append(deps.node(group), element('span', 'goto-space-name', group.name))
       section.append(head, ...group.rows.map(rowNode))
       if (group.repo === null) {

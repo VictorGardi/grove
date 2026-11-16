@@ -15,6 +15,9 @@
       <aside id="sidebar" class="sidebar">
         <header class="side-head" data-tauri-drag-region>
           <span class="brand-name">Grove</span>
+          <button id="new-space" class="icon-button" type="button" aria-label="New space" title="New space">
+            <svg class="icon icon-plus" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M5 12h14" /><path d="M12 5v14" /></svg>
+          </button>
           <button id="search-button" class="icon-button" type="button" aria-label="Search" title="Search">
             <svg class="icon icon-search" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="11" cy="11" r="8" /><path d="m21 21-4.3-4.3" /></svg>
           </button>
@@ -23,12 +26,6 @@
           </button>
         </header>
         <section id="section-spaces" class="spaces-section">
-          <div class="section-head">
-            <h2 class="section-label">Spaces</h2>
-            <button id="new-space" class="icon-button" type="button" aria-label="New space" title="New space">
-              <svg class="icon icon-plus" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M5 12h14" /><path d="M12 5v14" /></svg>
-            </button>
-          </div>
           <ul id="spaces" class="spaces"></ul>
         </section>
         <footer class="sidebar-foot">

@@ -1038,6 +1038,9 @@ function summaryTabs(spaceId: string): SummaryTab[] {
   })
 }
 
+// The states whose time a row shows: an idle or unknown row's age is noise.
+const TIMED: AgentStateName[] = ['needs-you', 'working', 'finished']
+
 // A space's node: its most urgent state, or the dashed look for no tabs open.
 function spaceNode(state: AgentStateName, empty: boolean): HTMLElement {
   if (!empty) return indicatorEl(state, undefined, true)
@@ -1047,7 +1050,7 @@ function spaceNode(state: AgentStateName, empty: boolean): HTMLElement {
   return node
 }
 
-// Line 2 of a row: what is open, as the agent and terminal icons with their counts (each only above zero), or "No tabs open".
+// What is open, as the agent and terminal icons with their live counts (each only above zero), or "No tabs open".
 function openLine(summary: RowSummary): HTMLElement {
   const line = element('span', summary.empty ? 'space-detail' : 'space-detail counts', summary.empty ? 'No tabs open' : '')
   const count = (n: number, noun: string, icon: string): void => {
@@ -1063,15 +1066,15 @@ function openLine(summary: RowSummary): HTMLElement {
   return line
 }
 
-// One space's row: its node, then two lines (the name and the time; what is open), or for a plain
-// space with no tabs one line, the name and the branch.
+// One space's row, on one line: its node, the name, what is open and the time. The time shows only while the state has
+// something to say (needs you, working, finished), in that state's colour. A plain space with no tabs shows its name and branch.
 function spaceRow(row: SidebarRow<SpaceInfo>): HTMLButtonElement {
   const { space } = row
   const summary = rowSummary(summaryTabs(space.id), [...store.recentIds])
   const grouped = row.main || space.worktree || space.parent !== null
   const button = document.createElement('button')
   button.type = 'button'
-  button.className = summary.state === 'working' ? 'space working' : 'space'
+  button.className = `space state-${summary.empty ? 'none' : summary.state}`
   button.dataset.spaceId = space.id
   button.title = space.path
   const node = spaceNode(summary.state, summary.empty)
@@ -1081,18 +1084,16 @@ function spaceRow(row: SidebarRow<SpaceInfo>): HTMLButtonElement {
     button.append(node, name, element('span', 'space-branch', space.branch ?? ''))
   } else {
     const line = element('span', 'space-line', '')
-    line.append(name)
-    if (summary.since !== null) {
+    line.append(name, openLine(summary))
+    if (summary.since !== null && TIMED.includes(summary.state)) {
       const age = element('span', 'space-time', formatAge(Date.now() - summary.since))
       age.dataset.since = String(summary.since)
       line.append(age)
     }
-    const text = element('span', 'space-text', '')
-    text.append(line, openLine(summary))
-    button.append(node, text)
+    button.append(node, line)
   }
   if (space.id === store.activeSpace) button.setAttribute('aria-current', 'true')
-  // The tab line 2 names opens when it has something for you; otherwise the space's last visited tab does.
+  // The deciding tab opens when it has something for you; otherwise the space's last visited tab does.
   const chosen = summary.state === 'needs-you' || summary.state === 'finished' ? (summary.tabId ?? undefined) : undefined
   button.addEventListener('click', () => {
     selectSpace(space.id, chosen)

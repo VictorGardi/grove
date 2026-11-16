@@ -205,6 +205,11 @@ p {
   display: none;
 }
 
+/* One unbroken trunk: the rows touch, so each row's stretch of trunk joins the next. */
+.spaces.graph {
+  gap: 0;
+}
+
 .spaces.graph {
   padding: 0 0 0 var(--graph-indent);
 }
@@ -212,6 +217,12 @@ p {
 .graph > li {
   position: relative;
   padding-left: var(--graph-branch);
+}
+
+/* The branch ends at the node: the row starts where the branch stops. */
+.graph .space {
+  padding-left: 0;
+  gap: var(--space-2);
 }
 
 /* The trunk runs down the left of the rows, and ends at the last row's branch. */
@@ -241,7 +252,7 @@ p {
 .space {
   display: grid;
   grid-template-columns: var(--ind-container-width) minmax(0, 1fr);
-  align-items: start;
+  align-items: center;
   gap: var(--space-3);
   width: 100%;
   padding: var(--space-1) var(--space-4) var(--space-1) var(--space-2);
@@ -255,26 +266,12 @@ p {
   align-items: center;
 }
 
-.space .indicator {
-  margin-top: calc((var(--graph-line) - var(--ind-size)) / 2);
-}
-
-.space.plain .indicator {
-  margin-top: 0;
-}
-
 .space:hover {
   background: var(--color-raised);
 }
 
 .space[aria-current='true'] {
   background: var(--color-selected);
-}
-
-.space-text {
-  display: flex;
-  flex-direction: column;
-  min-width: 0;
 }
 
 .space-line {
@@ -297,11 +294,17 @@ p {
   flex: 1 1 auto;
 }
 
-/* Line 1 is blue while something in the row is working. */
-.space.working .space-name {
+/* The name is blue while something in the row is working, and heavier while something needs you. */
+.space.state-working .space-name {
   color: var(--accent);
 }
 
+.space.state-needs-you .space-name,
+.goto-space.state-needs-you .goto-space-name {
+  font-weight: 600;
+}
+
+/* The time shows only for a state with something to say, in that state's colour. */
 .space-time {
   flex: none;
   font-size: var(--text-meta);
@@ -309,7 +312,20 @@ p {
   font-variant-numeric: tabular-nums;
 }
 
+.state-needs-you .space-time {
+  color: var(--agent-state-needs-you, var(--state-needs-you));
+}
+
+.state-working .space-time {
+  color: var(--agent-state-working, var(--state-working));
+}
+
+.state-finished .space-time {
+  color: var(--agent-state-finished, var(--state-finished));
+}
+
 .space-detail {
+  flex: none;
   min-width: 0;
   overflow: hidden;
   white-space: nowrap;
@@ -319,9 +335,13 @@ p {
 }
 
 /* Line 2 with tabs open: the counts, right-aligned. */
+.space-detail:not(.counts) {
+  flex: 0 1 auto;
+  color: var(--color-faint);
+}
+
 .space-detail.counts {
   display: flex;
-  justify-content: flex-end;
   gap: var(--space-3);
 }
 
@@ -3450,8 +3470,9 @@ li[aria-selected] > .slash-tile {
 }
 
 .goto-heading .goto-space {
-  padding: var(--space-1) var(--space-4) var(--space-1) var(--space-2);
-  min-height: var(--graph-line);
+  padding: var(--space-1) var(--space-4) var(--space-1) 0;
+  min-height: calc(var(--graph-line) + var(--space-1) * 2);
+  gap: var(--space-2);
 }
 
 .goto-row {
