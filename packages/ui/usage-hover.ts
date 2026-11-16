@@ -40,12 +40,12 @@ const SPAN: Record<TotalLabel, number> = { Today: 1, '7 days': 7, '30 days': 30 
 // past what the files hold (the summary always carries the days of a matrix, which is more than 60).
 export function totalDelta(summary: UsageSummary, agent: UsageAgent, label: TotalLabel): string | null {
   const found = summary.agents.find((a) => a.agent === agent)
-  if (found === undefined || summary.ready === null) return null
+  if (found === undefined) return null
   const span = SPAN[label]
   const sum = (from: string, to: string): number => found.days.filter((d) => d.day >= from && d.day <= to).reduce((n, d) => n + d.requests, 0)
   const currentFrom = shiftDay(summary.today, -(span - 1))
   const previousFrom = shiftDay(currentFrom, -span)
-  if (previousFrom < summary.ready.from) return null
+  if (previousFrom < found.from) return null
   const now = sum(currentFrom, summary.today)
   const before = sum(previousFrom, shiftDay(currentFrom, -1))
   const name = label === 'Today' ? 'yesterday' : `the ${span} days before`

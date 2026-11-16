@@ -113,6 +113,18 @@ describe('usage history from Copilot session files, to the summary', () => {
 
   const copilot = (s: UsageService, days?: number) => s.summary(days).agents.find((a) => a.agent === 'copilot')
 
+  it('gives each agent its own first day, so one that began later is not shown as zero before it', async () => {
+    fs.mkdirSync(path.join(projects, 'p'), { recursive: true })
+    fs.writeFileSync(path.join(projects, 'p', 'a.jsonl'), `${claudeLine('c1', iso(2))}\n${claudeLine('c2', iso(15))}\n`)
+    session('a', [start('/work/app'), usage({ id: '1', ts: iso(10) })])
+    const s = make()
+    await s.drain()
+    const summary = s.summary(30)
+    expect(summary.ready?.from).toBe('2026-11-02')
+    expect(summary.agents.find((a) => a.agent === 'claude')?.from).toBe('2026-11-02')
+    expect(copilot(s)?.from).toBe('2026-11-10')
+  })
+
   it('counts a request once however many lines and files repeat it', async () => {
     session('a', [start('/work/app'), usage({ id: '1', ts: iso(15) }), usage({ id: '1', ts: iso(15) }), usage({ id: '2', ts: iso(15) })])
     session('b', [start('/work/app'), usage({ id: '1', ts: iso(15) })])

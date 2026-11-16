@@ -50,11 +50,13 @@ export function summarizeAgents(index: UsageIndex, repositoryOf: (folder: string
     const last7 = emptyTotals()
     const todays = emptyTotals()
     const perDay: UsageDay[] = []
+    let from = ''
     const hours = new Array<number>(168).fill(0)
     const models = new Map<string, UsageTotals>()
     const repositories = new Map<string, UsageRepositoryTotals>()
     const sources = new Map<UsageSplit, UsageTotals>()
     for (const [day, bucket] of index.days(agent) ?? []) {
+      if (from === '' || day < from) from = day
       // A request stamped after today (a clock that moved back) belongs to no window yet.
       if (day > today) continue
       if (day >= month) plusTotals(last30, bucket.totals)
@@ -79,6 +81,7 @@ export function summarizeAgents(index: UsageIndex, repositoryOf: (folder: string
     found.push({
       agent,
       hasCredits: CREDIT_AGENTS.includes(agent),
+      from,
       days: perDay.sort((a, b) => (a.day < b.day ? -1 : 1)),
       today: inCredits(todays),
       last7: inCredits(last7),

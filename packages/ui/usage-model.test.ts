@@ -41,7 +41,7 @@ function summary(days: UsageDay[], more: Partial<UsageSummary> = {}, totals: Par
     building: false,
     ready: { from: '2026-05-01', to: '2026-11-16' },
     progress: [],
-    agents: [{ agent: 'claude', hasCredits: false, days, today: sum(0), last7: sum(0), last30: sum(days.length), hours: new Array<number>(168).fill(0), repositories: [], models: [], sources: [], trackedSince: null, ...totals }],
+    agents: [{ agent: 'claude', hasCredits: false, from: '2026-05-01', days, today: sum(0), last7: sum(0), last30: sum(days.length), hours: new Array<number>(168).fill(0), repositories: [], models: [], sources: [], trackedSince: null, ...totals }],
     ...more,
   }
 }
@@ -107,9 +107,17 @@ describe('the matrix', () => {
   })
 
   it('shows days before the earliest request the agents’ files still hold as unknown, not as zero activity', () => {
-    const view = usageView(summary([day('2026-11-10', 2)], { ready: { from: '2026-11-03', to: '2026-11-16' } }), { expanded: false })
+    const view = usageView(summary([day('2026-11-10', 2)], { ready: { from: '2026-11-03', to: '2026-11-16' } }, { from: '2026-11-03' }), { expanded: false })
     expect(cells(view).find((cell) => cell.day === '2026-11-02')).toMatchObject({ requests: null, shade: null })
     expect(cells(view).find((cell) => cell.day === '2026-11-03')).toMatchObject({ requests: 0, shade: 0 })
+  })
+
+  it('goes by each agent’s own first day: a day before one agent’s files begin is no record for it and zero for an agent that reaches further back', () => {
+    const view = usageView({ ...two({ from: '2026-11-03' }, { from: '2026-11-09' }), ready: { from: '2026-11-03', to: '2026-11-16' } }, { expanded: false })
+    const [claude, copilot] = view.agents.map((a) => a.weeks.flat().filter((cell) => cell !== null))
+    expect(claude.find((cell) => cell?.day === '2026-11-05')).toMatchObject({ requests: 0 })
+    expect(copilot.find((cell) => cell?.day === '2026-11-05')).toMatchObject({ requests: null, shade: null })
+    expect(copilot.find((cell) => cell?.day === '2026-11-09')).toMatchObject({ requests: 0 })
   })
 
   it('labels each day for a screen reader and marks the selected one', () => {
@@ -278,6 +286,7 @@ function copilotAgent(over: Partial<UsageAgentSummary> = {}): UsageAgentSummary 
   return {
     agent: 'copilot',
     hasCredits: true,
+    from: '2026-05-01',
     days: [
       { day: '2026-11-10', helperRequests: 0, models: [], sources: [], ...totalsOf(4, 12.34) },
       { day: '2026-11-11', helperRequests: 0, models: [], sources: [], ...totalsOf(9, 0.5, 2) },
@@ -371,7 +380,7 @@ describe('the Copilot section', () => {
 const zeros = () => new Array<number>(168).fill(0)
 const t = (requests: number, more: Partial<UsageTotals> = {}): UsageTotals => ({ requests, input: 0, output: 0, cacheRead: 0, cacheWrite: 0, credits: 0, withoutCredits: 0, ...more })
 function agent(name: 'claude' | 'copilot', over: Partial<UsageAgentSummary> = {}): UsageAgentSummary {
-  return { agent: name, hasCredits: name === 'copilot', days: [], today: t(0), last7: t(0), last30: t(1), hours: zeros(), repositories: [], models: [], sources: [], trackedSince: null, ...over }
+  return { agent: name, hasCredits: name === 'copilot', from: '2026-05-01', days: [], today: t(0), last7: t(0), last30: t(1), hours: zeros(), repositories: [], models: [], sources: [], trackedSince: null, ...over }
 }
 const two = (claude: Partial<UsageAgentSummary>, copilot: Partial<UsageAgentSummary> = {}): UsageSummary => ({ ...summary([]), agents: [agent('claude', claude), agent('copilot', copilot)] })
 const charts = (s: UsageSummary, options: { expanded?: boolean; range?: RangeId } = {}) => usageView(s, { expanded: options.expanded ?? false, range: options.range }).charts!

@@ -198,6 +198,14 @@ describe('usage history from Claude files, to the summary', () => {
     expect(claude(again)?.last7.requests).toBe(2)
   })
 
+  it('says per agent the first day its own files hold, over all its days and not only the ones asked for', async () => {
+    write('p/a.jsonl', [line({ id: 'old', ts: at(1, 10, 8) }), line({ id: 'new', ts: at(16, 11) })])
+    const s = make()
+    await s.drain()
+    expect(claude(s, 7)?.from).toBe('2026-09-01')
+    expect(claude(s, 7)?.days.map((d) => d.day)).toEqual(['2026-11-16'])
+  })
+
   it('leaves an agent out when it made no request in the last 30 days, and brings it back with its history', async () => {
     write('p/a.jsonl', [line({ id: 'old', ts: at(1, 10, 8) })])
     const s = make()

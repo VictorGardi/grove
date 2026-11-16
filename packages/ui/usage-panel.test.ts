@@ -20,6 +20,7 @@ function summary(over: Partial<UsageSummary> = {}): UsageSummary {
       {
         agent: 'claude',
         hasCredits: false,
+        from: '2026-05-01',
         days: [
           { day: '2026-11-10', requests: 2, input: 40, output: 1200, cacheRead: 3_000_000, cacheWrite: 800, credits: 0, withoutCredits: 0, helperRequests: 0, models: [], sources: [] },
           { day: '2026-11-11', requests: 9, input: 1, output: 2, cacheRead: 3, cacheWrite: 4, credits: 0, withoutCredits: 0, helperRequests: 0, models: [], sources: [] },
@@ -142,6 +143,7 @@ describe('usage panel', () => {
         {
           agent: 'copilot',
           hasCredits: true,
+          from: '2026-05-01',
           days: [{ day: '2026-11-11', requests: 3, input: 5, output: 6, cacheRead: 7, cacheWrite: 8, credits: 2.5, withoutCredits: 1, helperRequests: 0, models: [], sources: [] }],
           today: { ...sum(0) },
           last7: { ...sum(3), credits: 2.5, withoutCredits: 1 },

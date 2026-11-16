@@ -134,7 +134,7 @@ export function creditsOf(totals: UsageTotals, hasCredits: boolean): string | nu
 
 export interface MatrixCell {
   day: string
-  // The request count, or null for a day before the earliest request the agents' files still hold: they were pruned, which is not "no activity".
+  // The request count, or null for a day before the earliest request this agent's files still hold: they were pruned, which is not "no activity".
   requests: number | null
   shade: Shade | null
   label: string
@@ -321,11 +321,12 @@ export function sourcesOf(agent: UsageAgentSummary, sources: readonly UsageSplit
   }
 }
 
-// The first day the agents' files still hold a request for; '' when they hold none, so no day is before it.
+// The first day the agents' files still hold a request for, over all agents; '' when they hold none, so no day is before it. Used where
+// agents are drawn together (the bars). Each agent's own days use its own `from`.
 const earliest = (summary: UsageSummary): string => summary.ready?.from ?? ''
 
 function detailOf(summary: UsageSummary, agent: UsageAgentSummary, day: string): DayDetail {
-  if (day < earliest(summary)) return { title: formatDay(day), requests: NO_RECORD, credits: null, helper: null, tokens: [], models: [], sources: null }
+  if (day < agent.from) return { title: formatDay(day), requests: NO_RECORD, credits: null, helper: null, tokens: [], models: [], sources: null }
   const found: UsageDay | undefined = agent.days.find((d) => d.day === day)
   return {
     title: formatDay(day),
@@ -357,7 +358,7 @@ function agentView(summary: UsageSummary, agent: UsageAgentSummary, expanded: bo
     for (let r = 0; r < 7; r++) {
       const day = shiftDay(first, w * 7 + r)
       if (day > summary.today) week.push(null)
-      else if (day < earliest(summary)) week.push({ day, requests: null, shade: null, label: `${formatDay(day)}: ${NO_RECORD.toLowerCase()}`, selected: day === selected })
+      else if (day < agent.from) week.push({ day, requests: null, shade: null, label: `${formatDay(day)}: ${NO_RECORD.toLowerCase()}`, selected: day === selected })
       else {
         const requests = perDay.get(day) ?? 0
         week.push({ day, requests, shade: shadeOf(requests, ranked), label: `${formatDay(day)}: ${requestsLabel(requests)}`, selected: day === selected })

@@ -15,6 +15,7 @@ function summary(over: Partial<UsageSummary> = {}): UsageSummary {
       {
         agent: 'claude',
         hasCredits: false,
+        from: '2026-10-01',
         days: [
           day('2026-11-15', 3, { models: [{ model: 'claude-haiku-4-5-20251001', requests: 1, ...zero }, { model: 'claude-opus-4-5-20251101', requests: 2, ...zero }] }),
           day('2026-11-16', 5),
@@ -31,6 +32,7 @@ function summary(over: Partial<UsageSummary> = {}): UsageSummary {
       {
         agent: 'copilot',
         hasCredits: true,
+        from: '2026-10-01',
         days: [day('2026-11-15', 4, { credits: 2.5, models: [{ model: 'gpt-5', requests: 4, ...zero }] })],
         today: { requests: 0, ...zero },
         last7: { requests: 4, ...zero },
@@ -83,9 +85,21 @@ describe('totalDelta', () => {
   })
 
   it('gives nothing when the period before reaches back past the record', () => {
-    expect(totalDelta(summary({ ready: { from: '2026-11-16', to: '2026-11-16' } }), 'claude', 'Today')).toBeNull()
-    expect(totalDelta(summary({ ready: { from: '2026-11-10', to: '2026-11-16' } }), 'claude', '7 days')).toBeNull()
-    expect(totalDelta(summary({ ready: null }), 'claude', 'Today')).toBeNull()
+    const from = (day: string, agent: 'claude' | 'copilot' = 'claude'): UsageSummary => {
+      const s = summary()
+      s.agents.find((a) => a.agent === agent)!.from = day
+      return s
+    }
+    expect(totalDelta(from('2026-11-16'), 'claude', 'Today')).toBeNull()
+    expect(totalDelta(from('2026-11-10'), 'claude', '7 days')).toBeNull()
+  })
+
+  it('goes by the agent’s own first day, not the earliest of all agents', () => {
+    const s = summary()
+    s.agents[0].from = '2026-11-16'
+    expect(s.ready?.from).toBe('2026-10-01')
+    expect(totalDelta(s, 'claude', 'Today')).toBeNull()
+    expect(totalDelta(s, 'copilot', 'Today')).not.toBeNull()
   })
 })
 

@@ -154,6 +154,9 @@ export interface UsageAgentSummary {
   agent: UsageAgent
   // True for an agent that reports credits (Copilot): the credit figures and `withoutCredits` mean something for it.
   hasCredits: boolean
+  // The first local day this agent has a request on, over everything its files still hold (not only `days`). A day before it is "no record"
+  // for this agent, not zero activity: another agent's files may reach further back than this one's.
+  from: string
   // Only the days with a request, oldest first, within the days asked for.
   days: UsageDay[]
   // Today, the last 7 days and the last 30 days, today included.
