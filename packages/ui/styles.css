@@ -303,7 +303,8 @@ p {
 }
 
 .space.state-needs-you .space-name,
-.goto-space.state-needs-you .goto-space-name {
+.goto-group.state-needs-you .goto-space-name,
+.goto-row.state-needs-you .goto-row-name {
   font-weight: 600;
 }
 
@@ -3358,17 +3359,6 @@ li[aria-selected] > .slash-tile {
   box-shadow: 0 var(--space-4) var(--space-6) var(--color-page);
 }
 
-.goto-head {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-}
-
-.goto-esc {
-  font-size: var(--text-sm);
-  color: var(--color-faint);
-}
-
 .goto-search {
   display: flex;
   align-items: center;
@@ -3429,12 +3419,6 @@ li[aria-selected] > .slash-tile {
   font-size: var(--text-sm);
 }
 
-.goto-chip kbd {
-  font-family: var(--font-mono);
-  font-size: var(--text-xs);
-  color: var(--color-faint);
-}
-
 .goto-chip:hover,
 .goto-chip[aria-pressed='true'] {
   color: var(--color-ink);
@@ -3448,9 +3432,19 @@ li[aria-selected] > .slash-tile {
 .goto-list {
   display: flex;
   flex-direction: column;
-  gap: var(--space-2);
   max-height: var(--size-goto-list);
   overflow-y: auto;
+}
+
+.goto-count {
+  flex: none;
+  margin-left: auto;
+  font-size: var(--text-sm);
+  color: var(--color-faint);
+}
+
+.goto-chip-count {
+  color: var(--color-faint);
 }
 
 .goto-group {
@@ -3458,39 +3452,84 @@ li[aria-selected] > .slash-tile {
   flex-direction: column;
 }
 
+/* A space with several tabs: a muted header, its tabs on a second level of branches that hangs from the header's node. */
 .goto-space {
+  position: relative;
   display: flex;
   align-items: center;
-  gap: var(--space-3);
-  padding: var(--space-2) var(--space-4);
-  font-size: var(--text-sm);
+  gap: var(--space-2);
+  min-height: calc(var(--graph-line) + var(--space-2) * 2);
+  padding: var(--space-2) var(--space-4) var(--space-2) 0;
+  font-size: var(--text-md);
   color: var(--color-mute);
 }
 
-/* Go to's tree: a repo's heading and its spaces on branches, as in the sidebar; the space's line matches the sidebar's line 1. */
-.goto-heading .heading-name {
-  cursor: default;
+.goto-space-name {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
-.goto-heading .goto-space {
-  padding: var(--space-1) var(--space-4) var(--space-1) 0;
-  min-height: calc(var(--graph-line) + var(--space-1) * 2);
-  gap: var(--space-2);
+.goto-space-note {
+  flex: none;
+  font-size: var(--text-sm);
+  color: var(--color-faint);
+}
+
+.goto-group:has(> .graph) > .goto-space::after {
+  content: '';
+  position: absolute;
+  top: 50%;
+  bottom: 0;
+  left: calc(var(--ind-container-width) / 2);
+  border-left: 1px solid var(--color-line);
+}
+
+.goto-group > .graph {
+  padding-left: calc(var(--ind-container-width) / 2);
+}
+
+/* The branch meets the middle of a row. */
+.goto .graph {
+  --graph-branch-y: calc(var(--space-2) + var(--graph-line) / 2);
+}
+
+.goto-heading .heading-name {
+  cursor: default;
 }
 
 .goto-row {
   display: flex;
   align-items: center;
-  gap: var(--space-4);
-  padding: var(--space-3) var(--space-4);
+  gap: var(--space-2);
+  min-height: calc(var(--graph-line) + var(--space-2) * 2);
+  padding: var(--space-2) var(--space-3);
   border-radius: var(--radius-md);
   color: var(--color-ink);
   font-size: var(--text-md);
   text-align: left;
 }
 
+/* As in the sidebar, the highlight reaches left of the node and the node stays where its branch ends. */
+.goto .graph .goto-row {
+  width: calc(100% + var(--space-3));
+  margin-left: calc(-1 * var(--space-3));
+}
+
 .goto-row[aria-selected='true'] {
   background: var(--color-selected);
+}
+
+.goto-row[aria-selected='true']::after {
+  content: '↵';
+  flex: none;
+  padding: 0 var(--space-2);
+  border: 1px solid var(--color-line);
+  border-radius: var(--radius-sm);
+  font-size: var(--text-sm);
+  color: var(--color-mute);
 }
 
 .goto-row-name {
@@ -3501,15 +3540,121 @@ li[aria-selected] > .slash-tile {
   white-space: nowrap;
 }
 
-.goto-row-state {
+.goto-kind,
+.goto-open-count {
+  display: inline-flex;
   flex: none;
+  align-items: center;
+  gap: var(--space-2);
   font-size: var(--text-sm);
   color: var(--color-mute);
 }
 
-.goto-state-needs-you { color: var(--state-needs-you); }
-.goto-state-working { color: var(--state-working); }
-.goto-state-finished { color: var(--state-finished); }
+.goto-kind .agent-mark,
+.goto-open-count .agent-mark {
+  width: var(--icon-size-sm);
+  height: var(--icon-size-sm);
+}
+
+.goto-open {
+  display: flex;
+  flex: none;
+  gap: var(--space-4);
+}
+
+.goto-time,
+.goto-status {
+  flex: none;
+  font-size: var(--text-sm);
+  font-variant-numeric: tabular-nums;
+  color: var(--color-faint);
+}
+
+.state-needs-you .goto-time,
+.goto-hit.state-needs-you .goto-status {
+  color: var(--agent-state-needs-you, var(--state-needs-you));
+}
+
+.state-working .goto-time,
+.goto-hit.state-working .goto-status {
+  color: var(--agent-state-working, var(--state-working));
+}
+
+.state-finished .goto-time,
+.goto-hit.state-finished .goto-status {
+  color: var(--agent-state-finished, var(--state-finished));
+}
+
+.goto-section {
+  margin: 0;
+  padding: var(--space-3) var(--space-3) var(--space-1);
+  font-size: var(--text-sm);
+  font-weight: 400;
+  color: var(--color-mute);
+}
+
+.goto-none {
+  margin: 0;
+  padding: var(--space-5) var(--space-3);
+  color: var(--color-faint);
+}
+
+/* A result: the name with the match marked, and a muted line under it. */
+.goto-hit {
+  padding: var(--space-2) var(--space-3);
+}
+
+.goto-hit-text {
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  min-width: 0;
+}
+
+.goto-hit-text .goto-row-name {
+  flex: none;
+}
+
+.goto-hit-where {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: var(--text-sm);
+  color: var(--color-faint);
+}
+
+.goto-match {
+  border-radius: var(--radius-sm);
+  background: color-mix(in srgb, var(--accent) 25%, transparent);
+  color: var(--color-ink);
+}
+
+.goto-foot {
+  display: flex;
+  gap: var(--space-5);
+  padding-top: var(--space-4);
+  border-top: 1px solid var(--color-line);
+  font-size: var(--text-sm);
+  color: var(--color-mute);
+}
+
+.goto-hint {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-2);
+}
+
+.goto-hint-end {
+  margin-left: auto;
+}
+
+.goto-foot kbd {
+  padding: 0 var(--space-2);
+  border: 1px solid var(--color-line);
+  border-radius: var(--radius-sm);
+  font: inherit;
+  color: var(--color-ink);
+}
 
 .spaces-quiet {
   padding: var(--space-2) var(--space-3);

@@ -451,7 +451,6 @@ describe('window status path', () => {
     expect(goto().querySelector('.goto-heading .goto-space .indicator')?.className).toBe('indicator ind-needs-you')
     expect(goto().querySelector('.goto-heading .goto-space .indicator')?.getAttribute('aria-label')).toBe('needs you')
     expect(goto().querySelectorAll('.goto-heading .goto-row').length).toBeGreaterThan(0)
-    expect(goto().querySelector('.space-tile')).toBeNull()
     // The quiet spaces fold as in the sidebar, and a query searches them too.
     const fold = () => goto().querySelector<HTMLElement>('.goto-quiet')
     expect(fold()?.textContent).toBe('2 quiet spaces ▾')
@@ -459,6 +458,15 @@ describe('window status path', () => {
     expect(fold()?.textContent).toBe('Hide quiet spaces ▴')
     expect([...goto().querySelectorAll('.goto-space-name')].map((el) => el.textContent)).toEqual(['main', 'proj-wt', 'master', 'old-wt'])
     const input = document.querySelector<HTMLInputElement>('#goto-input')!
+    // Typing flattens it: worktrees then tabs, each hit with its match marked, the count in the field and the chips counting.
+    input.value = 'proj'
+    input.dispatchEvent(new Event('input', { bubbles: true }))
+    expect([...goto().querySelectorAll('.goto-section')].map((el) => el.textContent)).toEqual(['Worktrees'])
+    expect(goto().querySelector('.goto-hit .goto-row-name')?.textContent).toBe('main')
+    expect(goto().querySelector('.goto-hit .goto-hit-where')?.textContent).toBe('proj')
+    expect(document.querySelector('#goto-count')?.textContent).toBe('1 result')
+    expect(document.querySelector('#goto-chip-needs')?.textContent).toBe('Needs you1')
+    expect(goto().querySelector('.goto-heading')).toBeNull()
     input.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true }))
     notify('spaces.removed', { id: 'old-wt' })
     notify('spaces.removed', { id: 'old' })

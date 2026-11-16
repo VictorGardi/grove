@@ -90,9 +90,13 @@ specific meaning, so humans and agents stay consistent.
   leaves the list only when all its spaces are quiet. This is separate from
   folding a heading, which the human does and which is remembered per repo.
 - **Go to**: the Cmd+P overlay that fuzzy-matches tabs, spaces and agents,
-  grouped by space and drawn as the sidebar's tree (headings, branches, nodes,
-  row names), and jumps to the chosen tab on Enter. It only navigates; it
-  runs no commands.
+  and jumps to the chosen tab on Enter. With an empty query it draws the
+  sidebar's tree (headings, branches, nodes, row names), a space with one tab
+  as a single row and a space with several as a header over its tabs. With a
+  query it is a flat ranked list of worktrees, then tabs, each hit with its
+  match marked; Enter on a worktree goes to the tab that decides its state (the
+  one that needs you). A tab with no name of its own is named by what it runs
+  and where, or "<agent>, untitled". It only navigates; it runs no commands.
 - **Grove CLI**: the `grove` command, which drives the running app over the
   core socket (`~/.grove/s`); a tab knows itself by `GROVE_TAB`.
 - **Token**: a named design value (colour, type, spacing, radius, size) as a

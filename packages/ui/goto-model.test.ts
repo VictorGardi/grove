@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { goToView, marksOf, RECENT_SPACES, toggleMark, type GoToInput, type GoToSpace, type GoToTab } from './goto-model.ts'
+import { fuzzyMatch, goToView, marksOf, RECENT_SPACES, toggleMark, unnamedTabName, type GoToInput, type GoToSpace, type GoToTab } from './goto-model.ts'
 
 function space(id: string, name = id, extra: Partial<GoToSpace> = {}): GoToSpace {
   return { id, name, label: null, parent: null, worktree: false, repoName: null, branch: null, ...extra }
@@ -378,5 +378,82 @@ describe('filter marks', () => {
     expect(toggleMark('!grove build', '!')).toBe('grove build ')
     expect(toggleMark('!~x', '!')).toBe('~x ')
     expect(toggleMark('~ notes', '~')).toBe('notes ')
+  })
+
+  describe('the tree', () => {
+    it('marks a space with one tab as a single row, and counts the tabs of the others', () => {
+      const view = goToView(input({ spaces: [space('a'), space('b'), space('c')], tabs: [tab('a1', 'a', '1'), tab('b1', 'b', '1'), tab('b2', 'b', '2')], activeSpaceId: 'a', expandQuiet: true }))
+      const by = (id: string) => view.groups.find((group) => group.spaceId === id)!
+      expect(by('a')).toMatchObject({ single: true, tabCount: 1 })
+      expect(by('b')).toMatchObject({ single: false, tabCount: 2 })
+      expect(by('c')).toMatchObject({ single: false, tabCount: 0 })
+      expect(view.results).toBeNull()
+    })
+
+    it('counts the tabs that need you and are working, and keeps the tree for a state filter alone', () => {
+      const tabs = [tab('a1', 'a', 'x', { state: 'needs-you' }), tab('a2', 'a', 'y', { state: 'working' }), tab('a3', 'a', 'z', { state: 'working' })]
+      const view = goToView(input({ spaces: [space('a')], tabs, query: '!', activeSpaceId: 'a' }))
+      expect(view.counts).toEqual({ needsYou: 1, working: 2 })
+      expect(view.results).toBeNull()
+      expect(view.rows.map((row) => row.tabId)).toEqual(['a1'])
+    })
+  })
+
+  describe('results for a query', () => {
+    const spaces = [space('a', 'ass-121', { repoName: 'plat', branch: 'x' }), space('b', 'main', { repoName: 'plat', branch: 'main' }), space('c', 'other', { repoName: 'plat', worktree: true, parent: 'b' })]
+    const tabs = [
+      tab('a1', 'a', 'ass-121', { state: 'finished', since: 5 }),
+      tab('b1', 'b', 'ass-83'),
+      tab('b2', 'b', 'Remaining work on ASS-69', { agent: 'claude' }),
+      tab('c1', 'c', 'zsh', { state: 'working' }),
+    ]
+    const view = goToView(input({ spaces, tabs, query: 'ass', activeSpaceId: 'c', expandQuiet: true }))
+
+    it('lists worktrees, then tabs, flat, with the match marked and a muted line', () => {
+      expect(view.results!.worktrees.map((row) => [row.key, row.name, row.where, row.matched])).toEqual([['space:a', 'ass-121', 'plat', [0, 1, 2]]])
+      expect(view.results!.tabs.map((row) => [row.key, row.where, row.matched])).toEqual([
+        ['b1', 'plat / main', [0, 1, 2]],
+        ['b2', 'plat / main', [18, 19, 20]],
+      ])
+      expect(view.rows.map((row) => row.key)).toEqual(['space:a', 'b1', 'b2'])
+    })
+
+    it('starts on the top hit, and a worktree row goes to the tab that decides its state', () => {
+      expect(view.highlight).toBe('space:a')
+      expect(view.rows[0]).toMatchObject({ tabId: 'a1', state: 'finished', stateLabel: 'finished', since: 5 })
+    })
+
+    it('does not list the sole tab of a listed worktree again', () => {
+      expect(view.results!.tabs.map((row) => row.tabId)).not.toContain('a1')
+    })
+
+    it('sends a worktree row to the tab that needs you, and counts what it has open', () => {
+      const several = goToView(
+        input({
+          spaces: [space('w', 'feature')],
+          tabs: [tab('w1', 'w', 'one', { agent: 'claude' }), tab('w2', 'w', 'two', { agent: 'claude', state: 'needs-you' }), tab('w3', 'w', 'sh')],
+          recent: ['w1'],
+          query: 'feat',
+          activeSpaceId: 'w',
+        }),
+      )
+      expect(several.results!.worktrees[0]).toMatchObject({ tabId: 'w2', open: { agents: 2, terminals: 1, agent: 'claude' } })
+    })
+
+    it('counts the matching tabs by state for the chips, whatever the state filters say', () => {
+      expect(view.counts).toEqual({ needsYou: 0, working: 0 })
+      expect(goToView(input({ spaces: [space('a')], tabs: [tab('a1', 'a', 'build', { state: 'working' })], query: '~ bui', activeSpaceId: 'a' })).counts).toEqual({ needsYou: 0, working: 1 })
+    })
+  })
+
+  it('finds the places a word matched', () => {
+    expect(fuzzyMatch('ass', 'x-ass-1')?.at).toEqual([2, 3, 4])
+    expect(fuzzyMatch('zz', 'abc')).toBeNull()
+  })
+
+  it('names a tab with no name of its own by what it runs and where, or by its agent', () => {
+    expect(unnamedTabName({ agent: null, foreground: 'zsh', cwd: '/Users/me/git/app' }, '/Users/me')).toBe('zsh ~/git/app')
+    expect(unnamedTabName({ agent: null, foreground: null, cwd: null }, '/Users/me')).toBe('shell')
+    expect(unnamedTabName({ agent: 'claude', foreground: 'claude', cwd: '/x' }, '')).toBe('claude, untitled')
   })
 })

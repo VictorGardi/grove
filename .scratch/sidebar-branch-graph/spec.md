@@ -1,5 +1,5 @@
 Status: shipped
-Shipped as specified. Follow-up: Go to now draws the same tree instead of letter tiles.
+Shipped as specified. Follow-up: Go to now draws the same tree instead of letter tiles, and becomes a compact palette (flat ranked results while typing, Enter on a worktree goes to its tab that needs you).
 
 # Sidebar as a branch graph
 

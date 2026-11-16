@@ -28,7 +28,7 @@ import { noViewState, storageViewState } from './view-state.ts'
 import { quietLabel, quietSpaces } from './quiet-spaces.ts'
 import { foldQuiet, headingOf, headingOpen, jumpTargets, mostUrgent, nextUrgent, rowName, rowSummary, shortFolder, sidebarItems, sidebarSpaceOrder, spaceAt, type SidebarItem, type RowSummary, type SidebarRow, type SummaryTab } from './sidebar-model.ts'
 import { createWindowStore, type Tab, type TabKind } from './window-store.ts'
-import { contextMeter, hideContextTip, markWithContext } from './context-badge.ts'
+import { contextMeter, hideContextTip } from './context-badge.ts'
 import { createTabPill, type TabPill } from './tab-pill.ts'
 import { createNotesEditor } from './notes-editor.ts'
 import { diffModule, notesModule, usageModule } from './dock-modules.ts'
@@ -36,6 +36,7 @@ import { createHostBus, mountModules } from './modules.ts'
 import { createDock } from './dock.ts'
 import { settled, summarize } from './diff-model.ts'
 import { createGoTo } from './goto.ts'
+import { unnamedTabName } from './goto-model.ts'
 import { createRenameModal } from './rename-modal.ts'
 import { createContextMenu } from './context-menu.ts'
 import { createSpaceDialog } from './space-dialog.ts'
@@ -180,6 +181,7 @@ const goTo = createGoTo(
     modal: byId('goto-modal'),
     input: byId('goto-input') as HTMLInputElement,
     chips: [byId('goto-chip-needs') as HTMLButtonElement, byId('goto-chip-working') as HTMLButtonElement],
+    count: byId('goto-count'),
     list: byId('goto-list'),
   },
   {
@@ -191,9 +193,10 @@ const goTo = createGoTo(
       tabs: store.tabs.map((tab) => ({
         id: tab.id,
         spaceId: tab.spaceId,
-        name: tabName(tab),
+        name: goToTabName(tab),
         agent: store.agent(tab.id)?.agent ?? (tab.kind === 'shell' ? null : tab.kind),
         state: stateOf(tab),
+        since: store.agent(tab.id)?.since ?? null,
         reason: store.agent(tab.id)?.reason,
         exited: tab.exited,
       })),
@@ -203,11 +206,8 @@ const goTo = createGoTo(
     }),
     node: (group) => spaceNode(group.state, group.empty),
     indicator: (state, agent) => indicatorEl(state, agent ?? undefined),
-    agentMark: (row) => {
-      const mark = markEl(row.agent)
-      mark.title = row.agentName
-      return markWithContext(mark, store.agent(row.tabId)?.context, row.agent)
-    },
+    mark: (agent) => markEl(agent ?? 'shell'),
+    age: (since) => formatAge(Date.now() - since),
     go: (tabId, inGrid) => {
       activate(tabId)
       if (inGrid) showInGrid()
@@ -215,7 +215,7 @@ const goTo = createGoTo(
     closed: focusActive,
   },
 )
-byId('search-button').addEventListener('click', () => goTo.open())
+byId('search-button').addEventListener('click', openGoTo)
 // The dock is the right sidebar: one panel at a time, each with a key binding. The notes are the first panel; they are one markdown
 // file kept by the core. The dock is not modal, so key bindings keep working while a panel has focus.
 const dock = createDock(
@@ -354,7 +354,7 @@ const keyActions: Record<KeyAction, () => void> = {
     const newest = store.tabs.at(-1)
     if (newest) activate(newest.id)
   },
-  palette: () => goTo.open(),
+  palette: openGoTo,
   'sidebar-toggle': () => sidebarToggle.click(),
   notes: () => rail.toggle('notes')?.(),
   diff: () => rail.toggle('diff')?.(),
@@ -399,6 +399,27 @@ function element(tag: string, className: string, text = ''): HTMLElement {
 
 function spaceName(spaceId: string): string {
   return store.space(spaceId)?.name ?? spaceId
+}
+
+// What each tab runs and where, as the core lists it; read when Go to opens, for the tabs that have no name of their own.
+let tabHints = new Map<string, { foreground: string | null; cwd: string }>()
+
+function openGoTo(): void {
+  goTo.open()
+  void bridge
+    .rpc('tabs.list', {})
+    .then((tabs) => {
+      tabHints = new Map(tabs.map((tab) => [tab.id, { foreground: tab.foreground, cwd: tab.cwd }]))
+      goTo.refresh()
+    })
+    .catch(() => {})
+}
+
+// A tab's name in Go to: its own, else what it runs and where (never a bare number).
+function goToTabName(tab: Tab): string {
+  if (store.hasName(tab.id)) return tabName(tab)
+  const hint = tabHints.get(tab.id)
+  return unnamedTabName({ agent: store.agent(tab.id)?.agent ?? (tab.kind === 'shell' ? null : tab.kind), foreground: hint?.foreground ?? null, cwd: hint?.cwd ?? null }, homeDir)
 }
 
 // The tab's name: the one the user gave it, else "Tab N".
