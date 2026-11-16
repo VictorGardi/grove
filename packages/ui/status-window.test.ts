@@ -1,6 +1,6 @@
 // @vitest-environment happy-dom
 // The window's status path, through the real entry point: the core's status.changed notifications arrive on the bridge's
-// channel and must draw the indicator on the tab strip, the pane header, the agents list and the space tile. Each agent
+// channel and must draw the indicator on the tab strip, the pane header and the sidebar's rows. Each agent
 // is typed by hand into a shell tab, as a human does, so its tab was created as a shell.
 import { readFileSync } from 'node:fs'
 import path from 'node:path'
@@ -101,34 +101,40 @@ function notify(method: string, params: unknown): void {
   fake.channel!.onmessage(JSON.stringify({ jsonrpc: '2.0', method, params }))
 }
 
-function change(tabId: string, agent: StatusChange['agent'], state: AgentStateName): StatusChange {
+function change(tabId: string, agent: StatusChange['agent'], state: AgentStateName, since = 1_000): StatusChange {
   return {
     tabId,
     agent,
     state,
     ...(state === 'needs-you' ? { reason: 'permission' as const } : {}),
-    since: 1_000,
+    since,
     source: agent,
   }
 }
 
 // The indicator each part of the window draws for a tab, found by what it shows.
-function indicatorsFor(label: string): Record<'pill' | 'pane' | 'agent' | 'space', string | null> {
+function indicatorsFor(label: string): Record<'pill' | 'pane', string | null> {
   const classOf = (root: Element | null) => root?.querySelector('.indicator')?.className ?? null
   const pill = [...document.querySelectorAll('#tabs > *')].find((el) => el.textContent?.includes(label)) ?? null
   const pane = [...document.querySelectorAll('#terminals .pane')].find((el) => el.querySelector('.pane-kind')?.textContent === label) ?? null
-  const agent = [...document.querySelectorAll('#agents .agent-row')].find((el) => el.querySelector('.agent-label')?.textContent === label) ?? null
-  return {
-    pill: classOf(pill),
-    pane: classOf(pane?.querySelector('.pane-head') ?? null),
-    agent: classOf(agent),
-    space: null,
-  }
+  return { pill: classOf(pill), pane: classOf(pane?.querySelector('.pane-head') ?? null) }
 }
 
-function spaceIndicator(): string | null {
-  return document.querySelector('#spaces .space .indicator')?.className ?? null
+// A space's row in the sidebar, by the space's id.
+function row(spaceId: string): HTMLElement | null {
+  return document.querySelector<HTMLElement>(`#spaces .space[data-space-id="${spaceId}"]`)
 }
+
+const lines = (spaceId: string) => ({
+  name: row(spaceId)?.querySelector('.space-name')?.textContent ?? null,
+  time: row(spaceId)?.querySelector('.space-time')?.textContent ?? null,
+  detail: row(spaceId)?.querySelector('.space-detail')?.textContent ?? null,
+  node: row(spaceId)?.querySelector('.indicator')?.className ?? null,
+})
+
+const space = (id: string, extra: Record<string, unknown> = {}) => ({
+  id, path: `/Users/test/${id}`, name: id, label: null, repoName: null, parent: null, worktree: false, branch: null, ...extra,
+})
 
 describe('window status path', () => {
   beforeAll(async () => {
@@ -201,7 +207,6 @@ describe('window status path', () => {
         const shown = indicatorsFor(label)
         expect(shown.pill, `${label} tab strip, ${state}`).toBe(`indicator ind-${state}`)
         expect(shown.pane, `${label} pane header, ${state}`).toBe(`indicator ind-${state}`)
-        expect(shown.agent, `${label} agents list, ${state}`).toBe(`indicator ind-${state}`)
       }
       if (state === 'working') {
         const workingIndicator = [...document.querySelectorAll('#tabs .indicator')].find((node) =>
@@ -209,11 +214,7 @@ describe('window status path', () => {
         )
         expect(workingIndicator?.querySelectorAll('.agent-thinking-dot')).toHaveLength(3)
       }
-      const sidebarGridMarker = [...document.querySelectorAll('#agents .agent-row')]
-        .find((row) => row.querySelector('.agent-label')?.textContent === 'claude')
-        ?.querySelector('.tab-grid svg.icon-grid')
-      expect(sidebarGridMarker?.querySelectorAll('circle')).toHaveLength(4)
-      expect(spaceIndicator(), `space tile, ${state}`).toBe(`indicator ind-${state}`)
+      expect(lines('s1').node, `sidebar row, ${state}`).toBe(`indicator ind-${state}`)
     }
   })
 
@@ -258,10 +259,90 @@ describe('window status path', () => {
     for (const indicator of document.querySelectorAll('.indicator.ind-working')) {
       expect(indicator.querySelectorAll('.agent-wave-bar')).toHaveLength(3)
     }
+    expect(document.querySelectorAll('#spaces .indicator.ind-working .agent-wave-bar')).toHaveLength(3)
 
     document.querySelector<HTMLButtonElement>('#appearance-needs-you [aria-label="Waiting color: Theme default"]')!.click()
     expect(root.style.getPropertyValue('--agent-state-needs-you')).toBe('')
     expect(JSON.parse(localStorage.getItem('grove.agent-appearance')!).needsYou).toBeNull()
+  })
+
+  it('shows a space as two lines: its name and time, then the deciding tab and what is open', () => {
+    const since = Date.now() - 90_000
+    notify('status.changed', change('tab-claude', 'claude', 'needs-you', since))
+    notify('status.changed', change('tab-copilot', 'copilot', 'working'))
+    notify('status.changed', change('tab-opencode', 'opencode', 'idle'))
+    expect(lines('s1')).toMatchObject({ name: 'proj', time: '1m', detail: 'claude · 3 agents', node: 'indicator ind-needs-you' })
+    expect(row('s1')?.classList.contains('working')).toBe(false)
+    notify('status.changed', change('tab-claude', 'claude', 'idle'))
+    expect(row('s1')?.classList.contains('working')).toBe(true)
+    expect(lines('s1').detail).toBe('copilot · 3 agents')
+    notify('status.changed', change('tab-claude', 'claude', 'finished', since))
+    expect(lines('s1')).toMatchObject({ time: '1m', detail: 'claude · 3 agents', node: 'indicator ind-finished' })
+    expect(row('s1')?.textContent).not.toContain('Ready')
+  })
+
+  it('opens the tab a row names when it needs you or has finished, else the one last visited', () => {
+    notify('status.changed', change('tab-opencode', 'opencode', 'finished'))
+    notify('status.changed', change('tab-claude', 'claude', 'idle'))
+    row('s1')!.click()
+    expect(document.querySelector('#tabs > .active')?.textContent).toContain('opencode')
+    notify('status.changed', change('tab-opencode', 'opencode', 'working'))
+    document.querySelector<HTMLElement>('#tabs > :not(.active)')!.querySelector<HTMLElement>('.tab-main')!.click()
+    const visited = document.querySelector('#tabs > .active')?.textContent
+    notify('spaces.changed', space('other'))
+    notify('tabs.opened', { ...TABS[0], id: 'other-tab', spaceId: 'other', spacePath: '/Users/test/other', label: 'other' })
+    row('other')!.click()
+    row('s1')!.click()
+    expect(document.querySelector('#tabs > .active')?.textContent).toBe(visited)
+    notify('tabs.closed', { id: 'other-tab' })
+    notify('spaces.removed', { id: 'other' })
+  })
+
+  it('shows a plain space with no tabs on one line, and no tabs open on a worktree', () => {
+    notify('spaces.changed', space('empty', { branch: 'dev' }))
+    expect(lines('empty')).toMatchObject({ name: 'empty', time: null, detail: null, node: 'indicator ind-unknown' })
+    expect(row('empty')?.textContent).toContain('dev')
+    notify('spaces.changed', space('empty-wt', { worktree: true, repoName: 'empty', parent: 'empty' }))
+    expect(lines('empty-wt')).toMatchObject({ detail: 'No tabs open', time: null, node: 'indicator ind-unknown' })
+    expect(row('empty-wt')?.getAttribute('title')).toBe('/Users/test/empty-wt')
+    expect(row('empty-wt')?.querySelector('.indicator')?.getAttribute('aria-label')).toBe('no tabs open')
+    notify('spaces.removed', { id: 'empty-wt' })
+    notify('spaces.removed', { id: 'empty' })
+  })
+
+  it('counts a terminal with no time; a plain space is two lines while it has a live tab', () => {
+    notify('spaces.changed', space('shells', { branch: 'dev' }))
+    notify('tabs.opened', { ...TABS[0], id: 'shell-a', spaceId: 'shells', spacePath: '/Users/test/shells', label: 'sh' })
+    expect(lines('shells')).toMatchObject({ name: 'shells', time: null, detail: 'sh · 1 terminal', node: 'indicator ind-idle' })
+    notify('tabs.exit', { id: 'shell-a', exitCode: 0 })
+    expect(lines('shells')).toMatchObject({ detail: null, node: 'indicator ind-unknown' })
+    notify('tabs.closed', { id: 'shell-a' })
+    notify('spaces.removed', { id: 'shells' })
+  })
+
+  it('draws a repo with worktrees under a heading, and clicking the heading changes nothing', () => {
+    notify('spaces.changed', space('s1', { path: '/Users/test/proj', name: 'proj', repoName: 'proj', branch: 'main' }))
+    notify('spaces.changed', space('proj-wt', { name: 'proj-wt', worktree: true, repoName: 'proj', parent: 's1', branch: 'feat' }))
+    notify('spaces.changed', space('lone-wt', { name: 'lone-wt', worktree: true, repoName: 'lone', branch: 'x' }))
+    const headings = [...document.querySelectorAll('#spaces .heading')]
+    expect(headings.map((el) => el.querySelector('.heading-name')?.textContent)).toEqual(['proj', 'lone'])
+    expect([...headings[0].querySelectorAll('.space-name')].map((el) => el.textContent)).toEqual(['main', 'proj-wt'])
+    expect([...headings[1].querySelectorAll('.space-name')].map((el) => el.textContent)).toEqual(['lone-wt'])
+    expect(headings[0].querySelector('.heading-name')?.closest('button')).toBeNull()
+    const active = document.querySelector('#tabs > .active')?.textContent
+    headings[0].querySelector<HTMLElement>('.heading-name')!.click()
+    expect(row('s1')?.getAttribute('aria-current')).toBe('true')
+    expect(document.querySelector('#tabs > .active')?.textContent).toBe(active)
+    expect(lines('s1').name).toBe('main')
+    notify('spaces.removed', { id: 'proj-wt' })
+    notify('spaces.removed', { id: 'lone-wt' })
+    notify('spaces.changed', space('s1', { path: '/Users/test/proj', name: 'proj' }))
+    expect(document.querySelector('#spaces .heading')).toBeNull()
+  })
+
+  it('names no agent type anywhere in the sidebar, and draws no mark or tile', () => {
+    expect(document.querySelector('#spaces .agent-mark, #spaces .space-tile, #agents')).toBeNull()
+    expect(document.querySelector('#spaces')?.textContent).not.toMatch(/Claude|Copilot|OpenCode/)
   })
 
   it('shows an unknown agent minimum-version hint only while its PTY is live', () => {

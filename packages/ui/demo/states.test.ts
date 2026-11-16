@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { tabStateOf } from '../sidebar-model.ts'
+import { rowSummary, tabStateOf } from '../sidebar-model.ts'
 import { demoRows, isDemoStates } from './states.ts'
 
 describe('isDemoStates', () => {
@@ -20,9 +20,9 @@ describe('demoRows', () => {
     return tabStateOf({ exited: tab.exited, kind: tab.kind, state: agent?.state ?? null })
   })
 
-  it('has four spaces with distinct ids, one of them a worktree, and two at one folder', () => {
-    expect(rows.spaces).toHaveLength(4)
-    expect(new Set(rows.spaces.map((space) => space.id)).size).toBe(4)
+  it('has five spaces with distinct ids, one of them a worktree, and two at one folder', () => {
+    expect(rows.spaces).toHaveLength(5)
+    expect(new Set(rows.spaces.map((space) => space.id)).size).toBe(5)
     expect(rows.spaces.filter((space) => space.parent !== null)).toHaveLength(1)
     const paths = rows.spaces.map((space) => space.path)
     expect(paths.length - new Set(paths).size).toBe(1)
@@ -36,6 +36,16 @@ describe('demoRows', () => {
   it('has a tab in each of the five states', () => {
     const live = states.filter((_, index) => !rows.tabs[index]?.exited)
     expect([...new Set(live)].sort()).toEqual(['finished', 'idle', 'needs-you', 'unknown', 'working'])
+  })
+
+  it('gives each state to a different space, so the sidebar shows them all', () => {
+    const shown = rows.spaces.map((space) => {
+      const tabs = rows.tabs.flatMap((tab, index) =>
+        tab.spaceId === space.id ? [{ id: tab.id, name: tab.id, agent: tab.kind !== 'shell', exited: tab.exited, state: states[index]!, since: null }] : [],
+      )
+      return rowSummary(tabs, []).state
+    })
+    expect([...shown].sort()).toEqual(['finished', 'idle', 'needs-you', 'unknown', 'working'])
   })
 
   it('has a gone tab, and every tab sits in a space it names by id', () => {

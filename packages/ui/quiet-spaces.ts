@@ -1,4 +1,4 @@
-// Which spaces are quiet, for every list that folds them (Go to and the agents in the sidebar), so both fold the same ones.
+// Which spaces are quiet, for every list that folds them (Go to today; the sidebar again in a later slice), so both fold the same ones.
 // Plain functions, so they run in tests without a DOM.
 import type { AgentStateName } from '../protocol/messages.ts'
 

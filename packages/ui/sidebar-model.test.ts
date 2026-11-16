@@ -1,10 +1,21 @@
 import { describe, expect, it } from 'vitest'
-import type { AgentInfo, AgentStateName } from '../protocol/messages.ts'
-import { groupAgents, jumpTargets, nextUrgent, shortFolder, sidebarSpaceOrder, spaceAt, tabStateOf, tileIndex, urgentTabs } from './sidebar-model.ts'
-
-function agent(state: AgentStateName, since: number): AgentInfo {
-  return { tabId: 't', agent: 'claude', state, since, source: 'hook', resumable: false }
-}
+import type { AgentStateName } from '../protocol/messages.ts'
+import {
+  jumpTargets,
+  nextUrgent,
+  openCounts,
+  rowName,
+  rowSummary,
+  shortFolder,
+  sidebarItems,
+  sidebarSpaceOrder,
+  spaceAt,
+  tabStateOf,
+  tileIndex,
+  urgentTabs,
+  type SidebarSpace,
+  type SummaryTab,
+} from './sidebar-model.ts'
 
 describe('tabStateOf', () => {
   it('gives idle for a gone tab, whatever state it holds', () => {
@@ -30,47 +41,57 @@ describe('tabStateOf', () => {
   })
 })
 
-describe('groupAgents', () => {
-  const row = (spaceId: string, state: AgentStateName, since: number, tabNumber = 1) => ({
-    spaceId,
-    tabNumber,
-    agent: agent(state, since),
+describe('rowSummary', () => {
+  const tab = (id: string, state: AgentStateName, extra: Partial<SummaryTab> = {}): SummaryTab => ({
+    id,
+    name: `Tab ${id}`,
+    agent: true,
     exited: false,
+    state,
+    since: 1_000,
+    ...extra,
   })
 
-  it('sorts a gone row as idle, whatever its last stored state was', () => {
-    const gone = { ...row('/a', 'needs-you', 1, 1), exited: true }
-    const [group] = groupAgents(['/a'], [gone, row('/a', 'working', 9, 2)])
-    expect(group.rows.map((item) => item.tabNumber)).toEqual([2, 1])
+  it('is empty for a space with no tabs, and for one with only gone tabs', () => {
+    expect(rowSummary([], []).empty).toBe(true)
+    const gone = rowSummary([tab('a', 'needs-you', { exited: true })], [])
+    expect(gone).toMatchObject({ empty: true, state: 'idle', tabId: null, tabName: null, agents: 0, terminals: 0, since: null })
   })
 
-  it('keeps the space order and leaves out spaces with no agents', () => {
-    const groups = groupAgents(['/a', '/b', '/c'], [row('/c', 'idle', 1), row('/a', 'working', 2)])
-    expect(groups.map((group) => group.spaceId)).toEqual(['/a', '/c'])
+  it('decides by needs-you, finished, working, unknown, idle', () => {
+    const states: AgentStateName[] = ['idle', 'unknown', 'working', 'finished', 'needs-you']
+    for (let i = 0; i < states.length; i++) {
+      const tabs = states.slice(0, i + 1).map((state, at) => tab(String(at), state))
+      expect(rowSummary(tabs, []).state).toBe(states[i])
+    }
   })
 
-  it('groups by space id, so two spaces at one folder get their own groups', () => {
-    const groups = groupAgents(['first', 'second'], [row('second', 'idle', 1), row('first', 'working', 2)])
-    expect(groups.map((group) => group.spaceId)).toEqual(['first', 'second'])
-    expect(groups.map((group) => group.rows.length)).toEqual([1, 1])
+  it('names the deciding tab, and gives a tie to the most recently visited one', () => {
+    const tabs = [tab('a', 'working'), tab('b', 'working'), tab('c', 'idle')]
+    expect(rowSummary(tabs, ['c', 'b', 'a']).tabId).toBe('b')
+    expect(rowSummary(tabs, ['a']).tabId).toBe('a')
+    expect(rowSummary(tabs, []).tabId).toBe('a')
   })
 
-  it('orders each group by urgency, then by the longest wait', () => {
-    const rows = [
-      row('/a', 'idle', 1, 1),
-      row('/a', 'needs-you', 50, 2),
-      row('/a', 'working', 5, 3),
-      row('/a', 'needs-you', 10, 4),
-      row('/a', 'unknown', 0, 5),
-    ]
-    const [group] = groupAgents(['/a'], rows)
-    expect(group?.rows.map((item) => item.tabNumber)).toEqual([4, 2, 3, 5, 1])
+  it('counts live agent and terminal tabs, and leaves gone tabs out', () => {
+    const tabs = [tab('a', 'idle'), tab('b', 'idle'), tab('c', 'idle', { agent: false }), tab('d', 'idle', { exited: true }), tab('e', 'idle', { agent: false, exited: true })]
+    expect(rowSummary(tabs, [])).toMatchObject({ agents: 2, terminals: 1 })
   })
 
-  it('puts the finished rows after working and before unknown', () => {
-    const rows = [row('/a', 'unknown', 1, 1), row('/a', 'finished', 9, 2), row('/a', 'working', 9, 3)]
-    const [group] = groupAgents(['/a'], rows)
-    expect(group?.rows.map((item) => item.tabNumber)).toEqual([3, 2, 1])
+  it('shows the start of the deciding tab\'s state, and no time when it has none', () => {
+    expect(rowSummary([tab('a', 'working', { since: 5 }), tab('b', 'idle', { since: 9 })], []).since).toBe(5)
+    expect(rowSummary([tab('a', 'idle', { agent: false, since: null })], []).since).toBeNull()
+  })
+})
+
+describe('openCounts', () => {
+  it('counts by type, in singular and plural, and leaves out a zero', () => {
+    expect(openCounts({ agents: 4, terminals: 1 })).toBe('4 agents, 1 terminal')
+    expect(openCounts({ agents: 1, terminals: 0 })).toBe('1 agent')
+    expect(openCounts({ agents: 0, terminals: 2 })).toBe('2 terminals')
+  })
+  it('says no tabs are open for none', () => {
+    expect(openCounts({ agents: 0, terminals: 0 })).toBe('No tabs open')
   })
 })
 
@@ -104,19 +125,89 @@ describe('shortFolder', () => {
   })
 })
 
-describe('sidebarSpaceOrder', () => {
-  it('lists each top-level space, then its worktrees, as the sidebar draws them', () => {
+const space = (id: string, extra: Partial<SidebarSpace> = {}): SidebarSpace => ({
+  id,
+  name: id,
+  label: null,
+  parent: null,
+  worktree: false,
+  repoName: null,
+  branch: null,
+  ...extra,
+})
+
+// What the sidebar draws, as heading names with their row ids and plain ids.
+const shape = (spaces: SidebarSpace[]) =>
+  sidebarItems(spaces).map((item) => (item.kind === 'heading' ? { [item.repo]: item.rows.map((row) => row.space.id) } : item.row.space.id))
+
+describe('sidebarItems', () => {
+  it('draws a repo with worktrees as a heading with its main checkout first, and other spaces plain', () => {
     const spaces = [
-      { id: 'a', parent: null },
-      { id: 'a-wt', parent: 'a' },
-      { id: 'c', parent: null },
-      { id: 'd', parent: null },
-      { id: 'd-wt', parent: 'd' },
+      space('a', { repoName: 'app' }),
+      space('plain'),
+      space('a-wt', { parent: 'a', worktree: true, repoName: 'app' }),
+      space('a-wt2', { parent: 'a', worktree: true, repoName: 'app' }),
     ]
-    expect(sidebarSpaceOrder(spaces)).toEqual(['a', 'a-wt', 'c', 'd', 'd-wt'])
+    expect(shape(spaces)).toEqual([{ app: ['a', 'a-wt', 'a-wt2'] }, 'plain'])
   })
-  it('lists a worktree whose repo is missing as top-level', () => {
-    expect(sidebarSpaceOrder([{ id: 'x', parent: 'gone' }])).toEqual(['x'])
+
+  it('gives a worktree whose main checkout is not a space a heading named after the repo', () => {
+    const spaces = [space('x-wt', { worktree: true, repoName: 'app' }), space('x-wt2', { worktree: true, repoName: 'app' })]
+    expect(shape(spaces)).toEqual([{ app: ['x-wt', 'x-wt2'] }])
+  })
+
+  it('keeps the heading when the main checkout is added later, with the checkout as the first row', () => {
+    const wt = space('wt', { parent: null, worktree: true, repoName: 'app' })
+    expect(shape([wt])).toEqual([{ app: ['wt'] }])
+    expect(shape([space('main', { repoName: 'app' }), { ...wt, parent: 'main' }])).toEqual([{ app: ['main', 'wt'] }])
+  })
+
+  it('keeps the worktrees under the repo when the main checkout space is removed', () => {
+    const spaces = [space('wt', { parent: 'gone', worktree: true, repoName: 'app' })]
+    expect(shape(spaces)).toEqual([{ app: ['wt'] }])
+  })
+
+  it('leaves a second space on one folder as its own row', () => {
+    const spaces = [space('a', { repoName: 'app' }), space('a-wt', { parent: 'a', worktree: true, repoName: 'app' }), space('a-2', { repoName: 'app' })]
+    expect(shape(spaces)).toEqual([{ app: ['a', 'a-wt'] }, 'a-2'])
+  })
+
+  it('shows a space git cannot place as a plain row', () => {
+    expect(shape([space('odd', { worktree: true })])).toEqual(['odd'])
+  })
+
+  it('is empty for no spaces', () => {
+    expect(sidebarItems([])).toEqual([])
+  })
+})
+
+describe('rowName', () => {
+  const main = (extra: Partial<SidebarSpace>) => ({ space: space('m', { name: 'folder', ...extra }), main: true })
+
+  it('names a main checkout by its rename, else its branch, else its folder', () => {
+    expect(rowName(main({ label: 'mine', branch: 'dev' }))).toBe('mine')
+    expect(rowName(main({ branch: 'dev' }))).toBe('dev')
+    expect(rowName(main({}))).toBe('folder')
+  })
+
+  it('names any other space by its space name', () => {
+    expect(rowName({ space: space('w', { name: 'wt-name', branch: 'feature' }), main: false })).toBe('wt-name')
+  })
+})
+
+describe('sidebarSpaceOrder', () => {
+  it('lists the rows of each heading and each plain space as the sidebar draws them, folded rows included', () => {
+    const spaces = [
+      space('a', { repoName: 'app' }),
+      space('c'),
+      space('a-wt', { parent: 'a', worktree: true, repoName: 'app' }),
+      space('d'),
+    ]
+    expect(sidebarSpaceOrder(spaces)).toEqual(['a', 'a-wt', 'c', 'd'])
+  })
+  it('lists a worktree whose repo is missing under its repo, with the others of that repo', () => {
+    const spaces = [space('x', { parent: 'gone', worktree: true, repoName: 'app' }), space('y'), space('z', { worktree: true, repoName: 'app' })]
+    expect(sidebarSpaceOrder(spaces)).toEqual(['x', 'z', 'y'])
   })
   it('is empty for no spaces', () => {
     expect(sidebarSpaceOrder([])).toEqual([])

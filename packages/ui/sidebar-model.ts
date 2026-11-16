@@ -1,8 +1,9 @@
 // The sidebar and tab strip's rules as plain functions, so they run in tests without a DOM.
-import type { AgentInfo, AgentStateName, ContextUsage } from '../protocol/messages.ts'
+import type { AgentStateName, ContextUsage } from '../protocol/messages.ts'
 import type { AgentKind } from '../core/status/adapter.ts'
 import { contextLevel } from '../protocol/context-level.ts'
 import { URGENCY } from '../protocol/rollup.ts'
+import { visitRank } from './quiet-spaces.ts'
 
 export interface TabStateInput {
   exited: boolean
@@ -17,34 +18,6 @@ export function tabStateOf(tab: TabStateInput): AgentStateName {
   if (tab.exited) return 'idle'
   if (tab.state !== null) return tab.state
   return tab.kind === 'shell' ? 'idle' : 'unknown'
-}
-
-export interface AgentRowInput {
-  spaceId: string
-  tabNumber: number
-  agent: AgentInfo
-  exited: boolean
-}
-
-// The row's rank as the row shows it: a gone tab shows idle, whatever its last stored state was.
-function urgencyOf(row: AgentRowInput): number {
-  return URGENCY.indexOf(row.exited ? 'idle' : row.agent.state)
-}
-
-// One group per space id, in the order of `spaceIds`. Empty groups are left out. Within a group, the most urgent row comes first,
-// then the one waiting longest (the smallest `since`).
-export function groupAgents<T extends AgentRowInput>(
-  spaceIds: string[],
-  rows: T[],
-): Array<{ spaceId: string; rows: T[] }> {
-  const groups: Array<{ spaceId: string; rows: T[] }> = []
-  for (const spaceId of spaceIds) {
-    const own = rows
-      .filter((row) => row.spaceId === spaceId)
-      .sort((a, b) => urgencyOf(a) - urgencyOf(b) || a.agent.since - b.agent.since)
-    if (own.length > 0) groups.push({ spaceId, rows: own })
-  }
-  return groups
 }
 
 export interface WorktreeInput extends SpaceOrderInput {
@@ -78,11 +51,80 @@ export interface SpaceOrderInput {
   parent: string | null
 }
 
-// The space ids in the order the sidebar lists them: each top-level space, then its worktrees. A worktree whose repo is not listed is top-level.
-export function sidebarSpaceOrder(spaces: SpaceOrderInput[]): string[] {
-  const ids = new Set(spaces.map((space) => space.id))
-  const top = spaces.filter((space) => !space.parent || !ids.has(space.parent))
-  return top.flatMap((space) => [space.id, ...spaces.filter((child) => child.parent === space.id).map((child) => child.id)])
+export interface SidebarSpace extends SpaceOrderInput {
+  name: string
+  // The name the human gave, or null.
+  label: string | null
+  worktree: boolean
+  repoName: string | null
+  branch: string | null
+}
+
+// A space as a row: a main checkout is a row beside the worktree spaces under its repo's heading, and is named differently.
+export interface SidebarRow<T extends SidebarSpace = SidebarSpace> {
+  space: T
+  main: boolean
+}
+
+// What the sidebar lists, top to bottom: a repo's heading with its rows (its main checkout spaces first, then its worktree
+// spaces), or a plain space with no heading. The heading is keyed by the repo's name, not by a main checkout space, so it
+// survives that space being added or removed.
+export type SidebarItem<T extends SidebarSpace = SidebarSpace> =
+  | { kind: 'heading'; repo: string; rows: Array<SidebarRow<T>> }
+  | { kind: 'plain'; row: SidebarRow<T> }
+
+// The repo a worktree space belongs to: its own repo name, else its main checkout space's. Null when the space is not a worktree,
+// or when git could not say which repo it is a worktree of: it is then a plain row.
+function repoOf(space: SidebarSpace, byId: Map<string, SidebarSpace>): string | null {
+  if (!space.worktree && space.parent === null) return null
+  const parent = space.parent === null ? undefined : byId.get(space.parent)
+  return space.repoName ?? parent?.repoName ?? parent?.name ?? null
+}
+
+export function sidebarItems<T extends SidebarSpace>(spaces: T[]): Array<SidebarItem<T>> {
+  const byId = new Map(spaces.map((space) => [space.id, space]))
+  // The repo of each main checkout space: that of the first worktree space listed under it.
+  const mainRepo = new Map<string, string>()
+  for (const space of spaces) {
+    const repo = repoOf(space, byId)
+    if (repo !== null && space.parent !== null && byId.has(space.parent) && !mainRepo.has(space.parent)) mainRepo.set(space.parent, repo)
+  }
+  const items: Array<SidebarItem<T>> = []
+  const headings = new Map<string, { mains: Array<SidebarRow<T>>; trees: Array<SidebarRow<T>> }>()
+  const join = (repo: string, row: SidebarRow<T>): void => {
+    let heading = headings.get(repo)
+    if (!heading) {
+      heading = { mains: [], trees: [] }
+      headings.set(repo, heading)
+      items.push({ kind: 'heading', repo, rows: [] })
+    }
+    ;(row.main ? heading.mains : heading.trees).push(row)
+  }
+  for (const space of spaces) {
+    const repo = repoOf(space, byId)
+    const main = mainRepo.get(space.id)
+    if (repo !== null) join(repo, { space, main: false })
+    else if (main !== undefined) join(main, { space, main: true })
+    else items.push({ kind: 'plain', row: { space, main: false } })
+  }
+  for (const item of items) {
+    if (item.kind !== 'heading') continue
+    const heading = headings.get(item.repo)!
+    item.rows = [...heading.mains, ...heading.trees]
+  }
+  return items
+}
+
+// The row's name: a main checkout's is the human's rename, else its branch, else its folder (detached, or git cannot say);
+// any other space's is its name.
+export function rowName(row: SidebarRow): string {
+  const { space } = row
+  return row.main ? (space.label ?? space.branch ?? space.name) : space.name
+}
+
+// The space ids in the order the sidebar lists them, hidden rows included.
+export function sidebarSpaceOrder(spaces: SidebarSpace[]): string[] {
+  return sidebarItems(spaces).flatMap((item) => (item.kind === 'heading' ? item.rows : [item.row]).map((row) => row.space.id))
 }
 
 // The space at place n of the sidebar order, counted from 1. Null for a place past the last space.
@@ -183,4 +225,52 @@ export function contextView(context: ContextUsage | undefined, kind: AgentKind =
   const counts = `${compact(tokens)} / ${compact(window)}${source}`
   const detail = model ? `${counts} · ${model}` : counts
   return { fraction: Math.min(Math.max(pct, 0), 100) / 100, full, warn, handoff, last, headline, detail }
+}
+
+export interface SummaryTab {
+  id: string
+  name: string
+  // An agent tab, whether launched as one or typed into a shell tab and watched.
+  agent: boolean
+  exited: boolean
+  // The state as the tab shows it (see tabStateOf).
+  state: AgentStateName
+  // When the tab's state began (epoch ms); null when the core sent none, as for a shell.
+  since: number | null
+}
+
+// What a row shows of its space's tabs. With no live tab it is empty: `state` is idle, and there is nothing to name.
+export interface RowSummary {
+  empty: boolean
+  state: AgentStateName
+  // The deciding tab: the most urgent live one, ties to the most recently visited.
+  tabId: string | null
+  tabName: string | null
+  agents: number
+  terminals: number
+  // When the deciding tab's state began; null when it has no such time.
+  since: number | null
+}
+
+// `recent` is the tab ids, most recently visited first. A gone tab is left out of the counts and does not decide.
+export function rowSummary(tabs: SummaryTab[], recent: string[]): RowSummary {
+  const live = tabs.filter((tab) => !tab.exited)
+  const [top] = [...live].sort((a, b) => URGENCY.indexOf(a.state) - URGENCY.indexOf(b.state) || visitRank(recent, a.id) - visitRank(recent, b.id))
+  const agents = live.filter((tab) => tab.agent).length
+  return {
+    empty: top === undefined,
+    state: top?.state ?? 'idle',
+    tabId: top?.id ?? null,
+    tabName: top?.name ?? null,
+    agents,
+    terminals: live.length - agents,
+    since: top?.since ?? null,
+  }
+}
+
+// "4 agents, 1 terminal"; "No tabs open" for none.
+export function openCounts(summary: Pick<RowSummary, 'agents' | 'terminals'>): string {
+  const part = (n: number, word: string) => (n === 0 ? [] : [`${n} ${word}${n === 1 ? '' : 's'}`])
+  const parts = [...part(summary.agents, 'agent'), ...part(summary.terminals, 'terminal')]
+  return parts.length === 0 ? 'No tabs open' : parts.join(', ')
 }

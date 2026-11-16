@@ -169,8 +169,7 @@ p {
   overflow-y: auto;
 }
 
-.spaces,
-.agents {
+.spaces {
   list-style: none;
   margin: 0;
   padding: 0 var(--space-3);
@@ -179,49 +178,151 @@ p {
   gap: var(--space-xs);
 }
 
-.agent-rows {
-  list-style: none;
+/* A repo's heading, with its spaces branching off a trunk beneath it. */
+.heading-name {
   margin: 0;
-  padding: 0;
-  display: flex;
-  flex-direction: column;
-  gap: var(--space-xs);
+  padding: var(--space-3) var(--space-4) var(--space-1);
+  min-width: 0;
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+  font-size: var(--text-sm);
+  font-weight: 400;
+  color: var(--color-mute);
 }
 
-.spaces.nested {
-  padding: 0;
+.spaces.graph {
+  padding: 0 0 0 var(--graph-indent);
+}
+
+.graph > li {
+  position: relative;
+  padding-left: var(--graph-branch);
+}
+
+/* The trunk runs down the left of the rows, and ends at the last row's branch. */
+.graph > li::before {
+  content: '';
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  left: 0;
+  border-left: 1px solid var(--color-line);
+}
+
+.graph > li:last-child::before {
+  bottom: auto;
+  height: var(--graph-branch-y);
+}
+
+.graph > li::after {
+  content: '';
+  position: absolute;
+  top: var(--graph-branch-y);
+  left: 0;
+  width: var(--graph-branch);
+  border-top: 1px solid var(--color-line);
 }
 
 .space {
   display: grid;
-  grid-template-columns: var(--size-tile) auto minmax(0, 1fr) auto;
-  align-items: center;
-  gap: var(--space-4);
+  grid-template-columns: var(--ind-container-width) minmax(0, 1fr);
+  align-items: start;
+  gap: var(--space-3);
   width: 100%;
-  padding: var(--space-1) var(--space-4);
+  padding: var(--space-1) var(--space-4) var(--space-1) var(--space-2);
   border-radius: var(--radius-md);
   text-align: left;
 }
 
-/* The indent is the button's own padding, so a selected worktree is highlighted across the full width. */
-.space.worktree {
-  padding-left: calc(var(--space-4) + var(--space-6));
+/* A plain space with no tabs: the name, and the branch on the right. */
+.space.plain {
+  grid-template-columns: var(--ind-container-width) minmax(0, 1fr) auto;
+  align-items: center;
 }
 
-/* A worktree has no coloured tile: the branch mark, in the worktree purple. */
-.space.worktree .space-tile {
-  background: none;
-  color: var(--color-worktree);
+.space .indicator {
+  margin-top: calc((var(--graph-line) - var(--ind-size)) / 2);
 }
 
-.space:hover,
-.agent:hover {
+.space.plain .indicator {
+  margin-top: 0;
+}
+
+.space:hover {
   background: var(--color-raised);
 }
 
-.space[aria-current='true'],
-.agent[aria-current='true'] {
+.space[aria-current='true'] {
   background: var(--color-selected);
+}
+
+.space-text {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+}
+
+.space-line {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+  min-width: 0;
+  min-height: var(--graph-line);
+}
+
+.space-name {
+  min-width: 0;
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+  font-size: var(--text-md);
+}
+
+.space-line .space-name {
+  flex: 1 1 auto;
+}
+
+/* Line 1 is blue while something in the row is working. */
+.space.working .space-name {
+  color: var(--accent);
+}
+
+.space-time {
+  flex: none;
+  font-size: var(--text-meta);
+  color: var(--color-faint);
+  font-variant-numeric: tabular-nums;
+}
+
+.space-detail {
+  min-width: 0;
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+  font-size: var(--text-meta);
+  color: var(--color-mute);
+}
+
+.space-branch {
+  min-width: 0;
+  text-align: right;
+  max-width: 100%;
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+  color: var(--color-faint);
+  font-size: var(--text-meta);
+}
+
+.space-branch:empty {
+  display: none;
+}
+
+/* Go to's worktree tile has no colour either: the branch mark, in the worktree purple. */
+.goto-space .space-tile:not([class*='tile-']) {
+  background: none;
+  color: var(--color-worktree);
 }
 
 .space-tile {
@@ -249,155 +350,12 @@ p {
 .tile-7 { background: var(--tile-7); }
 .tile-8 { background: var(--tile-8); }
 
-.space-name,
-.agent-label,
 .tab-label,
 .pane-kind {
   min-width: 0;
   overflow: hidden;
   white-space: nowrap;
   text-overflow: ellipsis;
-}
-
-.agent-label {
-  font-size: var(--text-md);
-}
-
-.space-name {
-  font-size: var(--text-md);
-}
-
-/* A space speaks up only when something in it needs you. */
-.space .ind-idle,
-.space .ind-unknown {
-  display: none;
-}
-
-.space-branch {
-  min-width: 0;
-  text-align: right;
-  max-width: 100%;
-  overflow: hidden;
-  white-space: nowrap;
-  text-overflow: ellipsis;
-  color: var(--color-faint);
-  font-size: var(--text-meta);
-}
-
-.space-branch:empty {
-  display: none;
-}
-
-/* Agents */
-
-.agents-section {
-  display: flex;
-  flex: 0 1 auto;
-  flex-direction: column;
-  min-height: 0;
-  max-height: 50%;
-  margin-top: var(--space-3);
-  padding-top: var(--space-3);
-  border-top: 1px solid var(--color-rule);
-  overflow-y: auto;
-}
-
-.agent-group {
-  margin: 0 0 var(--space-3);
-}
-
-.agent-group-name {
-  display: flex;
-  align-items: center;
-  gap: var(--space-3);
-  min-width: 0;
-  padding: var(--space-2) var(--space-4) var(--space-1);
-  font-size: var(--text-sm);
-  font-weight: 400;
-  color: var(--color-mute);
-}
-
-.agent-group-name .space-tile {
-  flex: none;
-}
-
-/* A worktree has no coloured tile, in the sidebar's spaces list and in Go to and the agents list alike: the branch mark, in the worktree purple. */
-.goto-space .space-tile:not([class*='tile-']),
-.agent-group-name .space-tile:not([class*='tile-']) {
-  background: none;
-  color: var(--color-worktree);
-}
-
-/* The name, and for a worktree its repo just under it, so a long repo name never takes the name's room. */
-.agent-group-text {
-  display: flex;
-  flex-direction: column;
-  min-width: 0;
-}
-
-.agent-group-title,
-.agent-group-note {
-  min-width: 0;
-  overflow: hidden;
-  white-space: nowrap;
-  text-overflow: ellipsis;
-}
-
-.agent-group-title {
-  color: var(--color-ink);
-}
-
-.agent-group-note {
-  font-size: var(--text-xs);
-  color: var(--color-faint);
-}
-
-.agent-quiet {
-  width: 100%;
-  padding: var(--space-3) var(--space-4);
-  border-top: 1px solid var(--color-rule);
-  text-align: left;
-  font-size: var(--text-sm);
-  color: var(--color-faint);
-}
-
-.agent-quiet:hover {
-  color: var(--color-ink);
-}
-
-.agent-row {
-  display: flex;
-  align-items: center;
-  gap: var(--space-1);
-  min-width: 0;
-}
-
-.agent {
-  display: grid;
-  grid-template-columns: var(--size-mark) minmax(0, 1fr) auto auto;
-  align-items: center;
-  gap: var(--space-4);
-  flex: 1;
-  min-width: 0;
-  padding: var(--space-1) var(--space-4);
-  border-radius: var(--radius-md);
-  text-align: left;
-}
-
-.agent-tail {
-  display: flex;
-  align-items: center;
-  gap: var(--space-1);
-}
-
-.agent-age {
-  font-size: var(--text-meta);
-  color: var(--color-faint);
-  font-variant-numeric: tabular-nums;
-}
-
-.agent-row.gone .agent {
-  color: var(--color-faint);
 }
 
 /* The context ring: a thin ring around the agent mark, cut from a conic fill by a mask. */
@@ -466,10 +424,6 @@ p {
   font-size: var(--text-meta);
   color: var(--color-mute);
   font-variant-numeric: tabular-nums;
-}
-
-.agent-row.gone .agent-label {
-  text-decoration: line-through;
 }
 
 .agent-resume {

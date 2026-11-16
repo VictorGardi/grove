@@ -1,7 +1,7 @@
 import type { AgentStateName } from './messages.ts'
 
-// Most urgent first. The sidebar orders agent rows and rolls a space's tabs up by this order.
-export const URGENCY: readonly AgentStateName[] = ['needs-you', 'working', 'finished', 'unknown', 'idle']
+// Most urgent first. A row's state and a space's roll-up follow this order.
+export const URGENCY: readonly AgentStateName[] = ['needs-you', 'finished', 'working', 'unknown', 'idle']
 
 // The most urgent of the states. No states at all is idle.
 export function mostUrgent(states: Iterable<AgentStateName>): AgentStateName {

@@ -37,14 +37,17 @@ export function applySettings(root: StyleHost, settings: { sidebarWidth: number 
   root.style.setProperty('--sidebar-width', `${settings.sidebarWidth}px`)
 }
 
-// Puts the sidebar sections in the given order before `before` (the footer). Sections not in `order` stay where they are.
+// Puts the sidebar sections in the given order before `before` (the footer). Sections not in `order`, and names with no section, stay where they are.
 export function applyLayout<T>(
   parent: { insertBefore(node: T, before: T | null): unknown },
-  sections: Record<LayoutSection, T>,
+  sections: Partial<Record<LayoutSection, T>>,
   order: LayoutSection[],
   before: T | null,
 ): void {
-  for (const name of order) parent.insertBefore(sections[name], before)
+  for (const name of order) {
+    const section = sections[name]
+    if (section !== undefined) parent.insertBefore(section, before)
+  }
 }
 
 const quote = (word: string): string => `'${word.replace(/'/g, "'\\''")}'`

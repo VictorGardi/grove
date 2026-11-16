@@ -24,25 +24,27 @@ export function isDemoStates(location: { search: string }, dev: boolean): boolea
   return dev && new URLSearchParams(location.search).get('demo') === 'states'
 }
 
-// Four spaces (one a worktree of the first, one a second space at the first's folder), tabs in all five states, one gone tab,
-// and agents with a resumable gone one. Spaces are told apart by id, not by path.
+// Five spaces (one a worktree of the first, one a second space at the first's folder), tabs in all five states so that each
+// space's row shows a different one, one gone tab, and agents with a resumable gone one. Spaces are told apart by id, not by path.
 export function demoRows(now: number = Date.now()): DemoRows {
   const home = '/Users/demo'
   const grove = `${home}/git/grove`
   const worktree = `${home}/git/grove-wt`
   const notes = `${home}/git/notes`
+  const scratch = `${home}/git/scratch`
   const spaces: SpaceInfo[] = [
     { id: 'demo-space-grove', path: grove, name: 'grove', label: null, worktree: false, repoName: 'grove', parent: null, branch: 'main' },
     { id: 'demo-space-wt', path: worktree, name: 'grove-wt', label: null, worktree: true, repoName: 'grove', parent: 'demo-space-grove', branch: 'feature/look' },
     { id: 'demo-space-notes', path: notes, name: 'notes', label: null, worktree: false, repoName: null, parent: null, branch: null },
     { id: 'demo-space-grove-2', path: grove, name: 'grove review', label: null, worktree: false, repoName: 'grove', parent: null, branch: 'main' },
+    { id: 'demo-space-scratch', path: scratch, name: 'scratch', label: null, worktree: false, repoName: null, parent: null, branch: null },
   ]
   const tabs: DemoTab[] = [
     { id: 'demo-1', spaceId: 'demo-space-grove', kind: 'shell', label: null, exited: false },
-    { id: 'demo-2', spaceId: 'demo-space-grove', kind: 'claude', label: 'v2 plan', exited: false },
-    { id: 'demo-3', spaceId: 'demo-space-grove', kind: 'opencode', label: null, exited: false },
+    { id: 'demo-2', spaceId: 'demo-space-wt', kind: 'claude', label: 'v2 plan', exited: false },
+    { id: 'demo-3', spaceId: 'demo-space-grove-2', kind: 'opencode', label: null, exited: false },
     { id: 'demo-4', spaceId: 'demo-space-notes', kind: 'copilot', label: null, exited: false },
-    { id: 'demo-5', spaceId: 'demo-space-notes', kind: 'claude', label: null, exited: false },
+    { id: 'demo-5', spaceId: 'demo-space-scratch', kind: 'claude', label: null, exited: false },
     { id: 'demo-6', spaceId: 'demo-space-wt', kind: 'claude', label: null, exited: true },
     { id: 'demo-7', spaceId: 'demo-space-wt', kind: 'shell', label: 'logs', exited: false },
     { id: 'demo-8', spaceId: 'demo-space-grove-2', kind: 'shell', label: null, exited: false },

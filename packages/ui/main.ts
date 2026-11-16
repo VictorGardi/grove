@@ -25,8 +25,7 @@ import type { KeyValueStore } from './persisted-pref.ts'
 import { readSidebarHidden, writeSidebarHidden } from './sidebar-state.ts'
 import { createFocusSignal } from './focus-signal.ts'
 import { noViewState, storageViewState } from './view-state.ts'
-import { groupAgents, jumpTargets, nextUrgent, shortFolder, sidebarSpaceOrder, spaceAt, tileIndex, worktreeOf } from './sidebar-model.ts'
-import { quietSpaces } from './quiet-spaces.ts'
+import { jumpTargets, nextUrgent, openCounts, rowName, rowSummary, shortFolder, sidebarItems, sidebarSpaceOrder, spaceAt, tileIndex, worktreeOf, type SidebarRow } from './sidebar-model.ts'
 import { createWindowStore, type Tab, type TabKind } from './window-store.ts'
 import { contextMeter, hideContextTip, markWithContext } from './context-badge.ts'
 import { createTabPill, type TabPill } from './tab-pill.ts'
@@ -46,7 +45,6 @@ import { createKeysPanel } from './keys-panel.ts'
 import { indicatorClass, indicatorLabel } from './indicator.ts'
 import { createAgentWorkingMark } from './agent-thinking-dots.ts'
 import { agentIconSvg, iconSvg } from './icons.ts'
-import { rollupSpaces } from '../protocol/rollup.ts'
 import { ERROR_CODES } from '../protocol/messages.ts'
 import type {
   AgentInfo,
@@ -82,15 +80,6 @@ interface TabDom {
   tabEl: HTMLDivElement
   pill: TabPill
   view: TerminalView
-}
-
-// One agent row in the sidebar: the tab it belongs to, with the agent's status.
-interface AgentRow {
-  spaceId: string
-  tabNumber: number
-  agent: AgentInfo
-  exited: boolean
-  tab: Tab
 }
 
 const bridge = createBridge()
@@ -147,8 +136,6 @@ const spaceList = byId('spaces')
 const gridToggle = byId('grid-toggle') as HTMLButtonElement
 const paneDim = byId('pane-dim') as HTMLInputElement
 const gridReset = byId('grid-reset') as HTMLButtonElement
-const agentList = byId('agents')
-const agentsEmpty = byId('agents-empty')
 const installCliButton = byId('install-cli') as HTMLButtonElement
 const installCliStatus = byId('install-cli-status')
 const soundToggle = byId('sound-toggle') as HTMLButtonElement
@@ -885,8 +872,7 @@ function paint(): void {
   }
   paintGrid(members)
   requestAnimationFrame(fitShown)
-  renderSpaces()
-  renderAgents()
+  renderSidebar()
   paintEmpty()
   signalActiveTab(activeSpace, active?.id ?? null)
   const idle = activeSpace === null || store.refused !== null
@@ -968,52 +954,76 @@ function selectSpace(spaceId: string | null, chosenId?: string): void {
   store.selectSpace(spaceId, chosenId)
 }
 
-function renderSpaces(): void {
-  const all = store.spaces()
-  // A space's indicator is the most urgent state among its own tabs; a worktree's tabs count only towards itself.
-  const states = rollupSpaces(
-    all.map((space) => space.id),
-    store.tabs.map((tab) => ({ spaceId: tab.spaceId, state: stateOf(tab) })),
-  )
-  const top = all.filter((space) => !space.parent || !store.space(space.parent))
+// Rebuilds the sidebar: one list of rows, a repo with worktrees under its heading and any other space on its own. A row's
+// node and lines come from the tabs of its space (see rowSummary).
+function renderSidebar(): void {
+  paintUrgent()
+  hideContextTip()
+  const items = sidebarItems(store.spaces())
   spaceList.replaceChildren(
-    ...top.map((space) => {
-      const item = document.createElement('li')
-      item.append(spaceButton(space, states.get(space.id) ?? 'idle'))
-      const children = all.filter((child) => child.parent === space.id)
-      if (children.length > 0) {
-        const nested = document.createElement('ul')
-        nested.className = 'spaces nested'
-        for (const child of children) {
-          const li = document.createElement('li')
-          li.append(spaceButton(child, states.get(child.id) ?? 'idle'))
-          nested.append(li)
-        }
-        item.append(nested)
+    ...items.map((item) => {
+      const li = document.createElement('li')
+      if (item.kind === 'plain') {
+        li.append(spaceRow(item.row))
+        return li
       }
-      return item
+      const rows = document.createElement('ul')
+      rows.className = 'spaces graph'
+      for (const row of item.rows) {
+        const branch = document.createElement('li')
+        branch.append(spaceRow(row))
+        rows.append(branch)
+      }
+      li.className = 'heading'
+      li.append(element('h3', 'heading-name', item.repo), rows)
+      return li
     }),
   )
 }
 
-function spaceButton(space: SpaceInfo, state: AgentStateName): HTMLButtonElement {
-  const worktree = space.worktree || space.parent !== null
+// One space's row: its node, then two lines (the name and the time; the deciding tab's name and what is open), or for a plain
+// space with no tabs one line, the name and the branch.
+function spaceRow(row: SidebarRow<SpaceInfo>): HTMLButtonElement {
+  const { space } = row
+  const summary = rowSummary(
+    store.tabsOfSpace(space.id).map((tab) => {
+      const info = store.agent(tab.id)
+      return { id: tab.id, name: tabName(tab), agent: tab.kind !== 'shell' || info !== undefined, exited: tab.exited, state: stateOf(tab), since: info?.since ?? null }
+    }),
+    [...store.recentIds],
+  )
+  const grouped = row.main || space.worktree || space.parent !== null
   const button = document.createElement('button')
   button.type = 'button'
-  button.className = worktree ? 'space worktree' : 'space'
+  button.className = summary.state === 'working' ? 'space working' : 'space'
   button.dataset.spaceId = space.id
   button.title = space.path
-  const tile = element(
-    'span',
-    worktree ? 'space-tile' : `space-tile tile-${tileIndex(space.name)}`,
-    worktree ? '' : space.name.charAt(0).toUpperCase(),
-  )
-  if (worktree) tile.innerHTML = iconSvg('branch')
-  button.append(tile, element('span', 'space-name', space.name), element('span', 'space-branch', worktree ? '' : (space.branch ?? '')))
-  button.append(indicatorEl(state))
+  const node = summary.empty ? element('span', indicatorClass('unknown')) : indicatorEl(summary.state, undefined, true)
+  if (summary.empty) {
+    node.title = 'no tabs open'
+    node.setAttribute('aria-label', 'no tabs open')
+  }
+  const name = element('span', 'space-name', rowName(row))
+  if (summary.empty && !grouped) {
+    button.classList.add('plain')
+    button.append(node, name, element('span', 'space-branch', space.branch ?? ''))
+  } else {
+    const line = element('span', 'space-line', '')
+    line.append(name)
+    if (summary.since !== null) {
+      const age = element('span', 'space-time', formatAge(Date.now() - summary.since))
+      age.dataset.since = String(summary.since)
+      line.append(age)
+    }
+    const text = element('span', 'space-text', '')
+    text.append(line, element('span', 'space-detail', summary.empty ? openCounts(summary) : `${summary.tabName} · ${openCounts(summary)}`))
+    button.append(node, text)
+  }
   if (space.id === store.activeSpace) button.setAttribute('aria-current', 'true')
+  // The tab line 2 names opens when it has something for you; otherwise the space's last visited tab does.
+  const chosen = summary.state === 'needs-you' || summary.state === 'finished' ? (summary.tabId ?? undefined) : undefined
   button.addEventListener('click', () => {
-    selectSpace(space.id)
+    selectSpace(space.id, chosen)
     focusActive()
   })
   if (!demoMode) button.addEventListener('contextmenu', (event) => openSpaceMenu(space, event))
@@ -1124,7 +1134,7 @@ function applyConfig(snapshot: ConfigSnapshot): void {
   themeTokens = applyTheme(document.documentElement, values.theme, themeTokens)
   applyLayout(
     sidebar,
-    { spaces: byId('section-spaces'), agents: byId('section-agents') },
+    { spaces: byId('section-spaces') },
     values.layout.sidebarOrder,
     sidebar.querySelector<HTMLElement>('.sidebar-foot'),
   )
@@ -1156,118 +1166,10 @@ function formatAge(ms: number): string {
   return `${Math.floor(hours / 24)}d`
 }
 
-function agentRow(row: AgentRow): HTMLLIElement {
-  const { tab, agent } = row
-  const li = document.createElement('li')
-  li.className = tab.exited ? 'agent-row gone' : 'agent-row'
-
-  const focus = document.createElement('button')
-  focus.type = 'button'
-  focus.className = 'agent'
-  focus.title = tabLabel(tab)
-  if (tab === store.activeTab) focus.setAttribute('aria-current', 'true')
-  const age = element('span', 'agent-age', formatAge(Date.now() - agent.since))
-  age.dataset.since = String(agent.since)
-  const tail = element('span', 'agent-tail', '')
-  if (tab.inGrid) {
-    const grid = element('span', 'tab-grid', '')
-    grid.title = 'In the grid'
-    grid.innerHTML = iconSvg('grid')
-    tail.append(grid)
-  }
-  tail.append(age)
-  const agentKind = tab.kind === 'shell' ? undefined : tab.kind
-  focus.append(
-    markWithContext(markEl(tab.kind), agent.context, agent.agent),
-    element('span', 'agent-label', tabName(tab)),
-    tail,
-    indicatorEl(stateOf(tab), agentKind, !tab.exited),
-  )
-  focus.addEventListener('click', () => activate(tab.id))
-  li.append(focus)
-
-  if (agent.resumable) {
-    const resume = document.createElement('button')
-    resume.type = 'button'
-    resume.className = 'agent-resume'
-    resume.textContent = 'Resume'
-    resume.addEventListener('click', () => {
-      resume.disabled = true
-      resumeAgent(tab, agent.agent).catch((error: unknown) => {
-        resume.disabled = false
-        report(error)
-      })
-    })
-    li.append(resume)
-  }
-  return li
-}
-
-// Whether the agents list shows its quiet spaces. Kept for the window's life, like Go to's, and opened afresh by neither.
-let agentsQuietExpanded = false
-
-// Rebuilds the sidebar list: one group per space, in the sidebar's space order, which never changes with use. Within a group,
-// the most urgent row comes first. Quiet spaces, the same ones Go to folds, fold behind one line; a space with anything
-// busy in it, and the current one, never do.
-function renderAgents(): void {
-  paintUrgent()
-  hideContextTip()
-  const rows: AgentRow[] = []
-  for (const agent of store.agents()) {
-    const tab = store.tab(agent.tabId)
-    if (tab) rows.push({ spaceId: tab.spaceId, tabNumber: tab.number, agent, exited: tab.exited, tab })
-  }
-  agentsEmpty.hidden = rows.length > 0
-  const order = sidebarSpaceOrder(store.spaces())
-  const quiet = quietSpaces({
-    spaces: order.flatMap((id) => {
-      const space = store.space(id)
-      return space ? [{ id, parent: space.parent }] : []
-    }),
-    tabs: store.tabs.map((tab) => ({ id: tab.id, spaceId: tab.spaceId, state: stateOf(tab) })),
-    recent: [...store.recentIds],
-    activeSpaceId: store.activeSpace,
-  })
-  const groups = groupAgents(order, rows)
-  const folded = groups.filter((group) => quiet.ids.has(group.spaceId))
-  const items = groups
-    .filter((group) => agentsQuietExpanded || !quiet.ids.has(group.spaceId))
-    .map((group) => {
-      const section = document.createElement('li')
-      section.className = 'agent-group'
-      const list = document.createElement('ul')
-      list.className = 'agent-rows'
-      list.append(...group.rows.map(agentRow))
-      const space = store.space(group.spaceId)
-      const parent = space ? worktreeOf(space, store.spaces()) : null
-      const head = element('h3', 'agent-group-name', '')
-      const text = element('span', 'agent-group-text', '')
-      text.append(element('span', 'agent-group-title', spaceName(group.spaceId)))
-      if (parent) text.append(element('span', 'agent-group-note', `worktree of ${parent}`))
-      head.append(spaceTile(group.spaceId), text)
-      section.append(head, list)
-      return section
-    })
-  if (folded.length > 0) {
-    const last = quiet.last !== null && folded.some((group) => group.spaceId === quiet.last) ? ` · last: ${spaceName(quiet.last)}` : ''
-    const toggle = element('button', 'agent-quiet', `earlier: ${folded.length} quiet ${folded.length === 1 ? 'space' : 'spaces'}${last} ${agentsQuietExpanded ? '▴' : '▾'}`) as HTMLButtonElement
-    toggle.type = 'button'
-    toggle.setAttribute('aria-expanded', String(agentsQuietExpanded))
-    toggle.addEventListener('click', () => {
-      agentsQuietExpanded = !agentsQuietExpanded
-      renderAgents()
-    })
-    const item = document.createElement('li')
-    item.append(toggle)
-    items.push(item)
-  }
-  agentList.replaceChildren(...items)
-}
-
-// Only the ages are rewritten on the timer, so a click on a row is never lost to a rebuild.
+// Only the times are rewritten on the timer, so a click on a row is never lost to a rebuild.
 function refreshAges(): void {
   const now = Date.now()
-  for (const age of agentList.querySelectorAll<HTMLElement>('.agent-age')) {
+  for (const age of spaceList.querySelectorAll<HTMLElement>('.space-time')) {
     age.textContent = formatAge(now - Number(age.dataset.since))
   }
 }

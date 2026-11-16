@@ -4,7 +4,7 @@ import { mostUrgent, rollupSpaces, URGENCY } from './rollup.ts'
 
 describe('mostUrgent', () => {
   it('lets each state win over the ones below it', () => {
-    expect(URGENCY).toEqual(['needs-you', 'working', 'finished', 'unknown', 'idle'])
+    expect(URGENCY).toEqual(['needs-you', 'finished', 'working', 'unknown', 'idle'])
     for (let i = 0; i < URGENCY.length; i++) {
       for (let j = i + 1; j < URGENCY.length; j++) {
         expect(mostUrgent([URGENCY[j], URGENCY[i]])).toBe(URGENCY[i])

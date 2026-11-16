@@ -98,6 +98,11 @@
   --ind-size: 8px;
   --ind-container-width: 16px;
   --ind-stroke: 1.5px;
+  /* The sidebar's branch graph: the trunk's indent, the branch's length, the height of line 1, and where the branch meets a row. */
+  --graph-indent: var(--space-5);
+  --graph-branch: var(--space-4);
+  --graph-line: 20px;
+  --graph-branch-y: calc(var(--space-1) + var(--graph-line) / 2);
   --halo-size: 3px;
   --ind-thinking-dot-size: 4px;
   --ind-thinking-period: 1.2s;
