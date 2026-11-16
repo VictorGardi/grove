@@ -15,4 +15,6 @@ export interface UsageReader {
   step(): Promise<{ requests: UsageRequest[]; done: boolean }>
   // How much of what the agent's files hold the first read has read, 0 to 1, or undefined before it has looked.
   progress?(): number | undefined
+  // How many files (or databases) the reader keeps a place for in memory: those the last listing held, so one the agent deleted is not kept.
+  tracked?(): number
 }

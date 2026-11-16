@@ -198,7 +198,11 @@ export function createOpencodeReader(options: OpencodeReaderOptions): UsageReade
 
   async function begin(): Promise<Item[]> {
     const items: Item[] = []
-    for (const file of await listDatabases(options.dataDir)) for (const generation of GENERATIONS) items.push({ file, generation, started: false, max: 0 })
+    const files = await listDatabases(options.dataDir)
+    // A database that is gone loses its place and its failure.
+    for (const file of places.keys()) if (!files.includes(file)) places.delete(file)
+    for (const file of failed) if (!files.includes(file)) failed.delete(file)
+    for (const file of files) for (const generation of GENERATIONS) items.push({ file, generation, started: false, max: 0 })
     return items
   }
 
@@ -257,6 +261,7 @@ export function createOpencodeReader(options: OpencodeReaderOptions): UsageReade
       if (queue.length === 0) queue = undefined
       return { requests, done: queue === undefined }
     },
+    tracked: () => places.size,
     progress() {
       if (tables === undefined) return undefined
       if (queue === undefined || tables === 0) return 1

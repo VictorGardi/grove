@@ -124,8 +124,16 @@ export function createClaudeReader(options: ClaudeReaderOptions): UsageReader {
   const pending = async (): Promise<Listed[]> => {
     const all = await listTranscripts(options.projectsDir)
     total = all.reduce((sum, item) => sum + item.size, 0)
+    forget(all.map((item) => item.file))
     done = all.reduce((sum, item) => sum + Math.min(offsets.get(item.file) ?? 0, item.size), 0)
     return all.filter((item) => item.size !== (offsets.get(item.file) ?? 0)).sort((a, b) => a.born - b.born || (a.file < b.file ? -1 : 1))
+  }
+
+  // What the listing no longer holds is gone: its place, its head and its failure are dropped, from the listing already made (no stat of its own).
+  const forget = (files: string[]): void => {
+    const present = new Set(files)
+    for (const map of [offsets, heads]) for (const file of map.keys()) if (!present.has(file)) map.delete(file)
+    for (const file of failed) if (!present.has(file)) failed.delete(file)
   }
 
   // Reads the next slice of one file. False when the file has nothing complete left.
@@ -172,6 +180,7 @@ export function createClaudeReader(options: ClaudeReaderOptions): UsageReader {
       if (queue === undefined) done = total ?? 0
       return { requests, done: queue === undefined }
     },
+    tracked: () => offsets.size,
     progress: () => (total === undefined ? undefined : total === 0 ? 1 : Math.min(1, done / total)),
   }
 }

@@ -116,6 +116,9 @@ export class GroveSessions {
       } catch {
         continue
       }
+      // A per-tab file that is gone loses its reading place and its stamp (what was learnt from it stays).
+      const present = new Set(names.map((name) => `${agent}/${name}`))
+      for (const map of [this.offsets, this.stamps]) for (const id of map.keys()) if (id.startsWith(`${agent}/`) && !present.has(id)) map.delete(id)
       for (const name of names) {
         const file = path.join(this.options.home, 'agents', agent, name)
         try {

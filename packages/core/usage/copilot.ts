@@ -134,6 +134,10 @@ export function createCopilotReader(options: CopilotReaderOptions): UsageReader 
   const pending = async (): Promise<Listed[]> => {
     const all = await listEvents(options.copilotHome)
     total = all.reduce((sum, item) => sum + item.size, 0)
+    // What the listing no longer holds is gone: its place and its failure are dropped, from the listing already made (no stat of its own).
+    const present = new Set(all.map((item) => item.file))
+    for (const file of places.keys()) if (!present.has(file)) places.delete(file)
+    for (const file of failed) if (!present.has(file)) failed.delete(file)
     done = all.reduce((sum, item) => sum + Math.min(places.get(item.file)?.offset ?? 0, item.size), 0)
     return all.filter((item) => item.size !== (places.get(item.file)?.offset ?? 0))
   }
@@ -188,6 +192,7 @@ export function createCopilotReader(options: CopilotReaderOptions): UsageReader 
       if (queue === undefined) done = total ?? 0
       return { requests, done: queue === undefined }
     },
+    tracked: () => places.size,
     progress: () => (total === undefined ? undefined : total === 0 ? 1 : Math.min(1, done / total)),
   }
 }
