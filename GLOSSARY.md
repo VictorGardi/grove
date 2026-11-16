@@ -120,7 +120,12 @@ specific meaning, so humans and agents stay consistent.
 - **Usage history**: Grove's own saved record behind the usage panel: one entry
   per request, with its time, agent, model, folder and token counts, and no
   conversation text. It is per machine, starts when Grove first reads the
-  agents' files, and outlives an agent deleting its own sessions.
+  agents' files, and outlives an agent deleting its own sessions. The first
+  read of a large history takes a few seconds to minutes and the panel says it
+  is still being built, with how far each agent has got. The panel's Wipe
+  history deletes only this record, never the agents' own files: "history from"
+  becomes the wipe day, what the agents already wrote is not read again, and
+  only requests from then on are counted.
 - **Not tracked by Grove**: requests from sessions Grove did not run or cannot
   tell it ran. The usage panel shows this share only from the date Grove began
   recording its own sessions; before that it says it cannot tell. Copilot via

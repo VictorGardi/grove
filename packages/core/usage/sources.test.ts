@@ -174,6 +174,31 @@ describe('where requests ran: Claude Desktop and the Grove split', () => {
     })
   })
 
+  describe('what the saved history holds', () => {
+    it('is figures, a model, a folder and a source for every request, and no conversation text, whichever agent made it', async () => {
+      claudeHook('tab-1', 'session-a', BEGAN)
+      transcript('p/s1.jsonl', [claudeLine({ id: 'c1', ts: iso(15) }), claudeLine({ id: 'c2', ts: iso(15), entrypoint: 'claude-desktop' })])
+      transcript('p/s1/subagents/agent-1.jsonl', [claudeLine({ id: 'h1', ts: iso(15), sidechain: true })])
+      copilotHook('tab-2', 's', ms(1, 9, 9))
+      copilotSession('s', [copilotStart('/work/app'), copilotLine({ id: 'u1', ts: iso(15) }), JSON.stringify({ type: 'user.message', data: { content: SECRET }, timestamp: iso(15) })])
+      const s = await read()
+      s.close()
+      const saved = fs.readFileSync(usageHistoryFile(home), 'utf8')
+      expect(saved).not.toContain(SECRET)
+      expect(saved).not.toMatch(/hunter2|password|initialPrompt|prompt|content|"text"/)
+      expect(saved).not.toMatch(/[$€£]|usd|dollar|cost|price/i)
+      expect(fs.statSync(usageHistoryFile(home)).mode & 0o777).toBe(0o600)
+      const { requests } = JSON.parse(saved) as { requests: Record<string, unknown[]> }
+      expect(Object.keys(requests).length).toBe(4)
+      for (const row of Object.values(requests)) {
+        expect(row.length).toBe(11)
+        expect(row.map((value) => typeof value)).toEqual(['number', 'string', 'string', 'string', 'number', 'number', 'number', 'number', 'number', row[9] === null ? 'object' : 'number', row[10] === null ? 'object' : 'number'])
+        expect(['claude-code', 'claude-desktop', 'copilot']).toContain(row[1])
+        expect(row[3]).toBe('/work/app')
+      }
+    })
+  })
+
   describe('migrating a history written before the source tag existed', () => {
     // What slices 1 to 3 saved: Claude rows of 10 columns with the untagged source, a Claude position without a schema.
     const oldHistory = (): void => {

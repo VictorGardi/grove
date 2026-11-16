@@ -1,6 +1,6 @@
 import path from 'node:path'
 import { dayKey } from '../../protocol/days.ts'
-import type { UsageSummary } from '../../protocol/messages.ts'
+import type { UsageAgent, UsageProgress, UsageSummary } from '../../protocol/messages.ts'
 import { poll } from '../agents/usageSource.ts'
 import type { GitRun } from '../gitrun.ts'
 import type { GroveSessions } from './groveSessions.ts'
@@ -57,6 +57,11 @@ export class UsageService {
   private poller: { stop: () => void } | undefined
   private closed = false
   private saveTimer: ReturnType<typeof setTimeout> | undefined
+  // The save in progress, and whether more changed while it ran.
+  private saving: Promise<void> | undefined
+  private saveAgain = false
+  // The progress the window was last told of, so a slice that moved it tells the window again.
+  private shownProgress = ''
   private notifyTimer: ReturnType<typeof setTimeout> | undefined
   private cached: { key: string; summary: UsageSummary } | undefined
 
@@ -83,7 +88,7 @@ export class UsageService {
     this.poller = undefined
     clearTimeout(this.notifyTimer)
     this.notifyTimer = undefined
-    if (this.saveTimer !== undefined) this.persist()
+    if (this.saveTimer !== undefined || this.saving !== undefined) this.persist()
   }
 
   // Calls `listener` when the numbers changed. Coalesced: a burst of requests is one call.
@@ -112,7 +117,8 @@ export class UsageService {
           if (generation !== this.generation) return
           let changed = false
           for (const request of requests) changed = this.history.add(request) || changed
-          if (changed) this.changed()
+          // While the history is being built the numbers move with every slice, whether or not it held a request.
+          if (changed || (this.building && this.progressKey() !== this.shownProgress)) this.changed()
           if (done) break
           await yieldToLoop()
         }
@@ -130,10 +136,27 @@ export class UsageService {
     }
   }
 
+  // How far the first read has got per agent: the readers that can say, an agent with several as far as its slowest. Empty once built.
+  private progress(): UsageProgress[] {
+    if (!this.building) return []
+    const fractions = new Map<UsageAgent, number>()
+    for (const reader of this.options.readers) {
+      // A reader that can say but has not looked yet has read nothing: its agent is not done because another source of it is.
+      const fraction = reader.progress ? (reader.progress() ?? 0) : undefined
+      if (fraction !== undefined) fractions.set(reader.agent, Math.min(fractions.get(reader.agent) ?? 1, fraction))
+    }
+    return [...fractions].map(([agent, fraction]) => ({ agent, fraction: Math.round(fraction * 100) / 100 }))
+  }
+
+  private progressKey(): string {
+    return this.progress().map((entry) => `${entry.agent}:${entry.fraction}`).join()
+  }
+
   private changed(): void {
     this.cached = undefined
+    this.shownProgress = this.progressKey()
     if (this.closed) return
-    this.saveTimer ??= setTimeout(() => this.persist(), this.options.saveMs ?? SAVE_MS).unref()
+    this.saveTimer ??= setTimeout(() => void this.persistLater(), this.options.saveMs ?? SAVE_MS).unref()
     this.notifyTimer ??= setTimeout(() => {
       this.notifyTimer = undefined
       for (const listener of this.listeners) {
@@ -146,18 +169,52 @@ export class UsageService {
     }, this.options.notifyMs ?? NOTIFY_MS).unref()
   }
 
+  // An empty, never-wiped history has nothing to keep: it starts again, from the same day, when the core does.
+  private worthKeeping(): boolean {
+    return this.history.size > 0 || this.history.floor !== null
+  }
+
+  private rememberReaders(): void {
+    for (const reader of this.options.readers) this.history.readers[readerKey(reader)] = reader.state()
+    if (this.options.grove) this.history.readers[GROVE_STATE] = this.options.grove.state()
+  }
+
+  // Saves the whole file at once, holding the loop: for a core that is closing, and for a wipe (an empty file).
   private persist(): void {
     clearTimeout(this.saveTimer)
     this.saveTimer = undefined
-    // An empty, never-wiped history has nothing to keep: it starts again, from the same day, when the core does.
-    if (this.history.size === 0 && this.history.floor === null) return
-    for (const reader of this.options.readers) this.history.readers[readerKey(reader)] = reader.state()
-    if (this.options.grove) this.history.readers[GROVE_STATE] = this.options.grove.state()
+    if (!this.worthKeeping()) return
+    this.rememberReaders()
     try {
       this.history.save()
     } catch (error) {
       console.error(`core: could not save the usage history: ${message(error)}`)
     }
+  }
+
+  // Saves the file in slices, so a history of hundreds of thousands of requests never holds the loop. A change that comes in while it
+  // writes is saved by the next one, which starts when this one is done.
+  private persistLater(): Promise<void> {
+    clearTimeout(this.saveTimer)
+    this.saveTimer = undefined
+    if (!this.worthKeeping()) return Promise.resolve()
+    if (this.saving !== undefined) {
+      this.saveAgain = true
+      return this.saving
+    }
+    this.rememberReaders()
+    this.saving = this.history
+      .saveAsync()
+      .then(() => undefined)
+      .catch((error: unknown) => console.error(`core: could not save the usage history: ${message(error)}`))
+      .finally(() => {
+        this.saving = undefined
+        if (this.saveAgain && !this.closed) {
+          this.saveAgain = false
+          this.saveTimer ??= setTimeout(() => void this.persistLater(), this.options.saveMs ?? SAVE_MS).unref()
+        }
+      })
+    return this.saving
   }
 
   // Resolves once every folder the summary needs placed in a repository has been looked up.
@@ -175,7 +232,7 @@ export class UsageService {
     const now = this.clock()
     const today = dayKey(now)
     const spaces = (this.options.spaces?.() ?? []).join('\n')
-    const key = `${this.history.revision}|${days}|${range}|${today}|${this.building}|${this.repositories.version}|${spaces}|${this.options.grove?.trackedSince('claude')}`
+    const key = `${this.history.revision}|${days}|${range}|${today}|${this.building}|${this.progressKey()}|${this.repositories.version}|${spaces}|${this.options.grove?.trackedSince('claude')}`
     if (this.cached?.key === key) return this.cached.summary
     let first = Infinity
     let last = -Infinity
@@ -188,6 +245,7 @@ export class UsageService {
       historyFrom: dayKey(this.history.floor ?? (Number.isFinite(first) ? first : this.history.since)),
       building: this.building,
       ready: Number.isFinite(first) ? { from: dayKey(first), to: dayKey(last) } : null,
+      progress: this.progress(),
       agents: summarizeAgents(this.index, this.repositories.snapshot(), now, days, range, (agent) => this.options.grove?.trackedSince(agent)),
     }
     this.cached = { key, summary }

@@ -4,6 +4,7 @@ import path from 'node:path'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { createClaudeReader } from './claude.ts'
 import type { UsageReader } from './reader.ts'
+import { STALL_LIMIT_MS, calmest, worstStall } from './loopProbe.ts'
 import { UsageService, usageHistoryFile } from './service.ts'
 
 // What a conversation says. It sits in every fixture line and must never reach the saved history.
@@ -297,24 +298,110 @@ describe('usage history from Claude files, to the summary', () => {
         },
       }
       const s = make([spy])
-      let worst = 0
-      let last = performance.now()
-      const probe = setInterval(() => {
-        const t = performance.now()
-        worst = Math.max(worst, t - last)
-        last = t
-      }, 5)
-      const began = performance.now()
-      await s.drain()
-      const took = performance.now() - began
-      clearInterval(probe)
+      let worst = await worstStall(() => s.drain())
       expect(steps).toBeGreaterThan(100)
       expect(buildingMidScan).toBe(true)
       expect(readyMidScan).not.toBeNull()
       expect(s.summary().building).toBe(false)
       expect(claude(s)?.last7.requests).toBe(150 * 3)
-      // The loop was never held for long: a 5 ms timer was never late by more than this, or by more than a fraction of the whole scan when other test files load the machine.
-      expect(worst).toBeLessThan(Math.max(150, took / 4))
+      // The loop was never held for long.
+      worst = await calmest(worst, async () => {
+        s.close()
+        fs.rmSync(home, { recursive: true, force: true })
+        fs.mkdirSync(home)
+        const next = make([createClaudeReader({ projectsDir: projects })])
+        return worstStall(() => next.drain())
+      })
+      expect(worst).toBeLessThan(STALL_LIMIT_MS)
+    })
+
+    // A fixture of `files` transcripts of 120 lines each, three of which are requests: files * 3 requests in all.
+    const fixture = (files: number): number => {
+      const filler = JSON.stringify({ type: 'user', message: { content: 'x'.repeat(2000) } })
+      for (let f = 0; f < files; f++) {
+        const lines: string[] = []
+        for (let i = 0; i < 120; i++) lines.push(i % 40 === 0 ? line({ id: `m${f}-${i}`, ts: at(15) }) : filler)
+        write(`proj${f % 10}/s${f}.jsonl`, lines)
+      }
+      return files * 3
+    }
+    const progressOf = (s: UsageService): number | undefined => s.summary().progress.find((p) => p.agent === 'claude')?.fraction
+
+    it('says how far the first read has got, growing until it is built and then gone', async () => {
+      const total = fixture(30)
+      const inner = createClaudeReader({ projectsDir: projects, chunkBytes: 64 * 1024 })
+      const seen: Array<number | undefined> = []
+      const ready: Array<string | undefined> = []
+      const s = make([
+        {
+          ...inner,
+          step: async () => {
+            const result = await inner.step()
+            seen.push(progressOf(s))
+            ready.push(s.summary().ready?.to)
+            return result
+          },
+        },
+      ])
+      expect(progressOf(s)).toBe(0)
+      await s.drain()
+      const fractions = seen.filter((value): value is number => value !== undefined)
+      expect(fractions.length).toBeGreaterThan(5)
+      expect(fractions[0]).toBeGreaterThan(0)
+      expect(fractions.slice(1)).toEqual([...fractions.slice(1)].sort((a, b) => a - b))
+      expect(fractions.at(-1)).toBeLessThanOrEqual(1)
+      expect(new Set(fractions).size).toBeGreaterThan(3)
+      expect(ready.at(-1)).toBe('2026-11-15')
+      expect(s.summary()).toMatchObject({ building: false, progress: [] })
+      expect(claude(s)?.last7.requests).toBe(total)
+    })
+
+    it('carries on from where it was after a restart in the middle of the first scan, without counting anything twice', async () => {
+      const total = fixture(30)
+      const first = createClaudeReader({ projectsDir: projects, chunkBytes: 64 * 1024 })
+      let steps = 0
+      const interrupted: UsageReader = {
+        ...first,
+        step: async () => {
+          if (++steps > 40) throw new Error('killed')
+          return first.step()
+        },
+      }
+      vi.spyOn(console, 'error').mockImplementation(() => undefined)
+      const s = make([interrupted])
+      await s.drain()
+      const before = progressOf(s)
+      const partial = claude(s)?.last7.requests ?? 0
+      expect(s.summary().building).toBe(true)
+      expect(partial).toBeGreaterThan(0)
+      expect(partial).toBeLessThan(total)
+      s.close()
+
+      // What reading everything from nothing takes.
+      const fresh = createClaudeReader({ projectsDir: projects, chunkBytes: 64 * 1024 })
+      let full = 0
+      for (let done = false; !done; full++) done = (await fresh.step()).done
+
+      const reader = createClaudeReader({ projectsDir: projects, chunkBytes: 64 * 1024 })
+      const step = vi.spyOn(reader, 'step')
+      const again = make([reader])
+      // The numbers it had are back at once, and it knows how far it was.
+      expect(claude(again)?.last7.requests).toBe(partial)
+      await again.drain()
+      expect(claude(again)?.last7.requests).toBe(total)
+      expect(again.summary()).toMatchObject({ building: false, progress: [] })
+      // It did not start over: the files it had read are not read again.
+      expect(step.mock.calls.length).toBeLessThan(full)
+      expect(before).toBeGreaterThan(0)
+    })
+
+    it('never lets a pass that was cut short back into the numbers after a wipe', async () => {
+      fixture(10)
+      const s = make([createClaudeReader({ projectsDir: projects, chunkBytes: 64 * 1024 })])
+      const pass = s.drain()
+      await s.wipe()
+      await pass
+      expect(s.summary()).toMatchObject({ agents: [], building: false, progress: [] })
     })
 
     it('stays building after a restart in the middle of the first scan', async () => {
@@ -326,6 +413,101 @@ describe('usage history from Claude files, to the summary', () => {
       expect(s.summary().building).toBe(true)
       s.close()
       expect(make().summary().building).toBe(true)
+    })
+  })
+
+  describe('saving the history', () => {
+    const many = (n: number): string[] => Array.from({ length: n }, (_, i) => line({ id: `m${i}`, ts: at(15), cwd: `/work/app${i % 7}` }))
+    const leftovers = (): string[] => fs.readdirSync(home).filter((name) => name.endsWith('.tmp'))
+    interface Saving {
+      saveAsync(pause: () => Promise<void>): Promise<boolean>
+      save(): void
+    }
+    // A service that never saves by itself, so the saves below are the only writer.
+    const quiet = (): { s: UsageService; history: Saving } => {
+      const s = (service = new UsageService({ home, readers: [createClaudeReader({ projectsDir: projects })], clock: () => now, saveMs: 600_000 }))
+      return { s, history: (s as unknown as { history: Saving }).history }
+    }
+
+    it('saves without holding the loop: the file is written in slices with the loop given back between them', async () => {
+      write('p/a.jsonl', many(6000))
+      const { s, history } = quiet()
+      await s.drain()
+      let yields = 0
+      expect(await history.saveAsync(async () => void yields++)).toBe(true)
+      expect(yields).toBeGreaterThan(2)
+      s.close()
+      expect(claude(make())?.last7.requests).toBe(6000)
+    })
+
+    it('leaves the last good history readable when the writer is killed part way, and clears what it left behind', async () => {
+      write('p/a.jsonl', many(300))
+      const first = make()
+      await first.drain()
+      first.close()
+      const file = usageHistoryFile(home)
+      const good = fs.readFileSync(file, 'utf8')
+      write('p/b.jsonl', many(6000))
+      const { s, history } = quiet()
+      await s.drain()
+      let slices = 0
+      await expect(
+        history.saveAsync(async () => {
+          if (++slices === 2) throw new Error('killed')
+        }),
+      ).rejects.toThrow('killed')
+      // The file on disk is still the whole of the one before: not cut, not mixed.
+      expect(fs.readFileSync(file, 'utf8')).toBe(good)
+      // A real kill cannot clean up after itself: a temp file stays. The next start sweeps it and reads the good file.
+      const stale = `${file}.deadbeef.tmp`
+      fs.writeFileSync(stale, good.slice(0, good.length >> 1))
+      service = undefined
+      const next = make()
+      expect(claude(next)?.last7.requests).toBe(300)
+      expect(leftovers()).toEqual([])
+    })
+
+    it('does not let a slow save that a later one overtook put its older numbers back', async () => {
+      write('p/a.jsonl', many(6000))
+      const { s, history } = quiet()
+      await s.drain()
+      expect(
+        await history.saveAsync(async () => {
+          history.save()
+        }),
+      ).toBe(false)
+      expect(leftovers()).toEqual([])
+      s.close()
+      expect(claude(make())?.last7.requests).toBe(6000)
+    })
+
+    it('never lets a save that was under way when the history was wiped bring the old days back', async () => {
+      write('p/a.jsonl', many(6000))
+      const s = (service = new UsageService({ home, readers: [createClaudeReader({ projectsDir: projects })], clock: () => now, saveMs: 1, notifyMs: 1 }))
+      await s.drain()
+      // The save has begun (its first slice is out) when the wipe comes.
+      await new Promise((resolve) => setTimeout(resolve, 3))
+      now = new Date(2026, 10, 20, 9).getTime()
+      await s.wipe()
+      await new Promise((resolve) => setTimeout(resolve, 80))
+      s.close()
+      expect(leftovers()).toEqual([])
+      const again = make()
+      expect(again.summary()).toMatchObject({ agents: [], historyFrom: '2026-11-20', ready: null })
+      await again.drain()
+      expect(again.summary().agents).toEqual([])
+    })
+
+    it('saves the history owner-only, with no conversation text, whichever agent it came from', async () => {
+      write('p/a.jsonl', many(50))
+      const s = make()
+      await s.drain()
+      await new Promise((resolve) => setTimeout(resolve, 60))
+      s.close()
+      const file = usageHistoryFile(home)
+      expect(fs.statSync(file).mode & 0o777).toBe(0o600)
+      const saved = fs.readFileSync(file, 'utf8')
+      for (const forbidden of [SECRET, 'hunter2', '"text"', '"content"', '"prompt"', '"title"', '$', 'cost']) expect(saved).not.toContain(forbidden)
     })
   })
 })

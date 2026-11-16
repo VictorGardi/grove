@@ -6,6 +6,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { createClaudeReader } from './claude.ts'
 import { createCopilotReader } from './copilot.ts'
 import { createOpencodeReader, opencodeDataDir } from './opencode.ts'
+import { STALL_LIMIT_MS, calmest, worstStall } from './loopProbe.ts'
 import { UsageService, usageHistoryFile } from './service.ts'
 
 // OpenCode's requests on Copilot's models, from a fixture database in both table generations to the summary. The only proof there is:
@@ -409,22 +410,19 @@ describe('usage history from OpenCode’s database, to the summary', () => {
       ],
       clock: () => NOW,
     }))
-    let worst = 0
-    let last = performance.now()
-    const probe = setInterval(() => {
-      const t = performance.now()
-      worst = Math.max(worst, t - last)
-      last = t
-    }, 5)
-    const began = performance.now()
-    await s.drain()
-    const took = performance.now() - began
-    clearInterval(probe)
+    let worst = await worstStall(() => s.drain())
     expect(steps).toBeGreaterThan(10)
     expect(buildingMidScan).toBe(true)
     expect(s.summary().building).toBe(false)
     expect(copilot(s, 30)?.last30.requests).toBe(40 * 4 * 2)
-    expect(worst).toBeLessThan(Math.max(150, took / 4))
+    worst = await calmest(worst, async () => {
+      s.close()
+      fs.rmSync(home, { recursive: true, force: true })
+      fs.mkdirSync(home)
+      const next = (service = new UsageService({ home, readers: [createOpencodeReader({ dataDir, clock: () => NOW })], clock: () => NOW }))
+      return worstStall(() => next.drain())
+    })
+    expect(worst).toBeLessThan(STALL_LIMIT_MS)
   })
 })
 

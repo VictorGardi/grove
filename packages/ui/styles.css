@@ -3548,6 +3548,14 @@ li[aria-selected] > .slash-tile {
   color: var(--color-mute);
 }
 
+.usage-building {
+  margin: 0;
+  padding: var(--space-3) var(--space-4);
+  border: 1px solid var(--color-rule);
+  border-radius: var(--radius-sm);
+  color: var(--color-mute);
+}
+
 .usage-agent {
   display: flex;
   flex-direction: column;
@@ -3706,6 +3714,23 @@ button.usage-cell:hover,
   flex-wrap: wrap;
   gap: var(--space-2) var(--space-5);
   margin-top: auto;
+}
+
+/* The wipe sits at the end of the footer: an unobtrusive text button, as it is rarely used and cannot be undone. */
+.usage-wipe {
+  margin-left: auto;
+  padding: 0;
+  border: 0;
+  background: none;
+  color: var(--color-mute);
+  font: inherit;
+  text-decoration: underline;
+  cursor: pointer;
+}
+
+.usage-wipe:hover,
+.usage-wipe:focus-visible {
+  color: var(--color-ink);
 }
 
 /* Usage, where requests ran: a share bar of the places side by side, a gap between them (the colours are set per place from usage-model.ts,

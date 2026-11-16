@@ -16,6 +16,7 @@ function summary(over: Partial<UsageSummary> = {}): UsageSummary {
     historyFrom: '2026-05-01',
     building: false,
     ready: { from: '2026-05-01', to: '2026-11-16' },
+    progress: [],
     agents: [
       {
         agent: 'claude',
@@ -42,12 +43,19 @@ const flush = async (): Promise<void> => {
   for (let i = 0; i < 5; i++) await Promise.resolve()
 }
 
-function setup(first: UsageSummary = summary(), connected = true) {
+interface Kept {
+  getItem(key: string): string | null
+  setItem(key: string, value: string): void
+}
+
+function setup(first: UsageSummary = summary(), connected = true, store: Kept | null = null) {
   document.body.innerHTML = ''
   const body = document.body.appendChild(document.createElement('div'))
   const calls: number[] = []
   const ranges: number[] = []
   const state = { summary: first, connected, expanded: false, fail: null as Error | null }
+  const wipes: Array<{ title: string; text: string; confirm: string }> = []
+  const wipe = { answer: true, fail: null as Error | null }
   const spoken = { status: [] as string[], error: [] as Array<string | null> }
   const expandedListeners: Array<() => void> = []
   const context: DockContext = {
@@ -70,6 +78,13 @@ function setup(first: UsageSummary = summary(), connected = true) {
     },
     connected: () => state.connected,
     now: () => NOW,
+    store,
+    wipe: async (prompt) => {
+      wipes.push(prompt)
+      if (wipe.fail) throw wipe.fail
+      if (wipe.answer) state.summary = summary({ agents: [], historyFrom: '2026-11-16', ready: null })
+      return wipe.answer
+    },
   })
   const bus = createHostBus((e) => {
     throw e
@@ -80,7 +95,7 @@ function setup(first: UsageSummary = summary(), connected = true) {
     state.expanded = on
     for (const l of [...expandedListeners]) l()
   }
-  return { body, calls, ranges, state, spoken, module, bus, instance, expand }
+  return { body, calls, ranges, state, spoken, module, bus, instance, expand, wipes, wipe }
 }
 
 const cell = (body: HTMLElement, day: string) => body.querySelector<HTMLButtonElement>(`.usage-cell[data-day="${day}"]`)!
@@ -185,7 +200,21 @@ describe('usage panel', () => {
   it('says the history is still being built', async () => {
     const t = setup(summary({ building: true, ready: { from: '2026-11-01', to: '2026-11-16' } }))
     await flush()
-    expect(t.spoken.status.at(-1)).toBe('Still building the history: ready from 1 Nov to 16 Nov')
+    expect(t.spoken.status.at(-1)).toBe('Still building the history. Ready so far: 1 Nov to 16 Nov')
+  })
+
+  it('says in the panel, and in the status line, that the history is still being built, and drops the note when it is complete', async () => {
+    const t = setup(summary({ building: true, ready: { from: '2026-11-01', to: '2026-11-16' }, progress: [{ agent: 'claude', fraction: 0.4 }] }))
+    await flush()
+    const note = 'Still building the history: Claude 40%. Ready so far: 1 Nov to 16 Nov'
+    expect(t.body.querySelector('.usage-building')?.textContent).toBe(note)
+    expect(t.spoken.status.at(-1)).toBe(note)
+    t.state.summary = summary()
+    t.module.changed()
+    await flush()
+    expect(t.body.querySelector('.usage-building')).toBeNull()
+    expect(t.spoken.status.at(-1)).toBe('')
+    expect(t.body.querySelector('.usage-from')?.textContent).toContain('History from')
   })
 
   it('asks for as many days as the matrix draws, and a year in the expanded dock', async () => {
@@ -338,6 +367,68 @@ describe('usage panel', () => {
       const t = setup({ ...summary(), agents: [] })
       await flush()
       expect(t.body.querySelector('.usage-charts')).toBeNull()
+    })
+  })
+
+  describe('wiping the history', () => {
+    const wipeButton = (body: HTMLElement) => body.querySelector<HTMLButtonElement>('.usage-wipe')
+
+    it('asks first with the whole confirmation, and does nothing when it is declined', async () => {
+      const t = setup()
+      t.wipe.answer = false
+      await flush()
+      wipeButton(t.body)!.click()
+      await flush()
+      expect(t.wipes).toHaveLength(1)
+      expect(t.wipes[0]).toMatchObject({ title: 'Wipe the saved usage history?', confirm: 'Wipe history' })
+      expect(t.wipes[0].text).toContain('never touched')
+      expect(t.body.querySelector('.usage-agent')).not.toBeNull()
+      expect(t.calls).toHaveLength(1)
+    })
+
+    it('shows the honest empty state after it, with the history starting today', async () => {
+      const t = setup()
+      await flush()
+      wipeButton(t.body)!.click()
+      await flush()
+      await flush()
+      expect(t.body.querySelector('.usage-agent')).toBeNull()
+      expect(t.body.querySelector('.usage-empty')?.textContent).toBe('No usage recorded since Mon 16 Nov 2026')
+      expect(t.body.querySelector('.usage-from')?.textContent).toBe('History from Mon 16 Nov 2026')
+    })
+
+    it('says why when the wipe fails, and keeps what was shown', async () => {
+      const t = setup()
+      t.wipe.fail = new Error('disk full')
+      await flush()
+      wipeButton(t.body)!.click()
+      await flush()
+      expect(t.spoken.error.at(-1)).toBe('Could not wipe the usage history: disk full')
+      expect(t.body.querySelector('.usage-agent')).not.toBeNull()
+    })
+  })
+
+  describe('keeping the range and the breakdown', () => {
+    const memory = () => {
+      const data: Record<string, string> = {}
+      return { data, getItem: (k: string) => data[k] ?? null, setItem: (k: string, v: string) => void (data[k] = v) }
+    }
+
+    it('remembers both across a reload, and asks for the kept range at once', async () => {
+      const store = memory()
+      const first = setup(summary(), true, store)
+      await flush()
+      first.body.querySelector<HTMLButtonElement>('.usage-range [data-range="18w"]')!.click()
+      await flush()
+      first.body.querySelector<HTMLButtonElement>('.usage-tabs [data-tab="models"]')!.click()
+      await flush()
+      first.instance.destroy()
+
+      const second = setup(summary(), true, store)
+      await flush()
+      expect(second.ranges[0]).toBe(18 * 7)
+      expect(second.body.querySelector('.usage-range [data-range="18w"]')?.getAttribute('aria-pressed')).toBe('true')
+      expect(second.body.querySelector('.usage-tabs [data-tab="models"]')?.getAttribute('aria-pressed')).toBe('true')
     })
   })
 })

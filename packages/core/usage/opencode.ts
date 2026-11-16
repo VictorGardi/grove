@@ -20,6 +20,11 @@ export interface OpencodeReaderOptions {
 // beside the figures, so the query names each figure it needs (json_extract) and never `data` itself.
 const COPILOT_PROVIDER = 'github-copilot'
 const RANGE_ROWS = 500
+// A slice is held to about this long: rows of very different size make a fixed row count a slice of very different length (500 rows took
+// 5 ms in one place and 90 ms in another), so the count starts small, halves after a slice that took longer and doubles after a short one.
+const SLICE_MS = 20
+const MIN_ROWS = 10
+const START_ROWS = 100
 // A request that has not completed after this long is given up on: its row failed or was left behind.
 const PENDING_MS = 7 * 24 * 60 * 60 * 1000
 const PENDING_MAX = 1000
@@ -155,6 +160,9 @@ export function createOpencodeReader(options: OpencodeReaderOptions): UsageReade
   let places = new Map<string, Place>()
   let queue: Item[] | undefined
   const failed = new Set<string>()
+  // How many rows the next slice looks at (never more than `rangeRows`), and how many tables the pass in progress has: what `progress` is made of.
+  let rows = Math.min(rangeRows, START_ROWS)
+  let tables: number | undefined
 
   const placeOf = (file: string): Place => {
     let place = places.get(file)
@@ -200,7 +208,10 @@ export function createOpencodeReader(options: OpencodeReaderOptions): UsageReade
     agent: 'copilot',
     id: OPENCODE_SOURCE,
     async step() {
-      queue ??= await begin()
+      if (queue === undefined) {
+        queue = await begin()
+        tables = queue.length
+      }
       const item = queue[0]
       if (item === undefined) {
         queue = undefined
@@ -222,8 +233,12 @@ export function createOpencodeReader(options: OpencodeReaderOptions): UsageReade
             if (item.max < table.rid) table.rid = 0
             recheck(db, g, table, (options.clock ?? Date.now)(), requests)
           }
-          const to = Math.min(table.rid + rangeRows, item.max)
+          const to = Math.min(table.rid + rows, item.max)
+          const began = performance.now()
           if (to > table.rid) look(db, g, 'm.rowid > ? AND m.rowid <= ?', [table.rid, to], table, requests)
+          const took = performance.now() - began
+          if (took > SLICE_MS) rows = Math.max(Math.min(MIN_ROWS, rangeRows), rows >> 1)
+          else if (took < SLICE_MS / 4) rows = Math.min(rangeRows, rows * 2)
           table.rid = to
           if (to >= item.max) queue.shift()
         }
@@ -244,6 +259,13 @@ export function createOpencodeReader(options: OpencodeReaderOptions): UsageReade
       if (queue.length === 0) queue = undefined
       return { requests, done: queue === undefined }
     },
+    progress() {
+      if (tables === undefined) return undefined
+      if (queue === undefined || tables === 0) return 1
+      const current = queue[0]
+      const table = current?.started && current.max > 0 ? placeOf(current.file)[current.generation.gen].rid / current.max : 0
+      return Math.min(1, (tables - queue.length + table) / tables)
+    },
     state: () => ({ schema: SCHEMA, files: Object.fromEntries(places) }),
     restore(state) {
       const saved = state as { schema?: unknown; files?: unknown } | null
@@ -262,9 +284,11 @@ export function createOpencodeReader(options: OpencodeReaderOptions): UsageReade
         }
       }
       queue = undefined
+      tables = undefined
     },
     async skipToEnd() {
       queue = undefined
+      tables = undefined
       for (const file of await listDatabases(options.dataDir)) {
         let db: DatabaseSync | undefined
         try {

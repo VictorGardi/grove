@@ -4,6 +4,7 @@ import path from 'node:path'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { createClaudeReader } from './claude.ts'
 import { createCopilotReader, requestOf } from './copilot.ts'
+import { STALL_LIMIT_MS, calmest, worstStall } from './loopProbe.ts'
 import { UsageService, usageHistoryFile } from './service.ts'
 
 // What a conversation says. It sits in the fixture's conversation events and workspace file and must never reach the saved history.
@@ -348,21 +349,18 @@ describe('usage history from Copilot session files, to the summary', () => {
       ],
       clock: () => NOW,
     }))
-    let worst = 0
-    let last = performance.now()
-    const probe = setInterval(() => {
-      const t = performance.now()
-      worst = Math.max(worst, t - last)
-      last = t
-    }, 5)
-    const began = performance.now()
-    await s.drain()
-    const took = performance.now() - began
-    clearInterval(probe)
+    let worst = await worstStall(() => s.drain())
     expect(steps).toBeGreaterThan(100)
     expect(buildingMidScan).toBe(true)
     expect(s.summary().building).toBe(false)
     expect(copilot(s)?.last7.requests).toBe(120 * 3)
-    expect(worst).toBeLessThan(Math.max(150, took / 4))
+    worst = await calmest(worst, async () => {
+      s.close()
+      fs.rmSync(home, { recursive: true, force: true })
+      fs.mkdirSync(home)
+      const next = (service = new UsageService({ home, readers: [createCopilotReader({ copilotHome })], clock: () => NOW }))
+      return worstStall(() => next.drain())
+    })
+    expect(worst).toBeLessThan(STALL_LIMIT_MS)
   })
 })

@@ -174,6 +174,11 @@ export interface UsageAgentSummary {
   trackedSince: string | null
 }
 
+export interface UsageProgress {
+  agent: UsageAgent
+  fraction: number
+}
+
 export interface UsageSummary {
   today: string
   // The first day the saved history can speak for: the earliest request it holds, or the day it was started or wiped.
@@ -182,6 +187,9 @@ export interface UsageSummary {
   building: boolean
   // The days the history holds requests for so far, or null when it holds none.
   ready: { from: string; to: string } | null
+  // How far the first read has got per agent, 0 to 1 (an agent with several sources is as far as its slowest). Empty once the history
+  // is built, and for an agent whose reader cannot say.
+  progress: UsageProgress[]
   // Agents with a request in the last 30 days. None: nothing to show.
   agents: UsageAgentSummary[]
 }

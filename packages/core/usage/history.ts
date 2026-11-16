@@ -1,3 +1,4 @@
+import crypto from 'node:crypto'
 import fs from 'node:fs'
 import path from 'node:path'
 import type { UsageAgent } from '../../protocol/messages.ts'
@@ -40,6 +41,9 @@ export const OPENCODE_SOURCE = 'opencode'
 
 const AGENTS: readonly string[] = ['claude', 'copilot'] satisfies UsageAgent[]
 const VERSION = 1
+// How many requests are written before the event loop is given back: about 1 to 2 ms of work.
+const SAVE_SLICE = 1500
+const yieldToLoop = (): Promise<void> => new Promise((resolve) => setImmediate(resolve))
 
 export interface HistoryFile {
   version: typeof VERSION
@@ -93,6 +97,8 @@ export class UsageHistory {
   readers: Record<string, unknown> = {}
   // Counts changes, so a summary can be reused while nothing changed.
   revision = 0
+  // Counts the writes of the whole file and the wipes, so a slow write that something later overtook knows to give up.
+  private writes = 0
   // Told of every request the history gains or changes: what it held under the key until now (undefined for a new one), and what it holds.
   observer: ((before: UsageRequest | undefined, after: UsageRequest) => void) | undefined
 
@@ -105,6 +111,7 @@ export class UsageHistory {
 
   static load(file: string, now: number): UsageHistory {
     const history = new UsageHistory(file, now)
+    history.sweep()
     let text: string
     try {
       text = fs.readFileSync(file, 'utf8')
@@ -131,6 +138,14 @@ export class UsageHistory {
       return fresh
     }
     return history
+  }
+
+  // A write that was killed leaves its temp file behind. Nothing else writes next to the history, so every one found is stale.
+  private sweep(): void {
+    const base = path.basename(this.file)
+    try {
+      for (const name of fs.readdirSync(path.dirname(this.file))) if (name.startsWith(`${base}.`) && name.endsWith('.tmp')) fs.rmSync(path.join(path.dirname(this.file), name), { force: true })
+    } catch {}
   }
 
   private setAside(error: unknown): void {
@@ -193,14 +208,56 @@ export class UsageHistory {
     this.built = false
     this.readers = {}
     this.revision++
+    this.writes++
   }
 
-  // Writes the whole file atomically: a temp file renamed over, owner-only (atomicWrite).
+  // Writes the whole file atomically: a temp file renamed over, owner-only (atomicWrite). Holds the loop for the whole write, so the
+  // service uses it only when the core is closing or the history is empty; a running core uses saveAsync.
   save(): void {
+    this.writes++
     const requests: Record<string, unknown[]> = {}
     for (const [key, request] of this.rows) requests[key] = encode(request)
     const body: HistoryFile = { version: VERSION, since: this.since, floor: this.floor, built: this.built, readers: this.readers, requests }
     fs.mkdirSync(path.dirname(this.file), { recursive: true })
     atomicWrite(this.file, JSON.stringify(body))
+  }
+
+  // The same file, written in slices: `pause` gives the event loop back between them (default: one turn of the loop), so rewriting a
+  // history of hundreds of thousands of requests never holds up the core. It is as crash-safe as `save`: the slices go to a temp file
+  // that is renamed over the history only when whole, so a kill leaves the last good file, and the next load sweeps the temp file.
+  // The place the readers had got to is taken before the first slice and the requests after it, so the file never knows a place its
+  // requests do not reach: a restart from it reads a little again, and the keys keep that from counting twice. Resolves false, writing
+  // nothing, when a wipe or a later save overtook it.
+  async saveAsync(pause: () => Promise<void> = yieldToLoop): Promise<boolean> {
+    const mine = ++this.writes
+    const head = JSON.stringify({ version: VERSION, since: this.since, floor: this.floor, built: this.built, readers: this.readers }).slice(0, -1)
+    fs.mkdirSync(path.dirname(this.file), { recursive: true })
+    const tmp = `${this.file}.${crypto.randomBytes(8).toString('hex')}.tmp`
+    const handle = await fs.promises.open(tmp, 'wx', 0o600)
+    let renamed = false
+    try {
+      await handle.write(`${head},"requests":{`)
+      let slice: string[] = []
+      let first = true
+      for (const [key, request] of this.rows) {
+        slice.push(`${first ? '' : ','}${JSON.stringify(key)}:${JSON.stringify(encode(request))}`)
+        first = false
+        if (slice.length >= SAVE_SLICE) {
+          await handle.write(slice.join(''))
+          slice = []
+          await pause()
+          if (this.writes !== mine) return false
+        }
+      }
+      await handle.write(`${slice.join('')}}}`)
+      await handle.close()
+      if (this.writes !== mine) return false
+      fs.renameSync(tmp, this.file)
+      renamed = true
+      return true
+    } finally {
+      await handle.close().catch(() => undefined)
+      if (!renamed) fs.rmSync(tmp, { force: true })
+    }
   }
 }

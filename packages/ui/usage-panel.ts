@@ -5,6 +5,7 @@
 import { dayKey } from '../protocol/days.ts'
 import type { UsageAgent, UsageSummary } from '../protocol/messages.ts'
 import type { DockContext, DockInstance, DockPanel } from './dock.ts'
+import type { KeyValueStore } from './persisted-pref.ts'
 import {
   SHADE_MIX,
   agentColour,
@@ -12,7 +13,8 @@ import {
   effectiveRange,
   rangeDays,
   usageView,
-  DEFAULT_RANGE,
+  wipePrompt,
+  type WipePrompt,
   type AgentView,
   type BarsView,
   type BreakdownRow,
@@ -23,6 +25,7 @@ import {
   type RangeId,
   type SourcesView,
 } from './usage-model.ts'
+import { readUsageBreakdown, readUsageRange, writeUsageBreakdown, writeUsageRange } from './usage-pref.ts'
 
 export interface UsageDeps {
   // `days` of per-day detail, and the hour, repository and model breakdowns over the last `range` days.
@@ -30,6 +33,10 @@ export interface UsageDeps {
   connected(): boolean
   // The window's clock, which says which day the matrix ends on.
   now(): number
+  // Where the range and the breakdown the human chose are kept, or null when the window has no storage.
+  store: KeyValueStore | null
+  // Asks the human to confirm the wipe with the prompt, and wipes when they do; true when it was wiped. A failure is shown by the question itself.
+  wipe(prompt: WipePrompt): Promise<boolean>
 }
 
 export interface UsagePanel {
@@ -279,6 +286,12 @@ function breakdownSection(breakdowns: BreakdownsView, which: 'repositories' | 'm
   return section
 }
 
+function buildingParagraph(text: string): HTMLElement {
+  const note = el('p', 'usage-building', text)
+  note.setAttribute('role', 'status')
+  return note
+}
+
 function chartsSection(charts: ChartsView, which: 'repositories' | 'models', range: (id: RangeId) => void, choose: (which: 'repositories' | 'models') => void): HTMLElement {
   const root = el('div', 'usage-charts')
   const control = el('div', 'usage-range')
@@ -302,9 +315,9 @@ function mountUsage(body: HTMLElement, context: DockContext, deps: UsageDeps): D
   let summary: UsageSummary | null = null
   let selected: { agent: UsageAgent; day: string } | null = null
   // The range the human chose, and the range the numbers on screen are for: they differ until the core has answered.
-  let range: RangeId = DEFAULT_RANGE
-  let drawn: RangeId = DEFAULT_RANGE
-  let breakdown: 'repositories' | 'models' = 'repositories'
+  let range: RangeId = readUsageRange(deps.store)
+  let drawn: RangeId = range
+  let breakdown = readUsageBreakdown(deps.store)
   let asked = 0
   let destroyed = false
 
@@ -316,6 +329,7 @@ function mountUsage(body: HTMLElement, context: DockContext, deps: UsageDeps): D
     const scrollLeft = new Map<string, number>()
     for (const matrix of root.querySelectorAll<HTMLElement>('.usage-agent')) scrollLeft.set(matrix.dataset.agent ?? '', matrix.querySelector<HTMLElement>('.usage-matrix')?.scrollLeft ?? 0)
     root.replaceChildren()
+    if (view.building !== null) root.append(buildingParagraph(view.building))
     if (view.empty !== null) root.append(el('p', 'usage-empty', view.empty))
     for (const agent of view.agents) root.append(agentSection(agent, choose))
     if (view.charts !== null) {
@@ -325,17 +339,22 @@ function mountUsage(body: HTMLElement, context: DockContext, deps: UsageDeps): D
           breakdown,
           (id) => {
             range = id
+            writeUsageRange(deps.store, id)
             void reload()
           },
           (which) => {
             breakdown = which
+            writeUsageBreakdown(deps.store, which)
             draw()
           },
         ),
       )
     }
     const foot = el('footer', 'usage-foot')
-    foot.append(el('span', 'usage-from', view.historyFrom), el('span', 'usage-scope', view.scope))
+    const wipe = el('button', 'usage-wipe', 'Wipe history')
+    wipe.type = 'button'
+    wipe.addEventListener('click', () => void wipeHistory())
+    foot.append(el('span', 'usage-from', view.historyFrom), el('span', 'usage-scope', view.scope), wipe)
     root.append(foot)
     context.status(view.building ?? '')
     context.meta('')
@@ -349,6 +368,19 @@ function mountUsage(body: HTMLElement, context: DockContext, deps: UsageDeps): D
   function choose(agent: UsageAgent, day: string): void {
     selected = selected?.agent === agent && selected.day === day ? null : { agent, day }
     draw()
+  }
+
+  // The human confirms in a dialog; the numbers are asked for again once it is wiped, and show the history starting today.
+  async function wipeHistory(): Promise<void> {
+    if (summary === null) return
+    try {
+      if (!(await deps.wipe(wipePrompt(summary)))) return
+    } catch (error) {
+      context.error(`Could not wipe the usage history: ${error instanceof Error ? error.message : String(error)}`)
+      return
+    }
+    selected = null
+    await reload()
   }
 
   async function reload(): Promise<void> {

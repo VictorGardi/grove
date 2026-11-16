@@ -13,6 +13,9 @@ export interface UsageReader {
   // between slices and the core's event loop is never held for long. Records that are repeated, partial or copied may come back
   // more than once: the history merges them by key.
   step(): Promise<{ requests: UsageRequest[]; done: boolean }>
+  // How much of what the agent's files hold the first read has read, 0 to 1, or undefined before it has looked. Counted over everything
+  // the files hold, so a restart in the middle of the first read carries on from where it was and does not go back to 0.
+  progress?(): number | undefined
   // Where the reader is in the agent's files, to be saved with the history, and given back to `restore` after a restart.
   state(): unknown
   restore(state: unknown): void

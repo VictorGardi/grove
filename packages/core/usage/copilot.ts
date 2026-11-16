@@ -125,8 +125,16 @@ export function createCopilotReader(options: CopilotReaderOptions): UsageReader 
   let places = new Map<string, Place>()
   let queue: Listed[] | undefined
   const failed = new Set<string>()
+  // Bytes of every session's events the last pass listed, and how many of them are read: what `progress` is made of.
+  let total: number | undefined
+  let done = 0
 
-  const pending = async (): Promise<Listed[]> => (await listEvents(options.copilotHome)).filter((item) => item.size !== (places.get(item.file)?.offset ?? 0))
+  const pending = async (): Promise<Listed[]> => {
+    const all = await listEvents(options.copilotHome)
+    total = all.reduce((sum, item) => sum + item.size, 0)
+    done = all.reduce((sum, item) => sum + Math.min(places.get(item.file)?.offset ?? 0, item.size), 0)
+    return all.filter((item) => item.size !== (places.get(item.file)?.offset ?? 0))
+  }
 
   async function slice(item: Listed, out: UsageRequest[]): Promise<boolean> {
     let place = places.get(item.file) ?? { offset: 0, cwd: '' }
@@ -145,6 +153,7 @@ export function createCopilotReader(options: CopilotReaderOptions): UsageReader 
       if (request) out.push(request)
     }
     places.set(item.file, { offset: next, cwd })
+    done += next - place.offset
     return more
   }
 
@@ -170,8 +179,10 @@ export function createCopilotReader(options: CopilotReaderOptions): UsageReader 
         }
       }
       if (queue.length === 0) queue = undefined
+      if (queue === undefined) done = total ?? 0
       return { requests, done: queue === undefined }
     },
+    progress: () => (total === undefined ? undefined : total === 0 ? 1 : Math.min(1, done / total)),
     state: () => ({ schema: SCHEMA, files: Object.fromEntries(places) }),
     restore(state) {
       const saved = state as { schema?: unknown; files?: unknown } | null
@@ -185,9 +196,11 @@ export function createCopilotReader(options: CopilotReaderOptions): UsageReader 
         }
       }
       queue = undefined
+      total = undefined
     },
     async skipToEnd() {
       queue = undefined
+      total = undefined
       places = new Map((await listEvents(options.copilotHome)).map((item) => [item.file, { offset: item.size, cwd: places.get(item.file)?.cwd ?? '' }]))
     },
   }

@@ -116,11 +116,16 @@ export function createClaudeReader(options: ClaudeReaderOptions): UsageReader {
   let offsets = new Map<string, number>()
   let queue: Listed[] | undefined
   const failed = new Set<string>()
+  // Bytes of every transcript the last pass listed, and how many of them are read: what `progress` is made of. undefined before a pass has looked.
+  let total: number | undefined
+  let done = 0
 
-  const pending = async (): Promise<Listed[]> =>
-    (await listTranscripts(options.projectsDir))
-      .filter((item) => item.size !== (offsets.get(item.file) ?? 0))
-      .sort((a, b) => a.born - b.born || (a.file < b.file ? -1 : 1))
+  const pending = async (): Promise<Listed[]> => {
+    const all = await listTranscripts(options.projectsDir)
+    total = all.reduce((sum, item) => sum + item.size, 0)
+    done = all.reduce((sum, item) => sum + Math.min(offsets.get(item.file) ?? 0, item.size), 0)
+    return all.filter((item) => item.size !== (offsets.get(item.file) ?? 0)).sort((a, b) => a.born - b.born || (a.file < b.file ? -1 : 1))
+  }
 
   // Reads the next slice of one file. False when the file has nothing complete left.
   async function slice(item: Listed, out: UsageRequest[]): Promise<boolean> {
@@ -132,6 +137,7 @@ export function createClaudeReader(options: ClaudeReaderOptions): UsageReader {
       if (request) out.push(request)
     }
     offsets.set(item.file, next)
+    done += next - offset
     return more
   }
 
@@ -157,8 +163,10 @@ export function createClaudeReader(options: ClaudeReaderOptions): UsageReader {
         }
       }
       if (queue.length === 0) queue = undefined
+      if (queue === undefined) done = total ?? 0
       return { requests, done: queue === undefined }
     },
+    progress: () => (total === undefined ? undefined : total === 0 ? 1 : Math.min(1, done / total)),
     state: () => ({ schema: SCHEMA, files: Object.fromEntries(offsets) }),
     restore(state) {
       const saved = state as { schema?: unknown; files?: unknown } | null
@@ -168,9 +176,11 @@ export function createClaudeReader(options: ClaudeReaderOptions): UsageReader {
         files !== null && typeof files === 'object' ? Object.entries(files).filter((entry): entry is [string, number] => typeof entry[1] === 'number' && entry[1] >= 0) : [],
       )
       queue = undefined
+      total = undefined
     },
     async skipToEnd() {
       queue = undefined
+      total = undefined
       offsets = new Map((await listTranscripts(options.projectsDir)).map((item) => [item.file, item.size]))
     },
   }

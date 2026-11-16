@@ -1,10 +1,12 @@
 // What the usage panel draws, from the core's summary: the day matrix per agent (darker = more requests, in quartiles of the
 // agent's own days), the Today / 7 days / 30 days totals, the labels and a day's detail. Pure: no DOM, no clock, no RPC.
 import { shiftDay, weekdayOf, weekStart } from '../protocol/days.ts'
-import type { UsageAgent, UsageAgentSummary, UsageDay, UsageSplit, UsageSplitTotals, UsageSummary, UsageTotals } from '../protocol/messages.ts'
+import type { UsageAgent, UsageAgentSummary, UsageDay, UsageProgress, UsageSplit, UsageSplitTotals, UsageSummary, UsageTotals } from '../protocol/messages.ts'
 
 export const EMPTY_MESSAGE = 'No usage in the last 30 days'
 export const SCOPE_NOTE = 'This machine only'
+// The panel looks at this many days: an agent shows when it made a request in them.
+const WINDOW_DAYS = 30
 
 // The matrix is whole weeks, Monday to Sunday, the newest week last. The expanded dock has the room for a year.
 export const MATRIX_WEEKS = 13
@@ -265,11 +267,12 @@ export interface ChartsView {
 }
 
 export interface UsageView {
-  // The one message when no agent made a request in the last 30 days.
+  // The one message when no agent has anything to show: no request in the last 30 days, or, when the history itself is younger than
+  // that (a new one, or one just wiped), that none is recorded since it started. Null while the history is being built.
   empty: string | null
   scope: string
   historyFrom: string
-  // Says the first read is still running and how far it has got; null when the history is complete.
+  // Says the first read is still running, how far it has got per agent and what is ready so far; null when the history is complete.
   building: string | null
   agents: AgentView[]
   // Null when there is no agent to draw.
@@ -561,20 +564,55 @@ function breakdownsOf(summary: UsageSummary, range: RangeId): BreakdownsView {
   }
 }
 
+// 'Claude 62%': a share never reads 100% before the agent is done, nor 0% once it has begun.
+function progressLabel(entry: UsageProgress): string {
+  if (entry.fraction <= 0) return `${AGENT_TITLES[entry.agent]} 0%`
+  if (entry.fraction >= 1) return `${AGENT_TITLES[entry.agent]} done`
+  return `${AGENT_TITLES[entry.agent]} ${Math.min(99, Math.max(1, Math.floor(entry.fraction * 100)))}%`
+}
+
+function buildingNote(summary: UsageSummary): string | null {
+  if (!summary.building) return null
+  const order = Object.keys(AGENT_TITLES)
+  const agents = [...summary.progress].sort((a, b) => order.indexOf(a.agent) - order.indexOf(b.agent)).map(progressLabel)
+  const ready = summary.ready === null ? '' : `Ready so far: ${shortDay(summary.ready.from)} to ${shortDay(summary.ready.to)}`
+  return `Still building the history${agents.length > 0 ? `: ${agents.join(', ')}` : ''}${ready === '' ? '' : `. ${ready}`}`
+}
+
+function emptyMessage(summary: UsageSummary): string | null {
+  if (summary.agents.length > 0 || summary.building) return null
+  return summary.historyFrom >= shiftDay(summary.today, 1 - WINDOW_DAYS) ? `No usage recorded since ${formatDay(summary.historyFrom)}` : EMPTY_MESSAGE
+}
+
+// What the wipe asks before it deletes: said in full, because it cannot be undone.
+export interface WipePrompt {
+  title: string
+  text: string
+  confirm: string
+  cancel: string
+}
+
+export function wipePrompt(summary: UsageSummary): WipePrompt {
+  return {
+    title: 'Wipe the saved usage history?',
+    text:
+      `This deletes Grove’s saved record of your usage on this machine, kept since ${formatDay(summary.historyFrom)}. The agents’ own files are never touched.\n\n` +
+      `The history then starts again on ${formatDay(summary.today)}: what the agents already wrote is not read again, and only requests from now on are counted. ` +
+      'Days the agents have already deleted cannot come back, and neither can the ones you wipe here.',
+    confirm: 'Wipe history',
+    cancel: 'Cancel',
+  }
+}
+
 // `selected` is the clicked day, if any: its detail is shown under the agent that was clicked.
 export function usageView(summary: UsageSummary, options: { expanded: boolean; selected?: { agent: UsageAgent; day: string } | null; range?: RangeId }): UsageView {
   const selected = options.selected ?? null
   const range = effectiveRange(options.range ?? DEFAULT_RANGE, options.expanded)
   return {
-    empty: summary.agents.length === 0 ? EMPTY_MESSAGE : null,
+    empty: emptyMessage(summary),
     scope: SCOPE_NOTE,
     historyFrom: `History from ${formatDay(summary.historyFrom)}`,
-    building:
-      summary.building === false
-        ? null
-        : summary.ready === null
-          ? 'Still building the history'
-          : `Still building the history: ready from ${shortDay(summary.ready.from)} to ${shortDay(summary.ready.to)}`,
+    building: buildingNote(summary),
     agents: summary.agents.map((agent) => agentView(summary, agent, options.expanded, selected?.agent === agent.agent ? selected.day : null, range)),
     charts:
       summary.agents.length === 0

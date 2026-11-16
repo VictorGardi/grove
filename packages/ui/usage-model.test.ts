@@ -22,6 +22,7 @@ import {
   shadeOf,
   tokensLabel,
   usageView,
+  wipePrompt,
   type RangeId,
   COPILOT_MIX,
   SPLIT_INK_MIX,
@@ -40,6 +41,7 @@ function summary(days: UsageDay[], more: Partial<UsageSummary> = {}, totals: Par
     historyFrom: '2026-05-01',
     building: false,
     ready: { from: '2026-05-01', to: '2026-11-16' },
+    progress: [],
     agents: [{ agent: 'claude', hasCredits: false, days, today: sum(0), last7: sum(0), last30: sum(days.length), hours: new Array<number>(168).fill(0), repositories: [], models: [], sources: [], trackedSince: null, ...totals }],
     ...more,
   }
@@ -133,10 +135,86 @@ describe('labels', () => {
     expect(view.scope).toBe('This machine only')
   })
 
-  it('says the history is still being built, and how far it has got', () => {
-    expect(usageView(summary([]), { expanded: false }).building).toBeNull()
-    expect(usageView(summary([], { building: true, ready: { from: '2026-10-01', to: '2026-11-16' } }), { expanded: false }).building).toBe('Still building the history: ready from 1 Oct to 16 Nov')
-    expect(usageView(summary([], { building: true, ready: null }), { expanded: false }).building).toBe('Still building the history')
+  describe('the note that the history is still being built', () => {
+    const building = (more: Partial<UsageSummary>) => usageView(summary([], { building: true, ...more }), { expanded: false }).building
+
+    it('is absent when the history is complete', () => {
+      expect(usageView(summary([]), { expanded: false }).building).toBeNull()
+      expect(usageView(summary([], { progress: [{ agent: 'claude', fraction: 0.5 }] }), { expanded: false }).building).toBeNull()
+    })
+
+    it('says how far each agent has got and what is ready so far', () => {
+      expect(
+        building({
+          ready: { from: '2026-10-01', to: '2026-11-16' },
+          progress: [
+            { agent: 'claude', fraction: 0.62 },
+            { agent: 'copilot', fraction: 1 },
+          ],
+        }),
+      ).toBe('Still building the history: Claude 62%, Copilot CLI done. Ready so far: 1 Oct to 16 Nov')
+    })
+
+    it('never says 100% of an agent that is not done, nor 0% of one that has begun', () => {
+      expect(building({ ready: null, progress: [{ agent: 'claude', fraction: 0.996 }] })).toBe('Still building the history: Claude 99%')
+      expect(building({ ready: null, progress: [{ agent: 'claude', fraction: 0.001 }] })).toBe('Still building the history: Claude 1%')
+    })
+
+    it('says only that it is building when nothing is known yet', () => {
+      expect(building({ ready: null, progress: [] })).toBe('Still building the history')
+      expect(building({ ready: { from: '2026-10-01', to: '2026-11-16' }, progress: [] })).toBe('Still building the history. Ready so far: 1 Oct to 16 Nov')
+    })
+
+    it('follows the agents in their usual order whatever order the core listed them', () => {
+      expect(
+        building({
+          ready: null,
+          progress: [
+            { agent: 'copilot', fraction: 0.5 },
+            { agent: 'claude', fraction: 0.25 },
+          ],
+        }),
+      ).toBe('Still building the history: Claude 25%, Copilot CLI 50%')
+    })
+
+    it('is not the empty message: an agent with nothing to show yet is not “no usage”', () => {
+      const view = usageView({ ...summary([]), agents: [], building: true, ready: null }, { expanded: false })
+      expect(view.empty).toBeNull()
+      expect(view.building).toBe('Still building the history')
+    })
+  })
+
+  describe('after a wipe, or on a history younger than the window', () => {
+    it('says honestly that nothing is recorded since the history started, and not that nothing was used', () => {
+      const wiped = usageView({ ...summary([]), agents: [], historyFrom: '2026-11-16', ready: null }, { expanded: false })
+      expect(wiped.empty).toBe('No usage recorded since Mon 16 Nov 2026')
+      expect(wiped.historyFrom).toBe('History from Mon 16 Nov 2026')
+      expect(wiped.building).toBeNull()
+      const thirtyDaysAgo = usageView({ ...summary([]), agents: [], historyFrom: '2026-10-18' }, { expanded: false })
+      expect(thirtyDaysAgo.empty).toBe('No usage recorded since Sun 18 Oct 2026')
+      expect(usageView({ ...summary([]), agents: [], historyFrom: '2026-10-17' }, { expanded: false }).empty).toBe(EMPTY_MESSAGE)
+    })
+  })
+
+  describe('the wipe confirmation', () => {
+    it('says what is deleted, what is not, that the date resets, and that deleted days cannot come back', () => {
+      const prompt = wipePrompt(summary([], { historyFrom: '2026-05-01' }))
+      expect(prompt.title).toBe('Wipe the saved usage history?')
+      expect(prompt.confirm).toBe('Wipe history')
+      expect(prompt.cancel).toBe('Cancel')
+      expect(prompt.text).toContain('Grove’s saved record')
+      expect(prompt.text).toContain('Fri 1 May 2026')
+      expect(prompt.text).toContain('never touched')
+      expect(prompt.text).toContain('Mon 16 Nov 2026')
+      expect(prompt.text).toContain('cannot come back')
+      expect(prompt.text).not.toMatch(/\$/)
+    })
+
+    it('does not claim to rebuild what was wiped', () => {
+      const text = wipePrompt(summary([])).text
+      expect(text).toContain('not read again')
+      expect(text).toContain('from now on')
+    })
   })
 
   it('gives Today, 7 days and 30 days totals', () => {
