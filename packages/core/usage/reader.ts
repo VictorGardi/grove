@@ -5,6 +5,9 @@ import type { UsageRequest } from './history.ts'
 // service, the history and the panel stay as they are. A reader keeps its own place in the agent's files and reads only what is new.
 export interface UsageReader {
   agent: UsageAgent
+  // What the reader's place is saved under in the history, when it is not the agent's name: a second reader of the same agent (OpenCode on
+  // Copilot's models) must not overwrite the first's place.
+  id?: string
   // Reads one small slice of what is new and returns the requests in it. `done` is true when nothing is left for now; the next
   // call then starts a new pass and looks for what the agent wrote since. A slice does bounded work, so the caller can yield
   // between slices and the core's event loop is never held for long. Records that are repeated, partial or copied may come back

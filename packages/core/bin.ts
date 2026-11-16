@@ -10,6 +10,7 @@ import { SpacesService } from './spaces.ts'
 import { createClaudeReader } from './usage/claude.ts'
 import { createCopilotReader } from './usage/copilot.ts'
 import { GroveSessions } from './usage/groveSessions.ts'
+import { createOpencodeReader, opencodeDataDir } from './usage/opencode.ts'
 import { UsageService } from './usage/service.ts'
 
 async function main(): Promise<void> {
@@ -25,7 +26,7 @@ async function main(): Promise<void> {
     home: groveHome(),
     grove,
     spaces: () => spaces.ids().flatMap((id) => spaces.spaceById(id)?.path ?? []),
-    readers: [createClaudeReader({ projectsDir: claudeProjectsDir(), grove }), createCopilotReader({ copilotHome: copilotHomeDir(), grove })],
+    readers: [createClaudeReader({ projectsDir: claudeProjectsDir(), grove }), createCopilotReader({ copilotHome: copilotHomeDir(), grove }), createOpencodeReader({ dataDir: opencodeDataDir() })],
   })
   const core = await startCoreDaemon({ spaces, usage })
   console.log(`core: listening on ${core.socketPath}`)

@@ -44,19 +44,22 @@ const rangeLabel = (range: RangeId): string => RANGES.find((r) => r.id === range
 export const detailDays = (today: string, expanded: boolean, range: RangeId): number => Math.max(matrixSpan(today, expanded), rangeDays(effectiveRange(range, expanded)))
 
 // Where requests ran (GLOSSARY: Not tracked by Grove). Claude Desktop is its own slice, never run in Grove. Claude Code is run in Grove
-// or not tracked by Grove, and "can't tell" before Grove began recording its sessions. Copilot is run in Grove or not tracked.
+// or not tracked by Grove, and "can't tell" before Grove began recording its sessions. Copilot CLI is run in Grove or not tracked, and the
+// requests OpenCode made on Copilot's models are their own place, not split any further.
+const VIA_OPENCODE = 'Copilot via OpenCode'
 const SPLIT_LABELS: Record<UsageAgent, Record<UsageSplit, string>> = {
-  claude: { desktop: 'Claude Desktop', grove: 'Claude Code run in Grove', other: 'Claude Code not tracked by Grove', unknown: 'Claude Code, can’t tell' },
-  copilot: { desktop: 'Copilot CLI', grove: 'Copilot CLI run in Grove', other: 'Copilot CLI not tracked by Grove', unknown: 'Copilot CLI, can’t tell' },
+  claude: { desktop: 'Claude Desktop', grove: 'Claude Code run in Grove', other: 'Claude Code not tracked by Grove', unknown: 'Claude Code, can’t tell', opencode: VIA_OPENCODE },
+  copilot: { desktop: 'Copilot CLI', grove: 'Copilot CLI run in Grove', other: 'Copilot CLI not tracked by Grove', unknown: 'Copilot CLI, can’t tell', opencode: VIA_OPENCODE },
 }
 
 // How much of the ink each split's colour holds over the agent's own colour (the rest is the agent's colour), so the splits differ in
 // lightness and not only in hue. Mixing toward the ink only ever raises the contrast with the ground, so the agent colour's 3:1
 // carries to every split; "can't tell" is not the agent's colour but a neutral, the ink over the ground (SPLIT_UNKNOWN_MIX), drawn
-// hatched like the other marks that are not a plain count. Four steps between an agent's colour and the ink cannot all be told apart
+// hatched like the other marks that are not a plain count; the requests made through OpenCode are drawn hatched in the agent's colour
+// (as in the stacked bars) and are the darkest step, which Copilot has no Claude Desktop to share with. Four steps between an agent's colour and the ink cannot all be told apart
 // by lightness alone in every theme, so the places also carry their label, a gap between them and, for "can't tell", the hatch.
 // usage-model.test.ts checks the contrast in every theme.
-export const SPLIT_INK_MIX: Record<'grove' | 'other' | 'desktop', number> = { grove: 0, other: 40, desktop: 80 }
+export const SPLIT_INK_MIX: Record<'grove' | 'other' | 'desktop' | 'opencode', number> = { grove: 0, other: 40, desktop: 80, opencode: 90 }
 export const SPLIT_UNKNOWN_MIX = 50
 export const splitColour = (agent: UsageAgent, split: UsageSplit): string =>
   split === 'unknown'
@@ -189,7 +192,7 @@ export interface BarSegment {
   requests: number
   // Of the axis, which is the bar's height.
   percent: number
-  // Room for slice 5: the part of Copilot's requests made through OpenCode, drawn hatched. Always false for now.
+  // The part of Copilot's requests made through OpenCode, drawn hatched in Copilot's colour on top of Copilot CLI's own.
   hatched: boolean
 }
 
@@ -297,7 +300,8 @@ export function sourcesOf(agent: UsageAgentSummary, sources: readonly UsageSplit
     segments: shown.map((source) => {
       const label = SPLIT_LABELS[agent.agent][source.split]
       const share = percentLabel(source.requests, total)
-      const credits = creditsOf(source, agent.hasCredits)
+      // No credit figure exists for the requests made through OpenCode, so the line says only how many are without.
+      const credits = source.split === 'opencode' && agent.hasCredits ? `${requestsLabel(source.withoutCredits)} without credits` : creditsOf(source, agent.hasCredits)
       return {
         split: source.split,
         label,
@@ -305,7 +309,7 @@ export function sourcesOf(agent: UsageAgentSummary, sources: readonly UsageSplit
         share,
         percent: (source.requests / total) * 100,
         colour: splitColour(agent.agent, source.split),
-        hatched: source.split === 'unknown',
+        hatched: source.split === 'unknown' || source.split === 'opencode',
         credits,
         title: [`${label}: ${requestsLabel(source.requests)}, ${share}`, ...(credits === null ? [] : [credits])].join('. '),
       }
@@ -384,37 +388,62 @@ const barUnit = (range: RangeId): 'day' | 'week' => (range === '1y' ? 'week' : '
 function barsOf(summary: UsageSummary, range: RangeId): BarsView {
   const unit = barUnit(range)
   const first = shiftDay(summary.today, -(rangeDays(range) - 1))
-  const perAgent = summary.agents.map((agent) => ({ agent: agent.agent, perDay: new Map(agent.days.map((d) => [d.day, d.requests])) }))
-  const bars: Array<Omit<Bar, 'segments' | 'label'> & { counts: number[]; end: string }> = []
+  // Per agent and day, the requests and how many of them were made through OpenCode (the agent's other places are one bar).
+  const perAgent = summary.agents.map((agent) => ({
+    agent: agent.agent,
+    perDay: new Map(agent.days.map((d) => [d.day, { requests: d.requests, via: d.sources.find((source) => source.split === 'opencode')?.requests ?? 0 }])),
+  }))
+  const bars: Array<Omit<Bar, 'segments' | 'label'> & { counts: Array<{ own: number; via: number }>; end: string }> = []
   for (let day = unit === 'week' ? weekStart(first) : first; day <= summary.today; day = shiftDay(day, unit === 'week' ? 7 : 1)) {
     const end = unit === 'week' ? shiftDay(day, 6) : day
     const counts = perAgent.map(({ perDay }) => {
       let sum = 0
-      for (let d = day < first ? first : day; d <= end && d <= summary.today; d = shiftDay(d, 1)) sum += perDay.get(d) ?? 0
-      return sum
+      let via = 0
+      for (let d = day < first ? first : day; d <= end && d <= summary.today; d = shiftDay(d, 1)) {
+        sum += perDay.get(d)?.requests ?? 0
+        via += perDay.get(d)?.via ?? 0
+      }
+      return { own: sum - via, via }
     })
-    bars.push({ day, end, requests: counts.reduce((a, b) => a + b, 0), counts })
+    bars.push({ day, end, requests: counts.reduce((a, b) => a + b.own + b.via, 0), counts })
   }
   const top = niceMax(Math.max(0, ...bars.map((b) => b.requests)))
   const drawn: Bar[] = bars.map(({ day, end, requests, counts }) => {
     const span = unit === 'week' ? `Week of ${shortDay(day)}` : formatDay(day)
-    const split = perAgent.flatMap(({ agent }, i) => (counts[i] > 0 && perAgent.length > 1 ? [`${AGENT_TITLES[agent]} ${group(counts[i])}`] : []))
+    const split = perAgent.flatMap(({ agent }, i) => {
+      const { own, via } = counts[i]
+      const parts = [...(own > 0 ? [`${AGENT_TITLES[agent]} ${group(own)}`] : []), ...(via > 0 ? [`${VIA_OPENCODE} ${group(via)}`] : [])]
+      return own + via > 0 && perAgent.length > 1 ? parts : []
+    })
     const label = end < summary.historyFrom ? `${span}: before the history starts` : `${span}: ${requestsLabel(requests)}${split.length > 0 ? ` (${split.join(', ')})` : ''}`
     return {
       day,
       requests,
       label,
-      segments: perAgent.flatMap(({ agent }, i) => (counts[i] > 0 ? [{ agent, requests: counts[i], percent: (counts[i] / top) * 100, hatched: false }] : [])),
+      segments: perAgent.flatMap(({ agent }, i) => [
+        ...(counts[i].own > 0 ? [{ agent, requests: counts[i].own, percent: (counts[i].own / top) * 100, hatched: false }] : []),
+        ...(counts[i].via > 0 ? [{ agent, requests: counts[i].via, percent: (counts[i].via / top) * 100, hatched: true }] : []),
+      ]),
     }
   })
   const total = drawn.reduce((sum, bar) => sum + bar.requests, 0)
+  // An agent's legend entry is its own colour, and a hatched one beside it when some of its requests in the range went through
+  // OpenCode. An agent whose every request in the range did has the hatched entry only.
+  const legend: BarsView['legend'] = summary.agents.flatMap((agent, i) => {
+    const via = bars.reduce((sum, bar) => sum + bar.counts[i].via, 0)
+    const own = bars.reduce((sum, bar) => sum + bar.counts[i].own, 0)
+    return [
+      ...(own > 0 || via === 0 ? [{ agent: agent.agent, title: AGENT_TITLES[agent.agent], hatched: false }] : []),
+      ...(via > 0 ? [{ agent: agent.agent, title: VIA_OPENCODE, hatched: true }] : []),
+    ]
+  })
   return {
     title: unit === 'week' ? 'Requests per week' : 'Requests per day',
     total: requestsLabel(total),
     unit,
     bars: drawn,
     ticks: [top, top / 2, 0].map((value) => ({ value, label: group(value) })),
-    legend: summary.agents.map((agent) => ({ agent: agent.agent, title: AGENT_TITLES[agent.agent], hatched: false })),
+    legend,
   }
 }
 

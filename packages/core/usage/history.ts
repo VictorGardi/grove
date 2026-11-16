@@ -10,7 +10,7 @@ export interface UsageRequest {
   key: string
   agent: UsageAgent
   // Where it ran, within the agent: Claude's is CLAUDE_CODE or CLAUDE_DESKTOP from the record's entrypoint (UNTAGGED in a history
-  // written before the tag existed), Copilot's is 'copilot'.
+  // written before the tag existed), Copilot's is 'copilot' or OPENCODE_SOURCE.
   source: string
   model: string
   // The working folder of the request, '' when the record named none.
@@ -35,6 +35,8 @@ export interface UsageRequest {
 export const CLAUDE_UNTAGGED = 'claude'
 export const CLAUDE_CODE = 'claude-code'
 export const CLAUDE_DESKTOP = 'claude-desktop'
+// Copilot's other source: requests OpenCode made on Copilot's models. Copilot CLI's own are 'copilot'.
+export const OPENCODE_SOURCE = 'opencode'
 
 const AGENTS: readonly string[] = ['claude', 'copilot'] satisfies UsageAgent[]
 const VERSION = 1

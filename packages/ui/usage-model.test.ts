@@ -385,6 +385,51 @@ describe('the stacked bars', () => {
     expect(last.label).toBe('Mon 16 Nov 2026: 55 requests (Claude 30, Copilot CLI 25)')
   })
 
+  describe('the part of Copilot’s requests made through OpenCode', () => {
+    const via = (n: number): UsageSplitTotals => ({ split: 'opencode', ...t(n) })
+    const viaDay = (d: string, requests: number, through: number) => day(d, requests, { sources: [{ split: 'other' as const, ...t(requests - through) }, via(through)].filter((x) => x.requests > 0) })
+
+    it('is its own hatched segment on top of Copilot’s own, with its own count in the label', () => {
+      const bars = charts(two({ days: days([['2026-11-16', 30]]) }, { days: [viaDay('2026-11-16', 25, 5)] })).bars
+      const last = bars.bars.at(-1)!
+      expect(last.requests).toBe(55)
+      expect(last.segments).toEqual([
+        { agent: 'claude', requests: 30, percent: 30, hatched: false },
+        { agent: 'copilot', requests: 20, percent: 20, hatched: false },
+        { agent: 'copilot', requests: 5, percent: 5, hatched: true },
+      ])
+      expect(last.label).toBe('Mon 16 Nov 2026: 55 requests (Claude 30, Copilot CLI 20, Copilot via OpenCode 5)')
+    })
+
+    it('is the whole of Copilot’s bar on a day when only OpenCode made requests, and a legend entry of its own', () => {
+      const bars = charts(two({ days: days([['2026-11-15', 2]]) }, { days: [viaDay('2026-11-16', 4, 4)] })).bars
+      expect(bars.bars.at(-1)?.segments).toEqual([{ agent: 'copilot', requests: 4, percent: 80, hatched: true }])
+      expect(bars.bars.at(-1)?.label).toBe('Mon 16 Nov 2026: 4 requests (Copilot via OpenCode 4)')
+      // Copilot CLI made no request in the range: only the hatched entry stands for Copilot.
+      expect(bars.legend).toEqual([
+        { agent: 'claude', title: 'Claude', hatched: false },
+        { agent: 'copilot', title: 'Copilot via OpenCode', hatched: true },
+      ])
+    })
+
+    it('has both legend entries when Copilot CLI made requests too, and none of it for a range without OpenCode', () => {
+      const mixed = charts(two({}, { days: [viaDay('2026-11-16', 6, 1)] })).bars
+      expect(mixed.legend).toEqual([
+        { agent: 'claude', title: 'Claude', hatched: false },
+        { agent: 'copilot', title: 'Copilot CLI', hatched: false },
+        { agent: 'copilot', title: 'Copilot via OpenCode', hatched: true },
+      ])
+      // Only requests inside the bars' range count: a day before it is not drawn.
+      const old = charts(two({}, { days: [viaDay('2026-09-01', 3, 3), day('2026-11-16', 2)] })).bars
+      expect(old.legend.map((item) => item.hatched)).toEqual([false, false])
+    })
+
+    it('adds up in a week bar like the others', () => {
+      const bars = charts(two({}, { days: [viaDay('2026-11-16', 4, 3), viaDay('2026-11-15', 2, 2)] }), { range: '1y', expanded: true }).bars
+      expect(bars.bars.at(-1)?.segments).toEqual([{ agent: 'copilot', requests: 1, percent: 20, hatched: false }, { agent: 'copilot', requests: 3, percent: 60, hatched: true }])
+    })
+  })
+
   it('has a legend of the agents shown, and says when a bar is from before the history', () => {
     const s = { ...two({ days: days([['2026-11-16', 3]]) }), historyFrom: '2026-11-01' }
     const bars = charts(s).bars
@@ -639,6 +684,31 @@ describe('where requests ran', () => {
     expect(bar(view)?.note).not.toContain('\n')
   })
 
+  it('shows the requests OpenCode made on Copilot’s models as their own hatched place, with no Grove split and no credits', () => {
+    const view = usageView(two({}, { hasCredits: true, sources: [split('grove', 3, { credits: 2.5 }), split('other', 1, { credits: 0.5 }), split('opencode', 4, { withoutCredits: 4 })] }), { expanded: false })
+    const segments = bar(view, 'copilot')?.segments
+    expect(segments?.map((s) => [s.split, s.label, s.share, s.hatched])).toEqual([
+      ['grove', 'Copilot CLI run in Grove', '38%', false],
+      ['other', 'Copilot CLI not tracked by Grove', '13%', false],
+      ['opencode', 'Copilot via OpenCode', '50%', true],
+    ])
+    expect(segments?.[2].credits).toBe('4 requests without credits')
+    expect(segments?.[2].title).toBe('Copilot via OpenCode: 4 requests, 50%. 4 requests without credits')
+    expect(segments?.[2].colour).toBe(splitColour('copilot', 'opencode'))
+    expect(bar(view, 'copilot')?.note).toBeNull()
+  })
+
+  it('has it in the day’s detail with the credit note on the day’s total', () => {
+    const days = [day('2026-11-11', 4, { credits: 2.5, withoutCredits: 2, sources: [{ split: 'other', ...t(2, { credits: 2.5 }) }, { split: 'opencode', ...t(2, { withoutCredits: 2 }) }] })]
+    const s = { ...summary([]), agents: [agent('copilot', { days, hasCredits: true })] }
+    const detail = usageView(s, { expanded: false, selected: { agent: 'copilot', day: '2026-11-11' } }).agents[0].detail
+    expect(detail?.credits).toBe('2.50 credits plus 2 requests without credits')
+    expect(detail?.sources?.segments.map((x) => [x.label, x.requests])).toEqual([
+      ['Copilot CLI not tracked by Grove', '2 requests'],
+      ['Copilot via OpenCode', '2 requests'],
+    ])
+  })
+
   it('says so when Grove has no record of Claude sessions at all', () => {
     const view = usageView(two({ sources: [split('unknown', 5)], trackedSince: null }), { expanded: false })
     expect(bar(view)?.note).toBe('Grove has no record of your Claude sessions, so earlier Claude Code requests can’t be split.')
@@ -713,6 +783,7 @@ describe('the colours of where requests ran', () => {
       other: mix(rgb(ink), base, SPLIT_INK_MIX.other),
       desktop: mix(rgb(ink), base, SPLIT_INK_MIX.desktop),
       unknown: mix(rgb(ink), rgb(ground), SPLIT_UNKNOWN_MIX),
+      opencode: mix(rgb(ink), base, SPLIT_INK_MIX.opencode),
     }
   }
 
@@ -721,6 +792,7 @@ describe('the colours of where requests ran', () => {
     expect(splitColour('claude', 'desktop')).toBe(`color-mix(in srgb, var(--color-ink) ${SPLIT_INK_MIX.desktop}%, var(--agent-claude))`)
     expect(splitColour('copilot', 'other')).toBe(`color-mix(in srgb, var(--color-ink) ${SPLIT_INK_MIX.other}%, ${agentColour('copilot')})`)
     expect(splitColour('claude', 'unknown')).toBe(`color-mix(in srgb, var(--color-ink) ${SPLIT_UNKNOWN_MIX}%, var(--color-ground))`)
+    expect(splitColour('copilot', 'opencode')).toBe(`color-mix(in srgb, var(--color-ink) ${SPLIT_INK_MIX.opencode}%, ${agentColour('copilot')})`)
     expect(themes.length).toBeGreaterThan(5)
   })
 
@@ -728,11 +800,17 @@ describe('the colours of where requests ran', () => {
     for (const agent of ['claude', 'copilot'] as const) for (const colour of Object.values(colours(agent, ground, ink))) expect(contrast(colour, rgb(ground))).toBeGreaterThanOrEqual(3)
   })
 
-  // The three places that are the agent's colour step apart in lightness; the fourth is hatched, so it needs no step of its own.
+  // The three places that are the agent's colour step apart in lightness; "can't tell" is hatched, so it needs no step of its own.
   it.each(themes)('%s: the places of an agent differ from each other in lightness, not only in hue', (_name, ground, ink) => {
     for (const agent of ['claude', 'copilot'] as const) {
       const { grove, other, desktop } = colours(agent, ground, ink)
       for (const [a, b] of [[grove, other], [other, desktop], [grove, desktop]]) expect(contrast(a, b)).toBeGreaterThanOrEqual(1.1)
     }
+  })
+
+  // Copilot's places are Copilot CLI run in Grove, not tracked by Grove, and via OpenCode (which is hatched too, but also has its own step).
+  it.each(themes)('%s: via OpenCode differs in lightness from both of Copilot CLI’s places', (_name, ground, ink) => {
+    const { grove, other, opencode } = colours('copilot', ground, ink)
+    for (const [a, b] of [[grove, opencode], [other, opencode]]) expect(contrast(a, b)).toBeGreaterThanOrEqual(1.1)
   })
 })

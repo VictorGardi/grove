@@ -133,8 +133,9 @@ export interface UsageRepositoryTotals extends UsageTotals {
 
 // Where requests ran, as the panel splits them. Claude: 'desktop' (Claude Desktop, never run in Grove), 'grove' (Claude Code run in
 // Grove), 'other' (Claude Code not tracked by Grove) and 'unknown' (Claude Code from before Grove recorded its sessions: it cannot
-// tell). Copilot: 'grove' and 'other'.
-export type UsageSplit = 'desktop' | 'grove' | 'other' | 'unknown'
+// tell). Copilot: 'grove' and 'other' for Copilot CLI, and 'opencode' for the requests OpenCode made on Copilot's models, which are
+// not split any further.
+export type UsageSplit = 'desktop' | 'grove' | 'other' | 'unknown' | 'opencode'
 
 export interface UsageSplitTotals extends UsageTotals {
   split: UsageSplit

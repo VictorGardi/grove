@@ -124,3 +124,8 @@ specific meaning, so humans and agents stay consistent.
 - **Not tracked by Grove**: requests from sessions Grove did not run or cannot
   tell it ran. The usage panel shows this share only from the date Grove began
   recording its own sessions; before that it says it cannot tell.
+- **Via OpenCode**: requests OpenCode made on Copilot's models. Only OpenCode's
+  own database records them, so Grove reads it for these alone (nothing else of
+  OpenCode appears in the usage panel). They count under Copilot as their own
+  slice, drawn hatched, are not split into run in Grove or not tracked, and carry
+  no credit figure, so they are always "requests without credits".

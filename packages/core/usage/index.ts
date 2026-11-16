@@ -1,16 +1,17 @@
 import { dayKey } from '../../protocol/days.ts'
 import type { UsageAgent, UsageSplit, UsageTotals } from '../../protocol/messages.ts'
-import { CLAUDE_DESKTOP, type UsageRequest } from './history.ts'
+import { CLAUDE_DESKTOP, OPENCODE_SOURCE, type UsageRequest } from './history.ts'
 
 // The agents whose requests carry a credit figure; for the others no request is "without credits", there are none to count.
 export const CREDIT_AGENTS: readonly UsageAgent[] = ['copilot']
 
 // The order the splits are listed in.
-export const SPLITS: readonly UsageSplit[] = ['desktop', 'grove', 'other', 'unknown']
+export const SPLITS: readonly UsageSplit[] = ['desktop', 'grove', 'other', 'unknown', 'opencode']
 
-// Where a request ran, as the panel splits it: Claude Desktop apart, the rest by whether Grove ran the session.
+// Where a request ran, as the panel splits it: Claude Desktop and OpenCode apart (neither says anything about Grove), the rest by
+// whether Grove ran the session.
 export const splitOf = (request: UsageRequest): UsageSplit =>
-  request.source === CLAUDE_DESKTOP ? 'desktop' : request.inGrove === true ? 'grove' : request.inGrove === false ? 'other' : 'unknown'
+  request.source === CLAUDE_DESKTOP ? 'desktop' : request.source === OPENCODE_SOURCE ? 'opencode' : request.inGrove === true ? 'grove' : request.inGrove === false ? 'other' : 'unknown'
 
 export const emptyTotals = (): UsageTotals => ({ requests: 0, input: 0, output: 0, cacheRead: 0, cacheWrite: 0, credits: 0, withoutCredits: 0 })
 
