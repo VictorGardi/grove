@@ -430,6 +430,35 @@ describe('window status path', () => {
     expect(fold()).toBeNull()
   })
 
+  it('draws Go to as the sidebar\'s tree: a heading, branches to its spaces, nodes, and the same quiet line', () => {
+    const goto = () => document.querySelector<HTMLElement>('#goto-list')!
+    notify('spaces.changed', space('s1', { path: '/Users/test/proj', name: 'proj', repoName: 'proj', branch: 'main' }))
+    notify('spaces.changed', space('proj-wt', { name: 'proj-wt', worktree: true, repoName: 'proj', parent: 's1' }))
+    notify('spaces.changed', space('old', { repoName: 'old', branch: 'master' }))
+    notify('spaces.changed', space('old-wt', { name: 'old-wt', worktree: true, repoName: 'old', parent: 'old' }))
+    notify('status.changed', change('tab-claude', 'claude', 'needs-you'))
+    document.querySelector<HTMLElement>('#search-button')!.click()
+    // One heading holds the main checkout (named by its branch) and the worktree; the tabs keep their rows.
+    expect([...goto().querySelectorAll('.goto-heading .heading-label')].map((el) => el.textContent)).toEqual(['proj'])
+    expect([...goto().querySelectorAll('.goto-heading .goto-space-name')].map((el) => el.textContent)).toEqual(['main', 'proj-wt'])
+    expect(goto().querySelector('.goto-heading .goto-space .indicator')?.className).toBe('indicator ind-needs-you')
+    expect(goto().querySelector('.goto-heading .goto-space .indicator')?.getAttribute('aria-label')).toBe('needs you')
+    expect(goto().querySelectorAll('.goto-heading .goto-row').length).toBeGreaterThan(0)
+    expect(goto().querySelector('.space-tile')).toBeNull()
+    // The quiet spaces fold as in the sidebar, and a query searches them too.
+    const fold = () => goto().querySelector<HTMLElement>('.goto-quiet')
+    expect(fold()?.textContent).toBe('2 quiet spaces ▾')
+    fold()!.click()
+    expect(fold()?.textContent).toBe('Hide quiet spaces ▴')
+    expect([...goto().querySelectorAll('.goto-space-name')].map((el) => el.textContent)).toEqual(['main', 'proj-wt', 'master', 'old-wt'])
+    const input = document.querySelector<HTMLInputElement>('#goto-input')!
+    input.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true }))
+    notify('spaces.removed', { id: 'old-wt' })
+    notify('spaces.removed', { id: 'old' })
+    notify('spaces.removed', { id: 'proj-wt' })
+    notify('spaces.changed', space('s1', { path: '/Users/test/proj', name: 'proj' }))
+  })
+
   it('names no agent type anywhere in the sidebar, and draws no mark or tile', () => {
     expect(document.querySelector('#spaces .agent-mark, #spaces .space-tile, #agents')).toBeNull()
     expect(document.querySelector('#spaces')?.textContent).not.toMatch(/Claude|Copilot|OpenCode/)

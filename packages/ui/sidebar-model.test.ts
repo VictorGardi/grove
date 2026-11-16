@@ -14,7 +14,6 @@ import {
   sidebarSpaceOrder,
   spaceAt,
   tabStateOf,
-  tileIndex,
   urgentTabs,
   type SidebarSpace,
   type SummaryTab,
@@ -89,20 +88,6 @@ describe('rowSummary', () => {
   it('shows the start of the deciding tab\'s state, and no time when it has none', () => {
     expect(rowSummary([tab('a', 'working', { since: 5 }), tab('b', 'idle', { since: 9 })], []).since).toBe(5)
     expect(rowSummary([tab('a', 'idle', { agent: null, since: null })], []).since).toBeNull()
-  })
-})
-
-describe('tileIndex', () => {
-  it('gives a number from 1 to 8', () => {
-    for (const name of ['grove', 'notes', 'a', '', 'a long folder name with spaces']) {
-      const index = tileIndex(name)
-      expect(index).toBeGreaterThanOrEqual(1)
-      expect(index).toBeLessThanOrEqual(8)
-    }
-  })
-
-  it('is stable for the same name', () => {
-    expect(tileIndex('grove')).toBe(tileIndex('grove'))
   })
 })
 

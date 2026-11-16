@@ -1,5 +1,5 @@
 Status: shipped
-Shipped as specified; Resume's button class and the Go to tiles were kept (Go to still draws them).
+Shipped as specified. Follow-up: Go to now draws the same tree instead of letter tiles.
 
 # Sidebar as a branch graph
 

@@ -353,37 +353,6 @@ p {
   display: none;
 }
 
-/* Go to's worktree tile has no colour either: the branch mark, in the worktree purple. */
-.goto-space .space-tile:not([class*='tile-']) {
-  background: none;
-  color: var(--color-worktree);
-}
-
-.space-tile {
-  display: grid;
-  place-items: center;
-  width: var(--size-tile);
-  height: var(--size-tile);
-  border-radius: var(--radius-sm);
-  color: var(--color-on-mark);
-  font-size: var(--text-sm);
-  font-weight: 600;
-}
-
-.space-tile .icon {
-  width: var(--icon-size-sm);
-  height: var(--icon-size-sm);
-}
-
-.tile-1 { background: var(--tile-1); }
-.tile-2 { background: var(--tile-2); }
-.tile-3 { background: var(--tile-3); }
-.tile-4 { background: var(--tile-4); }
-.tile-5 { background: var(--tile-5); }
-.tile-6 { background: var(--tile-6); }
-.tile-7 { background: var(--tile-7); }
-.tile-8 { background: var(--tile-8); }
-
 .tab-label,
 .pane-kind {
   min-width: 0;
@@ -3475,8 +3444,14 @@ li[aria-selected] > .slash-tile {
   color: var(--color-mute);
 }
 
-.goto-space-note {
-  color: var(--color-faint);
+/* Go to's tree: a repo's heading and its spaces on branches, as in the sidebar; the space's line matches the sidebar's line 1. */
+.goto-heading .heading-name {
+  cursor: default;
+}
+
+.goto-heading .goto-space {
+  padding: var(--space-1) var(--space-4) var(--space-1) var(--space-2);
+  min-height: var(--graph-line);
 }
 
 .goto-row {

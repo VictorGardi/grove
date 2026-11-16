@@ -26,7 +26,7 @@ import { readSidebarFolds, readSidebarHidden, writeSidebarFolds, writeSidebarHid
 import { createFocusSignal } from './focus-signal.ts'
 import { noViewState, storageViewState } from './view-state.ts'
 import { quietLabel, quietSpaces } from './quiet-spaces.ts'
-import { foldQuiet, headingOf, headingOpen, jumpTargets, mostUrgent, nextUrgent, rowName, rowSummary, shortFolder, sidebarItems, sidebarSpaceOrder, spaceAt, tileIndex, worktreeOf, type SidebarItem, type RowSummary, type SidebarRow, type SummaryTab } from './sidebar-model.ts'
+import { foldQuiet, headingOf, headingOpen, jumpTargets, mostUrgent, nextUrgent, rowName, rowSummary, shortFolder, sidebarItems, sidebarSpaceOrder, spaceAt, type SidebarItem, type RowSummary, type SidebarRow, type SummaryTab } from './sidebar-model.ts'
 import { createWindowStore, type Tab, type TabKind } from './window-store.ts'
 import { contextMeter, hideContextTip, markWithContext } from './context-badge.ts'
 import { createTabPill, type TabPill } from './tab-pill.ts'
@@ -186,7 +186,7 @@ const goTo = createGoTo(
     source: () => ({
       spaces: sidebarSpaceOrder(store.spaces()).flatMap((id) => {
         const space = store.space(id)
-        return space ? [{ id, name: space.name, parent: space.parent, worktree: space.worktree, repoName: space.repoName }] : []
+        return space ? [{ id, name: space.name, label: space.label, parent: space.parent, worktree: space.worktree, repoName: space.repoName, branch: space.branch }] : []
       }),
       tabs: store.tabs.map((tab) => ({
         id: tab.id,
@@ -195,12 +195,13 @@ const goTo = createGoTo(
         agent: store.agent(tab.id)?.agent ?? (tab.kind === 'shell' ? null : tab.kind),
         state: stateOf(tab),
         reason: store.agent(tab.id)?.reason,
+        exited: tab.exited,
       })),
       recent: [...store.recentIds],
       activeSpaceId: store.activeSpace,
       activeTabId: store.activeTab?.id ?? null,
     }),
-    tile: (group) => spaceTile(group.spaceId),
+    node: (group) => spaceNode(group.state, group.empty),
     indicator: (state, agent) => indicatorEl(state, agent ?? undefined),
     agentMark: (row) => {
       const mark = markEl(row.agent)
@@ -398,16 +399,6 @@ function element(tag: string, className: string, text = ''): HTMLElement {
 
 function spaceName(spaceId: string): string {
   return store.space(spaceId)?.name ?? spaceId
-}
-
-// The space's tile, as Go to draws it: its colour and first letter, or the branch icon for a worktree.
-function spaceTile(spaceId: string): HTMLElement {
-  const space = store.space(spaceId)
-  const name = spaceName(spaceId)
-  const worktree = space !== undefined && worktreeOf(space, store.spaces()) !== null
-  const tile = element('span', worktree ? 'space-tile' : `space-tile tile-${tileIndex(name)}`, worktree ? '' : name.charAt(0).toUpperCase())
-  if (worktree || space?.worktree) tile.innerHTML = iconSvg('branch')
-  return tile
 }
 
 // The tab's name: the one the user gave it, else "Tab N".
@@ -1047,6 +1038,15 @@ function summaryTabs(spaceId: string): SummaryTab[] {
   })
 }
 
+// A space's node: its most urgent state, or the dashed look for no tabs open.
+function spaceNode(state: AgentStateName, empty: boolean): HTMLElement {
+  if (!empty) return indicatorEl(state, undefined, true)
+  const node = element('span', indicatorClass('unknown'))
+  node.title = 'no tabs open'
+  node.setAttribute('aria-label', 'no tabs open')
+  return node
+}
+
 // Line 2 of a row: what is open, as the agent and terminal icons with their counts (each only above zero), or "No tabs open".
 function openLine(summary: RowSummary): HTMLElement {
   const line = element('span', summary.empty ? 'space-detail' : 'space-detail counts', summary.empty ? 'No tabs open' : '')
@@ -1074,11 +1074,7 @@ function spaceRow(row: SidebarRow<SpaceInfo>): HTMLButtonElement {
   button.className = summary.state === 'working' ? 'space working' : 'space'
   button.dataset.spaceId = space.id
   button.title = space.path
-  const node = summary.empty ? element('span', indicatorClass('unknown')) : indicatorEl(summary.state, undefined, true)
-  if (summary.empty) {
-    node.title = 'no tabs open'
-    node.setAttribute('aria-label', 'no tabs open')
-  }
+  const node = spaceNode(summary.state, summary.empty)
   const name = element('span', 'space-name', rowName(row))
   if (summary.empty && !grouped) {
     button.classList.add('plain')

@@ -90,7 +90,8 @@ specific meaning, so humans and agents stay consistent.
   leaves the list only when all its spaces are quiet. This is separate from
   folding a heading, which the human does and which is remembered per repo.
 - **Go to**: the Cmd+P overlay that fuzzy-matches tabs, spaces and agents,
-  grouped by space, and jumps to the chosen tab on Enter. It only navigates; it
+  grouped by space and drawn as the sidebar's tree (headings, branches, nodes,
+  row names), and jumps to the chosen tab on Enter. It only navigates; it
   runs no commands.
 - **Grove CLI**: the `grove` command, which drives the running app over the
   core socket (`~/.grove/s`); a tab knows itself by `GROVE_TAB`.

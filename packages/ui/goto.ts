@@ -1,8 +1,9 @@
-// The Go to overlay: a filter box over the tabs of every space, grouped by space. Up and Down move the highlight, Enter goes to
+// The Go to overlay: a filter box over the tabs of every space, grouped by space and drawn as the sidebar's tree. Up and Down move the highlight, Enter goes to
 // that tab (Cmd+Enter opens it in the grid), Esc and a click on the backdrop close it. The rules for what is listed are in goto-model.ts.
 import type { AgentKind } from '../core/status/adapter.ts'
 import type { AgentStateName } from '../protocol/messages.ts'
 import { hideContextTip } from './context-badge.ts'
+import { quietLabel } from './quiet-spaces.ts'
 import { goToView, marksOf, toggleMark, type GoToGroup, type GoToInput, type GoToRow, type GoToView } from './goto-model.ts'
 
 export interface GoToElements {
@@ -16,7 +17,8 @@ export interface GoToElements {
 export interface GoToDeps {
   // The spaces and tabs as they are now; the overlay adds the query and the collapsed state.
   source(): Pick<GoToInput, 'spaces' | 'tabs' | 'recent' | 'activeSpaceId' | 'activeTabId'>
-  tile(group: GoToGroup): HTMLElement
+  // The space's node, as the sidebar's row draws it.
+  node(group: GoToGroup): HTMLElement
   indicator(state: AgentStateName, agent: AgentKind | null): HTMLElement
   // The row's agent icon with its context ring, as Go to draws it.
   agentMark(row: GoToRow & { agent: AgentKind; agentName: string }): HTMLElement
@@ -52,17 +54,36 @@ export function createGoTo(elements: GoToElements, deps: GoToDeps): GoTo {
     const marks = marksOf(input.value)
     for (const chip of chips) chip.setAttribute('aria-pressed', String(marks.has(chip.dataset.mark ?? '')))
     if (!rows().some((row) => row.tabId === highlight)) highlight = view.highlight
-    const nodes: HTMLElement[] = view.groups.map((group) => {
+    // A repo's spaces sit together (see goToView): they share one heading, with the trunk and a branch to each space.
+    const nodes: HTMLElement[] = []
+    let heading: HTMLElement | null = null
+    let branches: HTMLElement | null = null
+    for (const group of view.groups) {
       const section = element('section', 'goto-group')
       const head = element('header', 'goto-space')
-      head.append(deps.tile(group), element('span', 'goto-space-name', group.name))
-      if (group.worktreeOf) head.append(element('span', 'goto-space-note', `worktree of ${group.worktreeOf}`))
+      head.append(deps.node(group), element('span', 'goto-space-name', group.name))
       section.append(head, ...group.rows.map(rowNode))
-      return section
-    })
+      if (group.repo === null) {
+        heading = null
+        nodes.push(section)
+        continue
+      }
+      if (!heading || heading.dataset.repo !== group.repo) {
+        heading = element('section', 'goto-heading')
+        heading.dataset.repo = group.repo
+        const name = element('h3', 'heading-name')
+        name.append(element('span', 'heading-label', group.repo))
+        branches = element('ul', 'spaces graph')
+        heading.append(name, branches)
+        nodes.push(heading)
+      }
+      const branch = document.createElement('li')
+      branch.append(section)
+      branches!.append(branch)
+    }
     if (view.quiet) {
-      const { count, expanded, last } = view.quiet
-      const toggle = element('button', 'goto-quiet', `earlier: ${count} quiet ${count === 1 ? 'space' : 'spaces'}${last ? ` · last: ${last}` : ''} ${expanded ? '▴' : '▾'}`) as HTMLButtonElement
+      const { count, expanded } = view.quiet
+      const toggle = element('button', 'goto-quiet', quietLabel(count, expanded)) as HTMLButtonElement
       toggle.type = 'button'
       toggle.setAttribute('aria-expanded', String(expanded))
       toggle.addEventListener('click', () => {

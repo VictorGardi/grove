@@ -2,18 +2,13 @@
 import type { AgentStateName, NeedsYouReason } from '../protocol/messages.ts'
 import type { AgentKind } from '../core/status/adapter.ts'
 import { indicatorLabel } from './indicator.ts'
-import { worktreeOf as worktreeOfSpace } from './sidebar-model.ts'
+import { mostUrgent, rowName, sidebarItems, worktreeOf as worktreeOfSpace, type SidebarSpace } from './sidebar-model.ts'
 import { BUSY, quietSpaces, RECENT_SPACES, visitRank } from './quiet-spaces.ts'
 
 export { RECENT_SPACES }
 
-export interface GoToSpace {
-  id: string
-  name: string
-  parent: string | null
-  worktree: boolean
-  repoName: string | null
-}
+// A space as the sidebar lists it, so Go to can draw the same tree and name rows the same way.
+export type GoToSpace = SidebarSpace
 
 export interface GoToTab {
   id: string
@@ -25,6 +20,8 @@ export interface GoToTab {
   state: AgentStateName
   // Why the tab needs the human, when it does and the agent said.
   reason?: NeedsYouReason
+  // The tab's process ended: it does not count towards its space's state.
+  exited?: boolean
 }
 
 export interface GoToInput {
@@ -86,7 +83,13 @@ function queryScore(terms: string[], fields: string[]): number | null {
 
 export interface GoToGroup {
   spaceId: string
+  // The name the sidebar's row gives the space (see rowName).
   name: string
+  // The repo whose heading the space sits under in the sidebar's tree, or null for a plain space.
+  repo: string | null
+  // The space's most urgent state over its live tabs, whatever the query filtered out; `empty` when it has no live tab.
+  state: AgentStateName
+  empty: boolean
   // The name of the space this worktree belongs to, or null for any other space.
   worktreeOf: string | null
   rows: GoToRow[]
@@ -152,6 +155,11 @@ export function goToView(input: GoToInput): GoToView {
     }
     if (text) terms.push(text)
   }
+  const placed = new Map<string, { repo: string | null; main: boolean }>()
+  for (const item of sidebarItems(input.spaces)) {
+    if (item.kind === 'plain') placed.set(item.row.space.id, { repo: null, main: false })
+    else for (const row of item.rows) placed.set(row.space.id, { repo: item.repo, main: row.main })
+  }
   const entries = input.spaces.flatMap((space) => {
     const own = input.tabs.filter((tab) => tab.spaceId === space.id)
     const worktreeOf = worktreeOfSpace(space, input.spaces)
@@ -168,7 +176,10 @@ export function goToView(input: GoToInput): GoToView {
     const tier = own.some((tab) => tab.state === 'needs-you') ? 0 : own.some((tab) => tab.state === 'finished') ? 1 : space.id === input.activeSpaceId ? 2 : own.some((tab) => tab.state === 'working') ? 3 : 4
     const top = scored[0]?.score ?? 0
     const rows = scored.map(({ tab }) => rowOf(tab))
-    return [{ tier, latest, top, current: space.id === input.activeSpaceId, group: { spaceId: space.id, name: space.name, worktreeOf, rows } }]
+    const where = placed.get(space.id) ?? { repo: null, main: false }
+    const live = own.filter((tab) => !tab.exited)
+    const group = { spaceId: space.id, name: rowName({ space, main: where.main }), repo: where.repo, state: mostUrgent(live.map((tab) => tab.state)) ?? 'idle', empty: live.length === 0, worktreeOf, rows }
+    return [{ tier, latest, top, current: space.id === input.activeSpaceId, group }]
   })
   // Array.prototype.sort is stable, so spaces equally recent keep the sidebar order they came in.
   if (searching) entries.sort((a, b) => b.top - a.top || a.latest - b.latest)
@@ -177,7 +188,9 @@ export function goToView(input: GoToInput): GoToView {
   const folded = searching ? { ids: new Set<string>(), last: null } : quietSpaces({ spaces: input.spaces, tabs: input.tabs, recent: input.recent, activeSpaceId: input.activeSpaceId })
   const quiet = entries.filter((entry) => folded.ids.has(entry.group.spaceId))
   const listed = quiet.length > 0 && !input.expandQuiet ? entries.filter((entry) => !quiet.includes(entry)) : entries
-  const groups = listed.map((entry) => entry.group)
+  // A heading holds its spaces together, where its first space in this order stands; the spaces keep that order within it.
+  const ordered = listed.map((entry) => entry.group)
+  const groups = ordered.filter((group, at) => group.repo === null || ordered.findIndex((other) => other.repo === group.repo) === at).flatMap((group) => (group.repo === null ? [group] : ordered.filter((other) => other.repo === group.repo)))
   const rows = groups.flatMap((group) => group.rows)
   const current = !searching ? rows.find((row) => row.tabId === input.activeTabId) : undefined
   const highlight = (current ?? rows[0])?.tabId ?? null

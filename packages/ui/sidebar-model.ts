@@ -31,13 +31,6 @@ export function worktreeOf(space: WorktreeInput, spaces: Array<SpaceOrderInput &
   return spaces.find((other) => other.id === space.parent)?.name ?? space.repoName
 }
 
-// A stable colour for a space: 1 to 8, from a hash of its name (the tile-1 to tile-8 classes).
-export function tileIndex(name: string): number {
-  let hash = 0
-  for (const char of name) hash = (hash * 31 + char.codePointAt(0)!) >>> 0
-  return (hash % 8) + 1
-}
-
 // The folder as the panes show it: the home folder as `~`, anything else in full.
 export function shortFolder(path: string, home: string): string {
   if (!home) return path

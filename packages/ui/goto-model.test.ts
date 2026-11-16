@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest'
 import { goToView, marksOf, RECENT_SPACES, toggleMark, type GoToInput, type GoToSpace, type GoToTab } from './goto-model.ts'
 
 function space(id: string, name = id, extra: Partial<GoToSpace> = {}): GoToSpace {
-  return { id, name, parent: null, worktree: false, repoName: null, ...extra }
+  return { id, name, label: null, parent: null, worktree: false, repoName: null, branch: null, ...extra }
 }
 
 function tab(id: string, spaceId: string, name: string, extra: Partial<GoToTab> = {}): GoToTab {
@@ -295,6 +295,49 @@ describe('goToView', () => {
         ['b', 'grove'],
         ['c', 'other'],
       ])
+    })
+
+    it('puts a repo\'s spaces under one heading, named as the sidebar names its rows', () => {
+      const view = goToView(
+        input({
+          spaces: [
+            space('a', 'grove', { repoName: 'grove', branch: 'master' }),
+            space('x', 'lone'),
+            space('b', 'feature', { parent: 'a', worktree: true, repoName: 'grove' }),
+          ],
+          tabs: [tab('a1', 'a', '1'), tab('x1', 'x', '1', { state: 'needs-you' }), tab('b1', 'b', '1', { state: 'working' })],
+          recent: ['b1', 'a1', 'x1'],
+          activeSpaceId: 'b',
+          expandQuiet: true,
+        }),
+      )
+      // The needs-you space leads; the heading stands where its first space is, and its spaces keep Go to's order within it.
+      expect(view.groups.map((group) => [group.spaceId, group.repo, group.name])).toEqual([
+        ['x', null, 'lone'],
+        ['b', 'grove', 'feature'],
+        ['a', 'grove', 'master'],
+      ])
+    })
+
+    it('keeps a lone worktree under its repo\'s heading and gives a space its most urgent live state', () => {
+      const view = goToView(
+        input({
+          spaces: [space('b', 'feature', { worktree: true, repoName: 'grove' }), space('c', 'empty'), space('d', 'gone')],
+          tabs: [tab('b1', 'b', '1', { state: 'working' }), tab('b2', 'b', '2', { state: 'finished' }), tab('d1', 'd', '1', { state: 'needs-you', exited: true })],
+          activeSpaceId: 'b',
+          expandQuiet: true,
+        }),
+      )
+      const by = (id: string) => view.groups.find((group) => group.spaceId === id)!
+      expect(by('b')).toMatchObject({ repo: 'grove', state: 'finished', empty: false })
+      expect(by('c')).toMatchObject({ repo: null, state: 'idle', empty: true })
+      expect(by('d')).toMatchObject({ state: 'idle', empty: true })
+    })
+
+    it('draws a space\'s state whole while a query keeps some of its tabs', () => {
+      const view = goToView(input({ spaces: [space('a')], tabs: [tab('a1', 'a', 'one'), tab('a2', 'a', 'two', { state: 'needs-you' })], query: 'one', activeSpaceId: 'a' }))
+      expect(view.groups[0]).toMatchObject({ state: 'needs-you' })
+      expect(view.groups[0].rows.map((row) => row.name)).toEqual(['one'])
     })
 
     it('starts on the current tab, or on the top match when there is a query', () => {

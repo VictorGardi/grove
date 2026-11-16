@@ -7,7 +7,7 @@ The window follows the Herdr reference (`docs/work/2026-11-04-grove-v2-spaces-ta
 | Token | Size | Used for |
 | --- | --- | --- |
 | `--text-xs` | 11px | agent and shell mark letters, brand letter |
-| `--text-sm` | 12px | Go to tile letters, resume button, the new-tab labels |
+| `--text-sm` | 12px | Resume button, the new-tab labels |
 | `--text-meta` | 12.5px | branch, folder, age, empty and status text |
 | `--text-md` | 13.5px | section labels, tabs, pane kind |
 | `--text-lg` | 14.5px | space and heading names, empty-state heading |
@@ -41,7 +41,7 @@ Fonts: Geist for the interface (`--font-ui`), Geist Mono for the terminal (`--fo
 
 ## Sizes
 
-`--header-h` 50px (sidebar header and tab strip), `--pane-head-h` 40px, `--sidebar-width` 240px (overwritten by the saved setting), Go to tiles 18px (`--size-tile`), marks 20px (18px in tabs and pane heads), icon buttons 24px, icons 15px (12px in Go to tiles and close buttons), icon stroke 1.6px.
+`--header-h` 50px (sidebar header and tab strip), `--pane-head-h` 40px, `--sidebar-width` 240px (overwritten by the saved setting), marks 20px (18px in tabs and pane heads), icon buttons 24px, icons 15px (12px in Go to tiles and close buttons), icon stroke 1.6px.
 
 ## Indicators
 
@@ -63,7 +63,7 @@ Indicator box: `--ind-size` 8px, ring stroke `--ind-stroke` 1.5px, halo `--halo-
 
 ## Sidebar graph
 
-A repo with worktrees is a heading (a trunk) with its spaces as two-line rows branching off it (ADR 0005); a space with none is a plain row. Each row has a state node, the same indicator as in Indicators, and shows its most urgent state; a folded heading shows the most urgent state of its rows, an unfolded one none. The geometry is tokens: `--graph-indent` (trunk inset), `--graph-branch` (branch length), `--graph-line` (first-line height) and `--graph-branch-y` (branch height, from the row's top to the middle of its first line). Per-agent rows and letter tiles are gone from the sidebar; Resume is a button in the pane of an exited agent tab. Line 2 of a row shows no tab name: only what is open, right-aligned, as the agent icon and the terminal icon (`>_`) with their live counts, each when above zero, or "No tabs open". Quiet spaces fold behind one line ("N quiet spaces ▾", "Hide quiet spaces ▴" when open). Which headings are folded is saved per repo (`grove.sidebar-folds`, `sidebar-state.ts`).
+A repo with worktrees is a heading (a trunk) with its spaces as two-line rows branching off it (ADR 0005); a space with none is a plain row. Each row has a state node, the same indicator as in Indicators, and shows its most urgent state; a folded heading shows the most urgent state of its rows, an unfolded one none. The geometry is tokens: `--graph-indent` (trunk inset), `--graph-branch` (branch length), `--graph-line` (first-line height) and `--graph-branch-y` (branch height, from the row's top to the middle of its first line). Per-agent rows and letter tiles are gone from the sidebar; Resume is a button in the pane of an exited agent tab. Line 2 of a row shows no tab name: only what is open, right-aligned, as the agent icon and the terminal icon (`>_`) with their live counts, each when above zero, or "No tabs open". Go to (Cmd+P) draws the same tree: a heading per repo with its spaces on branches, the same nodes and row names, then each space's tabs as before. Quiet spaces fold behind one line ("N quiet spaces ▾", "Hide quiet spaces ▴" when open). Which headings are folded is saved per repo (`grove.sidebar-folds`, `sidebar-state.ts`).
 
 ## Surfaces
 
