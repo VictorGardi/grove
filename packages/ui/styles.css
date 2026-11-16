@@ -3550,6 +3550,7 @@ li[aria-selected] > .slash-tile {
 
 .goto-kind,
 .goto-open-count {
+  line-height: 1;
   display: inline-flex;
   flex: none;
   align-items: center;
@@ -3564,6 +3565,19 @@ li[aria-selected] > .slash-tile {
   height: var(--icon-size-sm);
 }
 
+.goto-kind .agent-mark .icon,
+.goto-open-count .agent-mark .icon {
+  display: block;
+  width: var(--icon-size-sm);
+  height: var(--icon-size-sm);
+}
+
+/* As in the sidebar, the solid agent glyph sits low beside the digits and text: lift it a little. */
+.goto-kind .icon-agent,
+.goto-open-count .icon-agent {
+  margin-bottom: var(--space-xs);
+}
+
 .goto-open {
   display: flex;
   flex: none;
@@ -3573,6 +3587,7 @@ li[aria-selected] > .slash-tile {
 .goto-time,
 .goto-status {
   flex: none;
+  line-height: 1;
   font-size: var(--text-sm);
   font-variant-numeric: tabular-nums;
   color: var(--color-faint);
