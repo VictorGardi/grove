@@ -35,10 +35,21 @@ export interface UsageServiceOptions {
 // copies of an unreadable one set aside. They name folders, and nothing reads them any more (ADR 0004), so a core start removes them.
 const isOldHistoryFile = (name: string): boolean => name === 'usage-history.json' || (name.startsWith('usage-history.json.') && (name.endsWith('.tmp') || name.startsWith('usage-history.json.corrupt-')))
 
+// Each removal stands alone: one that fails (or an entry that is not a plain file, which is left as it is: never a directory's
+// contents, never a link followed) does not stop the rest.
 export function removeOldUsageHistory(home: string): void {
+  let entries: fs.Dirent[]
   try {
-    for (const name of fs.readdirSync(home)) if (isOldHistoryFile(name)) fs.rmSync(path.join(home, name), { force: true })
-  } catch {}
+    entries = fs.readdirSync(home, { withFileTypes: true })
+  } catch {
+    return
+  }
+  for (const entry of entries) {
+    if (!entry.isFile() || !isOldHistoryFile(entry.name)) continue
+    try {
+      fs.rmSync(path.join(home, entry.name), { force: true })
+    } catch {}
+  }
 }
 
 // How a reader's failures are named.

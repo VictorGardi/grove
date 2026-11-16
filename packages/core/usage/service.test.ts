@@ -284,6 +284,19 @@ describe('usage history from Claude files, to the summary', () => {
       expect(() => removeOldUsageHistory(path.join(dir, 'nowhere'))).not.toThrow()
     })
 
+    it('removes each one on its own: a directory or a link with an old name is left alone and the rest are still removed', () => {
+      fs.mkdirSync(path.join(home, 'usage-history.json'))
+      fs.writeFileSync(path.join(home, 'usage-history.json', 'inside'), 'x')
+      fs.writeFileSync(path.join(dir, 'target'), 'x')
+      fs.symlinkSync(path.join(dir, 'target'), path.join(home, 'usage-history.json.abc.tmp'))
+      fs.mkdirSync(path.join(home, 'usage-history.json.corrupt-1'))
+      for (const name of ['usage-history.json.a.tmp', 'usage-history.json.z.tmp', 'usage-history.json.corrupt-2']) fs.writeFileSync(path.join(home, name), 'x')
+      expect(() => removeOldUsageHistory(home)).not.toThrow()
+      expect(fs.readdirSync(home).sort()).toEqual(['usage-history.json', 'usage-history.json.abc.tmp', 'usage-history.json.corrupt-1'])
+      expect(fs.readdirSync(path.join(home, 'usage-history.json'))).toEqual(['inside'])
+      expect(fs.existsSync(path.join(dir, 'target'))).toBe(true)
+    })
+
     it('removes a history that is not valid JSON too, without reading it', async () => {
       fs.writeFileSync(path.join(home, 'usage-history.json'), '{ not json')
       write('p/a.jsonl', [line({ id: 'm1', ts: at(15) })])
