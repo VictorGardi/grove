@@ -220,8 +220,11 @@ p {
 }
 
 /* The branch ends at the node: the row starts where the branch stops. */
+/* The highlight reaches left of the node so it never clips it; the node itself stays where the branch ends. */
 .graph .space {
-  padding-left: 0;
+  width: calc(100% + var(--space-3));
+  margin-left: calc(-1 * var(--space-3));
+  padding-left: var(--space-3);
   gap: var(--space-2);
 }
 
