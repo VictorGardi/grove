@@ -80,6 +80,8 @@ export class UsageHistory {
   readers: Record<string, unknown> = {}
   // Counts changes, so a summary can be reused while nothing changed.
   revision = 0
+  // Told of every request the history gains or changes: what it held under the key until now (undefined for a new one), and what it holds.
+  observer: ((before: UsageRequest | undefined, after: UsageRequest) => void) | undefined
 
   constructor(
     private readonly file: string,
@@ -143,20 +145,23 @@ export class UsageHistory {
     if (kept === undefined) {
       this.rows.set(storedKey, request)
       this.revision++
+      this.observer?.(undefined, request)
       return true
     }
     const first = request.at < kept.at ? request : kept
     const counted = request.output > kept.output ? request : kept
     if (first === kept && counted === kept) return false
-    this.rows.set(storedKey, {
+    const merged: UsageRequest = {
       ...first,
       input: counted.input,
       output: counted.output,
       cacheRead: counted.cacheRead,
       cacheWrite: counted.cacheWrite,
       nanoAiu: counted.nanoAiu ?? first.nanoAiu,
-    })
+    }
+    this.rows.set(storedKey, merged)
     this.revision++
+    this.observer?.(kept, merged)
     return true
   }
 

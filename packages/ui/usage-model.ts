@@ -19,6 +19,30 @@ export const SHADE_MIX: Record<1 | 2 | 3 | 4, number> = { 1: 62, 2: 75, 3: 87, 4
 
 const AGENT_TITLES: Record<UsageAgent, string> = { claude: 'Claude', copilot: 'Copilot CLI' }
 
+// The colour an agent is drawn in, in the bars, the rows and the legend: the agent's own token. Copilot's violet alone is too dark on some
+// themes' ground for the 3:1 non-text contrast, so it is lightened toward the ink: which also keeps it apart from Claude's orange in
+// lightness and not only hue (usage-model.test.ts checks both in every theme).
+export const COPILOT_MIX = 25
+export const agentColour = (agent: UsageAgent): string => (agent === 'copilot' ? `color-mix(in srgb, var(--agent-copilot) ${COPILOT_MIX}%, var(--color-ink))` : `var(--agent-${agent})`)
+
+// What the stacked bars, "When you work" and "Where it went" cover. The year needs the room of the expanded dock.
+export type RangeId = '30d' | '18w' | '1y'
+export const DEFAULT_RANGE: RangeId = '30d'
+const RANGES: Array<{ id: RangeId; label: string; days: number }> = [
+  { id: '30d', label: '30 days', days: 30 },
+  { id: '18w', label: '18 weeks', days: 126 },
+  { id: '1y', label: '1 year', days: 365 },
+]
+
+export const rangeOptions = (expanded: boolean): Array<{ id: RangeId; label: string }> => RANGES.filter((r) => r.id !== '1y' || expanded).map(({ id, label }) => ({ id, label }))
+// A year chosen in the expanded dock is 18 weeks again once the dock is not expanded.
+export const effectiveRange = (range: RangeId, expanded: boolean): RangeId => (range === '1y' && !expanded ? '18w' : range)
+export const rangeDays = (range: RangeId): number => RANGES.find((r) => r.id === range)!.days
+const rangeLabel = (range: RangeId): string => RANGES.find((r) => r.id === range)!.label
+
+// How many days of per-day detail the panel asks the core for: the matrix and the stacked bars both need theirs.
+export const detailDays = (today: string, expanded: boolean, range: RangeId): number => Math.max(matrixSpan(today, expanded), rangeDays(effectiveRange(range, expanded)))
+
 export const matrixWeeks = (expanded: boolean): number => (expanded ? MATRIX_WEEKS_EXPANDED : MATRIX_WEEKS)
 
 // How many days back from today the matrix reaches, which is how many days of detail the panel asks the core for.
@@ -93,7 +117,11 @@ export interface DayDetail {
   requests: string
   // The day's credits, for an agent that has them; null otherwise.
   credits: string | null
+  // "of which helper agents": their share of the day's requests; null for a day without requests.
+  helper: string | null
   tokens: Array<{ label: string; value: string }>
+  // The day's requests and tokens per model, most requests first.
+  models: Array<{ model: string; requests: string; tokens: string }>
 }
 
 export interface AgentView {
@@ -106,6 +134,82 @@ export interface AgentView {
   detail: DayDetail | null
 }
 
+export interface BarSegment {
+  agent: UsageAgent
+  requests: number
+  // Of the axis, which is the bar's height.
+  percent: number
+  // Room for slice 5: the part of Copilot's requests made through OpenCode, drawn hatched. Always false for now.
+  hatched: boolean
+}
+
+export interface Bar {
+  // The first day it covers.
+  day: string
+  requests: number
+  segments: BarSegment[]
+  label: string
+}
+
+export interface BarsView {
+  title: string
+  total: string
+  unit: 'day' | 'week'
+  bars: Bar[]
+  // The y axis: its top is a round number above the busiest bar, then halfway and zero.
+  ticks: Array<{ value: number; label: string }>
+  legend: Array<{ agent: UsageAgent; title: string; hatched: boolean }>
+}
+
+export interface HourCell {
+  hour: number
+  requests: number
+  shade: Shade
+  label: string
+}
+
+export interface HoursView {
+  title: string
+  subtitle: string
+  // Monday to Sunday, each with its 24 hours.
+  rows: Array<{ weekday: string; cells: HourCell[] }>
+  axis: string[]
+}
+
+export interface BreakdownRow {
+  name: string
+  // A repository that is a current Space.
+  space: boolean
+  // The "Other" row.
+  other: boolean
+  requests: string
+  share: string
+  // How the row's bar is filled, per agent, as a percent of the bar's track (the biggest row fills it).
+  segments: Array<{ agent: UsageAgent; percent: number }>
+  // Credits of the agents that have them, for the row's tooltip.
+  detail: string
+}
+
+export interface BreakdownsView {
+  title: string
+  repositories: BreakdownRow[]
+  models: BreakdownRow[]
+}
+
+export interface RangeOption {
+  id: RangeId
+  label: string
+  selected: boolean
+}
+
+// The views over all the agents shown, for the selected range.
+export interface ChartsView {
+  range: RangeOption[]
+  bars: BarsView
+  hours: HoursView
+  breakdowns: BreakdownsView
+}
+
 export interface UsageView {
   // The one message when no agent made a request in the last 30 days.
   empty: string | null
@@ -114,15 +218,33 @@ export interface UsageView {
   // Says the first read is still running and how far it has got; null when the history is complete.
   building: string | null
   agents: AgentView[]
+  // Null when there is no agent to draw.
+  charts: ChartsView | null
 }
 
+// The share of `part` in `whole`, as a whole percent; a share too small for one says so instead of "0%".
+export const percentLabel = (part: number, whole: number): string => {
+  if (whole <= 0 || part <= 0) return '0%'
+  const percent = Math.round((part / whole) * 100)
+  return percent === 0 ? '<1%' : `${percent}%`
+}
+
+// Cutting the date off a model's name: claude-haiku-4-5-20251001 is the model claude-haiku-4-5.
+export const modelLabel = (model: string): string => (model === '' ? 'Unknown model' : model.replace(/-\d{8}$/, ''))
+
 function detailOf(summary: UsageSummary, agent: UsageAgentSummary, day: string): DayDetail {
-  if (day < summary.historyFrom) return { title: formatDay(day), requests: 'Before the history starts', credits: null, tokens: [] }
+  if (day < summary.historyFrom) return { title: formatDay(day), requests: 'Before the history starts', credits: null, helper: null, tokens: [], models: [] }
   const found: UsageDay | undefined = agent.days.find((d) => d.day === day)
   return {
     title: formatDay(day),
     requests: requestsLabel(found?.requests ?? 0),
     credits: creditsOf(found ?? { requests: 0, input: 0, output: 0, cacheRead: 0, cacheWrite: 0, credits: 0, withoutCredits: 0 }, agent.hasCredits),
+    helper: found === undefined || found.requests === 0 ? null : `${percentLabel(found.helperRequests, found.requests)} (${group(found.helperRequests)})`,
+    models: (found?.models ?? []).map((m) => ({
+      model: modelLabel(m.model),
+      requests: requestsLabel(m.requests),
+      tokens: `${tokensLabel(m.input)} in · ${tokensLabel(m.output)} out · ${tokensLabel(m.cacheRead + m.cacheWrite)} cache`,
+    })),
     tokens: [
       { label: 'Fresh input', value: tokensLabel(found?.input ?? 0) },
       { label: 'Output', value: tokensLabel(found?.output ?? 0) },
@@ -163,9 +285,171 @@ function agentView(summary: UsageSummary, agent: UsageAgentSummary, expanded: bo
   }
 }
 
+// The top of the bars' axis: the smallest 1, 2, 5 or 10 times a power of ten that holds the busiest bar.
+export function niceMax(value: number): number {
+  if (value <= 1) return 1
+  const power = 10 ** Math.floor(Math.log10(value))
+  const fraction = value / power
+  return (fraction <= 1 ? 1 : fraction <= 2 ? 2 : fraction <= 5 ? 5 : 10) * power
+}
+
+// The weeks of a year are bars of their own, the days of 18 weeks and 30 days are.
+const barUnit = (range: RangeId): 'day' | 'week' => (range === '1y' ? 'week' : 'day')
+
+function barsOf(summary: UsageSummary, range: RangeId): BarsView {
+  const unit = barUnit(range)
+  const first = shiftDay(summary.today, -(rangeDays(range) - 1))
+  const perAgent = summary.agents.map((agent) => ({ agent: agent.agent, perDay: new Map(agent.days.map((d) => [d.day, d.requests])) }))
+  const bars: Array<Omit<Bar, 'segments' | 'label'> & { counts: number[]; end: string }> = []
+  for (let day = unit === 'week' ? weekStart(first) : first; day <= summary.today; day = shiftDay(day, unit === 'week' ? 7 : 1)) {
+    const end = unit === 'week' ? shiftDay(day, 6) : day
+    const counts = perAgent.map(({ perDay }) => {
+      let sum = 0
+      for (let d = day < first ? first : day; d <= end && d <= summary.today; d = shiftDay(d, 1)) sum += perDay.get(d) ?? 0
+      return sum
+    })
+    bars.push({ day, end, requests: counts.reduce((a, b) => a + b, 0), counts })
+  }
+  const top = niceMax(Math.max(0, ...bars.map((b) => b.requests)))
+  const drawn: Bar[] = bars.map(({ day, end, requests, counts }) => {
+    const span = unit === 'week' ? `Week of ${shortDay(day)}` : formatDay(day)
+    const split = perAgent.flatMap(({ agent }, i) => (counts[i] > 0 && perAgent.length > 1 ? [`${AGENT_TITLES[agent]} ${group(counts[i])}`] : []))
+    const label = end < summary.historyFrom ? `${span}: before the history starts` : `${span}: ${requestsLabel(requests)}${split.length > 0 ? ` (${split.join(', ')})` : ''}`
+    return {
+      day,
+      requests,
+      label,
+      segments: perAgent.flatMap(({ agent }, i) => (counts[i] > 0 ? [{ agent, requests: counts[i], percent: (counts[i] / top) * 100, hatched: false }] : [])),
+    }
+  })
+  const total = drawn.reduce((sum, bar) => sum + bar.requests, 0)
+  return {
+    title: unit === 'week' ? 'Requests per week' : 'Requests per day',
+    total: requestsLabel(total),
+    unit,
+    bars: drawn,
+    ticks: [top, top / 2, 0].map((value) => ({ value, label: group(value) })),
+    legend: summary.agents.map((agent) => ({ agent: agent.agent, title: AGENT_TITLES[agent.agent], hatched: false })),
+  }
+}
+
+// Weekday by hour across the agents shown, shaded like the matrix: the quartile each cell's count falls in among the cells with requests.
+function hoursOf(summary: UsageSummary, range: RangeId): HoursView {
+  const counts = new Array<number>(168).fill(0)
+  for (const agent of summary.agents) agent.hours.forEach((n, i) => (counts[i] += n))
+  const ranked = rankedDays(counts)
+  return {
+    title: 'When you work',
+    subtitle: `weekday by hour, ${rangeLabel(range)}`,
+    rows: WEEKDAYS.map((weekday, row) => ({
+      weekday,
+      cells: Array.from({ length: 24 }, (_, hour) => {
+        const requests = counts[row * 24 + hour]
+        return { hour, requests, shade: shadeOf(requests, ranked), label: `${weekday} ${String(hour).padStart(2, '0')}:00: ${requestsLabel(requests)}` }
+      }),
+    })),
+    axis: ['00', '06', '12', '18', '23'],
+  }
+}
+
+// Under this share of all requests a group is too small to be a row of its own.
+const TINY_SHARE = 0.01
+
+interface Group {
+  key: string
+  name: string
+  space: boolean
+  other: boolean
+  perAgent: Map<UsageAgent, UsageTotals>
+}
+
+const requestsOfGroup = (of: Group): number => [...of.perAgent.values()].reduce((sum, totals) => sum + totals.requests, 0)
+
+const plus = (a: UsageTotals, b: UsageTotals): UsageTotals => ({
+  requests: a.requests + b.requests,
+  input: a.input + b.input,
+  output: a.output + b.output,
+  cacheRead: a.cacheRead + b.cacheRead,
+  cacheWrite: a.cacheWrite + b.cacheWrite,
+  credits: a.credits + b.credits,
+  withoutCredits: a.withoutCredits + b.withoutCredits,
+})
+const NONE: UsageTotals = { requests: 0, input: 0, output: 0, cacheRead: 0, cacheWrite: 0, credits: 0, withoutCredits: 0 }
+
+// Rows for some groups, most requests first. With `fold`, the groups under 1% of the requests are folded into Other, the last row.
+function rowsOf(groups: Group[], agents: UsageAgentSummary[], fold: boolean): BreakdownRow[] {
+  const total = groups.reduce((sum, g) => sum + requestsOfGroup(g), 0)
+  // Tiny groups fold into Other, which is always the last row.
+  const kept: Group[] = []
+  let other: Group | undefined
+  const foldIn = (g: Group): void => {
+    other ??= { key: '', name: 'Other', space: false, other: true, perAgent: new Map() }
+    for (const [agent, totals] of g.perAgent) other.perAgent.set(agent, plus(other.perAgent.get(agent) ?? NONE, totals))
+  }
+  for (const g of groups) {
+    // A Space keeps its row however small: the mark is what the human looks for.
+    if (g.other || (fold && !g.space && requestsOfGroup(g) < total * TINY_SHARE)) foldIn(g)
+    else kept.push(g)
+  }
+  kept.sort((a, b) => requestsOfGroup(b) - requestsOfGroup(a) || (a.name < b.name ? -1 : a.name > b.name ? 1 : 0))
+  const all: Group[] = other === undefined ? kept : [...kept, other]
+  const biggest = Math.max(1, ...all.map(requestsOfGroup))
+  return all.map((g) => {
+    const requests = requestsOfGroup(g)
+    const credits = agents.flatMap((agent) => {
+      const totals = g.perAgent.get(agent.agent)
+      return agent.hasCredits && totals !== undefined ? [`${AGENT_TITLES[agent.agent]}: ${creditsOf(totals, true)}`] : []
+    })
+    return {
+      name: g.name,
+      space: g.space,
+      other: g.other,
+      requests: group(requests),
+      share: percentLabel(requests, total),
+      segments: agents.flatMap((agent) => {
+        const part = g.perAgent.get(agent.agent)?.requests ?? 0
+        return part > 0 ? [{ agent: agent.agent, percent: (part / biggest) * 100 }] : []
+      }),
+      detail: [`${requestsLabel(requests)}, ${percentLabel(requests, total)}`, ...credits].join('. '),
+    }
+  })
+}
+
+function breakdownsOf(summary: UsageSummary, range: RangeId): BreakdownsView {
+  const repositories = new Map<string, Group>()
+  for (const agent of summary.agents) {
+    for (const row of agent.repositories) {
+      const key = row.name === null ? '' : `${row.space ? 'space' : 'repo'}:${row.name}`
+      let found = repositories.get(key)
+      if (found === undefined) repositories.set(key, (found = { key, name: row.name ?? 'Other', space: row.space, other: row.name === null, perAgent: new Map() }))
+      found.perAgent.set(agent.agent, row)
+    }
+  }
+  // A model's name alone says enough, unless two agents run the same one: then the agent comes first.
+  const owners = new Map<string, number>()
+  for (const agent of summary.agents) for (const row of agent.models) owners.set(modelLabel(row.model), (owners.get(modelLabel(row.model)) ?? 0) + 1)
+  const models = new Map<string, Group>()
+  for (const agent of summary.agents) {
+    for (const row of agent.models) {
+      const name = modelLabel(row.model)
+      const key = `${agent.agent}:${name}`
+      let found = models.get(key)
+      if (found === undefined) models.set(key, (found = { key, name: (owners.get(name) ?? 0) > 1 ? `${AGENT_TITLES[agent.agent]} · ${name}` : name, space: false, other: false, perAgent: new Map() }))
+      found.perAgent.set(agent.agent, plus(found.perAgent.get(agent.agent) ?? NONE, row))
+    }
+  }
+  return {
+    title: `Where it went, ${rangeLabel(range)}`,
+    repositories: rowsOf([...repositories.values()], summary.agents, true),
+    // Models are not folded: a model with a share too small to see is still a model the human used.
+    models: rowsOf([...models.values()], summary.agents, false),
+  }
+}
+
 // `selected` is the clicked day, if any: its detail is shown under the agent that was clicked.
-export function usageView(summary: UsageSummary, options: { expanded: boolean; selected?: { agent: UsageAgent; day: string } | null }): UsageView {
+export function usageView(summary: UsageSummary, options: { expanded: boolean; selected?: { agent: UsageAgent; day: string } | null; range?: RangeId }): UsageView {
   const selected = options.selected ?? null
+  const range = effectiveRange(options.range ?? DEFAULT_RANGE, options.expanded)
   return {
     empty: summary.agents.length === 0 ? EMPTY_MESSAGE : null,
     scope: SCOPE_NOTE,
@@ -177,5 +461,14 @@ export function usageView(summary: UsageSummary, options: { expanded: boolean; s
           ? 'Still building the history'
           : `Still building the history: ready from ${shortDay(summary.ready.from)} to ${shortDay(summary.ready.to)}`,
     agents: summary.agents.map((agent) => agentView(summary, agent, options.expanded, selected?.agent === agent.agent ? selected.day : null)),
+    charts:
+      summary.agents.length === 0
+        ? null
+        : {
+            range: rangeOptions(options.expanded).map((option) => ({ ...option, selected: option.id === range })),
+            bars: barsOf(summary, range),
+            hours: hoursOf(summary, range),
+            breakdowns: breakdownsOf(summary, range),
+          },
   }
 }

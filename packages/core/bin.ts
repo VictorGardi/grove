@@ -17,6 +17,7 @@ async function main(): Promise<void> {
   await restoreTabs(spaces)
   const usage = new UsageService({
     home: groveHome(),
+    spaces: () => spaces.ids().flatMap((id) => spaces.spaceById(id)?.path ?? []),
     readers: [createClaudeReader({ projectsDir: claudeProjectsDir() }), createCopilotReader({ copilotHome: copilotHomeDir() })],
   })
   const core = await startCoreDaemon({ spaces, usage })

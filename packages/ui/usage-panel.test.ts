@@ -21,12 +21,15 @@ function summary(over: Partial<UsageSummary> = {}): UsageSummary {
         agent: 'claude',
         hasCredits: false,
         days: [
-          { day: '2026-11-10', requests: 2, input: 40, output: 1200, cacheRead: 3_000_000, cacheWrite: 800, credits: 0, withoutCredits: 0 },
-          { day: '2026-11-11', requests: 9, input: 1, output: 2, cacheRead: 3, cacheWrite: 4, credits: 0, withoutCredits: 0 },
+          { day: '2026-11-10', requests: 2, input: 40, output: 1200, cacheRead: 3_000_000, cacheWrite: 800, credits: 0, withoutCredits: 0, helperRequests: 0, models: [] },
+          { day: '2026-11-11', requests: 9, input: 1, output: 2, cacheRead: 3, cacheWrite: 4, credits: 0, withoutCredits: 0, helperRequests: 0, models: [] },
         ],
         today: sum(0),
         last7: sum(11),
         last30: sum(11),
+        hours: new Array<number>(168).fill(0),
+        repositories: [],
+        models: [],
       },
     ],
     ...over,
@@ -41,6 +44,7 @@ function setup(first: UsageSummary = summary(), connected = true) {
   document.body.innerHTML = ''
   const body = document.body.appendChild(document.createElement('div'))
   const calls: number[] = []
+  const ranges: number[] = []
   const state = { summary: first, connected, expanded: false, fail: null as Error | null }
   const spoken = { status: [] as string[], error: [] as Array<string | null> }
   const expandedListeners: Array<() => void> = []
@@ -56,8 +60,9 @@ function setup(first: UsageSummary = summary(), connected = true) {
     },
   }
   const module: DockModule & { changed(): void } = usageModule({
-    summary: async (days) => {
+    summary: async (days, range) => {
       calls.push(days)
+      ranges.push(range)
       if (state.fail) throw state.fail
       return state.summary
     },
@@ -73,7 +78,7 @@ function setup(first: UsageSummary = summary(), connected = true) {
     state.expanded = on
     for (const l of [...expandedListeners]) l()
   }
-  return { body, calls, state, spoken, module, bus, instance, expand }
+  return { body, calls, ranges, state, spoken, module, bus, instance, expand }
 }
 
 const cell = (body: HTMLElement, day: string) => body.querySelector<HTMLButtonElement>(`.usage-cell[data-day="${day}"]`)!
@@ -105,10 +110,13 @@ describe('usage panel', () => {
         {
           agent: 'copilot',
           hasCredits: true,
-          days: [{ day: '2026-11-11', requests: 3, input: 5, output: 6, cacheRead: 7, cacheWrite: 8, credits: 2.5, withoutCredits: 1 }],
+          days: [{ day: '2026-11-11', requests: 3, input: 5, output: 6, cacheRead: 7, cacheWrite: 8, credits: 2.5, withoutCredits: 1, helperRequests: 0, models: [] }],
           today: { ...sum(0) },
           last7: { ...sum(3), credits: 2.5, withoutCredits: 1 },
           last30: { ...sum(3), credits: 2.5, withoutCredits: 1 },
+          hours: new Array<number>(168).fill(0),
+          repositories: [],
+          models: [],
         },
       ],
     })
@@ -177,7 +185,7 @@ describe('usage panel', () => {
     const t = setup()
     await flush()
     cell(t.body, '2026-11-10').click()
-    t.state.summary = summary({ agents: [{ ...summary().agents[0], days: [{ day: '2026-11-10', requests: 7, input: 0, output: 0, cacheRead: 0, cacheWrite: 0, credits: 0, withoutCredits: 0 }] }] })
+    t.state.summary = summary({ agents: [{ ...summary().agents[0], days: [{ day: '2026-11-10', requests: 7, input: 0, output: 0, cacheRead: 0, cacheWrite: 0, credits: 0, withoutCredits: 0, helperRequests: 0, models: [] }] }] })
     t.module.changed()
     await flush()
     expect(t.body.querySelector('.usage-detail-requests')?.textContent).toBe('7 requests')
@@ -210,5 +218,94 @@ describe('usage panel', () => {
   it('is a dock module with a rail button and a key action', () => {
     const t = setup()
     expect(t.module).toMatchObject({ keyAction: 'usage', button: { icon: 'usage', label: null, tooltip: 'Usage' }, panel: { id: 'usage', title: 'Usage' } })
+  })
+
+  describe('the views over a range', () => {
+    const withCharts = (): UsageSummary => {
+      const base = summary()
+      const hours = new Array<number>(168).fill(0)
+      hours[9] = 5
+      return {
+        ...base,
+        agents: [
+          {
+            ...base.agents[0],
+            days: [{ ...base.agents[0].days[1], requests: 9, helperRequests: 3, models: [{ model: 'claude-opus-4-5-20251101', ...sum(9) }] }],
+            hours,
+            repositories: [
+              { name: 'grove', space: true, ...sum(7) },
+              { name: null, space: false, ...sum(2) },
+            ],
+            models: [{ model: 'claude-opus-4-5-20251101', ...sum(9) }],
+          },
+        ],
+      }
+    }
+    const rangeButton = (body: HTMLElement, id: string) => body.querySelector<HTMLButtonElement>(`.usage-range [data-range="${id}"]`)
+
+    it('draws the stacked bars with a legend and axis, the weekday by hour, and where it went', async () => {
+      const t = setup(withCharts())
+      await flush()
+      expect(t.body.querySelectorAll('.usage-bar')).toHaveLength(30)
+      const filled = t.body.querySelector<HTMLElement>('.usage-bar[data-day="2026-11-11"] .usage-segment')!
+      expect(filled.dataset.agent).toBe('claude')
+      expect(filled.style.height).toBe('90%')
+      expect([...t.body.querySelectorAll('.usage-tick')].map((n) => n.textContent)).toEqual(['10', '5', '0'])
+      expect(t.body.querySelector('.usage-legend')?.textContent).toBe('Claude')
+      expect(t.body.querySelectorAll('.usage-hour')).toHaveLength(168)
+      expect(t.body.querySelectorAll('.usage-hour')[9].getAttribute('aria-label')).toBe('Mon 09:00: 5 requests')
+      expect([...t.body.querySelectorAll('.usage-row')].map((n) => n.querySelector('.usage-row-label')?.textContent)).toEqual(['grove', 'Other'])
+      expect(t.body.querySelector('.usage-row-space')?.textContent).toBe('Space')
+    })
+
+    it('switches the second breakdown to models', async () => {
+      const t = setup(withCharts())
+      await flush()
+      t.body.querySelector<HTMLButtonElement>('.usage-tab[data-tab="models"]')!.click()
+      expect([...t.body.querySelectorAll('.usage-row .usage-row-label')].map((n) => n.textContent)).toEqual(['claude-opus-4-5'])
+    })
+
+    it('asks the core again for the range chosen, with the days of detail it needs, and draws it', async () => {
+      const t = setup(withCharts())
+      await flush()
+      expect([rangeButton(t.body, '30d'), rangeButton(t.body, '18w'), rangeButton(t.body, '1y')].map((b) => b?.textContent ?? null)).toEqual(['30 days', '18 weeks', null])
+      expect(t.ranges).toEqual([30])
+      rangeButton(t.body, '18w')!.click()
+      await flush()
+      expect(t.ranges.at(-1)).toBe(126)
+      expect(t.calls.at(-1)).toBe(126)
+      expect(t.body.querySelectorAll('.usage-bar')).toHaveLength(126)
+      expect(rangeButton(t.body, '18w')!.getAttribute('aria-pressed')).toBe('true')
+    })
+
+    it('offers a year only in the expanded dock, and falls back to 18 weeks when it is not expanded again', async () => {
+      const t = setup(withCharts())
+      await flush()
+      t.expand(true)
+      await flush()
+      rangeButton(t.body, '1y')!.click()
+      await flush()
+      expect(t.ranges.at(-1)).toBe(365)
+      expect(t.body.querySelector('.usage-columns')?.getAttribute('data-unit')).toBe('week')
+      t.expand(false)
+      await flush()
+      expect(rangeButton(t.body, '1y')).toBeNull()
+      expect(t.ranges.at(-1)).toBe(126)
+    })
+
+    it('shows the helper share and the model split in a clicked day', async () => {
+      const t = setup(withCharts())
+      await flush()
+      cell(t.body, '2026-11-11').click()
+      const detail = t.body.querySelector('.usage-detail')!
+      expect(detail.querySelector('.usage-detail-helper')?.textContent).toBe('of which helper agents33% (3)')
+      expect(detail.querySelector('.usage-detail-model')?.textContent).toContain('claude-opus-4-5')
+    })
+
+    it('has no charts when no agent made a request', async () => {
+      const t = setup({ ...summary(), agents: [] })
+      await flush()
+      expect(t.body.querySelector('.usage-charts')).toBeNull()
+    })
   })
 })

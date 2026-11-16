@@ -1,6 +1,7 @@
-import { dayKey, shiftDay } from '../../protocol/days.ts'
-import type { UsageAgent, UsageAgentSummary, UsageDay, UsageTotals } from '../../protocol/messages.ts'
-import type { UsageRequest } from './history.ts'
+import { dayKey, shiftDay, weekdayOf } from '../../protocol/days.ts'
+import type { UsageAgentSummary, UsageDay, UsageModelTotals, UsageRepositoryTotals, UsageTotals } from '../../protocol/messages.ts'
+import { CREDIT_AGENTS, emptyTotals, plusTotals, type UsageIndex } from './index.ts'
+import type { RepositoryRef } from './repositories.ts'
 
 export const DEFAULT_DAYS = 30
 export const MAX_DAYS = 400
@@ -11,58 +12,71 @@ const QUALIFYING_DAYS = 30
 // GitHub's pricing page (GPT-6 Luna, $0.10 per million input tokens) and the `costPerBatch` of 10,000,000,000 in Copilot's own records.
 export const NANO_AIU_PER_CREDIT = 1e9
 
-// The agents whose requests carry a credit figure; for the others no request is "without credits", there are none to count.
-const CREDIT_AGENTS: readonly UsageAgent[] = ['copilot']
-
-const empty = (): UsageTotals => ({ requests: 0, input: 0, output: 0, cacheRead: 0, cacheWrite: 0, credits: 0, withoutCredits: 0 })
-
 // Totals are summed in nano AIU, so the sums are exact, and turned into credits once, when the summary is done.
-function add(into: UsageTotals, request: UsageRequest): void {
-  if (request.nanoAiu !== null) into.credits += request.nanoAiu
-  else if (CREDIT_AGENTS.includes(request.agent)) into.withoutCredits++
-  into.requests++
-  into.input += request.input
-  into.output += request.output
-  into.cacheRead += request.cacheRead
-  into.cacheWrite += request.cacheWrite
-}
-
 const inCredits = <T extends UsageTotals>(totals: T): T => ({ ...totals, credits: totals.credits / NANO_AIU_PER_CREDIT })
 
 export const clampDays = (days: unknown): number => (typeof days === 'number' && Number.isInteger(days) ? Math.min(MAX_DAYS, Math.max(1, days)) : DEFAULT_DAYS)
 
-// What the usage panel shows per agent: per-day totals for the last `days` days, and the Today / 7 days / 30 days totals. Days are
-// the human's local days. An agent with no request in the last 30 days is left out.
-export function summarizeAgents(requests: Iterable<UsageRequest>, now: number, days: number): UsageAgentSummary[] {
+const byRequests = (a: UsageTotals, b: UsageTotals): number => b.requests - a.requests
+
+function merged<K extends string>(into: Map<K, UsageTotals>, key: K, totals: UsageTotals): void {
+  let sum = into.get(key)
+  if (sum === undefined) into.set(key, (sum = emptyTotals()))
+  plusTotals(sum, totals)
+}
+
+const modelsOf = (models: Map<string, UsageTotals>): UsageModelTotals[] =>
+  [...models].map(([model, totals]) => ({ model, ...inCredits(totals) })).sort((a, b) => byRequests(a, b) || (a.model < b.model ? -1 : 1))
+
+// What the usage panel shows per agent, from the index of the history: per-day detail for the last `days` days, the Today / 7 days /
+// 30 days totals, and the hour, repository and model breakdowns over the last `range` days. Days are the human's local days. An agent
+// with no request in the last 30 days is left out. `repositoryOf` says which repository a working folder belongs to.
+export function summarizeAgents(index: UsageIndex, repositoryOf: (folder: string) => RepositoryRef, now: number, days: number, range: number): UsageAgentSummary[] {
   const today = dayKey(now)
-  const rangeStart = shiftDay(today, -(days - 1))
+  const detailStart = shiftDay(today, -(days - 1))
+  const rangeStart = shiftDay(today, -(range - 1))
   const week = shiftDay(today, -6)
   const month = shiftDay(today, -(QUALIFYING_DAYS - 1))
-  const agents = new Map<UsageAgent, { perDay: Map<string, UsageDay>; today: UsageTotals; last7: UsageTotals; last30: UsageTotals }>()
-  for (const request of requests) {
-    const day = dayKey(request.at)
-    // A request stamped after today (a clock that moved back) belongs to no window yet.
-    if (day > today) continue
-    let agent = agents.get(request.agent)
-    if (agent === undefined) agents.set(request.agent, (agent = { perDay: new Map(), today: empty(), last7: empty(), last30: empty() }))
-    if (day >= month) add(agent.last30, request)
-    if (day >= week) add(agent.last7, request)
-    if (day === today) add(agent.today, request)
-    if (day >= rangeStart) {
-      let total = agent.perDay.get(day)
-      if (total === undefined) agent.perDay.set(day, (total = { day, ...empty() }))
-      add(total, request)
+  const found: UsageAgentSummary[] = []
+  for (const agent of index.agentsSeen()) {
+    const last30 = emptyTotals()
+    const last7 = emptyTotals()
+    const todays = emptyTotals()
+    const perDay: UsageDay[] = []
+    const hours = new Array<number>(168).fill(0)
+    const models = new Map<string, UsageTotals>()
+    const repositories = new Map<string, UsageRepositoryTotals>()
+    for (const [day, bucket] of index.days(agent) ?? []) {
+      // A request stamped after today (a clock that moved back) belongs to no window yet.
+      if (day > today) continue
+      if (day >= month) plusTotals(last30, bucket.totals)
+      if (day >= week) plusTotals(last7, bucket.totals)
+      if (day === today) plusTotals(todays, bucket.totals)
+      if (day >= detailStart) perDay.push({ day, ...inCredits(bucket.totals), helperRequests: bucket.helper, models: modelsOf(bucket.models) })
+      if (day >= rangeStart) {
+        const row = weekdayOf(day) * 24
+        for (let hour = 0; hour < 24; hour++) hours[row + hour] += bucket.hours[hour]
+        for (const [model, totals] of bucket.models) merged(models, model, totals)
+        for (const [folder, totals] of bucket.folders) {
+          const repository = repositoryOf(folder)
+          let sum = repositories.get(repository.id)
+          if (sum === undefined) repositories.set(repository.id, (sum = { name: repository.name, space: repository.space, ...emptyTotals() }))
+          plusTotals(sum, totals)
+        }
+      }
     }
-  }
-  return [...agents]
-    .filter(([, agent]) => agent.last30.requests > 0)
-    .map(([agent, found]) => ({
+    if (last30.requests === 0) continue
+    found.push({
       agent,
       hasCredits: CREDIT_AGENTS.includes(agent),
-      days: [...found.perDay.values()].sort((a, b) => (a.day < b.day ? -1 : 1)).map(inCredits),
-      today: inCredits(found.today),
-      last7: inCredits(found.last7),
-      last30: inCredits(found.last30),
-    }))
-    .sort((a, b) => (a.agent < b.agent ? -1 : 1))
+      days: perDay.sort((a, b) => (a.day < b.day ? -1 : 1)),
+      today: inCredits(todays),
+      last7: inCredits(last7),
+      last30: inCredits(last30),
+      hours,
+      repositories: [...repositories.values()].map(inCredits).sort((a, b) => byRequests(a, b) || ((a.name ?? '') < (b.name ?? '') ? -1 : 1)),
+      models: modelsOf(models),
+    })
+  }
+  return found.sort((a, b) => (a.agent < b.agent ? -1 : 1))
 }

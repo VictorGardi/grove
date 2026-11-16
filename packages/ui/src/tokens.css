@@ -120,6 +120,10 @@
   --size-control: 24px;
   --size-pill: 26px;
   --size-usage-cell: 12px;
+  --size-usage-plot: 120px;
+  --size-usage-hatch: 2px;
+  --size-usage-axis: 36px;
+  --size-usage-weekday: 28px;
   --size-cap: 28px;
   --statusbar-h: 30px;
   --icon-size-pill: 13px;

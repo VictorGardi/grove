@@ -481,9 +481,11 @@ async function dispatch(method: string, rawParams: unknown, holder: Promise<RpcC
     return skillInfo(agent, dir) satisfies MethodMap['skills.install']['result']
   }
   if (method === METHODS.usageSummary) {
-    const days = (rawParams as { days?: unknown } | null | undefined)?.days
-    if (days !== undefined && (typeof days !== 'number' || !Number.isInteger(days) || days < 1)) throw new RpcError(ERROR_CODES.invalidParams, 'days must be a positive whole number')
-    return deps.usage.summary(days) satisfies MethodMap['usage.summary']['result']
+    const { days, range } = (rawParams ?? {}) as { days?: unknown; range?: unknown }
+    for (const [name, value] of [['days', days], ['range', range]] as const) {
+      if (value !== undefined && (typeof value !== 'number' || !Number.isInteger(value) || value < 1)) throw new RpcError(ERROR_CODES.invalidParams, `${name} must be a positive whole number`)
+    }
+    return deps.usage.summary(days as number | undefined, range as number | undefined) satisfies MethodMap['usage.summary']['result']
   }
   if (method === METHODS.usageWipe) {
     await deps.usage.wipe()

@@ -1,11 +1,17 @@
 import { readFileSync } from 'node:fs'
 import { fileURLToPath } from 'node:url'
 import { describe, expect, it } from 'vitest'
-import type { UsageAgentSummary, UsageDay, UsageSummary } from '../protocol/messages.ts'
+import type { UsageAgentSummary, UsageDay, UsageModelTotals, UsageRepositoryTotals, UsageSummary, UsageTotals } from '../protocol/messages.ts'
 import {
   EMPTY_MESSAGE,
   creditsLabel,
   creditsOf,
+  detailDays,
+  effectiveRange,
+  modelLabel,
+  niceMax,
+  percentLabel,
+  rangeOptions,
   MATRIX_WEEKS,
   MATRIX_WEEKS_EXPANDED,
   SHADE_MIX,
@@ -16,10 +22,13 @@ import {
   shadeOf,
   tokensLabel,
   usageView,
+  type RangeId,
+  COPILOT_MIX,
+  agentColour,
 } from './usage-model.ts'
 
 // 2026-11-16 is a Monday.
-const day = (d: string, requests: number, more: Partial<UsageDay> = {}): UsageDay => ({ day: d, requests, input: 0, output: 0, cacheRead: 0, cacheWrite: 0, credits: 0, withoutCredits: 0, ...more })
+const day = (d: string, requests: number, more: Partial<UsageDay> = {}): UsageDay => ({ day: d, requests, input: 0, output: 0, cacheRead: 0, cacheWrite: 0, credits: 0, withoutCredits: 0, helperRequests: 0, models: [], ...more })
 
 function summary(days: UsageDay[], more: Partial<UsageSummary> = {}, totals: Partial<UsageAgentSummary> = {}): UsageSummary {
   const sum = (n: number) => ({ requests: n, input: 0, output: 0, cacheRead: 0, cacheWrite: 0, credits: 0, withoutCredits: 0 })
@@ -28,7 +37,7 @@ function summary(days: UsageDay[], more: Partial<UsageSummary> = {}, totals: Par
     historyFrom: '2026-05-01',
     building: false,
     ready: { from: '2026-05-01', to: '2026-11-16' },
-    agents: [{ agent: 'claude', hasCredits: false, days, today: sum(0), last7: sum(0), last30: sum(days.length), ...totals }],
+    agents: [{ agent: 'claude', hasCredits: false, days, today: sum(0), last7: sum(0), last30: sum(days.length), hours: new Array<number>(168).fill(0), repositories: [], models: [], ...totals }],
     ...more,
   }
 }
@@ -149,7 +158,7 @@ describe('a day’s detail', () => {
     usageView(s, { expanded: false, selected: { agent: 'claude', day: d } }).agents[0].detail
 
   it('shows requests and the four token counts apart', () => {
-    expect(selected('2026-11-10')).toEqual({
+    expect(selected('2026-11-10')).toMatchObject({
       title: 'Tue 10 Nov 2026',
       requests: '5 requests',
       credits: null,
@@ -213,10 +222,16 @@ function copilotAgent(over: Partial<UsageAgentSummary> = {}): UsageAgentSummary 
   return {
     agent: 'copilot',
     hasCredits: true,
-    days: [{ day: '2026-11-10', ...totalsOf(4, 12.34) }, { day: '2026-11-11', ...totalsOf(9, 0.5, 2) }],
+    days: [
+      { day: '2026-11-10', helperRequests: 0, models: [], ...totalsOf(4, 12.34) },
+      { day: '2026-11-11', helperRequests: 0, models: [], ...totalsOf(9, 0.5, 2) },
+    ],
     today: totalsOf(0, 0),
     last7: totalsOf(13, 12.84, 2),
     last30: totalsOf(40, 1234.5),
+    hours: new Array<number>(168).fill(0),
+    repositories: [],
+    models: [],
     ...over,
   }
 }
@@ -291,5 +306,281 @@ describe('the Copilot section', () => {
     expect(only.agents.map((a) => a.agent)).toEqual(['claude'])
     expect(usageView(both(), { expanded: false }).agents.map((a) => a.agent)).toEqual(['claude', 'copilot'])
     expect(usageView({ ...summary([]), agents: [] }, { expanded: false }).empty).toBe(EMPTY_MESSAGE)
+  })
+})
+
+// A summary of two agents with the breakdowns filled in.
+const zeros = () => new Array<number>(168).fill(0)
+const t = (requests: number, more: Partial<UsageTotals> = {}): UsageTotals => ({ requests, input: 0, output: 0, cacheRead: 0, cacheWrite: 0, credits: 0, withoutCredits: 0, ...more })
+function agent(name: 'claude' | 'copilot', over: Partial<UsageAgentSummary> = {}): UsageAgentSummary {
+  return { agent: name, hasCredits: name === 'copilot', days: [], today: t(0), last7: t(0), last30: t(1), hours: zeros(), repositories: [], models: [], ...over }
+}
+const two = (claude: Partial<UsageAgentSummary>, copilot: Partial<UsageAgentSummary> = {}): UsageSummary => ({ ...summary([]), agents: [agent('claude', claude), agent('copilot', copilot)] })
+const charts = (s: UsageSummary, options: { expanded?: boolean; range?: RangeId } = {}) => usageView(s, { expanded: options.expanded ?? false, range: options.range }).charts!
+
+describe('the range', () => {
+  it('offers 30 days and 18 weeks, and a year only in the expanded dock', () => {
+    expect(rangeOptions(false).map((r) => r.label)).toEqual(['30 days', '18 weeks'])
+    expect(rangeOptions(true).map((r) => r.label)).toEqual(['30 days', '18 weeks', '1 year'])
+  })
+
+  it('marks the selected one, and has a year fall back to 18 weeks when the dock is not expanded', () => {
+    expect(charts(two({}), { range: '18w' }).range.filter((r) => r.selected).map((r) => r.id)).toEqual(['18w'])
+    expect(charts(two({}), { range: '1y', expanded: true }).range.filter((r) => r.selected).map((r) => r.id)).toEqual(['1y'])
+    expect(effectiveRange('1y', false)).toBe('18w')
+    expect(charts(two({}), { range: '1y' }).range.filter((r) => r.selected).map((r) => r.id)).toEqual(['18w'])
+  })
+
+  it('asks for the days of detail the matrix or the bars need, whichever is more', () => {
+    expect(detailDays('2026-11-16', false, '30d')).toBe(matrixSpan('2026-11-16', false))
+    expect(detailDays('2026-11-16', false, '18w')).toBe(126)
+    expect(detailDays('2026-11-16', true, '1y')).toBe(matrixSpan('2026-11-16', true) < 365 ? 365 : matrixSpan('2026-11-16', true))
+    // A year chosen in an expanded dock is not asked for once the dock is not expanded.
+    expect(detailDays('2026-11-16', false, '1y')).toBe(126)
+  })
+
+  it('names the range in the titles', () => {
+    expect(charts(two({}), { range: '18w' }).breakdowns.title).toBe('Where it went, 18 weeks')
+    expect(charts(two({}), { range: '18w' }).hours.subtitle).toBe('weekday by hour, 18 weeks')
+  })
+})
+
+describe('the stacked bars', () => {
+  const days = (counts: Array<[string, number]>) => counts.map(([d, n]) => day(d, n))
+
+  it('is one bar per day of the range, oldest first, ending today', () => {
+    const bars = charts(two({ days: days([['2026-11-16', 4]]) })).bars
+    expect(bars.unit).toBe('day')
+    expect(bars.bars).toHaveLength(30)
+    expect(bars.bars[0].day).toBe('2026-10-18')
+    expect(bars.bars.at(-1)?.day).toBe('2026-11-16')
+    expect(charts(two({}), { range: '18w' }).bars.bars).toHaveLength(126)
+  })
+
+  it('is one bar per week for a year, Monday first, counting only the days of the range', () => {
+    const bars = charts(two({ days: days([['2026-11-16', 4], ['2026-11-15', 2], ['2026-11-09', 5], ['2025-11-17', 1], ['2025-11-16', 7]]) }), { range: '1y', expanded: true }).bars
+    expect(bars.unit).toBe('week')
+    expect(bars.bars.at(-1)).toMatchObject({ day: '2026-11-16', requests: 4 })
+    expect(bars.bars.at(-2)).toMatchObject({ day: '2026-11-09', requests: 7 })
+    // The range starts on Monday 2025-11-17: the Sunday before it is not in it.
+    expect(bars.bars[0]).toMatchObject({ day: '2025-11-17', requests: 1 })
+    expect(bars.bars.length).toBe(53)
+  })
+
+  it('draws the height as a share of a round axis top, and the agents stacked in colour order with their requests', () => {
+    const bars = charts(two({ days: days([['2026-11-16', 30]]) }, { days: days([['2026-11-16', 25]]) })).bars
+    const last = bars.bars.at(-1)!
+    expect(bars.ticks.map((tick) => tick.value)).toEqual([100, 50, 0])
+    expect(last.requests).toBe(55)
+    expect(last.segments).toEqual([
+      { agent: 'claude', requests: 30, percent: 30, hatched: false },
+      { agent: 'copilot', requests: 25, percent: 25, hatched: false },
+    ])
+    expect(bars.bars[0].segments).toEqual([])
+    expect(last.label).toBe('Mon 16 Nov 2026: 55 requests (Claude 30, Copilot CLI 25)')
+  })
+
+  it('has a legend of the agents shown, and says when a bar is from before the history', () => {
+    const s = { ...two({ days: days([['2026-11-16', 3]]) }), historyFrom: '2026-11-01' }
+    const bars = charts(s).bars
+    expect(bars.legend).toEqual([
+      { agent: 'claude', title: 'Claude', hatched: false },
+      { agent: 'copilot', title: 'Copilot CLI', hatched: false },
+    ])
+    expect(bars.bars[0].label).toBe('Sun 18 Oct 2026: before the history starts')
+    expect(bars.bars[20].label).toMatch(/: 0 requests$/)
+    expect(bars.total).toBe('3 requests')
+  })
+
+  it('rounds the axis top up to 1, 2 or 5 times a power of ten', () => {
+    expect([0, 1, 3, 7, 12, 20, 21, 55, 101, 5400].map(niceMax)).toEqual([1, 1, 5, 10, 20, 20, 50, 100, 200, 10000])
+    expect(charts(two({ days: days([['2026-11-16', 7]]) })).bars.ticks.map((tick) => tick.label)).toEqual(['10', '5', '0'])
+    expect(charts(two({ days: days([['2026-11-16', 5400]]) })).bars.ticks.map((tick) => tick.label)).toEqual(['10,000', '5,000', '0'])
+  })
+})
+
+describe('"When you work"', () => {
+  const cell = (s: UsageSummary, row: number, hour: number) => charts(s).hours.rows[row].cells[hour]
+
+  it('has Monday to Sunday with 24 hours each, and adds the agents shown', () => {
+    const a = zeros()
+    a[0 * 24 + 9] = 4
+    const b = zeros()
+    b[0 * 24 + 9] = 3
+    b[6 * 24 + 23] = 1
+    const hours = charts(two({ hours: a }, { hours: b })).hours
+    expect(hours.rows.map((r) => r.weekday)).toEqual(['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'])
+    expect(hours.rows.every((r) => r.cells.length === 24)).toBe(true)
+    expect(hours.rows[0].cells[9]).toMatchObject({ hour: 9, requests: 7, label: 'Mon 09:00: 7 requests' })
+    expect(hours.rows[6].cells[23]).toMatchObject({ requests: 1, label: 'Sun 23:00: 1 request' })
+    expect(hours.axis).toEqual(['00', '06', '12', '18', '23'])
+  })
+
+  it('shades by rank among the hours with requests, as the matrix does: an empty hour is 0 and one huge hour does not wash out the rest', () => {
+    const h = zeros()
+    ;[1, 2, 3, 1000].forEach((n, i) => (h[i] = n))
+    const s = two({ hours: h })
+    expect([0, 1, 2, 3, 4].map((i) => cell(s, 0, i).shade)).toEqual([1, 2, 3, 4, 0])
+  })
+})
+
+describe('"Where it went"', () => {
+  const repo = (name: string | null, requests: number, more: Partial<UsageRepositoryTotals> = {}): UsageRepositoryTotals => ({ name, space: false, ...t(requests), ...more })
+  const rows = (s: UsageSummary) => charts(s).breakdowns.repositories.map((r) => [r.name, r.requests, r.space])
+
+  it('lists the repositories by requests, Other last however big it is, and marks the Spaces', () => {
+    const s = two({ repositories: [repo(null, 500), repo('grove', 300, { space: true }), repo('api', 200)] })
+    expect(rows(s)).toEqual([
+      ['grove', '300', true],
+      ['api', '200', false],
+      ['Other', '500', false],
+    ])
+    expect(charts(s).breakdowns.repositories.map((r) => r.other)).toEqual([false, false, true])
+  })
+
+  it('adds the agents, and fills each row’s bar with the agents’ parts, the biggest row filling it', () => {
+    const s = two({ repositories: [repo('grove', 60), repo('api', 20)] }, { repositories: [repo('grove', 40)] })
+    const found = charts(s).breakdowns.repositories
+    expect(found.map((r) => [r.name, r.requests, r.share])).toEqual([
+      ['grove', '100', '83%'],
+      ['api', '20', '17%'],
+    ])
+    expect(found[0].segments).toEqual([
+      { agent: 'claude', percent: 60 },
+      { agent: 'copilot', percent: 40 },
+    ])
+    expect(found[1].segments).toEqual([{ agent: 'claude', percent: 20 }])
+  })
+
+  it('folds groups under 1% into Other, and leaves no Other when there is nothing for it', () => {
+    const tiny = two({ repositories: [repo('big', 995), repo('speck', 3), repo(null, 2)] })
+    expect(rows(tiny)).toEqual([
+      ['big', '995', false],
+      ['Other', '5', false],
+    ])
+    expect(rows(two({ repositories: [repo('a', 60), repo('b', 40)] })).map((r) => r[0])).toEqual(['a', 'b'])
+    // Exactly 1% stays.
+    expect(rows(two({ repositories: [repo('big', 99), repo('one', 1)] })).map((r) => r[0])).toEqual(['big', 'one'])
+  })
+
+  it('keeps a Space’s row however small', () => {
+    const s = two({ repositories: [repo('big', 995), repo('tiny', 3, { space: true })] })
+    expect(rows(s)).toEqual([
+      ['big', '995', false],
+      ['tiny', '3', true],
+    ])
+  })
+
+  it('keeps a Space apart from a plain repository of the same name', () => {
+    expect(rows(two({ repositories: [repo('app', 60, { space: true })] }, { repositories: [repo('app', 40)] })).map((r) => [r[0], r[2]])).toEqual([
+      ['app', true],
+      ['app', false],
+    ])
+  })
+
+  it('shows credits of the agents that have them in the row’s detail, and never a dollar sign', () => {
+    const s = two({ repositories: [repo('app', 60)] }, { repositories: [repo('app', 40, { credits: 12.4, withoutCredits: 3 })] })
+    const detail = charts(s).breakdowns.repositories[0].detail
+    expect(detail).toBe('100 requests, 100%. Copilot CLI: 12.4 credits plus 3 requests without credits')
+    expect(detail).not.toContain('$')
+  })
+
+  it('lists the models by requests with the date cut off their names, and does not fold small ones', () => {
+    const model = (name: string, requests: number): UsageModelTotals => ({ model: name, ...t(requests) })
+    const s = two({ models: [model('claude-opus-4-5-20251101', 900), model('claude-haiku', 99), model('', 1)] }, { models: [model('gpt-5', 5)] })
+    expect(charts(s).breakdowns.models.map((r) => [r.name, r.requests])).toEqual([
+      ['claude-opus-4-5', '900'],
+      ['claude-haiku', '99'],
+      ['gpt-5', '5'],
+      ['Unknown model', '1'],
+    ])
+  })
+
+  it('puts the agent in front of a model name both agents run', () => {
+    const s = two({ models: [{ model: 'sonnet', ...t(10) }] }, { models: [{ model: 'sonnet', ...t(5) }, { model: 'gpt', ...t(1) }] })
+    expect(charts(s).breakdowns.models.map((r) => r.name)).toEqual(['Claude · sonnet', 'Copilot CLI · sonnet', 'gpt'])
+  })
+
+  it('has no charts when no agent is shown', () => {
+    expect(usageView({ ...summary([]), agents: [] }, { expanded: false }).charts).toBeNull()
+  })
+})
+
+describe('a day’s helper agents and models', () => {
+  const view = (d: UsageDay) => usageView({ ...summary([d]) }, { expanded: false, selected: { agent: 'claude', day: d.day } }).agents[0].detail!
+
+  it('shows the share of the day’s requests that helper agents made', () => {
+    expect(view(day('2026-11-10', 8, { helperRequests: 2 })).helper).toBe('25% (2)')
+    expect(view(day('2026-11-10', 8, { helperRequests: 0 })).helper).toBe('0% (0)')
+    expect(view(day('2026-11-10', 1000, { helperRequests: 1 })).helper).toBe('<1% (1)')
+    expect(view(day('2026-11-10', 0)).helper).toBeNull()
+  })
+
+  it('splits the day by model, with requests and tokens', () => {
+    const models: UsageModelTotals[] = [
+      { model: 'claude-opus-4-5-20251101', ...t(3, { input: 40, output: 1200, cacheRead: 3_000_000, cacheWrite: 800 }) },
+      { model: 'claude-haiku', ...t(1) },
+    ]
+    expect(view(day('2026-11-10', 4, { models })).models).toEqual([
+      { model: 'claude-opus-4-5', requests: '3 requests', tokens: '40 in · 1.2k out · 3M cache' },
+      { model: 'claude-haiku', requests: '1 request', tokens: '0 in · 0 out · 0 cache' },
+    ])
+  })
+
+  it('has neither for a day before the history', () => {
+    const detail = usageView(summary([]), { expanded: false, selected: { agent: 'claude', day: '2026-04-01' } }).agents[0].detail!
+    expect(detail).toMatchObject({ helper: null, models: [] })
+  })
+})
+
+describe('small labels', () => {
+  it('writes shares as whole percents, <1% for a tiny one', () => {
+    expect([percentLabel(1, 3), percentLabel(1, 1000), percentLabel(0, 5), percentLabel(5, 0), percentLabel(1, 1)]).toEqual(['33%', '<1%', '0%', '0%', '100%'])
+  })
+
+  it('cuts a date off a model name only when it is the whole suffix', () => {
+    expect([modelLabel('claude-haiku-4-5-20251001'), modelLabel('gpt-5.1'), modelLabel('claude-3-5-sonnet-20241022'), modelLabel('')]).toEqual(['claude-haiku-4-5', 'gpt-5.1', 'claude-3-5-sonnet', 'Unknown model'])
+  })
+})
+
+// The agents' colours in the bars and rows, against the surface they are drawn on, in every theme.
+describe('the agent colours contrast', () => {
+  const UI = fileURLToPath(new URL('.', import.meta.url))
+  const tokens = readFileSync(`${UI}src/tokens.css`, 'utf8')
+  const themesCss = readFileSync(`${UI}src/themes.css`, 'utf8')
+  const token = (name: string) => tokens.match(new RegExp(`--${name}:\\s*(#[0-9a-f]{6})`, 'i'))![1]
+  // [name, ground, ink] of the default tokens and of every theme preset.
+  const themes: Array<[string, string, string]> = []
+  for (const block of (tokens + '\n' + themesCss).matchAll(/:root(?:\[data-theme='([\w-]+)'\])?\s*\{([^}]*)\}/g)) {
+    const ground = block[2].match(/--color-ground:\s*(#[0-9a-f]{6})/i)?.[1]
+    if (ground) themes.push([block[1] ?? 'default', ground, block[2].match(/--color-ink:\s*(#[0-9a-f]{6})/i)?.[1] ?? token('color-ink')])
+  }
+  const rgb = (hex: string) => [1, 3, 5].map((i) => parseInt(hex.slice(i, i + 2), 16))
+  const luminance = (c: number[]) => {
+    const [r, g, b] = c.map((v) => (v / 255 <= 0.03928 ? v / 255 / 12.92 : ((v / 255 + 0.055) / 1.055) ** 2.4))
+    return 0.2126 * r + 0.7152 * g + 0.0722 * b
+  }
+  const contrast = (a: number[], b: number[]) => {
+    const [hi, lo] = [luminance(a), luminance(b)].sort((x, y) => y - x)
+    return (hi + 0.05) / (lo + 0.05)
+  }
+  const mix = (a: string, b: string, percent: number) => rgb(a).map((c, i) => c * (percent / 100) + rgb(b)[i] * (1 - percent / 100))
+  // The colours as the CSS makes them: Claude's token as it is, Copilot's mixed toward the ink.
+  const claude = () => rgb(token('agent-claude'))
+  const copilot = (ink: string) => mix(token('agent-copilot'), ink, COPILOT_MIX)
+
+  it('are the tokens, and Copilot’s a mix of its token over the ink', () => {
+    expect(agentColour('claude')).toBe('var(--agent-claude)')
+    expect(agentColour('copilot')).toBe(`color-mix(in srgb, var(--agent-copilot) ${COPILOT_MIX}%, var(--color-ink))`)
+    expect(themes.length).toBeGreaterThan(5)
+  })
+
+  it.each(themes)('%s: each agent stands out from the surface by 3:1', (_name, ground, ink) => {
+    expect(contrast(claude(), rgb(ground))).toBeGreaterThanOrEqual(3)
+    expect(contrast(copilot(ink), rgb(ground))).toBeGreaterThanOrEqual(3)
+  })
+
+  it.each(themes)('%s: the two differ in lightness, not only in hue', (_name, _ground, ink) => {
+    expect(contrast(claude(), copilot(ink))).toBeGreaterThanOrEqual(1.4)
   })
 })

@@ -2,8 +2,11 @@ import path from 'node:path'
 import { dayKey } from '../../protocol/days.ts'
 import type { UsageSummary } from '../../protocol/messages.ts'
 import { poll } from '../agents/usageSource.ts'
+import type { GitRun } from '../gitrun.ts'
 import { UsageHistory } from './history.ts'
+import { UsageIndex } from './index.ts'
 import type { UsageReader } from './reader.ts'
+import { RepositoryResolver, type RepositoryPlaces } from './repositories.ts'
 import { clampDays, summarizeAgents } from './summary.ts'
 
 export const USAGE_POLL_MS = 5000
@@ -18,6 +21,11 @@ export interface UsageServiceOptions {
   // How long after a change the history is saved, and the window told. Both coalesce: many changes inside it are one.
   saveMs?: number
   notifyMs?: number
+  // The folders of the current Spaces, which "Where it went" marks and rolls subfolders and former worktrees into.
+  spaces?: () => string[]
+  // How folders are placed in repositories: git (read-only, time limited) and the folders that count as home, Grove's worktrees and scratch.
+  git?: GitRun
+  places?: RepositoryPlaces
 }
 
 export const usageHistoryFile = (home: string): string => path.join(home, 'usage-history.json')
@@ -30,6 +38,8 @@ const message = (error: unknown): string => (error instanceof Error ? error.mess
 // transcripts never holds up the core's other work.
 export class UsageService {
   private readonly history: UsageHistory
+  private readonly index = new UsageIndex()
+  private readonly repositories: RepositoryResolver
   private readonly clock: () => number
   private readonly listeners = new Set<() => void>()
   private running: Promise<void> | undefined
@@ -45,6 +55,9 @@ export class UsageService {
   constructor(private readonly options: UsageServiceOptions) {
     this.clock = options.clock ?? Date.now
     this.history = UsageHistory.load(usageHistoryFile(options.home), this.clock())
+    for (const request of this.history.requests()) this.index.apply(undefined, request)
+    this.history.observer = (before, after) => this.index.apply(before, after)
+    this.repositories = new RepositoryResolver({ git: options.git, spaces: options.spaces ?? (() => []), places: options.places, clock: this.clock, onChange: () => this.changed() })
     for (const reader of options.readers) reader.restore(this.history.readers[reader.agent])
     this.building = !this.history.built
   }
@@ -56,6 +69,7 @@ export class UsageService {
 
   close(): void {
     this.closed = true
+    this.repositories.close()
     this.poller?.stop()
     this.poller = undefined
     clearTimeout(this.notifyTimer)
@@ -136,13 +150,22 @@ export class UsageService {
     }
   }
 
-  // The numbers for the panel: per agent that made a request in the last 30 days, per-day detail for the last `days` days
-  // and the Today / 7 days / 30 days totals; when the history starts; whether the first read is still running.
-  summary(days?: number): UsageSummary {
-    const range = clampDays(days)
+  // Resolves once every folder the summary needs placed in a repository has been looked up.
+  settled(): Promise<void> {
+    return this.repositories.settled()
+  }
+
+  // The numbers for the panel: per agent that made a request in the last 30 days, per-day detail for the last `days` days, the
+  // Today / 7 days / 30 days totals, and the hour, repository and model breakdowns over the last `range` days (default `days`);
+  // when the history starts; whether the first read is still running. Folders not yet placed in a repository count by their path
+  // until git has answered, and the window is told then.
+  summary(daysAsked?: number, rangeAsked?: number): UsageSummary {
+    const days = clampDays(daysAsked)
+    const range = rangeAsked === undefined ? days : clampDays(rangeAsked)
     const now = this.clock()
     const today = dayKey(now)
-    const key = `${this.history.revision}|${range}|${today}|${this.building}`
+    const spaces = (this.options.spaces?.() ?? []).join('\n')
+    const key = `${this.history.revision}|${days}|${range}|${today}|${this.building}|${this.repositories.version}|${spaces}`
     if (this.cached?.key === key) return this.cached.summary
     let first = Infinity
     let last = -Infinity
@@ -155,7 +178,7 @@ export class UsageService {
       historyFrom: dayKey(this.history.floor ?? (Number.isFinite(first) ? first : this.history.since)),
       building: this.building,
       ready: Number.isFinite(first) ? { from: dayKey(first), to: dayKey(last) } : null,
-      agents: summarizeAgents(this.history.requests(), now, range),
+      agents: summarizeAgents(this.index, this.repositories.snapshot(), now, days, range),
     }
     this.cached = { key, summary }
     return summary
@@ -166,6 +189,7 @@ export class UsageService {
     this.generation++
     await this.running?.catch(() => undefined)
     this.history.wipe(this.clock())
+    this.index.clear()
     await Promise.all(
       this.options.readers.map((reader) =>
         reader.skipToEnd().catch((error: unknown) => console.error(`core: usage skip of ${reader.agent} failed: ${message(error)}`)),

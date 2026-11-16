@@ -133,7 +133,7 @@ describe('usage history from Copilot session files, to the summary', () => {
     session('a', [start('/work/app'), usage({ id: '1', ts: iso(15), input: 17224, output: 74, cacheRead: 10464, cacheWrite: 6757 })])
     const s = make()
     await s.drain()
-    expect(copilot(s)?.days).toEqual([{ day: '2026-11-15', requests: 1, input: 3, output: 74, cacheRead: 10464, cacheWrite: 6757, credits: 1, withoutCredits: 0 }])
+    expect(copilot(s)?.days).toMatchObject([{ day: '2026-11-15', requests: 1, input: 3, output: 74, cacheRead: 10464, cacheWrite: 6757, credits: 1, withoutCredits: 0 }])
   })
 
   it('includes the subagents’ requests and flags them as helpers, however Copilot marks them', () => {

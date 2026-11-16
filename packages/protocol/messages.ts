@@ -117,8 +117,26 @@ export interface UsageTotals extends UsageTokens {
   withoutCredits: number
 }
 
+// One model's share of some requests.
+export interface UsageModelTotals extends UsageTotals {
+  model: string
+}
+
+// One repository's share of some requests. Worktrees are rolled up into their main checkout.
+export interface UsageRepositoryTotals extends UsageTotals {
+  // The repository's folder name, or null for everything that is no repository and no Space: scratch and temp folders, the home
+  // folder, folders with no folder at all.
+  name: string | null
+  // Whether the repository is a current Space.
+  space: boolean
+}
+
 export interface UsageDay extends UsageTotals {
   day: string
+  // How many of the day's requests helper agents made.
+  helperRequests: number
+  // The day's requests per model, most requests first.
+  models: UsageModelTotals[]
 }
 
 export interface UsageAgentSummary {
@@ -131,6 +149,12 @@ export interface UsageAgentSummary {
   today: UsageTotals
   last7: UsageTotals
   last30: UsageTotals
+  // The breakdowns below cover the last `range` days (see usage.summary), today included.
+  // Requests by weekday and local hour: 168 counts, Monday 00:00 first, `weekday * 24 + hour`.
+  hours: number[]
+  // Where the requests went, most requests first. Rows of one repository are one row.
+  repositories: UsageRepositoryTotals[]
+  models: UsageModelTotals[]
 }
 
 export interface UsageSummary {
@@ -534,8 +558,9 @@ export interface MethodMap {
   'skills.install': { params: { agent: SkillAgent }; result: SkillAgentInfo }
   // Removes only the skill files Grove wrote.
   'skills.uninstall': { params: { agent: SkillAgent }; result: SkillAgentInfo }
-  // The usage panel's numbers. `days` is how many local days of per-day detail to return (default 30).
-  'usage.summary': { params: { days?: number }; result: UsageSummary }
+  // The usage panel's numbers. `days` is how many local days of per-day detail to return (default 30); `range` is how many days the
+  // hour, repository and model breakdowns cover (default: `days`).
+  'usage.summary': { params: { days?: number; range?: number }; result: UsageSummary }
   // Wipes the saved usage history; its start date becomes now.
   'usage.wipe': { params: Empty; result: Empty }
 }

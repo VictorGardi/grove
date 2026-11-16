@@ -247,7 +247,7 @@ const dock = createDock(
 // emits below (tab switch, an agent that stopped working, a connection that opened or closed).
 const hostBus = createHostBus((error) => report(error))
 const usage = usageModule({
-  summary: (days) => bridge.rpc('usage.summary', { days }),
+  summary: (days, range) => bridge.rpc('usage.summary', { days, range }),
   connected: () => coreConnected,
   now: Date.now,
 })

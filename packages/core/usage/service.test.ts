@@ -83,7 +83,7 @@ describe('usage history from Claude files, to the summary', () => {
     await s.drain()
     expect(claude(s)?.today.requests).toBe(0)
     expect(claude(s)?.last7.requests).toBe(2)
-    expect(claude(s)?.days).toEqual([{ day: '2026-11-15', requests: 2, input: 6, output: 20, cacheRead: 200, cacheWrite: 10, credits: 0, withoutCredits: 0 }])
+    expect(claude(s)?.days).toMatchObject([{ day: '2026-11-15', requests: 2, input: 6, output: 20, cacheRead: 200, cacheWrite: 10, credits: 0, withoutCredits: 0 }])
   })
 
   it('counts a request without a request id by its message id alone', async () => {

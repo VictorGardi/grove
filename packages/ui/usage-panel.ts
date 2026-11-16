@@ -5,10 +5,27 @@
 import { dayKey } from '../protocol/days.ts'
 import type { UsageAgent, UsageSummary } from '../protocol/messages.ts'
 import type { DockContext, DockInstance, DockPanel } from './dock.ts'
-import { SHADE_MIX, matrixSpan, usageView, type AgentView, type MatrixCell } from './usage-model.ts'
+import {
+  SHADE_MIX,
+  agentColour,
+  detailDays,
+  effectiveRange,
+  rangeDays,
+  usageView,
+  DEFAULT_RANGE,
+  type AgentView,
+  type BarsView,
+  type BreakdownRow,
+  type BreakdownsView,
+  type ChartsView,
+  type HoursView,
+  type MatrixCell,
+  type RangeId,
+} from './usage-model.ts'
 
 export interface UsageDeps {
-  summary(days: number): Promise<UsageSummary>
+  // `days` of per-day detail, and the hour, repository and model breakdowns over the last `range` days.
+  summary(days: number, range: number): Promise<UsageSummary>
   connected(): boolean
   // The window's clock, which says which day the matrix ends on.
   now(): number
@@ -89,6 +106,11 @@ function agentSection(view: AgentView, choose: (agent: UsageAgent, day: string) 
     const detail = el('div', 'usage-detail')
     detail.append(el('div', 'usage-detail-title', view.detail.title), el('div', 'usage-detail-requests', view.detail.requests))
     if (view.detail.credits !== null) detail.append(el('div', 'usage-detail-credits', view.detail.credits))
+    if (view.detail.helper !== null) {
+      const helper = el('div', 'usage-detail-helper')
+      helper.append(el('span', 'usage-token-label', 'of which helper agents'), el('span', 'usage-token-value', view.detail.helper))
+      detail.append(helper)
+    }
     if (view.detail.tokens.length > 0) {
       const tokens = el('dl', 'usage-detail-tokens')
       for (const token of view.detail.tokens) {
@@ -98,9 +120,145 @@ function agentSection(view: AgentView, choose: (agent: UsageAgent, day: string) 
       }
       detail.append(tokens)
     }
+    if (view.detail.models.length > 0) {
+      const models = el('ul', 'usage-detail-models')
+      for (const model of view.detail.models) {
+        const item = el('li', 'usage-detail-model')
+        item.append(el('span', 'usage-model-name', model.model), el('span', 'usage-model-requests', model.requests), el('span', 'usage-model-tokens', model.tokens))
+        models.append(item)
+      }
+      detail.append(models)
+    }
     section.append(detail)
   }
   return section
+}
+
+function heading(title: string, side: string): HTMLElement {
+  const head = el('div', 'usage-chart-head')
+  head.append(el('h3', 'usage-chart-title', title), el('span', 'usage-chart-side', side))
+  return head
+}
+
+function barsSection(bars: BarsView): HTMLElement {
+  const section = el('section', 'usage-chart usage-bars')
+  section.append(heading(bars.title, bars.total))
+  const plot = el('div', 'usage-plot')
+  const axis = el('div', 'usage-axis')
+  for (const tick of bars.ticks) axis.append(el('span', 'usage-tick', tick.label))
+  const columns = el('div', 'usage-columns')
+  columns.dataset.unit = bars.unit
+  for (const bar of bars.bars) {
+    const column = el('div', 'usage-bar')
+    column.title = bar.label
+    column.setAttribute('aria-label', bar.label)
+    column.dataset.day = bar.day
+    for (const part of bar.segments) {
+      const segment = el('span', 'usage-segment')
+      segment.dataset.agent = part.agent
+      segment.dataset.hatched = String(part.hatched)
+      segment.style.height = `${part.percent}%`
+      segment.style.setProperty('--agent', agentColour(part.agent))
+      column.append(segment)
+    }
+    columns.append(column)
+  }
+  plot.append(axis, columns)
+  section.append(plot)
+  const legend = el('div', 'usage-legend')
+  for (const item of bars.legend) {
+    const entry = el('span', 'usage-legend-item')
+    const swatch = el('span', 'usage-swatch')
+    swatch.dataset.hatched = String(item.hatched)
+    swatch.style.setProperty('--agent', agentColour(item.agent))
+    entry.append(swatch, item.title)
+    legend.append(entry)
+  }
+  section.append(legend)
+  return section
+}
+
+function hoursSection(hours: HoursView): HTMLElement {
+  const section = el('section', 'usage-chart usage-hours')
+  section.append(heading(hours.title, hours.subtitle))
+  const grid = el('div', 'usage-hours-grid')
+  for (const row of hours.rows) {
+    grid.append(el('span', 'usage-hours-weekday', row.weekday))
+    for (const cell of row.cells) {
+      const node = el('span', 'usage-hour')
+      node.dataset.shade = String(cell.shade)
+      if (cell.shade > 0) node.style.setProperty('--mix', `${SHADE_MIX[cell.shade as 1 | 2 | 3 | 4]}%`)
+      node.title = cell.label
+      node.setAttribute('aria-label', cell.label)
+      grid.append(node)
+    }
+  }
+  section.append(grid)
+  const axis = el('div', 'usage-hours-axis')
+  for (const label of hours.axis) axis.append(el('span', 'usage-hours-hour', label))
+  section.append(axis)
+  return section
+}
+
+function rowNode(row: BreakdownRow): HTMLElement {
+  const node = el('li', 'usage-row')
+  node.title = row.detail
+  const name = el('span', 'usage-row-name')
+  name.append(el('span', 'usage-row-label', row.name))
+  if (row.space) name.append(el('span', 'usage-row-space', 'Space'))
+  const track = el('span', 'usage-row-track')
+  for (const part of row.segments) {
+    const fill = el('span', 'usage-row-fill')
+    fill.dataset.agent = part.agent
+    fill.style.width = `${part.percent}%`
+    fill.style.setProperty('--agent', agentColour(part.agent))
+    track.append(fill)
+  }
+  node.append(name, track, el('span', 'usage-row-requests', row.requests), el('span', 'usage-row-share', row.share))
+  if (row.other) node.dataset.other = 'true'
+  return node
+}
+
+const BREAKDOWNS: Array<{ id: 'repositories' | 'models'; label: string }> = [
+  { id: 'repositories', label: 'By repository' },
+  { id: 'models', label: 'By model' },
+]
+
+function breakdownSection(breakdowns: BreakdownsView, which: 'repositories' | 'models', choose: (which: 'repositories' | 'models') => void): HTMLElement {
+  const section = el('section', 'usage-chart usage-breakdown')
+  const head = heading(breakdowns.title, '')
+  const tabs = el('div', 'usage-tabs')
+  for (const tab of BREAKDOWNS) {
+    const button = el('button', 'usage-tab', tab.label)
+    button.type = 'button'
+    button.dataset.tab = tab.id
+    button.setAttribute('aria-pressed', String(tab.id === which))
+    button.addEventListener('click', () => choose(tab.id))
+    tabs.append(button)
+  }
+  head.querySelector('.usage-chart-side')?.replaceWith(tabs)
+  section.append(head)
+  const list = el('ul', 'usage-rows')
+  for (const row of breakdowns[which]) list.append(rowNode(row))
+  section.append(list)
+  return section
+}
+
+function chartsSection(charts: ChartsView, which: 'repositories' | 'models', range: (id: RangeId) => void, choose: (which: 'repositories' | 'models') => void): HTMLElement {
+  const root = el('div', 'usage-charts')
+  const control = el('div', 'usage-range')
+  control.setAttribute('role', 'group')
+  control.setAttribute('aria-label', 'Range')
+  for (const option of charts.range) {
+    const button = el('button', 'usage-tab', option.label)
+    button.type = 'button'
+    button.dataset.range = option.id
+    button.setAttribute('aria-pressed', String(option.selected))
+    button.addEventListener('click', () => range(option.id))
+    control.append(button)
+  }
+  root.append(control, barsSection(charts.bars), hoursSection(charts.hours), breakdownSection(charts.breakdowns, which, choose))
+  return root
 }
 
 function mountUsage(body: HTMLElement, context: DockContext, deps: UsageDeps): DockInstance & { reload(): void } {
@@ -108,6 +266,10 @@ function mountUsage(body: HTMLElement, context: DockContext, deps: UsageDeps): D
   body.append(root)
   let summary: UsageSummary | null = null
   let selected: { agent: UsageAgent; day: string } | null = null
+  // The range the human chose, and the range the numbers on screen are for: they differ until the core has answered.
+  let range: RangeId = DEFAULT_RANGE
+  let drawn: RangeId = DEFAULT_RANGE
+  let breakdown: 'repositories' | 'models' = 'repositories'
   let asked = 0
   let destroyed = false
 
@@ -115,12 +277,28 @@ function mountUsage(body: HTMLElement, context: DockContext, deps: UsageDeps): D
 
   function draw(): void {
     if (summary === null) return
-    const view = usageView(summary, { expanded: expanded(), selected })
+    const view = usageView(summary, { expanded: expanded(), selected, range: drawn })
     const scrollLeft = new Map<string, number>()
     for (const matrix of root.querySelectorAll<HTMLElement>('.usage-agent')) scrollLeft.set(matrix.dataset.agent ?? '', matrix.querySelector<HTMLElement>('.usage-matrix')?.scrollLeft ?? 0)
     root.replaceChildren()
     if (view.empty !== null) root.append(el('p', 'usage-empty', view.empty))
     for (const agent of view.agents) root.append(agentSection(agent, choose))
+    if (view.charts !== null) {
+      root.append(
+        chartsSection(
+          view.charts,
+          breakdown,
+          (id) => {
+            range = id
+            void reload()
+          },
+          (which) => {
+            breakdown = which
+            draw()
+          },
+        ),
+      )
+    }
     const foot = el('footer', 'usage-foot')
     foot.append(el('span', 'usage-from', view.historyFrom), el('span', 'usage-scope', view.scope))
     root.append(foot)
@@ -142,9 +320,11 @@ function mountUsage(body: HTMLElement, context: DockContext, deps: UsageDeps): D
     if (!deps.connected()) return
     const mine = ++asked
     try {
-      const next = await deps.summary(matrixSpan(dayKey(deps.now()), expanded()))
+      const shown = effectiveRange(range, expanded())
+      const next = await deps.summary(detailDays(dayKey(deps.now()), expanded(), shown), rangeDays(shown))
       if (destroyed || mine !== asked) return
       summary = next
+      drawn = shown
       context.error(null)
       draw()
     } catch (error) {
