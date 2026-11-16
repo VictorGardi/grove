@@ -94,9 +94,8 @@ function cellButton(agent: UsageAgent, cell: MatrixCell, stop: boolean, week: nu
 
 // Where some requests ran: a labelled share bar (the places side by side, a gap between them), a line each with its count and share,
 // and the one line that says why some cannot be told, when it applies.
-function sourcesBlock(sources: SourcesView, title?: string): HTMLElement {
+function sourcesBlock(sources: SourcesView): HTMLElement {
   const block = el('div', 'usage-sources')
-  if (title !== undefined) block.append(el('div', 'usage-sources-title', title))
   const bar = el('div', 'usage-sources-bar')
   for (const part of sources.segments) {
     const segment = el('span', 'usage-sources-segment')
@@ -148,7 +147,6 @@ function agentSection(view: AgentView, choose: (agent: UsageAgent, day: string) 
     totals.append(item)
   }
   section.append(totals)
-  if (view.sources !== null) section.append(sourcesBlock(view.sources, view.sourcesTitle))
   if (view.detail !== null) {
     const detail = el('div', 'usage-detail')
     detail.append(el('div', 'usage-detail-title', view.detail.title), el('div', 'usage-detail-requests', view.detail.requests))

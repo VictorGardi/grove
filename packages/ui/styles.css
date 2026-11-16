@@ -3864,10 +3864,6 @@ button.usage-cell:focus-visible {
   gap: var(--space-2);
 }
 
-.usage-sources-title {
-  color: var(--color-mute);
-}
-
 .usage-sources-bar {
   display: flex;
   gap: var(--space-xs);

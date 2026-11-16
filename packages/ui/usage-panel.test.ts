@@ -126,12 +126,7 @@ describe('usage panel', () => {
       ],
     })
     await flush()
-    const block = t.body.querySelector('.usage-agent > .usage-sources')!
-    expect(block.querySelector('.usage-sources-title')?.textContent).toBe('Where it ran, 30 days')
-    expect([...block.querySelectorAll('.usage-sources-segment')].map((n) => (n as HTMLElement).style.width)).toEqual(['60%', '30%', '10%'])
-    expect([...block.querySelectorAll('.usage-sources-segment')].map((n) => (n as HTMLElement).dataset.hatched)).toEqual(['false', 'false', 'true'])
-    expect([...block.querySelectorAll('.usage-sources-item')].map((n) => n.querySelector('.usage-sources-label')?.textContent)).toEqual(['Claude Desktop', 'Claude Code run in Grove', 'Claude Code, can’t tell'])
-    expect(block.querySelector('.usage-sources-note')?.textContent).toContain('Grove began recording Claude sessions on Thu 5 Nov 2026')
+    expect(t.body.querySelector('.usage-agent > .usage-sources')).toBeNull()
     cell(t.body, '2026-11-11').click()
     const detail = t.body.querySelector('.usage-detail .usage-sources')!
     expect([...detail.querySelectorAll('.usage-sources-label')].map((n) => n.textContent)).toEqual(['Claude Desktop'])
