@@ -951,6 +951,8 @@ describe('agents typed by hand', () => {
   const typeLine = (core: RpcClient, id: string, text: string) =>
     core.request(METHODS.tabsWrite, { id, dataB64: bytesToB64(Buffer.from(text)) })
 
+  const skillDirs = () => ({ claude: path.join(home, 'skills-claude'), copilot: path.join(home, 'skills-copilot'), opencode: path.join(home, 'skills-opencode') })
+
   const startTypedCore = async (adapters: Partial<Record<AgentKind, AgentAdapter>>): Promise<RpcClient> => {
     const fakeCore = path.join(path.dirname(fileURLToPath(import.meta.url)), '..', 'holder', 'testdata', 'fake-core.mjs')
     holder = await ensureHolder({
@@ -966,7 +968,7 @@ describe('agents typed by hand', () => {
       }
     }
     const status = new StatusService({ home, adapters, alive, onSession: (tabId, sessionId) => spaces.setAgentSession(tabId, sessionId) })
-    daemons.push(await startCoreDaemon({ home, spaces, status, adapters }))
+    daemons.push(await startCoreDaemon({ home, spaces, status, adapters, skillDirs: skillDirs() }))
     const core = await connectWhenReady(coreSocketPath())
     clients.push(core)
     return core
@@ -1119,6 +1121,25 @@ describe('agents typed by hand', () => {
     expect(installed).toMatchObject({ state: 'enabled', changed: true, written: null, pending: false })
     expect(fs.existsSync(settings)).toBe(true)
     await typeLine(core, id, '\u0003')
+  })
+
+  it('installs and removes Grove skills for one agent at a time, and refuses an unknown agent', async () => {
+    const core = await startTypedCore({})
+    const dirs = skillDirs()
+    const states = async () => (await core.request(METHODS.skillsStatus, {})).agents.map((agent) => `${agent.agent}:${agent.state}`)
+    expect(await states()).toEqual(['claude:not-installed', 'copilot:not-installed', 'opencode:not-installed'])
+
+    expect(await core.request(METHODS.skillsInstall, { agent: 'copilot' })).toEqual({ agent: 'copilot', dir: dirs.copilot, state: 'installed' })
+    expect(fs.existsSync(path.join(dirs.copilot, 'grove', 'SKILL.md'))).toBe(true)
+    expect(fs.existsSync(path.join(dirs.claude, 'grove'))).toBe(false)
+    expect(await states()).toEqual(['claude:not-installed', 'copilot:installed', 'opencode:not-installed'])
+
+    expect(await core.request(METHODS.skillsUninstall, { agent: 'copilot' })).toMatchObject({ state: 'not-installed' })
+
+    fs.mkdirSync(path.join(dirs.claude, 'grove'), { recursive: true })
+    fs.writeFileSync(path.join(dirs.claude, 'grove', 'SKILL.md'), 'mine\n')
+    await expect(core.request(METHODS.skillsInstall, { agent: 'claude' })).rejects.toThrow('not written by grove')
+    await expect(core.request(METHODS.skillsInstall, { agent: 'cursor' } as never)).rejects.toThrow('agent must be')
   })
 
   it('moves the space root when a plain tab cds, and keeps it while an agent sits elsewhere', async () => {

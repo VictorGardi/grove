@@ -10,7 +10,7 @@ import { parseCommand, UsageError, type Command } from './args.ts'
 import { formatError, formatLsJson, formatNew, formatRead, formatTree, spaceHeadings, turnExit, type LsTab, type TurnOutcome } from './output.ts'
 import { pasteText, waitStable } from './paste.ts'
 import { resolveSpaceRef, resolveTabRef } from './ref.ts'
-import { agentSkillsDirs, installSkill } from './skill.ts'
+import { installSkill, skillDirs } from '../core/skills.ts'
 import { buildId } from '../core/build.ts'
 import { claudeSettingsFile, copilotSettingsFile, installClaude, uninstallClaude, uninstallCopilot } from '../core/integrations/install.ts'
 import { waitForWorking, waitTurn, type WaitDeps, type WaitTab } from './wait.ts'
@@ -85,7 +85,7 @@ async function run(command: Command): Promise<number> {
 
 // One line per folder: written, or why not. Exit 1 if any folder failed.
 function installSkills(): number {
-  const results = installSkill({ dirs: agentSkillsDirs(os.homedir(), process.env) })
+  const results = installSkill({ dirs: Object.values(skillDirs(os.homedir(), process.env)) })
   for (const result of results) console.log(result.ok ? `✓ ${result.target}` : `✗ ${result.target}: ${result.error}`)
   return results.every((result) => result.ok) ? 0 : 1
 }

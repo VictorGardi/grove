@@ -41,6 +41,7 @@ import { createContextMenu } from './context-menu.ts'
 import { createSpaceDialog } from './space-dialog.ts'
 import { bindSpaceRename } from './space-rename.ts'
 import { createIntegrationPanel } from './integrations.ts'
+import { createSkillsPanel } from './skills-panel.ts'
 import { createKeysPanel } from './keys-panel.ts'
 import { indicatorClass, indicatorLabel } from './indicator.ts'
 import { createAgentWorkingMark } from './agent-thinking-dots.ts'
@@ -290,6 +291,15 @@ const keysPanel = createKeysPanel(byId('keys-list'), byId('keys-error'), {
   save: async (action, binding) => applyConfig(await bridge.rpc('config.setKey', { action, binding })),
 })
 // Agent status: the Agents panel and the one-time prompt. Each install, removal or answer is a call the human made here.
+const skillsPanel = createSkillsPanel(
+  { list: byId('skills-list'), error: byId('skills-error') },
+  {
+    status: async () => (await bridge.rpc('skills.status', {})).agents,
+    install: (agent) => bridge.rpc('skills.install', { agent }),
+    uninstall: (agent) => bridge.rpc('skills.uninstall', { agent }),
+  },
+)
+
 const integrationPanel = createIntegrationPanel(
   {
     panel: byId('integrations-modal'),
@@ -1390,7 +1400,10 @@ bindSpaceRename(spaceList, (spaceId) => {
   if (!space) return
   void askRenameSpace(space).then(focusActive)
 })
-byId('settings-open').addEventListener('click', () => integrationPanel.open())
+byId('settings-open').addEventListener('click', () => {
+  integrationPanel.open()
+  void skillsPanel.refresh()
+})
 urgentBanner.addEventListener('click', () => jumpToUrgent())
 bridge.on('integration.prompt', ({ agent }) => {
   integrationPanel.ask(agent).catch(report)

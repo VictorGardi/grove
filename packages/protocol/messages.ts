@@ -45,6 +45,9 @@ export const METHODS = {
   integrationInstall: 'integration.install',
   integrationUninstall: 'integration.uninstall',
   integrationAnswer: 'integration.answer',
+  skillsStatus: 'skills.status',
+  skillsInstall: 'skills.install',
+  skillsUninstall: 'skills.uninstall',
 } as const
 
 export const ERROR_CODES = {
@@ -262,6 +265,21 @@ export interface IntegrationInfo {
   error?: string
 }
 
+// The agents whose user skill folder Grove can put its skills into.
+export type SkillAgent = 'claude' | 'copilot' | 'opencode'
+
+// installed: Grove's skills are there and current. not-installed: none. out-of-date: some missing or changed. blocked: a file or
+// link Grove did not write is in the way (or the folder cannot be read); `error` says which. Grove never touches it.
+export type SkillState = 'installed' | 'not-installed' | 'out-of-date' | 'blocked'
+
+export interface SkillAgentInfo {
+  agent: SkillAgent
+  state: SkillState
+  // The agent's user skill folder, resolved from the core's environment.
+  dir: string
+  error?: string
+}
+
 export type DiffMode = 'branch' | 'uncommitted' | 'last-commit'
 
 // What the diff was compared against, resolved by the core.
@@ -461,6 +479,11 @@ export interface MethodMap {
   'integration.uninstall': { params: { agent: IntegrationAgent }; result: IntegrationInfo }
   // Records that the human said not now; nothing is written.
   'integration.answer': { params: { agent: IntegrationAgent; answer: 'not-now' }; result: Empty }
+  'skills.status': { params: Empty; result: { agents: SkillAgentInfo[] } }
+  // Writes Grove's skills into the agent's user skill folder, only on this call (a human's yes). Refuses a file Grove did not write.
+  'skills.install': { params: { agent: SkillAgent }; result: SkillAgentInfo }
+  // Removes only the skill files Grove wrote.
+  'skills.uninstall': { params: { agent: SkillAgent }; result: SkillAgentInfo }
 }
 
 export interface NotificationMap {

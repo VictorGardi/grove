@@ -1,15 +1,17 @@
 import { randomUUID } from 'node:crypto'
 import fs from 'node:fs'
 import net from 'node:net'
+import os from 'node:os'
 import path from 'node:path'
 import { connectRpc, type RpcClient } from '../protocol/client.ts'
 import { bytesToB64, createLineDecoder, encodeLine } from '../protocol/framing.ts'
 import { coreSocketPath, groveHome, holderSocketPath } from '../protocol/paths.ts'
 import { ERROR_CODES, METHODS, PROTOCOL_VERSION } from '../protocol/messages.ts'
-import type { IntegrationAgent, IntegrationInfo, KeyAction } from '../protocol/messages.ts'
+import type { IntegrationAgent, IntegrationInfo, KeyAction, SkillAgent } from '../protocol/messages.ts'
 import { claudeSettingsFile } from './integrations/install.ts'
 import { IntegrationService, isIntegrationAgent } from './integrations/service.ts'
 import { buildId } from './build.ts'
+import { installSkill, SKILL_AGENTS, skillDirs, skillInfo, uninstallSkill } from './skills.ts'
 import { Presence } from './presence.ts'
 import type { Empty, JsonRpcId, JsonRpcRequest, MethodMap, MethodName, NotificationMap } from '../protocol/messages.ts'
 import { RpcError } from '../protocol/errors.ts'
@@ -73,6 +75,7 @@ export async function startCoreDaemon(
     adapters?: Partial<Record<AgentKind, AgentAdapter>>
     status?: StatusService
     integrations?: IntegrationService
+    skillDirs?: Record<SkillAgent, string>
   } = {},
 ): Promise<CoreServer> {
   const socketPath = options.socketPath ?? coreSocketPath()
@@ -238,7 +241,8 @@ export async function startCoreDaemon(
   // Agent tabs are rebuilt before the core listens, so the first client already sees their state.
   status.restore(spaces.agentTabs(), tabsAtStart)
   status.start()
-  const deps: Deps = { spaces, status, attention, home, configDir, config, adapters, available, broadcast, integrations }
+  const skillDirsOf = options.skillDirs ?? skillDirs(os.homedir(), process.env)
+  const deps: Deps = { skillDirs: skillDirsOf, spaces, status, attention, home, configDir, config, adapters, available, broadcast, integrations }
 
   const server = net.createServer((socket) => {
     sockets.add(socket)
@@ -372,6 +376,13 @@ interface Deps {
   available: Set<AgentKind>
   broadcast: (message: unknown) => void
   integrations: IntegrationService
+  skillDirs: Record<SkillAgent, string>
+}
+
+function skillAgentParam(params: unknown): SkillAgent {
+  const agent = (params as { agent?: unknown } | null)?.agent
+  if (!SKILL_AGENTS.includes(agent as SkillAgent)) throw new RpcError(ERROR_CODES.invalidParams, 'agent must be claude, copilot or opencode')
+  return agent as SkillAgent
 }
 
 // The agent kinds of the tabs the app did not start that are running now.
@@ -447,6 +458,18 @@ async function dispatch(method: string, rawParams: unknown, holder: Promise<RpcC
     if ((rawParams as { answer?: unknown }).answer !== 'not-now') throw new RpcError(ERROR_CODES.invalidParams, 'answer must be not-now')
     deps.integrations.answer(agent, 'not-now')
     return {} satisfies MethodMap['integration.answer']['result']
+  }
+  if (method === METHODS.skillsStatus) {
+    const agents = SKILL_AGENTS.map((agent) => skillInfo(agent, deps.skillDirs[agent]))
+    return { agents } satisfies MethodMap['skills.status']['result']
+  }
+  if (method === METHODS.skillsInstall || method === METHODS.skillsUninstall) {
+    const agent = skillAgentParam(rawParams)
+    const dir = deps.skillDirs[agent]
+    const results = (method === METHODS.skillsInstall ? installSkill : uninstallSkill)({ dirs: [dir] })
+    const failed = results.find((result) => !result.ok)
+    if (failed) throw new RpcError(ERROR_CODES.invalidParams, failed.error ?? `could not change ${failed.target}`)
+    return skillInfo(agent, dir) satisfies MethodMap['skills.install']['result']
   }
   if (method === METHODS.corePing) {
     const result: MethodMap['core.ping']['result'] = { protocolVersion: PROTOCOL_VERSION, build: buildId() }

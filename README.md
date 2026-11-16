@@ -77,7 +77,7 @@ grove focus <ref>                          show the tab in the app and raise its
 grove kill <ref>                           end the tab and remove it
 grove read <ref> [--lines N]               the last N lines of the screen (default 100)
 grove config path                          print the config folder
-grove skill                                install the grove-config skill (see Config folder)
+grove skill                                install the grove and grove-config skills (see Config folder)
 ```
 
 - `<ref>` is a tab's full id, an id prefix of at least four characters, or its label (exact). A ref that matches two tabs is an error.
@@ -122,13 +122,13 @@ The folder holds five JSON files, each with `"version": 1`. A missing file means
 
 The app watches the folder and applies a saved change while it runs, with no restart. A file that does not validate keeps its last good values, and the window's status line shows a note with the file name and the problem until the file is fixed. The folder also gets an `AGENTS.md` that lists every file and key.
 
-Every tab the app starts has `GROVE_CONFIG` set to the config folder, so an agent in that tab can find the files. To let agents change the settings for you, install the skill:
+Every tab the app starts has `GROVE_CONFIG` set to the config folder, so an agent in that tab can find the files. To let agents change the settings for you, and start and read other tabs, install the skills. In Settings, under Agent status, each of Claude, Copilot and OpenCode has an Install button (and Update and Remove); or from a terminal:
 
 ```sh
 grove skill
 ```
 
-It writes `grove-config/SKILL.md` into the Claude, OpenCode and Copilot user skill folders, one line per folder (`✓ <path>` or `✗ <path>: <error>`). The skill is generated, so running it again refreshes it. A file in those folders that grove did not write is left alone and named in the error; remove it first.
+Both write two skills into the Claude, OpenCode and Copilot user skill folders (`~/.claude/skills`, `~/.config/opencode/skills`, `~/.copilot/skills`; `CLAUDE_CONFIG_DIR`, `XDG_CONFIG_HOME` and `COPILOT_HOME` move them): `grove` (from `skills/grove/SKILL.md` in this repo) and `grove-config` (generated). `grove skill` prints one line per file (`✓ <path>` or `✗ <path>: <error>`), and running either again refreshes them. A file or link in those folders that grove did not write is left alone and named in the error; remove it first. Only files grove wrote are removed.
 
 To put `grove` on your PATH, click "Install grove command" at the bottom of the sidebar. It writes `~/.local/bin/grove`, a small script that runs this checkout's `bin/grove`, so `~/.local/bin` must be on your PATH. Keep the checkout where it is: the script points at it.
 
