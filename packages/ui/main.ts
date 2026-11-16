@@ -318,6 +318,9 @@ const keyActions: Record<KeyAction, () => void> = {
   'new-shell': () => {
     if (store.activeSpace !== null && store.refused === null) void newShellTab()
   },
+  'new-grid-shell': () => {
+    if (store.activeSpace !== null && store.refused === null) void newShellTab(null, true)
+  },
   'new-space': () => void newSpaceTab().catch(report),
   'close-tab': () => {
     if (store.activeTab) void closeTab(store.activeTab.id).catch(report)
@@ -968,8 +971,9 @@ function spaceButton(space: SpaceInfo, state: AgentStateName): HTMLButtonElement
   return button
 }
 
-// Opens a shell tab in the active space. A launcher passes the line it types once the tab's first output arrives.
-async function newShellTab(typed: string | null = null): Promise<void> {
+// Opens a shell tab in the active space, and in the grid when `inGrid`. A launcher passes the line it types once the tab's first
+// output arrives.
+async function newShellTab(typed: string | null = null, inGrid = false): Promise<void> {
   const spaceId = store.activeSpace
   const space = spaceId ? store.space(spaceId) : undefined
   if (!spaceId || !space) return
@@ -988,6 +992,7 @@ async function newShellTab(typed: string | null = null): Promise<void> {
     if (!dom.attached || dom.attaching) await attach(dom)
     if (typed !== null) void bridge.rpc('tabs.write', { id, dataB64: toBase64(encoder.encode(`${typed}\r`)) }).catch(report)
     activate(id)
+    if (inGrid) showInGrid()
   } catch (error) {
     if (opened) store.removeTab(opened)
     report(error)

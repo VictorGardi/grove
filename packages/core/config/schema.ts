@@ -23,6 +23,7 @@ export const SECTION: Record<ConfigFile, keyof ConfigValues> = {
 export const KEY_ACTIONS = [
   'grid-toggle',
   'new-shell',
+  'new-grid-shell',
   'new-space',
   'close-tab',
   'previous-tab',
@@ -77,6 +78,7 @@ export const DEFAULT_VALUES: ConfigValues = {
   keys: {
     'grid-toggle': 'mod+g',
     'new-shell': 'mod+t',
+    'new-grid-shell': 'mod+shift+t',
     'new-space': 'mod+n',
     'close-tab': 'mod+w',
     'previous-tab': 'ctrl+tab',
@@ -164,6 +166,7 @@ export function canonicalBinding(text: string): string | null {
 const KEY_DESCRIPTIONS: Record<KeyAction, string> = {
   'grid-toggle': 'Shows or hides the grid of the active space\'s tabs in it.',
   'new-shell': 'Opens a shell tab in the active space.',
+  'new-grid-shell': 'Opens a shell tab in the active space and puts it in the grid, which shows. With a grid of nine tabs, the shell opens outside it and the status line says why.',
   'new-space': 'Adds a space at the home folder, or selects it if it exists, and opens a shell tab there.',
   'close-tab': 'Closes the active tab.',
   'previous-tab': 'Goes back to the tab you were in before the active one, in the active space. Pressed again, it goes back to the one before.',

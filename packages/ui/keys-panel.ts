@@ -8,6 +8,7 @@ const SPACE_PLACES = ['first', 'second', 'third', 'fourth', 'fifth', 'sixth', 's
 export const KEY_LABELS: Record<KeyAction, string> = {
   'grid-toggle': 'Show or hide the grid',
   'new-shell': 'New shell tab',
+  'new-grid-shell': 'New shell tab, in the grid',
   'new-space': 'New space at the home folder',
   'close-tab': 'Close the tab',
   'previous-tab': 'Previous tab',

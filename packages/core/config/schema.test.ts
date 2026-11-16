@@ -45,6 +45,7 @@ describe('config schema', () => {
       value: {
         'grid-toggle': 'mod+g',
         'new-shell': 'mod+t',
+        'new-grid-shell': 'mod+shift+t',
         'new-space': 'mod+n',
         'close-tab': 'mod+w',
         'previous-tab': 'ctrl+tab',

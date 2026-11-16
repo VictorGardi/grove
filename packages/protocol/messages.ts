@@ -182,6 +182,7 @@ export interface AttentionNotice {
 export type KeyAction =
   | 'grid-toggle'
   | 'new-shell'
+  | 'new-grid-shell'
   | 'new-space'
   | 'close-tab'
   | 'previous-tab'
