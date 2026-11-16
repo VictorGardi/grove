@@ -10,10 +10,10 @@ import type { UsageRequest } from './history.ts'
 //  - <tab>.status.json holds the session the tab is in now (`resumeId`), <tab>.usage.json (Claude) the last context reading.
 //    Neither says when the session began.
 // Nothing in Grove deletes these files: closing or killing a tab only stops watching them. So a tab that is gone still counts.
-// Sessions of the tabs open now (Grove's saved state) are added too, as `live`.
+// Sessions of the tabs open now (Grove's saved state) are added too, as `live`. Everything is held in memory and learnt again from
+// these files at every core start (ADR 0004).
 
 const AGENTS: readonly UsageAgent[] = ['claude', 'copilot']
-const SCHEMA = 1
 const CHUNK_BYTES = 1 << 20
 // A hook record is written before the requests of its session and a refresh reads every file, so a request made before a refresh
 // began is settled by it. The margin covers the agent's clock and Grove's disagreeing a little.
@@ -184,35 +184,6 @@ export class GroveSessions {
       // The reading's time says Grove was recording by then, though not since when the session began.
       const at = time(body.at)
       if (at !== undefined) this.began.set(agent, Math.min(this.began.get(agent) ?? at, at))
-    }
-  }
-
-  // What to save with the history, so a restart does not read every per-tab file again, and what Grove learnt survives a file
-  // being removed.
-  state(): unknown {
-    return {
-      schema: SCHEMA,
-      files: Object.fromEntries(this.offsets),
-      sessions: Object.fromEntries([...this.first].map(([key, at]) => [key, Number.isFinite(at) ? at : null])),
-      began: Object.fromEntries(this.began),
-    }
-  }
-
-  restore(state: unknown): void {
-    const saved = record(state)
-    this.offsets = new Map()
-    this.first = new Map()
-    this.began = new Map()
-    this.stamps = new Map()
-    if (saved === undefined || saved.schema !== SCHEMA) return
-    for (const [id, offset] of Object.entries(record(saved.files) ?? {})) if (typeof offset === 'number' && offset >= 0) this.offsets.set(id, offset)
-    for (const [key, at] of Object.entries(record(saved.sessions) ?? {})) {
-      if (at === null) this.first.set(key, -Infinity)
-      else if (time(at) !== undefined) this.first.set(key, at as number)
-    }
-    for (const agent of AGENTS) {
-      const at = time(record(saved.began)?.[agent])
-      if (at !== undefined) this.began.set(agent, at)
     }
   }
 }

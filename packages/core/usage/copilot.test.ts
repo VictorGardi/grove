@@ -5,7 +5,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { createClaudeReader } from './claude.ts'
 import { createCopilotReader, requestOf } from './copilot.ts'
 import { STALL_LIMIT_MS, calmest, worstStall } from './loopProbe.ts'
-import { UsageService, usageHistoryFile } from './service.ts'
+import { UsageService } from './service.ts'
 
 // What a conversation says. It sits in the fixture's conversation events and workspace file and must never reach the saved history.
 const SECRET = 'my password is hunter2'
@@ -108,7 +108,6 @@ describe('usage history from Copilot session files, to the summary', () => {
       home,
       readers: [createClaudeReader({ projectsDir: projects }), createCopilotReader({ copilotHome })],
       clock: () => NOW,
-      saveMs: 10,
       notifyMs: 10,
     }))
 
@@ -146,14 +145,12 @@ describe('usage history from Copilot session files, to the summary', () => {
     expect(line({ id: 's3', ts: iso(15), agentId: 'agent-7' })?.helper).toBe(true)
   })
 
-  it('counts the subagents’ requests in the totals and keeps the helper flag in the saved history', async () => {
+  it('counts the subagents’ requests in the totals and shows their share as helper requests', async () => {
     session('a', [start('/work/app'), usage({ id: '1', ts: iso(15), initiator: 'user' }), usage({ id: '2', ts: iso(15), initiator: 'sub-agent', interaction: 'conversation-subagent', agentId: 'x' })])
     const s = make()
     await s.drain()
-    s.close()
     expect(copilot(s)?.last7.requests).toBe(2)
-    const rows = Object.entries((JSON.parse(fs.readFileSync(usageHistoryFile(home), 'utf8')) as { requests: Record<string, unknown[]> }).requests)
-    expect(rows.map(([, row]) => row[8]).sort()).toEqual([0, 1])
+    expect(copilot(s)?.days.map((d) => d.helperRequests)).toEqual([1])
   })
 
   it('takes the folder from the session start, and from the resume that follows it', () => {
@@ -166,25 +163,18 @@ describe('usage history from Copilot session files, to the summary', () => {
 
   it('falls back to the session’s workspace file for the folder, and reads nothing else from it', async () => {
     session('a', [usage({ id: '1', ts: iso(15) })], false, `id: a\ncwd: "/work/from-workspace"\nname: ${SECRET}\nsummary_count: 0\n`)
-    const s = make()
-    await s.drain()
-    s.close()
-    const saved = fs.readFileSync(usageHistoryFile(home), 'utf8')
-    expect(saved).toContain('/work/from-workspace')
-    expect(saved).not.toContain(SECRET)
+    const { requests } = await createCopilotReader({ copilotHome }).step()
+    expect(requests.map((r) => r.folder)).toEqual(['/work/from-workspace'])
+    expect(JSON.stringify(requests)).not.toContain(SECRET)
   })
 
-  it('keeps the folder across passes and restarts that read only new lines', async () => {
+  it('keeps the folder across passes that read only new lines', async () => {
     session('a', [start('/work/app'), usage({ id: '1', ts: iso(15) })])
     const s = make()
     await s.drain()
-    s.close()
     session('a', [usage({ id: '2', ts: iso(15) })], true)
-    const again = make()
-    await again.drain()
-    again.close()
-    const saved = JSON.parse(fs.readFileSync(usageHistoryFile(home), 'utf8')) as { requests: Record<string, unknown[]> }
-    expect(Object.values(saved.requests).map((row) => row[3])).toEqual(['/work/app', '/work/app'])
+    await s.drain()
+    expect(copilot(s)?.repositories.map((r) => r.requests)).toEqual([2])
   })
 
   it('spreads a resumed session’s requests across the days they were made, by their own timestamps', async () => {
@@ -247,15 +237,23 @@ describe('usage history from Copilot session files, to the summary', () => {
     expect(s.summary().agents.map((a) => a.agent)).toEqual(['claude', 'copilot'])
   })
 
-  it('keeps the history when Copilot deletes its session files, also across a restart', async () => {
-    const file = session('a', [start('/work/app'), usage({ id: '1', ts: iso(15), nano: 2_000_000_000 }), usage({ id: '2', ts: iso(14) })])
+  it('rebuilds the same summary after a restart, and shows only what Copilot’s files still hold once it has deleted a session', async () => {
+    const gone = session('a', [start('/work/app'), usage({ id: '1', ts: iso(15), nano: 2_000_000_000 }), usage({ id: '2', ts: iso(14) })])
+    session('b', [start('/work/app'), usage({ id: '3', ts: iso(13), nano: 1_000_000_000 })])
     const s = make()
     await s.drain()
+    const before = s.summary(30, 30)
+    expect(copilot(s)?.last7).toMatchObject({ requests: 3, credits: 4 })
     s.close()
-    fs.rmSync(path.dirname(file), { recursive: true })
+    const same = make()
+    await same.drain()
+    expect(same.summary(30, 30)).toEqual(before)
+    same.close()
+    fs.rmSync(path.dirname(gone), { recursive: true })
     const again = make()
     await again.drain()
-    expect(copilot(again)?.last7).toMatchObject({ requests: 2, credits: 3 })
+    expect(copilot(again)?.last7).toMatchObject({ requests: 1, credits: 1 })
+    expect(fs.readdirSync(home)).toEqual([])
   })
 
   it('reads only what is new, and waits for a half-written last line', async () => {
@@ -306,23 +304,14 @@ describe('usage history from Copilot session files, to the summary', () => {
     expect(errors).not.toHaveBeenCalled()
   })
 
-  it('saves no conversation text, owner-only', async () => {
+  it('shows no conversation text and writes no file', async () => {
     session('a', [start('/work/app'), chat(), usage({ id: '1', ts: iso(15) }), chat(), shutdown(1_000_000_000)], false, `cwd: /work/app\nname: ${SECRET}\n`)
     const s = make()
     await s.drain()
+    expect(copilot(s)?.last7.requests).toBe(1)
+    expect(JSON.stringify(s.summary())).not.toContain(SECRET)
     s.close()
-    const file = usageHistoryFile(home)
-    expect(fs.statSync(file).mode & 0o777).toBe(0o600)
-    expect(fs.readFileSync(file, 'utf8')).not.toContain(SECRET)
-  })
-
-  it('reads a history saved before credits existed, with its requests as having no credit figure', () => {
-    fs.writeFileSync(
-      usageHistoryFile(home),
-      JSON.stringify({ version: 1, since: NOW, floor: null, built: true, readers: {}, requests: { 'claude:m1': [new Date(2026, 10, 15).getTime(), 'claude', 'claude-opus', '/work/app', 3, 10, 100, 5, 0] } }),
-    )
-    const s = new UsageService({ home, readers: [], clock: () => NOW })
-    expect(s.summary().agents[0]).toMatchObject({ agent: 'claude', last7: { requests: 1, credits: 0, withoutCredits: 0 } })
+    expect(fs.readdirSync(home)).toEqual([])
   })
 
   it('stays responsive while a large history is scanned for the first time', async () => {
@@ -356,8 +345,6 @@ describe('usage history from Copilot session files, to the summary', () => {
     expect(copilot(s)?.last7.requests).toBe(120 * 3)
     worst = await calmest(worst, async () => {
       s.close()
-      fs.rmSync(home, { recursive: true, force: true })
-      fs.mkdirSync(home)
       const next = (service = new UsageService({ home, readers: [createCopilotReader({ copilotHome })], clock: () => NOW }))
       return worstStall(() => next.drain())
     })

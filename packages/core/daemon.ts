@@ -487,10 +487,6 @@ async function dispatch(method: string, rawParams: unknown, holder: Promise<RpcC
     }
     return deps.usage.summary(days as number | undefined, range as number | undefined) satisfies MethodMap['usage.summary']['result']
   }
-  if (method === METHODS.usageWipe) {
-    await deps.usage.wipe()
-    return {} satisfies MethodMap['usage.wipe']['result']
-  }
   if (method === METHODS.corePing) {
     const result: MethodMap['core.ping']['result'] = { protocolVersion: PROTOCOL_VERSION, build: buildId() }
     return result

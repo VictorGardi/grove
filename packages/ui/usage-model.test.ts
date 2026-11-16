@@ -4,6 +4,7 @@ import { describe, expect, it } from 'vitest'
 import type { UsageAgent, UsageAgentSummary, UsageDay, UsageModelTotals, UsageRepositoryTotals, UsageSplit, UsageSplitTotals, UsageSummary, UsageTotals } from '../protocol/messages.ts'
 import {
   EMPTY_MESSAGE,
+  NO_RECORD,
   creditsLabel,
   creditsOf,
   detailDays,
@@ -22,7 +23,6 @@ import {
   shadeOf,
   tokensLabel,
   usageView,
-  wipePrompt,
   type RangeId,
   COPILOT_MIX,
   SPLIT_INK_MIX,
@@ -38,7 +38,6 @@ function summary(days: UsageDay[], more: Partial<UsageSummary> = {}, totals: Par
   const sum = (n: number) => ({ requests: n, input: 0, output: 0, cacheRead: 0, cacheWrite: 0, credits: 0, withoutCredits: 0 })
   return {
     today: '2026-11-16',
-    historyFrom: '2026-05-01',
     building: false,
     ready: { from: '2026-05-01', to: '2026-11-16' },
     progress: [],
@@ -107,8 +106,8 @@ describe('the matrix', () => {
     expect(matrixSpan('2026-11-22', true)).toBe(53 * 7)
   })
 
-  it('shows days before the history starts as unknown, not as zero activity', () => {
-    const view = usageView(summary([day('2026-11-10', 2)], { historyFrom: '2026-11-03' }), { expanded: false })
+  it('shows days before the earliest request the agents’ files still hold as unknown, not as zero activity', () => {
+    const view = usageView(summary([day('2026-11-10', 2)], { ready: { from: '2026-11-03', to: '2026-11-16' } }), { expanded: false })
     expect(cells(view).find((cell) => cell.day === '2026-11-02')).toMatchObject({ requests: null, shade: null })
     expect(cells(view).find((cell) => cell.day === '2026-11-03')).toMatchObject({ requests: 0, shade: 0 })
   })
@@ -129,9 +128,9 @@ describe('labels', () => {
     expect(none.agents).toEqual([])
   })
 
-  it('says where the history starts, and that it is this machine', () => {
-    const view = usageView(summary([], { historyFrom: '2026-11-03' }), { expanded: false })
-    expect(view.historyFrom).toBe('History from Tue 3 Nov 2026')
+  it('says that it is this machine, and has no line about where a saved history starts', () => {
+    const view = usageView(summary([]), { expanded: false })
+    expect(view).not.toHaveProperty('historyFrom')
     expect(view.scope).toBe('This machine only')
   })
 
@@ -184,36 +183,12 @@ describe('labels', () => {
     })
   })
 
-  describe('after a wipe, or on a history younger than the window', () => {
-    it('says honestly that nothing is recorded since the history started, and not that nothing was used', () => {
-      const wiped = usageView({ ...summary([]), agents: [], historyFrom: '2026-11-16', ready: null }, { expanded: false })
-      expect(wiped.empty).toBe('No usage recorded since Mon 16 Nov 2026')
-      expect(wiped.historyFrom).toBe('History from Mon 16 Nov 2026')
-      expect(wiped.building).toBeNull()
-      const thirtyDaysAgo = usageView({ ...summary([]), agents: [], historyFrom: '2026-10-18' }, { expanded: false })
-      expect(thirtyDaysAgo.empty).toBe('No usage recorded since Sun 18 Oct 2026')
-      expect(usageView({ ...summary([]), agents: [], historyFrom: '2026-10-17' }, { expanded: false }).empty).toBe(EMPTY_MESSAGE)
-    })
-  })
-
-  describe('the wipe confirmation', () => {
-    it('says what is deleted, what is not, that the date resets, and that deleted days cannot come back', () => {
-      const prompt = wipePrompt(summary([], { historyFrom: '2026-05-01' }))
-      expect(prompt.title).toBe('Wipe the saved usage history?')
-      expect(prompt.confirm).toBe('Wipe history')
-      expect(prompt.cancel).toBe('Cancel')
-      expect(prompt.text).toContain('Grove’s saved record')
-      expect(prompt.text).toContain('Fri 1 May 2026')
-      expect(prompt.text).toContain('never touched')
-      expect(prompt.text).toContain('Mon 16 Nov 2026')
-      expect(prompt.text).toContain('cannot come back')
-      expect(prompt.text).not.toMatch(/\$/)
-    })
-
-    it('does not claim to rebuild what was wiped', () => {
-      const text = wipePrompt(summary([])).text
-      expect(text).toContain('not read again')
-      expect(text).toContain('from now on')
+  describe('when the agents’ files hold nothing recent', () => {
+    it('says the one plain message, never a date a record starts, and not while building', () => {
+      const none = usageView({ ...summary([]), agents: [], ready: null }, { expanded: false })
+      expect(none.empty).toBe(EMPTY_MESSAGE)
+      expect(none.building).toBeNull()
+      expect(usageView({ ...summary([]), agents: [], ready: null, building: true }, { expanded: false }).empty).toBeNull()
     })
   })
 
@@ -252,9 +227,9 @@ describe('a day’s detail', () => {
     })
   })
 
-  it('shows zero for a day with no requests, and says so for a day before the history', () => {
+  it('shows zero for a day with no requests, and says so for a day before the earliest the files hold', () => {
     expect(selected('2026-11-11')?.requests).toBe('0 requests')
-    expect(selected('2026-04-01')).toMatchObject({ requests: 'Before the history starts', tokens: [] })
+    expect(selected('2026-04-01')).toMatchObject({ requests: NO_RECORD, tokens: [] })
   })
 
   it('is absent until a day is clicked', () => {
@@ -508,14 +483,14 @@ describe('the stacked bars', () => {
     })
   })
 
-  it('has a legend of the agents shown, and says when a bar is from before the history', () => {
-    const s = { ...two({ days: days([['2026-11-16', 3]]) }), historyFrom: '2026-11-01' }
+  it('has a legend of the agents shown, and says when a bar is from before the earliest the files hold', () => {
+    const s = { ...two({ days: days([['2026-11-16', 3]]) }), ready: { from: '2026-11-01', to: '2026-11-16' } }
     const bars = charts(s).bars
     expect(bars.legend).toEqual([
       { agent: 'claude', title: 'Claude', hatched: false },
       { agent: 'copilot', title: 'Copilot CLI', hatched: false },
     ])
-    expect(bars.bars[0].label).toBe('Sun 18 Oct 2026: before the history starts')
+    expect(bars.bars[0].label).toBe('Sun 18 Oct 2026: no record that far back')
     expect(bars.bars[20].label).toMatch(/: 0 requests$/)
     expect(bars.total).toBe('3 requests')
   })
@@ -655,7 +630,7 @@ describe('a day’s helper agents and models', () => {
     ])
   })
 
-  it('has neither for a day before the history', () => {
+  it('has neither for a day before the earliest the files hold', () => {
     const detail = usageView(summary([]), { expanded: false, selected: { agent: 'claude', day: '2026-04-01' } }).agents[0].detail!
     expect(detail).toMatchObject({ helper: null, models: [] })
   })

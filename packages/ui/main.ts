@@ -251,15 +251,6 @@ const usage = usageModule({
   connected: () => coreConnected,
   now: Date.now,
   store: storage(),
-  // The same question as the other destructive ones: Cancel has the focus, and a failure is said inside the dialog.
-  wipe: (prompt) =>
-    spaceDialog.open({
-      ...prompt,
-      danger: true,
-      submit: async () => {
-        await bridge.rpc('usage.wipe', {})
-      },
-    }),
 })
 const rail = mountModules(
   [

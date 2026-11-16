@@ -49,7 +49,6 @@ export const METHODS = {
   skillsInstall: 'skills.install',
   skillsUninstall: 'skills.uninstall',
   usageSummary: 'usage.summary',
-  usageWipe: 'usage.wipe',
 } as const
 
 export const ERROR_CODES = {
@@ -181,8 +180,6 @@ export interface UsageProgress {
 
 export interface UsageSummary {
   today: string
-  // The first day the saved history can speak for: the earliest request it holds, or the day it was started or wiped.
-  historyFrom: string
   // True while the first read of the agents' files is still running; the numbers are what is ready so far.
   building: boolean
   // The days the history holds requests for so far, or null when it holds none.
@@ -586,8 +583,6 @@ export interface MethodMap {
   // The usage panel's numbers. `days` is how many local days of per-day detail to return (default 30); `range` is how many days the
   // hour, repository and model breakdowns cover (default: `days`).
   'usage.summary': { params: { days?: number; range?: number }; result: UsageSummary }
-  // Wipes the saved usage history; its start date becomes now.
-  'usage.wipe': { params: Empty; result: Empty }
 }
 
 export interface NotificationMap {

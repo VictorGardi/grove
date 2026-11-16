@@ -1,5 +1,5 @@
 // The usage panel: each agent's requests per day as a matrix (darker = more), the Today / 7 days / 30 days totals and, for a clicked day,
-// its detail. The numbers are the core's usage history (src/protocol UsageSummary); the panel asks for them when it opens, when the core says
+// its detail. The numbers are the core's usage history, read from the agents' files (src/protocol UsageSummary); the panel asks for them when it opens, when the core says
 // they changed, when the connection comes back, and when the dock is expanded or not (a longer matrix needs more days). What is drawn is
 // decided by usage-model.ts.
 import { dayKey } from '../protocol/days.ts'
@@ -13,8 +13,6 @@ import {
   effectiveRange,
   rangeDays,
   usageView,
-  wipePrompt,
-  type WipePrompt,
   type AgentView,
   type BarsView,
   type BreakdownRow,
@@ -35,8 +33,6 @@ export interface UsageDeps {
   now(): number
   // Where the range and the breakdown the human chose are kept, or null when the window has no storage.
   store: KeyValueStore | null
-  // Asks the human to confirm the wipe with the prompt, and wipes when they do; true when it was wiped. A failure is shown by the question itself.
-  wipe(prompt: WipePrompt): Promise<boolean>
 }
 
 export interface UsagePanel {
@@ -351,10 +347,7 @@ function mountUsage(body: HTMLElement, context: DockContext, deps: UsageDeps): D
       )
     }
     const foot = el('footer', 'usage-foot')
-    const wipe = el('button', 'usage-wipe', 'Wipe history')
-    wipe.type = 'button'
-    wipe.addEventListener('click', () => void wipeHistory())
-    foot.append(el('span', 'usage-from', view.historyFrom), el('span', 'usage-scope', view.scope), wipe)
+    foot.append(el('span', 'usage-scope', view.scope))
     root.append(foot)
     context.status(view.building ?? '')
     context.meta('')
@@ -368,19 +361,6 @@ function mountUsage(body: HTMLElement, context: DockContext, deps: UsageDeps): D
   function choose(agent: UsageAgent, day: string): void {
     selected = selected?.agent === agent && selected.day === day ? null : { agent, day }
     draw()
-  }
-
-  // The human confirms in a dialog; the numbers are asked for again once it is wiped, and show the history starting today.
-  async function wipeHistory(): Promise<void> {
-    if (summary === null) return
-    try {
-      if (!(await deps.wipe(wipePrompt(summary)))) return
-    } catch (error) {
-      context.error(`Could not wipe the usage history: ${error instanceof Error ? error.message : String(error)}`)
-      return
-    }
-    selected = null
-    await reload()
   }
 
   async function reload(): Promise<void> {

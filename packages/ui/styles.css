@@ -3601,7 +3601,7 @@ button.usage-cell {
   background: var(--color-line);
 }
 
-/* A day before the history starts: not "no activity", so not a filled cell. */
+/* A day before the earliest request the agents' files hold: not "no activity", so not a filled cell. */
 .usage-cell[data-shade='none'] {
   border: 1px dashed var(--color-line);
   background: transparent;
@@ -3625,8 +3625,7 @@ button.usage-cell:hover,
 
 .usage-total-label,
 .usage-token-label,
-.usage-scope,
-.usage-from {
+.usage-scope {
   color: var(--color-mute);
 }
 
@@ -3714,23 +3713,6 @@ button.usage-cell:hover,
   flex-wrap: wrap;
   gap: var(--space-2) var(--space-5);
   margin-top: auto;
-}
-
-/* The wipe sits at the end of the footer: an unobtrusive text button, as it is rarely used and cannot be undone. */
-.usage-wipe {
-  margin-left: auto;
-  padding: 0;
-  border: 0;
-  background: none;
-  color: var(--color-mute);
-  font: inherit;
-  text-decoration: underline;
-  cursor: pointer;
-}
-
-.usage-wipe:hover,
-.usage-wipe:focus-visible {
-  color: var(--color-ink);
 }
 
 /* Usage, where requests ran: a share bar of the places side by side, a gap between them (the colours are set per place from usage-model.ts,

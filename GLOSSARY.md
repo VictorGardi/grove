@@ -117,15 +117,14 @@ specific meaning, so humans and agents stay consistent.
   made a request in the last 30 days. Claude's figures include Claude Desktop as
   a separate slice. Copilot also shows credits; Claude shows no cost. Nothing
   here is a plan limit, and nothing is added across agents or machines.
-- **Usage history**: Grove's own saved record behind the usage panel: one entry
-  per request, with its time, agent, model, folder and token counts, and no
-  conversation text. It is per machine, starts when Grove first reads the
-  agents' files, and outlives an agent deleting its own sessions. The first
-  read of a large history takes a few seconds to minutes and the panel says it
-  is still being built, with how far each agent has got. The panel's Wipe
-  history deletes only this record, never the agents' own files: "history from"
-  becomes the wipe day, what the agents already wrote is not read again, and
-  only requests from then on are counted.
+- **Usage history**: what the usage panel counts: one entry per request, with
+  its time, agent, model, folder and token counts, and no conversation text.
+  Grove builds it in memory from the agents' own files at every start and keeps
+  no record of it on disk, so it reaches back only as far as those files do and
+  is shorter when an agent prunes them. The read of a large set of files takes a
+  few seconds to minutes and the panel says it is still being built, with how
+  far each agent has got. A day older than the earliest request the files hold
+  is shown as having no record, not as zero activity.
 - **Not tracked by Grove**: requests from sessions Grove did not run or cannot
   tell it ran. The usage panel shows this share only from the date Grove began
   recording its own sessions; before that it says it cannot tell. Copilot via

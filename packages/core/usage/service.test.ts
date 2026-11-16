@@ -5,9 +5,9 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { createClaudeReader } from './claude.ts'
 import type { UsageReader } from './reader.ts'
 import { STALL_LIMIT_MS, calmest, worstStall } from './loopProbe.ts'
-import { UsageService, usageHistoryFile } from './service.ts'
+import { UsageService, removeOldUsageHistory } from './service.ts'
 
-// What a conversation says. It sits in every fixture line and must never reach the saved history.
+// What a conversation says. It sits in every fixture line and must never reach the history, or the log.
 const SECRET = 'my password is hunter2'
 
 const at = (day: number, hour = 10, month = 10) => new Date(2026, month, day, hour).toISOString()
@@ -73,7 +73,7 @@ describe('usage history from Claude files, to the summary', () => {
   }
 
   const make = (readers: UsageReader[] = [createClaudeReader({ projectsDir: projects })]): UsageService =>
-    (service = new UsageService({ home, readers, clock: () => now, saveMs: 10, notifyMs: 10 }))
+    (service = new UsageService({ home, readers, clock: () => now, notifyMs: 10 }))
 
   const claude = (s: UsageService, days?: number) => s.summary(days).agents.find((a) => a.agent === 'claude')
 
@@ -148,19 +148,38 @@ describe('usage history from Claude files, to the summary', () => {
     expect(s.summary().today).toBe('2026-11-16')
   })
 
-  it('keeps the history when the agent deletes its files, also across a restart', async () => {
-    const file = write('p/a.jsonl', [line({ id: 'm1', ts: at(15) }), line({ id: 'm2', ts: at(14) })])
+  it('rebuilds the same summary from the agents’ files at a restart, and writes no file', async () => {
+    write('p/a.jsonl', [line({ id: 'm1', ts: at(15) }), line({ id: 'm2', ts: at(14), cwd: '/work/other', sidechain: true }), line({ id: 'm3', ts: at(10), out: 7 })])
+    write('p/a/subagents/agent-1.jsonl', [line({ id: 'h1', ts: at(15), sidechain: true })])
     const s = make()
     await s.drain()
+    const before = s.summary(30, 30)
+    expect(before.agents[0].last30.requests).toBe(4)
     s.close()
-    fs.rmSync(file)
     const again = make()
+    // Before anything is read the new core knows nothing and says it is still building.
+    expect(again.summary()).toMatchObject({ agents: [], building: true })
     await again.drain()
-    expect(claude(again)?.last7.requests).toBe(2)
-    expect(again.summary().historyFrom).toBe('2026-11-14')
+    expect(again.summary(30, 30)).toEqual(before)
+    expect(fs.readdirSync(home)).toEqual([])
   })
 
-  it('reads only what is new after a restart', async () => {
+  it('shows only what the agent’s files still hold when it has deleted some, also after a restart', async () => {
+    const gone = write('p/a.jsonl', [line({ id: 'm1', ts: at(15) }), line({ id: 'm2', ts: at(14) })])
+    write('p/b.jsonl', [line({ id: 'm3', ts: at(12) })])
+    const s = make()
+    await s.drain()
+    expect(claude(s)?.last7.requests).toBe(3)
+    s.close()
+    fs.rmSync(gone)
+    const again = make()
+    await again.drain()
+    expect(claude(again)?.last7.requests).toBe(1)
+    expect(again.summary().ready).toEqual({ from: '2026-11-12', to: '2026-11-12' })
+    expect(again.summary()).not.toHaveProperty('historyFrom')
+  })
+
+  it('a new core reads everything from the start, and afterwards only what is new', async () => {
     write('p/a.jsonl', [line({ id: 'm1', ts: at(15) })])
     const s = make()
     await s.drain()
@@ -169,8 +188,11 @@ describe('usage history from Claude files, to the summary', () => {
     const step = vi.spyOn(reader, 'step')
     const again = make([reader])
     await again.drain()
-    expect(step).toHaveBeenCalledTimes(1)
-    expect((await step.mock.results[0].value).requests).toEqual([])
+    expect(claude(again)?.last7.requests).toBe(1)
+    const reads = step.mock.calls.length
+    await again.drain()
+    expect(step.mock.calls.length).toBe(reads + 1)
+    expect((await step.mock.results[reads].value).requests).toEqual([])
     write('p/a.jsonl', [line({ id: 'm2', ts: at(15) })], true)
     await again.drain()
     expect(claude(again)?.last7.requests).toBe(2)
@@ -187,46 +209,10 @@ describe('usage history from Claude files, to the summary', () => {
     expect(claude(s, 100)?.days.map((d) => d.day)).toEqual(['2026-09-01', '2026-11-16'])
   })
 
-  it('reports no ready range for an empty history, from the day it was started', async () => {
+  it('reports no ready range when the agents’ files hold nothing, and is not building once they were read', async () => {
     const s = make()
     await s.drain()
-    expect(s.summary()).toMatchObject({ agents: [], ready: null, historyFrom: '2026-11-16', building: false })
-  })
-
-  it('wipes the history, resets "history from", and does not read the old files again', async () => {
-    write('p/a.jsonl', [line({ id: 'm1', ts: at(3) })])
-    const s = make()
-    await s.drain()
-    expect(s.summary().historyFrom).toBe('2026-11-03')
-    now = new Date(2026, 10, 20, 9).getTime()
-    await s.wipe()
-    expect(s.summary()).toMatchObject({ agents: [], historyFrom: '2026-11-20', building: false })
-    await s.drain()
-    expect(s.summary().agents).toEqual([])
-    // A session resumed after the wipe copies old history: it stays out. New requests come in.
-    write('q/resumed.jsonl', [line({ id: 'm1', ts: at(3) }), line({ id: 'm9', ts: new Date(2026, 10, 20, 10).toISOString() })])
-    await s.drain()
-    expect(claude(s, 30)?.days.map((d) => d.day)).toEqual(['2026-11-20'])
-    expect(s.summary().historyFrom).toBe('2026-11-20')
-  })
-
-  it('wipes the copies of an unreadable history it set aside, and any temp file of the history, along with the history', async () => {
-    vi.spyOn(console, 'error').mockImplementation(() => undefined)
-    fs.writeFileSync(usageHistoryFile(home), '{ not json')
-    write('p/a.jsonl', [line({ id: 'm1', ts: at(15) })])
-    const s = make()
-    await s.drain()
-    const file = usageHistoryFile(home)
-    fs.writeFileSync(`${file}.corrupt-1`, '{"/work/secret": 1')
-    fs.writeFileSync(`${file}.abc123.tmp`, '{}')
-    fs.writeFileSync(path.join(home, 'other.json'), '{}')
-    expect(fs.readdirSync(home).filter((name) => name.startsWith('usage-history.json.corrupt-')).length).toBeGreaterThan(1)
-    await s.wipe()
-    s.close()
-    const names = fs.readdirSync(home)
-    expect(names.filter((name) => name.startsWith('usage-history.json.'))).toEqual([])
-    expect(names).toContain('other.json')
-    expect(fs.readFileSync(file, 'utf8')).not.toContain('/work/')
+    expect(s.summary()).toMatchObject({ agents: [], ready: null, building: false })
   })
 
   it('gives no value for a corrupt or unreadable file without breaking the others', async () => {
@@ -251,27 +237,43 @@ describe('usage history from Claude files, to the summary', () => {
     expect(s.summary()).toMatchObject({ agents: [], building: false })
   })
 
-  it('saves the history owner-only, with no conversation text', async () => {
-    write('p/a.jsonl', [line({ id: 'm1', ts: at(15) })])
+  it('never creates a usage history file, or any file, in the Grove home, however much it reads', async () => {
+    write('p/a.jsonl', Array.from({ length: 6000 }, (_, i) => line({ id: `m${i}`, ts: at(15), cwd: `/work/app${i % 7}` })))
     const s = make()
     await s.drain()
+    // Long enough for any timer that saved the history to have fired (the old one fired after 5 s; the test's notify timer after 10 ms).
+    await new Promise((resolve) => setTimeout(resolve, 60))
+    expect(claude(s)?.last7.requests).toBe(6000)
     s.close()
-    const file = usageHistoryFile(home)
-    expect(fs.statSync(file).mode & 0o777).toBe(0o600)
-    const saved = fs.readFileSync(file, 'utf8')
-    expect(saved).not.toContain(SECRET)
-    expect(saved).toContain('/work/app')
-    expect(fs.readdirSync(home).filter((name) => name.endsWith('.tmp'))).toEqual([])
+    expect(fs.readdirSync(home)).toEqual([])
   })
 
-  it('sets a history it cannot read aside and starts a new one', async () => {
-    vi.spyOn(console, 'error').mockImplementation(() => undefined)
-    fs.writeFileSync(usageHistoryFile(home), '{ not json')
-    write('p/a.jsonl', [line({ id: 'm1', ts: at(15) })])
-    const s = make()
-    await s.drain()
-    expect(claude(s)?.last7.requests).toBe(1)
-    expect(fs.readdirSync(home).some((name) => name.startsWith('usage-history.json.corrupt-'))).toBe(true)
+  describe('files an earlier build left in the Grove home', () => {
+    const OLD = ['usage-history.json', 'usage-history.json.abc123.tmp', 'usage-history.json.corrupt-1700000000000', 'usage-history.json.corrupt-1']
+    const KEPT = ['config.json', 'usage-history.txt', 'other-usage-history.json', 'usage-history.json.bak']
+
+    it('removes the history, its temp files and its set-aside copies when a core starts, and nothing else', () => {
+      for (const name of [...OLD, ...KEPT]) fs.writeFileSync(path.join(home, name), '{"/work/secret": 1}')
+      fs.mkdirSync(path.join(home, 'agents'))
+      make()
+      expect(fs.readdirSync(home).sort()).toEqual([...KEPT, 'agents'].sort())
+    })
+
+    it('removes them whatever the agents hold, even with no reader, and does not fail on a home that is not there', () => {
+      for (const name of OLD) fs.writeFileSync(path.join(home, name), 'x')
+      make([])
+      expect(fs.readdirSync(home)).toEqual([])
+      expect(() => removeOldUsageHistory(path.join(dir, 'nowhere'))).not.toThrow()
+    })
+
+    it('removes a history that is not valid JSON too, without reading it', async () => {
+      fs.writeFileSync(path.join(home, 'usage-history.json'), '{ not json')
+      write('p/a.jsonl', [line({ id: 'm1', ts: at(15) })])
+      const s = make()
+      await s.drain()
+      expect(claude(s)?.last7.requests).toBe(1)
+      expect(fs.readdirSync(home)).toEqual([])
+    })
   })
 
   it('tells the window once for a burst of changes', async () => {
@@ -287,7 +289,7 @@ describe('usage history from Claude files, to the summary', () => {
   it('a failing reader gives nothing and does not stop the others', async () => {
     vi.spyOn(console, 'error').mockImplementation(() => undefined)
     write('p/a.jsonl', [line({ id: 'm1', ts: at(15) })])
-    const broken: UsageReader = { agent: 'claude', step: () => Promise.reject(new Error('boom')), state: () => ({}), restore: () => undefined, skipToEnd: async () => undefined }
+    const broken: UsageReader = { agent: 'claude', step: () => Promise.reject(new Error('boom')) }
     const s = make([broken, createClaudeReader({ projectsDir: projects })])
     await s.drain()
     expect(claude(s)?.last7.requests).toBe(1)
@@ -326,8 +328,6 @@ describe('usage history from Claude files, to the summary', () => {
       // The loop was never held for long.
       worst = await calmest(worst, async () => {
         s.close()
-        fs.rmSync(home, { recursive: true, force: true })
-        fs.mkdirSync(home)
         const next = make([createClaudeReader({ projectsDir: projects })])
         return worstStall(() => next.drain())
       })
@@ -375,7 +375,7 @@ describe('usage history from Claude files, to the summary', () => {
       expect(claude(s)?.last7.requests).toBe(total)
     })
 
-    it('carries on from where it was after a restart in the middle of the first scan, without counting anything twice', async () => {
+    it('starts the first scan over after a restart in the middle of it, and counts everything once', async () => {
       const total = fixture(30)
       const first = createClaudeReader({ projectsDir: projects, chunkBytes: 64 * 1024 })
       let steps = 0
@@ -389,144 +389,32 @@ describe('usage history from Claude files, to the summary', () => {
       vi.spyOn(console, 'error').mockImplementation(() => undefined)
       const s = make([interrupted])
       await s.drain()
-      const before = progressOf(s)
       const partial = claude(s)?.last7.requests ?? 0
       expect(s.summary().building).toBe(true)
       expect(partial).toBeGreaterThan(0)
       expect(partial).toBeLessThan(total)
       s.close()
 
-      // What reading everything from nothing takes.
-      const fresh = createClaudeReader({ projectsDir: projects, chunkBytes: 64 * 1024 })
-      let full = 0
-      for (let done = false; !done; full++) done = (await fresh.step()).done
-
-      const reader = createClaudeReader({ projectsDir: projects, chunkBytes: 64 * 1024 })
-      const step = vi.spyOn(reader, 'step')
-      const again = make([reader])
-      // The numbers it had are back at once, and it knows how far it was.
-      expect(claude(again)?.last7.requests).toBe(partial)
+      // The next core knows nothing of that partial read: it is building from nothing, and reads all of it.
+      const again = make([createClaudeReader({ projectsDir: projects, chunkBytes: 64 * 1024 })])
+      expect(again.summary()).toMatchObject({ agents: [], building: true })
       await again.drain()
       expect(claude(again)?.last7.requests).toBe(total)
       expect(again.summary()).toMatchObject({ building: false, progress: [] })
-      // It did not start over: the files it had read are not read again.
-      expect(step.mock.calls.length).toBeLessThan(full)
-      expect(before).toBeGreaterThan(0)
     })
 
-    it('never lets a pass that was cut short back into the numbers after a wipe', async () => {
-      fixture(10)
-      const s = make([createClaudeReader({ projectsDir: projects, chunkBytes: 64 * 1024 })])
-      const pass = s.drain()
-      await s.wipe()
-      await pass
-      expect(s.summary()).toMatchObject({ agents: [], building: false, progress: [] })
-    })
-
-    it('stays building after a restart in the middle of the first scan', async () => {
+    it('is building from the start of every core until a clean pass has read everything', async () => {
       write('p/a.jsonl', [line({ id: 'm1', ts: at(15) })])
-      const never: UsageReader = { agent: 'claude', step: () => Promise.reject(new Error('stop')), state: () => ({}), restore: () => undefined, skipToEnd: async () => undefined }
+      const never: UsageReader = { agent: 'claude', step: () => Promise.reject(new Error('stop')) }
       vi.spyOn(console, 'error').mockImplementation(() => undefined)
       const s = make([never])
       await s.drain()
       expect(s.summary().building).toBe(true)
       s.close()
-      expect(make().summary().building).toBe(true)
-    })
-  })
-
-  describe('saving the history', () => {
-    const many = (n: number): string[] => Array.from({ length: n }, (_, i) => line({ id: `m${i}`, ts: at(15), cwd: `/work/app${i % 7}` }))
-    const leftovers = (): string[] => fs.readdirSync(home).filter((name) => name.endsWith('.tmp'))
-    interface Saving {
-      saveAsync(pause: () => Promise<void>): Promise<boolean>
-      save(): void
-    }
-    // A service that never saves by itself, so the saves below are the only writer.
-    const quiet = (): { s: UsageService; history: Saving } => {
-      const s = (service = new UsageService({ home, readers: [createClaudeReader({ projectsDir: projects })], clock: () => now, saveMs: 600_000 }))
-      return { s, history: (s as unknown as { history: Saving }).history }
-    }
-
-    it('saves without holding the loop: the file is written in slices with the loop given back between them', async () => {
-      write('p/a.jsonl', many(6000))
-      const { s, history } = quiet()
-      await s.drain()
-      let yields = 0
-      expect(await history.saveAsync(async () => void yields++)).toBe(true)
-      expect(yields).toBeGreaterThan(2)
-      s.close()
-      expect(claude(make())?.last7.requests).toBe(6000)
-    })
-
-    it('leaves the last good history readable when the writer is killed part way, and clears what it left behind', async () => {
-      write('p/a.jsonl', many(300))
-      const first = make()
-      await first.drain()
-      first.close()
-      const file = usageHistoryFile(home)
-      const good = fs.readFileSync(file, 'utf8')
-      write('p/b.jsonl', many(6000))
-      const { s, history } = quiet()
-      await s.drain()
-      let slices = 0
-      await expect(
-        history.saveAsync(async () => {
-          if (++slices === 2) throw new Error('killed')
-        }),
-      ).rejects.toThrow('killed')
-      // The file on disk is still the whole of the one before: not cut, not mixed.
-      expect(fs.readFileSync(file, 'utf8')).toBe(good)
-      // A real kill cannot clean up after itself: a temp file stays. The next start sweeps it and reads the good file.
-      const stale = `${file}.deadbeef.tmp`
-      fs.writeFileSync(stale, good.slice(0, good.length >> 1))
-      service = undefined
       const next = make()
-      expect(claude(next)?.last7.requests).toBe(300)
-      expect(leftovers()).toEqual([])
-    })
-
-    it('does not let a slow save that a later one overtook put its older numbers back', async () => {
-      write('p/a.jsonl', many(6000))
-      const { s, history } = quiet()
-      await s.drain()
-      expect(
-        await history.saveAsync(async () => {
-          history.save()
-        }),
-      ).toBe(false)
-      expect(leftovers()).toEqual([])
-      s.close()
-      expect(claude(make())?.last7.requests).toBe(6000)
-    })
-
-    it('never lets a save that was under way when the history was wiped bring the old days back', async () => {
-      write('p/a.jsonl', many(6000))
-      const s = (service = new UsageService({ home, readers: [createClaudeReader({ projectsDir: projects })], clock: () => now, saveMs: 1, notifyMs: 1 }))
-      await s.drain()
-      // The save has begun (its first slice is out) when the wipe comes.
-      await new Promise((resolve) => setTimeout(resolve, 3))
-      now = new Date(2026, 10, 20, 9).getTime()
-      await s.wipe()
-      await new Promise((resolve) => setTimeout(resolve, 80))
-      s.close()
-      expect(leftovers()).toEqual([])
-      const again = make()
-      expect(again.summary()).toMatchObject({ agents: [], historyFrom: '2026-11-20', ready: null })
-      await again.drain()
-      expect(again.summary().agents).toEqual([])
-    })
-
-    it('saves the history owner-only, with no conversation text, whichever agent it came from', async () => {
-      write('p/a.jsonl', many(50))
-      const s = make()
-      await s.drain()
-      await new Promise((resolve) => setTimeout(resolve, 60))
-      s.close()
-      const file = usageHistoryFile(home)
-      expect(fs.statSync(file).mode & 0o777).toBe(0o600)
-      const saved = fs.readFileSync(file, 'utf8')
-      for (const forbidden of [SECRET, 'hunter2', '"text"', '"content"', '"prompt"', '"title"', '$', 'cost']) expect(saved).not.toContain(forbidden)
+      expect(next.summary().building).toBe(true)
+      await next.drain()
+      expect(next.summary().building).toBe(false)
     })
   })
 })

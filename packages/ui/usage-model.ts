@@ -4,9 +4,10 @@ import { shiftDay, weekdayOf, weekStart } from '../protocol/days.ts'
 import type { UsageAgent, UsageAgentSummary, UsageDay, UsageProgress, UsageSplit, UsageSplitTotals, UsageSummary, UsageTotals } from '../protocol/messages.ts'
 
 export const EMPTY_MESSAGE = 'No usage in the last 30 days'
+// What a day older than anything the agents' files still hold says: they pruned it, so it is not "no activity".
+export const NO_RECORD = 'No record that far back'
 export const SCOPE_NOTE = 'This machine only'
 // The panel looks at this many days: an agent shows when it made a request in them.
-const WINDOW_DAYS = 30
 
 // The matrix is whole weeks, Monday to Sunday, the newest week last. The expanded dock has the room for a year.
 export const MATRIX_WEEKS = 13
@@ -133,7 +134,7 @@ export function creditsOf(totals: UsageTotals, hasCredits: boolean): string | nu
 
 export interface MatrixCell {
   day: string
-  // The request count, or null for a day before the history starts: the agent's files were gone, which is not "no activity".
+  // The request count, or null for a day before the earliest request the agents' files still hold: they were pruned, which is not "no activity".
   requests: number | null
   shade: Shade | null
   label: string
@@ -267,11 +268,9 @@ export interface ChartsView {
 }
 
 export interface UsageView {
-  // The one message when no agent has anything to show: no request in the last 30 days, or, when the history itself is younger than
-  // that (a new one, or one just wiped), that none is recorded since it started. Null while the history is being built.
+  // The one message when no agent has anything to show: no request in the last 30 days. Null while the history is being built.
   empty: string | null
   scope: string
-  historyFrom: string
   // Says the first read is still running, how far it has got per agent and what is ready so far; null when the history is complete.
   building: string | null
   agents: AgentView[]
@@ -322,8 +321,11 @@ export function sourcesOf(agent: UsageAgentSummary, sources: readonly UsageSplit
   }
 }
 
+// The first day the agents' files still hold a request for; '' when they hold none, so no day is before it.
+const earliest = (summary: UsageSummary): string => summary.ready?.from ?? ''
+
 function detailOf(summary: UsageSummary, agent: UsageAgentSummary, day: string): DayDetail {
-  if (day < summary.historyFrom) return { title: formatDay(day), requests: 'Before the history starts', credits: null, helper: null, tokens: [], models: [], sources: null }
+  if (day < earliest(summary)) return { title: formatDay(day), requests: NO_RECORD, credits: null, helper: null, tokens: [], models: [], sources: null }
   const found: UsageDay | undefined = agent.days.find((d) => d.day === day)
   return {
     title: formatDay(day),
@@ -355,7 +357,7 @@ function agentView(summary: UsageSummary, agent: UsageAgentSummary, expanded: bo
     for (let r = 0; r < 7; r++) {
       const day = shiftDay(first, w * 7 + r)
       if (day > summary.today) week.push(null)
-      else if (day < summary.historyFrom) week.push({ day, requests: null, shade: null, label: `${formatDay(day)}: before the history starts`, selected: day === selected })
+      else if (day < earliest(summary)) week.push({ day, requests: null, shade: null, label: `${formatDay(day)}: ${NO_RECORD.toLowerCase()}`, selected: day === selected })
       else {
         const requests = perDay.get(day) ?? 0
         week.push({ day, requests, shade: shadeOf(requests, ranked), label: `${formatDay(day)}: ${requestsLabel(requests)}`, selected: day === selected })
@@ -419,7 +421,7 @@ function barsOf(summary: UsageSummary, range: RangeId): BarsView {
       const parts = [...(own > 0 ? [`${AGENT_TITLES[agent]} ${group(own)}`] : []), ...(via > 0 ? [`${VIA_OPENCODE} ${group(via)}`] : [])]
       return own + via > 0 && perAgent.length > 1 ? parts : []
     })
-    const label = end < summary.historyFrom ? `${span}: before the history starts` : `${span}: ${requestsLabel(requests)}${split.length > 0 ? ` (${split.join(', ')})` : ''}`
+    const label = end < earliest(summary) ? `${span}: ${NO_RECORD.toLowerCase()}` : `${span}: ${requestsLabel(requests)}${split.length > 0 ? ` (${split.join(', ')})` : ''}`
     return {
       day,
       requests,
@@ -581,27 +583,7 @@ function buildingNote(summary: UsageSummary): string | null {
 
 function emptyMessage(summary: UsageSummary): string | null {
   if (summary.agents.length > 0 || summary.building) return null
-  return summary.historyFrom >= shiftDay(summary.today, 1 - WINDOW_DAYS) ? `No usage recorded since ${formatDay(summary.historyFrom)}` : EMPTY_MESSAGE
-}
-
-// What the wipe asks before it deletes: said in full, because it cannot be undone.
-export interface WipePrompt {
-  title: string
-  text: string
-  confirm: string
-  cancel: string
-}
-
-export function wipePrompt(summary: UsageSummary): WipePrompt {
-  return {
-    title: 'Wipe the saved usage history?',
-    text:
-      `This deletes Grove’s saved record of your usage on this machine, kept since ${formatDay(summary.historyFrom)}. The agents’ own files are never touched.\n\n` +
-      `The history then starts again on ${formatDay(summary.today)}: what the agents already wrote is not read again, and only requests from now on are counted. ` +
-      'Days the agents have already deleted cannot come back, and neither can the ones you wipe here.',
-    confirm: 'Wipe history',
-    cancel: 'Cancel',
-  }
+  return EMPTY_MESSAGE
 }
 
 // `selected` is the clicked day, if any: its detail is shown under the agent that was clicked.
@@ -611,7 +593,6 @@ export function usageView(summary: UsageSummary, options: { expanded: boolean; s
   return {
     empty: emptyMessage(summary),
     scope: SCOPE_NOTE,
-    historyFrom: `History from ${formatDay(summary.historyFrom)}`,
     building: buildingNote(summary),
     agents: summary.agents.map((agent) => agentView(summary, agent, options.expanded, selected?.agent === agent.agent ? selected.day : null, range)),
     charts:

@@ -1,4 +1,3 @@
-import crypto from 'node:crypto'
 import fs from 'node:fs'
 import os from 'node:os'
 import path from 'node:path'
@@ -7,7 +6,7 @@ import type { UsageAgentSummary, UsageSplit } from '../../protocol/messages.ts'
 import { createClaudeReader } from './claude.ts'
 import { createCopilotReader } from './copilot.ts'
 import { GroveSessions } from './groveSessions.ts'
-import { UsageService, usageHistoryFile } from './service.ts'
+import { UsageService } from './service.ts'
 
 // Where requests ran: Claude Desktop as its own slice, and what Grove ran against what it did not, from the agents' files and
 // Grove's own per-tab records to the summary.
@@ -122,7 +121,6 @@ describe('where requests ran: Claude Desktop and the Grove split', () => {
       grove,
       readers: [createClaudeReader({ projectsDir: projects, grove }), createCopilotReader({ copilotHome, grove })],
       clock: () => now,
-      saveMs: 10,
       notifyMs: 10,
     }))
   }
@@ -174,7 +172,7 @@ describe('where requests ran: Claude Desktop and the Grove split', () => {
     })
   })
 
-  describe('what the saved history holds', () => {
+  describe('what the history holds', () => {
     it('is figures, a model, a folder and a source for every request, and no conversation text, whichever agent made it', async () => {
       claudeHook('tab-1', 'session-a', BEGAN)
       transcript('p/s1.jsonl', [claudeLine({ id: 'c1', ts: iso(15) }), claudeLine({ id: 'c2', ts: iso(15), entrypoint: 'claude-desktop' })])
@@ -182,96 +180,16 @@ describe('where requests ran: Claude Desktop and the Grove split', () => {
       copilotHook('tab-2', 's', ms(1, 9, 9))
       copilotSession('s', [copilotStart('/work/app'), copilotLine({ id: 'u1', ts: iso(15) }), JSON.stringify({ type: 'user.message', data: { content: SECRET }, timestamp: iso(15) })])
       const s = await read()
+      const shown = JSON.stringify(s.summary(30, 30))
+      expect(shown).not.toContain(SECRET)
+      expect(shown).not.toMatch(/hunter2|password|initialPrompt|prompt|content|"text"/)
+      expect(shown).not.toMatch(/[$€£]|usd|dollar|cost|price/i)
+      expect(agentOf(s, 'claude')?.last30.requests).toBe(3)
+      expect(agentOf(s, 'copilot')?.last30.requests).toBe(1)
+      expect(agentOf(s, 'claude')?.repositories.map((r) => r.requests)).toEqual([3])
+      // Nothing of it is saved: the home holds only the per-tab records Grove itself wrote.
       s.close()
-      const saved = fs.readFileSync(usageHistoryFile(home), 'utf8')
-      expect(saved).not.toContain(SECRET)
-      expect(saved).not.toMatch(/hunter2|password|initialPrompt|prompt|content|"text"/)
-      expect(saved).not.toMatch(/[$€£]|usd|dollar|cost|price/i)
-      expect(fs.statSync(usageHistoryFile(home)).mode & 0o777).toBe(0o600)
-      const { requests } = JSON.parse(saved) as { requests: Record<string, unknown[]> }
-      expect(Object.keys(requests).length).toBe(4)
-      for (const row of Object.values(requests)) {
-        expect(row.length).toBe(11)
-        expect(row.map((value) => typeof value)).toEqual(['number', 'string', 'string', 'string', 'number', 'number', 'number', 'number', 'number', row[9] === null ? 'object' : 'number', row[10] === null ? 'object' : 'number'])
-        expect(['claude-code', 'claude-desktop', 'copilot']).toContain(row[1])
-        expect(row[3]).toBe('/work/app')
-      }
-    })
-  })
-
-  describe('migrating a history written before the source tag existed', () => {
-    // What slices 1 to 3 saved: Claude rows of 10 columns with the untagged source, a Claude position without a schema.
-    const oldHistory = (): void => {
-      const row = (at: number, output: number) => [at, 'claude', 'claude-opus', '/work/app', 3, output, 100, 5, 0, null]
-      fs.writeFileSync(
-        usageHistoryFile(home),
-        JSON.stringify({
-          version: 1,
-          since: ms(1, 9, 9),
-          floor: null,
-          built: true,
-          readers: { claude: { files: { [path.join(projects, 'p/a.jsonl')]: fs.statSync(path.join(projects, 'p/a.jsonl')).size } } },
-          requests: {
-            'claude:m1|req-m1': row(ms(15), 4),
-            'claude:m2|req-m2': row(ms(15), 10),
-            // Its transcript is long gone: it stays as it was saved.
-            'claude:gone|req-gone': row(ms(14), 7),
-          },
-        }),
-      )
-    }
-
-    it('reads the transcripts once more, so old entries gain their source, without counting any request twice', async () => {
-      transcript('p/a.jsonl', [
-        claudeLine({ id: 'm1', ts: iso(15), entrypoint: 'claude-desktop', out: 9 }),
-        claudeLine({ id: 'm2', ts: iso(15), entrypoint: 'cli' }),
-        claudeLine({ id: 'm3', ts: iso(15), entrypoint: 'claude-desktop' }),
-      ])
-      oldHistory()
-      claudeHook('tab', 'other-session', BEGAN)
-      const s = make()
-      // Until the re-read has run, nothing reads as a confident figure.
-      expect(split(agentOf(s, 'claude'))).toEqual({ unknown: 3 })
-      await s.drain()
-      const claude = agentOf(s, 'claude')
-      expect(claude?.last30.requests).toBe(4)
-      expect(split(claude)).toEqual({ desktop: 2, other: 1, unknown: 1 })
-      // The larger count of the re-read replaced the saved partial one; the saved larger one was kept; nothing was added twice.
-      expect(claude?.last30.output).toBe(9 + 10 + 10 + 7)
-      // A second pass and a restart read nothing again.
-      await s.drain()
-      s.close()
-      const again = make()
-      await again.drain()
-      expect(agentOf(again, 'claude')?.last30).toMatchObject({ requests: 4, output: 36 })
-    })
-
-    it('does not read again once the history is in the new format', async () => {
-      transcript('p/a.jsonl', [claudeLine({ id: 'm1', ts: iso(15), entrypoint: 'claude-desktop' })])
-      oldHistory()
-      const first = await read()
-      first.close()
-      // The same transcript gains a line: only that is read, and the file on disk now carries the schema.
-      transcript('p/a.jsonl', [claudeLine({ id: 'm9', ts: iso(15), entrypoint: 'claude-desktop' })], true)
-      const reader = createClaudeReader({ projectsDir: projects })
-      const saved = JSON.parse(fs.readFileSync(usageHistoryFile(home), 'utf8')) as { readers: { claude: unknown } }
-      reader.restore(saved.readers.claude)
-      const { requests } = await reader.step()
-      expect(requests.map((r) => r.key)).toEqual(['m9|req-m9'])
-    })
-
-    it('saves the new format with the Grove flag, and a history written by the new format reads back', async () => {
-      transcript('p/a.jsonl', [claudeLine({ id: 'm1', ts: iso(15), session: 'in-grove' }), claudeLine({ id: 'm2', ts: iso(15), entrypoint: 'claude-desktop' })])
-      claudeHook('tab', 'in-grove', BEGAN)
-      const s = await read()
-      s.close()
-      const saved = JSON.parse(fs.readFileSync(usageHistoryFile(home), 'utf8')) as { requests: Record<string, unknown[]> }
-      expect(saved.requests['claude:m1|req-m1'].slice(1, 2)).toEqual(['claude-code'])
-      expect(saved.requests['claude:m1|req-m1'][10]).toBe(1)
-      expect(saved.requests['claude:m2|req-m2'].slice(1, 2)).toEqual(['claude-desktop'])
-      expect(saved.requests['claude:m2|req-m2'][10]).toBe(0)
-      const again = make()
-      expect(split(agentOf(again, 'claude'))).toEqual({ grove: 1, desktop: 1 })
+      expect(fs.readdirSync(home)).toEqual(['agents'])
     })
   })
 
@@ -292,17 +210,26 @@ describe('where requests ran: Claude Desktop and the Grove split', () => {
       expect(split(agentOf(await read(), 'claude'))).toEqual({ grove: 1 })
     })
 
-    it('keeps what it decided when Grove’s per-tab files are removed later', async () => {
+    it('keeps what it learnt in memory while the core runs when Grove’s per-tab files are removed', async () => {
+      transcript('p/a.jsonl', [claudeLine({ id: 'g1', ts: iso(15), session: 'closed' })])
+      claudeHook('tab', 'closed', ms(15, 9))
+      const s = await read()
+      fs.rmSync(path.join(home, 'agents'), { recursive: true })
+      transcript('p/a.jsonl', [claudeLine({ id: 'g2', ts: iso(15, 11), session: 'closed' })], true)
+      await s.drain()
+      expect(split(agentOf(s, 'claude'))).toEqual({ grove: 2 })
+      expect(agentOf(s, 'claude')?.trackedSince).toBe('2026-11-15')
+    })
+
+    it('cannot tell after a restart once Grove’s per-tab files are gone: nothing about them is saved', async () => {
       transcript('p/a.jsonl', [claudeLine({ id: 'g1', ts: iso(15), session: 'closed' })])
       claudeHook('tab', 'closed', ms(15, 9))
       const first = await read()
       first.close()
       fs.rmSync(path.join(home, 'agents'), { recursive: true })
-      transcript('p/a.jsonl', [claudeLine({ id: 'g2', ts: iso(15, 11), session: 'closed' })], true)
       const again = await read()
-      // The saved answer stays, and the same session is still known as Grove's from what Grove learnt before the files went.
-      expect(split(agentOf(again, 'claude'))).toEqual({ grove: 2 })
-      expect(agentOf(again, 'claude')?.trackedSince).toBe('2026-11-15')
+      expect(split(agentOf(again, 'claude'))).toEqual({ unknown: 1 })
+      expect(agentOf(again, 'claude')?.trackedSince).toBeNull()
     })
 
     it('knows a session from the tab’s status file, and from a tab that is open now', async () => {
@@ -443,27 +370,6 @@ describe('where requests ran: Claude Desktop and the Grove split', () => {
       const copilot = agentOf(await read(), 'copilot')
       expect(split(copilot)).toEqual({ grove: 1, other: 2 })
     })
-
-    it('gives the saved Copilot entries their Grove flag by reading the sessions once more', async () => {
-      copilotSession('in-grove', [copilotStart('/work/app'), copilotLine({ id: 'a', ts: iso(15) })])
-      copilotHook('tab', 'in-grove', ms(15, 9))
-      const file = path.join(copilotHome, 'session-state', 'in-grove', 'events.jsonl')
-      // A history from before the flag: the same request, saved without it, and a Copilot position without a schema.
-      fs.writeFileSync(
-        usageHistoryFile(home),
-        JSON.stringify({
-          version: 1,
-          since: ms(1, 9, 9),
-          floor: null,
-          built: true,
-          readers: { copilot: { files: { [file]: { offset: fs.statSync(file).size, cwd: '/work/app' } } } },
-          requests: { [`copilot:${crypto.createHash('sha256').update('usage-a').digest('base64url').slice(0, 22)}`]: [ms(15), 'copilot', 'gpt-6-luna', '/work/app', 100, 50, 600, 300, 0, 2_000_000_000] },
-        }),
-      )
-      const s = await read()
-      expect(split(agentOf(s, 'copilot'))).toEqual({ grove: 1 })
-      expect(agentOf(s, 'copilot')?.last30).toMatchObject({ requests: 1, credits: 2 })
-    })
   })
 
   describe('when Grove’s records are missing or broken', () => {
@@ -503,9 +409,9 @@ describe('where requests ran: Claude Desktop and the Grove split', () => {
       copilotSession('c', [copilotStart('/work/app'), copilotLine({ id: 'a', ts: iso(15) })])
       copilotHook('tab', 'c', ms(15, 9))
       const s = await read()
+      expect(JSON.stringify(s.summary(30, 30))).not.toContain(SECRET)
       s.close()
-      expect(fs.readFileSync(usageHistoryFile(home), 'utf8')).not.toContain(SECRET)
-      expect(fs.statSync(usageHistoryFile(home)).mode & 0o077).toBe(0)
+      expect(fs.readdirSync(home)).toEqual(['agents'])
     })
   })
 

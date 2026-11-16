@@ -15,9 +15,6 @@ export interface ClaudeReaderOptions {
 }
 
 const CHUNK_BYTES = 1 << 20
-// Bumped when the reader learns to put more in a request, so the history is read once more and the old entries gain it (the
-// history's merge keeps what is already known and counts nothing twice). 2: the source from the entrypoint, the Grove flag.
-const SCHEMA = 2
 
 interface Listed {
   file: string
@@ -115,7 +112,7 @@ async function listTranscripts(projectsDir: string): Promise<Listed[]> {
 // Files are read oldest first, so a resumed session that copied old history is met after the session it copied from.
 export function createClaudeReader(options: ClaudeReaderOptions): UsageReader {
   const chunkBytes = options.chunkBytes ?? CHUNK_BYTES
-  let offsets = new Map<string, number>()
+  const offsets = new Map<string, number>()
   let queue: Listed[] | undefined
   const failed = new Set<string>()
   // Bytes of every transcript the last pass listed, and how many of them are read: what `progress` is made of. undefined before a pass has looked.
@@ -173,21 +170,5 @@ export function createClaudeReader(options: ClaudeReaderOptions): UsageReader {
       return { requests, done: queue === undefined }
     },
     progress: () => (total === undefined ? undefined : total === 0 ? 1 : Math.min(1, done / total)),
-    state: () => ({ schema: SCHEMA, files: Object.fromEntries(offsets) }),
-    restore(state) {
-      const saved = state as { schema?: unknown; files?: unknown } | null
-      // A position saved by an older reader is dropped: the transcripts are read once more, so the entries gain what it did not read.
-      const files = saved?.schema === SCHEMA ? saved.files : undefined
-      offsets = new Map(
-        files !== null && typeof files === 'object' ? Object.entries(files).filter((entry): entry is [string, number] => typeof entry[1] === 'number' && entry[1] >= 0) : [],
-      )
-      queue = undefined
-      total = undefined
-    },
-    async skipToEnd() {
-      queue = undefined
-      total = undefined
-      offsets = new Map((await listTranscripts(options.projectsDir)).map((item) => [item.file, item.size]))
-    },
   }
 }

@@ -43,9 +43,6 @@ function readerOf(agent: UsageAgent, requests: UsageRequest[]): UsageReader {
       given = true
       return { requests: out, done: true }
     },
-    state: () => ({}),
-    restore: () => {},
-    skipToEnd: async () => {},
   }
 }
 
@@ -82,7 +79,6 @@ describe('usage breakdowns, from requests to the summary', () => {
         ),
       ),
       clock: () => now,
-      saveMs: 10,
       notifyMs: 10,
       spaces: () => options.spaces ?? [],
       git: options.git,

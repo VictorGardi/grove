@@ -16,8 +16,6 @@ export interface CopilotReaderOptions {
 }
 
 const CHUNK_BYTES = 1 << 20
-// Bumped when the reader learns to put more in a request, so the history is read once more and the old entries gain it. 2: the Grove flag.
-const SCHEMA = 2
 
 interface Listed {
   file: string
@@ -124,7 +122,7 @@ async function listEvents(copilotHome: string): Promise<Listed[]> {
 // Reads Copilot's session events incrementally, by file position: after the first pass only what a session's events gained is read.
 export function createCopilotReader(options: CopilotReaderOptions): UsageReader {
   const chunkBytes = options.chunkBytes ?? CHUNK_BYTES
-  let places = new Map<string, Place>()
+  const places = new Map<string, Place>()
   let queue: Listed[] | undefined
   const failed = new Set<string>()
   // Bytes of every session's events the last pass listed, and how many of them are read: what `progress` is made of.
@@ -189,25 +187,5 @@ export function createCopilotReader(options: CopilotReaderOptions): UsageReader 
       return { requests, done: queue === undefined }
     },
     progress: () => (total === undefined ? undefined : total === 0 ? 1 : Math.min(1, done / total)),
-    state: () => ({ schema: SCHEMA, files: Object.fromEntries(places) }),
-    restore(state) {
-      const saved = state as { schema?: unknown; files?: unknown } | null
-      // A position saved by an older reader is dropped: the sessions are read once more, so the entries gain what it did not read.
-      const files = saved?.schema === SCHEMA ? saved.files : undefined
-      places = new Map()
-      if (files !== null && typeof files === 'object') {
-        for (const [file, place] of Object.entries(files)) {
-          const { offset, cwd } = (place ?? {}) as Partial<Place>
-          if (typeof offset === 'number' && offset >= 0) places.set(file, { offset, cwd: typeof cwd === 'string' ? cwd : '' })
-        }
-      }
-      queue = undefined
-      total = undefined
-    },
-    async skipToEnd() {
-      queue = undefined
-      total = undefined
-      places = new Map((await listEvents(options.copilotHome)).map((item) => [item.file, { offset: item.size, cwd: places.get(item.file)?.cwd ?? '' }]))
-    },
   }
 }

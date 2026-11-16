@@ -68,10 +68,6 @@ export class UsageIndex {
     this.change(after, 1)
   }
 
-  clear(): void {
-    this.agents.clear()
-  }
-
   // The agent's days with at least one request.
   days(agent: UsageAgent): ReadonlyMap<string, DayBucket> | undefined {
     return this.agents.get(agent)

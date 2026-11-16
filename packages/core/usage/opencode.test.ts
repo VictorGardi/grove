@@ -7,7 +7,7 @@ import { createClaudeReader } from './claude.ts'
 import { createCopilotReader } from './copilot.ts'
 import { createOpencodeReader, opencodeDataDir } from './opencode.ts'
 import { STALL_LIMIT_MS, calmest, worstStall } from './loopProbe.ts'
-import { UsageService, usageHistoryFile } from './service.ts'
+import { UsageService } from './service.ts'
 
 // OpenCode's requests on Copilot's models, from a fixture database in both table generations to the summary. The only proof there is:
 // this machine has no Copilot-provider OpenCode requests.
@@ -137,7 +137,6 @@ describe('usage history from OpenCode’s database, to the summary', () => {
         ...(readers.includes('opencode') ? [createOpencodeReader({ dataDir, clock: () => NOW })] : []),
       ],
       clock: () => NOW,
-      saveMs: 10,
       notifyMs: 10,
     }))
 
@@ -227,26 +226,21 @@ describe('usage history from OpenCode’s database, to the summary', () => {
     expect(copilot(s)?.last7.requests).toBe(3)
   })
 
-  it('keeps its place across a restart, and a place saved by an older reader is read again', async () => {
+  it('reads the database from the start in a new core, and counts every request once', async () => {
     fixture.assistant(2, { id: 'm1', session: 's2' })
+    fixture.assistant(1, { id: 'm0', session: 's2' })
     const first = make()
     await first.drain()
+    expect(copilot(first)?.last7.requests).toBe(2)
     first.close()
-    expect(JSON.parse(fs.readFileSync(usageHistoryFile(home), 'utf8')).readers.opencode).toBeDefined()
-    expect(JSON.parse(fs.readFileSync(usageHistoryFile(home), 'utf8')).readers.copilot).toBeDefined()
-    // Nothing changed: a new core reads nothing more and counts the same.
     fixture.assistant(2, { id: 'm2', session: 's2' })
     const second = make()
     await second.drain()
-    expect(copilot(second)?.last7.requests).toBe(2)
-    second.close()
-    // A history from before the schema marker: the position is dropped and the database is read once more, with no double count.
-    const file = JSON.parse(fs.readFileSync(usageHistoryFile(home), 'utf8'))
-    file.readers.opencode = { files: {} }
-    fs.writeFileSync(usageHistoryFile(home), JSON.stringify(file))
-    const third = make()
-    await third.drain()
-    expect(copilot(third)?.last7.requests).toBe(2)
+    expect(copilot(second)?.last7.requests).toBe(3)
+    // Within a core it keeps its place: a pass with nothing new counts the same.
+    await second.drain()
+    expect(copilot(second)?.last7.requests).toBe(3)
+    expect(fs.readdirSync(home)).toEqual([])
   })
 
   it('does not count what a forked session inherited from its parent, in either generation', async () => {
@@ -340,7 +334,7 @@ describe('usage history from OpenCode’s database, to the summary', () => {
     expect(copilot(s)?.last7.requests).toBe(2)
   })
 
-  it('stores no conversation text, and does not change the database', async () => {
+  it('shows no conversation text, writes nothing, and does not change the database', async () => {
     fixture.assistant(2, { id: 'm1', session: 's2' })
     fixture.assistant(1, { id: 'm2', session: 's2' })
     fixture.db.exec('PRAGMA wal_checkpoint(TRUNCATE)')
@@ -348,11 +342,11 @@ describe('usage history from OpenCode’s database, to the summary', () => {
     const logged = vi.spyOn(console, 'error').mockImplementation(() => {})
     const s = make()
     await s.drain()
-    s.close()
     expect(copilot(s)?.last7.requests).toBe(2)
-    const saved = fs.readFileSync(usageHistoryFile(home), 'utf8')
-    expect(saved).toContain('opencode')
-    expect(saved).not.toContain(SECRET)
+    expect(copilot(s)?.sources.map((x) => x.split)).toEqual(['opencode'])
+    expect(JSON.stringify(s.summary())).not.toContain(SECRET)
+    s.close()
+    expect(fs.readdirSync(home)).toEqual([])
     expect(JSON.stringify(logged.mock.calls)).not.toContain(SECRET)
     expect(fs.readFileSync(path.join(dataDir, 'opencode.db')).equals(before)).toBe(true)
   })
@@ -367,19 +361,6 @@ describe('usage history from OpenCode’s database, to the summary', () => {
     fixture.db.exec('COMMIT')
     await s.drain()
     expect(copilot(s)?.last7.requests).toBe(2)
-  })
-
-  it('does not read it again after a wipe', async () => {
-    fixture.assistant(2, { id: 'm1', session: 's2' })
-    const s = make()
-    await s.drain()
-    await s.wipe()
-    expect(copilot(s)).toBeUndefined()
-    await s.drain()
-    expect(copilot(s)).toBeUndefined()
-    fixture.assistant(2, { id: 'm2', session: 's2', created: NOW + 100, completed: NOW + 500 })
-    await s.drain()
-    expect(copilot(s)?.last7.requests).toBe(1)
   })
 
   it('stays responsive while a large database is scanned for the first time', async () => {
@@ -417,8 +398,6 @@ describe('usage history from OpenCode’s database, to the summary', () => {
     expect(copilot(s, 30)?.last30.requests).toBe(40 * 4 * 2)
     worst = await calmest(worst, async () => {
       s.close()
-      fs.rmSync(home, { recursive: true, force: true })
-      fs.mkdirSync(home)
       const next = (service = new UsageService({ home, readers: [createOpencodeReader({ dataDir, clock: () => NOW })], clock: () => NOW }))
       return worstStall(() => next.drain())
     })

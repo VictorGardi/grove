@@ -29,8 +29,6 @@ const START_ROWS = 100
 const PENDING_MS = 7 * 24 * 60 * 60 * 1000
 const PENDING_MAX = 1000
 const PENDING_CHUNK = 100
-// Bumped when the reader learns to put more in a request, so the database is read once more and the old entries gain it.
-const SCHEMA = 1
 
 // OpenCode's data folder: $OPENCODE_DATA_DIR, else its XDG data home (~/.local/share) in a folder named opencode.
 export const opencodeDataDir = (env: NodeJS.ProcessEnv = process.env, home: string = os.homedir()): string =>
@@ -157,7 +155,7 @@ function requestOf(row: Record<string, unknown>): { request?: UsageRequest; unfi
 // position: after the first pass only the rows added since are looked at, plus the requests that were still in progress.
 export function createOpencodeReader(options: OpencodeReaderOptions): UsageReader {
   const rangeRows = options.rangeRows ?? RANGE_ROWS
-  let places = new Map<string, Place>()
+  const places = new Map<string, Place>()
   let queue: Item[] | undefined
   const failed = new Set<string>()
   // How many rows the next slice looks at (never more than `rangeRows`), and how many tables the pass in progress has: what `progress` is made of.
@@ -265,44 +263,6 @@ export function createOpencodeReader(options: OpencodeReaderOptions): UsageReade
       const current = queue[0]
       const table = current?.started && current.max > 0 ? placeOf(current.file)[current.generation.gen].rid / current.max : 0
       return Math.min(1, (tables - queue.length + table) / tables)
-    },
-    state: () => ({ schema: SCHEMA, files: Object.fromEntries(places) }),
-    restore(state) {
-      const saved = state as { schema?: unknown; files?: unknown } | null
-      // A position saved by an older reader is dropped: the database is read once more, so the entries gain what it did not read.
-      const files = saved?.schema === SCHEMA ? saved.files : undefined
-      places = new Map()
-      if (files !== null && typeof files === 'object') {
-        for (const [file, saved] of Object.entries(files)) {
-          const place = emptyPlace()
-          for (const gen of [1, 2] as const) {
-            const table = (saved as Record<number, Partial<TablePlace> | undefined> | null)?.[gen]
-            if (table && finite(table.rid) && table.rid >= 0) place[gen].rid = table.rid
-            if (table?.pending && typeof table.pending === 'object') for (const [id, at] of Object.entries(table.pending)) if (finite(at)) place[gen].pending[id] = at
-          }
-          places.set(file, place)
-        }
-      }
-      queue = undefined
-      tables = undefined
-    },
-    async skipToEnd() {
-      queue = undefined
-      tables = undefined
-      for (const file of await listDatabases(options.dataDir)) {
-        let db: DatabaseSync | undefined
-        try {
-          db = open(file)
-          const place = placeOf(file)
-          for (const g of GENERATIONS) if (hasTables(db, g)) place[g.gen] = { rid: maxRow(db, g), pending: {} }
-        } catch (error) {
-          console.error(`core: could not skip ${path.basename(file)} for usage: ${message(error)}`)
-        } finally {
-          try {
-            db?.close()
-          } catch {}
-        }
-      }
     },
   }
 }

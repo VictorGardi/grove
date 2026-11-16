@@ -13,7 +13,6 @@ const NOW = new Date(2026, 10, 16, 12).getTime()
 function summary(over: Partial<UsageSummary> = {}): UsageSummary {
   return {
     today: '2026-11-16',
-    historyFrom: '2026-05-01',
     building: false,
     ready: { from: '2026-05-01', to: '2026-11-16' },
     progress: [],
@@ -54,8 +53,6 @@ function setup(first: UsageSummary = summary(), connected = true, store: Kept | 
   const calls: number[] = []
   const ranges: number[] = []
   const state = { summary: first, connected, expanded: false, fail: null as Error | null }
-  const wipes: Array<{ title: string; text: string; confirm: string }> = []
-  const wipe = { answer: true, fail: null as Error | null }
   const spoken = { status: [] as string[], error: [] as Array<string | null> }
   const expandedListeners: Array<() => void> = []
   const context: DockContext = {
@@ -79,12 +76,6 @@ function setup(first: UsageSummary = summary(), connected = true, store: Kept | 
     connected: () => state.connected,
     now: () => NOW,
     store,
-    wipe: async (prompt) => {
-      wipes.push(prompt)
-      if (wipe.fail) throw wipe.fail
-      if (wipe.answer) state.summary = summary({ agents: [], historyFrom: '2026-11-16', ready: null })
-      return wipe.answer
-    },
   })
   const bus = createHostBus((e) => {
     throw e
@@ -95,7 +86,7 @@ function setup(first: UsageSummary = summary(), connected = true, store: Kept | 
     state.expanded = on
     for (const l of [...expandedListeners]) l()
   }
-  return { body, calls, ranges, state, spoken, module, bus, instance, expand, wipes, wipe }
+  return { body, calls, ranges, state, spoken, module, bus, instance, expand }
 }
 
 const cell = (body: HTMLElement, day: string) => body.querySelector<HTMLButtonElement>(`.usage-cell[data-day="${day}"]`)!
@@ -114,7 +105,8 @@ describe('usage panel', () => {
     expect(cell(t.body, '2026-11-11').style.getPropertyValue('--mix')).toBe(`${SHADE_MIX[4]}%`)
     expect(cell(t.body, '2026-11-12').dataset.shade).toBe('0')
     expect([...t.body.querySelectorAll('.usage-total')].map((n) => n.textContent)).toEqual(['Today0 requests', '7 days11 requests', '30 days11 requests'])
-    expect(t.body.querySelector('.usage-from')?.textContent).toBe('History from Fri 1 May 2026')
+    expect(t.body.querySelector('.usage-from')).toBeNull()
+    expect(t.body.querySelector('.usage-wipe')).toBeNull()
     expect(t.body.querySelector('.usage-scope')?.textContent).toBe('This machine only')
   })
 
@@ -214,7 +206,7 @@ describe('usage panel', () => {
     await flush()
     expect(t.body.querySelector('.usage-building')).toBeNull()
     expect(t.spoken.status.at(-1)).toBe('')
-    expect(t.body.querySelector('.usage-from')?.textContent).toContain('History from')
+    expect(t.body.querySelector('.usage-wipe')).toBeNull()
   })
 
   it('asks for as many days as the matrix draws, and a year in the expanded dock', async () => {
@@ -370,41 +362,14 @@ describe('usage panel', () => {
     })
   })
 
-  describe('wiping the history', () => {
-    const wipeButton = (body: HTMLElement) => body.querySelector<HTMLButtonElement>('.usage-wipe')
-
-    it('asks first with the whole confirmation, and does nothing when it is declined', async () => {
-      const t = setup()
-      t.wipe.answer = false
+  describe('with nothing in the agents’ files', () => {
+    it('shows the honest empty state, with no saved-history line and no wipe control', async () => {
+      const t = setup(summary({ agents: [], ready: null }))
       await flush()
-      wipeButton(t.body)!.click()
-      await flush()
-      expect(t.wipes).toHaveLength(1)
-      expect(t.wipes[0]).toMatchObject({ title: 'Wipe the saved usage history?', confirm: 'Wipe history' })
-      expect(t.wipes[0].text).toContain('never touched')
-      expect(t.body.querySelector('.usage-agent')).not.toBeNull()
-      expect(t.calls).toHaveLength(1)
-    })
-
-    it('shows the honest empty state after it, with the history starting today', async () => {
-      const t = setup()
-      await flush()
-      wipeButton(t.body)!.click()
-      await flush()
-      await flush()
-      expect(t.body.querySelector('.usage-agent')).toBeNull()
-      expect(t.body.querySelector('.usage-empty')?.textContent).toBe('No usage recorded since Mon 16 Nov 2026')
-      expect(t.body.querySelector('.usage-from')?.textContent).toBe('History from Mon 16 Nov 2026')
-    })
-
-    it('says why when the wipe fails, and keeps what was shown', async () => {
-      const t = setup()
-      t.wipe.fail = new Error('disk full')
-      await flush()
-      wipeButton(t.body)!.click()
-      await flush()
-      expect(t.spoken.error.at(-1)).toBe('Could not wipe the usage history: disk full')
-      expect(t.body.querySelector('.usage-agent')).not.toBeNull()
+      expect(t.body.querySelector('.usage-empty')?.textContent).toBe(EMPTY_MESSAGE)
+      expect(t.body.querySelector('.usage-from')).toBeNull()
+      expect(t.body.querySelector('.usage-wipe')).toBeNull()
+      expect(t.body.textContent).not.toMatch(/wipe|history from/i)
     })
   })
 
