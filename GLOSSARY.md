@@ -13,7 +13,7 @@ specific meaning, so humans and agents stay consistent.
 - **Heading**: a repo's group in the sidebar, drawn as a trunk with its spaces
   (the main checkout and its worktree spaces) branching off it. It is a
   grouping, not a space: it has no tabs and clicking it only folds or unfolds
-  the group. A space with no worktrees has no heading. A worktree space whose
+  the group. Every space git places in a repo sits under one, even a lone checkout; only a space outside git has none. Each repo has a colour, from a hash of its name, on its heading and trunk. A worktree space whose
   main checkout is not a space still sits under a heading named after the repo.
 - **Most urgent state**: the one state a space shows when its tabs differ, and
   a folded heading shows for the spaces under it. Order: `needs-you`,

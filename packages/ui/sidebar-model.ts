@@ -60,7 +60,7 @@ export interface SidebarRow<T extends SidebarSpace = SidebarSpace> {
 }
 
 // What the sidebar lists, top to bottom: a repo's heading with its rows (its main checkout spaces first, then its worktree
-// spaces), or a plain space with no heading. The heading is keyed by the repo's name, not by a main checkout space, so it
+// spaces), or a plain space that git places in no repo. The heading is keyed by the repo's name, not by a main checkout space, so it
 // survives that space being added or removed.
 export type SidebarItem<T extends SidebarSpace = SidebarSpace> =
   | { kind: 'heading'; repo: string; rows: Array<SidebarRow<T>> }
@@ -98,6 +98,7 @@ export function sidebarItems<T extends SidebarSpace>(spaces: T[]): Array<Sidebar
     const main = mainRepo.get(space.id)
     if (repo !== null) join(repo, { space, main: false })
     else if (main !== undefined) join(main, { space, main: true })
+    else if (space.repoName !== null) join(space.repoName, { space, main: true })
     else items.push({ kind: 'plain', row: { space, main: false } })
   }
   for (const item of items) {
@@ -113,6 +114,16 @@ export function sidebarItems<T extends SidebarSpace>(spaces: T[]): Array<Sidebar
 export function rowName(row: SidebarRow): string {
   const { space } = row
   return row.main ? (space.label ?? space.branch ?? space.name) : space.name
+}
+
+// How many colours a repo can have; styles.css reads --repo-1 to --repo-6.
+export const REPO_COLORS = 6
+
+// The repo's colour, 1 to REPO_COLORS: a hash of its name, so a repo keeps its colour wherever it is drawn.
+export function repoColor(repo: string): number {
+  let hash = 0
+  for (const char of repo) hash = (hash * 31 + char.codePointAt(0)!) >>> 0
+  return (hash % REPO_COLORS) + 1
 }
 
 // Whether a heading draws its rows: the human's saved fold, except that the active space's heading stays open while it is active.

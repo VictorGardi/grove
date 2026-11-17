@@ -26,7 +26,7 @@ import { readSidebarFolds, readSidebarHidden, writeSidebarFolds, writeSidebarHid
 import { createFocusSignal } from './focus-signal.ts'
 import { noViewState, storageViewState } from './view-state.ts'
 import { quietLabel, quietSpaces } from './quiet-spaces.ts'
-import { foldQuiet, headingOf, headingOpen, jumpTargets, mostUrgent, nextUrgent, rowName, rowSummary, shortFolder, sidebarItems, sidebarSpaceOrder, spaceAt, type SidebarItem, type RowSummary, type SidebarRow, type SummaryTab } from './sidebar-model.ts'
+import { foldQuiet, headingOf, headingOpen, jumpTargets, mostUrgent, nextUrgent, rowName, repoColor, rowSummary, shortFolder, sidebarItems, sidebarSpaceOrder, spaceAt, type SidebarItem, type RowSummary, type SidebarRow, type SummaryTab } from './sidebar-model.ts'
 import { createWindowStore, type Tab, type TabKind } from './window-store.ts'
 import { contextMeter, hideContextTip } from './context-badge.ts'
 import { createTabPill, type TabPill } from './tab-pill.ts'
@@ -1003,6 +1003,7 @@ function renderSidebar(): void {
       const open = headingOpen(item.repo, folded, activeRepo)
       rows.hidden = !open
       li.className = 'heading'
+      li.dataset.repoColor = String(repoColor(item.repo))
       li.append(headingEl(item, open), rows)
       return li
     }),

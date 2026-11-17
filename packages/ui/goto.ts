@@ -5,6 +5,7 @@ import type { AgentStateName } from '../protocol/messages.ts'
 import { hideContextTip } from './context-badge.ts'
 import { BUSY, quietLabel } from './quiet-spaces.ts'
 import { goToView, marksOf, toggleMark, type GoToGroup, type GoToInput, type GoToRow, type GoToView } from './goto-model.ts'
+import { repoColor } from './sidebar-model.ts'
 
 export interface GoToElements {
   modal: HTMLElement
@@ -125,6 +126,7 @@ export function createGoTo(elements: GoToElements, deps: GoToDeps): GoTo {
       if (!heading || heading.dataset.repo !== group.repo) {
         heading = element('section', 'goto-heading')
         heading.dataset.repo = group.repo
+        heading.dataset.repoColor = String(repoColor(group.repo))
         const name = element('h3', 'heading-name')
         name.append(element('span', 'heading-label', group.repo))
         branches = element('ul', 'spaces graph')

@@ -400,7 +400,7 @@ describe('filter marks', () => {
   })
 
   describe('results for a query', () => {
-    const spaces = [space('a', 'ass-121', { repoName: 'plat', branch: 'x' }), space('b', 'main', { repoName: 'plat', branch: 'main' }), space('c', 'other', { repoName: 'plat', worktree: true, parent: 'b' })]
+    const spaces = [space('a', 'ass-121', { repoName: 'plat', branch: 'ass-121' }), space('b', 'main', { repoName: 'plat', branch: 'main' }), space('c', 'other', { repoName: 'plat', worktree: true, parent: 'b' })]
     const tabs = [
       tab('a1', 'a', 'ass-121', { state: 'finished', since: 5 }),
       tab('b1', 'b', 'ass-83'),

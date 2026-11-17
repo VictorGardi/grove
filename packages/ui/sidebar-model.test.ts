@@ -8,6 +8,8 @@ import {
   mostUrgent,
   nextUrgent,
   rowName,
+  repoColor,
+  REPO_COLORS,
   rowSummary,
   shortFolder,
   sidebarItems,
@@ -123,7 +125,7 @@ const shape = (spaces: SidebarSpace[]) =>
   sidebarItems(spaces).map((item) => (item.kind === 'heading' ? { [item.repo]: item.rows.map((row) => row.space.id) } : item.row.space.id))
 
 describe('sidebarItems', () => {
-  it('draws a repo with worktrees as a heading with its main checkout first, and other spaces plain', () => {
+  it('draws a repo with worktrees as a heading with its main checkout first, and a space outside git plain', () => {
     const spaces = [
       space('a', { repoName: 'app' }),
       space('plain'),
@@ -149,9 +151,13 @@ describe('sidebarItems', () => {
     expect(shape(spaces)).toEqual([{ app: ['wt'] }])
   })
 
-  it('leaves a second space on one folder as its own row', () => {
+  it('gives a repo with a single checkout a heading too', () => {
+    expect(shape([space('solo', { repoName: 'tool' }), space('plain')])).toEqual([{ tool: ['solo'] }, 'plain'])
+  })
+
+  it('keeps a second space on one folder under the repo, after the first', () => {
     const spaces = [space('a', { repoName: 'app' }), space('a-wt', { parent: 'a', worktree: true, repoName: 'app' }), space('a-2', { repoName: 'app' })]
-    expect(shape(spaces)).toEqual([{ app: ['a', 'a-wt'] }, 'a-2'])
+    expect(shape(spaces)).toEqual([{ app: ['a', 'a-2', 'a-wt'] }])
   })
 
   it('shows a space git cannot place as a plain row', () => {
@@ -160,6 +166,16 @@ describe('sidebarItems', () => {
 
   it('is empty for no spaces', () => {
     expect(sidebarItems([])).toEqual([])
+  })
+})
+
+describe('repoColor', () => {
+  it('gives a repo the same colour every time, within the palette', () => {
+    for (const name of ['app', 'grove', 'spatial-intelligence-platform', '']) {
+      expect(repoColor(name)).toBe(repoColor(name))
+      expect(repoColor(name)).toBeGreaterThanOrEqual(1)
+      expect(repoColor(name)).toBeLessThanOrEqual(REPO_COLORS)
+    }
   })
 })
 
