@@ -17,6 +17,8 @@ use tauri::menu::{Menu, PredefinedMenuItem, Submenu};
 use tauri::{AppHandle, Manager, State};
 use tauri_plugin_notification::NotificationExt;
 
+mod voice;
+
 const CLOSED_LINE: &str = r#"{"jsonrpc":"2.0","method":"bridge.closed","params":{}}"#;
 const RPC_TIMEOUT: Duration = Duration::from_secs(30);
 const CONNECT_TIMEOUT: Duration = Duration::from_secs(10);
@@ -359,6 +361,7 @@ fn hide_window_buttons(window: &tauri::WebviewWindow) {
 pub fn run() {
     tauri::Builder::default()
         .manage(Bridge::default())
+        .manage(voice::Voice::default())
         .plugin(tauri_plugin_notification::init())
         .setup(|app| {
             let menu = build_menu(app.handle())?;
@@ -369,7 +372,7 @@ pub fn run() {
             }
             Ok(())
         })
-        .invoke_handler(tauri::generate_handler![connect, rpc, env_info, notify, play_sound, raise_window, install_cli])
+        .invoke_handler(tauri::generate_handler![connect, rpc, env_info, notify, play_sound, raise_window, install_cli, voice::voice_status, voice::voice_start, voice::voice_stop, voice::voice_cancel, voice::voice_download])
         .run(tauri::generate_context!())
         .expect("error while running the Grove window");
 }

@@ -34,6 +34,7 @@ export const KEY_LABELS: Record<KeyAction, string> = {
   'space-7': `Go to the ${SPACE_PLACES[6]} space`,
   'space-8': `Go to the ${SPACE_PLACES[7]} space`,
   'space-9': `Go to the ${SPACE_PLACES[8]} space`,
+  'push-to-talk': 'Hold to talk to the agent',
 }
 
 export interface KeysPanelDeps {

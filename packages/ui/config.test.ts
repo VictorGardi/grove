@@ -11,6 +11,7 @@ import {
   formatBinding,
   launcherLine,
   parseBinding,
+  releasesBinding,
   type KeyEvent,
   type StyleHost,
 } from './config.ts'
@@ -246,5 +247,22 @@ describe('bindingFromEvent', () => {
     expect(bindingFromEvent(keyEvent({ key: 'g', code: 'KeyG' }), true)).toBeNull()
     expect(bindingFromEvent(keyEvent({ key: 'F1', code: 'F1', metaKey: true }), true)).toBeNull()
     expect(bindingFromEvent(keyEvent({ key: 'g', code: 'KeyG', metaKey: true }), false)).toBeNull()
+  })
+})
+
+describe('releasesBinding', () => {
+  const key = (code: string, extra: Partial<Parameters<typeof bindingMatches>[1]> = {}) => ({ code, key: code, metaKey: false, ctrlKey: false, altKey: false, shiftKey: false, ...extra })
+  const hold = parseBinding('ctrl+space')!
+
+  it('ends on the key itself or a modifier of the chord, and on nothing else', () => {
+    expect(releasesBinding(hold, key('Space'), true)).toBe(true)
+    expect(releasesBinding(hold, key('ControlLeft'), true)).toBe(true)
+    expect(releasesBinding(hold, key('ShiftLeft'), true)).toBe(false)
+    expect(releasesBinding(hold, key('KeyA'), true)).toBe(false)
+  })
+
+  it('reads Space as the key named space', () => {
+    expect(bindingMatches(hold, key('Space', { key: ' ', ctrlKey: true }), true)).toBe(true)
+    expect(bindingFromEvent(key('Space', { key: ' ', ctrlKey: true }), true)).toBe('ctrl+space')
   })
 })

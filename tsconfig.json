@@ -20,5 +20,9 @@
   "include": [
     "packages/**/*.ts",
     "vitest.config.ts"
+  ],
+  "exclude": [
+    "**/node_modules",
+    "packages/ui/src-tauri/target"
   ]
 }

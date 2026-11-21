@@ -82,6 +82,7 @@ function keyOf(event: KeyEvent): string {
   if (/^Key[A-Z]$/.test(event.code)) return event.code.slice(3).toLowerCase()
   if (/^Digit[0-9]$/.test(event.code)) return event.code.slice(5)
   if (event.code === 'Period') return '.'
+  if (event.code === 'Space') return 'space'
   return event.key.toLowerCase()
 }
 
@@ -135,4 +136,16 @@ export function findAction(keys: Record<KeyAction, string>, event: KeyEvent, isM
     if (binding !== null && bindingMatches(binding, event, isMac)) return action
   }
   return null
+}
+
+// Whether a key coming up ends a hold on the binding: the binding's own key, or any modifier it needs. A modifier let go first takes
+// the chord with it, as the human no longer holds what the binding names.
+export function releasesBinding(binding: Binding, event: KeyEvent, isMac: boolean): boolean {
+  if (keyOf(event) === binding.key) return true
+  const code = event.code
+  if (/^Control(Left|Right)$/.test(code)) return binding.ctrl || (binding.mod && !isMac)
+  if (/^Meta(Left|Right)$/.test(code)) return binding.mod && isMac
+  if (/^Alt(Left|Right)$/.test(code)) return binding.alt
+  if (/^Shift(Left|Right)$/.test(code)) return binding.shift
+  return false
 }

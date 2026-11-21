@@ -131,6 +131,13 @@
             </div>
             <div class="settings-row">
               <div>
+                <h4 class="settings-label">Voice language</h4>
+                <p class="modal-text">The language you speak when you hold the push-to-talk key in an agent tab. Your Mac's language by default.</p>
+              </div>
+              <select id="voice-language" class="settings-select" aria-label="Voice language"></select>
+            </div>
+            <div class="settings-row">
+              <div>
                 <h4 class="settings-label">Core</h4>
                 <p class="modal-text">Restarts Grove's background process, for example to load an update. Your tabs and running agents keep going.</p>
                 <p class="core-status" role="status" aria-live="polite"><span id="core-indicator" class="indicator ind-working" hidden></span><span id="core-status-text"></span></p>
@@ -216,6 +223,18 @@
         <div class="modal-actions">
           <button id="integration-not-now" type="button">Not now</button>
           <button id="integration-enable" class="modal-save" type="button">Enable</button>
+        </div>
+      </section>
+    </div>
+    <div id="voice-prompt" class="modal-backdrop" hidden>
+      <section class="modal" role="dialog" aria-modal="true" aria-labelledby="voice-prompt-title">
+        <h2 id="voice-prompt-title" class="modal-title">Download the speech model?</h2>
+        <div id="voice-prompt-text" class="modal-text"></div>
+        <progress id="voice-prompt-progress" class="voice-progress" value="0" max="1" hidden></progress>
+        <p id="voice-prompt-error" class="modal-error" role="alert" hidden></p>
+        <div class="modal-actions">
+          <button id="voice-prompt-cancel" type="button">Not now</button>
+          <button id="voice-prompt-accept" class="modal-save" type="button">Download</button>
         </div>
       </section>
     </div>

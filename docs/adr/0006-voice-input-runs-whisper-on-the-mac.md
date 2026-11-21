@@ -1,0 +1,7 @@
+# Voice input turns speech into text with Whisper on the Mac, and downloads the model once
+
+Voice input (hold the push-to-talk key, speak, release, and the words are added to the active agent's input) uses Whisper running on the Mac itself, with a speech model of about 190 MB that Grove downloads once, on first use, after the human says yes, and checks against its published checksum. After that it works offline. This is the one place Grove uses the network. Audio is held in memory only, dropped right after it is turned into text, and neither the audio nor the text is saved or logged. The model file is the only thing voice writes to disk.
+
+Why: Whisper works on every macOS version and on Intel, runs fully offline, and copes best with technical words. The macOS built-in recognizer needs macOS 26, has unknown accuracy on code words, and needs a Swift bridge, though it would give live words almost for free. Bundling the model would make the app about 190 MB larger for every rebuild, and Grove is run from source today, so it has no installer to grow. A download keeps the app small at the price of a first use that needs a connection.
+
+Consequences: live words are not in the first version. The speech engine sits behind a small seam (audio in, text out), so partial words can be added later without a rewrite. The build gains a native audio dependency and a C++ toolchain. macOS ties microphone permission to the app's identity and signing, so changing either resets it.

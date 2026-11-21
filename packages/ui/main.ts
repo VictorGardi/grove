@@ -1,4 +1,4 @@
-import { invoke } from '@tauri-apps/api/core'
+import { Channel, invoke } from '@tauri-apps/api/core'
 import { getCurrentWebview } from '@tauri-apps/api/webview'
 import { getCurrentWindow } from '@tauri-apps/api/window'
 import { createBridge, fromBase64, toBase64 } from './bridge.ts'
@@ -14,7 +14,10 @@ import {
 } from './appearance-pref.ts'
 import { THEMES, applyThemeChoice, isThemeId, readTheme, writeTheme } from './theme-pref.ts'
 import { DEFAULT_ZOOM, readZoom, stepZoom, writeZoom, type ZoomStep } from './zoom-pref.ts'
-import { applyLayout, applySettings, applyTheme, findAction, formatBinding, launcherLine } from './config.ts'
+import { applyLayout, applySettings, applyTheme, findAction, formatBinding, launcherLine, parseBinding, releasesBinding } from './config.ts'
+import { createVoice, type StartResult, type VoicePhase } from './voice.ts'
+import { createVoicePrompt } from './voice-prompt.ts'
+import { SYSTEM_LANGUAGE, VOICE_LANGUAGES, languageToListenIn, readVoiceLanguage, writeVoiceLanguage } from './voice-pref.ts'
 import { openTerminal, terminalFontSize, tokenValue, type TerminalView } from './terminal.ts'
 import { createArranger, clearPlacement, PANE_MIN } from './grid/arrange.ts'
 import type { PaneDirection } from './grid/layout.ts'
@@ -109,6 +112,8 @@ let sentFocus: string | null = null
 // The states page (?demo=states) runs without a core: nothing is sent to it.
 let demoMode = false
 const playSound = createSoundGate()
+// The tabs Voice input is listening in, or turning speech into text for.
+const voicePhases = new Map<string, VoicePhase>()
 let soundOn = readSound(storage())
 // The repos whose heading the human folded; kept across a reload.
 let folded = readSidebarFolds(storage())
@@ -149,6 +154,7 @@ const restartCoreButton = byId('restart-core') as HTMLButtonElement
 const coreIndicator = byId('core-indicator')
 const coreStatusText = byId('core-status-text')
 const themeSelect = byId('theme-select') as HTMLSelectElement
+const voiceLanguageSelect = byId('voice-language') as HTMLSelectElement
 const workingIndicatorSelect = byId('working-indicator-style') as HTMLSelectElement
 const settingsTabs = Array.from(document.querySelectorAll<HTMLButtonElement>('.settings-tab'))
 const settingsSections = Array.from(document.querySelectorAll<HTMLElement>('.settings-section'))
@@ -325,6 +331,8 @@ const integrationPanel = createIntegrationPanel(
 
 // Each key action does what its button does, so a disabled button ignores the key as it ignores a click.
 const keyActions: Record<KeyAction, () => void> = {
+  // Held, not pressed: the key listener below runs Voice input on the key going down and coming up.
+  'push-to-talk': () => {},
   'grid-toggle': () => gridToggle.click(),
   // Like the tab-strip button this replaced, the key does nothing with no space open or a refused one.
   'new-shell': () => {
@@ -754,6 +762,7 @@ function paintTab(tab: Tab): void {
   const state = stateOf(tab)
   const name = tabName(tab)
   const agent = tab.kind === 'shell' ? undefined : tab.kind
+  const voicePhase = voicePhases.get(tab.id)
   dom.pill.update({ name, title: tabLabel(tab), state, agent, live: !tab.exited, inGrid: tab.inGrid })
   // A meter replaced under the pointer never sends its leave, so its tooltip is put away first.
   if (dom.head.querySelector('.context-meter')) hideContextTip()
@@ -765,6 +774,11 @@ function paintTab(tab: Tab): void {
   parts.push(element('span', 'pane-folder', shortFolder(tab.spacePath, homeDir)))
   if (changes && changes.additions + changes.deletions > 0) parts.push(changesButton(changes))
   if (agent) parts.push(contextMeter(store.agent(tab.id)?.context, agent))
+  if (voicePhase) {
+    const voiceEl = element('span', 'voice-indicator', voicePhase === 'listening' ? 'Listening' : 'Transcribing')
+    voiceEl.dataset.phase = voicePhase
+    parts.push(voiceEl)
+  }
   parts.push(indicatorEl(state, agent, !tab.exited))
   dom.head.replaceChildren(...parts)
   paintResume(tab, dom)
@@ -1545,6 +1559,106 @@ settingsTabs.forEach((tab) =>
     settingsSections.forEach((section) => (section.hidden = section.dataset.section !== tab.dataset.section))
   }),
 )
+// Voice input: hold the push-to-talk key in an agent tab, speak, let go, and the words are added to its input, never sent.
+function voiceNotice(text: string): void {
+  statusLine.textContent = text
+  setTimeout(() => {
+    if (statusLine.textContent === text) statusLine.textContent = ''
+  }, 6000)
+}
+let modelBytes = 190_085_487
+invoke<{ modelBytes: number }>('voice_status')
+  .then((status) => (modelBytes = status.modelBytes))
+  .catch(() => {})
+const voicePrompt = createVoicePrompt(
+  {
+    backdrop: byId('voice-prompt'),
+    text: byId('voice-prompt-text'),
+    progress: byId('voice-prompt-progress') as HTMLProgressElement,
+    error: byId('voice-prompt-error'),
+    cancel: byId('voice-prompt-cancel') as HTMLButtonElement,
+    accept: byId('voice-prompt-accept') as HTMLButtonElement,
+  },
+  {
+    download: (progress) => {
+      const channel = new Channel<{ done: number; total: number }>()
+      channel.onmessage = (message) => progress(message.done, message.total)
+      return invoke<void>('voice_download', { progress: channel }).catch((error: unknown) => {
+        throw new Error(String(error))
+      })
+    },
+    ready: () => voiceNotice(`Voice is ready: hold ${formatBinding(keys['push-to-talk'], isMac)} in an agent tab to talk`),
+    bytes: () => modelBytes,
+  },
+)
+const voice = createVoice({
+  recorder: {
+    start: () =>
+      invoke<void>('voice_start').then(
+        (): StartResult => ({ ok: true }),
+        (error: unknown): StartResult => {
+          const reason = String(error)
+          return reason === 'no-model' || reason === 'mic-denied' || reason === 'busy' ? { ok: false, reason } : { ok: false, reason: 'failed', message: reason }
+        },
+      ),
+    stop: (language) =>
+      invoke<string>('voice_stop', { language }).then(
+        (text) => ({ ok: true as const, text }),
+        (error: unknown) => ({ ok: false as const, message: String(error) }),
+      ),
+    cancel: () => invoke<void>('voice_cancel').catch(() => {}),
+  },
+  target: () => {
+    const tab = store.activeTab
+    return tab ? { id: tab.id, kind: tab.kind, exited: tab.exited } : null
+  },
+  tab: (id) => {
+    const tab = store.tab(id)
+    return tab ? { id: tab.id, kind: tab.kind, exited: tab.exited } : null
+  },
+  write: async (tabId, data) => void (await bridge.rpc('tabs.write', { id: tabId, dataB64: toBase64(encoder.encode(data)) })),
+  language: () => languageToListenIn(readVoiceLanguage(storage()), navigator.language),
+  phase: (tabId, phase) => {
+    if (phase === null) voicePhases.delete(tabId)
+    else voicePhases.set(tabId, phase)
+    const tab = store.tab(tabId)
+    if (tab) paintTab(tab)
+  },
+  notice: voiceNotice,
+  offerDownload: () => voicePrompt.offer(),
+  setTimer: (run, ms) => setTimeout(run, ms),
+  clearTimer: (handle) => clearTimeout(handle as ReturnType<typeof setTimeout>),
+  now: () => Date.now(),
+})
+// A hold ends when the key (or a modifier of it) comes up, and also when the window loses focus, since the key's release is then never
+// seen, or when the human moves to another tab.
+window.addEventListener(
+  'keyup',
+  (event) => {
+    if (!voice.holding()) return
+    const binding = parseBinding(keys['push-to-talk'])
+    if (binding === null || !releasesBinding(binding, event, isMac)) return
+    event.preventDefault()
+    event.stopPropagation()
+    voice.release()
+  },
+  { capture: true },
+)
+window.addEventListener('blur', () => voice.release())
+document.addEventListener('visibilitychange', () => {
+  if (document.hidden) voice.release()
+})
+hostBus.on('activeTabChanged', () => voice.release())
+// Settings: the language Voice input listens in.
+for (const language of [{ code: SYSTEM_LANGUAGE, label: 'This Mac\'s language' }, ...VOICE_LANGUAGES]) {
+  const option = document.createElement('option')
+  option.value = language.code
+  option.textContent = language.label
+  voiceLanguageSelect.append(option)
+}
+voiceLanguageSelect.value = readVoiceLanguage(storage())
+voiceLanguageSelect.addEventListener('change', () => writeVoiceLanguage(storage(), voiceLanguageSelect.value))
+
 // How far a keyboard resize moves a divider, as a share of the area it divides.
 const GRID_NUDGE = 0.05
 const ARROW_DIRECTIONS: Record<string, PaneDirection | undefined> = { ArrowLeft: 'left', ArrowRight: 'right', ArrowUp: 'up', ArrowDown: 'down' }
@@ -1563,6 +1677,14 @@ window.addEventListener(
     }
     if (renameModal.isOpen() || integrationPanel.isOpen() || spaceDialog.isOpen() || contextMenu.isOpen()) return
     let action = findAction(keys, event, isMac)
+    if (action === 'push-to-talk') {
+      // In a shell tab, or with no tab, the key goes on to the terminal as it always did.
+      if (voice.press()) {
+        event.preventDefault()
+        event.stopPropagation()
+      }
+      return
+    }
     if (action === null && event.shiftKey) {
       // Shift added to the previous-tab key goes the other way, along the strip.
       const plain = { code: event.code, key: event.key, metaKey: event.metaKey, ctrlKey: event.ctrlKey, altKey: event.altKey, shiftKey: false }
@@ -1645,6 +1767,7 @@ async function start(): Promise<void> {
   windowFocused = await appWindow.isFocused()
   await appWindow.onFocusChanged(({ payload }: { payload: boolean }) => {
     windowFocused = payload
+    if (!payload) voice.release()
       reportFocus()
   })
   await loadFonts()

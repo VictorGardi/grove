@@ -4351,3 +4351,30 @@ button.usage-cell:focus-visible {
 .usage-row-share {
   min-width: 4ch;
 }
+
+/* Voice input: the pane header shows it while the push-to-talk key is held, and while the words are turned into text. */
+.voice-indicator {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-2);
+  color: var(--state-needs-you);
+  font-size: var(--text-sm);
+}
+.voice-indicator::before {
+  content: '';
+  width: var(--ind-size);
+  height: var(--ind-size);
+  border-radius: 50%;
+  background: currentColor;
+}
+.voice-indicator[data-phase='listening']::before {
+  animation: voice-pulse var(--ind-wave-period) ease-in-out infinite;
+}
+@keyframes voice-pulse {
+  50% {
+    opacity: 0.25;
+  }
+}
+.voice-progress {
+  width: 100%;
+}

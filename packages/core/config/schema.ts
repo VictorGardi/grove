@@ -49,6 +49,7 @@ export const KEY_ACTIONS = [
   'space-7',
   'space-8',
   'space-9',
+  'push-to-talk',
 ] as const satisfies readonly KeyAction[]
 export const LAYOUT_SECTIONS = ['spaces', 'agents'] as const satisfies readonly LayoutSection[]
 export const THEME_TOKENS = [
@@ -105,6 +106,7 @@ export const DEFAULT_VALUES: ConfigValues = {
     'space-7': 'mod+7',
     'space-8': 'mod+8',
     'space-9': 'mod+9',
+    'push-to-talk': 'ctrl+space',
   },
   launchers: [],
   // Tokens not in the file keep their defaults in tokens.css, so the default is no override at all.
@@ -151,10 +153,10 @@ function integerIn(min: number, max: number): (value: unknown) => Parsed<number>
 const MODIFIERS = ['mod', 'ctrl', 'alt', 'shift'] as const
 
 // The keys a binding can name besides a letter or digit.
-const NAMED_KEYS = ['tab'] as const
+const NAMED_KEYS = ['tab', 'space'] as const
 
 // The canonical form of a key binding such as "mod+shift+1": one or more modifiers in a fixed order, then one
-// lowercase letter, digit, period, = or - sign, or named key (tab). Returns null when the text is not a binding.
+// lowercase letter, digit, period, = or - sign, or named key (tab or space). Returns null when the text is not a binding.
 export function canonicalBinding(text: string): string | null {
   const parts = text.split('+')
   const key = parts.pop() ?? ''
@@ -194,6 +196,7 @@ const KEY_DESCRIPTIONS: Record<KeyAction, string> = {
   'space-7': 'Focuses the seventh space in the sidebar, with the tab it last showed.',
   'space-8': 'Focuses the eighth space in the sidebar, with the tab it last showed.',
   'space-9': 'Focuses the ninth space in the sidebar, with the tab it last showed.',
+  'push-to-talk': 'Hold it in an agent tab, speak, and let go: the words, turned to text on this Mac, are added to the agent\'s input. Grove never presses Enter. In a shell tab the key goes to the terminal as usual.',
 }
 
 const LAUNCHER_KEYS: readonly string[] = ['id', 'label', 'command', 'args', 'env']

@@ -71,6 +71,7 @@ describe('config schema', () => {
         'space-7': 'mod+7',
         'space-8': 'mod+8',
         'space-9': 'mod+9',
+        'push-to-talk': 'ctrl+space',
       },
     })
   })

@@ -75,6 +75,15 @@ specific meaning, so humans and agents stay consistent.
   `handoff`: the old tab stops after its current step, and a fresh tab carries
   on from a brief. The old tab is left for the human, never killed. An
   orchestrator hands off its own work, or a worker's next step.
+- **Agent tab**: a tab running an agent (Claude, OpenCode or Copilot). A tab
+  running only a shell is a **plain terminal tab**.
+- **Voice input**: holding the **push-to-talk key** in the active agent tab,
+  speaking, and on release finding the words, turned to text on the Mac, added
+  after whatever is already in that agent's input. Grove never presses Enter,
+  so nothing is sent until the human sends it. No audio leaves the Mac or is
+  kept. A plain terminal tab does nothing.
+- **Push-to-talk key**: the key held while speaking; rebindable like the other
+  keys. While it is held the tab shows a **listening indicator**.
 - **Grid layout**: how the grid's panes tile the screen. **Automatic** by
   default (columns follow pane count, tab order); once the human drags or
   resizes it becomes **custom**, a **split tree** whose leaves are panes and

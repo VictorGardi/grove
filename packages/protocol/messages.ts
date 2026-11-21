@@ -309,6 +309,7 @@ export type KeyAction =
   | 'space-7'
   | 'space-8'
   | 'space-9'
+  | 'push-to-talk'
 
 export type LayoutSection = 'spaces' | 'agents'
 
