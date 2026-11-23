@@ -29,7 +29,7 @@ import { readSidebarFolds, readSidebarHidden, writeSidebarFolds, writeSidebarHid
 import { createFocusSignal } from './focus-signal.ts'
 import { noViewState, storageViewState } from './view-state.ts'
 import { quietLabel, quietSpaces } from './quiet-spaces.ts'
-import { foldQuiet, headingOf, headingOpen, jumpTargets, mostUrgent, nextUrgent, rowName, repoColor, rowSummary, shortFolder, sidebarItems, sidebarSpaceOrder, spaceAt, type SidebarItem, type RowSummary, type SidebarRow, type SummaryTab } from './sidebar-model.ts'
+import { foldQuiet, headingOf, headingOpen, isPinned, jumpTargets, mostUrgent, nextUrgent, rowName, repoColor, rowSummary, shortFolder, sidebarItems, sidebarSpaceOrder, spaceAt, type SidebarItem, type RowSummary, type SidebarRow, type SummaryTab } from './sidebar-model.ts'
 import { createWindowStore, type Tab, type TabKind } from './window-store.ts'
 import { contextMeter, hideContextTip } from './context-badge.ts'
 import { createTabPill, type TabPill } from './tab-pill.ts'
@@ -194,7 +194,7 @@ const goTo = createGoTo(
     source: () => ({
       spaces: sidebarSpaceOrder(store.spaces()).flatMap((id) => {
         const space = store.space(id)
-        return space ? [{ id, name: space.name, label: space.label, parent: space.parent, worktree: space.worktree, repoName: space.repoName, branch: space.branch }] : []
+        return space ? [{ id, name: space.name, label: space.label, parent: space.parent, worktree: space.worktree, repoName: space.repoName, branch: space.branch, pinnedAt: space.pinnedAt ?? null }] : []
       }),
       tabs: store.tabs.map((tab) => ({
         id: tab.id,
@@ -364,6 +364,10 @@ const keyActions: Record<KeyAction, () => void> = {
   },
   palette: openGoTo,
   'sidebar-toggle': () => sidebarToggle.click(),
+  'pin-space': () => {
+    const space = store.activeSpace === null ? undefined : store.space(store.activeSpace)
+    if (space && !demoMode) void setPinned(space, !isPinned(space))
+  },
   notes: () => rail.toggle('notes')?.(),
   diff: () => rail.toggle('diff')?.(),
   usage: () => rail.toggle('usage')?.(),
@@ -651,6 +655,17 @@ async function askOpenWorktree(space: SpaceInfo): Promise<boolean> {
   })
 }
 
+// Pins or unpins a space. The core saves it with the space and tells every window, this one too, through spaces.changed, so the
+// sidebar changes from that and never from this call's answer. A refusal (the saved state cannot be written) shows in the status
+// line like any other failed request, and the pin stays as it was.
+async function setPinned(space: SpaceInfo, pinned: boolean): Promise<void> {
+  try {
+    await bridge.rpc('spaces.pin', { id: space.id, pinned })
+  } catch (error) {
+    report(error)
+  }
+}
+
 // A heading's menu has only the repo's worktree actions: `space` is any space of the repo, which is all they need.
 function openSpaceMenu(space: SpaceInfo, event: MouseEvent, heading = false): void {
   event.preventDefault()
@@ -658,6 +673,7 @@ function openSpaceMenu(space: SpaceInfo, event: MouseEvent, heading = false): vo
   contextMenu.open(
     [
       ...(heading ? [] : [{ label: 'Rename', icon: iconSvg('edit'), run: () => void askRenameSpace(space).then(done) }]),
+      ...(heading ? [] : [{ label: isPinned(space) ? 'Unpin' : 'Pin', icon: iconSvg('pin'), run: () => void setPinned(space, !isPinned(space)).then(done) }]),
       { label: 'New worktree', icon: iconSvg('branch'), run: () => void askNewWorktree(space).then(done) },
       { label: 'Open worktree', icon: iconSvg('branch'), run: () => void askOpenWorktree(space).then(done).catch(report) },
       ...(heading ? [] : [{ label: 'Close', icon: iconSvg('x'), separated: true, run: () => void askRemoveSpace(space).then(done) }]),
@@ -999,7 +1015,8 @@ function renderSidebar(): void {
     recent: [...store.recentIds],
     activeSpaceId: store.activeSpace,
   })
-  const folding = foldQuiet(items, quiet)
+  // A pinned space is never folded away: a pin is never hidden.
+  const folding = foldQuiet(items, { ids: new Set([...quiet.ids].filter((id) => !isPinned(store.space(id) ?? {}))) })
   spaceList.replaceChildren(
     ...(quietOpen ? items : folding.items).map((item) => {
       const li = document.createElement('li')
@@ -1104,6 +1121,27 @@ function openLine(summary: RowSummary): HTMLElement {
 
 // One space's row, on one line: its node, the name, what is open and the time. The time shows only while the state has
 // something to say (needs you, working, finished), in that state's colour. A plain space with no tabs shows its name and branch.
+// A pinned row ends in a yellow pin, and a click on it unpins. An unpinned row has none and keeps all its width: it is pinned
+// from the menu or the key.
+function unpinButton(space: SpaceInfo): HTMLElement {
+  const pin = element('span', 'space-pin')
+  pin.setAttribute('role', 'button')
+  pin.tabIndex = 0
+  pin.title = 'Unpin'
+  pin.setAttribute('aria-label', `Unpin ${space.name}`)
+  pin.innerHTML = iconSvg('pin')
+  const unpin = (event: Event): void => {
+    event.preventDefault()
+    event.stopPropagation()
+    void setPinned(space, false)
+  }
+  pin.addEventListener('click', unpin)
+  pin.addEventListener('keydown', (event) => {
+    if (event.key === 'Enter' || event.key === ' ') unpin(event)
+  })
+  return pin
+}
+
 function spaceRow(row: SidebarRow<SpaceInfo>): HTMLButtonElement {
   const { space } = row
   const summary = rowSummary(summaryTabs(space.id), [...store.recentIds])
@@ -1117,7 +1155,7 @@ function spaceRow(row: SidebarRow<SpaceInfo>): HTMLButtonElement {
   const name = element('span', 'space-name', rowName(row))
   if (summary.empty && !grouped) {
     button.classList.add('plain')
-    button.append(node, name, element('span', 'space-branch', space.branch ?? ''))
+    button.append(node, name, element('span', 'space-branch', space.branch ?? ''), ...(demoMode || !isPinned(space) ? [] : [unpinButton(space)]))
   } else {
     const line = element('span', 'space-line', '')
     line.append(name, openLine(summary))
@@ -1126,9 +1164,11 @@ function spaceRow(row: SidebarRow<SpaceInfo>): HTMLButtonElement {
       age.dataset.since = String(summary.since)
       line.append(age)
     }
+    if (!demoMode && isPinned(space)) line.append(unpinButton(space))
     button.append(node, line)
   }
   if (space.id === store.activeSpace) button.setAttribute('aria-current', 'true')
+  if (isPinned(space)) button.classList.add('pinned')
   // The deciding tab opens when it has something for you; otherwise the space's last visited tab does.
   const chosen = summary.state === 'needs-you' || summary.state === 'finished' ? (summary.tabId ?? undefined) : undefined
   button.addEventListener('click', () => {

@@ -18,6 +18,7 @@ export const KEY_LABELS: Record<KeyAction, string> = {
   'newest-tab': 'Newest tab, in any space',
   palette: 'Go to a tab',
   'sidebar-toggle': 'Show or hide the sidebar',
+  'pin-space': 'Pin or unpin the space',
   notes: 'Notes',
   diff: 'Changes',
   usage: 'Usage',

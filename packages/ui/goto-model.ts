@@ -3,7 +3,7 @@ import type { AgentStateName, NeedsYouReason } from '../protocol/messages.ts'
 import type { AgentKind } from '../core/status/adapter.ts'
 import { indicatorLabel } from './indicator.ts'
 import { URGENCY } from '../protocol/rollup.ts'
-import { mostUrgent, rowName, shortFolder, sidebarItems, worktreeOf as worktreeOfSpace, type SidebarSpace } from './sidebar-model.ts'
+import { isPinned, mostUrgent, rowName, shortFolder, sidebarItems, worktreeOf as worktreeOfSpace, type SidebarSpace } from './sidebar-model.ts'
 import { BUSY, quietSpaces, RECENT_SPACES, visitRank } from './quiet-spaces.ts'
 
 export { RECENT_SPACES }
@@ -57,6 +57,8 @@ export interface GoToRow {
   where: string
   // A worktree row's open tabs, counted by type (results only).
   open: { agents: number; terminals: number; agent: AgentKind | null } | null
+  // The row is a pinned space (a worktree result). A tab is never pinned.
+  pinned: boolean
 }
 
 // What a tab's agent is called in a row, and what the query can match.
@@ -115,6 +117,8 @@ export interface GoToGroup {
   // How many tabs the space has. A space with exactly one is drawn as a single row, `single`, the tab hanging under no header.
   tabCount: number
   single: boolean
+  // The space is pinned: its row carries the pin mark.
+  pinned: boolean
   // The name of the space this worktree belongs to, or null for any other space.
   worktreeOf: string | null
   rows: GoToRow[]
@@ -182,12 +186,19 @@ function rowOf(tab: GoToTab): GoToRow {
     matched: [],
     where: '',
     open: null,
+    pinned: false,
   }
 }
 
 // The places of `name` that any of the words matched.
 function matchedOf(terms: string[], name: string): number[] {
   return [...new Set(terms.flatMap((term) => fuzzyMatch(term, name)?.at ?? []))].sort((a, b) => a - b)
+}
+
+// Pinned before unpinned, and two pinned ones by when they were pinned; 0 when neither decides.
+function pinOrder(a: number | null, b: number | null): number {
+  if (a === null || b === null) return a === b ? 0 : a === null ? 1 : -1
+  return a - b
 }
 
 export function goToView(input: GoToInput): GoToView {
@@ -250,6 +261,7 @@ export function goToView(input: GoToInput): GoToView {
           stateLabel: label,
           matched: matchedOf(terms, shown),
           where: repoLabel,
+          pinned: isPinned(space),
           open: { agents, terminals: live.length - agents, agent: live.find((tab) => tab.agent !== null)?.agent ?? null },
         }
         hits.worktrees.push({ row, score: spaceScore, tier, latest: Math.min(...own.map((tab) => visitRank(input.recent, tab.id)), input.recent.length), spaceId: space.id })
@@ -269,14 +281,18 @@ export function goToView(input: GoToInput): GoToView {
     const top = scored[0]?.score ?? 0
     const rows = scored.map(({ tab }) => rowOf(tab))
     const live = own.filter((tab) => !tab.exited)
-    const group = { spaceId: space.id, name: shown, repo: where.repo, state: mostUrgent(live.map((tab) => tab.state)) ?? 'idle', empty: live.length === 0, tabCount: own.length, single: own.length === 1, worktreeOf, rows }
-    return [{ tier, latest, top, current: space.id === input.activeSpaceId, group }]
+    const group = { spaceId: space.id, name: shown, repo: where.repo, state: mostUrgent(live.map((tab) => tab.state)) ?? 'idle', empty: live.length === 0, tabCount: own.length, single: own.length === 1, pinned: isPinned(space), worktreeOf, rows }
+    return [{ tier, latest, top, pinnedAt: isPinned(space) ? space.pinnedAt! : null, current: space.id === input.activeSpaceId, group }]
   })
   // Array.prototype.sort is stable, so spaces equally recent keep the sidebar order they came in.
   if (searching) entries.sort((a, b) => b.top - a.top || a.latest - b.latest)
-  else entries.sort((a, b) => a.tier - b.tier || a.latest - b.latest)
+  // Inside a group the pinned spaces lead, in the order they were pinned, then the rest by how recently they were visited.
+  // A pin never lifts a space out of its group, so a space that needs you stays above every pinned space of a lower group.
+  else entries.sort((a, b) => a.tier - b.tier || pinOrder(a.pinnedAt, b.pinnedAt) || a.latest - b.latest)
   // A query searches every space, so only an empty one folds the quiet ones.
-  const folded = searching ? { ids: new Set<string>(), last: null } : quietSpaces({ spaces: input.spaces, tabs: input.tabs, recent: input.recent, activeSpaceId: input.activeSpaceId })
+  const quietOnes = searching ? { ids: new Set<string>(), last: null } : quietSpaces({ spaces: input.spaces, tabs: input.tabs, recent: input.recent, activeSpaceId: input.activeSpaceId })
+  // A pinned space is never behind the quiet line here: a pin is never hidden.
+  const folded = { ...quietOnes, ids: new Set([...quietOnes.ids].filter((id) => !input.spaces.some((space) => space.id === id && isPinned(space)))) }
   const quiet = entries.filter((entry) => folded.ids.has(entry.group.spaceId))
   const listed = quiet.length > 0 && !input.expandQuiet ? entries.filter((entry) => !quiet.includes(entry)) : entries
   // A heading holds its spaces together, where its first space in this order stands; the spaces keep that order within it.

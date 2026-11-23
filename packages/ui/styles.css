@@ -276,10 +276,14 @@ p {
   text-align: left;
 }
 
-/* A plain space with no tabs: the name, and the branch on the right. */
+/* A plain space with no tabs: the name, and the branch on the right (then the pin, when pinned). */
 .space.plain {
   grid-template-columns: var(--ind-container-width) minmax(0, 1fr) auto;
   align-items: center;
+}
+
+.space.plain.pinned {
+  grid-template-columns: var(--ind-container-width) minmax(0, 1fr) auto auto;
 }
 
 .space:hover {
@@ -396,6 +400,52 @@ p {
 
 .space-branch:empty {
   display: none;
+}
+
+/* A pinned space: a faint tint on its row and a yellow pin at the right end, which unpins. Other rows have no pin. */
+.space.pinned {
+  background: color-mix(in srgb, var(--pin) 7%, transparent);
+}
+
+.space.pinned:hover {
+  background: color-mix(in srgb, var(--pin) 11%, transparent);
+}
+
+.space.pinned[aria-current='true'] {
+  background: color-mix(in srgb, var(--pin) 15%, transparent);
+}
+
+.space-pin {
+  flex: none;
+  display: grid;
+  place-items: center;
+  padding: var(--space-1);
+  border-radius: var(--radius-sm);
+  color: var(--pin);
+  line-height: 0;
+  cursor: pointer;
+}
+
+.space-pin:hover {
+  background: var(--color-line);
+}
+
+.space-pin .icon {
+  display: block;
+  width: var(--icon-size-sm);
+  height: var(--icon-size-sm);
+}
+
+/* Go to's pin mark on a pinned space. */
+.goto-pin {
+  flex: none;
+  display: inline-flex;
+  color: var(--pin);
+}
+
+.goto-pin .icon {
+  width: var(--icon-size-sm);
+  height: var(--icon-size-sm);
 }
 
 .tab-label,

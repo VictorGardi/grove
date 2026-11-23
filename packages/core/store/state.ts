@@ -4,10 +4,13 @@ import type { AgentKind } from '../status/adapter.ts'
 
 // `id` is optional: a file written before spaces had ids has none, and loadState fills them in.
 // `name` is a display name the human gave; without it the space shows its folder's name.
+// `pinnedAt` is when the human pinned the space (epoch ms); a record without it is not pinned. It was added without a version
+// bump, and it goes with the record when the space is closed.
 export interface SpaceRecord {
   id?: string
   path: string
   name?: string
+  pinnedAt?: number
 }
 
 // Tab order within a space is the array order. `spaceId`, `agent`, `agentSessionId`, `label` and `found` are optional

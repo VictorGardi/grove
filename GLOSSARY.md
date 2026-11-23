@@ -15,6 +15,12 @@ specific meaning, so humans and agents stay consistent.
   grouping, not a space: it has no tabs and clicking it only folds or unfolds
   the group. Every space git places in a repo sits under one, even a lone checkout; only a space outside git has none. Each repo has a colour, from a hash of its name, on its heading and trunk. A worktree space whose
   main checkout is not a space still sits under a heading named after the repo.
+- **Pin**: a mark the human puts on a space, a worktree space included, to
+  find their way back to it later. Only spaces are pinned, never tabs. A pin
+  has no note, limit or expiry, lasts until the human removes it, and ends with
+  its space: a space that is closed and added again is not pinned. A pinned
+  space keeps its place in the sidebar and shows a yellow pin on its row; it is
+  never folded behind the quiet line.
 - **Most urgent state**: the one state a space shows when its tabs differ, and
   a folded heading shows for the spaces under it. Order: `needs-you`,
   `finished`, `working`, `unknown`, `idle`. An unfolded heading shows none.
@@ -42,7 +48,8 @@ specific meaning, so humans and agents stay consistent.
   the active space, unless the space has no tabs.
 - **Recent order**: tabs most recently shown first, kept per space and for the
   whole window. The previous-tab key walks a space's order; Go to lists tabs
-  and spaces in the window's order.
+  and spaces in the window's order, except that pinned spaces lead within each
+  of its groups.
 - **Holder**: the detached Node process that owns the PTYs, so tabs survive the
   window and the core restarting. It parses the agents' OSC 7501 reports.
 - **Core**: the Node process the holder supervises. It keeps spaces, tabs and
@@ -105,7 +112,12 @@ specific meaning, so humans and agents stay consistent.
   query it is a flat ranked list of worktrees, then tabs, each hit with its
   match marked; Enter on a worktree goes to the tab that decides its state (the
   one that needs you). A tab with no name of its own is named by what it runs
-  and where, or "<agent>, untitled". It only navigates; it runs no commands.
+  and where, or "<agent>, untitled". With an empty query, pinned spaces come
+  first within each group (needs you, finished, active, working, the rest), in
+  the Pinned group's order, each once and marked with a pin; a pinned space is
+  never folded behind the quiet line, and a pin never lifts a space above a
+  group that needs you more. A query ranks as before and only shows the mark.
+  It only navigates: it runs no commands, and never pins or unpins.
 - **Grove CLI**: the `grove` command, which drives the running app over the
   core socket (`~/.grove/s`); a tab knows itself by `GROVE_TAB`.
 - **Token**: a named design value (colour, type, spacing, radius, size) as a

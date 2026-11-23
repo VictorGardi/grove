@@ -18,6 +18,7 @@ export const METHODS = {
   spacesAdd: 'spaces.add',
   spacesRemove: 'spaces.remove',
   spacesRename: 'spaces.rename',
+  spacesPin: 'spaces.pin',
   worktreesList: 'worktrees.list',
   worktreesAdd: 'worktrees.add',
   tabsOpen: 'tabs.open',
@@ -224,6 +225,9 @@ export interface SpaceInfo {
   worktree: boolean
   // The branch checked out in the space; null when detached or when git cannot say.
   branch: string | null
+  // When the human pinned the space (epoch ms), or null while it is not pinned. Saved with the space, so it ends with it. The core
+  // always sends it; it is optional so a space built without it (a test, the demo) reads as not pinned.
+  pinnedAt?: number | null
 }
 
 export interface SpaceTabInfo {
@@ -293,6 +297,7 @@ export type KeyAction =
   | 'newest-tab'
   | 'palette'
   | 'sidebar-toggle'
+  | 'pin-space'
   | 'notes'
   | 'diff'
   | 'usage'
@@ -526,6 +531,9 @@ export interface MethodMap {
   'spaces.remove': { params: { id: string; removeWorktree?: boolean; force?: boolean }; result: Empty }
   // An empty name clears it, so the space shows its folder's name again.
   'spaces.rename': { params: { id: string; name: string }; result: Empty }
+  // Pins or unpins a space. Pinning a pinned space changes nothing, so its place in the pins stays. Fails while the state file is
+  // refused. Every window, the asking one too, hears the new state through `spaces.changed`, sent before the answer.
+  'spaces.pin': { params: { id: string; pinned: boolean }; result: Empty }
   // The worktrees of the space's repo that are not spaces yet.
   'worktrees.list': { params: { spaceId: string }; result: { worktrees: { path: string; branch: string | null }[] } }
   // A new space on a checkout under ~/.grove/worktrees/<repo>/. A branch that exists is checked out; a new one starts from `base`

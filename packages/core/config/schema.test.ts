@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { canonicalBinding, defaultFile, FILES, validateFile, type ConfigFile } from './schema.ts'
+import { canonicalBinding, DEFAULT_VALUES, defaultFile, FILES, validateFile, type ConfigFile } from './schema.ts'
 
 const withFile = (file: ConfigFile, patch: Record<string, unknown>) => ({ ...defaultFile(file), ...patch })
 
@@ -55,6 +55,7 @@ describe('config schema', () => {
         'newest-tab': 'mod+shift+j',
         palette: 'mod+k',
         'sidebar-toggle': 'mod+b',
+        'pin-space': 'mod+shift+p',
         notes: 'mod+shift+n',
         diff: 'mod+shift+d',
         usage: 'mod+shift+u',
@@ -102,6 +103,12 @@ describe('config schema', () => {
       ok: false,
       message: 'keys.json: sidebar-toggle: same binding as grid-tab',
     })
+  })
+
+  it('binds pin-space to Cmd+Shift+P, lets it be rebound, and refuses a clash', () => {
+    expect(DEFAULT_VALUES.keys['pin-space']).toBe('mod+shift+p')
+    expect(validateFile('keys.json', withFile('keys.json', { 'pin-space': 'mod+shift+o' }))).toMatchObject({ ok: true, value: { 'pin-space': 'mod+shift+o' } })
+    expect(validateFile('keys.json', withFile('keys.json', { 'pin-space': 'mod+shift+d' }))).toEqual({ ok: false, message: 'keys.json: diff: same binding as pin-space' })
   })
 
   it('rejects a duplicate key binding, and accepts the same modifiers in another order only as a duplicate', () => {

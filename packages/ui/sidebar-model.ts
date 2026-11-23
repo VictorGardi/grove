@@ -51,6 +51,8 @@ export interface SidebarSpace extends SpaceOrderInput {
   worktree: boolean
   repoName: string | null
   branch: string | null
+  // When the space was pinned (epoch ms); null or missing while it is not.
+  pinnedAt?: number | null
 }
 
 // A space as a row: a main checkout is a row beside the worktree spaces under its repo's heading, and is named differently.
@@ -107,6 +109,10 @@ export function sidebarItems<T extends SidebarSpace>(spaces: T[]): Array<Sidebar
     item.rows = [...heading.mains, ...heading.trees]
   }
   return items
+}
+
+export function isPinned(space: { pinnedAt?: number | null }): boolean {
+  return typeof space.pinnedAt === 'number'
 }
 
 // The row's name: a main checkout's is the human's rename, else its branch, else its folder (detached, or git cannot say);

@@ -59,6 +59,7 @@ const SPACE_METHODS = new Set<string>([
   METHODS.spacesAdd,
   METHODS.spacesRemove,
   METHODS.spacesRename,
+  METHODS.spacesPin,
   METHODS.worktreesList,
   METHODS.worktreesAdd,
   METHODS.tabsOpen,
@@ -755,6 +756,15 @@ async function dispatchSpaces(method: string, rawParams: unknown, holder: RpcCli
   if (method === METHODS.spacesRename) {
     spaces.renameSpace(stringParam(rawParams, 'id'), stringParam(rawParams, 'name'))
     return {} satisfies MethodMap['spaces.rename']['result']
+  }
+  if (method === METHODS.spacesPin) {
+    const id = stringParam(rawParams, 'id')
+    const pinned = (rawParams as { pinned?: unknown } | null)?.pinned
+    if (typeof pinned !== 'boolean') throw new RpcError(ERROR_CODES.invalidParams, 'pinned must be true or false')
+    spaces.setPinned(id, pinned)
+    const info = await spaces.spaceInfo(id)
+    if (info !== undefined) deps.broadcast(notification('spaces.changed', info))
+    return {} satisfies MethodMap['spaces.pin']['result']
   }
   if (method === METHODS.worktreesList) {
     return { worktrees: await spaces.unopenedWorktrees(stringParam(rawParams, 'spaceId')) } satisfies MethodMap['worktrees.list']['result']

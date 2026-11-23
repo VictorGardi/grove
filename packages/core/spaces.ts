@@ -113,6 +113,20 @@ export class SpacesService {
     this.state = next
   }
 
+  // Pins the space, or unpins it. Pinning a pinned space, or unpinning an unpinned one, writes nothing, so a pin keeps its place.
+  // The pin time never goes back past an earlier pin's, so pins made in one millisecond keep the order they were made in.
+  setPinned(spaceId: string, pinned: boolean, now: number = Date.now()): void {
+    this.assertNotRefused()
+    const space = this.requireSpace(spaceId)
+    if ((space.pinnedAt !== undefined) === pinned) return
+    const { pinnedAt: _cleared, ...unpinned } = space
+    const latest = Math.max(0, ...this.state.spaces.map((other) => other.pinnedAt ?? 0))
+    const changed: SpaceRecord = pinned ? { ...unpinned, pinnedAt: Math.max(now, latest + 1) } : unpinned
+    const next: StateV1 = { ...this.state, spaces: this.state.spaces.map((s) => (recordSpaceId(s) === spaceId ? changed : s)) }
+    saveState(this.file, next)
+    this.state = next
+  }
+
   tabIdsOf(spaceId: string): string[] {
     return this.state.tabs.filter((tab) => tabSpaceId(tab) === spaceId).map((tab) => tab.id)
   }
@@ -515,6 +529,7 @@ export class SpacesService {
       parent: main === undefined ? null : recordSpaceId(main),
       worktree: git.linked,
       branch: git.branch,
+      pinnedAt: typeof space.pinnedAt === 'number' ? space.pinnedAt : null,
     }
   }
 }

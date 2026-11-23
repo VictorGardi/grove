@@ -5,6 +5,7 @@ import type { AgentStateName } from '../protocol/messages.ts'
 import { hideContextTip } from './context-badge.ts'
 import { BUSY, quietLabel } from './quiet-spaces.ts'
 import { goToView, marksOf, toggleMark, type GoToGroup, type GoToInput, type GoToRow, type GoToView } from './goto-model.ts'
+import { iconSvg } from './icons.ts'
 import { repoColor } from './sidebar-model.ts'
 
 export interface GoToElements {
@@ -47,6 +48,16 @@ function element(tag: string, className: string, text = ''): HTMLElement {
   node.className = className
   node.textContent = text
   return node
+}
+
+// The mark on a pinned space's row. Go to only shows it: pinning is not done here.
+function pinMark(): HTMLElement {
+  const mark = element('span', 'goto-pin')
+  mark.title = 'Pinned'
+  mark.setAttribute('role', 'img')
+  mark.setAttribute('aria-label', 'Pinned')
+  mark.innerHTML = iconSvg('pin')
+  return mark
 }
 
 // The name with the characters the query matched in a mark.
@@ -141,10 +152,10 @@ export function createGoTo(elements: GoToElements, deps: GoToDeps): GoTo {
   }
 
   function spaceNode(group: GoToGroup): HTMLElement {
-    if (group.single && group.rows[0]) return tabRow(group.rows[0], deps.node(group), group.name)
+    if (group.single && group.rows[0]) return tabRow(group.rows[0], deps.node(group), group.name, group.pinned)
     const section = element('section', `goto-group state-${group.empty ? 'none' : group.state}`)
     const head = element('header', 'goto-space')
-    head.append(deps.node(group), element('span', 'goto-space-name', group.name), element('span', 'goto-space-note', group.tabCount === 0 ? 'No tabs open' : `${group.tabCount} tabs`))
+    head.append(deps.node(group), element('span', 'goto-space-name', group.name), ...(group.pinned ? [pinMark()] : []), element('span', 'goto-space-note', group.tabCount === 0 ? 'No tabs open' : `${group.tabCount} tabs`))
     section.append(head)
     if (group.rows.length > 0) {
       const tabs = element('ul', 'spaces graph')
@@ -159,9 +170,9 @@ export function createGoTo(elements: GoToElements, deps: GoToDeps): GoTo {
   }
 
   // A tab as one line: its node, name, what it is (agent or terminal) and, while something is going on, the time.
-  function tabRow(row: GoToRow, node: HTMLElement, name: string): HTMLElement {
+  function tabRow(row: GoToRow, node: HTMLElement, name: string, pinned = false): HTMLElement {
     const button = rowButton(row, `goto-row state-${row.state}`)
-    button.append(node, element('span', 'goto-row-name', name), kindOf(row))
+    button.append(node, element('span', 'goto-row-name', name), ...(pinned ? [pinMark()] : []), kindOf(row))
     if (BUSY.includes(row.state) && row.since !== null) button.append(element('span', 'goto-time', deps.age(row.since)))
     return button
   }
@@ -196,7 +207,7 @@ export function createGoTo(elements: GoToElements, deps: GoToDeps): GoTo {
     const button = rowButton(row, `goto-row goto-hit state-${row.state}`)
     const text = element('span', 'goto-hit-text')
     text.append(highlighted(row.name, row.matched), element('span', 'goto-hit-where', row.where))
-    button.append(deps.indicator(row.state, worktree ? null : row.agent), text)
+    button.append(deps.indicator(row.state, worktree ? null : row.agent), text, ...(row.pinned ? [pinMark()] : []))
     const status = worktree ? statusText(row, deps.age) : null
     if (status) button.append(element('span', 'goto-status', status))
     else if (worktree && row.open) {

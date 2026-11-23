@@ -202,6 +202,7 @@ describe('findAction', () => {
     expect(findAction(keys, keyEvent({ key: 'b', code: 'KeyB', metaKey: true }), true)).toBe('sidebar-toggle')
     expect(findAction(keys, keyEvent({ key: 'N', code: 'KeyN', metaKey: true, shiftKey: true }), true)).toBe('notes')
     expect(findAction(keys, keyEvent({ key: '7', code: 'Digit7', metaKey: true }), true)).toBe('space-7')
+    expect(findAction(keys, keyEvent({ key: 'P', code: 'KeyP', metaKey: true, shiftKey: true }), true)).toBe('pin-space')
   })
 
   it('zooms with Cmd+=, Cmd++ (Shift+=), Cmd+- and Cmd+0', () => {

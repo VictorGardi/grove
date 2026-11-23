@@ -77,6 +77,8 @@
   --tile-8: #3fa7c4;
 
   /* Repo colours: a repo's name and trunk in the sidebar. They follow the theme's ANSI hues, so each preset gets its own. */
+  /* The pin on a pinned space: its mark in the sidebar and in Go to. */
+  --pin: var(--ansi-yellow);
   --repo-1: var(--ansi-cyan);
   --repo-2: var(--ansi-magenta);
   --repo-3: var(--ansi-yellow);

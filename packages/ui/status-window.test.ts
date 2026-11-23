@@ -4,7 +4,7 @@
 // is typed by hand into a shell tab, as a human does, so its tab was created as a shell.
 import { readFileSync } from 'node:fs'
 import path from 'node:path'
-import { afterAll, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest'
+import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest'
 import type { AgentInfo, AgentStateName, SpaceTabInfo, StatusChange } from '../protocol/messages.ts'
 import { DEFAULT_VALUES } from '../core/config/schema.ts'
 import { VIEW_STATE_KEY } from './view-state.ts'
@@ -16,6 +16,12 @@ const fake = vi.hoisted(() => ({
   opening: null as SpaceTabInfo | null,
   attaches: [] as string[],
   creates: [] as unknown[],
+  // The spaces the test announced, by id, so the mocked core can answer a pin with the space as it would now be.
+  known: new Map<string, Record<string, unknown>>(),
+  pinCalls: [] as Array<{ id: string; pinned: boolean }>,
+  // A message makes the next pins fail as the core does while its state file is refused.
+  pinFails: null as string | null,
+  clock: 1_000,
 }))
 
 vi.mock('@tauri-apps/api/core', () => {
@@ -45,6 +51,18 @@ vi.mock('@tauri-apps/api/core', () => {
       case 'tabs.attach':
         fake.attaches.push(params.id!)
         return { screenB64: '', cols: 80, rows: 24 }
+      case 'spaces.pin': {
+        const { id, pinned } = params as unknown as { id: string; pinned: boolean }
+        fake.pinCalls.push({ id, pinned })
+        if (fake.pinFails !== null) throw new Error(fake.pinFails)
+        const before = fake.known.get(id)!
+        // Pinning a pinned space keeps its place, as in the core.
+        const pinnedAt = pinned ? (typeof before.pinnedAt === 'number' ? before.pinnedAt : ++fake.clock) : null
+        const next = { ...before, pinnedAt }
+        fake.known.set(id, next)
+        fake.channel!.onmessage(JSON.stringify({ jsonrpc: '2.0', method: 'spaces.changed', params: next }))
+        return {}
+      }
       case 'tabs.open':
         if (!fake.opening) throw new Error('no tab configured')
         fake.channel!.onmessage(JSON.stringify({ jsonrpc: '2.0', method: 'tabs.opened', params: fake.opening }))
@@ -58,7 +76,11 @@ vi.mock('@tauri-apps/api/core', () => {
     if (command === 'connect') return undefined
     if (command === 'rpc') {
       const request = args!.request!
-      return JSON.stringify({ jsonrpc: '2.0', id: request.id, result: answer(request.method, request.params) })
+      try {
+        return JSON.stringify({ jsonrpc: '2.0', id: request.id, result: answer(request.method, request.params) })
+      } catch (error) {
+        return JSON.stringify({ jsonrpc: '2.0', id: request.id, error: { code: -32000, message: (error as Error).message } })
+      }
     }
     return undefined
   }
@@ -513,4 +535,256 @@ describe('window status path', () => {
     await vi.waitFor(() => expect(fake.creates).toContainEqual(expect.objectContaining({ id: 'tab-claude', agent: { kind: 'claude' } })))
     await vi.waitFor(() => expect(fake.attaches.filter((id) => id === 'tab-claude').length).toBeGreaterThan(1))
   })
+
+  describe('pinned spaces', () => {
+    // The spaces whose row carries the pin, and whether any does. A pinned space is never folded away, so it is always drawn.
+    const pinnedIds = () => [...document.querySelectorAll<HTMLElement>('#spaces .space.pinned')].map((el) => el.dataset.spaceId)
+    const anyPinned = () => pinnedIds().length > 0
+    // The pin at the end of a row: only a pinned row has one.
+    const pinOf = (id: string) => treeRow(id).querySelector<HTMLElement>('.space-pin')
+    // A space the core would announce: the window hears it, and the mocked core can answer a pin on it.
+    const announce = (id: string, extra: Record<string, unknown> = {}) => {
+      const info = space(id, extra)
+      fake.known.set(id, { ...fake.known.get(id), ...info })
+      notify('spaces.changed', fake.known.get(id))
+    }
+    const remove = (id: string) => {
+      fake.known.delete(id)
+      notify('spaces.removed', { id })
+    }
+    const press = (init: KeyboardEventInit) => document.dispatchEvent(new KeyboardEvent('keydown', { bubbles: true, ...init }))
+    const PIN_KEY = { key: 'P', code: 'KeyP', ctrlKey: true, shiftKey: true }
+    const settle = () => new Promise((resolve) => setTimeout(resolve, 0))
+    const menuFor = (el: Element): string[] => {
+      el.dispatchEvent(new MouseEvent('contextmenu', { bubbles: true, cancelable: true }))
+      return [...document.querySelectorAll('.context-menu .context-item')].map((item) => item.textContent ?? '')
+    }
+    const chooseInMenu = async (label: string) => {
+      ;[...document.querySelectorAll<HTMLElement>('.context-menu .context-item')].find((item) => item.textContent === label)!.click()
+      await settle()
+    }
+    // The tree row of a space, with the quiet fold open so a space nobody visited is there to find.
+    const treeRow = (id: string): HTMLElement => {
+      quietFold(true)
+      return row(id)!
+    }
+    const pinThroughMenu = async (id: string) => {
+      expect(menuFor(treeRow(id))).toContain('Pin')
+      await chooseInMenu('Pin')
+    }
+    const repoSpaces = () => {
+      announce('s1', { path: '/Users/test/proj', name: 'proj', repoName: 'proj', branch: 'main' })
+      announce('proj-wt', { name: 'proj-wt', worktree: true, repoName: 'proj', parent: 's1', branch: 'feat' })
+    }
+    // Back to the plain window the other tests expect: nothing pinned, one plain space, selected.
+    const reset = async () => {
+      quietFold(false)
+      for (const id of [...fake.known.keys()]) if (id !== 's1') remove(id)
+      announce('s1', { path: '/Users/test/proj', name: 'proj', pinnedAt: null })
+      treeRow('s1').click()
+      // The fold stays open in memory when its line went away; a quiet space brings the line back to close it.
+      announce('tmp-quiet')
+      quietFold(false)
+      remove('tmp-quiet')
+      fake.pinFails = null
+      fake.pinCalls.length = 0
+    }
+    const gotoNames = () =>
+      [...document.querySelectorAll<HTMLElement>('#goto-list > *')].flatMap((node) => {
+        const name = node.querySelector('.goto-space-name, .goto-row-name')?.textContent
+        return name ? [{ name, pinned: node.querySelector('.goto-pin') !== null }] : []
+      })
+    const openGoToWith = (query = '') => {
+      if (document.querySelector<HTMLElement>('#goto-modal')!.hidden) document.querySelector<HTMLElement>('#search-button')!.click()
+      const input = document.querySelector<HTMLInputElement>('#goto-input')!
+      input.value = query
+      input.dispatchEvent(new Event('input', { bubbles: true }))
+    }
+    const closeGoTo = () => document.querySelector<HTMLInputElement>('#goto-input')!.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true }))
+
+    afterEach(async () => {
+      closeGoTo()
+      await reset()
+    })
+
+    it('marks a pinned space\'s own row with a pin, and draws no section for pins', async () => {
+      announce('s1', { path: '/Users/test/proj', name: 'proj' })
+      expect(anyPinned()).toBe(false)
+      expect(pinOf('s1')).toBeNull()
+      press(PIN_KEY)
+      await vi.waitFor(() => expect(pinnedIds()).toEqual(['s1']))
+      expect(pinOf('s1')?.getAttribute('aria-label')).toBe('Unpin proj')
+      // Nothing else is drawn: one row for the space, no Pinned section, no extra heading.
+      expect(document.querySelector('#pinned, .pinned-label')).toBeNull()
+      expect(document.querySelectorAll('#spaces .space[data-space-id="s1"]')).toHaveLength(1)
+      press(PIN_KEY)
+      await vi.waitFor(() => expect(anyPinned()).toBe(false))
+      expect(pinOf('s1')).toBeNull()
+    })
+
+    it('unpins from the pin on the row without opening the space, and an unpinned row has no pin', async () => {
+      repoSpaces()
+      const names = () => [...document.querySelectorAll('#spaces .space-name')].map((el) => el.textContent)
+      const before = names()
+      expect(document.querySelector('#spaces .space-pin')).toBeNull()
+      await pinThroughMenu('proj-wt')
+      expect(pinnedIds()).toEqual(['proj-wt'])
+      expect(document.querySelectorAll('#spaces .space-pin')).toHaveLength(1)
+      expect(row('s1')?.getAttribute('aria-current')).toBe('true')
+      expect(names()).toEqual(before)
+      expect([...document.querySelectorAll('#spaces .heading .heading-label')].map((el) => el.textContent)).toEqual(['proj'])
+      pinOf('proj-wt')!.click()
+      await vi.waitFor(() => expect(anyPinned()).toBe(false))
+      expect(row('s1')?.getAttribute('aria-current')).toBe('true')
+    })
+
+    it('shows no pin in the tab strip, the pane header or the title bar', async () => {
+      announce('s1', { path: '/Users/test/proj', name: 'proj' })
+      press(PIN_KEY)
+      await vi.waitFor(() => expect(anyPinned()).toBe(true))
+      expect(document.querySelector('#tabs .icon-pin, .tabstrip .icon-pin, #terminals .icon-pin')).toBeNull()
+    })
+
+    it('keeps Cmd+1 to Cmd+9 where they were when spaces are pinned', async () => {
+      repoSpaces()
+      announce('lone', { branch: 'dev' })
+      await pinThroughMenu('lone')
+      await pinThroughMenu('proj-wt')
+      // The tree is main, proj-wt, lone, whatever is pinned.
+      treeRow('lone').click()
+      press({ key: '1', code: 'Digit1', ctrlKey: true })
+      expect(row('s1')?.getAttribute('aria-current')).toBe('true')
+      press({ key: '3', code: 'Digit3', ctrlKey: true })
+      expect(row('lone')?.getAttribute('aria-current')).toBe('true')
+      press({ key: '2', code: 'Digit2', ctrlKey: true })
+      expect(row('proj-wt')?.getAttribute('aria-current')).toBe('true')
+    })
+
+    it('never folds a pinned space into the quiet count', async () => {
+      announce('s1', { path: '/Users/test/proj', name: 'proj' })
+      announce('hush', { branch: 'dev' })
+      const fold = () => document.querySelector<HTMLElement>('#spaces .spaces-quiet')
+      expect(fold()?.textContent).toBe('1 quiet space ▾')
+      expect(row('hush')).toBeNull()
+      await pinThroughMenu('hush')
+      quietFold(false)
+      expect(fold()).toBeNull()
+      expect(row('hush')?.classList.contains('pinned')).toBe(true)
+    })
+
+    it('has Pin or Unpin in a space\'s menu by its state, and none in a heading\'s', async () => {
+      repoSpaces()
+      expect(menuFor(treeRow('proj-wt'))).toEqual(['Rename', 'Pin', 'New worktree', 'Open worktree', 'Close'])
+      await chooseInMenu('Pin')
+      expect(pinnedIds()).toEqual(['proj-wt'])
+      expect(menuFor(treeRow('proj-wt'))).toContain('Unpin')
+      await chooseInMenu('Unpin')
+      expect(anyPinned()).toBe(false)
+      const heading = menuFor(document.querySelector('#spaces .heading .heading-name')!)
+      expect(heading).toEqual(['New worktree', 'Open worktree'])
+      document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true }))
+    })
+
+    it('toggles the pin of the active space with its key', async () => {
+      announce('s1', { path: '/Users/test/proj', name: 'proj' })
+      press(PIN_KEY)
+      await vi.waitFor(() => expect(pinnedIds()).toEqual(['s1']))
+      press(PIN_KEY)
+      await vi.waitFor(() => expect(anyPinned()).toBe(false))
+    })
+
+    it('says so when a pin fails, and shows no pin', async () => {
+      announce('s1', { path: '/Users/test/proj', name: 'proj' })
+      fake.pinFails = 'state file has version 2; this core reads version 1'
+      press(PIN_KEY)
+      await vi.waitFor(() => expect(document.querySelector('#status')?.textContent).toContain('version 2'))
+      expect(anyPinned()).toBe(false)
+    })
+
+    it('ends a pin with its space: one added again is not pinned', async () => {
+      repoSpaces()
+      await pinThroughMenu('proj-wt')
+      remove('proj-wt')
+      announce('proj-wt', { name: 'proj-wt', worktree: true, repoName: 'proj', parent: 's1', branch: 'feat' })
+      expect(anyPinned()).toBe(false)
+    })
+
+    describe('in Go to', () => {
+      // Three plain spaces with one tab each, none visited: quiet unless pinned or busy.
+      const threeSpaces = () => {
+        for (const [id, name] of [['a1', 'alpha'], ['b1', 'bravo'], ['c1', 'charlie']] as const) {
+          announce(id, { name })
+          notify('tabs.opened', { ...TABS[0], id: `${id}-tab`, spaceId: id, spacePath: `/Users/test/${id}`, label: name })
+        }
+      }
+      const dropTabs = () => {
+        for (const id of ['a1', 'b1', 'c1']) notify('tabs.closed', { id: `${id}-tab` })
+      }
+
+      it('lists pinned spaces first within each group, marked, once, and never behind the quiet line', async () => {
+        announce('s1', { path: '/Users/test/proj', name: 'proj' })
+        threeSpaces()
+        await pinThroughMenu('b1')
+        // After the awaits: the window re-reads the agents list as it goes, and the mocked core has none to give.
+        notify('status.changed', change('c1-tab', 'claude', 'needs-you'))
+        openGoToWith()
+        // Needs-you leads though it is not pinned; then the active space; then the pinned one, though it is quiet; alpha is quiet.
+        expect(gotoNames()).toEqual([
+          { name: 'charlie', pinned: false },
+          { name: 'proj', pinned: false },
+          { name: 'bravo', pinned: true },
+        ])
+        expect(document.querySelector('#goto-list .goto-quiet')?.textContent).toBe('1 quiet space ▾')
+        // No way to pin or unpin from here.
+        expect(document.querySelector('#goto-list .space-pin')).toBeNull()
+        expect([...document.querySelectorAll('#goto-list button')].some((el) => /pin/i.test(el.textContent ?? '') || /pin/i.test(el.getAttribute('aria-label') ?? ''))).toBe(false)
+        closeGoTo()
+        dropTabs()
+      })
+
+      it('puts pinned spaces first, in pin order, among the rest of their group', async () => {
+        announce('s1', { path: '/Users/test/proj', name: 'proj' })
+        threeSpaces()
+        await pinThroughMenu('c1')
+        await pinThroughMenu('a1')
+        openGoToWith()
+        document.querySelector<HTMLElement>('#goto-list .goto-quiet')?.click()
+        const names = gotoNames()
+        expect(names.map((n) => n.name)).toEqual(['proj', 'charlie', 'alpha', 'bravo'])
+        expect(names.filter((n) => n.pinned).map((n) => n.name)).toEqual(['charlie', 'alpha'])
+        closeGoTo()
+        dropTabs()
+      })
+
+      it('keeps the ranking of a search and only adds the mark', async () => {
+        announce('s1', { path: '/Users/test/proj', name: 'proj' })
+        threeSpaces()
+        const hits = () => [...document.querySelectorAll<HTMLElement>('#goto-list .goto-hit')].map((el) => ({ name: el.querySelector('.goto-row-name')?.textContent, pinned: el.querySelector('.goto-pin') !== null }))
+        openGoToWith('a')
+        const before = hits()
+        expect(before.length).toBeGreaterThan(1)
+        expect(before.some((hit) => hit.pinned)).toBe(false)
+        closeGoTo()
+        await pinThroughMenu('c1')
+        openGoToWith('a')
+        const after = hits()
+        expect(after.map((hit) => hit.name)).toEqual(before.map((hit) => hit.name))
+        expect(after.filter((hit) => hit.pinned).map((hit) => hit.name)).toEqual(['charlie'])
+        closeGoTo()
+        dropTabs()
+      })
+    })
+
+    // Last of the file: dropping the only space takes its tabs with it, which the tests above must not lose.
+    it('does nothing with no active space', async () => {
+      announce('s1', { path: '/Users/test/proj', name: 'proj' })
+      remove('s1')
+      fake.pinCalls.length = 0
+      press(PIN_KEY)
+      await settle()
+      expect(fake.pinCalls).toEqual([])
+      expect(anyPinned()).toBe(false)
+    })
+  })
+
 })

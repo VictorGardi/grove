@@ -157,6 +157,27 @@ describe('core daemon', () => {
     await expect(window.request(METHODS.tabsAttach, { id })).resolves.toHaveProperty('screenB64')
   })
 
+  it('pins a space through spaces.pin: every client hears it and lists the same pins, and an unknown space is refused', async () => {
+    const stack = await startStack()
+    holder = stack.holder
+    const cli = stack.core
+    const window = await connectRpc(coreSocketPath())
+    clients.push(cli, window)
+    const changed: SpaceInfo[] = []
+    window.onNotification('spaces.changed', (info) => changed.push(info))
+    const space = await cli.request(METHODS.spacesAdd, { path: home })
+    await cli.request(METHODS.spacesPin, { id: space.id, pinned: true })
+    await waitFor(async () => changed.filter((info) => typeof info.pinnedAt === 'number').length, (count) => count === 1)
+    const pinnedAt = changed.at(-1)!.pinnedAt
+    for (const client of [cli, window]) {
+      expect((await client.request(METHODS.spacesList, {})).spaces.find((info) => info.id === space.id)?.pinnedAt).toBe(pinnedAt)
+    }
+    await cli.request(METHODS.spacesPin, { id: space.id, pinned: false })
+    await waitFor(async () => changed.at(-1)?.pinnedAt, (at) => at === null)
+    await expect(cli.request(METHODS.spacesPin, { id: 'nope', pinned: true })).rejects.toThrow('no such space')
+    await expect(cli.request(METHODS.spacesPin, { id: space.id, pinned: 'yes' as unknown as boolean })).rejects.toThrow('pinned must be')
+  })
+
   it('applies every resize to the holder, the last one wins, whichever client owns the tab', async () => {
     const stack = await startStack()
     holder = stack.holder
