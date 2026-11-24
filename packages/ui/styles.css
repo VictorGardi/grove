@@ -253,16 +253,27 @@ p {
 
 .graph > li:last-child::before {
   bottom: auto;
-  height: var(--graph-branch-y);
+  height: calc(var(--graph-branch-y) - var(--graph-curve) + 1px);
 }
 
+/* The last branch has no trunk beside it, so its curve keeps its own left edge and meets the trunk's end. */
+.graph > li:last-child::after {
+  clip-path: none;
+}
+
+/* The branch leaves the trunk in a curve. Its left edge is clipped away: the trunk already draws that line, so a translucent trunk is not doubled. */
 .graph > li::after {
   content: '';
   position: absolute;
-  top: var(--graph-branch-y);
+  top: calc(var(--graph-branch-y) - var(--graph-curve) + 1px);
   left: 0;
   width: var(--graph-branch);
-  border-top: 1px solid color-mix(in srgb, var(--repo, var(--color-line)) 70%, transparent);
+  height: var(--graph-curve);
+  box-sizing: border-box;
+  border-left: 1px solid color-mix(in srgb, var(--repo, var(--color-line)) 70%, transparent);
+  border-bottom: 1px solid color-mix(in srgb, var(--repo, var(--color-line)) 70%, transparent);
+  border-bottom-left-radius: var(--graph-curve);
+  clip-path: inset(0 0 0 1px);
 }
 
 .space {
@@ -402,24 +413,14 @@ p {
   display: none;
 }
 
-/* A pinned space: a faint tint on its row and a yellow pin at the right end, which unpins. Other rows have no pin. */
-.space.pinned {
-  background: color-mix(in srgb, var(--pin) 7%, transparent);
-}
-
-.space.pinned:hover {
-  background: color-mix(in srgb, var(--pin) 11%, transparent);
-}
-
-.space.pinned[aria-current='true'] {
-  background: color-mix(in srgb, var(--pin) 15%, transparent);
-}
-
+/* A pinned space: a yellow pin at the right end, which unpins. Other rows have no pin. The row keeps its normal look. */
 .space-pin {
   flex: none;
   display: grid;
   place-items: center;
   padding: var(--space-1);
+  /* The padding is the pin's hover area; pull it out so the icon ends where the counts and times above and below end. */
+  margin-right: calc(-1 * var(--space-1));
   border-radius: var(--radius-sm);
   color: var(--pin);
   line-height: 0;
@@ -432,6 +433,7 @@ p {
 
 .space-pin .icon {
   display: block;
+  fill: currentColor;
   width: var(--icon-size-sm);
   height: var(--icon-size-sm);
 }
@@ -444,6 +446,7 @@ p {
 }
 
 .goto-pin .icon {
+  fill: currentColor;
   width: var(--icon-size-sm);
   height: var(--icon-size-sm);
 }

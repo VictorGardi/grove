@@ -112,6 +112,7 @@
   --graph-indent: var(--space-5);
   --graph-branch: var(--space-4);
   --graph-line: 20px;
+  --graph-curve: 8px;
   --graph-branch-y: calc(var(--space-1) + var(--graph-line) / 2);
   --halo-size: 3px;
   --ind-thinking-dot-size: 4px;
